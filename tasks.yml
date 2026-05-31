@@ -4,26 +4,41 @@ version: '1'
 # workflows in this repo. Run with: `mooncake task <name>`.
 # Bare `mooncake task` lists every task with its description.
 #
-# Templates use Pongo2 syntax ({{ VAR }}). Non-trivial shell logic lives
-# in scripts/ so this file stays scannable.
+# The quality gate (build/test/vet/lint/vuln/scan/ai-lint/arch-snapshot/
+# budget-status/dupl/ci-fast/ci) is provided by the shared **go-quality**
+# module (alehatsman/go-quality), so it stays in lockstep with mooncake +
+# moongit. Each task is a thin wrapper over a `goq/*` component; the only
+# dex-specific knobs are the vars below.
 #
-# Quick reference:
-#   mooncake task install-tools  # install every static-analysis tool the project needs
-#   mooncake task ci             # full pre-push gate: build + test + lint + vuln + arch + budget + dupl
-#   mooncake task ci-fast        # fast pre-commit gate: vet + fmt (staged) + ai-lint (staged)
-#   mooncake task ai-lint        # AI-smell sweep on staged Go files
-#   mooncake task build / test / lint / scan
+# PREREQ: go-quality is hosted on the local moongit over plain http, so the
+# module fetch needs the host trusted once per shell:
+#   export MOONCAKE_MODULE_INSECURE=127.0.0.1:8080
+# (the first run clones to ~/.cache/mooncake/modules/...; later runs hit cache.)
+#
+# Kept local (not quality gates, or no module equivalent): install-tools,
+# check-tools, install, clean, test-race, fmt (writer), setup-hooks.
+#
+# dex's project-specific golangci excludes stay in ./.golangci.yml — the
+# module ships only the shared linter core; goq/lint runs golangci-lint in this
+# repo's cwd so the local config is honored.
 
 vars:
   PKG: ./...
   BIN: dex
   # mattn/go-sqlite3 ships FTS5 only with this tag enabled; the project's
-  # chunks_fts virtual table and hybrid BM25 leg require it.
+  # chunks_fts virtual table and hybrid BM25 leg require it. Threaded into
+  # every goq/* component as the go_tags prop — a tag-less build wipes the
+  # index on reindex.
   GO_TAGS: sqlite_fts5
+
+modules:
+  goq: "127.0.0.1:8080/alehatsman/go-quality@v0.1.1"
 
 tasks:
 
   # ── Tool installation. Idempotent: re-running picks up newer versions. ──
+  # Kept local: dex installs gosec via golangci-lint (not standalone) and the
+  # set is verified inline; not worth a module round-trip.
   install-tools:
     desc: Install every static-analysis tool the project depends on
     steps:
@@ -64,8 +79,16 @@ tasks:
     desc: Build the dex binary
     steps:
       - shell: go mod download
-      - shell: go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
+      - name: build
+        use: goq/build
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          cmd_path: ./cmd/dex
+          bin: '{{ BIN }}'
+          trimpath: true
+          ldflags: "-s -w"
 
+  # Kept local: dex-specific deploy (copy to ~/.local/bin + restart instances).
   install:
     desc: Build, install dex to ~/.local/bin, and restart any running instances
     steps:
@@ -94,13 +117,20 @@ tasks:
   test:
     desc: Run go test ./...
     steps:
-      - shell: go test -tags '{{ GO_TAGS }}' {{ PKG }}
+      - name: test
+        use: goq/test
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          pkg: '{{ PKG }}'
 
+  # Kept local: go-quality has no race component (race is a dex-local variant).
   test-race:
     desc: Run go test -race ./...
     steps:
       - shell: go test -race -tags '{{ GO_TAGS }}' {{ PKG }}
 
+  # Kept local: this is the formatter (gofmt -w); goq/fmt is the check used
+  # inside the ci-fast gate.
   fmt:
     desc: Format all Go files with gofmt
     steps:
@@ -109,40 +139,60 @@ tasks:
   vet:
     desc: Run go vet ./...
     steps:
-      - shell: go vet {{ PKG }}
+      - name: vet
+        use: goq/vet
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          pkg: '{{ PKG }}'
 
   # ── Lint + security + vulnerability scans ───────────────────────────────
   lint:
     desc: golangci-lint (includes gosec, staticcheck, cyclop, revive, …)
     steps:
-      - shell: golangci-lint run {{ PKG }}
+      - name: lint
+        use: goq/lint
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          pkg: '{{ PKG }}'
 
   vuln:
     desc: govulncheck — scan for known vulnerabilities in dependencies
     steps:
-      - shell: govulncheck {{ PKG }}
+      - name: vuln
+        use: goq/vuln
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          pkg: '{{ PKG }}'
 
   scan:
     desc: Security + vulnerability scan (lint + vuln)
     steps:
-      - shell: golangci-lint run {{ PKG }}
-      - shell: govulncheck {{ PKG }}
+      - name: scan
+        use: goq/scan
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          pkg: '{{ PKG }}'
 
   # ── Architecture / analysis reports ─────────────────────────────────────
   arch-snapshot:
     desc: Regenerate docs-working/ARCH_SNAPSHOT.md (gitignored; local read-only)
     steps:
-      - shell: bash ./scripts/arch-snapshot.sh
+      - name: arch-snapshot
+        use: goq/arch-snapshot
+        props:
+          go_tags: '{{ GO_TAGS }}'
 
   budget-status:
     desc: Show current state of code-quality soft caps (gocyclo + god files)
     steps:
-      - shell: bash ./scripts/budget-status.sh
+      - name: budget-status
+        use: goq/budget-status
 
   dupl:
     desc: Code-duplication report (production only)
     steps:
-      - shell: bash ./scripts/dupl-report.sh
+      - name: dupl
+        use: goq/dupl
 
   # ── Setup ───────────────────────────────────────────────────────────────
   setup-hooks:
@@ -154,60 +204,33 @@ tasks:
   ai-lint:
     desc: AI-smell sweep on staged Go files (stub panics, agent TODOs, prompt artifacts)
     steps:
-      - shell: bash ./scripts/ai-lint.sh
+      - name: ai-lint
+        use: goq/ai-lint
 
   ai-lint-all:
     desc: AI-smell sweep on every tracked Go file
     steps:
-      - shell: bash ./scripts/ai-lint.sh --all
+      - name: ai-lint-all
+        use: goq/ai-lint
+        props:
+          args: "--all"
 
   # ── Fast gate — pre-commit. Cheap checks only (<5s on warm cache). ─────
   ci-fast:
-    desc: "Pre-commit gate: vet + gofmt (staged) + ai-lint (staged)"
+    desc: "Pre-commit gate: vet + gofmt (staged) + ai-lint (staged) + budget"
     steps:
-      - name: "[1/3] go vet"
-        shell: go vet {{ PKG }}
-      - name: "[2/3] gofmt (staged Go files)"
-        shell: |
-          staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.go' || true)
-          if [ -z "$staged" ]; then echo "  (no staged Go files)"; exit 0; fi
-          bad=$(echo "$staged" | xargs gofmt -l 2>/dev/null || true)
-          if [ -n "$bad" ]; then
-            echo "  ✗ gofmt would change:" >&2
-            echo "$bad" | sed 's/^/    /' >&2
-            echo "  fix with: gofmt -w <files>" >&2
-            exit 1
-          fi
-          echo "  ✓ all staged files formatted"
-      - name: "[3/3] ai-lint (staged Go files)"
-        shell: bash ./scripts/ai-lint.sh
-      - log: "✓ Fast checks green — full 'mooncake task ci' gate runs on push."
+      - name: ci-fast
+        use: goq/ci-fast
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          pkg: '{{ PKG }}'
 
   # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
   ci:
     desc: "Pre-push gate: build + test + lint + vuln + arch + budget + dupl"
     steps:
-      - name: "[1/7] build"
-        shell: go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
-      - name: "[2/7] test"
-        shell: go test -tags '{{ GO_TAGS }}' {{ PKG }}
-      - name: "[3/7] golangci-lint"
-        shell: golangci-lint run {{ PKG }}
-      - name: "[4/7] govulncheck"
-        shell: govulncheck {{ PKG }}
-      - name: "[5/7] arch-snapshot"
-        shell: |
-          bash ./scripts/arch-snapshot.sh >/dev/null
-          f=docs-working/ARCH_SNAPSHOT.md
-          if [ ! -f "$f" ]; then echo "  (snapshot file missing — skipping summary)"; exit 0; fi
-          echo "  Top packages by LOC:"
-          awk '/^\| `/{print "    " $0}' "$f" | head -5
-          god=$(awk '/^## God files/,/^## [^G]/' "$f" | grep -cE '^[[:space:]]*[0-9]+ ' || true)
-          echo "  God files (>500 LOC, non-test): $god"
-          echo "  Top cyclomatic hotspots:"
-          awk '/^## Cyclomatic hotspots/,/^## [^C]/' "$f" | grep -E '^[[:space:]]*[0-9]+ ' | head -3 | sed 's/^/    /'
-      - name: "[6/7] soft-cap budget"
-        shell: bash ./scripts/budget-status.sh | sed 's/^/  /'
-      - name: "[7/7] dupl (production-code duplication report)"
-        shell: bash ./scripts/dupl-report.sh --ci
-      - log: "✓ All checks green — safe to push."
+      - name: ci
+        use: goq/ci
+        props:
+          go_tags: '{{ GO_TAGS }}'
+          pkg: '{{ PKG }}'
