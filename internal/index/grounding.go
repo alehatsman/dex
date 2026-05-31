@@ -24,10 +24,6 @@ type pkgGrounding struct {
 	ProjectImports []string
 }
 
-func (g pkgGrounding) empty() bool {
-	return len(g.Symbols) == 0 && len(g.ProjectImports) == 0
-}
-
 // repoPkgGrounding is one row in repoGrounding: a directory plus a few
 // of its top-PageRank symbols. Kept short so the inputs to summarizeRepo
 // don't blow past the model's context.
