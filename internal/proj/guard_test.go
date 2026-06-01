@@ -28,11 +28,13 @@ func TestCheckIndexableHardDeny(t *testing.T) {
 }
 
 func TestCheckIndexableRejectsHomeDir(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		t.Skip("no $HOME available")
-	}
-	err = CheckIndexable(&Project{Root: home}, false)
+	// Pin HOME to a temp subdir so the assertion doesn't depend on the ambient
+	// $HOME: a runner whose HOME is itself a hard-denied path (e.g. CI sets
+	// HOME=/tmp) would trip the "protected system path" branch first and never
+	// reach the home-directory check this test exercises.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	err := CheckIndexable(&Project{Root: home}, false)
 	if err == nil || !strings.Contains(err.Error(), "home directory") {
 		t.Fatalf("home dir should be denied; got %v", err)
 	}
