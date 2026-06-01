@@ -32,7 +32,17 @@ vars:
   GO_TAGS: sqlite_fts5
 
 modules:
-  goq: "127.0.0.1:8080/alehatsman/go-quality@v0.1.1"
+  # Default props are applied to every `use: goq/*`, filtered to the params
+  # each export declares (mooncake #52/#57): go_tags reaches build/test/vet/
+  # lint/vuln/scan/arch-snapshot/ci/ci-fast; pkg reaches the test/vet/lint/
+  # vuln/scan/ci exports. Exports that declare neither (budget-status, dupl,
+  # ai-lint, fmt, tools, sync-config) silently ignore them. This is exactly
+  # the set each prop used to be passed to by hand.
+  goq:
+    source: "127.0.0.1:8080/alehatsman/go-quality@v0.1.1"
+    props:
+      go_tags: "{{ GO_TAGS }}"
+      pkg: "{{ PKG }}"
 
 tasks:
 
@@ -82,7 +92,6 @@ tasks:
       - name: build
         use: goq/build
         props:
-          go_tags: '{{ GO_TAGS }}'
           cmd_path: ./cmd/dex
           bin: '{{ BIN }}'
           trimpath: true
@@ -114,14 +123,10 @@ tasks:
       - log: "✓ Cleaned"
 
   # ── Test / format / vet ─────────────────────────────────────────────────
-  test:
-    desc: Run go test ./...
-    steps:
-      - name: test
-        use: goq/test
-        props:
-          go_tags: '{{ GO_TAGS }}'
-          pkg: '{{ PKG }}'
+  # Pure wrappers below collapse to the one-line `use:` shorthand; go_tags/pkg
+  # come from the goq binding's default props and `mooncake task` shows each
+  # component's own description.
+  test: goq/test
 
   # Kept local: go-quality has no race component (race is a dex-local variant).
   test-race:
@@ -136,63 +141,23 @@ tasks:
     steps:
       - shell: gofmt -w .
 
-  vet:
-    desc: Run go vet ./...
-    steps:
-      - name: vet
-        use: goq/vet
-        props:
-          go_tags: '{{ GO_TAGS }}'
-          pkg: '{{ PKG }}'
+  vet: goq/vet
 
   # ── Lint + security + vulnerability scans ───────────────────────────────
-  lint:
-    desc: golangci-lint (includes gosec, staticcheck, cyclop, revive, …)
-    steps:
-      - name: lint
-        use: goq/lint
-        props:
-          go_tags: '{{ GO_TAGS }}'
-          pkg: '{{ PKG }}'
+  lint: goq/lint
 
-  vuln:
-    desc: govulncheck — scan for known vulnerabilities in dependencies
-    steps:
-      - name: vuln
-        use: goq/vuln
-        props:
-          go_tags: '{{ GO_TAGS }}'
-          pkg: '{{ PKG }}'
+  vuln: goq/vuln
 
-  scan:
-    desc: Security + vulnerability scan (lint + vuln)
-    steps:
-      - name: scan
-        use: goq/scan
-        props:
-          go_tags: '{{ GO_TAGS }}'
-          pkg: '{{ PKG }}'
+  scan: goq/scan
 
   # ── Architecture / analysis reports ─────────────────────────────────────
-  arch-snapshot:
-    desc: Regenerate docs-working/ARCH_SNAPSHOT.md (gitignored; local read-only)
-    steps:
-      - name: arch-snapshot
-        use: goq/arch-snapshot
-        props:
-          go_tags: '{{ GO_TAGS }}'
+  # arch-snapshot declares go_tags but not pkg, so the binding default applies
+  # go_tags here and skips pkg — matching the old hand-written props.
+  arch-snapshot: goq/arch-snapshot
 
-  budget-status:
-    desc: Show current state of code-quality soft caps (gocyclo + god files)
-    steps:
-      - name: budget-status
-        use: goq/budget-status
+  budget-status: goq/budget-status
 
-  dupl:
-    desc: Code-duplication report (production only)
-    steps:
-      - name: dupl
-        use: goq/dupl
+  dupl: goq/dupl
 
   # ── Setup ───────────────────────────────────────────────────────────────
   setup-hooks:
@@ -201,36 +166,18 @@ tasks:
       - shell: bash ./scripts/setup-hooks.sh
 
   # ── AI-smell sweep ──────────────────────────────────────────────────────
-  ai-lint:
-    desc: AI-smell sweep on staged Go files (stub panics, agent TODOs, prompt artifacts)
-    steps:
-      - name: ai-lint
-        use: goq/ai-lint
+  ai-lint: goq/ai-lint
 
+  # Keeps the full form: a non-default prop (args) means it can't be a one-liner.
   ai-lint-all:
     desc: AI-smell sweep on every tracked Go file
     steps:
-      - name: ai-lint-all
-        use: goq/ai-lint
+      - use: goq/ai-lint
         props:
           args: "--all"
 
   # ── Fast gate — pre-commit. Cheap checks only (<5s on warm cache). ─────
-  ci-fast:
-    desc: "Pre-commit gate: vet + gofmt (staged) + ai-lint (staged) + budget"
-    steps:
-      - name: ci-fast
-        use: goq/ci-fast
-        props:
-          go_tags: '{{ GO_TAGS }}'
-          pkg: '{{ PKG }}'
+  ci-fast: goq/ci-fast
 
   # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
-  ci:
-    desc: "Pre-push gate: build + test + lint + vuln + arch + budget + dupl"
-    steps:
-      - name: ci
-        use: goq/ci
-        props:
-          go_tags: '{{ GO_TAGS }}'
-          pkg: '{{ PKG }}'
+  ci: goq/ci
