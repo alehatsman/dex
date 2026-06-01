@@ -66,6 +66,8 @@ var allEnvVars = []envVar{
 	{"DEX_AUTO_SUMMARIZE", "", "`dex watch` and the MCP auto-watcher auto-drain pending summaries when idle. Default on if a chat/summary endpoint is set; set off|0 to disable.", "summary", true},
 	{"DEX_SUMMARIZE_IDLE", "5s", "Quiet window after a re-index before the background summary drainer fires.", "summary", false},
 	{"DEX_SUMMARIZE_BATCH", "10", "Rows per idle batch. Smaller = faster yield back to fs events.", "summary", false},
+	{"DEX_SUMMARIZE_YIELD", "", "If set (e.g. 10s), the background summary drainer skips a tick when a foreground query (search/ask/symbol/graph) ran within this window — interactive latency wins over summary freshness. Cross-process via a marker file. Empty = never yield.", "summary", true},
+	{"DEX_SUMMARIZE_PACE", "", "If set (e.g. 2s), `dex index summarize` sleeps this long between batches so a manual whole-queue drain can't monopolise a shared GPU. Empty = drain at full speed.", "summary", true},
 	{"DEX_MCP_AUTOWATCH", "1", "MCP server spawns a per-project watcher on first request to keep the index fresh and (when chat is configured) fill summaries in the background. Set off|0 to disable.", "summary", true},
 	{"DEX_WATCH_DEBOUNCE", "500ms", "Quiet window before the MCP auto-watcher re-indexes after a burst of fs events.", "summary", false},
 

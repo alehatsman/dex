@@ -14,9 +14,46 @@ import (
 
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/ignore"
+	"github.com/alehatsman/dex/internal/lock"
 	"github.com/alehatsman/dex/internal/store"
 	"golang.org/x/sync/errgroup"
 )
+
+// drainHolder describes this process as the holder of a project's
+// summary-drain lock (DrainLockPath). Distinct Command from the index
+// lock so `dex lock`-style introspection can tell the two apart.
+func (ix *Indexer) drainHolder(phase string) lock.Holder {
+	host, _ := os.Hostname()
+	return lock.Holder{
+		PID:     os.Getpid(),
+		Host:    host,
+		Command: "summary-drain",
+		Phase:   phase,
+		Started: time.Now(),
+	}
+}
+
+// foregroundBusy reports whether a foreground query ran within
+// Options.YieldWindow. Used by the idle drainer to defer background
+// summary generation while an agent is actively querying. Always false
+// when YieldWindow <= 0 (feature off).
+func (ix *Indexer) foregroundBusy() bool {
+	if ix.Options.YieldWindow <= 0 || ix.Proj == nil {
+		return false
+	}
+	ts, ok := ix.Proj.LastActivity()
+	return ok && time.Since(ts) < ix.Options.YieldWindow
+}
+
+// batchForPace caps rows per whole-queue drain call. 0 (unbounded —
+// drain everything in one call) when pacing is off; a bounded batch
+// when SummaryPace > 0 so DrainPendingSummaries can sleep between them.
+func (ix *Indexer) batchForPace() int {
+	if ix.Options.SummaryPace > 0 {
+		return 10
+	}
+	return 0
+}
 
 // DrainPendingSummariesBatch processes up to `max` rows from
 // pending_summaries (file_summary + chunk_summary kinds). Pass 0 for
@@ -271,6 +308,23 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 			// next idle tick.
 			return true, nil
 		}
+		// Foreground-yield: an agent queried recently, so leave the GPU
+		// to interactive work. Re-arm (done=false) to retry once quiet
+		// rather than waiting for the next fs flush.
+		if ix.foregroundBusy() {
+			return false, nil
+		}
+		// Cross-process dedupe: only one process drains a project's
+		// queue at a time. If another holds the lock, skip and re-arm.
+		dl, lerr := lock.Acquire(ix.Proj.DrainLockPath, ix.drainHolder("idle-drain"))
+		if errors.Is(lerr, lock.ErrLocked) {
+			return false, nil
+		}
+		if lerr != nil {
+			return true, lerr
+		}
+		defer func() { _ = dl.Release() }()
+
 		before, _ := ix.Store.CountPendingSummaries(ctx)
 		gen, after, err := ix.DrainPendingSummariesBatch(ctx, batchSize)
 		if err != nil {
@@ -330,9 +384,17 @@ func (ix *Indexer) DrainPendingSummaries(ctx context.Context) (int, error) {
 	if ix.Options.Chat == nil {
 		return 0, fmt.Errorf("DrainPendingSummaries: chat client not configured")
 	}
+	// Coordinate with any background drainer via the per-project lock so
+	// a manual `dex index summarize` and a watcher don't double-generate
+	// the same rows. AcquireWait yields once the background drainer
+	// releases (it does so after every batch). Best-effort: if the lock
+	// layer errors, fall through and drain anyway rather than refuse.
+	if dl, err := lock.AcquireWait(ctx, ix.Proj.DrainLockPath, ix.drainHolder("manual-drain")); err == nil {
+		defer func() { _ = dl.Release() }()
+	}
 	total := 0
 	for {
-		gen, remaining, err := ix.DrainPendingSummariesBatch(ctx, 0)
+		gen, remaining, err := ix.DrainPendingSummariesBatch(ctx, ix.batchForPace())
 		if err != nil {
 			return total, err
 		}
@@ -340,10 +402,16 @@ func (ix *Indexer) DrainPendingSummaries(ctx context.Context) (int, error) {
 		if remaining == 0 {
 			break
 		}
-		// max=0 drains everything in one call, so the loop normally exits
-		// on the first iteration. Kept as a safety net in case future
-		// row-filtering (e.g. attempts-based backoff) causes the same
-		// batch to leave rows behind.
+		// When paced, DrainPendingSummariesBatch returns after one bounded
+		// batch (not the whole queue), so sleep between batches to leave
+		// GPU headroom for foreground work before draining the rest.
+		if ix.Options.SummaryPace > 0 {
+			select {
+			case <-ctx.Done():
+				return total, ctx.Err()
+			case <-time.After(ix.Options.SummaryPace):
+			}
+		}
 	}
 	ix.Options.Logger.Info("drain: cascading package + repo summaries")
 	cascadeGen, err := ix.CascadePackageRepoSummaries(ctx)

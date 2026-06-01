@@ -41,6 +41,14 @@ Independent of chunks; runs after them in `cmd/dex/main.go:cmdIndex`. `ExtractGo
 
 `Watcher.Run`: fsnotify subscribes to the project tree → events filtered through the same `ignore.Matcher` → debounced (`Options.Debounce`, default 500ms) → dirty set drained by re-invoking `Indexer.Run` → `AfterIndex` hook re-runs the graph phase. Used by `dex watch` (`cmd/dex/main.go:1512`).
 
+### Background summary draining — pacing (`internal/index/drain.go`)
+
+Both `dex serve` and every `dex mcp` spawn per-project watchers, so multiple processes can target one project's `pending_summaries` queue. To keep that from saturating a shared GPU, `IdleSummaryDrainer` guards each idle tick with three checks (in order):
+
+1. **Foreground yield** — if a query touched `Project.ActivityPath` (a marker file query handlers stamp via `markForeground`) within `DEX_SUMMARIZE_YIELD`, skip this tick. Cross-process: a `dex serve` drainer yields to a `dex mcp`'s queries. Off when the window is 0.
+2. **Cross-process drain lock** — a non-blocking flock on `Project.DrainLockPath` (`summary.lock`, separate from the index lock). If another process holds it, skip. Guarantees **one drainer per project** regardless of how many watchers exist.
+3. The watcher's `OnIdleAfter` re-arm already paces ~5 s between batches; `DEX_SUMMARIZE_PACE` adds an inter-batch sleep to the manual whole-queue drain (`dex index summarize`), which also takes the drain lock (waiting).
+
 ## Flow at a glance
 
 ```
