@@ -35,7 +35,7 @@ Independent of chunks; runs after them in `cmd/dex/main.go:cmdIndex`. `ExtractGo
 - **BM25** — `bm25()` against `chunks_fts`.
 - final score `Σ 1/(60 + rank)`; optional cross-encoder rerank (`DEX_RERANK_URL`).
 
-`internal/mcp` wraps this for the MCP tool surface (`ask`, `search_semantic`, `search_symbol`, `graph_*`, `view_summarize`). `cmd/dex/main.go` provides the CLI mirrors and the MCP stdio server entrypoint.
+`internal/mcp` wraps this for the MCP tool surface. By default the MCP server exposes a **single tool, `ask`** — it composes the lanes above and, when a chat endpoint is configured, synthesizes a grounded prose `answer` (with `path:line` citations) from the evidence bundle (`internal/mcp/answer.go`). The raw lanes (`search_semantic`, `search_symbol`, `graph_*`, `view_summarize`, `index_status`) are gated behind `DEX_EXPOSE_RAW_TOOLS=1` for CLI parity / power use. `cmd/dex/main.go` provides the CLI mirrors and the MCP stdio server entrypoint.
 
 ## Live updates (`internal/watch/watch.go`)
 
@@ -50,5 +50,5 @@ files ──► walk (ignore) ──► chunk (tree-sitter) ──► embed (HTT
 files ──► ExtractGo/YAML ──► linkChunks ──► graph_nodes/graph_edges ──► PageRank → centrality
 
 query ──► embed ──► chunk_vecs (cosine)  ┐
-query ──► tokens ──► chunks_fts (BM25)   ├─► RRF ──► (opt.) rerank ──► hits
+query ──► tokens ──► chunks_fts (BM25)   ├─► RRF ──► (opt.) rerank ──► hits ──► (opt.) chat synthesis ──► answer + evidence
 ```

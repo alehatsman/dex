@@ -64,3 +64,16 @@ batch throughput.
 | `DEX_DISABLE_BM25`      | unset        | Set `1` to skip the BM25 leg of hybrid search and rank by cosine similarity alone.                                                                                        |
 | `DEX_MAX_HITS_PER_FILE` | unset (no cap) | Positive integer caps how many search hits come from a single file. Promotes result diversity.                                                                          |
 | `DEX_ALLOW_PATHS`       | unset        | Colon-separated path prefixes (`:` on POSIX, `;` on Windows) that `index`/`watch` accept even when the target isn't inside a git work tree. Entries support `~` / `$HOME`. |
+| `DEX_EXPOSE_RAW_TOOLS`  | unset        | Set `1`/`on` to also register the raw MCP lanes (`search_semantic`, `search_symbol`, `graph_*`, `view_summarize`, `index_status`) alongside `ask`. Default off: the MCP server exposes `ask` only, since it composes those lanes and synthesizes the answer. CLI subcommands are unaffected. |
+
+## Answer synthesis (the `ask` `answer` field)
+
+When a chat endpoint is configured (`DEX_CHAT_URL`/`DEX_CHAT_MODEL`),
+`ask` synthesizes a grounded prose `answer` from the evidence bundle on
+every call and returns it alongside `answer_model`. It cites `path:line`
+and is bounded by `MaxTokens` (~400) with the evidence input capped at
+~12 KB so the prompt fits a 4096-token local context window. Synthesis
+is best-effort: if the chat leg is unreachable the `answer` is omitted
+and the agent falls back to `suggested_reads` + `next_action` (status
+stays `ok`). Identical re-asks within a process are served from an
+in-memory cache keyed on the question + evidence, so they cost no GPU.
