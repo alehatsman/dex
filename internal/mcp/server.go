@@ -698,17 +698,17 @@ type BreakerStatus struct {
 }
 
 type ProjectStatus struct {
-	ID                        string `json:"id"`
-	Root                      string `json:"root,omitempty"`
-	Chunks                    int    `json:"chunks"`
-	Files                     int    `json:"files"`
-	Dim                       int    `json:"dim"`
-	EmbedModel                string `json:"embed_model,omitempty"`
-	LastIndexed               string `json:"last_indexed,omitempty"`
-	PendingSummaries          int    `json:"pending_summaries,omitempty"`
-	PendingSummariesOldestAgeSecs int `json:"pending_summaries_oldest_age_s,omitempty"`
-	QueueHint                 string `json:"queue_hint,omitempty"`
-	LastSummarized            string `json:"last_summarized,omitempty"`
+	ID                            string `json:"id"`
+	Root                          string `json:"root,omitempty"`
+	Chunks                        int    `json:"chunks"`
+	Files                         int    `json:"files"`
+	Dim                           int    `json:"dim"`
+	EmbedModel                    string `json:"embed_model,omitempty"`
+	LastIndexed                   string `json:"last_indexed,omitempty"`
+	PendingSummaries              int    `json:"pending_summaries,omitempty"`
+	PendingSummariesOldestAgeSecs int    `json:"pending_summaries_oldest_age_s,omitempty"`
+	QueueHint                     string `json:"queue_hint,omitempty"`
+	LastSummarized                string `json:"last_summarized,omitempty"`
 }
 
 type StatusOutput struct {
@@ -891,66 +891,79 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		Version: Version,
 	}, nil)
 
-	sdk.AddTool(srv, &sdk.Tool{
-		Name: "search_semantic",
-		Description: "Prefer `ask` for general code-understanding questions — it composes this " +
-			"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
-			"want raw semantic ranking without intent routing. " +
-			"Embeds the query and returns top-k matching chunks. Supports exclude list to skip paths. " +
-			"On error, returns a structured status: 'no-index' (run dex index first), " +
-			"'embedding-service-unreachable' (fall back to grep), or 'ok'.",
-	}, s.search)
+	// Thin surface: `ask` is the sole tool agents see by default — it
+	// composes the lanes below and (when a chat client is wired)
+	// synthesizes the answer, so the raw lanes are redundant for agents.
+	// Set DEX_EXPOSE_RAW_TOOLS=1 to register them too (CLI parity / power
+	// use / A-B debugging). The `dex` CLI subcommands are unaffected.
+	rawTools := exposeRawTools()
 
-	sdk.AddTool(srv, &sdk.Tool{
-		Name: "search_symbol",
-		Description: "Prefer `ask` — it detects identifiers in your question and runs this " +
-			"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
-			"already have the exact identifier name and want nothing else. " +
-			"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists.",
-	}, s.findSymbol)
+	if rawTools {
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "search_semantic",
+			Description: "Prefer `ask` for general code-understanding questions — it composes this " +
+				"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
+				"want raw semantic ranking without intent routing. " +
+				"Embeds the query and returns top-k matching chunks. Supports exclude list to skip paths. " +
+				"On error, returns a structured status: 'no-index' (run dex index first), " +
+				"'embedding-service-unreachable' (fall back to grep), or 'ok'.",
+		}, s.search)
 
-	sdk.AddTool(srv, &sdk.Tool{
-		Name: "graph_neighbors",
-		Description: "Prefer `ask` — it includes neighborhood expansion as part of routing. " +
-			"Use graph_neighbors directly only when you already have the exact (path, start_line) of a chunk " +
-			"and want its cosine neighbors. " +
-			"Finds code that is semantically related even without keyword overlap.",
-	}, s.related)
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "search_symbol",
+			Description: "Prefer `ask` — it detects identifiers in your question and runs this " +
+				"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
+				"already have the exact identifier name and want nothing else. " +
+				"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists.",
+		}, s.findSymbol)
 
-	sdk.AddTool(srv, &sdk.Tool{
-		Name: "graph_deps",
-		Description: "Return the `imports` edges for a file or package — the package the file belongs to, " +
-			"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
-			"Pass `path` (relative file inside the project) OR `package` (full package path). " +
-			"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing.",
-	}, s.graphDeps)
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_neighbors",
+			Description: "Prefer `ask` — it includes neighborhood expansion as part of routing. " +
+				"Use graph_neighbors directly only when you already have the exact (path, start_line) of a chunk " +
+				"and want its cosine neighbors. " +
+				"Finds code that is semantically related even without keyword overlap.",
+		}, s.related)
 
-	sdk.AddTool(srv, &sdk.Tool{
-		Name: "graph_callers",
-		Description: "Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
-			"Go-only for now (Python/JS/Rust callers fall back to ripgrep via `ask`). " +
-			"Accepts a bare name (`Foo`), a qualified method (`(*Server).RunStdio`), or a package-qualified " +
-			"name (`mcp.NewServer`). Multiple matches are returned with their package paths so the agent can " +
-			"disambiguate. Returns 'no-graph' when calls edges haven't been indexed yet.",
-	}, s.graphCallers)
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_deps",
+			Description: "Return the `imports` edges for a file or package — the package the file belongs to, " +
+				"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
+				"Pass `path` (relative file inside the project) OR `package` (full package path). " +
+				"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing.",
+		}, s.graphDeps)
 
-	sdk.AddTool(srv, &sdk.Tool{
-		Name: "graph_callees",
-		Description: "Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
-			"Go-only for now. Same name resolution as graph_callers. " +
-			"Returns 'no-graph' when calls edges haven't been indexed yet.",
-	}, s.graphCallees)
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_callers",
+			Description: "Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
+				"Go-only for now (Python/JS/Rust callers fall back to ripgrep via `ask`). " +
+				"Accepts a bare name (`Foo`), a qualified method (`(*Server).RunStdio`), or a package-qualified " +
+				"name (`mcp.NewServer`). Multiple matches are returned with their package paths so the agent can " +
+				"disambiguate. Returns 'no-graph' when calls edges haven't been indexed yet.",
+		}, s.graphCallers)
 
-	sdk.AddTool(srv, &sdk.Tool{
-		Name:        "index_status",
-		Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
-	}, s.status)
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_callees",
+			Description: "Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
+				"Go-only for now. Same name resolution as graph_callers. " +
+				"Returns 'no-graph' when calls edges haven't been indexed yet.",
+		}, s.graphCallees)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "index_status",
+			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
+		}, s.status)
+	}
 
 	sdk.AddTool(srv, &sdk.Tool{
 		Name: "ask",
-		Description: "PRIMARY ENTRY POINT for code-understanding questions. Call this BEFORE Grep/Glob/Read fan-out. " +
-			"Given a free-text question (and optional intent override), it picks a strategy, composes search_semantic " +
-			"+ search_symbol + graph expansion, and returns a compact bundle: `semantic_hits`, `symbols`, `suggested_reads` " +
+		Description: "PRIMARY ENTRY POINT for code-understanding questions — and, by default, the ONLY dex tool you " +
+			"need. Call this BEFORE Grep/Glob/Read fan-out. When a chat model is configured it returns `answer`: a " +
+			"synthesized, citation-bearing prose response (`path:line`) grounded in the evidence below — read that " +
+			"first. `answer_model` names the model that produced it. The answer is absent only when the chat leg is " +
+			"unreachable, in which case fall back to the evidence bundle + `next_action`. " +
+			"Given a free-text question (and optional intent override), it picks a strategy, composes semantic search " +
+			"+ symbol lookup + graph expansion, and returns a compact bundle: `semantic_hits`, `symbols`, `suggested_reads` " +
 			"(both lanes carry their CONTENTS inlined by default — no follow-up Read needed in the common case), a prose " +
 			"`next_action` directive you can execute verbatim, and an `avoid` line telling you what NOT to do. Each " +
 			"SymbolHit carries `signature` (declaration line) and `doc` (leading comment block) so you can see the API " +
@@ -970,7 +983,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 			"only to override. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep.",
 	}, s.contextRouter)
 
-	if s.ChatClient != nil {
+	if s.ChatClient != nil && rawTools {
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "view_summarize",
 			Description: "Prefer `ask` first — its `suggested_reads` will name the file worth " +
@@ -982,6 +995,20 @@ func (s *Server) RunStdio(ctx context.Context) error {
 	}
 
 	return srv.Run(ctx, &sdk.StdioTransport{})
+}
+
+// exposeRawTools reports whether the raw lanes (search_*, graph_*,
+// view_summarize, index_status) should be registered alongside `ask`.
+// Off by default so agents see a single tool; DEX_EXPOSE_RAW_TOOLS=1
+// (or true/on/yes) restores the full surface for CLI parity, power use,
+// and A-B debugging.
+func exposeRawTools() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_EXPOSE_RAW_TOOLS"))) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 // Version is set at build time via -ldflags.
