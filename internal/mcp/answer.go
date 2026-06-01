@@ -216,7 +216,7 @@ func answerCacheKey(question, intent, model, evidence string) string {
 	// Length-prefix each field so concatenation can't collide across
 	// boundaries (e.g. "ab"+"c" vs "a"+"bc").
 	for _, part := range []string{question, intent, model, evidence} {
-		fmt.Fprintf(h, "%d:", len(part))
+		h.Write(fmt.Appendf(nil, "%d:", len(part)))
 		h.Write([]byte(part))
 	}
 	return hex.EncodeToString(h.Sum(nil))
