@@ -224,8 +224,16 @@ type SuggestedRead struct {
 }
 
 type ContextOutput struct {
-	Status         string          `json:"status"` // ok | no-index | embedding-service-unreachable | error
-	Hint           string          `json:"hint,omitempty"`
+	Status string `json:"status"` // ok | no-index | embedding-service-unreachable | error
+	Hint   string `json:"hint,omitempty"`
+	// Answer is the synthesized prose response to the question, grounded
+	// in the evidence below and citing `path:line`. Populated when a chat
+	// client is configured and reachable; absent on degradation, in which
+	// case the agent works from the evidence bundle + next_action.
+	Answer string `json:"answer,omitempty"`
+	// AnswerModel names the model that produced Answer (e.g.
+	// "qwen2.5-coder:14b"). Empty when no answer was synthesized.
+	AnswerModel    string          `json:"answer_model,omitempty"`
 	Endpoint       string          `json:"endpoint,omitempty"` // populated when embed is unreachable
 	Project        string          `json:"project,omitempty"`
 	Intent         string          `json:"intent,omitempty"`
@@ -388,6 +396,10 @@ func (s *Server) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in C
 	if embedFailed && out.Hint == "" {
 		out.Hint = "embed offline; results from symbol lane only."
 	}
+	// Synthesize a grounded prose answer from the evidence just
+	// assembled. Best-effort: a missing/unreachable chat client leaves
+	// out.Answer empty and the agent falls back to the evidence bundle.
+	s.synthesizeAnswer(ctx, intent, in.Question, &out)
 	return nil, out, nil
 }
 
