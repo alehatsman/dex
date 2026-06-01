@@ -435,151 +435,62 @@ func (s *Server) handleAsk(projects map[string]string) http.HandlerFunc {
 	}
 }
 
-func (s *Server) handleSearch(projects map[string]string) http.HandlerFunc {
+// jsonHandler builds the HTTP handler shared by every project-scoped tool:
+// resolve {id} to a project root, decode the JSON body into In, override its
+// project field via bind (so a client can't smuggle a different path), invoke
+// call, and encode the result. The handlers below differ only in their input
+// type and service method, so they collapse to thin delegators.
+func jsonHandler[In, Out any](
+	projects map[string]string,
+	bind func(in *In, root string),
+	call func(ctx context.Context, in In) (Out, error),
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		root := resolveProjectFromURL(w, r, projects)
 		if root == "" {
 			return
 		}
-		var in SearchInput
+		var in In
 		if err := decodeBody(r, &in); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
-		in.ProjectRoot = root
-		out, err := s.Search(r.Context(), in)
+		bind(&in, root)
+		out, err := call(r.Context(), in)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
+}
+
+func (s *Server) handleSearch(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *SearchInput, root string) { in.ProjectRoot = root }, s.Search)
 }
 
 func (s *Server) handleFindSymbol(projects map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		root := resolveProjectFromURL(w, r, projects)
-		if root == "" {
-			return
-		}
-		var in FindSymbolInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		in.ProjectRoot = root
-		out, err := s.FindSymbol(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
+	return jsonHandler(projects, func(in *FindSymbolInput, root string) { in.ProjectRoot = root }, s.FindSymbol)
 }
 
 func (s *Server) handleRelated(projects map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		root := resolveProjectFromURL(w, r, projects)
-		if root == "" {
-			return
-		}
-		var in RelatedInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		in.ProjectRoot = root
-		out, err := s.Related(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
+	return jsonHandler(projects, func(in *RelatedInput, root string) { in.ProjectRoot = root }, s.Related)
 }
 
 func (s *Server) handleGraphDeps(projects map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		root := resolveProjectFromURL(w, r, projects)
-		if root == "" {
-			return
-		}
-		var in GraphDepsInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		in.ProjectRoot = root
-		out, err := s.GraphDeps(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
+	return jsonHandler(projects, func(in *GraphDepsInput, root string) { in.ProjectRoot = root }, s.GraphDeps)
 }
 
 func (s *Server) handleGraphCallers(projects map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		root := resolveProjectFromURL(w, r, projects)
-		if root == "" {
-			return
-		}
-		var in CallEdgeInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		in.ProjectRoot = root
-		out, err := s.GraphCallers(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
+	return jsonHandler(projects, func(in *CallEdgeInput, root string) { in.ProjectRoot = root }, s.GraphCallers)
 }
 
 func (s *Server) handleGraphCallees(projects map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		root := resolveProjectFromURL(w, r, projects)
-		if root == "" {
-			return
-		}
-		var in CallEdgeInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		in.ProjectRoot = root
-		out, err := s.GraphCallees(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
+	return jsonHandler(projects, func(in *CallEdgeInput, root string) { in.ProjectRoot = root }, s.GraphCallees)
 }
 
 func (s *Server) handleSummarize(projects map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		root := resolveProjectFromURL(w, r, projects)
-		if root == "" {
-			return
-		}
-		var in SummarizeInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		in.ProjectRoot = root
-		out, err := s.Summarize(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
+	return jsonHandler(projects, func(in *SummarizeInput, root string) { in.ProjectRoot = root }, s.Summarize)
 }
 
 // ─── package-level helpers exposed for cmd/dex/serve.go ─────────────────────
