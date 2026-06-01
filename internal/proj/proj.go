@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Project identifies an indexed project on disk.
@@ -18,6 +19,19 @@ type Project struct {
 	CacheDir string // $DEX_INDEX_DIR/<ID>
 	DBPath   string // CacheDir/index.db
 	LockPath string // CacheDir/index.lock — cross-process indexer mutex
+	// DrainLockPath is a second, independent flock guarding background
+	// summary draining. Distinct from LockPath so a drain never blocks
+	// (or is blocked by) an index run, while still ensuring only ONE
+	// process drains a given project's pending_summaries at a time —
+	// otherwise every `dex serve` / `dex mcp` watcher would redundantly
+	// generate the same summaries and saturate the GPU.
+	DrainLockPath string // CacheDir/summary.lock
+	// ActivityPath is a marker file whose mtime tracks the last
+	// foreground query (search / ask / symbol / graph). Cross-process by
+	// construction (shared filesystem): query handlers touch it, the
+	// summary drainer stats it and yields while it's fresh so background
+	// work doesn't starve interactive latency.
+	ActivityPath string // CacheDir/last_query
 }
 
 // Resolve canonicalizes path and returns the project identity. The path
@@ -46,15 +60,52 @@ func Resolve(path, baseCacheDir string) (*Project, error) {
 	id := hex.EncodeToString(sum[:])
 	cache := filepath.Join(baseCacheDir, id)
 	return &Project{
-		Root:     real,
-		ID:       id,
-		CacheDir: cache,
-		DBPath:   filepath.Join(cache, "index.db"),
-		LockPath: filepath.Join(cache, "index.lock"),
+		Root:          real,
+		ID:            id,
+		CacheDir:      cache,
+		DBPath:        filepath.Join(cache, "index.db"),
+		LockPath:      filepath.Join(cache, "index.lock"),
+		DrainLockPath: filepath.Join(cache, "summary.lock"),
+		ActivityPath:  filepath.Join(cache, "last_query"),
 	}, nil
 }
 
 // EnsureCacheDir creates the per-project cache directory.
 func (p *Project) EnsureCacheDir() error {
 	return os.MkdirAll(p.CacheDir, 0o755)
+}
+
+// MarkActivity stamps ActivityPath's mtime to now, recording that a
+// foreground query just ran. Cheap (a touch); callers may throttle.
+// Best-effort: a failure here must never break a query, so callers
+// typically ignore the error.
+func (p *Project) MarkActivity() error {
+	if p.ActivityPath == "" {
+		return nil
+	}
+	now := time.Now()
+	err := os.Chtimes(p.ActivityPath, now, now)
+	if errors.Is(err, os.ErrNotExist) {
+		f, e := os.OpenFile(p.ActivityPath, os.O_CREATE|os.O_WRONLY, 0o644)
+		if e != nil {
+			return e
+		}
+		_ = f.Close()
+		return os.Chtimes(p.ActivityPath, now, now)
+	}
+	return err
+}
+
+// LastActivity returns the time of the last foreground query (the
+// ActivityPath mtime) and whether the marker exists. A missing marker
+// means "no recent activity" — callers treat ok=false as "go ahead".
+func (p *Project) LastActivity() (time.Time, bool) {
+	if p.ActivityPath == "" {
+		return time.Time{}, false
+	}
+	fi, err := os.Stat(p.ActivityPath)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return fi.ModTime(), true
 }

@@ -1507,6 +1507,7 @@ func cmdIndexSummarize(ctx context.Context, args []string) error {
 		SummaryModels:        summaryModelsFromEnv(),
 		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 4),
 		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
+		SummaryPace:          envDuration("DEX_SUMMARIZE_PACE", 0),
 	})
 
 	startCount, _ := st.CountPendingSummaries(ctx)
@@ -1857,6 +1858,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 		ixOpts.SummaryModels = summaryModelsFromEnv()
 		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 4)
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
+		ixOpts.YieldWindow = envDuration("DEX_SUMMARIZE_YIELD", 0)
 	}
 	ix := index.New(p, st, newEmbedClient(), ig, ixOpts)
 
@@ -2067,6 +2069,7 @@ func autoWatchConfigFromEnv() mcp.AutoWatchConfig {
 		IndexConcurrency:     envInt("DEX_INDEX_CONCURRENCY", 0),
 		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 4),
 		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
+		YieldWindow:          envDuration("DEX_SUMMARIZE_YIELD", 0),
 		Logger:               cliLogger(),
 	}
 }
