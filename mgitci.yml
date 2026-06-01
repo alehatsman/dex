@@ -1,0 +1,29 @@
+# dex CI — runs the pre-push quality gate (`mooncake task ci`) on every push.
+#
+# Schema (moongit internal/ci/ci.go): version "1"; `on.push.branches` gates
+# which refs trigger a run; `jobs` is a DAG wired by `needs`. Each job runs in a
+# throwaway container off `image:`, and moongitd execs every step as
+# `mooncake step '<yaml>'` inside it — so the image MUST carry `mooncake` + git
+# on PATH (plus whatever the steps shell out to). See ci/Dockerfile for the
+# image this job uses (dex-ci:latest = moongit-ci-dev + the cgo C toolchain
+# that sqlite_fts5 builds need).
+#
+# `mooncake task ci` is the same gate the local pre-push hook runs: build +
+# test + golangci-lint + govulncheck + arch-snapshot + budget + dupl, all with
+# GO_TAGS=sqlite_fts5 (tasks.yml). Its go tooling comes from the shared
+# go-quality module, fetched from this moongit over plain http;
+# MOONCAKE_MODULE_INSECURE marks the host trusted for that fetch, and tasks.yml
+# pins the module at host.docker.internal:8080 so it resolves from inside the
+# container (127.0.0.1 there would mean the container itself).
+version: "1"
+on:
+  push:
+    branches: [main, "feat/*"]
+jobs:
+  quality:
+    image: dex-ci:latest
+    steps:
+      - shell:
+          cmd: mooncake task ci
+        env:
+          MOONCAKE_MODULE_INSECURE: host.docker.internal:8080
