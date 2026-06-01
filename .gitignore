@@ -24,3 +24,5 @@ coverage.txt
 /docs-working/
 .claude/
 .dex/
+
+data/
