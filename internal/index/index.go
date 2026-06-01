@@ -89,6 +89,18 @@ type Options struct {
 	// (chunkSummaryMinLines). 0 = use default. Raise to cut chunk-summary
 	// volume on large repos by skipping medium-sized functions too.
 	ChunkSummaryMinLines int
+	// SummaryPace, when > 0, sleeps this long between batches in the
+	// whole-queue drain (DrainPendingSummaries). Throttles a manual
+	// `dex index summarize` so it can't monopolise a shared GPU. The
+	// watch / MCP idle drainer is already paced by its OnIdleAfter
+	// re-arm window, so it ignores this.
+	SummaryPace time.Duration
+	// YieldWindow, when > 0, makes the idle drainer skip a tick if a
+	// foreground query (Project.ActivityPath mtime) ran within this
+	// window — interactive latency wins over summary freshness. 0 =
+	// never yield. Cross-process via the marker file, so a `dex serve`
+	// drainer yields to a `dex mcp`'s queries.
+	YieldWindow time.Duration
 	// Concurrency caps the number of parallel file readers / chunkers in
 	// Pass 1. <=0 = runtime.GOMAXPROCS(0). The walker itself stays
 	// single-threaded (directory IO is cheap and serializes well with

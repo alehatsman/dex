@@ -54,6 +54,9 @@ type AutoWatchConfig struct {
 	SummaryConcurrency int
 	// ChunkSummaryMinLines forwards to index.Options.ChunkSummaryMinLines.
 	ChunkSummaryMinLines int
+	// YieldWindow forwards to index.Options.YieldWindow: the idle drainer
+	// skips a tick if a foreground query ran within this window. 0 = off.
+	YieldWindow time.Duration
 	// Logger receives spawn/teardown messages; nil = io.Discard.
 	Logger *slog.Logger
 }
@@ -179,8 +182,20 @@ func (s *Server) resolveProject(projectRoot string) (*proj.Project, string) {
 	if err != nil {
 		return nil, fmt.Sprintf("resolve project: %v", err)
 	}
+	s.markForeground(p)
 	s.ensureWatcher(p)
 	return p, ""
+}
+
+// markForeground records that a foreground query just touched project p
+// so the background summary drainer (here or in another process) yields
+// to interactive work for the configured YieldWindow. Best-effort: a
+// touch failure must never affect the query. One cheap syscall per
+// query (queries are agent-paced, so no throttle is needed).
+func (s *Server) markForeground(p *proj.Project) {
+	if p != nil {
+		_ = p.MarkActivity()
+	}
 }
 
 // ensureWatcher lazily spawns a Watcher goroutine for this project,
@@ -251,6 +266,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 		ixOpts.SummaryModels = s.SummaryModels
 		ixOpts.SummaryConcurrency = s.AutoWatch.SummaryConcurrency
 		ixOpts.ChunkSummaryMinLines = s.AutoWatch.ChunkSummaryMinLines
+		ixOpts.YieldWindow = s.AutoWatch.YieldWindow
 	}
 	ix := index.New(p, st, s.EmbedClient, ig, ixOpts)
 
@@ -551,6 +567,7 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 	if err != nil {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("resolve project: %v", err)}, nil
 	}
+	s.markForeground(p)
 	out.Project = p.Root
 	out.Endpoint = s.ChatClient.Endpoint()
 	out.Model = s.ChatClient.ModelName()
