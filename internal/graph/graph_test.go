@@ -496,3 +496,67 @@ func countCalls(edges []Edge) int {
 	}
 	return n
 }
+
+// TestRunResetsCentralityWhenCallsDisappear guards the stale-centrality
+// bug (#93): a node that carried centrality on one run must have it reset
+// — not left stale — when a later run produces no `calls` edges. The fix
+// builds a centrality row for every surviving node so GraphSetCentrality
+// zeroes the ones that dropped out of the call graph.
+func TestRunResetsCentralityWhenCallsDisappear(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/calls\n\ngo 1.21\n")
+	// Run 1: main calls helper, so helper picks up in-degree + pagerank.
+	write("main.go", "package main\n\nfunc helper() string { return \"x\" }\n\nfunc main() { _ = helper() }\n")
+
+	st := openTestStore(t)
+	p := resolveTestProject(t, root)
+	g := New(p, NewStoreAdapter(st), Options{})
+	if _, err := g.Run(context.Background()); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+
+	helperRank := func() (in int, pr float64, found bool) {
+		nodes, err := st.GraphAllNodes(context.Background())
+		if err != nil {
+			t.Fatalf("GraphAllNodes: %v", err)
+		}
+		for _, n := range nodes {
+			if n.Kind == string(NodeFunction) && n.Name == "helper" {
+				return n.InDegree, n.PageRank, true
+			}
+		}
+		return 0, 0, false
+	}
+
+	in1, pr1, ok := helperRank()
+	if !ok {
+		t.Fatal("helper node missing after Run 1")
+	}
+	if in1 == 0 || pr1 == 0 {
+		t.Fatalf("expected helper to carry centrality after Run 1, got in=%d pr=%g", in1, pr1)
+	}
+
+	// Run 2: drop the call. helper still exists as a node, but the graph
+	// now has zero `calls` edges, so ComputeCentrality returns nothing.
+	write("main.go", "package main\n\nfunc helper() string { return \"x\" }\n\nfunc main() {}\n")
+	if _, err := g.Run(context.Background()); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	in2, pr2, ok := helperRank()
+	if !ok {
+		t.Fatal("helper node missing after Run 2")
+	}
+	if in2 != 0 || pr2 != 0 {
+		t.Fatalf("stale centrality: helper still has in=%d pr=%g after its caller was removed (want 0, 0)", in2, pr2)
+	}
+}
