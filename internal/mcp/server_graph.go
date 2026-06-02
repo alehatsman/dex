@@ -39,6 +39,11 @@ func (s *Server) GraphCallees(ctx context.Context, in CallEdgeInput) (CallEdgeOu
 	return out, err
 }
 
+func (s *Server) PackageGraph(ctx context.Context, in PackageGraphInput) (PackageGraphOutput, error) {
+	_, out, err := s.packageGraph(ctx, nil, in)
+	return out, err
+}
+
 // ─── tool: graph_deps ─────────────────────────────────────────────────────
 
 type GraphDepsInput struct {
@@ -144,6 +149,171 @@ func (s *Server) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in Graph
 	}
 	sort.Slice(out.Imports, func(i, j int) bool { return out.Imports[i].ToPackage < out.Imports[j].ToPackage })
 	return nil, out, nil
+}
+
+// ─── tool: graph_packages ─────────────────────────────────────────────────
+//
+// graph_deps answers "what does ONE package import"; graph_packages
+// returns the WHOLE internal package import DAG in a single call, so a
+// consumer (e.g. moongit's /explore "Map of the codebase") can rank and
+// layer packages without N per-package round-trips.
+
+type PackageGraphInput struct {
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+}
+
+// PackageNode is one internal package in the import DAG.
+//
+// in_degree / out_degree / page_rank are derived from the package-level
+// `imports` edges here — NOT read from graph_nodes' centrality columns,
+// which the call-graph computation leaves zero on package nodes by
+// design (see internal/graph/centrality.go). in_degree counts distinct
+// internal packages that import this one (how load-bearing it is);
+// out_degree counts the distinct internal packages it imports.
+type PackageNode struct {
+	Package   string  `json:"package"`
+	InDegree  int     `json:"in_degree"`
+	OutDegree int     `json:"out_degree"`
+	PageRank  float64 `json:"page_rank"`
+}
+
+// PackageEdge is one internal import relationship: FromPackage imports
+// ToPackage. External (stdlib / third-party) imports are excluded —
+// both endpoints have their own package node in the project.
+type PackageEdge struct {
+	FromPackage string `json:"from_package"`
+	ToPackage   string `json:"to_package"`
+}
+
+type PackageGraphOutput struct {
+	Status  string        `json:"status"` // "ok" | "no-index" | "no-graph" | "error"
+	Hint    string        `json:"hint,omitempty"`
+	Project string        `json:"project,omitempty"`
+	Nodes   []PackageNode `json:"nodes,omitempty"`
+	Edges   []PackageEdge `json:"edges,omitempty"`
+}
+
+func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in PackageGraphInput) (*sdk.CallToolResult, PackageGraphOutput, error) {
+	p, hint := s.resolveProject(in.ProjectRoot)
+	if hint != "" {
+		return nil, PackageGraphOutput{Status: "error", Hint: hint}, nil
+	}
+	if _, err := os.Stat(p.DBPath); errors.Is(err, os.ErrNotExist) {
+		return nil, PackageGraphOutput{Status: "no-index", Project: p.Root,
+			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
+	}
+	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	if err != nil {
+		return nil, PackageGraphOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
+	}
+	defer func() { _ = st.Close() }()
+
+	view, err := loadGraphView(ctx, st)
+	if err != nil {
+		return nil, PackageGraphOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
+	}
+	if view == nil {
+		return nil, PackageGraphOutput{Status: "no-graph", Project: p.Root,
+			Hint: fmt.Sprintf("graph not indexed for %s — run `dex index %s --graph=only`.", p.Root, p.Root)}, nil
+	}
+
+	out := buildPackageGraph(view)
+	out.Project = p.Root
+	return nil, out, nil
+}
+
+// buildPackageGraph derives the internal package import DAG from a
+// loaded graphView. Pure (no I/O) so it unit-tests against a hand-built
+// view. The import graph lives on EdgeImports edges: src is the
+// importing package's NodePackage; dst is a NodeImport whose
+// QualifiedName is the imported path. An import is "internal" when that
+// path has its own NodePackage in the project — external imports
+// (stdlib / third-party) have no package node and are dropped.
+func buildPackageGraph(view *graphView) PackageGraphOutput {
+	internal := map[string]struct{}{}
+	for _, n := range view.nodesByID {
+		if n.Kind == graph.NodePackage && n.PackagePath != "" {
+			internal[n.PackagePath] = struct{}{}
+		}
+	}
+	if len(internal) == 0 {
+		return PackageGraphOutput{Status: "no-graph",
+			Hint: "graph has no package nodes — reindex with `dex index . --graph=only` (Go-only today)."}
+	}
+
+	// Dedup edges on (from, to); build degree counts and the
+	// out-adjacency for PageRank in one pass.
+	type pair struct{ from, to string }
+	seen := map[pair]struct{}{}
+	inDeg := map[string]int{}
+	outDeg := map[string]int{}
+	outAdj := map[string]map[string]struct{}{}
+	var edges []PackageEdge
+	for _, e := range view.edgesByKind[graph.EdgeImports] {
+		src, ok := view.nodesByID[e.SrcID]
+		if !ok || src.Kind != graph.NodePackage {
+			continue
+		}
+		dst, ok := view.nodesByID[e.DstID]
+		if !ok || dst.Kind != graph.NodeImport {
+			continue
+		}
+		from, to := src.PackagePath, dst.QualifiedName // import node carries the imported path
+		if from == "" || to == "" || from == to {
+			continue
+		}
+		if _, ok := internal[to]; !ok {
+			continue // external import — no package node
+		}
+		if _, dup := seen[pair{from, to}]; dup {
+			continue
+		}
+		seen[pair{from, to}] = struct{}{}
+		edges = append(edges, PackageEdge{FromPackage: from, ToPackage: to})
+		outDeg[from]++
+		inDeg[to]++
+		if outAdj[from] == nil {
+			outAdj[from] = map[string]struct{}{}
+		}
+		outAdj[from][to] = struct{}{}
+	}
+
+	// PageRank over the import DAG. Rank flows importer → imported, so
+	// foundation packages many others depend on accumulate weight —
+	// the "load-bearing core floats up" signal even when raw in-degree
+	// is modest. Keyed by package path (the id space used in outAdj).
+	ids := make([]string, 0, len(internal))
+	for pkg := range internal {
+		ids = append(ids, pkg)
+	}
+	ranks := graph.PageRank(ids, outAdj)
+
+	nodes := make([]PackageNode, 0, len(internal))
+	for pkg := range internal {
+		nodes = append(nodes, PackageNode{
+			Package:   pkg,
+			InDegree:  inDeg[pkg],
+			OutDegree: outDeg[pkg],
+			PageRank:  ranks[pkg],
+		})
+	}
+
+	// Deterministic output: nodes by in-degree desc then path; edges by
+	// (from, to). Keeps responses and golden tests stable.
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].InDegree != nodes[j].InDegree {
+			return nodes[i].InDegree > nodes[j].InDegree
+		}
+		return nodes[i].Package < nodes[j].Package
+	})
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].FromPackage != edges[j].FromPackage {
+			return edges[i].FromPackage < edges[j].FromPackage
+		}
+		return edges[i].ToPackage < edges[j].ToPackage
+	})
+
+	return PackageGraphOutput{Status: "ok", Nodes: nodes, Edges: edges}
 }
 
 // ─── tools: graph_callers / graph_callees ─────────────────────────────────

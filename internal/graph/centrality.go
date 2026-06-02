@@ -163,6 +163,21 @@ func ComputeCentrality(nodes []Node, edges []Edge) map[string]CentralityResult {
 	return out
 }
 
+// PageRank runs the damped PageRank iteration over an arbitrary
+// directed graph described by node IDs and an out-adjacency set
+// (src ID → set of dst IDs). Exposed so callers building a graph other
+// than the call graph — e.g. the package-level import DAG, where the
+// stored per-node centrality is zero by design — can reuse the same
+// converged implementation (damping 0.85, 20 iterations, dangling-mass
+// redistribution). Returns rank keyed by node ID; empty input → nil.
+func PageRank(nodeIDs []string, outAdj map[string]map[string]struct{}) map[string]float64 {
+	nodes := make([]Node, len(nodeIDs))
+	for i, id := range nodeIDs {
+		nodes[i] = Node{ID: id}
+	}
+	return pageRank(nodes, outAdj)
+}
+
 // pageRank runs the classic damped iteration. Nodes with no outgoing
 // edges (dangling) redistribute their score uniformly to every node
 // each round, which is the standard correction — without it the total

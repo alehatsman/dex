@@ -22,7 +22,7 @@ import (
 // the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | callers | callees | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -32,6 +32,8 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphNeighbors(ctx, rest)
 	case "deps":
 		return cmdGraphDeps(ctx, rest)
+	case "packages":
+		return cmdGraphPackages(ctx, rest)
 	case "callers":
 		return cmdGraphCallers(ctx, rest)
 	case "callees":
@@ -43,6 +45,7 @@ func cmdGraph(ctx context.Context, args []string) error {
   dex graph neighbors [<path>] <file> <line>  vector neighbours of a chunk (MCP: graph_neighbors)
   dex graph deps      [<path>] [flags]        imports edges (MCP: graph_deps)
                                                   --file=<rel>  --package=<full>
+  dex graph packages  [<path>]                whole internal package import DAG
   dex graph callers   [<path>] <name>         incoming calls edges (MCP: graph_callers)
                                                   --package=<pkg>  --k=<n>
   dex graph callees   [<path>] <name>         outgoing calls edges (MCP: graph_callees)
@@ -56,7 +59,7 @@ note:
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, callers, callees, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, export)", sub)
 	}
 }
 
@@ -162,6 +165,51 @@ func cmdGraphDeps(ctx context.Context, args []string) error {
 	}
 	for _, dep := range out.Imports {
 		fmt.Printf("  → %s\n", dep.ToPackage)
+	}
+	return nil
+}
+
+func cmdGraphPackages(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("graph packages", flag.ContinueOnError)
+	setHelp(fs,
+		"Return the whole internal package import DAG with per-package in/out-degree + PageRank (MCP: graph_packages).",
+		"dex graph packages [flags] [<path>]")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) != 0 {
+		return fmt.Errorf("graph packages takes no extra positional args (got %v)", rest)
+	}
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve(path, base)
+	if err != nil {
+		return err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.PackageGraph(ctx, mcp.PackageGraphInput{ProjectRoot: p.Root})
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	fmt.Printf("%d packages, %d internal import edges\n", len(out.Nodes), len(out.Edges))
+	for _, n := range out.Nodes {
+		fmt.Printf("  in=%-3d out=%-3d pr=%.4f  %s\n", n.InDegree, n.OutDegree, n.PageRank, n.Package)
 	}
 	return nil
 }
