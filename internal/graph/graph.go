@@ -309,10 +309,18 @@ func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
 	// linger with stale ranks. Cheap on the current scale (<10k
 	// nodes); a single SQLite transaction even at full repo size.
 	centrality := ComputeCentrality(result.Nodes, result.Edges)
-	centralityRows := make([]CentralityRow, 0, len(centrality))
-	for id, r := range centrality {
+	// Emit a row for EVERY surviving node, not just those that picked up
+	// centrality this run. ComputeCentrality returns no entry for a node
+	// with no `calls` edges (and nothing at all when the graph has zero
+	// `calls` edges), while GraphSetCentrality only UPDATEs the ids we
+	// hand it. Filling absent nodes with explicit zeros resets ranks that
+	// would otherwise linger when a project's call graph shrinks or
+	// disappears entirely.
+	centralityRows := make([]CentralityRow, 0, len(result.Nodes))
+	for _, n := range result.Nodes {
+		r := centrality[n.ID] // zero value when absent
 		centralityRows = append(centralityRows, CentralityRow{
-			ID:              id,
+			ID:              n.ID,
 			InDegree:        r.InDegree,
 			OutDegree:       r.OutDegree,
 			CrossPkgCallers: r.CrossPkgCallers,
