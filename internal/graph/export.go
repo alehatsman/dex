@@ -83,7 +83,12 @@ func writeNodesJSONL(path string, nodes []Node) error {
 			return fmt.Errorf("encode node %s: %w", n.ID, err)
 		}
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush %s: %w", path, err)
+	}
+	// Close explicitly so a deferred-to-disk write error is surfaced;
+	// the deferred Close above is a fallback for early returns.
+	return f.Close()
 }
 
 func writeEdgesJSONL(path string, edges []Edge) error {
@@ -108,5 +113,10 @@ func writeEdgesJSONL(path string, edges []Edge) error {
 			return fmt.Errorf("encode edge %s: %w", e.ID, err)
 		}
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush %s: %w", path, err)
+	}
+	// Close explicitly so a deferred-to-disk write error is surfaced;
+	// the deferred Close above is a fallback for early returns.
+	return f.Close()
 }
