@@ -55,22 +55,29 @@ func cmdServe(ctx context.Context, args []string) error {
 
 	token := strings.TrimSpace(os.Getenv("DEX_SERVE_TOKEN"))
 
+	// Eager-watch the whole registry at boot (default on) so serve is the
+	// single re-index watcher on the server box and the per-project
+	// dex-watch@ units can be retired. Opt out with DEX_SERVE_WATCH=0 to
+	// fall back to lazy on-query watching. No-op when autowatch is off.
+	eagerWatch := envBool("DEX_SERVE_WATCH", true)
+
 	// Reuse the same Server wiring the stdio MCP path uses — embed
 	// client, chat client, autowatch config, etc. Only the transport
 	// differs.
 	srv, _ := newServerFromEnv(base)
 
 	fmt.Printf("dex serve\n")
-	fmt.Printf("  addr=%s  projects=%d  auth=%v\n", *addr, len(registry), token != "")
+	fmt.Printf("  addr=%s  projects=%d  auth=%v  eager-watch=%v\n", *addr, len(registry), token != "", eagerWatch)
 	for id, root := range registry {
 		fmt.Printf("  %s  %s\n", id[:12], root)
 	}
 
 	return srv.RunHTTP(ctx, mcp.RunHTTPOptions{
-		Addr:     *addr,
-		Token:    token,
-		Projects: registry,
-		Logger:   cliLogger(),
+		Addr:       *addr,
+		Token:      token,
+		Projects:   registry,
+		Logger:     cliLogger(),
+		EagerWatch: eagerWatch,
 	})
 }
 

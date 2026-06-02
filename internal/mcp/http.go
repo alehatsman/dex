@@ -85,6 +85,13 @@ type RunHTTPOptions struct {
 	// ReadHeaderTimeout is the maximum time spent reading request
 	// headers. Defaults to 5s when zero.
 	ReadHeaderTimeout time.Duration
+	// EagerWatch, when true (and AutoWatch is enabled), spawns a watcher
+	// for every project in the registry at startup rather than lazily on
+	// the first query. Lets `dex serve` be the single eager re-index
+	// watcher on the server box, so the dedicated dex-watch@ units can be
+	// retired. Idempotent with the lazy path: a later query touching the
+	// same project is a no-op (ensureWatcher dedupes on project ID).
+	EagerWatch bool
 }
 
 // ProjectID computes the canonical project ID from a filesystem path.
@@ -163,6 +170,13 @@ func (s *Server) RunHTTP(ctx context.Context, opts RunHTTPOptions) error {
 		"projects", len(opts.Projects),
 		"auth", opts.Token != "")
 
+	// Spawn watchers for the whole registry up-front (idempotent with the
+	// lazy on-query path). Done after a successful Listen so a bind error
+	// returns before any goroutine is started.
+	if opts.EagerWatch {
+		s.startEagerWatchers(opts.Projects, opts.Logger)
+	}
+
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpSrv.Serve(listener) }()
 
@@ -177,6 +191,26 @@ func (s *Server) RunHTTP(ctx context.Context, opts RunHTTPOptions) error {
 			return nil
 		}
 		return err
+	}
+}
+
+// startEagerWatchers resolves every registry root to a Project and spawns
+// its watcher immediately, instead of waiting for the first query to do so
+// via resolveProject. No-op unless AutoWatch is enabled (ensureWatcher's
+// own guard); a resolve failure for one root warns and skips rather than
+// aborting startup, mirroring cmdServe's PreflightProjects loop. Safe to
+// call alongside the lazy path — ensureWatcher dedupes on project ID.
+func (s *Server) startEagerWatchers(projects map[string]string, logger *slog.Logger) {
+	if !s.AutoWatch.Enabled {
+		return
+	}
+	for _, root := range projects {
+		p, err := proj.Resolve(root, s.IndexDir)
+		if err != nil {
+			logger.Warn("dex serve: eager watch skipped", "root", root, "err", err)
+			continue
+		}
+		s.ensureWatcher(p)
 	}
 }
 
