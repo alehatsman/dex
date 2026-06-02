@@ -1208,14 +1208,20 @@ type inlineCached struct {
 // fetch returns (content, truncated, charged). charged=true means the
 // call drew from the budget (cache miss); the caller must decrement.
 func (in *inliner) fetch(path string, start, end int) (string, bool, bool) {
-	perBytes := min(in.caps.maxBytesPerRead, in.budget)
-	k := inlineKey{path, start, end, in.caps.maxLinesPerRead, perBytes}
+	// Key on the per-read cap, NOT the running budget. The budget is
+	// decremented between passes, so including it would give the same
+	// (path,range) a different key on a later lane, miss the cache, and
+	// re-read + re-charge the file — breaking the "loaded once, charged
+	// once" guarantee. The read itself is still clamped to the remaining
+	// budget below.
+	k := inlineKey{path, start, end, in.caps.maxLinesPerRead, in.caps.maxBytesPerRead}
 	if c, ok := in.cache[k]; ok {
 		return c.content, c.truncated, false
 	}
 	if in.budget <= 0 {
 		return "", false, false
 	}
+	perBytes := min(in.caps.maxBytesPerRead, in.budget)
 	abs := path
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(in.projectRoot, abs)
@@ -1228,6 +1234,21 @@ func (in *inliner) fetch(path string, start, end int) (string, bool, bool) {
 	return content, truncated, true
 }
 
+// chargePrePopulated debits the budget for content that was already
+// inlined upstream (summary kinds), exactly once across all lanes. A
+// summary SemHit promoted into suggested_reads carries the same Content
+// in both lanes; charging it in fillReads AND fillSemanticHits would
+// double-debit the budget and shrink it below totalBytesCap. Keying the
+// charge the same way fetch keys disk reads collapses the two into one.
+func (in *inliner) chargePrePopulated(path string, start, end int, content string, truncated bool) {
+	k := inlineKey{path, start, end, in.caps.maxLinesPerRead, in.caps.maxBytesPerRead}
+	if _, seen := in.cache[k]; seen {
+		return
+	}
+	in.cache[k] = inlineCached{content, truncated}
+	in.budget -= len(content)
+}
+
 // fillReads populates Content/Truncated on every SuggestedRead.
 // Entries that already carry Content (summary kinds) skip disk I/O
 // but still charge the budget so the total response size stays bounded.
@@ -1237,7 +1258,7 @@ func (in *inliner) fillReads(reads []SuggestedRead) {
 			return
 		}
 		if reads[i].Content != "" {
-			in.budget -= len(reads[i].Content)
+			in.chargePrePopulated(reads[i].Path, reads[i].StartLine, reads[i].EndLine, reads[i].Content, reads[i].Truncated)
 			continue
 		}
 		content, truncated, charged := in.fetch(reads[i].Path, reads[i].StartLine, reads[i].EndLine)
@@ -1322,17 +1343,19 @@ func (in *inliner) fillSymbolBodies(syms []SymbolHit) {
 //   - hits with pre-populated Content (summary kinds); charges the
 //     budget but skips refetch.
 func (in *inliner) fillSemanticHits(sem []SemHit) {
-	var topScore float32
-	if len(sem) > 0 {
-		topScore = sem[0].Score
-	}
+	// Use the max score across the pool, not sem[0]: semantic_hits are
+	// not strictly score-sorted (summary merging and rerank reordering
+	// permute them), so [0] can be a low-score entry — using it would
+	// spuriously trip, or fail to trip, the weak-match suppression. This
+	// matches the decision buildNextAction already makes via maxSemanticScore.
+	topScore := maxSemanticScore(sem)
 	suppressLowScore := topScore > 0 && topScore < lowConfidenceScore
 	for i := range sem {
 		if in.budget <= 0 {
 			return
 		}
 		if sem[i].Content != "" {
-			in.budget -= len(sem[i].Content)
+			in.chargePrePopulated(sem[i].Path, sem[i].StartLine, sem[i].EndLine, sem[i].Content, false)
 			continue
 		}
 		if suppressLowScore && sem[i].Score < noiseFloorScore {

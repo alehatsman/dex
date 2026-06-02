@@ -497,12 +497,6 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 				Role:          formatRole(peer.Name, peer.InDegree, peer.OutDegree, peer.CrossPkgCallers),
 			}
 			out.Hits = append(out.Hits, hit)
-			if len(out.Hits) >= k {
-				break
-			}
-		}
-		if len(out.Hits) >= k {
-			break
 		}
 	}
 
@@ -544,6 +538,14 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 		}
 		return ai.CallSiteLine < aj.CallSiteLine
 	})
+
+	// Cap to the k most-central hits. The truncation is applied AFTER the
+	// centrality sort (not during edge iteration) so we return the true
+	// top-k by centrality rather than whichever peers the graph-edge
+	// traversal happened to visit first.
+	if len(out.Hits) > k {
+		out.Hits = out.Hits[:k]
+	}
 
 	// Inline a short slice of each hit's containing function so the
 	// agent doesn't need a follow-up Read for context. Same shape as
