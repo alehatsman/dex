@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -694,5 +696,88 @@ func TestEnsureWatcherSpawnedByResolveProject(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("watcher never exited after ctx cancel")
+	}
+}
+
+// TestStartEagerWatchersSpawnsForRegistry verifies serve's boot-time
+// eager-watch spawns one watcher per registry project up-front — without
+// waiting for a query — and skips a root that fails to resolve rather
+// than aborting the whole sweep.
+func TestStartEagerWatchersSpawnsForRegistry(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	cacheDir := t.TempDir()
+	projA := t.TempDir()
+	projB := t.TempDir()
+	t.Setenv("DEX_ALLOW_PATHS",
+		filepath.Dir(projA)+string(filepath.ListSeparator)+filepath.Dir(projB))
+	writeFile(t, filepath.Join(projA, "a.go"), "package main\n")
+	writeFile(t, filepath.Join(projB, "b.go"), "package main\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &Server{
+		EmbedClient: embed.New(srv.URL, "fake", 16, 5*time.Second),
+		IndexDir:    cacheDir,
+		AutoWatch: AutoWatchConfig{
+			Enabled:  true,
+			Debounce: 10 * time.Millisecond,
+		},
+	}
+	s.runCtx = ctx
+
+	registry, err := BuildProjectRegistry([]string{projA, projB})
+	if err != nil {
+		t.Fatalf("BuildProjectRegistry: %v", err)
+	}
+	// A root that doesn't resolve must be warned-and-skipped, not fatal.
+	registry["deadbeef"] = filepath.Join(cacheDir, "does-not-exist")
+
+	s.startEagerWatchers(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.countWatchers() == 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := s.countWatchers(); got != 2 {
+		t.Fatalf("expected 2 eager watchers (bad root skipped); got %d", got)
+	}
+
+	cancel()
+	done := make(chan struct{})
+	go func() { s.watcherWG.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("watchers never exited after ctx cancel")
+	}
+}
+
+// TestStartEagerWatchersNoopWhenDisabled verifies the AutoWatch guard:
+// with autowatch off, the boot-time sweep spawns nothing.
+func TestStartEagerWatchersNoopWhenDisabled(t *testing.T) {
+	cacheDir := t.TempDir()
+	projA := t.TempDir()
+	t.Setenv("DEX_ALLOW_PATHS", filepath.Dir(projA))
+	writeFile(t, filepath.Join(projA, "a.go"), "package main\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &Server{
+		IndexDir:  cacheDir,
+		AutoWatch: AutoWatchConfig{Enabled: false},
+	}
+	s.runCtx = ctx
+
+	registry, err := BuildProjectRegistry([]string{projA})
+	if err != nil {
+		t.Fatalf("BuildProjectRegistry: %v", err)
+	}
+	s.startEagerWatchers(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if got := s.countWatchers(); got != 0 {
+		t.Errorf("startEagerWatchers must be a no-op when AutoWatch disabled; got %d", got)
 	}
 }
