@@ -21,6 +21,15 @@ func TestBuildPackageGraph(t *testing.T) {
 	edge := func(srcPkgID, impID string) graphEdge {
 		return graphEdge{Kind: graph.EdgeImports, SrcID: srcPkgID, DstID: impID}
 	}
+	// A non-Go (tree-sitter) package node, stamped with its language — as a
+	// python/js/ts testdata fixture or web/src module would be. These form a
+	// real LINKED sub-graph (py.a → py.b) but must be excluded from the Go DAG.
+	sitterPkg := func(id, path, lang string) graphNode {
+		return graphNode{
+			ID: id, Kind: graph.NodePackage, PackagePath: path,
+			MetadataJSON: []byte(`{"language":"` + lang + `"}`),
+		}
+	}
 	view := &graphView{
 		nodesByID: map[string]graphNode{
 			"pa":     pkg("pa", "mod/a"),
@@ -29,12 +38,17 @@ func TestBuildPackageGraph(t *testing.T) {
 			"ia-b":   imp("ia-b", "mod/a", "mod/b"),
 			"ia-fmt": imp("ia-fmt", "mod/a", "fmt"),
 			"ib-c":   imp("ib-c", "mod/b", "mod/c"),
+			// non-Go fixture pair: linked to each other, must not appear.
+			"py-a":  sitterPkg("py-a", "py.a", "python"),
+			"py-b":  sitterPkg("py-b", "py.b", "python"),
+			"ipy-b": imp("ipy-b", "py.a", "py.b"),
 		},
 		edgesByKind: map[graph.EdgeKind][]graphEdge{
 			graph.EdgeImports: {
 				edge("pa", "ia-b"),
 				edge("pa", "ia-fmt"), // external — dropped
 				edge("pb", "ib-c"),
+				edge("py-a", "ipy-b"), // non-Go — dropped
 			},
 		},
 	}
@@ -62,8 +76,13 @@ func TestBuildPackageGraph(t *testing.T) {
 	for _, n := range out.Nodes {
 		byPkg[n.Package] = n
 	}
+	// The non-Go fixture packages are excluded entirely, even though they're
+	// linked to each other — only the 3 Go packages remain.
 	if len(out.Nodes) != 3 {
 		t.Fatalf("nodes = %d, want 3 (%+v)", len(out.Nodes), out.Nodes)
+	}
+	if _, leaked := byPkg["py.a"]; leaked {
+		t.Errorf("non-Go package py.a leaked into the Go package graph")
 	}
 	for pkg, want := range map[string][2]int{
 		"mod/a": {0, 1}, // {in, out}

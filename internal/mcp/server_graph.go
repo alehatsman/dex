@@ -9,6 +9,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -229,16 +230,38 @@ func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in Pa
 // QualifiedName is the imported path. An import is "internal" when that
 // path has its own NodePackage in the project — external imports
 // (stdlib / third-party) have no package node and are dropped.
+// isGoPackageNode reports whether n is a Go package node. The package import
+// DAG is Go-only: the Go extractor emits package nodes with no "language" in
+// their metadata, while every tree-sitter extractor stamps its package nodes
+// with Metadata["language"] (sitter_javascript.go etc.). So a NodePackage
+// without a "language" key is Go; one with it is a non-Go package (web/src TS,
+// python/rust/js testdata fixtures) that has no place in this DAG. Nodes carry
+// no metadata at all (the common Go case) → Go.
+func isGoPackageNode(n graphNode) bool {
+	if n.Kind != graph.NodePackage {
+		return false
+	}
+	if len(n.MetadataJSON) == 0 {
+		return true
+	}
+	var md map[string]any
+	if err := json.Unmarshal(n.MetadataJSON, &md); err != nil {
+		return true // unparseable metadata: don't exclude a real Go package
+	}
+	_, nonGo := md["language"]
+	return !nonGo
+}
+
 func buildPackageGraph(view *graphView) PackageGraphOutput {
 	internal := map[string]struct{}{}
 	for _, n := range view.nodesByID {
-		if n.Kind == graph.NodePackage && n.PackagePath != "" {
+		if isGoPackageNode(n) && n.PackagePath != "" {
 			internal[n.PackagePath] = struct{}{}
 		}
 	}
 	if len(internal) == 0 {
 		return PackageGraphOutput{Status: "no-graph",
-			Hint: "graph has no package nodes — reindex with `dex index . --graph=only` (Go-only today)."}
+			Hint: "no Go package import graph — this endpoint is Go-only today; non-Go repos return no-graph."}
 	}
 
 	// Dedup edges on (from, to); build degree counts and the
@@ -262,8 +285,14 @@ func buildPackageGraph(view *graphView) PackageGraphOutput {
 		if from == "" || to == "" || from == to {
 			continue
 		}
+		// Both endpoints must be Go packages in this project. `internal` is
+		// already the Go-package set, so this drops external imports and any
+		// edge touching a non-Go (tree-sitter) package node.
+		if _, ok := internal[from]; !ok {
+			continue
+		}
 		if _, ok := internal[to]; !ok {
-			continue // external import — no package node
+			continue
 		}
 		if _, dup := seen[pair{from, to}]; dup {
 			continue
