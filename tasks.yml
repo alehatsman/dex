@@ -186,3 +186,26 @@ tasks:
 
   # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
   ci: goq/ci
+
+  # ── CI image. dex-ci:latest is the container mgitci.yml runs the quality
+  # gate in: moongit-ci-dev (Go + Node + mooncake + static-analysis tools)
+  # plus the cgo C toolchain the sqlite_fts5 build needs (ci/Dockerfile).
+  # It derives FROM moongit-ci-dev:latest, so build that first in the moongit
+  # repo (`mooncake task ci-images`); this task bakes the cgo layer on top and
+  # tags dex-ci:latest. Run on a fresh box and whenever the base image or
+  # ci/Dockerfile changes, so the runner never has to pull (pulls trip the host
+  # docker credential helper — see dotfiles#8).
+  ci-image:
+    desc: Build the dex CI container image (dex-ci:latest) the runner needs
+    steps:
+      - shell:
+          cmd: |
+            set -eu
+            docker image inspect moongit-ci-dev:latest >/dev/null 2>&1 || {
+              echo "moongit-ci-dev:latest missing — build it first in the moongit repo: 'mooncake task ci-images'" >&2
+              exit 1
+            }
+      - cmd:
+          argv: ["docker", "build", "-t", "dex-ci:latest", "ci/"]
+      - log:
+          msg: "built dex-ci:latest"
