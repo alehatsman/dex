@@ -205,7 +205,13 @@ func pageRank(nodes []Node, outAdj map[string]map[string]struct{}) map[string]fl
 		// conserved across the iteration.
 		var dangling float64
 		for _, id := range ids {
-			if _, ok := outAdj[id]; !ok {
+			// A node with no outgoing edges is dangling — whether it is
+			// absent from outAdj or present with an empty dst set. This
+			// test must match the contribution loop's len(dsts) == 0 skip
+			// below; otherwise such a node is counted as non-dangling yet
+			// distributes nothing, leaking its mass and breaking
+			// conservation for caller-supplied outAdj with empty sets.
+			if len(outAdj[id]) == 0 {
 				dangling += rank[id]
 			}
 		}

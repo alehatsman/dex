@@ -168,6 +168,9 @@ func (e *tsExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, err
 	// reference would otherwise miss because of walk order).
 	for _, imp := range e.fileImports {
 		for local, target := range imp.modules {
+			if local == "__from__" {
+				continue
+			}
 			imp.modules[local] = e.resolveModuleSpecifier(target, imp.modules["__from__"])
 		}
 		for local, fi := range imp.fromImports {
@@ -840,25 +843,12 @@ func (e *tsExtractor) resolveModuleSpecifier(specifier, fromFile string) string 
 	}
 	base := path.Dir(filepath.ToSlash(fromFile))
 	joined := path.Clean(path.Join(base, specifier))
-	// Try (in order): exact pkgPath, +.ts, +.tsx, +/index.
-	candidates := []string{
-		joined,
-		joined + "_ts",
-		joined + "_tsx",
-	}
-	// "joined" without extension is what packagePath would be after
-	// stripping. Same for `+index`. The probe uses knownFiles which is
-	// keyed on packagePath, so the canonical "matches if seen" lookup
-	// is just `_, ok := e.knownFiles[joined]`.
+	// knownFiles is keyed on packagePath (extension already stripped),
+	// so a single lookup of "joined" matches `./foo` → `foo.ts`/`foo.tsx`
+	// alike; "joined/index" matches `./foo` → directory `foo/index.ts(x)`.
 	if _, ok := e.knownFiles[joined]; ok {
 		return joined
 	}
-	// `./foo` → file `./foo.ts(x)` → pkg "foo". knownFiles maps pkg
-	// to its observed relpath; both `foo.ts` and `foo.tsx` produce
-	// pkg "foo", so the same lookup catches either.
-	_ = candidates // kept for readability above; the lookup logic is
-	// already covered.
-	// `./foo` → directory `./foo/` with index.ts(x) → pkg "foo/index".
 	if _, ok := e.knownFiles[joined+"/index"]; ok {
 		return joined + "/index"
 	}
