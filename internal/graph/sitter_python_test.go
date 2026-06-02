@@ -2,6 +2,8 @@ package graph
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -167,6 +169,45 @@ func TestPythonRelativeImport(t *testing.T) {
 	if findEdge(res.Edges, EdgeImports, utilsInitID, impID) == nil {
 		t.Errorf("missing relative imports edge utils/__init__.py → utils.text; imports=%v",
 			edgeKinds(res.Edges, EdgeImports))
+	}
+}
+
+// TestPythonRelativeImportFromModule guards #95: relative imports in a
+// regular module (not __init__.py) must resolve against the module's
+// PARENT package, not its own dotted path. For pkg/sub.py (pkg
+// "pkg.sub"), `from .other import thing` is pkg.other — not pkg.sub.other.
+func TestPythonRelativeImportFromModule(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("pkg/__init__.py", "")
+	write("pkg/other.py", "def thing():\n    pass\n")
+	write("pkg/sub.py", "from .other import thing\n\ndef use():\n    return thing()\n")
+
+	reg := NewRegistry()
+	reg.Register(newPythonExtractor)
+	res, err := ExtractSitterWith(context.Background(), root, reg)
+	if err != nil {
+		t.Fatalf("ExtractSitterWith: %v", err)
+	}
+
+	subID := NodeID("", "pkg.sub", NodeFile, "pkg/sub.py")
+	wantImp := NodeID("", "pkg.sub", NodeImport, "pkg.other")
+	if findEdge(res.Edges, EdgeImports, subID, wantImp) == nil {
+		t.Errorf("relative import in pkg/sub.py should resolve to pkg.other; imports=%v",
+			edgeKinds(res.Edges, EdgeImports))
+	}
+	// Must NOT resolve one level too deep against the module's own path.
+	if badImp := findByID(res.Nodes, NodeID("", "pkg.sub", NodeImport, "pkg.sub.other")); badImp != nil {
+		t.Errorf("relative import resolved one level too deep to pkg.sub.other (#95 regression)")
 	}
 }
 

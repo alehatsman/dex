@@ -474,7 +474,10 @@ func (e *pythonExtractor) parseImportFrom(
 	if moduleNode == nil {
 		return
 	}
-	module := resolveImportModule(moduleNode, src, currentPkg)
+	// Relative imports resolve against the package CONTAINING this file,
+	// not the file's own dotted path — for foo/bar.py (pkg "foo.bar"),
+	// `from . import x` is foo.x, not foo.bar.x. See #95.
+	module := resolveImportModule(moduleNode, src, pythonContainingPackage(filePath, currentPkg))
 	if module == "" {
 		return
 	}
@@ -548,10 +551,30 @@ func (e *pythonExtractor) emitPkgImportEdge(pkg, impID string) {
 	})
 }
 
+// pythonContainingPackage returns the package that relative imports in
+// relPath resolve against. An __init__.py IS its own package, so pkg is
+// returned unchanged; a regular module foo/bar.py (pkg "foo.bar")
+// resolves relative imports against its parent package "foo". A
+// top-level module returns "" (the root package).
+func pythonContainingPackage(relPath, pkg string) string {
+	rp := filepath.ToSlash(relPath)
+	if rp == "__init__.py" || strings.HasSuffix(rp, "/__init__.py") {
+		return pkg
+	}
+	if i := strings.LastIndex(pkg, "."); i >= 0 {
+		return pkg[:i]
+	}
+	return ""
+}
+
 // resolveImportModule returns the dotted module path for a
 // from-import's source. Handles plain dotted_name and the
-// relative_import case (leading dots resolve against currentPkg).
-func resolveImportModule(n *sitter.Node, src []byte, currentPkg string) string {
+// relative_import case, where leading dots resolve against
+// relativeBase — the package that contains the current file (the
+// parent package for a regular module, the package itself for an
+// __init__.py). The caller is responsible for passing the containing
+// package, NOT the module's own dotted path.
+func resolveImportModule(n *sitter.Node, src []byte, relativeBase string) string {
 	switch n.Type() {
 	case "dotted_name":
 		return nodeText(n, src)
@@ -572,9 +595,9 @@ func resolveImportModule(n *sitter.Node, src []byte, currentPkg string) string {
 				tail = nodeText(c, src)
 			}
 		}
-		// `.` resolves to the file's own package; `..` strips one
-		// dot from the package path; etc.
-		parts := strings.Split(currentPkg, ".")
+		// `.` resolves to the containing package (relativeBase); each
+		// extra dot strips one more component off it.
+		parts := strings.Split(relativeBase, ".")
 		strip := dots - 1
 		if strip < 0 {
 			strip = 0
