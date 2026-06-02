@@ -115,6 +115,7 @@ type Options struct {
 type Store struct {
 	db          *sql.DB
 	dim         atomic.Int64 // vector dimension; set once on first upsert, read concurrently
+	dimInit     sync.Mutex   // serializes first-write dim init so concurrent first UpsertMany calls don't double-init
 	embedModel  atomic.Value // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
 	opts        Options      // immutable after Open
 	rerankCache RerankCache  // memoizes rerank results across calls; lazily set on first use
@@ -179,7 +180,7 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 	// Materialize the vec0 table now if we know the dim — covers both
 	// brand-new opens (no chunks yet, dim known from a prior run) and
 	// pre-vec0 indexes that need a one-shot backfill from chunks.vec.
-	if err := s.ensureVecTable(ctx); err != nil {
+	if err := s.ensureVecTable(ctx, s.dim.Load()); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ensure vec table: %w", err)
 	}
@@ -379,8 +380,7 @@ func (s *Store) migrate(ctx context.Context) error {
 // it backfills chunk_vecs from chunks.vec in one INSERT...SELECT. Cheap
 // because vec0 takes the BLOB format we already store on disk (packed
 // little-endian float32).
-func (s *Store) ensureVecTable(ctx context.Context) error {
-	dim := s.dim.Load()
+func (s *Store) ensureVecTable(ctx context.Context, dim int64) error {
 	if dim <= 0 {
 		return nil
 	}
@@ -659,6 +659,32 @@ type PendingChunk struct {
 	Vec        []float32
 }
 
+// initDim performs the one-time, first-write index initialization:
+// persist the vector dimension to meta and materialize the vec0 table +
+// mirror triggers. It is safe to call concurrently — dimInit serializes
+// callers and the double-check skips the work once another goroutine has
+// completed it. The dim is published to s.dim only after ensureVecTable
+// succeeds, so a concurrent reader that sees s.dim != 0 is guaranteed the
+// vec0 triggers already exist.
+func (s *Store) initDim(ctx context.Context, dim int64) error {
+	s.dimInit.Lock()
+	defer s.dimInit.Unlock()
+	if s.dim.Load() != 0 { // another goroutine already initialized
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key,value) VALUES('`+metaDim+`', ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		strconv.FormatInt(dim, 10)); err != nil {
+		return err
+	}
+	if err := s.ensureVecTable(ctx, dim); err != nil {
+		return err
+	}
+	s.dim.Store(dim)
+	return nil
+}
+
 // UpsertMany inserts a batch of chunks in a single transaction. One
 // commit per batch instead of one commit per chunk drops the no-op
 // fsync count by ~32× on a typical run and is well worth the slight
@@ -668,17 +694,13 @@ func (s *Store) UpsertMany(ctx context.Context, rows []PendingChunk, now time.Ti
 		return nil
 	}
 	if s.dim.Load() == 0 {
-		s.dim.Store(int64(len(rows[0].Vec)))
-		if _, err := s.db.ExecContext(ctx,
-			`INSERT INTO meta(key,value) VALUES('`+metaDim+`', ?)
-			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-			strconv.FormatInt(s.dim.Load(), 10)); err != nil {
-			return err
-		}
-		// First write to a fresh index — now we know the dim, so create
-		// the vec0 table + triggers. After this, every INSERT/UPDATE on
-		// chunks mirrors into chunk_vecs via the triggers.
-		if err := s.ensureVecTable(ctx); err != nil {
+		// First write to a fresh index. Serialize init under dimInit so
+		// that `dex index` and `dex watch` racing their first UpsertMany
+		// don't both write meta.dim / build the vec0 table. dim is
+		// published to the atomic only after the vec0 table + triggers
+		// exist, so any reader that observes dim != 0 can safely INSERT
+		// into chunks and rely on the mirror triggers being present.
+		if err := s.initDim(ctx, int64(len(rows[0].Vec))); err != nil {
 			return err
 		}
 	}
