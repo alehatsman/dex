@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -202,10 +201,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	// Initialized before the walk so the fast-path branch can populate
 	// entries for files that bypass slowFiles. Mutated only by the
 	// walker goroutine (the workers don't touch it), so no lock needed.
-	type pkgFileEntry struct {
-		path    string
-		fileSHA string
-	}
+	// pkgFileEntry (path, sha) is shared with the idle-drainer cascade —
+	// see its definition in drain.go.
 	var pkgFiles map[string][]pkgFileEntry
 	if summarizeWanted {
 		pkgFiles = make(map[string][]pkgFileEntry, len(existingFileSummarySHAs))
@@ -389,7 +386,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				mtimeSkips.Add(1)
 				if ix.Options.Summarize && fastPathSummary != "" {
 					dir := filepath.Dir(rel)
-					pkgFiles[dir] = append(pkgFiles[dir], pkgFileEntry{path: rel, fileSHA: fastPathSummary})
+					pkgFiles[dir] = append(pkgFiles[dir], pkgFileEntry{path: rel, sha: fastPathSummary})
 					fastDirs[dir] = true
 				}
 				return nil
@@ -508,7 +505,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			fileSHA := chunkSHA(string(slice))
 			if pkgFiles != nil {
 				dir := filepath.Dir(sf.rel)
-				pkgFiles[dir] = append(pkgFiles[dir], pkgFileEntry{path: sf.rel, fileSHA: fileSHA})
+				pkgFiles[dir] = append(pkgFiles[dir], pkgFileEntry{path: sf.rel, sha: fileSHA})
 			}
 			if existing[fileSHA] {
 				if err := ix.Store.TouchSeen(ctx, sf.rel, fileSHA, "", 0, 0, startTime); err != nil {
@@ -762,50 +759,15 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	if len(pkgFiles) > 0 && !ix.Options.DeferSummaries {
 		ix.Options.Logger.Info("index: package summaries", "dirs", len(pkgFiles))
 		modPath := readModulePath(ix.Proj.Root)
-		type pkgJob struct {
-			dir       string
-			filePaths []string
-			pkgSHA    string
-		}
-		var pkgJobs []pkgJob
-		for dir, entries := range pkgFiles {
-			if ctx.Err() != nil {
-				break
-			}
-			// Drop test-file entries so the package summary describes the
-			// production surface, not the test suite — without this, the
-			// LLM sees N file_summary rows shaped "this file tests X" and
-			// emits "package is a test suite for X". Test-only dirs
-			// (no production files) fall back to all entries so they
-			// still get a summary.
-			summarized := entries
-			prod := entries[:0:0]
-			for _, e := range entries {
-				if !ignore.IsTestPath(e.path) {
-					prod = append(prod, e)
-				}
-			}
-			if len(prod) > 0 {
-				summarized = prod
-			}
-			// Stable cache key: SHA of sorted per-file SHAs from the
-			// summarization set. Test-only changes don't bust the cache
-			// when production files exist.
-			shas := make([]string, len(summarized))
-			filePaths := make([]string, len(summarized))
-			for i, e := range summarized {
-				shas[i] = e.fileSHA
-				filePaths[i] = e.path
-			}
-			sort.Strings(shas)
-			pkgSHA := chunkSHA(packageSummaryPromptVersion + "\x00" + strings.Join(shas, ":"))
-			if existingBatch[dir][pkgSHA] {
-				if err := ix.Store.TouchSeen(ctx, dir, pkgSHA, "", 0, 0, startTime); err != nil {
-					return err
-				}
-				continue
-			}
-			pkgJobs = append(pkgJobs, pkgJob{dir: dir, filePaths: filePaths, pkgSHA: pkgSHA})
+		// Planning (test-file filtering + sorted-SHA cache key + cache-hit
+		// TouchSeen) is identical to the idle-drainer cascade, so both
+		// share planPackageJobs (see drain.go). The executor below stays
+		// inline here because, unlike the cascade's runPackageJobs, a
+		// package-summary embed failure during a full index is a warning,
+		// not fatal — the file/chunk data is already committed.
+		pkgJobs, err := ix.planPackageJobs(ctx, startTime, pkgFiles, existingBatch)
+		if err != nil {
+			return err
 		}
 
 		var pkgEmbed []pending

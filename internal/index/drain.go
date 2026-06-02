@@ -231,7 +231,13 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 		ix.Options.Logger.Info("drain: dropped stale rows", "count", len(stale))
 	}
 
-	remaining, _ = ix.Store.CountPendingSummaries(ctx)
+	remaining, err = ix.Store.CountPendingSummaries(ctx)
+	if err != nil {
+		// Surface the error rather than reporting remaining=0: a false
+		// "queue empty" would make DrainPendingSummaries break its loop
+		// and IdleSummaryDrainer run the cascade as if the queue drained.
+		return generated, 0, fmt.Errorf("count pending after drain: %w", err)
+	}
 	if generated > 0 {
 		_ = ix.Store.SetLastSummarizedAt(ctx, time.Now())
 	}
@@ -325,7 +331,17 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 		}
 		defer func() { _ = dl.Release() }()
 
-		before, _ := ix.Store.CountPendingSummaries(ctx)
+		before, err := ix.Store.CountPendingSummaries(ctx)
+		if err != nil {
+			// No baseline to compare against — skip this tick and re-arm
+			// rather than mistaking the missing count for no-progress and
+			// tripping the backoff. A persistent DB error is surfaced by
+			// the DrainPendingSummariesBatch call below on the next tick.
+			if verbose {
+				logger.Warn("idle drain: count pending failed, retrying", "err", err)
+			}
+			return false, nil
+		}
 		gen, after, err := ix.DrainPendingSummariesBatch(ctx, batchSize)
 		if err != nil {
 			return true, err
