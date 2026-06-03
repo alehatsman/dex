@@ -93,6 +93,103 @@ func TestExtractMarkdownVault(t *testing.T) {
 	}
 }
 
+func TestExtractMarkdownEmbedsAndTags(t *testing.T) {
+	root := copyFixture(t, "md_vault")
+	res, err := ExtractMarkdown(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ExtractMarkdown: %v", err)
+	}
+	doc := func(qn string) string { return NodeID("", mdPkg, NodeDocument, qn) }
+
+	// Transclusions: ![[glossary]] (wiki style) and ![inc](../specs/glossary.md)
+	// (relative style) both from notes/ideas.md → specs/glossary.md.
+	if findEdge(res.Edges, EdgeTransclude, doc("notes/ideas.md"), doc("specs/glossary.md")) == nil {
+		t.Errorf("missing transcludes edge notes/ideas.md → specs/glossary.md")
+	}
+	// The wiki-style and relative-style embeds sit on different lines, so
+	// they are two distinct transclusion edges.
+	var transcludeCount int
+	for _, e := range res.Edges {
+		if e.Kind == EdgeTransclude && e.SrcID == doc("notes/ideas.md") && e.DstID == doc("specs/glossary.md") {
+			transcludeCount++
+		}
+	}
+	if transcludeCount != 2 {
+		t.Errorf("transcludes ideas.md → glossary.md = %d, want 2 (wiki + relative)", transcludeCount)
+	}
+
+	// Tag nodes exist, including a nested tag.
+	for _, tag := range []string{"spec", "project/dex"} {
+		if findNode(res.Nodes, NodeTag, tag) == nil {
+			t.Errorf("missing tag node %q; tags=%v", tag, nodesOfKind(res.Nodes, NodeTag))
+		}
+	}
+	// The ATX heading "# Ideas" must NOT become a tag node.
+	if findNode(res.Nodes, NodeTag, "Ideas") != nil {
+		t.Errorf("heading '# Ideas' leaked a tag node")
+	}
+
+	// EdgeTagged ideas.md → #spec, deduped to ONE edge despite two mentions.
+	specTag := NodeID("", mdPkg, NodeTag, "spec")
+	var taggedSpec int
+	for _, e := range res.Edges {
+		if e.Kind == EdgeTagged && e.SrcID == doc("notes/ideas.md") && e.DstID == specTag {
+			taggedSpec++
+		}
+	}
+	if taggedSpec != 1 {
+		t.Errorf("tagged edges ideas.md → #spec = %d, want 1 (deduped)", taggedSpec)
+	}
+
+	// Tags are NOT documents and carry no doc-link edges.
+	if findEdge(res.Edges, EdgeLinks, doc("notes/ideas.md"), specTag) != nil {
+		t.Errorf("tag surfaced as a links edge")
+	}
+}
+
+func TestExtractMarkdownHeadings(t *testing.T) {
+	root := copyFixture(t, "md_vault")
+	res, err := ExtractMarkdown(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ExtractMarkdown: %v", err)
+	}
+	doc := func(qn string) string { return NodeID("", mdPkg, NodeDocument, qn) }
+	heading := func(qn string) string { return NodeID("", mdPkg, NodeHeading, qn) }
+
+	// Heading nodes carry `relpath#slug` qualified names.
+	for _, qn := range []string{"specs/auth.md#auth-spec", "specs/auth.md#flow", "notes/deep.md#deep"} {
+		if findNode(res.Nodes, NodeHeading, qn) == nil {
+			t.Errorf("missing heading node %s; headings=%v", qn, nodesOfKind(res.Nodes, NodeHeading))
+		}
+	}
+	// contains edge: document → its heading.
+	if findEdge(res.Edges, EdgeContains, doc("specs/auth.md"), heading("specs/auth.md#flow")) == nil {
+		t.Errorf("missing contains edge specs/auth.md → #flow")
+	}
+
+	// Anchored inline link (GitHub slug) resolves to the heading node, not
+	// the document: index.md line 4 `[auth flow](specs/auth.md#flow)`.
+	if findEdge(res.Edges, EdgeLinks, doc("index.md"), heading("specs/auth.md#flow")) == nil {
+		t.Errorf("anchored link index.md → specs/auth.md#flow did not resolve to the heading")
+	}
+	// The non-anchored link on line 3 still targets the document.
+	if findEdge(res.Edges, EdgeLinks, doc("index.md"), doc("specs/auth.md")) == nil {
+		t.Errorf("plain link index.md → specs/auth.md (doc) missing")
+	}
+
+	// deep.md: good anchor → heading; literal Obsidian anchor → heading
+	// (via lowercased heading text); bad anchor → falls back to the doc.
+	if findEdge(res.Edges, EdgeLinks, doc("notes/deep.md"), heading("specs/auth.md#flow")) == nil {
+		t.Errorf("deep.md good anchor did not resolve to #flow heading")
+	}
+	if findEdge(res.Edges, EdgeWikilinks, doc("notes/deep.md"), heading("specs/auth.md#auth-spec")) == nil {
+		t.Errorf("deep.md literal wiki anchor [[auth#Auth Spec]] did not resolve to #auth-spec heading")
+	}
+	if findEdge(res.Edges, EdgeLinks, doc("notes/deep.md"), doc("specs/auth.md")) == nil {
+		t.Errorf("deep.md bad anchor did not fall back to the specs/auth.md document")
+	}
+}
+
 func TestExtractMarkdownNoMarkdown(t *testing.T) {
 	root := copyFixture(t, "simple") // Go fixture, no .md files
 	res, err := ExtractMarkdown(context.Background(), root)

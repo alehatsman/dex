@@ -408,7 +408,20 @@ func runGraphDocEdges(ctx context.Context, args []string, backlinks bool) error 
 	}
 	fmt.Printf("%s (%d):\n", rel, len(out.Hits))
 	for i, h := range out.Hits {
-		fmt.Printf("─── #%d %s  (%s)\n", i+1, h.Doc, h.Kind)
+		// TargetAnchor is the section the underlying link points at. For
+		// outgoing links that section lives in the peer doc (h.Doc), so
+		// render it as `doc#anchor`. For backlinks it's a section of the
+		// *queried* doc, so show it separately as "→ #anchor".
+		target := h.Doc
+		suffix := ""
+		if h.TargetAnchor != "" {
+			if backlinks {
+				suffix = "  → #" + h.TargetAnchor
+			} else {
+				target += "#" + h.TargetAnchor
+			}
+		}
+		fmt.Printf("─── #%d %s  (%s)%s\n", i+1, target, h.Kind, suffix)
 		if h.LinkSitePath != "" {
 			fmt.Printf("  link site: %s:%d\n", h.LinkSitePath, h.LinkSiteLine)
 		}
