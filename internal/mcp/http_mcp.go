@@ -1,0 +1,122 @@
+package mcp
+
+// Native streamable-HTTP MCP transport for `dex serve` — the end state that
+// retires the `dex mcp --remote` stdio shim (remote.go). A client attaches
+// dex directly over MCP with {"type":"http","url":".../v1/projects/{id}/mcp"};
+// no proxy process. The handler is mounted on the same mux as the REST
+// surface (http.go) and gated by the same bearer auth.
+//
+// Each project gets its own *sdk.Server, scoped via a projectScoped wrapper
+// that injects the registry root into every tool Input before delegating to
+// the shared *Server handlers — the same override the REST handlers apply via
+// their bind funcs, so a client cannot reach a different project. Tools are
+// registered through the shared registerTools path (server.go), so the
+// HTTP-MCP surface is byte-identical to stdio and the remote shim.
+
+import (
+	"context"
+	"net/http"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// projectScoped adapts a *Server to a toolSurface pinned to one project
+// root. Every handler stamps the bound root onto its Input's project field
+// (ContextInput.Project; every other Input's ProjectRoot; status is global
+// and untouched) and then calls the underlying handler. This mirrors the
+// per-Input bind funcs in buildHTTPHandler so the HTTP-MCP and REST surfaces
+// resolve the project the same way.
+type projectScoped struct {
+	s    *Server
+	root string
+}
+
+func (p projectScoped) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
+	in.Project = p.root
+	return p.s.contextRouter(ctx, req, in)
+}
+
+func (p projectScoped) search(ctx context.Context, req *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.search(ctx, req, in)
+}
+
+func (p projectScoped) findSymbol(ctx context.Context, req *sdk.CallToolRequest, in FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.findSymbol(ctx, req, in)
+}
+
+func (p projectScoped) related(ctx context.Context, req *sdk.CallToolRequest, in RelatedInput) (*sdk.CallToolResult, RelatedOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.related(ctx, req, in)
+}
+
+func (p projectScoped) graphDeps(ctx context.Context, req *sdk.CallToolRequest, in GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphDeps(ctx, req, in)
+}
+
+func (p projectScoped) graphCallers(ctx context.Context, req *sdk.CallToolRequest, in CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphCallers(ctx, req, in)
+}
+
+func (p projectScoped) graphCallees(ctx context.Context, req *sdk.CallToolRequest, in CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphCallees(ctx, req, in)
+}
+
+func (p projectScoped) graphLinks(ctx context.Context, req *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphLinks(ctx, req, in)
+}
+
+func (p projectScoped) graphBacklinks(ctx context.Context, req *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphBacklinks(ctx, req, in)
+}
+
+func (p projectScoped) graphTags(ctx context.Context, req *sdk.CallToolRequest, in TagInput) (*sdk.CallToolResult, TagOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphTags(ctx, req, in)
+}
+
+func (p projectScoped) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.summarize(ctx, req, in)
+}
+
+// status is daemon-global (not project-scoped), so the bound root is ignored
+// — matching the REST handleStatus and the stdio index_status tool.
+func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
+	return p.s.status(ctx, req, in)
+}
+
+// newMCPHandler builds the streamable-HTTP MCP handler mounted at
+// /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
+// SDK permits reusing a server across sessions) and looked up by the {id} path
+// value; an unknown id returns nil, which the SDK serves as 400. nil when the
+// registry is empty.
+func (s *Server) newMCPHandler(projects map[string]string) http.Handler {
+	if len(projects) == 0 {
+		return nil
+	}
+
+	rawTools := exposeRawTools()
+	registerSummarize := s.ChatClient != nil
+
+	servers := make(map[string]*sdk.Server, len(projects))
+	for id, root := range projects {
+		srv := sdk.NewServer(&sdk.Implementation{Name: "dex", Version: Version}, nil)
+		registerTools(srv, projectScoped{s: s, root: root}, rawTools, registerSummarize)
+		servers[id] = srv
+	}
+
+	// JSONResponse: dex tools are pure request/response (no server-initiated
+	// messages), so replying application/json per POST is simpler and avoids
+	// holding an SSE stream open per call. Clients may still open the optional
+	// standalone SSE GET; dex just never pushes over it.
+	return sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
+		return servers[r.PathValue("id")] // nil for unknown id => 400
+	}, &sdk.StreamableHTTPOptions{JSONResponse: true})
+}

@@ -68,10 +68,12 @@ tool interface for Claude is the mcp-server spec's.
   stdio for Claude Code (the `ask`-default surface, `DEX_EXPOSE_RAW_TOOLS`, the
   lazy per-session watcher) are the **mcp-server** spec. This spec is the REST
   endpoint contract for service clients only.
-- **Native HTTP-MCP transport.** Speaking MCP JSON-RPC over HTTP (so `claude` can
-  attach this daemon as an MCP server directly) is tracked in dex #6: the stdio→REST
-  shim ships first, a native streamable-HTTP MCP transport is the follow-up. This
-  spec is the plain REST shape, not an MCP transport.
+- **Native HTTP-MCP transport.** Speaking MCP JSON-RPC over HTTP — so `claude`
+  attaches this daemon as an MCP server directly — now ships alongside the REST
+  surface as the streamable-HTTP handler mounted at `/v1/projects/{id}/mcp`
+  (dex #49; `internal/mcp/http_mcp.go`), behind the same bearer auth and project
+  scoping. It is a sibling transport, not part of this REST contract; this spec
+  remains the plain JSON-over-HTTP shape.
 - **What each tool computes.** Ranking/fusion is **semantic-search**, identifier
   lookup is **symbol-search**, edges are **graph**, synthesis is **ask**, vector
   storage is **storage** — the handlers delegate to those. Here only the wire
@@ -93,5 +95,5 @@ tool interface for Claude is the mcp-server spec's.
 - [x] Per-project routes mirror tools (ask/search/graph/summaries/view); structured status in body
 - [x] Body size cap, access log, panic→500, bounded graceful shutdown
 - [x] Eager per-project watcher at startup (idempotent with lazy path)
-- [ ] Native HTTP-MCP transport for direct `claude` attach (dex #6)
+- [x] Native HTTP-MCP transport for direct `claude` attach — streamable handler at `/v1/projects/{id}/mcp` (dex #49)
 - [ ] Verified against the code by the verify workflow (flip to `living`)
