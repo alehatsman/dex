@@ -79,6 +79,20 @@ type graphEdge struct {
 	StartLine int
 }
 
+// docNodes returns every markdown document node in the view. Used by the
+// doc-graph tools to count/scan documents for basename resolution and to
+// tell "no doc graph indexed" from "unknown doc path". Order is
+// unspecified (map iteration); callers that need determinism sort.
+func (v *graphView) docNodes() []graphNode {
+	var out []graphNode
+	for _, n := range v.nodesByID {
+		if n.Kind == graph.NodeDocument {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // loadGraphView pulls every node and edge from the store and indexes
 // them. Returns nil (no error) when the project has no graph indexed
 // — the caller should treat that as "graph not available."

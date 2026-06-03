@@ -7,7 +7,7 @@ dex is a local semantic code-search service. The pipeline has **three indexers w
 | Indexer | Package | Output |
 |---|---|---|
 | **Chunk indexer** | `internal/index` | `chunks` (+ `chunk_vecs` vec0, `chunks_fts` FTS5) — the semantic + lexical search corpus |
-| **Graph indexer** | `internal/graph` | `graph_nodes`, `graph_edges` — Go static call graph + YAML, with PageRank centrality |
+| **Graph indexer** | `internal/graph` | `graph_nodes`, `graph_edges` — Go static call graph + YAML + markdown doc graph, with PageRank centrality |
 | **Watcher** | `internal/watch` | fsnotify → debounce → re-runs the two above |
 
 ## Chunk pipeline (`Indexer.Run`, `internal/index/index.go:117`)
@@ -26,7 +26,7 @@ Comment at top of the file is literal: *"walk → chunk → embed → upsert"*. 
 
 ## Graph pipeline (`internal/graph/graph.go:254`)
 
-Independent of chunks; runs after them in `cmd/dex/main.go:cmdIndex`. `ExtractGo` (go/types) + `ExtractYAML` → `linkChunks` joins nodes to their chunk rows → `GraphUpsertNodes`/`GraphUpsertEdges` → `GraphPruneUnseen` → `ComputeCentrality` (PageRank + in/out degree + cross-pkg callers) → `GraphSetCentrality`. Skippable via `--graph=off`; `--graph=only` skips chunk passes.
+Independent of chunks; runs after them in `cmd/dex/main.go:cmdIndex`. `ExtractGo` (go/types) + `ExtractYAML` + `ExtractMarkdown` (one `document` node per .md/.markdown file; `links`/`wikilinks` edges between docs, resolved relative-path / vault-basename — Obsidian-style, backlinks = reverse direction) → `linkChunks` joins nodes to their chunk rows → `GraphUpsertNodes`/`GraphUpsertEdges` → `GraphPruneUnseen` → `ComputeCentrality` (PageRank + in/out degree + cross-pkg callers; `calls` edges only — doc edges don't affect rank yet) → `GraphSetCentrality`. Skippable via `--graph=off`; `--graph=only` skips chunk passes. Doc edges surface via `graph_links`/`graph_backlinks` (not `graph_callers`/`callees`, which stay `calls`-only).
 
 ## Retrieval (read side)
 
