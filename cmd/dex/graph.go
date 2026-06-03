@@ -22,7 +22,7 @@ import (
 // the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -38,6 +38,10 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphCallers(ctx, rest)
 	case "callees":
 		return cmdGraphCallees(ctx, rest)
+	case "links":
+		return cmdGraphLinks(ctx, rest)
+	case "backlinks":
+		return cmdGraphBacklinks(ctx, rest)
 	case "export":
 		return cmdGraphExport(ctx, rest)
 	case "-h", "--help", "help":
@@ -50,6 +54,10 @@ func cmdGraph(ctx context.Context, args []string) error {
                                                   --package=<pkg>  --k=<n>
   dex graph callees   [<path>] <name>         outgoing calls edges (MCP: graph_callees)
                                                   --package=<pkg>  --k=<n>
+  dex graph links     [<path>] <doc>          docs this doc links to (MCP: graph_links)
+                                                  --k=<n>
+  dex graph backlinks [<path>] <doc>          docs that link to this doc (MCP: graph_backlinks)
+                                                  --k=<n>
   dex graph export    [<path>] [--output=<dir>]
                                                   dump nodes/edges as JSONL
   (path defaults to cwd when omitted)
@@ -59,7 +67,7 @@ note:
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, export)", sub)
 	}
 }
 
@@ -316,6 +324,94 @@ func runGraphCallEdges(ctx context.Context, args []string, callers bool) error {
 			}
 		}
 		fmt.Println()
+	}
+	return nil
+}
+
+func cmdGraphLinks(ctx context.Context, args []string) error {
+	return runGraphDocEdges(ctx, args, false)
+}
+
+func cmdGraphBacklinks(ctx context.Context, args []string) error {
+	return runGraphDocEdges(ctx, args, true)
+}
+
+// runGraphDocEdges mirrors the MCP graph_links / graph_backlinks tools:
+// markdown doc-graph traversal over `links`/`wikilinks` edges. backlinks
+// walks incoming edges ("what links here"), otherwise outgoing.
+func runGraphDocEdges(ctx context.Context, args []string, backlinks bool) error {
+	name := "graph links"
+	rel := "links"
+	helpOneLiner := "Outgoing doc `links`/`wikilinks` (MCP: graph_links)."
+	if backlinks {
+		name = "graph backlinks"
+		rel = "backlinks"
+		helpOneLiner = "Incoming doc `links`/`wikilinks` (MCP: graph_backlinks)."
+	}
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	setHelp(fs, helpOneLiner, "dex "+name+" [flags] [<path>] <doc>")
+	k := fs.Int("k", 50, "max hits to return (default 50, max 200)")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) != 1 {
+		if len(rest) == 0 {
+			return fmt.Errorf("%s needs a <doc> path (path defaults to cwd)", name)
+		}
+		return fmt.Errorf("%s takes one <doc> (got %d extra args)", name, len(rest)-1)
+	}
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve(path, base)
+	if err != nil {
+		return err
+	}
+	in := mcp.DocLinkInput{
+		Doc:         rest[0],
+		ProjectRoot: p.Root,
+		K:           *k,
+	}
+	s, _ := newServerFromEnv(base)
+	var out mcp.DocLinkOutput
+	if backlinks {
+		out, err = s.GraphBacklinks(ctx, in)
+	} else {
+		out, err = s.GraphLinks(ctx, in)
+	}
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	if len(out.Targets) == 0 {
+		fmt.Fprintln(os.Stderr, "no document matched")
+		return nil
+	}
+	fmt.Printf("doc: %s\n\n", out.Targets[0].Doc)
+	if len(out.Hits) == 0 {
+		fmt.Printf("no %s\n", rel)
+		return nil
+	}
+	fmt.Printf("%s (%d):\n", rel, len(out.Hits))
+	for i, h := range out.Hits {
+		fmt.Printf("─── #%d %s  (%s)\n", i+1, h.Doc, h.Kind)
+		if h.LinkSitePath != "" {
+			fmt.Printf("  link site: %s:%d\n", h.LinkSitePath, h.LinkSiteLine)
+		}
 	}
 	return nil
 }

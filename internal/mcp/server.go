@@ -967,6 +967,22 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		}, s.graphCallees)
 
 		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_links",
+			Description: "Return the markdown documents that the given doc LINKS TO — outgoing `links` " +
+				"(inline `[text](other.md)`) and `wikilinks` (`[[Note]]`) edges from the doc graph. " +
+				"Pass `doc` as a path relative to the project root (e.g. 'docs/spec.md'); a unique basename works too. " +
+				"The reverse direction is graph_backlinks. Returns 'no-graph' when the markdown doc graph " +
+				"hasn't been indexed yet.",
+		}, s.graphLinks)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_backlinks",
+			Description: "Return the markdown documents that LINK TO the given doc — incoming `links`/`wikilinks` " +
+				"edges (Obsidian-style backlinks). Same `doc` resolution as graph_links. Useful for " +
+				"'what references this spec'. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet.",
+		}, s.graphBacklinks)
+
+		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "index_status",
 			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
 		}, s.status)

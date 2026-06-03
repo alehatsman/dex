@@ -44,6 +44,11 @@ const (
 	// Go's struct-vs-interface distinction. Schema is TEXT so this is
 	// a no-op migration.
 	NodeClass NodeKind = "class"
+	// NodeDocument is one markdown document (a .md/.markdown file),
+	// emitted by ExtractMarkdown. The doc-graph layer treats each file
+	// as a node so links/wikilinks between docs become navigable edges,
+	// Obsidian-style. Schema is TEXT so this is a no-op migration.
+	NodeDocument NodeKind = "document"
 )
 
 // EdgeKind enumerates the structural relationships emitted by the
@@ -65,6 +70,16 @@ const (
 	// std lib and unindexed dependencies are skipped to keep the
 	// graph navigable.
 	EdgeCalls EdgeKind = "calls"
+	// EdgeLinks is an inline markdown link `[text](./other.md)` from one
+	// document to another, emitted by ExtractMarkdown. Src is the source
+	// document node; dst is the resolved target document. The reverse
+	// direction is the backlink ("what links to this doc").
+	EdgeLinks EdgeKind = "links"
+	// EdgeWikilinks is an Obsidian-style `[[Note]]` reference resolved by
+	// basename against the doc set. Same src/dst semantics as EdgeLinks;
+	// kept distinct so consumers can tell vault-style refs from explicit
+	// relative links.
+	EdgeWikilinks EdgeKind = "wikilinks"
 )
 
 // Node is a structural symbol persisted in graph_nodes.
@@ -270,6 +285,17 @@ func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
 	result.Nodes = append(result.Nodes, yamlRes.Nodes...)
 	result.Edges = append(result.Edges, yamlRes.Edges...)
 	result.Warnings = append(result.Warnings, yamlRes.Warnings...)
+
+	// Markdown doc graph: document nodes + links/wikilinks edges, so a
+	// spec/docs tree is navigable like code (backlinks come free as the
+	// reverse edge direction).
+	mdRes, err := ExtractMarkdown(ctx, g.project.Root)
+	if err != nil {
+		return nil, fmt.Errorf("extract markdown: %w", err)
+	}
+	result.Nodes = append(result.Nodes, mdRes.Nodes...)
+	result.Edges = append(result.Edges, mdRes.Edges...)
+	result.Warnings = append(result.Warnings, mdRes.Warnings...)
 
 	// Multi-language tree-sitter graph. No-op when no per-language
 	// extractors are registered (default state until per-language
