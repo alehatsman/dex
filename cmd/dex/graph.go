@@ -22,7 +22,7 @@ import (
 // the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -42,6 +42,8 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphLinks(ctx, rest)
 	case "backlinks":
 		return cmdGraphBacklinks(ctx, rest)
+	case "tags":
+		return cmdGraphTags(ctx, rest)
 	case "export":
 		return cmdGraphExport(ctx, rest)
 	case "-h", "--help", "help":
@@ -58,6 +60,9 @@ func cmdGraph(ctx context.Context, args []string) error {
                                                   --k=<n>
   dex graph backlinks [<path>] <doc>          docs that link to this doc (MCP: graph_backlinks)
                                                   --k=<n>
+  dex graph tags      [<path>] [--tag=<t>|--doc=<d>]
+                                                  tag→docs or doc→tags (MCP: graph_tags)
+                                                  --k=<n>
   dex graph export    [<path>] [--output=<dir>]
                                                   dump nodes/edges as JSONL
   (path defaults to cwd when omitted)
@@ -67,7 +72,7 @@ note:
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, export)", sub)
 	}
 }
 
@@ -425,6 +430,58 @@ func runGraphDocEdges(ctx context.Context, args []string, backlinks bool) error 
 		if h.LinkSitePath != "" {
 			fmt.Printf("  link site: %s:%d\n", h.LinkSitePath, h.LinkSiteLine)
 		}
+	}
+	return nil
+}
+
+// cmdGraphTags mirrors the MCP graph_tags tool: --tag=<t> lists the
+// documents carrying a tag (ranked by importance); --doc=<d> lists the
+// tags a document carries.
+func cmdGraphTags(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("graph tags", flag.ContinueOnError)
+	setHelp(fs, "Query the markdown tag graph (MCP: graph_tags).", "dex graph tags [flags] [<path>]")
+	tag := fs.String("tag", "", "a #tag (without #) — list documents carrying it")
+	docFlag := fs.String("doc", "", "a document path — list the tags it carries")
+	k := fs.Int("k", 100, "max items to return (default 100, max 500)")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) != 0 {
+		return fmt.Errorf("graph tags takes no positional args besides an optional path; use --tag or --doc")
+	}
+	if *tag == "" && *docFlag == "" {
+		return fmt.Errorf("graph tags needs --tag=<t> or --doc=<d>")
+	}
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve(path, base)
+	if err != nil {
+		return err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.GraphTags(ctx, mcp.TagInput{Tag: *tag, Doc: *docFlag, ProjectRoot: p.Root, K: *k})
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	fmt.Printf("%s of %q (%d):\n", out.Result, out.Query, len(out.Items))
+	for _, it := range out.Items {
+		fmt.Printf("  %s\n", it)
 	}
 	return nil
 }

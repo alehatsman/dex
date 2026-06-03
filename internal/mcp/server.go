@@ -983,6 +983,13 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		}, s.graphBacklinks)
 
 		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_tags",
+			Description: "Query the markdown tag graph. Pass `tag` (a #tag without the #) to list the documents " +
+				"carrying it, ranked by doc importance — tag-based clustering. Or pass `doc` to list the tags that " +
+				"document carries. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet.",
+		}, s.graphTags)
+
+		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "index_status",
 			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
 		}, s.status)
