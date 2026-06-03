@@ -54,6 +54,12 @@ const (
 	// package); documents point at it via EdgeTagged for tag-based
 	// clustering. Schema is TEXT so this is a no-op migration.
 	NodeTag NodeKind = "tag"
+	// NodeHeading is one ATX heading within a markdown document, emitted
+	// by ExtractMarkdown for section-level deep links. QualifiedName is
+	// `relpath#slug`; the owning document points at it via EdgeContains,
+	// and anchored links/wikilinks resolve to it. Schema is TEXT so this
+	// is a no-op migration.
+	NodeHeading NodeKind = "heading"
 )
 
 // EdgeKind enumerates the structural relationships emitted by the
