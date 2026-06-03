@@ -80,12 +80,29 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+// writeIndexAll opts the temp project into indexing everything. Indexing
+// is opt-in (.dex/config.toml [index].include); without an include list
+// the matcher skips every file, so these indexer tests would see an empty
+// index. Mirrors the include = ["*"] escape used in the ignore tests.
+func writeIndexAll(t *testing.T, dir string) {
+	t.Helper()
+	cfgDir := filepath.Join(dir, ".dex")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"),
+		[]byte("[index]\ninclude = [\"*\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIndexAndQuery(t *testing.T) {
 	srv := fakeEmbedServer(t)
 	defer srv.Close()
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	// A Go file with two top-level declarations.
 	writeFile(t, filepath.Join(projDir, "alpha.go"), `package main
@@ -198,6 +215,7 @@ func TestNewlyIgnoredEviction(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	writeFile(t, filepath.Join(projDir, "main.go"),
 		"package main\nfunc Main() {}\n")
 	writeFile(t, filepath.Join(projDir, "drafts/wip.go"),
@@ -243,6 +261,7 @@ func TestPruneAtSameMillisecond(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	writeFile(t, filepath.Join(projDir, "a.go"),
 		"package main\nfunc A() {}\n")
 	writeFile(t, filepath.Join(projDir, "b.go"),
@@ -296,6 +315,7 @@ func TestChunkSummaryIndexing(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	// Build a function body with ≥ chunkSummaryMinLines (30) lines.
 	body := "package main\n\n// LongFunc is deliberately long.\nfunc LongFunc() {\n"
@@ -379,6 +399,7 @@ func TestParallelWalkIndexesAllFiles(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	const fileCount = 64
 	for i := 0; i < fileCount; i++ {
@@ -447,6 +468,7 @@ func TestSummarizeMtimeFastPath(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	// Two files in a single dir → exercises the package_summary keepalive
 	// path. One file is large enough to trigger a chunk_summary.
@@ -553,6 +575,7 @@ func TestDrainPendingSummariesEndToEnd(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	writeFile(t, filepath.Join(projDir, "short.go"),
 		"package main\n\nfunc S() string { return \"x\" }\n")
@@ -670,6 +693,7 @@ func TestDrainDropsStaleFileSummary(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	target := filepath.Join(projDir, "f.go")
 	writeFile(t, target, "package main\n\nfunc F1() {}\n")
 
@@ -738,6 +762,7 @@ func TestDrainPendingSummariesBatchRespectsMax(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	// Four files, each with a long structural chunk — that gives the
 	// queue 8 rows (4 file_summary + 4 chunk_summary) so a max=3 batch
@@ -859,6 +884,7 @@ func TestCascadePackageRepoSummariesEmpty(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	ctx := context.Background()
 	p, _ := proj.Resolve(projDir, cacheDir)
@@ -899,6 +925,7 @@ func TestDeferSummariesEnqueuesWithoutChat(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	// One short file (file_summary only) and one with a long structural
 	// chunk (both file_summary and chunk_summary).
@@ -1024,6 +1051,7 @@ func TestSummarizeConcurrencyParallelizesAcrossFiles(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	// Short files in distinct dirs: each produces exactly one
 	// file_summary call and no chunk_summary calls (every function body

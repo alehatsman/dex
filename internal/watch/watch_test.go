@@ -46,6 +46,22 @@ func fakeEmbedServer(t *testing.T) *httptest.Server {
 	}))
 }
 
+// writeIndexAll opts the temp project into indexing everything. Indexing
+// is opt-in (.dex/config.toml [index].include); without an include list
+// the matcher skips every file, so the watcher would index nothing.
+// Mirrors the include = ["*"] escape used in the ignore tests.
+func writeIndexAll(t *testing.T, dir string) {
+	t.Helper()
+	cfgDir := filepath.Join(dir, ".dex")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"),
+		[]byte("[index]\ninclude = [\"*\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func hashVec(s string, dim int) []float32 {
 	out := make([]float32, dim)
 	h := sha256.Sum256([]byte(s))
@@ -62,6 +78,7 @@ func TestWatchReindexesOnSave(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	_ = os.WriteFile(filepath.Join(projDir, "alpha.go"),
 		[]byte("package main\nfunc Alpha() {}\n"), 0o644)
 
@@ -131,6 +148,7 @@ func TestWatchSingleFlight(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	_ = os.WriteFile(filepath.Join(projDir, "seed.go"),
 		[]byte("package main\nfunc Seed() {}\n"), 0o644)
 
@@ -186,6 +204,7 @@ func newIdleTestRig(t *testing.T) (context.Context, context.CancelFunc, *index.I
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	if err := os.WriteFile(filepath.Join(projDir, "seed.go"),
 		[]byte("package main\nfunc Seed() {}\n"), 0o644); err != nil {
 		t.Fatal(err)

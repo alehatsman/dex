@@ -75,6 +75,7 @@ func indexProject(t *testing.T, projDir, cacheDir, srvURL string) string {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	writeIndexAll(t, projDir)
 	ig, _ := ignore.New(p.Root)
 	em := embed.New(srvURL, "fake", 16, 5*time.Second)
 	ix := index.New(p, st, em, ig, index.Options{})
@@ -90,6 +91,23 @@ func writeFile(t *testing.T, p, content string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeIndexAll opts the temp project into indexing everything. Indexing
+// is opt-in (.dex/config.toml [index].include); without an include list
+// the matcher skips every file, so an index built for these server tests
+// would be empty. Mirrors the include = ["*"] escape used in the ignore
+// tests.
+func writeIndexAll(t *testing.T, dir string) {
+	t.Helper()
+	cfgDir := filepath.Join(dir, ".dex")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"),
+		[]byte("[index]\ninclude = [\"*\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

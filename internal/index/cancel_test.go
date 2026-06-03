@@ -45,6 +45,7 @@ func TestRunReturnsPromptlyOnCancel(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	// Enough files to ensure embedding actually starts (Pass 4).
 	for i := 0; i < 5; i++ {
 		writeFile(t, filepath.Join(projDir, "f"+itoa(i)+".go"),

@@ -236,6 +236,23 @@ to produce a static binary on `distroless/static` (final image ~36 MB,
 no shell). For a host-bound `/cache`, add `--user "$(id -u):$(id -g)"`
 (the image runs as distroless `nonroot`, uid 65532).
 
+## What gets indexed
+
+Indexing is **opt-in**. dex indexes nothing until a project declares an
+allow-list in `.dex/config.toml`:
+
+```toml
+[index]
+include = ["cmd/", "internal/", "*.md"]  # gitignore grammar; file-level allow-list
+ignore  = ["testdata/"]                  # appended to the exclude set below
+```
+
+With no config (or an empty `include`), the index stays empty — `dex
+index`/`watch` print a warning so it isn't a silent no-op. `include`
+gates files only; the walk still descends every non-excluded directory,
+so `*.md` matches at any depth. The exclude rules below always apply on
+top.
+
 ## Ignore rules
 
 `.gitignore` is respected. A built-in `.dexignore` skips `.env*`,

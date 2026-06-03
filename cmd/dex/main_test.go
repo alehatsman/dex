@@ -25,6 +25,23 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
+// writeIndexAll opts the temp project into indexing everything. Indexing
+// is opt-in (.dex/config.toml [index].include); without an include list
+// the matcher skips every file, so these indexer-driven tests would see
+// an empty index. Mirrors the include = ["*"] escape used in the ignore
+// tests.
+func writeIndexAll(t *testing.T, dir string) {
+	t.Helper()
+	cfgDir := filepath.Join(dir, ".dex")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"),
+		[]byte("[index]\ninclude = [\"*\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNewRerankClientNilWhenURLEmpty(t *testing.T) {
 	t.Setenv("DEX_RERANK_URL", "")
 	if c := newRerankClient(); c != nil {
@@ -246,6 +263,7 @@ func TestIdleSummaryDrainerEndToEnd(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	// Two source files = at least two file_summary rows.
 	for i := range 2 {
 		_ = os.WriteFile(filepath.Join(projDir, fmt.Sprintf("f%d.go", i)),
@@ -308,6 +326,7 @@ func TestIdleSummaryDrainerNilWithoutChat(t *testing.T) {
 	defer embedSrv.Close()
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 
 	ctx := context.Background()
 	p, _ := proj.Resolve(projDir, cacheDir)
@@ -337,6 +356,7 @@ func TestIdleSummaryDrainerStopsOnNoProgress(t *testing.T) {
 
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
 	_ = os.WriteFile(filepath.Join(projDir, "f.go"),
 		[]byte("package main\nfunc F() {}\n"), 0o644)
 
