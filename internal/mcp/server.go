@@ -908,13 +908,42 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		Version: Version,
 	}, nil)
 
-	// Thin surface: `ask` is the sole tool agents see by default — it
-	// composes the lanes below and (when a chat client is wired)
-	// synthesizes the answer, so the raw lanes are redundant for agents.
-	// Set DEX_EXPOSE_RAW_TOOLS=1 to register them too (CLI parity / power
-	// use / A-B debugging). The `dex` CLI subcommands are unaffected.
-	rawTools := exposeRawTools()
+	registerTools(srv, s, exposeRawTools(), s.ChatClient != nil)
 
+	return srv.Run(ctx, &sdk.StdioTransport{})
+}
+
+// toolSurface is the set of tool handlers registerTools wires onto an MCP
+// server. *Server implements it against a local on-disk index; the remote
+// shim's *remoteClient (remote.go) implements it by proxying each call to a
+// `dex serve` REST endpoint. Funnelling both through one registerTools means
+// the stdio and remote surfaces can never drift in tool names, JSON schemas,
+// or descriptions — the schema for each tool is derived by the SDK from the
+// shared Input type, so both backends advertise byte-identical tools.
+type toolSurface interface {
+	contextRouter(context.Context, *sdk.CallToolRequest, ContextInput) (*sdk.CallToolResult, ContextOutput, error)
+	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
+	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
+	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
+	graphDeps(context.Context, *sdk.CallToolRequest, GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error)
+	graphCallers(context.Context, *sdk.CallToolRequest, CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error)
+	graphCallees(context.Context, *sdk.CallToolRequest, CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error)
+	graphLinks(context.Context, *sdk.CallToolRequest, DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error)
+	graphBacklinks(context.Context, *sdk.CallToolRequest, DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error)
+	graphTags(context.Context, *sdk.CallToolRequest, TagInput) (*sdk.CallToolResult, TagOutput, error)
+	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
+	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
+}
+
+// registerTools wires the dex tool surface onto srv, dispatching to h.
+//
+// Thin surface: `ask` is the sole tool agents see by default — it composes the
+// raw lanes below and (when a chat client is wired) synthesizes the answer, so
+// the raw lanes are redundant for agents. rawTools (DEX_EXPOSE_RAW_TOOLS=1)
+// registers them too (CLI parity / power use / A-B debugging). The `dex` CLI
+// subcommands are unaffected. registerSummarize gates view_summarize on chat
+// availability; it is still only registered when rawTools is on.
+func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize bool) {
 	if rawTools {
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "search_semantic",
@@ -924,7 +953,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 				"Embeds the query and returns top-k matching chunks. Supports exclude list to skip paths. " +
 				"On error, returns a structured status: 'no-index' (run dex index first), " +
 				"'embedding-service-unreachable' (fall back to grep), or 'ok'.",
-		}, s.search)
+		}, h.search)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "search_symbol",
@@ -932,7 +961,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 				"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
 				"already have the exact identifier name and want nothing else. " +
 				"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists.",
-		}, s.findSymbol)
+		}, h.findSymbol)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_neighbors",
@@ -940,7 +969,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 				"Use graph_neighbors directly only when you already have the exact (path, start_line) of a chunk " +
 				"and want its cosine neighbors. " +
 				"Finds code that is semantically related even without keyword overlap.",
-		}, s.related)
+		}, h.related)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_deps",
@@ -948,7 +977,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 				"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
 				"Pass `path` (relative file inside the project) OR `package` (full package path). " +
 				"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing.",
-		}, s.graphDeps)
+		}, h.graphDeps)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_callers",
@@ -957,14 +986,14 @@ func (s *Server) RunStdio(ctx context.Context) error {
 				"Accepts a bare name (`Foo`), a qualified method (`(*Server).RunStdio`), or a package-qualified " +
 				"name (`mcp.NewServer`). Multiple matches are returned with their package paths so the agent can " +
 				"disambiguate. Returns 'no-graph' when calls edges haven't been indexed yet.",
-		}, s.graphCallers)
+		}, h.graphCallers)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_callees",
 			Description: "Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
 				"Go-only for now. Same name resolution as graph_callers. " +
 				"Returns 'no-graph' when calls edges haven't been indexed yet.",
-		}, s.graphCallees)
+		}, h.graphCallees)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_links",
@@ -973,26 +1002,26 @@ func (s *Server) RunStdio(ctx context.Context) error {
 				"Pass `doc` as a path relative to the project root (e.g. 'docs/spec.md'); a unique basename works too. " +
 				"The reverse direction is graph_backlinks. Returns 'no-graph' when the markdown doc graph " +
 				"hasn't been indexed yet.",
-		}, s.graphLinks)
+		}, h.graphLinks)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_backlinks",
 			Description: "Return the markdown documents that LINK TO the given doc — incoming `links`/`wikilinks` " +
 				"edges (Obsidian-style backlinks). Same `doc` resolution as graph_links. Useful for " +
 				"'what references this spec'. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet.",
-		}, s.graphBacklinks)
+		}, h.graphBacklinks)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_tags",
 			Description: "Query the markdown tag graph. Pass `tag` (a #tag without the #) to list the documents " +
 				"carrying it, ranked by doc importance — tag-based clustering. Or pass `doc` to list the tags that " +
 				"document carries. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet.",
-		}, s.graphTags)
+		}, h.graphTags)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "index_status",
 			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
-		}, s.status)
+		}, h.status)
 	}
 
 	sdk.AddTool(srv, &sdk.Tool{
@@ -1021,9 +1050,9 @@ func (s *Server) RunStdio(ctx context.Context) error {
 			"files open. Intent is inferred automatically " +
 			"(behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context) — pass `intent` " +
 			"only to override. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep.",
-	}, s.contextRouter)
+	}, h.contextRouter)
 
-	if s.ChatClient != nil && rawTools {
+	if registerSummarize && rawTools {
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "view_summarize",
 			Description: "Prefer `ask` first — its `suggested_reads` will name the file worth " +
@@ -1031,10 +1060,8 @@ func (s *Server) RunStdio(ctx context.Context) error {
 				"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
 				"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
 				"On error, returns 'chat-service-unreachable' or 'error'.",
-		}, s.summarize)
+		}, h.summarize)
 	}
-
-	return srv.Run(ctx, &sdk.StdioTransport{})
 }
 
 // exposeRawTools reports whether the raw lanes (search_*, graph_*,
