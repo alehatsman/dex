@@ -146,7 +146,14 @@ type slowFile struct {
 }
 
 func (ix *Indexer) Run(ctx context.Context) error {
-	startTime := time.Now()
+	// Monotonic stamp/cutoff: strictly exceeds every previously stored
+	// last_seen_at, so a backward wall-clock step between runs can't make
+	// this run's prune cutoff smaller than a prior run's stamps and leave
+	// deleted files' chunks un-pruned (dex #32). Read before upserting.
+	startTime, err := ix.Store.SeenTime(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("seen time: %w", err)
+	}
 	ix.Options.Logger.Info("index: starting", "root", ix.Proj.Root)
 
 	// Refuse a silent embed-model swap: two same-dim models produce
