@@ -394,6 +394,17 @@ func cliLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 }
 
+// warnIfNoInclude prints a prominent notice when a project has no
+// `[index].include` in .dex/config.toml. Indexing is opt-in, so without
+// it the run produces an empty index — surface that instead of letting
+// it look like a silent success.
+func warnIfNoInclude(ig *ignore.Matcher, root string) {
+	if !ig.IncludeConfigured() {
+		fmt.Fprintf(os.Stderr,
+			"⚠ no [index].include in %s/.dex/config.toml — nothing will be indexed\n", root)
+	}
+}
+
 func newEmbedClient() *embed.Client {
 	url := envOr("DEX_EMBED_URL", "http://127.0.0.1:8082")
 	model := envOr("DEX_EMBED_MODEL", "Qwen/Qwen3-Embedding-4B")
@@ -696,6 +707,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		warnIfNoInclude(ig, p.Root)
 		opts := index.Options{
 			Verbose:     *verbose,
 			Logger:      cliLogger(),
@@ -1500,6 +1512,7 @@ func cmdIndexSummarize(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	warnIfNoInclude(ig, p.Root)
 	ix := index.New(p, st, newEmbedClient(), ig, index.Options{
 		Verbose:              *verbose,
 		Logger:               cliLogger(),
@@ -1680,6 +1693,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	if err != nil {
 		return err
 	}
+	warnIfNoInclude(ig, p.Root)
 	ix := index.New(p, st, newEmbedClient(), ig, index.Options{Verbose: verbose, Logger: cliLogger(), Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0)})
 	if err := ix.Run(ctx); err != nil {
 		return err
@@ -1839,6 +1853,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	warnIfNoInclude(ig, p.Root)
 	logger := cliLogger()
 
 	autoSum := autoSummarizeEnabled()

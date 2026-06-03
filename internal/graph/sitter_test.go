@@ -92,6 +92,7 @@ func writeTree(t *testing.T, files map[string]string) string {
 			t.Fatalf("write %s: %v", rel, err)
 		}
 	}
+	writeIndexAll(t, root)
 	return root
 }
 

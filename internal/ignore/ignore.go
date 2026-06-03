@@ -1,35 +1,48 @@
 // Package ignore decides which files to skip during indexing.
 //
+// Indexing is opt-in: a project is only indexed once .dex/config.toml
+// declares an `[index].include` allow-list. With no include configured,
+// every file is skipped — "index nothing until opted in".
+//
 // The full filter chain a file passes through:
 //
-//  1. Allow-list gate (IndexableExt / IndexableBasename): the file's
-//     extension must appear in IndexableExtensions, OR its basename in
-//     IndexableBasenames. Anything else is dropped before any further
-//     check runs. This is the first gate, not a fallback.
-//
-//  2. Matcher (gitignore-style exclusion): three sub-layers composed
-//     and evaluated together by github.com/sabhiram/go-gitignore — so
-//     full gitignore semantics apply (anchoring, negation, `**`,
-//     dir-only patterns, later-pattern-wins). The sub-layers, in
-//     declaration order:
+//  1. Matcher exclude set (gitignore-style exclusion): sub-layers
+//     composed and evaluated together by
+//     github.com/sabhiram/go-gitignore — so full gitignore semantics
+//     apply (anchoring, negation, `**`, dir-only patterns,
+//     later-pattern-wins). The sub-layers, in declaration order:
 //     a. DefaultPatterns — hard-coded: vendor dirs, build outputs,
 //     secret-shaped filenames, license-family files.
 //     b. .gitignore at the project root (root file only; nested
 //     .gitignore files are intentionally not read).
 //     c. .dexignore at the project root (same syntax).
+//     d. .dex/config.toml `[index].ignore` (same syntax).
 //
-//  3. LooksBinary — NUL-byte heuristic for binaries that slipped
+//  2. Include allow-list (opt-in): the .dex/config.toml
+//     `[index].include` patterns, same gitignore grammar. A FILE is
+//     kept only if it matches an include pattern; with no include
+//     configured, all files are dropped. Directories are never filtered
+//     by include — the walk still descends into every non-excluded
+//     directory, so file-only patterns like `*.md` work at any depth.
+//
+//  3. Extension allow-list (IndexableExt / IndexableBasename): the
+//     file's extension must appear in IndexableExtensions, OR its
+//     basename in IndexableBasenames. Applied by the indexer
+//     (internal/index), after Match, to narrow to chunkable content.
+//
+//  4. LooksBinary — NUL-byte heuristic for binaries that slipped
 //     through the allow-list (e.g. a `.yml` that's actually a packed
 //     binary).
 //
-//  4. LooksLikeSecret — scans the first 4 KB of content against a
+//  5. LooksLikeSecret — scans the first 4 KB of content against a
 //     panel of well-known secret regexes (AWS, GitHub PAT, Slack,
 //     OpenAI, Stripe, GitLab, SendGrid, …). Suppressed when
 //     IsTestPath(path) is true so test files holding fake credentials
 //     aren't dropped.
 //
-// MaxFileSize and other indexer-orchestration limits live in
-// internal/index/index.go, not here.
+// Steps 1 and 2 are what (*Matcher).Match evaluates. MaxFileSize and
+// other indexer-orchestration limits live in internal/index/index.go,
+// not here.
 package ignore
 
 import (
@@ -189,14 +202,24 @@ var IndexableExtensions = map[string]bool{
 // semantics) is delegated to github.com/sabhiram/go-gitignore so we
 // don't reinvent — and subtly miss — the corner cases of a
 // 20-year-old spec. We only contribute the DefaultPatterns,
-// .dexignore composition, and the wider always-skip rules.
+// .dexignore / .dex/config.toml composition, and the wider always-skip
+// rules.
 type Matcher struct {
-	g *gitignore.GitIgnore
+	g       *gitignore.GitIgnore // exclude set
+	include *gitignore.GitIgnore // opt-in file allow-list; nil when none configured
 }
 
-// New loads DefaultPatterns + project-root .gitignore + .dexignore
-// (in that order — later wins per gitignore semantics).
+// New builds the exclude set from DefaultPatterns + project-root
+// .gitignore + .dexignore + .dex/config.toml `[index].ignore` (in that
+// order — later wins per gitignore semantics), and the opt-in include
+// allow-list from `[index].include`. When no include is configured the
+// Matcher skips every file (index-nothing-until-opted-in).
 func New(root string) (*Matcher, error) {
+	cfg, err := loadIndexConfig(root)
+	if err != nil {
+		return nil, err
+	}
+
 	var lines []string
 	lines = append(lines, DefaultPatterns...)
 	for _, name := range []string{".gitignore", ".dexignore"} {
@@ -206,7 +229,20 @@ func New(root string) (*Matcher, error) {
 		}
 		lines = append(lines, extra...)
 	}
-	return &Matcher{g: gitignore.CompileIgnoreLines(lines...)}, nil
+	lines = append(lines, cfg.Ignore...)
+
+	m := &Matcher{g: gitignore.CompileIgnoreLines(lines...)}
+	if len(cfg.Include) > 0 {
+		m.include = gitignore.CompileIgnoreLines(cfg.Include...)
+	}
+	return m, nil
+}
+
+// IncludeConfigured reports whether the project declared a non-empty
+// `[index].include` in .dex/config.toml. When false, Match skips every
+// file and the index will be empty — callers warn so that's not silent.
+func (m *Matcher) IncludeConfigured() bool {
+	return m.include != nil
 }
 
 // readLines returns the lines of path, or nil if the file doesn't exist.
@@ -227,17 +263,29 @@ func readLines(path string) ([]string, error) {
 	return out, s.Err()
 }
 
-// Match returns true if the relative path is ignored. relPath uses
-// forward slashes (filepath.ToSlash). gitignore's dir-only patterns
-// (`name/`) only match when the input path is itself a directory, so
-// we append a trailing slash for directories — that's how the spec
-// distinguishes them.
+// Match returns true if the relative path should be skipped — either
+// because the exclude set matches it, or (for files) because the opt-in
+// include allow-list does not. relPath uses forward slashes
+// (filepath.ToSlash). gitignore's dir-only patterns (`name/`) only match
+// when the input path is itself a directory, so we append a trailing
+// slash for directories — that's how the spec distinguishes them.
 func (m *Matcher) Match(relPath string, isDir bool) bool {
 	p := filepath.ToSlash(relPath)
 	if isDir && !strings.HasSuffix(p, "/") {
 		p += "/"
 	}
-	return m.g.MatchesPath(p)
+	if m.g.MatchesPath(p) {
+		return true // excluded
+	}
+	// Opt-in allow-list: a file is indexed only if it matches an
+	// include pattern. With no include configured (m.include == nil)
+	// every file is skipped. Directories are never filtered here so the
+	// walk keeps descending — file-only patterns like `*.md` must still
+	// be reachable at any depth.
+	if !isDir && (m.include == nil || !m.include.MatchesPath(p)) {
+		return true
+	}
+	return false
 }
 
 // IndexableExt returns true if the file extension is one dex will

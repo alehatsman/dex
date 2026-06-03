@@ -191,6 +191,7 @@ func TestPythonRelativeImportFromModule(t *testing.T) {
 	write("pkg/__init__.py", "")
 	write("pkg/other.py", "def thing():\n    pass\n")
 	write("pkg/sub.py", "from .other import thing\n\ndef use():\n    return thing()\n")
+	writeIndexAll(t, root)
 
 	reg := NewRegistry()
 	reg.Register(newPythonExtractor)

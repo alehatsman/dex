@@ -39,7 +39,25 @@ func copyFixture(t *testing.T, name string) string {
 	}); err != nil {
 		t.Fatalf("copy fixture: %v", err)
 	}
+	writeIndexAll(t, dst)
 	return dst
+}
+
+// writeIndexAll opts a temp project into indexing everything. The graph
+// extractors walk through ignore.New/Match, and indexing is opt-in
+// (.dex/config.toml [index].include); without an include list every file
+// is skipped and the graph comes out empty. Mirrors the include = ["*"]
+// escape used in the ignore tests.
+func writeIndexAll(t *testing.T, dir string) {
+	t.Helper()
+	cfgDir := filepath.Join(dir, ".dex")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"),
+		[]byte("[index]\ninclude = [\"*\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func openTestStore(t *testing.T) *store.Store {

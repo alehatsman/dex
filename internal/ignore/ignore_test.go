@@ -3,11 +3,15 @@ package ignore
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
 func TestDefaultsIgnoreVendorDirs(t *testing.T) {
 	root := t.TempDir()
+	// Include everything so this exercises the exclude layer in isolation
+	// (without an include list the opt-in model would skip every file).
+	writeConfig(t, root, "[index]\ninclude = [\"*\"]\n")
 	m, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +92,7 @@ func TestGitignoreAndMcsearchIgnore(t *testing.T) {
 		[]byte("scratch/\n!scratch/keep.md\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeConfig(t, root, "[index]\ninclude = [\"*\"]\n")
 	m, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -124,6 +129,7 @@ func TestDoubleStarPatterns(t *testing.T) {
 		[]byte("**/__pycache__/\n**/*.bak\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeConfig(t, root, "[index]\ninclude = [\"*\"]\n")
 	m, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -327,4 +333,160 @@ func trim(s string) string {
 		return s[:40] + "…"
 	}
 	return s
+}
+
+// writeConfig writes a .dex/config.toml under root.
+func writeConfig(t *testing.T, root, body string) {
+	t.Helper()
+	dir := filepath.Join(root, ".dex")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIncludeAllowList(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, root, `# dex config
+[index]
+include = [
+  "cmd/",
+  "internal/",
+  "*.md",
+]
+ignore = ["internal/legacy/"]
+`)
+	m, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.IncludeConfigured() {
+		t.Fatal("IncludeConfigured() = false, want true")
+	}
+	cases := []struct {
+		path    string
+		isDir   bool
+		ignored bool
+	}{
+		// included trees
+		{"cmd/dex/main.go", false, false},
+		{"internal/ignore/ignore.go", false, false},
+		{"README.md", false, false},
+		{"docs/deep/notes.md", false, false}, // *.md matches at any depth
+		// not in include → skipped even though they're ordinary source
+		{"scripts/build.sh", false, true},
+		{"go.mod", false, true},
+		// ignore carve-out wins inside an included tree
+		{"internal/legacy/old.go", false, true},
+		{"internal/legacy", true, true},
+		// directories are NOT filtered by include — the walk must still
+		// descend into them to reach included files below.
+		{"scripts", true, false},
+		{"docs", true, false},
+		// exclude set still applies, before include
+		{"node_modules", true, true},
+		{"node_modules/foo.js", false, true},
+		{"internal/x.min.js", false, true},
+	}
+	for _, c := range cases {
+		if got := m.Match(c.path, c.isDir); got != c.ignored {
+			t.Errorf("Match(%q, isDir=%v) = %v, want %v", c.path, c.isDir, got, c.ignored)
+		}
+	}
+}
+
+func TestNoIncludeIndexesNothing(t *testing.T) {
+	root := t.TempDir() // no .dex/config.toml
+	m, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.IncludeConfigured() {
+		t.Fatal("IncludeConfigured() = true, want false")
+	}
+	cases := []struct {
+		path    string
+		isDir   bool
+		ignored bool
+	}{
+		// every file is skipped without an include list
+		{"cmd/main.go", false, true},
+		{"README.md", false, true},
+		{"internal/store/store.go", false, true},
+		// but directories are still walked, so files added to a future
+		// include list remain reachable
+		{"cmd", true, false},
+		{"internal", true, false},
+		// exclude set still prunes vendor dirs entirely
+		{"node_modules", true, true},
+		{"node_modules/x.js", false, true},
+	}
+	for _, c := range cases {
+		if got := m.Match(c.path, c.isDir); got != c.ignored {
+			t.Errorf("Match(%q, isDir=%v) = %v, want %v", c.path, c.isDir, got, c.ignored)
+		}
+	}
+}
+
+func TestLoadIndexConfig(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, root, `# leading comment
+[other]
+key = "ignored"
+
+[index]
+include = [
+  "cmd/",       # trailing comment
+  "internal/",
+  "*.md",
+]
+ignore = ["testdata/", "benchmark/results/",]
+scalar = "skipped quietly"
+`)
+	cfg, err := loadIndexConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantInc := []string{"cmd/", "internal/", "*.md"}
+	wantIgn := []string{"testdata/", "benchmark/results/"}
+	if !slices.Equal(cfg.Include, wantInc) {
+		t.Errorf("Include = %v, want %v", cfg.Include, wantInc)
+	}
+	if !slices.Equal(cfg.Ignore, wantIgn) {
+		t.Errorf("Ignore = %v, want %v", cfg.Ignore, wantIgn)
+	}
+}
+
+func TestLoadIndexConfigEdgeCases(t *testing.T) {
+	// Missing file → zero value, no error.
+	cfg, err := loadIndexConfig(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Include != nil || cfg.Ignore != nil {
+		t.Errorf("missing file: got %+v, want zero", cfg)
+	}
+
+	// Single-line array + empty array.
+	root := t.TempDir()
+	writeConfig(t, root, "[index]\ninclude = [\"a/\", \"b/\"]\nignore = []\n")
+	cfg, err = loadIndexConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cfg.Include, []string{"a/", "b/"}) {
+		t.Errorf("Include = %v, want [a/ b/]", cfg.Include)
+	}
+	if cfg.Ignore != nil {
+		t.Errorf("Ignore = %v, want nil", cfg.Ignore)
+	}
+
+	// Unterminated array → error.
+	bad := t.TempDir()
+	writeConfig(t, bad, "[index]\ninclude = [\n  \"a/\",\n")
+	if _, err := loadIndexConfig(bad); err == nil {
+		t.Error("unterminated array: want error, got nil")
+	}
 }
