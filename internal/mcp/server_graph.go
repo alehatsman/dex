@@ -176,6 +176,12 @@ type PackageNode struct {
 	InDegree  int     `json:"in_degree"`
 	OutDegree int     `json:"out_degree"`
 	PageRank  float64 `json:"page_rank"`
+	// IsMain marks an executable entry point: the package's clause name is
+	// "main" (Go `package main`). A reliable entry-point signal where
+	// in_degree==0 is not — a helper imported only by _test.go files also
+	// has in_degree 0 here (test imports are excluded from this DAG) yet is
+	// no entry point.
+	IsMain bool `json:"is_main"`
 }
 
 // PackageEdge is one internal import relationship: FromPackage imports
@@ -254,9 +260,13 @@ func isGoPackageNode(n graphNode) bool {
 
 func buildPackageGraph(view *graphView) PackageGraphOutput {
 	internal := map[string]struct{}{}
+	mainByPath := map[string]bool{} // package clause name == "main" → executable
 	for _, n := range view.nodesByID {
 		if isGoPackageNode(n) && n.PackagePath != "" {
 			internal[n.PackagePath] = struct{}{}
+			if n.Name == "main" {
+				mainByPath[n.PackagePath] = true
+			}
 		}
 	}
 	if len(internal) == 0 {
@@ -324,6 +334,7 @@ func buildPackageGraph(view *graphView) PackageGraphOutput {
 			InDegree:  inDeg[pkg],
 			OutDegree: outDeg[pkg],
 			PageRank:  ranks[pkg],
+			IsMain:    mainByPath[pkg],
 		})
 	}
 

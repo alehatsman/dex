@@ -222,7 +222,11 @@ func cmdGraphPackages(ctx context.Context, args []string) error {
 	}
 	fmt.Printf("%d packages, %d internal import edges\n", len(out.Nodes), len(out.Edges))
 	for _, n := range out.Nodes {
-		fmt.Printf("  in=%-3d out=%-3d pr=%.4f  %s\n", n.InDegree, n.OutDegree, n.PageRank, n.Package)
+		marker := ""
+		if n.IsMain {
+			marker = " [main]"
+		}
+		fmt.Printf("  in=%-3d out=%-3d pr=%.4f  %s%s\n", n.InDegree, n.OutDegree, n.PageRank, n.Package, marker)
 	}
 	return nil
 }
