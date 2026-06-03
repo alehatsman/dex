@@ -131,6 +131,7 @@ dex graph callers   <path> <name>          # incoming calls edges (Go-only)
 dex graph callees   <path> <name>          # outgoing calls edges (Go-only)
 dex graph links     <path> <doc>           # markdown docs this doc links to
 dex graph backlinks <path> <doc>           # markdown docs that link to this doc
+dex graph tags      <path> --tag=<t>|--doc=<d>  # tag→docs (clustering) or doc→tags
 dex graph export    <path>                 # dump nodes.jsonl + edges.jsonl
 dex view summarize  <path> <file>          # one-shot file/range gist via chat
 dex index status    [<path>]               # endpoint health + indexed projects
@@ -164,6 +165,7 @@ When running as `dex mcp`, the server registers:
 | `graph_callees`   | yes        | Outgoing `calls` edges (Go-only today).                                     |
 | `graph_links`     | yes        | Outgoing markdown `links`/`wikilinks` — docs a doc points to.               |
 | `graph_backlinks` | yes        | Incoming markdown `links`/`wikilinks` — what links to a doc (Obsidian-style).|
+| `graph_tags`      | yes        | Tag graph: `tag`→documents (ranked) or `doc`→tags. Tag-based clustering.     |
 | `index_status`    | yes        | Endpoint health (embed / chat / rerank) + indexed projects.                 |
 | `view_summarize`  | needs chat | One-shot file-or-range gist via the chat model. No retrieval.               |
 
