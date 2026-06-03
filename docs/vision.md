@@ -86,6 +86,7 @@ graph_callers             # incoming calls edges (Go-only today)
 graph_callees             # outgoing calls edges (Go-only today)
 graph_links               # outgoing markdown links/wikilinks (doc graph)
 graph_backlinks           # incoming markdown links/wikilinks (Obsidian-style)
+graph_tags                # tag→docs (ranked) or doc→tags; tag-based clustering
 graph_neighbors           # cosine neighbours of a known chunk
 view_summarize            # chat-model file/range gist
 view_expand               # widen a chunk to its enclosing scope (not yet shipped)

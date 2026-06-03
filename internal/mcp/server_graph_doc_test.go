@@ -214,6 +214,48 @@ func TestCollectDocEdgesHeadingRollup(t *testing.T) {
 	}
 }
 
+// TestGraphTagsHelpers checks the tag-graph walks: a tag → its documents
+// and a doc → its tags, ignoring non-`tagged` edges.
+func TestGraphTagsHelpers(t *testing.T) {
+	mkDoc := func(rel string) graphNode {
+		return graphNode{ID: graph.NodeID("", "_markdown", graph.NodeDocument, rel), Kind: graph.NodeDocument, Name: baseName(rel), QualifiedName: rel, FilePath: rel}
+	}
+	mkTag := func(name string) graphNode {
+		return graphNode{ID: graph.NodeID("", "_markdown", graph.NodeTag, name), Kind: graph.NodeTag, Name: name, QualifiedName: name}
+	}
+	a, b := mkDoc("a.md"), mkDoc("b.md")
+	spec := mkTag("spec")
+	edge := func(kind graph.EdgeKind, src, dst graphNode) graphEdge {
+		return graphEdge{Kind: kind, SrcID: src.ID, DstID: dst.ID}
+	}
+	v := &graphView{
+		nodesByID:  map[string]graphNode{},
+		edgesBySrc: map[string][]graphEdge{},
+		edgesByDst: map[string][]graphEdge{},
+	}
+	edges := []graphEdge{
+		edge(graph.EdgeTagged, a, spec),
+		edge(graph.EdgeTagged, b, spec),
+		edge(graph.EdgeLinks, a, b), // not a tag edge — must be ignored
+	}
+	for _, n := range []graphNode{a, b, spec} {
+		v.nodesByID[n.ID] = n
+	}
+	for _, e := range edges {
+		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
+		v.edgesByDst[e.DstID] = append(v.edgesByDst[e.DstID], e)
+	}
+
+	docs := docsForTag(v, spec.ID)
+	if len(docs) != 2 {
+		t.Errorf("docsForTag(spec) = %v, want [a.md b.md]", docs)
+	}
+	tags := tagsForDoc(v, a.ID)
+	if len(tags) != 1 || tags[0] != "spec" {
+		t.Errorf("tagsForDoc(a.md) = %v, want [spec] (links edge must be ignored)", tags)
+	}
+}
+
 func TestResolveDocTargets(t *testing.T) {
 	v := docVaultView()
 

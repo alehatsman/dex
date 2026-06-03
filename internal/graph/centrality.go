@@ -44,10 +44,13 @@ type CentralityResult struct {
 	PageRank        float64
 }
 
-// ComputeCentrality walks the `calls` edges and returns per-node
-// statistics keyed by node ID.
+// ComputeCentrality walks the `calls` edges (plus the markdown doc graph)
+// and returns per-node statistics keyed by node ID.
 //
-// Only edges with Kind == EdgeCalls are considered for direct counting.
+// Only edges with Kind == EdgeCalls are considered for direct counting
+// among code nodes; the markdown `links`/`wikilinks`/`transcludes` edges
+// are folded in separately (see below) so documents get a backlink-count
+// in-degree and a doc-graph PageRank.
 // On top of those, virtual forwarding edges are synthesized from each
 // interface method to every concrete method that implements it (via
 // EdgeImplements + EdgeHasMethod). Without this synthesis every method
@@ -102,6 +105,43 @@ func ComputeCentrality(nodes []Node, edges []Edge) map[string]CentralityResult {
 			outAdj[e.SrcID] = map[string]struct{}{}
 		}
 		outAdj[e.SrcID][e.DstID] = struct{}{}
+	}
+
+	// Markdown doc graph. Treat document-to-document references
+	// (links/wikilinks/transcludes) like calls for centrality: a doc's
+	// in-degree becomes its backlink count and PageRank ranks the
+	// most-referenced specs highest. The code and doc node sets are
+	// disjoint, so they form independent components of the same PageRank
+	// run. A reference to a section (heading node) is projected onto its
+	// parent document, so deep links still credit the doc. EdgeContains
+	// (doc → heading) and EdgeTagged (doc → tag) are structural, not
+	// references, and are excluded.
+	for _, e := range edges {
+		if e.Kind != EdgeLinks && e.Kind != EdgeWikilinks && e.Kind != EdgeTransclude {
+			continue
+		}
+		if _, ok := nodeByID[e.SrcID]; !ok {
+			continue
+		}
+		dstN, ok := nodeByID[e.DstID]
+		if !ok {
+			continue
+		}
+		dstID := e.DstID
+		if dstN.Kind == NodeHeading {
+			dstID = NodeID("", mdPkg, NodeDocument, dstN.FilePath)
+			if _, ok := nodeByID[dstID]; !ok {
+				continue // parent document not in the node set (shouldn't happen)
+			}
+		}
+		if dstID == e.SrcID {
+			continue // self-reference — ignore for degree, as with calls
+		}
+		distinctEdge[edgeKey{src: e.SrcID, dst: dstID}] = struct{}{}
+		if outAdj[e.SrcID] == nil {
+			outAdj[e.SrcID] = map[string]struct{}{}
+		}
+		outAdj[e.SrcID][dstID] = struct{}{}
 	}
 
 	// Interface-dispatch forwarding. For each interface method I_M

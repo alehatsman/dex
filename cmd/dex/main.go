@@ -14,6 +14,7 @@
 //	graph callees <path> <name>   Outgoing `calls` edges (MCP: graph_callees).
 //	graph links <path> <doc>      Docs this markdown doc links to (MCP: graph_links).
 //	graph backlinks <path> <doc>  Docs that link to this markdown doc (MCP: graph_backlinks).
+//	graph tags <path> --tag|--doc Tag→docs or doc→tags (MCP: graph_tags).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
 //	view summarize <path> <file>  Summarize a file slice (MCP: view_summarize).
 //	index <path>                  Build or refresh the per-project index.
@@ -165,6 +166,9 @@ usage (query — mirrors the MCP tool surface):
   dex graph links [<path>] <doc>     markdown docs this doc links to (MCP: graph_links)
                                           Flags: --k
   dex graph backlinks [<path>] <doc> markdown docs that link to this doc (MCP: graph_backlinks)
+                                          Flags: --k
+  dex graph tags [<path>] --tag=<t>|--doc=<d>
+                                          tag→docs or doc→tags (MCP: graph_tags)
                                           Flags: --k
   dex graph export [<path>]          dump graph_nodes/graph_edges as JSONL
                                           Flags: --output=<dir>
