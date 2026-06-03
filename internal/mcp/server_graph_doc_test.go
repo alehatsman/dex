@@ -42,12 +42,21 @@ func docVaultView() *graphView {
 	v := &graphView{
 		nodesByID:        map[string]graphNode{},
 		nodesByQualified: map[string][]graphNode{},
+		nodesByPath:      map[string][]graphNode{},
 		edgesBySrc:       map[string][]graphEdge{},
 		edgesByDst:       map[string][]graphEdge{},
 	}
 	for _, n := range []graphNode{index, auth, gloss, ideas} {
 		v.nodesByID[n.ID] = n
-		v.nodesByQualified[n.QualifiedName] = append(v.nodesByQualified[n.QualifiedName], n)
+		// Mirror loadGraphView exactly: nodesByQualified is populated only
+		// when QualifiedName != Name (so a root-level doc like "index.md"
+		// is absent), while nodesByPath is keyed on FilePath for every node.
+		if n.QualifiedName != "" && n.QualifiedName != n.Name {
+			v.nodesByQualified[n.QualifiedName] = append(v.nodesByQualified[n.QualifiedName], n)
+		}
+		if n.FilePath != "" {
+			v.nodesByPath[n.FilePath] = append(v.nodesByPath[n.FilePath], n)
+		}
 	}
 	for _, e := range edges {
 		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
@@ -129,6 +138,12 @@ func TestResolveDocTargets(t *testing.T) {
 	// Exact relpath.
 	if got := resolveDocTargets(v, "specs/auth.md"); len(got) != 1 || got[0].QualifiedName != "specs/auth.md" {
 		t.Errorf("exact path: got %+v", got)
+	}
+	// Root-level doc (QualifiedName == Name, so absent from nodesByQualified)
+	// must still resolve via nodesByPath — regression guard for the
+	// README.md not-found bug.
+	if got := resolveDocTargets(v, "index.md"); len(got) != 1 || got[0].QualifiedName != "index.md" {
+		t.Errorf("root-level doc: got %+v, want index.md", got)
 	}
 	// Leading ./ and extension completion.
 	if got := resolveDocTargets(v, "./specs/auth"); len(got) != 1 || got[0].QualifiedName != "specs/auth.md" {
