@@ -1099,3 +1099,60 @@ func TestSummarizeConcurrencyParallelizesAcrossFiles(t *testing.T) {
 			nFiles, elapsed, time.Duration(nFiles)*callDelay, 2*callDelay)
 	}
 }
+
+// TestCommitPackageSummaryIgnoresCancellation pins the dex #33 durability
+// guarantee. commitPackageSummary embeds + upserts a package_summary on a
+// cancellation-detached context, so a package summary the chat endpoint
+// already produced is persisted even when the surrounding cascade context
+// is cancelled — which the watcher does on every fresh fs event
+// (watch.markDirty). Before the fix the cascade collected every summary
+// into one final all-or-nothing batch that a cancellation discarded
+// wholesale, so in an active repo package summaries never converged: the
+// queue drained to 0 yet package_summary rows stayed missing.
+func TestCommitPackageSummaryIgnoresCancellation(t *testing.T) {
+	embedSrv := fakeEmbedServer(t)
+	defer embedSrv.Close()
+
+	ctx := context.Background()
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "go.mod"), "module example.com/m\n\ngo 1.26\n")
+
+	p, _ := proj.Resolve(projDir, cacheDir)
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatalf("EnsureCacheDir: %v", err)
+	}
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+	ig, _ := ignore.New(p.Root)
+	em := embed.New(embedSrv.URL, "fake", 8, 5*time.Second)
+	if err := st.EnsureEmbedModel(ctx, em.ModelName()); err != nil {
+		t.Fatalf("EnsureEmbedModel: %v", err)
+	}
+
+	ix := New(p, st, em, ig, Options{SummaryConcurrency: 1})
+
+	// An already-cancelled context stands in for the watcher preempting
+	// the idle cascade. The detached commit context must still land the
+	// row.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if err := ix.commitPackageSummary(cancelled, "internal/foo", "sha-foo", "Stub package summary.", time.Now()); err != nil {
+		t.Fatalf("commitPackageSummary under cancelled ctx: %v", err)
+	}
+
+	rows, err := st.AllSummariesByKind(ctx, chunk.KindPackageSummary)
+	if err != nil {
+		t.Fatalf("AllSummariesByKind: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 package_summary persisted despite cancellation; got %d", len(rows))
+	}
+	if rows[0] != "Stub package summary." {
+		t.Errorf("unexpected package_summary content: %q", rows[0])
+	}
+}

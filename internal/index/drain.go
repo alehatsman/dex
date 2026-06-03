@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alehatsman/dex/internal/chunk"
@@ -647,8 +648,22 @@ func (ix *Indexer) planPackageJobs(
 }
 
 // runPackageJobs fans out chat summarization across SummaryConcurrency
-// workers, then embeds and upserts the produced package_summary chunks
-// in one batch.
+// workers. Each worker commits its package_summary durably the moment it
+// is generated (see commitPackageSummary) rather than collecting all
+// results into a single all-or-nothing final batch.
+//
+// This is what makes the background cascade resumable. The watcher
+// cancels the idle context on any fresh fs event (watch.markDirty), so in
+// an active repo the cascade is routinely preempted mid-flight. With a
+// batch-at-the-end commit, a preemption lost every summary the chat
+// endpoint had already produced and the cascade never converged (dex
+// #33). Committing per package means completed packages persist; combined
+// with planPackageJobs's cache-hit skip, the cascade finishes across the
+// watcher's later flush→idle retries. The expensive chat call still
+// honours ctx and aborts promptly — only the cheap commit is protected.
+//
+// Concurrent UpsertMany is safe by design: the store opens with
+// _busy_timeout and serializes first-write dim init (store.Store).
 func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs []pkgJob) (int, error) {
 	if len(jobs) == 0 {
 		return 0, nil
@@ -658,7 +673,7 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 		conc = 1
 	}
 	modPath := readModulePath(ix.Proj.Root)
-	results := make([]*pending, len(jobs))
+	var generated atomic.Int64
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.SetLimit(conc)
 	for i := range jobs {
@@ -677,57 +692,49 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 			if strings.TrimSpace(summary) == "" {
 				return nil
 			}
-			results[i] = &pending{
-				rel: j.dir,
-				chunk: chunk.Chunk{
-					Path:    j.dir,
-					Kind:    chunk.KindPackageSummary,
-					Content: summary,
-				},
-				sha: j.pkgSHA,
+			if err := ix.commitPackageSummary(ctx, j.dir, j.pkgSHA, summary, startTime); err != nil {
+				ix.Options.Logger.Warn("commit package_summary failed", "dir", j.dir, "err", err)
+				return nil
 			}
+			generated.Add(1)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		return 0, err
+		return int(generated.Load()), err
 	}
-	var pkgEmbed []pending
-	for _, p := range results {
-		if p != nil {
-			pkgEmbed = append(pkgEmbed, *p)
-		}
-	}
-	if len(pkgEmbed) == 0 {
-		return 0, nil
-	}
-	texts := make([]string, len(pkgEmbed))
-	for i, p := range pkgEmbed {
-		texts[i] = p.chunk.EmbedText()
-	}
-	vecs, err := ix.Embed.Embed(ctx, texts)
+	return int(generated.Load()), nil
+}
+
+// commitPackageSummary embeds one package_summary, upserts it, and GCs
+// older-SHA rows for the same dir. The commit runs on a
+// cancellation-detached context (context.WithoutCancel) so neither a
+// sibling worker's failure nor an idle-context cancellation can discard a
+// summary the chat endpoint already produced — the unit of durable
+// progress is one package, not the whole cascade (dex #33). The embed +
+// upsert here are cheap relative to the chat call that produced `summary`,
+// so finishing them after a cancel costs little and buys convergence.
+func (ix *Indexer) commitPackageSummary(ctx context.Context, dir, pkgSHA, summary string, startTime time.Time) error {
+	cctx := context.WithoutCancel(ctx)
+	c := chunk.Chunk{Path: dir, Kind: chunk.KindPackageSummary, Content: summary}
+	vecs, err := ix.Embed.Embed(cctx, []string{c.EmbedText()})
 	if err != nil {
-		return 0, fmt.Errorf("package embed: %w", err)
+		return fmt.Errorf("package embed: %w", err)
 	}
-	rows := make([]store.PendingChunk, len(pkgEmbed))
-	for i, p := range pkgEmbed {
-		rows[i] = store.PendingChunk{
-			Path:       p.rel,
-			Kind:       p.chunk.Kind,
-			ContentSHA: p.sha,
-			Content:    p.chunk.Content,
-			Vec:        vecs[i],
-		}
+	row := store.PendingChunk{
+		Path:       dir,
+		Kind:       chunk.KindPackageSummary,
+		ContentSHA: pkgSHA,
+		Content:    summary,
+		Vec:        vecs[0],
 	}
-	if err := ix.Store.UpsertMany(ctx, rows, startTime); err != nil {
-		return 0, err
+	if err := ix.Store.UpsertMany(cctx, []store.PendingChunk{row}, startTime); err != nil {
+		return err
 	}
-	for _, r := range rows {
-		if _, err := ix.Store.DeleteOtherSummariesForPath(ctx, r.Path, r.Kind, r.ContentSHA); err != nil {
-			ix.Options.Logger.Warn("gc stale package_summary failed", "path", r.Path, "err", err)
-		}
+	if _, err := ix.Store.DeleteOtherSummariesForPath(cctx, dir, chunk.KindPackageSummary, pkgSHA); err != nil {
+		ix.Options.Logger.Warn("gc stale package_summary failed", "path", dir, "err", err)
 	}
-	return len(pkgEmbed), nil
+	return nil
 }
 
 // repoSummaryMaxPackages caps how many package summaries feed
