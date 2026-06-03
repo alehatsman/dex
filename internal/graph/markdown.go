@@ -48,6 +48,12 @@ var mdTag = regexp.MustCompile(`(?:^|\s)#([A-Za-z][A-Za-z0-9_/-]*)`)
 // toggle on it so link-like text inside fences doesn't emit edges.
 var mdFence = regexp.MustCompile("^\\s*(```|~~~)")
 
+// mdHeading matches an ATX heading line. Group 1 is the heading text,
+// with any trailing closing `#`s and surrounding whitespace stripped.
+// Setext headings (=== / --- underlines) are not handled (a known
+// limitation). Group is non-greedy so a closing-hash run is dropped.
+var mdHeadingRe = regexp.MustCompile(`^#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*$`)
+
 // ExtractMarkdown walks projectRoot for .md/.markdown files (honoring
 // .gitignore + .dexignore via internal/ignore) and emits one document
 // node per file plus `links` / `wikilinks` edges between documents.
@@ -78,6 +84,7 @@ func ExtractMarkdown(ctx context.Context, projectRoot string) (*ExtractResult, e
 		srcFile string // relpath (slash form)
 		srcDir  string // dir of srcFile (OS form), for relative resolution
 		target  string
+		anchor  string // `#fragment` for heading resolution; "" if none
 		kind    EdgeKind
 		style   refStyle
 		line    int
@@ -89,6 +96,10 @@ func ExtractMarkdown(ctx context.Context, projectRoot string) (*ExtractResult, e
 	// that carry it, for vault-style wikilink resolution. Multiple
 	// entries => ambiguous.
 	byBasename := make(map[string][]string)
+	// headingsByDoc[relpath] is that doc's anchor index: anchor key
+	// (GitHub slug OR lowercased literal) → heading QualifiedName. Built
+	// during the walk, consumed when resolving anchored references.
+	headingsByDoc := make(map[string]map[string]string)
 
 	walkErr := filepath.WalkDir(projectRoot, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -123,17 +134,19 @@ func ExtractMarkdown(ctx context.Context, projectRoot string) (*ExtractResult, e
 		byBasename[base] = append(byBasename[base], relSlash)
 		nodeSet.add(markdownDocNode(relSlash))
 
-		fileRefs, scanErr := scanMarkdownLinks(p)
+		fileRefs, headings, scanErr := scanMarkdown(p)
 		if scanErr != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %v", relSlash, scanErr))
 			return nil
 		}
+		headingsByDoc[relSlash] = extractHeadings(relSlash, headings, nodeSet, edgeSet)
 		dir := filepath.Dir(rel)
 		for _, r := range fileRefs {
 			refs = append(refs, pending{
 				srcFile: relSlash,
 				srcDir:  dir,
 				target:  r.target,
+				anchor:  r.anchor,
 				kind:    r.kind,
 				style:   r.style,
 				line:    r.line,
@@ -214,7 +227,16 @@ func ExtractMarkdown(ctx context.Context, projectRoot string) (*ExtractResult, e
 			continue // self-link — no edge
 		}
 		srcID := NodeID("", mdPkg, NodeDocument, r.srcFile)
+		// An anchored reference resolves to the target doc's heading node
+		// when the anchor matches (either GitHub-slug or Obsidian-literal
+		// form); otherwise it falls back to the document node so a stale
+		// anchor still links the doc rather than vanishing.
 		dstID := NodeID("", mdPkg, NodeDocument, dst)
+		if r.anchor != "" {
+			if qn, ok := lookupAnchor(headingsByDoc[dst], r.anchor); ok {
+				dstID = NodeID("", mdPkg, NodeHeading, qn)
+			}
+		}
 		edgeSet.add(Edge{
 			ID:        EdgeID(srcID, r.kind, dstID, r.srcFile, r.line),
 			Kind:      r.kind,
@@ -241,6 +263,72 @@ func markdownDocNode(relSlash string) Node {
 		FilePath:      relSlash,
 		Metadata:      map[string]any{"language": "markdown"},
 	}
+}
+
+// extractHeadings emits a NodeHeading + EdgeContains (doc → heading) for
+// each heading and returns the doc's anchor index. The index maps both
+// the GitHub slug and the lowercased literal heading text to the
+// heading's QualifiedName, so links written in either convention resolve.
+// Duplicate slugs within a doc are disambiguated GitHub-style (`-1`, `-2`).
+func extractHeadings(relSlash string, headings []mdHeading, nodes *nodeSet, edges *edgeSet) map[string]string {
+	docID := NodeID("", mdPkg, NodeDocument, relSlash)
+	anchorIdx := make(map[string]string)
+	slugCount := make(map[string]int)
+	for _, h := range headings {
+		baseSlug := headingSlug(h.text)
+		if baseSlug == "" {
+			continue
+		}
+		slug := baseSlug
+		if n := slugCount[baseSlug]; n > 0 {
+			slug = fmt.Sprintf("%s-%d", baseSlug, n)
+		}
+		slugCount[baseSlug]++
+
+		qn := relSlash + "#" + slug
+		hn := Node{
+			ID:            NodeID("", mdPkg, NodeHeading, qn),
+			Kind:          NodeHeading,
+			Name:          h.text,
+			QualifiedName: qn,
+			PackagePath:   mdPkg,
+			FilePath:      relSlash,
+			StartLine:     h.line,
+			EndLine:       h.line,
+			Metadata:      map[string]any{"language": "markdown"},
+		}
+		nodes.add(hn)
+		edges.add(Edge{
+			ID:        EdgeID(docID, EdgeContains, hn.ID, relSlash, h.line),
+			Kind:      EdgeContains,
+			SrcID:     docID,
+			DstID:     hn.ID,
+			FilePath:  relSlash,
+			StartLine: h.line,
+			EndLine:   h.line,
+		})
+		anchorIdx[slug] = qn
+		if lit := strings.ToLower(h.text); lit != slug {
+			anchorIdx[lit] = qn
+		}
+	}
+	return anchorIdx
+}
+
+// lookupAnchor resolves an incoming anchor against a doc's anchor index,
+// trying both the GitHub-slug normalisation and the lowercased-literal
+// form so `doc.md#auth-flow` and `[[doc#Auth Flow]]` both hit.
+func lookupAnchor(idx map[string]string, anchor string) (string, bool) {
+	if idx == nil {
+		return "", false
+	}
+	if qn, ok := idx[headingSlug(anchor)]; ok {
+		return qn, true
+	}
+	if qn, ok := idx[strings.ToLower(strings.TrimSpace(anchor))]; ok {
+		return qn, true
+	}
+	return "", false
 }
 
 // markdownTagNode builds the node for a `#tag`. Tags span documents, so
@@ -291,22 +379,30 @@ type mdLink struct {
 	kind   EdgeKind
 	style  refStyle
 	target string // relative path (styleRelative), note name (styleWiki), or tag (styleTag)
+	anchor string // raw `#fragment` (without `#`), for heading resolution; "" if none
 	line   int
 }
 
-// scanMarkdownLinks returns every inline link, wikilink, transclusion,
-// and tag found in the file at p. Cheap line scanner — no markdown-parser
-// dependency, mirroring scanYAMLRefs. Fenced code blocks are skipped so
-// embedded examples don't emit edges; inline code spans are not stripped
-// (a known limitation).
-func scanMarkdownLinks(p string) ([]mdLink, error) {
+// mdHeading is one ATX heading found while scanning a document.
+type mdHeading struct {
+	text string
+	line int
+}
+
+// scanMarkdown returns every inline link, wikilink, transclusion, and tag
+// reference plus every ATX heading found in the file at p. Cheap line
+// scanner — no markdown-parser dependency, mirroring scanYAMLRefs. Fenced
+// code blocks are skipped so embedded examples don't emit edges or phantom
+// headings; inline code spans are not stripped (a known limitation).
+func scanMarkdown(p string) ([]mdLink, []mdHeading, error) {
 	f, err := os.Open(p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = f.Close() }()
 
-	var out []mdLink
+	var links []mdLink
+	var headings []mdHeading
 	s := bufio.NewScanner(f)
 	s.Buffer(make([]byte, 64*1024), 1024*1024)
 	lineno := 0
@@ -321,8 +417,14 @@ func scanMarkdownLinks(p string) ([]mdLink, error) {
 		if inFence {
 			continue
 		}
+		if m := mdHeadingRe.FindStringSubmatch(line); m != nil {
+			if text := strings.TrimSpace(m[1]); text != "" {
+				headings = append(headings, mdHeading{text: text, line: lineno})
+			}
+			continue // a heading line carries no links/tags of interest
+		}
 		for _, m := range mdInlineLink.FindAllStringSubmatch(line, -1) {
-			tgt := cleanLinkTarget(m[2])
+			tgt, anchor := cleanLinkTarget(m[2])
 			if tgt == "" {
 				continue
 			}
@@ -331,10 +433,10 @@ func scanMarkdownLinks(p string) ([]mdLink, error) {
 			if m[1] == "!" {
 				kind = EdgeTransclude
 			}
-			out = append(out, mdLink{kind: kind, style: styleRelative, target: tgt, line: lineno})
+			links = append(links, mdLink{kind: kind, style: styleRelative, target: tgt, anchor: anchor, line: lineno})
 		}
 		for _, m := range mdWikiLink.FindAllStringSubmatch(line, -1) {
-			note := cleanWikiTarget(m[2])
+			note, anchor := cleanWikiTarget(m[2])
 			if note == "" {
 				continue
 			}
@@ -343,26 +445,28 @@ func scanMarkdownLinks(p string) ([]mdLink, error) {
 			if m[1] == "!" {
 				kind = EdgeTransclude
 			}
-			out = append(out, mdLink{kind: kind, style: styleWiki, target: note, line: lineno})
+			links = append(links, mdLink{kind: kind, style: styleWiki, target: note, anchor: anchor, line: lineno})
 		}
 		for _, m := range mdTag.FindAllStringSubmatch(line, -1) {
-			out = append(out, mdLink{kind: EdgeTagged, style: styleTag, target: m[1], line: lineno})
+			links = append(links, mdLink{kind: EdgeTagged, style: styleTag, target: m[1], line: lineno})
 		}
 	}
 	if err := s.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	return links, headings, nil
 }
 
 // cleanLinkTarget normalises an inline-link target: it unwraps a
-// `<...>` destination, drops a trailing `"title"`, strips a `#anchor`,
-// and returns "" for same-document anchors and external/absolute URLs
-// (which never resolve to a local document node).
-func cleanLinkTarget(raw string) string {
+// `<...>` destination, drops a trailing `"title"`, splits off the
+// `#anchor`, and returns "" path for same-document anchors and
+// external/absolute URLs (which never resolve to a local document node).
+// The second return is the raw anchor (without `#`), kept for heading
+// resolution; it is "" when there is no fragment.
+func cleanLinkTarget(raw string) (string, string) {
 	t := strings.TrimSpace(raw)
 	if t == "" {
-		return ""
+		return "", ""
 	}
 	if strings.HasPrefix(t, "<") {
 		if i := strings.Index(t, ">"); i >= 0 {
@@ -371,30 +475,52 @@ func cleanLinkTarget(raw string) string {
 	} else if i := strings.IndexAny(t, " \t"); i >= 0 {
 		t = t[:i] // drop the optional title following whitespace
 	}
+	var anchor string
 	if i := strings.Index(t, "#"); i >= 0 {
-		t = t[:i] // anchor — resolve to the document, drop the fragment
+		anchor = t[i+1:]
+		t = t[:i]
 	}
 	t = strings.TrimSpace(t)
 	if t == "" {
-		return "" // pure same-document anchor
+		return "", anchor // pure same-document anchor — no doc to resolve
 	}
 	if strings.Contains(t, "://") || strings.HasPrefix(t, "//") || strings.HasPrefix(t, "mailto:") {
-		return "" // external
+		return "", "" // external
 	}
-	return t
+	return t, anchor
 }
 
-// cleanWikiTarget strips the `|alias` and `#heading` suffixes from a
-// wikilink's inner text, leaving the note reference to resolve.
-func cleanWikiTarget(raw string) string {
+// cleanWikiTarget strips the `|alias` suffix and splits off the
+// `#heading` from a wikilink's inner text, returning (note, anchor).
+func cleanWikiTarget(raw string) (string, string) {
 	t := strings.TrimSpace(raw)
 	if i := strings.Index(t, "|"); i >= 0 {
 		t = t[:i]
 	}
+	var anchor string
 	if i := strings.Index(t, "#"); i >= 0 {
+		anchor = t[i+1:]
 		t = t[:i]
 	}
-	return strings.TrimSpace(t)
+	return strings.TrimSpace(t), strings.TrimSpace(anchor)
+}
+
+// headingSlug renders a heading's text into a GitHub-style anchor slug:
+// lowercased, spaces → hyphens, with characters other than [a-z0-9_-]
+// dropped. This is the canonical anchor form used in a heading node's
+// QualifiedName; resolution also accepts the Obsidian literal form (the
+// lowercased heading text) via the per-doc anchor index.
+func headingSlug(text string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(text)) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
 }
 
 // resolveMarkdownRef joins target against the source file's dir and
