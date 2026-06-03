@@ -1,6 +1,6 @@
 module github.com/alehatsman/dex
 
-go 1.26
+go 1.26.4
 
 require (
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
