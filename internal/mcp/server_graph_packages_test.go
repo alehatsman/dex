@@ -12,8 +12,8 @@ import (
 // an edge, degrees come from the internal import edges, and PageRank
 // flows importer → imported so the foundation outranks the entry point.
 func TestBuildPackageGraph(t *testing.T) {
-	pkg := func(id, path string) graphNode {
-		return graphNode{ID: id, Kind: graph.NodePackage, PackagePath: path}
+	pkg := func(id, path, name string) graphNode {
+		return graphNode{ID: id, Kind: graph.NodePackage, Name: name, PackagePath: path}
 	}
 	imp := func(id, importer, imported string) graphNode {
 		return graphNode{ID: id, Kind: graph.NodeImport, PackagePath: importer, QualifiedName: imported}
@@ -32,9 +32,9 @@ func TestBuildPackageGraph(t *testing.T) {
 	}
 	view := &graphView{
 		nodesByID: map[string]graphNode{
-			"pa":     pkg("pa", "mod/a"),
-			"pb":     pkg("pb", "mod/b"),
-			"pc":     pkg("pc", "mod/c"),
+			"pa":     pkg("pa", "mod/a", "main"), // executable entry point
+			"pb":     pkg("pb", "mod/b", "b"),
+			"pc":     pkg("pc", "mod/c", "c"),
 			"ia-b":   imp("ia-b", "mod/a", "mod/b"),
 			"ia-fmt": imp("ia-fmt", "mod/a", "fmt"),
 			"ib-c":   imp("ib-c", "mod/b", "mod/c"),
@@ -92,6 +92,14 @@ func TestBuildPackageGraph(t *testing.T) {
 		got := byPkg[pkg]
 		if got.InDegree != want[0] || got.OutDegree != want[1] {
 			t.Errorf("%s: in=%d out=%d, want in=%d out=%d", pkg, got.InDegree, got.OutDegree, want[0], want[1])
+		}
+	}
+
+	// is_main marks the `package main` executable (mod/a) and only it —
+	// in_degree==0 alone can't tell the entry point from an orphan helper.
+	for pkg, wantMain := range map[string]bool{"mod/a": true, "mod/b": false, "mod/c": false} {
+		if got := byPkg[pkg].IsMain; got != wantMain {
+			t.Errorf("%s: IsMain=%v, want %v", pkg, got, wantMain)
 		}
 	}
 
