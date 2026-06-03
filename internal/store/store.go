@@ -835,6 +835,31 @@ func (s *Store) PruneUnseen(ctx context.Context, cutoff time.Time) (int64, error
 	return n + n2, nil
 }
 
+// SeenTime returns the timestamp an index Run should stamp its chunks
+// with — and prune by. It is max(now, latest stored last_seen_at + 1ns)
+// over the chunks table, so a run's stamp/cutoff strictly exceeds every
+// previously stored stamp even when the wall clock steps backward (NTP /
+// VM clock resync — common on WSL2).
+//
+// Without this, a backward step makes a later run's cutoff numerically
+// smaller than the rows a prior run stamped, so PruneUnseen's strict
+// `last_seen_at < cutoff` comparison leaves deleted files' chunks
+// un-pruned (dex #32). The caller must read this BEFORE upserting (the
+// upsert bumps the max) and use the one value for every UpsertMany /
+// MarkSeen / PruneUnseen call in the run.
+func (s *Store) SeenTime(ctx context.Context, now time.Time) (time.Time, error) {
+	var maxSeen sql.NullInt64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT MAX(last_seen_at) FROM chunks`).Scan(&maxSeen); err != nil {
+		return time.Time{}, err
+	}
+	ns := now.UnixNano()
+	if maxSeen.Valid && maxSeen.Int64 >= ns {
+		ns = maxSeen.Int64 + 1
+	}
+	return time.Unix(0, ns), nil
+}
+
 // DeleteOtherSummariesForPath removes every chunk at (path, kind) whose
 // content_sha1 differs from keepSHA. Call it right after upserting a
 // fresh package_summary or repo_summary row to evict the prior

@@ -294,7 +294,14 @@ func New(p *proj.Project, s GraphStore, opts Options) *Indexer {
 // and prunes rows from files that no longer exist. Safe to invoke
 // repeatedly; idempotent on unchanged sources.
 func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
-	t0 := time.Now()
+	// Monotonic stamp/cutoff: strictly exceeds every previously stored
+	// last_seen_at, so a backward wall-clock step between runs can't make
+	// this run's prune cutoff smaller than a prior run's stamps and leave
+	// deleted nodes/edges un-pruned (dex #32). Read before upserting.
+	t0, err := g.store.GraphSeenTime(ctx, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("seen time: %w", err)
+	}
 	result, err := ExtractGo(ctx, g.project.Root)
 	if err != nil {
 		return nil, fmt.Errorf("extract: %w", err)
