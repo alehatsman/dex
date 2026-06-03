@@ -652,11 +652,15 @@ type DocLinkInput struct {
 // DocLink is one endpoint of a doc-graph edge: the document on the other
 // end, plus the file:line of the link expression that produced the edge.
 type DocLink struct {
-	Doc          string `json:"doc"`  // qualified name (relpath) of the peer document
-	Name         string `json:"name"` // basename of the peer document
-	Kind         string `json:"kind"` // "links" | "wikilinks"
+	Doc          string `json:"doc"`  // relpath of the peer document (its parent doc when the peer is a heading)
+	Name         string `json:"name"` // basename of the peer document, or the heading text
+	Kind         string `json:"kind"` // "links" | "wikilinks" | "transcludes"
 	LinkSitePath string `json:"link_site_path,omitempty"`
 	LinkSiteLine int    `json:"link_site_line,omitempty"`
+	// TargetAnchor is the heading slug the reference points at, when the
+	// edge targets a section rather than a whole document. For backlinks
+	// it names the section of the queried doc that was linked.
+	TargetAnchor string `json:"target_anchor,omitempty"`
 }
 
 // DocTarget is a resolved interpretation of the input `doc`. Returned
@@ -754,47 +758,77 @@ func (s *Server) docEdges(ctx context.Context, in DocLinkInput, backlinks bool) 
 }
 
 // collectDocEdges walks the doc-graph edges incident to targets and
-// returns the peer documents, keeping only `links`/`wikilinks` edges so
-// code edges (`calls`/`imports`/…) never leak in. backlinks=false walks
-// outgoing edges (docs the target points to); backlinks=true walks
-// incoming edges (docs that point to the target). Hits are deduped on
-// (peer doc, edge kind, link-site line), sorted deterministically, and
-// capped at k. Pure over view — unit-testable off a hand-built graph.
+// returns the peer documents, keeping only `links`/`wikilinks`/
+// `transcludes` edges so code edges (`calls`/`imports`/…) never leak in.
+// backlinks=false walks outgoing edges (docs the target points to);
+// backlinks=true walks incoming edges (docs that point to the target),
+// rolled up across the doc's heading nodes so a link to `doc.md#section`
+// still counts as a backlink of `doc.md`. When an edge targets a heading,
+// TargetAnchor names the section and Doc resolves to the parent document.
+// Hits are deduped, sorted deterministically, and capped at k. Pure over
+// view — unit-testable off a hand-built graph.
 func collectDocEdges(view *graphView, targets []graphNode, backlinks bool, k int) []DocLink {
 	seen := map[string]bool{}
 	var hits []DocLink
 	for _, t := range targets {
-		edges := view.edgesBySrc[t.ID]
+		// For backlinks, scan edges incident to the doc AND each of its
+		// heading nodes (same FilePath, kind heading), so section-targeted
+		// links roll up to the document. Outgoing links always originate
+		// from the document node, so no expansion is needed there.
+		endpoints := []string{t.ID}
 		if backlinks {
-			edges = view.edgesByDst[t.ID]
+			for _, n := range view.nodesByPath[t.FilePath] {
+				if n.Kind == graph.NodeHeading {
+					endpoints = append(endpoints, n.ID)
+				}
+			}
 		}
-		for _, e := range edges {
-			if e.Kind != graph.EdgeLinks && e.Kind != graph.EdgeWikilinks {
-				continue
-			}
-			peerID := e.DstID
+		for _, id := range endpoints {
+			edges := view.edgesBySrc[id]
 			if backlinks {
-				peerID = e.SrcID
+				edges = view.edgesByDst[id]
 			}
-			peer, ok := view.nodesByID[peerID]
-			if !ok {
-				continue
+			for _, e := range edges {
+				if e.Kind != graph.EdgeLinks && e.Kind != graph.EdgeWikilinks && e.Kind != graph.EdgeTransclude {
+					continue
+				}
+				peerID := e.DstID
+				if backlinks {
+					peerID = e.SrcID
+				}
+				peer, ok := view.nodesByID[peerID]
+				if !ok {
+					continue
+				}
+				// Render the peer: a heading peer surfaces under its parent
+				// doc with its text as the name.
+				doc, name := peer.QualifiedName, peer.Name
+				if peer.Kind == graph.NodeHeading {
+					doc = peer.FilePath
+				}
+				// The link's destination names the section, if any — true in
+				// both directions since edges always point src → (doc|heading).
+				var anchor string
+				if dn, ok := view.nodesByID[e.DstID]; ok && dn.Kind == graph.NodeHeading {
+					anchor = anchorOf(dn.QualifiedName)
+				}
+				key := peerID + "|" + string(e.Kind) + "|" + e.FilePath + ":" + fmt.Sprint(e.StartLine) + "|" + anchor
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				hits = append(hits, DocLink{
+					Doc:          doc,
+					Name:         name,
+					Kind:         string(e.Kind),
+					LinkSitePath: e.FilePath,
+					LinkSiteLine: e.StartLine,
+					TargetAnchor: anchor,
+				})
 			}
-			key := peer.ID + "|" + string(e.Kind) + "|" + e.FilePath + ":" + fmt.Sprint(e.StartLine)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			hits = append(hits, DocLink{
-				Doc:          peer.QualifiedName,
-				Name:         peer.Name,
-				Kind:         string(e.Kind),
-				LinkSitePath: e.FilePath,
-				LinkSiteLine: e.StartLine,
-			})
 		}
 	}
-	// Deterministic order: by peer doc path, then kind, then link-site line.
+	// Deterministic order: by peer doc, kind, link-site line, then anchor.
 	sort.SliceStable(hits, func(i, j int) bool {
 		a, b := hits[i], hits[j]
 		if a.Doc != b.Doc {
@@ -803,12 +837,24 @@ func collectDocEdges(view *graphView, targets []graphNode, backlinks bool, k int
 		if a.Kind != b.Kind {
 			return a.Kind < b.Kind
 		}
-		return a.LinkSiteLine < b.LinkSiteLine
+		if a.LinkSiteLine != b.LinkSiteLine {
+			return a.LinkSiteLine < b.LinkSiteLine
+		}
+		return a.TargetAnchor < b.TargetAnchor
 	})
 	if len(hits) > k {
 		hits = hits[:k]
 	}
 	return hits
+}
+
+// anchorOf returns the slug part of a heading QualifiedName ("doc.md#sec"
+// → "sec"); "" when there's no fragment.
+func anchorOf(qualifiedName string) string {
+	if i := strings.Index(qualifiedName, "#"); i >= 0 {
+		return qualifiedName[i+1:]
+	}
+	return ""
 }
 
 // resolveDocTargets maps the input `doc` onto document nodes. It tries an

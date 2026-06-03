@@ -132,6 +132,88 @@ func TestCollectDocEdgesBacklinks(t *testing.T) {
 	}
 }
 
+// TestCollectDocEdgesHeadingRollup checks that a link to a section
+// (`spec.md#flow`, a heading node) counts as a backlink of spec.md and
+// surfaces the anchor, and that outgoing links render a heading peer
+// under its parent doc. The doc→heading `contains` edge must not leak in.
+func TestCollectDocEdgesHeadingRollup(t *testing.T) {
+	mkDoc := func(rel string) graphNode {
+		return graphNode{
+			ID:   graph.NodeID("", "_markdown", graph.NodeDocument, rel),
+			Kind: graph.NodeDocument, Name: baseName(rel), QualifiedName: rel,
+			PackagePath: "_markdown", FilePath: rel,
+		}
+	}
+	spec := mkDoc("spec.md")
+	guide := mkDoc("guide.md")
+	flowQN := "spec.md#flow"
+	flow := graphNode{
+		ID:   graph.NodeID("", "_markdown", graph.NodeHeading, flowQN),
+		Kind: graph.NodeHeading, Name: "Flow", QualifiedName: flowQN,
+		PackagePath: "_markdown", FilePath: "spec.md",
+	}
+	edge := func(kind graph.EdgeKind, src, dst graphNode, line int) graphEdge {
+		return graphEdge{Kind: kind, SrcID: src.ID, DstID: dst.ID, FilePath: src.FilePath, StartLine: line}
+	}
+	edges := []graphEdge{
+		edge(graph.EdgeContains, spec, flow, 5), // doc → heading; must be ignored
+		edge(graph.EdgeLinks, guide, flow, 3),   // guide links to spec.md#flow
+		edge(graph.EdgeLinks, guide, spec, 4),   // guide links to spec.md (whole doc)
+	}
+	v := &graphView{
+		nodesByID:   map[string]graphNode{},
+		nodesByPath: map[string][]graphNode{},
+		edgesBySrc:  map[string][]graphEdge{},
+		edgesByDst:  map[string][]graphEdge{},
+	}
+	for _, n := range []graphNode{spec, guide, flow} {
+		v.nodesByID[n.ID] = n
+		v.nodesByPath[n.FilePath] = append(v.nodesByPath[n.FilePath], n)
+	}
+	for _, e := range edges {
+		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
+		v.edgesByDst[e.DstID] = append(v.edgesByDst[e.DstID], e)
+	}
+
+	// Backlinks of spec.md: both guide links roll up; the #flow one carries
+	// the anchor. The contains edge is excluded.
+	back := collectDocEdges(v, []graphNode{spec}, true, 50)
+	if len(back) != 2 {
+		t.Fatalf("backlinks = %d, want 2: %+v", len(back), back)
+	}
+	var sawAnchored, sawWhole bool
+	for _, h := range back {
+		if h.Kind == "contains" {
+			t.Errorf("contains edge leaked into backlinks")
+		}
+		if h.Doc != "guide.md" {
+			t.Errorf("backlink Doc = %q, want guide.md", h.Doc)
+		}
+		switch h.TargetAnchor {
+		case "flow":
+			sawAnchored = true
+		case "":
+			sawWhole = true
+		}
+	}
+	if !sawAnchored || !sawWhole {
+		t.Errorf("expected one #flow backlink and one whole-doc backlink; got %+v", back)
+	}
+
+	// Outgoing links of guide.md: the heading peer renders under its parent
+	// doc (spec.md) with the anchor surfaced.
+	out := collectDocEdges(v, []graphNode{guide}, false, 50)
+	var sawHeadingPeer bool
+	for _, h := range out {
+		if h.Doc == "spec.md" && h.TargetAnchor == "flow" {
+			sawHeadingPeer = true
+		}
+	}
+	if !sawHeadingPeer {
+		t.Errorf("outgoing links should render the #flow heading under spec.md; got %+v", out)
+	}
+}
+
 func TestResolveDocTargets(t *testing.T) {
 	v := docVaultView()
 

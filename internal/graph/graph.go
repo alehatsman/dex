@@ -49,6 +49,17 @@ const (
 	// as a node so links/wikilinks between docs become navigable edges,
 	// Obsidian-style. Schema is TEXT so this is a no-op migration.
 	NodeDocument NodeKind = "document"
+	// NodeTag is one `#tag` mined from markdown bodies by ExtractMarkdown.
+	// One node per distinct tag (namespaced under the markdown sentinel
+	// package); documents point at it via EdgeTagged for tag-based
+	// clustering. Schema is TEXT so this is a no-op migration.
+	NodeTag NodeKind = "tag"
+	// NodeHeading is one ATX heading within a markdown document, emitted
+	// by ExtractMarkdown for section-level deep links. QualifiedName is
+	// `relpath#slug`; the owning document points at it via EdgeContains,
+	// and anchored links/wikilinks resolve to it. Schema is TEXT so this
+	// is a no-op migration.
+	NodeHeading NodeKind = "heading"
 )
 
 // EdgeKind enumerates the structural relationships emitted by the
@@ -80,6 +91,16 @@ const (
 	// kept distinct so consumers can tell vault-style refs from explicit
 	// relative links.
 	EdgeWikilinks EdgeKind = "wikilinks"
+	// EdgeTransclude is a markdown transclusion/embed — `![[Note]]` or
+	// `![alt](other.md)` — from one document to another. Named distinctly
+	// from EdgeEmbeds (which is Go struct embedding) to avoid conflating
+	// the two under one kind string. A doc-to-doc edge, so it surfaces via
+	// graph_links/graph_backlinks alongside links/wikilinks.
+	EdgeTransclude EdgeKind = "transcludes"
+	// EdgeTagged links a document to a NodeTag it mentions (`#tag`).
+	// Document → tag direction; the reverse groups every doc carrying a
+	// tag, for tag-based clustering.
+	EdgeTagged EdgeKind = "tagged"
 )
 
 // Node is a structural symbol persisted in graph_nodes.
