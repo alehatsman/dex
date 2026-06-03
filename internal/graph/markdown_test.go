@@ -93,6 +93,60 @@ func TestExtractMarkdownVault(t *testing.T) {
 	}
 }
 
+func TestExtractMarkdownEmbedsAndTags(t *testing.T) {
+	root := copyFixture(t, "md_vault")
+	res, err := ExtractMarkdown(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ExtractMarkdown: %v", err)
+	}
+	doc := func(qn string) string { return NodeID("", mdPkg, NodeDocument, qn) }
+
+	// Transclusions: ![[glossary]] (wiki style) and ![inc](../specs/glossary.md)
+	// (relative style) both from notes/ideas.md → specs/glossary.md.
+	if findEdge(res.Edges, EdgeTransclude, doc("notes/ideas.md"), doc("specs/glossary.md")) == nil {
+		t.Errorf("missing transcludes edge notes/ideas.md → specs/glossary.md")
+	}
+	// The wiki-style and relative-style embeds sit on different lines, so
+	// they are two distinct transclusion edges.
+	var transcludeCount int
+	for _, e := range res.Edges {
+		if e.Kind == EdgeTransclude && e.SrcID == doc("notes/ideas.md") && e.DstID == doc("specs/glossary.md") {
+			transcludeCount++
+		}
+	}
+	if transcludeCount != 2 {
+		t.Errorf("transcludes ideas.md → glossary.md = %d, want 2 (wiki + relative)", transcludeCount)
+	}
+
+	// Tag nodes exist, including a nested tag.
+	for _, tag := range []string{"spec", "project/dex"} {
+		if findNode(res.Nodes, NodeTag, tag) == nil {
+			t.Errorf("missing tag node %q; tags=%v", tag, nodesOfKind(res.Nodes, NodeTag))
+		}
+	}
+	// The ATX heading "# Ideas" must NOT become a tag node.
+	if findNode(res.Nodes, NodeTag, "Ideas") != nil {
+		t.Errorf("heading '# Ideas' leaked a tag node")
+	}
+
+	// EdgeTagged ideas.md → #spec, deduped to ONE edge despite two mentions.
+	specTag := NodeID("", mdPkg, NodeTag, "spec")
+	var taggedSpec int
+	for _, e := range res.Edges {
+		if e.Kind == EdgeTagged && e.SrcID == doc("notes/ideas.md") && e.DstID == specTag {
+			taggedSpec++
+		}
+	}
+	if taggedSpec != 1 {
+		t.Errorf("tagged edges ideas.md → #spec = %d, want 1 (deduped)", taggedSpec)
+	}
+
+	// Tags are NOT documents and carry no doc-link edges.
+	if findEdge(res.Edges, EdgeLinks, doc("notes/ideas.md"), specTag) != nil {
+		t.Errorf("tag surfaced as a links edge")
+	}
+}
+
 func TestExtractMarkdownNoMarkdown(t *testing.T) {
 	root := copyFixture(t, "simple") // Go fixture, no .md files
 	res, err := ExtractMarkdown(context.Background(), root)
