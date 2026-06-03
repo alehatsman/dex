@@ -174,6 +174,32 @@ Every tool returns a `status` (`ok` / `no-index` / `no-graph` /
 with a human-readable `hint`, so the agent can fall back to grep
 instead of pretending success.
 
+### Remote access (`dex mcp --remote`)
+
+`dex serve` exposes the same tools over a bearer-gated REST API so a
+client on another host — e.g. a containerized agent — can reuse a hot
+host-side index without its own embeddings or GPU. To attach over MCP,
+run the stdio shim: it speaks MCP on stdio to the client and proxies
+every tool call to the daemon's REST surface.
+
+```bash
+# On the host: serve the pre-indexed project(s).
+dex serve --addr 127.0.0.1:7920 --project /path/to/repo   # add DEX_SERVE_TOKEN for non-loopback
+
+# In the container/client: attach the shim, bound to a project id.
+DEX_SERVE_TOKEN=… dex mcp --remote http://host:7920 --project-id <sha>
+```
+
+The project is targeted by its dex **id** (sha256 of the canonical host
+root), not by path — so a container's checkout maps onto the host's hot
+index. Pass `--project-id` explicitly (a container's checkout path
+differs from the host root, so a locally computed id would be wrong);
+`--project-root` computes the id locally when the shim runs on the same
+host, and if neither is given the shim auto-resolves when the daemon
+serves exactly one project. The token comes from `DEX_SERVE_TOKEN`. The
+shim holds no index — it's a thin proxy, so the tool surface and
+responses are identical to a local `dex mcp`.
+
 ## Environment
 
 | Variable          | Default                          | Meaning                                                                      |
