@@ -828,9 +828,29 @@ func collectDocEdges(view *graphView, targets []graphNode, backlinks bool, k int
 			}
 		}
 	}
-	// Deterministic order: by peer doc, kind, link-site line, then anchor.
+	// Order by peer importance (doc-graph PageRank, then backlink in-degree)
+	// so the most-referenced docs surface first, with path/kind/line/anchor
+	// as deterministic tiebreakers. peerRank reads the centrality persisted
+	// on the peer's document node; a heading peer borrows its parent doc's
+	// rank.
+	peerRank := func(h DocLink) (float64, int) {
+		for _, n := range view.nodesByPath[h.Doc] {
+			if n.Kind == graph.NodeDocument {
+				return n.PageRank, n.InDegree
+			}
+		}
+		return 0, 0
+	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		a, b := hits[i], hits[j]
+		pa, da := peerRank(a)
+		pb, db := peerRank(b)
+		if pa != pb {
+			return pa > pb
+		}
+		if da != db {
+			return da > db
+		}
 		if a.Doc != b.Doc {
 			return a.Doc < b.Doc
 		}
