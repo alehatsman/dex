@@ -12,6 +12,10 @@ import (
 // uses StoreAdapter wrapping *store.Store; tests can supply an in-memory
 // fake without depending on SQLite.
 type GraphStore interface {
+	// GraphSeenTime returns the monotonic stamp/cutoff for a run (see the
+	// store method): max(now, latest stored last_seen+1ns). Read once
+	// before upserting; use the result for the upserts and the prune.
+	GraphSeenTime(ctx context.Context, now time.Time) (time.Time, error)
 	GraphUpsertNodes(ctx context.Context, ns []Node, now time.Time) error
 	GraphUpsertEdges(ctx context.Context, es []Edge, now time.Time) error
 	GraphPruneUnseen(ctx context.Context, cutoff time.Time) (nodes, edges int64, err error)
@@ -51,6 +55,10 @@ type ChunkLocation struct {
 func NewStoreAdapter(s *store.Store) GraphStore { return &storeAdapter{s: s} }
 
 type storeAdapter struct{ s *store.Store }
+
+func (a *storeAdapter) GraphSeenTime(ctx context.Context, now time.Time) (time.Time, error) {
+	return a.s.GraphSeenTime(ctx, now)
+}
 
 func (a *storeAdapter) GraphUpsertNodes(ctx context.Context, ns []Node, now time.Time) error {
 	rows := make([]store.GraphNodeRow, 0, len(ns))
