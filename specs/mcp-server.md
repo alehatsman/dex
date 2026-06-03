@@ -1,0 +1,100 @@
+---
+id: mcp-server
+status: draft
+owners: [aleh]
+covers:
+  - "internal/mcp/server.go"
+  - "internal/mcp/context.go"
+  - "internal/mcp/answer.go"
+  - "internal/mcp/server_graph.go"
+  - "internal/mcp/server_summaries.go"
+---
+# MCP Server (stdio)
+
+## Intent
+
+`dex mcp` is dex's primary interface: a Model Context Protocol server spoken over
+stdio that lets Claude Code reach the local semantic index as native tools. It
+exposes a deliberately thin surface — by default a single `ask` tool that routes
+a free-text question across semantic search, symbol lookup, and graph expansion
+and (when a chat model is wired) synthesizes a cited answer — so an agent reaches
+for one dex tool before fanning out with Grep/Glob/Read. Every tool is scoped to
+one project, resolved from the caller's working directory, and every response
+carries a structured `status` so that when the index is missing or a backend is
+offline the agent gets an explicit fallback signal rather than a hard failure.
+This spec covers the stdio MCP tool interface and its contract; the same handlers
+re-exposed as REST endpoints for service clients are the http-api spec's.
+
+## Behavior
+
+- WHEN `dex mcp` starts, dex registers an MCP server (name `dex`) on stdio and
+  blocks serving JSON-RPC until the transport closes or the context is cancelled.
+- WHERE the surface is thin by default, `ask` is the only tool registered for an
+  agent to see; it composes the semantic, symbol, and graph lanes and is the
+  intended entry point before Grep/Glob/Read fan-out.
+- WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing
+  (`path:line`) prose answer grounded in the evidence bundle; WHEN the chat leg
+  is unreachable the answer is omitted and the caller falls back to the evidence
+  bundle plus the `next_action` directive.
+- WHEN `ask` runs, it infers intent
+  (behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context),
+  composes the matching lanes, and returns a compact bundle (semantic hits,
+  symbols, suggested reads with inlined contents, a `next_action`, an `avoid`
+  line); a caller MAY override the inferred intent.
+- WHERE raw lanes are opt-in, `search_semantic`, `search_symbol`,
+  `graph_neighbors`, `graph_deps`, `graph_callers`, `graph_callees`,
+  `graph_links`, `graph_backlinks`, `graph_tags`, `index_status`, and (with a
+  chat model) `view_summarize` are registered only when `DEX_EXPOSE_RAW_TOOLS`
+  is set (1/true/on/yes), for CLI parity and power use.
+- WHEN any tool resolves a project, it canonicalizes the caller's `project_root`
+  (defaulting to the server's working directory) to a single per-project index,
+  so every tool reads the index for exactly the repo the agent is working in.
+- IF no `project_root` is given and the working directory can't be determined, a
+  tool returns `status:"error"` with a hint to pass `project_root` explicitly.
+- IF the resolved project has no index on disk, a tool returns `status:"no-index"`
+  with a hint to run `dex index <root>` and fall back to grep meanwhile.
+- IF the embedding service is unreachable, a search/ask tool returns
+  `status:"embedding-service-unreachable"` with the endpoint and a hint to fall
+  back to grep/Glob/ripgrep — never a partial or empty result masquerading as ok.
+- IF the chat service is unreachable, `view_summarize` returns
+  `status:"chat-service-unreachable"`; graph tools that lack indexed edges return
+  `status:"no-graph"`; symbol lookup with no match returns `status:"not-found"`,
+  surfacing near-miss candidates when any exist.
+- WHILE the index is older than 24h, a search response is flagged `stale:true`
+  with a hint to re-index, but still answers.
+- WHEN a tool reads or summarizes a file path, the path must resolve inside the
+  project root; a path escaping the root is rejected so an MCP caller can't read
+  arbitrary files.
+- WHILE the stdio session is live and auto-watch is enabled, the first request
+  that resolves a project lazily spawns one per-project file watcher (at most once
+  per project per session) that keeps the index fresh and drains pending summaries
+  in the background; the watcher shares the session context and drains on shutdown.
+
+## Non-goals
+
+- **The REST transport.** The same Server handlers re-exposed as HTTP/REST
+  endpoints (`dex serve`, project-id-keyed URLs, bearer auth) are the **http-api**
+  spec. This spec is the stdio MCP tool interface for Claude only.
+- **What the lanes compute.** Ranking and hybrid fusion are **semantic-search**;
+  exact identifier lookup is **symbol-search**; call/import/doc edges are
+  **graph**; answer synthesis strategy detail is **ask**; vector storage is
+  **storage**. Here only the tool surface, scoping, and status contract.
+- **Building the index.** Walking, chunking, and embedding a repo are **indexing**;
+  this server only reads an already-built index (and triggers re-index via watch).
+- **The watch daemon internals.** Debounce, idle drain, and summary queueing are
+  **watch**; here only that a session lazily spawns one and drains it on shutdown.
+- **Remote MCP access.** Reaching the hot host index from a container is tracked
+  separately (dex #6: stdio→REST shim now, native HTTP-MCP transport later); this
+  spec is the local stdio server only.
+
+## Checklist
+
+- [x] `dex mcp` registers an MCP server on stdio, blocks until transport closes
+- [x] `ask` is the sole default tool; composes lanes + synthesizes cited answer
+- [x] Raw tools (search_*/graph_*/view_summarize/index_status) gated on `DEX_EXPOSE_RAW_TOOLS`
+- [x] Per-project scoping: `project_root` → canonical index (cwd default)
+- [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
+- [x] Path traversal rejected in `view_summarize` (must resolve inside project root)
+- [x] Lazy per-project auto-watcher spawned per session, drains on shutdown
+- [ ] Remote stdio→REST / HTTP-MCP transport for containerized agents (dex #6)
+- [ ] Verified against the code by the verify workflow (flip to `living`)
