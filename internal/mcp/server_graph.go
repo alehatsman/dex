@@ -769,7 +769,7 @@ func collectDocEdges(view *graphView, targets []graphNode, backlinks bool, k int
 			edges = view.edgesByDst[t.ID]
 		}
 		for _, e := range edges {
-			if e.Kind != graph.EdgeLinks && e.Kind != graph.EdgeWikilinks {
+			if e.Kind != graph.EdgeLinks && e.Kind != graph.EdgeWikilinks && e.Kind != graph.EdgeTransclude {
 				continue
 			}
 			peerID := e.DstID

@@ -26,7 +26,7 @@ Comment at top of the file is literal: *"walk → chunk → embed → upsert"*. 
 
 ## Graph pipeline (`internal/graph/graph.go:254`)
 
-Independent of chunks; runs after them in `cmd/dex/main.go:cmdIndex`. `ExtractGo` (go/types) + `ExtractYAML` + `ExtractMarkdown` (one `document` node per .md/.markdown file; `links`/`wikilinks` edges between docs, resolved relative-path / vault-basename — Obsidian-style, backlinks = reverse direction) → `linkChunks` joins nodes to their chunk rows → `GraphUpsertNodes`/`GraphUpsertEdges` → `GraphPruneUnseen` → `ComputeCentrality` (PageRank + in/out degree + cross-pkg callers; `calls` edges only — doc edges don't affect rank yet) → `GraphSetCentrality`. Skippable via `--graph=off`; `--graph=only` skips chunk passes. Doc edges surface via `graph_links`/`graph_backlinks` (not `graph_callers`/`callees`, which stay `calls`-only).
+Independent of chunks; runs after them in `cmd/dex/main.go:cmdIndex`. `ExtractGo` (go/types) + `ExtractYAML` + `ExtractMarkdown` (one `document` node per .md/.markdown file; `links`/`wikilinks`/`transcludes` edges between docs, resolved relative-path / vault-basename — Obsidian-style, backlinks = reverse direction; plus `tag` nodes + `tagged` edges mined from `#tag`s) → `linkChunks` joins nodes to their chunk rows → `GraphUpsertNodes`/`GraphUpsertEdges` → `GraphPruneUnseen` → `ComputeCentrality` (PageRank + in/out degree + cross-pkg callers; `calls` edges only — doc edges don't affect rank yet) → `GraphSetCentrality`. Skippable via `--graph=off`; `--graph=only` skips chunk passes. Doc edges surface via `graph_links`/`graph_backlinks` (not `graph_callers`/`callees`, which stay `calls`-only).
 
 ## Retrieval (read side)
 

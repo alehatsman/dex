@@ -25,15 +25,24 @@ const mdPkg = "_markdown"
 var markdownExts = map[string]bool{".md": true, ".markdown": true}
 
 // mdInlineLink matches a markdown inline link `[text](target)`. Group 1
-// captures an optional leading `!` so image/embed syntax `![alt](src)`
-// can be told apart (embeds are slice B). Group 2 is the raw target,
+// captures an optional leading `!`: `![alt](src)` is an image/file embed
+// (→ EdgeTransclude) rather than a plain link. Group 2 is the raw target,
 // which may carry a `#anchor` and/or a `"title"` we strip downstream.
 var mdInlineLink = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)]*)\)`)
 
 // mdWikiLink matches an Obsidian-style `[[Note]]` reference. Group 1 is
-// the optional leading `!` (transclusion/embed — slice B). Group 2 is
-// the inner target, which may carry `#heading` and/or `|alias`.
+// the optional leading `!` marking a transclusion `![[Note]]` (→
+// EdgeTransclude). Group 2 is the inner target, which may carry
+// `#heading` and/or `|alias`.
 var mdWikiLink = regexp.MustCompile(`(!?)\[\[([^\]]+)\]\]`)
+
+// mdTag matches an inline `#tag`. The leading boundary (start-of-line or
+// whitespace) keeps it from matching URL fragments (`auth.md#flow`) and
+// wikilink headings (`[[Note#h]]`), where `#` is preceded by a word
+// char. Requiring a leading letter rejects ATX headings (`# H` has a
+// space after `#`) and numeric fragments (`#123`). Nested tags
+// (`#area/topic`) are supported via `/`.
+var mdTag = regexp.MustCompile(`(?:^|\s)#([A-Za-z][A-Za-z0-9_/-]*)`)
 
 // mdFence matches the opening/closing line of a fenced code block. We
 // toggle on it so link-like text inside fences doesn't emit edges.
@@ -62,15 +71,15 @@ func ExtractMarkdown(ctx context.Context, projectRoot string) (*ExtractResult, e
 	edgeSet := newEdgeSet()
 	res := &ExtractResult{}
 
-	// pending holds one unresolved reference. For EdgeLinks, target is a
-	// relative path (anchor/title stripped) resolved against srcDir after
-	// the walk; for EdgeWikilinks, target is the bare note name resolved
-	// by basename against the full doc set.
+	// pending holds one unresolved reference. style selects how target is
+	// resolved (relative path / vault basename / tag) after the walk, once
+	// the full doc set is known; kind is the edge kind to emit.
 	type pending struct {
 		srcFile string // relpath (slash form)
 		srcDir  string // dir of srcFile (OS form), for relative resolution
 		target  string
 		kind    EdgeKind
+		style   refStyle
 		line    int
 	}
 	var refs []pending
@@ -126,6 +135,7 @@ func ExtractMarkdown(ctx context.Context, projectRoot string) (*ExtractResult, e
 				srcDir:  dir,
 				target:  r.target,
 				kind:    r.kind,
+				style:   r.style,
 				line:    r.line,
 			})
 		}
@@ -135,37 +145,64 @@ func ExtractMarkdown(ctx context.Context, projectRoot string) (*ExtractResult, e
 		return nil, walkErr
 	}
 
+	// seenTag dedups a (document, tag) pair to a single EdgeTagged: a doc
+	// that mentions #foo five times relates to the tag once. Links and
+	// transclusions stay per-occurrence (distinct line = distinct edge).
+	seenTag := make(map[string]struct{})
+
 	for _, r := range refs {
+		// Tags resolve to a tag node, not a document.
+		if r.style == styleTag {
+			key := r.srcFile + "\x00" + r.target
+			if _, dup := seenTag[key]; dup {
+				continue
+			}
+			seenTag[key] = struct{}{}
+			srcID := NodeID("", mdPkg, NodeDocument, r.srcFile)
+			tagNode := markdownTagNode(r.target)
+			nodeSet.add(tagNode)
+			edgeSet.add(Edge{
+				ID:        EdgeID(srcID, EdgeTagged, tagNode.ID, r.srcFile, r.line),
+				Kind:      EdgeTagged,
+				SrcID:     srcID,
+				DstID:     tagNode.ID,
+				FilePath:  r.srcFile,
+				StartLine: r.line,
+				EndLine:   r.line,
+			})
+			continue
+		}
+
 		var dst string
-		switch r.kind {
-		case EdgeLinks:
+		switch r.style {
+		case styleRelative:
 			resolved, ok := resolveMarkdownRef(projectRoot, r.srcDir, r.target)
 			if !ok {
 				continue // outside the tree / absolute — silently skipped
 			}
-			// Only markdown targets join the doc graph. Links to images,
-			// code, or other assets are out of scope and skipped without
-			// a warning (they aren't broken, just not documents).
+			// Only markdown targets join the doc graph. References to images,
+			// code, or other assets are out of scope and skipped without a
+			// warning (they aren't broken, just not documents).
 			if !markdownExts[strings.ToLower(path.Ext(resolved))] {
 				continue
 			}
 			if _, ok := knownFiles[resolved]; !ok {
 				res.Warnings = append(res.Warnings,
-					fmt.Sprintf("%s:%d: broken link to %s", r.srcFile, r.line, r.target))
+					fmt.Sprintf("%s:%d: broken %s to %s", r.srcFile, r.line, refNoun(r.kind), r.target))
 				continue
 			}
 			dst = resolved
-		case EdgeWikilinks:
+		case styleWiki:
 			resolved, ok, ambiguous := resolveWikilink(r.target, byBasename, knownFiles)
 			if ambiguous {
 				res.Warnings = append(res.Warnings,
-					fmt.Sprintf("%s:%d: ambiguous wikilink [[%s]] (%d matches)",
-						r.srcFile, r.line, r.target, len(byBasename[basenameKey(r.target)])))
+					fmt.Sprintf("%s:%d: ambiguous %s [[%s]] (%d matches)",
+						r.srcFile, r.line, refNoun(r.kind), r.target, len(byBasename[basenameKey(r.target)])))
 				continue
 			}
 			if !ok {
 				res.Warnings = append(res.Warnings,
-					fmt.Sprintf("%s:%d: unresolved wikilink [[%s]]", r.srcFile, r.line, r.target))
+					fmt.Sprintf("%s:%d: unresolved %s [[%s]]", r.srcFile, r.line, refNoun(r.kind), r.target))
 				continue
 			}
 			dst = resolved
@@ -206,6 +243,31 @@ func markdownDocNode(relSlash string) Node {
 	}
 }
 
+// markdownTagNode builds the node for a `#tag`. Tags span documents, so
+// they carry no FilePath; the tag text is both Name and QualifiedName.
+func markdownTagNode(tag string) Node {
+	return Node{
+		ID:            NodeID("", mdPkg, NodeTag, tag),
+		Kind:          NodeTag,
+		Name:          tag,
+		QualifiedName: tag,
+		PackagePath:   mdPkg,
+		Metadata:      map[string]any{"language": "markdown"},
+	}
+}
+
+// refNoun returns the human noun for a reference kind, for warnings.
+func refNoun(kind EdgeKind) string {
+	switch kind {
+	case EdgeTransclude:
+		return "embed"
+	case EdgeWikilinks:
+		return "wikilink"
+	default:
+		return "link"
+	}
+}
+
 // basenameKey is the lowercased, extension-less basename used to key the
 // wikilink resolution index. "docs/Spec.md" → "spec".
 func basenameKey(p string) string {
@@ -213,16 +275,30 @@ func basenameKey(p string) string {
 	return strings.ToLower(strings.TrimSuffix(b, path.Ext(b)))
 }
 
+// refStyle is how a reference's target must be resolved, kept separate
+// from the edge kind so the same resolution mechanism serves several
+// edge semantics (e.g. a relative-path target may be a link OR an
+// inline-image transclusion).
+type refStyle int
+
+const (
+	styleRelative refStyle = iota // resolve target as a path relative to the source dir
+	styleWiki                     // resolve target by vault basename
+	styleTag                      // target is a tag name; no doc resolution
+)
+
 type mdLink struct {
 	kind   EdgeKind
-	target string // raw target: relative path (links) or note name (wikilinks)
+	style  refStyle
+	target string // relative path (styleRelative), note name (styleWiki), or tag (styleTag)
 	line   int
 }
 
-// scanMarkdownLinks returns every inline link and wikilink found in the
-// file at p. Cheap line scanner — no markdown-parser dependency, mirroring
-// scanYAMLRefs. Fenced code blocks are skipped so embedded examples don't
-// emit edges; inline code spans are not stripped (a known limitation).
+// scanMarkdownLinks returns every inline link, wikilink, transclusion,
+// and tag found in the file at p. Cheap line scanner — no markdown-parser
+// dependency, mirroring scanYAMLRefs. Fenced code blocks are skipped so
+// embedded examples don't emit edges; inline code spans are not stripped
+// (a known limitation).
 func scanMarkdownLinks(p string) ([]mdLink, error) {
 	f, err := os.Open(p)
 	if err != nil {
@@ -246,20 +322,31 @@ func scanMarkdownLinks(p string) ([]mdLink, error) {
 			continue
 		}
 		for _, m := range mdInlineLink.FindAllStringSubmatch(line, -1) {
+			tgt := cleanLinkTarget(m[2])
+			if tgt == "" {
+				continue
+			}
+			// `![alt](x)` is an embed (transclusion); `[t](x)` is a link.
+			kind := EdgeLinks
 			if m[1] == "!" {
-				continue // image/embed — slice B
+				kind = EdgeTransclude
 			}
-			if tgt := cleanLinkTarget(m[2]); tgt != "" {
-				out = append(out, mdLink{kind: EdgeLinks, target: tgt, line: lineno})
-			}
+			out = append(out, mdLink{kind: kind, style: styleRelative, target: tgt, line: lineno})
 		}
 		for _, m := range mdWikiLink.FindAllStringSubmatch(line, -1) {
+			note := cleanWikiTarget(m[2])
+			if note == "" {
+				continue
+			}
+			// `![[Note]]` transcludes; `[[Note]]` links.
+			kind := EdgeWikilinks
 			if m[1] == "!" {
-				continue // transclusion/embed — slice B
+				kind = EdgeTransclude
 			}
-			if note := cleanWikiTarget(m[2]); note != "" {
-				out = append(out, mdLink{kind: EdgeWikilinks, target: note, line: lineno})
-			}
+			out = append(out, mdLink{kind: kind, style: styleWiki, target: note, line: lineno})
+		}
+		for _, m := range mdTag.FindAllStringSubmatch(line, -1) {
+			out = append(out, mdLink{kind: EdgeTagged, style: styleTag, target: m[1], line: lineno})
 		}
 	}
 	if err := s.Err(); err != nil {
