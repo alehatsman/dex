@@ -19,6 +19,8 @@ package mcp
 //	POST /projects/{id}/graph/deps         — body: GraphDepsInput
 //	POST /projects/{id}/graph/callers      — body: CallEdgeInput
 //	POST /projects/{id}/graph/callees      — body: CallEdgeInput
+//	POST /projects/{id}/graph/links        — body: DocLinkInput
+//	POST /projects/{id}/graph/backlinks    — body: DocLinkInput
 //	GET  /projects/{id}/graph/packages     — whole package import DAG
 //	POST /projects/{id}/view/summarize     — body: SummarizeInput
 //
@@ -246,6 +248,8 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/graph/deps", s.handleGraphDeps(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/callers", s.handleGraphCallers(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/callees", s.handleGraphCallees(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/links", s.handleGraphLinks(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/backlinks", s.handleGraphBacklinks(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/view/summarize", s.handleSummarize(opts.Projects))
 
@@ -527,6 +531,14 @@ func (s *Server) handleGraphCallers(projects map[string]string) http.HandlerFunc
 
 func (s *Server) handleGraphCallees(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *CallEdgeInput, root string) { in.ProjectRoot = root }, s.GraphCallees)
+}
+
+func (s *Server) handleGraphLinks(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *DocLinkInput, root string) { in.ProjectRoot = root }, s.GraphLinks)
+}
+
+func (s *Server) handleGraphBacklinks(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *DocLinkInput, root string) { in.ProjectRoot = root }, s.GraphBacklinks)
 }
 
 func (s *Server) handleSummarize(projects map[string]string) http.HandlerFunc {
