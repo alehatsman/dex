@@ -822,9 +822,14 @@ func resolveDocTargets(view *graphView, doc string) []graphNode {
 	}
 	isDoc := func(n graphNode) bool { return n.Kind == graph.NodeDocument }
 
-	// 1) Exact relpath (qualified name) match, with/without an extension.
+	// 1) Exact relpath match, with/without an extension. Resolve via
+	//    nodesByPath (keyed on FilePath) — NOT nodesByQualified, which
+	//    loadGraphView populates only when QualifiedName != Name, so a
+	//    root-level doc like "README.md" (where they're equal) is absent
+	//    from it. A document's FilePath is its relpath, so this is also
+	//    the natural index for a path lookup.
 	for _, cand := range []string{doc, doc + ".md", doc + ".markdown"} {
-		for _, n := range view.nodesByQualified[cand] {
+		for _, n := range view.nodesByPath[cand] {
 			if isDoc(n) {
 				return []graphNode{n}
 			}
