@@ -24,6 +24,8 @@ package mcp
 //	POST /projects/{id}/graph/tags         — body: TagInput
 //	GET  /projects/{id}/graph/packages     — whole package import DAG
 //	POST /projects/{id}/view/summarize     — body: SummarizeInput
+//	*    /projects/{id}/mcp                 — native streamable-HTTP MCP
+//	                                          transport (http_mcp.go), not REST
 //
 // The URL's {id} resolves to a project root via the operator-provided
 // registry (RunHTTPOptions.Projects). The corresponding Input struct's
@@ -254,6 +256,14 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/graph/tags", s.handleGraphTags(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/view/summarize", s.handleSummarize(opts.Projects))
+
+	// Native streamable-HTTP MCP transport — clients attach dex directly over
+	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
+	// the streamable protocol uses POST (messages), GET (SSE stream), and
+	// DELETE (session end). Same bearer auth via the authed submux.
+	if mcpHandler := s.newMCPHandler(opts.Projects); mcpHandler != nil {
+		authed.Handle("/v1/projects/{id}/mcp", mcpHandler)
+	}
 
 	wrapped := authMiddleware(opts.Token, authed)
 	mux.Handle("/v1/projects", wrapped)
