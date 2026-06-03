@@ -505,3 +505,32 @@ func scanStringColumn(rows *sql.Rows) ([]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// GraphSeenTime returns the timestamp a graph Run should stamp its
+// nodes/edges with — and prune by. It is max(now, latest stored
+// last_seen_at + 1ns) across graph_nodes and graph_edges, so a run's
+// stamp/cutoff strictly exceeds every previously stored stamp even when
+// the wall clock steps backward (NTP / VM clock resync — common on WSL2).
+//
+// Without this, a backward step makes a later run's cutoff numerically
+// smaller than the rows a prior run stamped, so GraphPruneUnseen's strict
+// `last_seen_at < cutoff` comparison leaves deleted entities un-pruned
+// (dex #32). Callers must read this BEFORE upserting (the upsert bumps the
+// max) and use the one value for both GraphUpsertNodes/Edges and
+// GraphPruneUnseen.
+func (s *Store) GraphSeenTime(ctx context.Context, now time.Time) (time.Time, error) {
+	var maxSeen sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT MAX(m) FROM (
+			SELECT MAX(last_seen_at) AS m FROM graph_nodes
+			UNION ALL
+			SELECT MAX(last_seen_at) AS m FROM graph_edges
+		)`).Scan(&maxSeen); err != nil {
+		return time.Time{}, err
+	}
+	ns := now.UnixNano()
+	if maxSeen.Valid && maxSeen.Int64 >= ns {
+		ns = maxSeen.Int64 + 1
+	}
+	return time.Unix(0, ns), nil
+}
