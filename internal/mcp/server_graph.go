@@ -640,3 +640,219 @@ func resolveCallTargets(view *graphView, name, pkgFilter string) []graphNode {
 	}
 	return out
 }
+
+// ─── tools: graph_links / graph_backlinks ─────────────────────────────────
+
+type DocLinkInput struct {
+	Doc         string `json:"doc" jsonschema:"path to a markdown document relative to the project root (e.g. 'docs/spec.md'); a bare basename like 'spec' is also accepted when unambiguous"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	K           int    `json:"k,omitempty" jsonschema:"max hits to return (default 50, max 200)"`
+}
+
+// DocLink is one endpoint of a doc-graph edge: the document on the other
+// end, plus the file:line of the link expression that produced the edge.
+type DocLink struct {
+	Doc          string `json:"doc"`  // qualified name (relpath) of the peer document
+	Name         string `json:"name"` // basename of the peer document
+	Kind         string `json:"kind"` // "links" | "wikilinks"
+	LinkSitePath string `json:"link_site_path,omitempty"`
+	LinkSiteLine int    `json:"link_site_line,omitempty"`
+}
+
+// DocTarget is a resolved interpretation of the input `doc`. Returned
+// even with no links so the caller can confirm the resolution.
+type DocTarget struct {
+	Doc  string `json:"doc"`
+	Name string `json:"name"`
+}
+
+type DocLinkOutput struct {
+	Status  string      `json:"status"` // "ok" | "no-index" | "no-graph" | "not-found" | "error"
+	Hint    string      `json:"hint,omitempty"`
+	Project string      `json:"project,omitempty"`
+	Targets []DocTarget `json:"targets,omitempty"`
+	Hits    []DocLink   `json:"hits,omitempty"`
+}
+
+// GraphLinks, GraphBacklinks are exported wrappers so the CLI can reuse
+// the handlers, mirroring GraphCallers/GraphCallees.
+func (s *Server) GraphLinks(ctx context.Context, in DocLinkInput) (DocLinkOutput, error) {
+	_, out, err := s.graphLinks(ctx, nil, in)
+	return out, err
+}
+
+func (s *Server) GraphBacklinks(ctx context.Context, in DocLinkInput) (DocLinkOutput, error) {
+	_, out, err := s.graphBacklinks(ctx, nil, in)
+	return out, err
+}
+
+func (s *Server) graphLinks(ctx context.Context, _ *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
+	return s.docEdges(ctx, in, false)
+}
+
+func (s *Server) graphBacklinks(ctx context.Context, _ *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
+	return s.docEdges(ctx, in, true)
+}
+
+// docEdges is the shared body for the doc-graph verbs. backlinks=false
+// (graph_links) walks edgesBySrc — documents this doc points to;
+// backlinks=true (graph_backlinks) walks edgesByDst — documents that
+// point here. Both keep only `links`/`wikilinks` edges, so it never
+// surfaces code (`calls`/`imports`) edges even on a mixed node id.
+func (s *Server) docEdges(ctx context.Context, in DocLinkInput, backlinks bool) (*sdk.CallToolResult, DocLinkOutput, error) {
+	if strings.TrimSpace(in.Doc) == "" {
+		return nil, DocLinkOutput{Status: "error", Hint: "doc is empty"}, nil
+	}
+	p, hint := s.resolveProject(in.ProjectRoot)
+	if hint != "" {
+		return nil, DocLinkOutput{Status: "error", Hint: hint}, nil
+	}
+	if _, err := os.Stat(p.DBPath); errors.Is(err, os.ErrNotExist) {
+		return nil, DocLinkOutput{Status: "no-index", Project: p.Root,
+			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
+	}
+	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	if err != nil {
+		return nil, DocLinkOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
+	}
+	defer func() { _ = st.Close() }()
+
+	view, err := loadGraphView(ctx, st)
+	if err != nil {
+		return nil, DocLinkOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
+	}
+	if view == nil {
+		return nil, DocLinkOutput{Status: "no-graph", Project: p.Root,
+			Hint: fmt.Sprintf("graph not indexed for %s — run `dex index %s --graph=only`.", p.Root, p.Root)}, nil
+	}
+
+	targets := resolveDocTargets(view, in.Doc)
+	if len(targets) == 0 {
+		// Distinguish "no docs at all" (needs reindex with this release)
+		// from "that path isn't a known doc" (likely a typo).
+		hint := fmt.Sprintf("no document node matches %q — pass a path relative to the project root, e.g. 'docs/spec.md'.", in.Doc)
+		if len(view.docNodes()) == 0 {
+			hint = "graph has no document nodes — reindex with this release (`dex index . --graph=only`) to extract the markdown doc graph."
+		}
+		return nil, DocLinkOutput{Status: "not-found", Project: p.Root, Hint: hint}, nil
+	}
+
+	k := in.K
+	if k <= 0 {
+		k = 50
+	}
+	if k > 200 {
+		k = 200
+	}
+
+	out := DocLinkOutput{Status: "ok", Project: p.Root}
+	for _, t := range targets {
+		out.Targets = append(out.Targets, DocTarget{Doc: t.QualifiedName, Name: t.Name})
+	}
+	out.Hits = collectDocEdges(view, targets, backlinks, k)
+	return nil, out, nil
+}
+
+// collectDocEdges walks the doc-graph edges incident to targets and
+// returns the peer documents, keeping only `links`/`wikilinks` edges so
+// code edges (`calls`/`imports`/…) never leak in. backlinks=false walks
+// outgoing edges (docs the target points to); backlinks=true walks
+// incoming edges (docs that point to the target). Hits are deduped on
+// (peer doc, edge kind, link-site line), sorted deterministically, and
+// capped at k. Pure over view — unit-testable off a hand-built graph.
+func collectDocEdges(view *graphView, targets []graphNode, backlinks bool, k int) []DocLink {
+	seen := map[string]bool{}
+	var hits []DocLink
+	for _, t := range targets {
+		edges := view.edgesBySrc[t.ID]
+		if backlinks {
+			edges = view.edgesByDst[t.ID]
+		}
+		for _, e := range edges {
+			if e.Kind != graph.EdgeLinks && e.Kind != graph.EdgeWikilinks {
+				continue
+			}
+			peerID := e.DstID
+			if backlinks {
+				peerID = e.SrcID
+			}
+			peer, ok := view.nodesByID[peerID]
+			if !ok {
+				continue
+			}
+			key := peer.ID + "|" + string(e.Kind) + "|" + e.FilePath + ":" + fmt.Sprint(e.StartLine)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			hits = append(hits, DocLink{
+				Doc:          peer.QualifiedName,
+				Name:         peer.Name,
+				Kind:         string(e.Kind),
+				LinkSitePath: e.FilePath,
+				LinkSiteLine: e.StartLine,
+			})
+		}
+	}
+	// Deterministic order: by peer doc path, then kind, then link-site line.
+	sort.SliceStable(hits, func(i, j int) bool {
+		a, b := hits[i], hits[j]
+		if a.Doc != b.Doc {
+			return a.Doc < b.Doc
+		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return a.LinkSiteLine < b.LinkSiteLine
+	})
+	if len(hits) > k {
+		hits = hits[:k]
+	}
+	return hits
+}
+
+// resolveDocTargets maps the input `doc` onto document nodes. It tries an
+// exact relpath match first (the qualified name of a doc node is its
+// relpath), then falls back to a unique basename match for convenience.
+func resolveDocTargets(view *graphView, doc string) []graphNode {
+	doc = strings.TrimSpace(doc)
+	doc = strings.TrimPrefix(filepath.ToSlash(doc), "./")
+	if doc == "" {
+		return nil
+	}
+	isDoc := func(n graphNode) bool { return n.Kind == graph.NodeDocument }
+
+	// 1) Exact relpath (qualified name) match, with/without an extension.
+	for _, cand := range []string{doc, doc + ".md", doc + ".markdown"} {
+		for _, n := range view.nodesByQualified[cand] {
+			if isDoc(n) {
+				return []graphNode{n}
+			}
+		}
+	}
+
+	// 2) Unique basename match across document nodes.
+	base := strings.ToLower(doc)
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	if dot := strings.LastIndex(base, "."); dot >= 0 {
+		base = base[:dot]
+	}
+	var matches []graphNode
+	for _, n := range view.docNodes() {
+		nb := strings.ToLower(n.Name)
+		if dot := strings.LastIndex(nb, "."); dot >= 0 {
+			nb = nb[:dot]
+		}
+		if nb == base {
+			matches = append(matches, n)
+		}
+	}
+	if len(matches) == 1 {
+		return matches
+	}
+	// Ambiguous (or zero) basename → caller reports not-found; exact
+	// relpath is the disambiguator.
+	return nil
+}
