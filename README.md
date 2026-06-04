@@ -162,6 +162,7 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 | `search_context`   | standard+ | Embed query → top-K file signatures + best symbol body in one call.         |
 | `session`          | standard+ | Declare / read a session task for task-relevance inline in file_view.       |
 | `knowledge`        | standard+ | Store / recall / consolidate cross-session facts; revision tracking on re-add. |
+| `agent`            | standard+ | Multi-agent coordination bus: `announce`/`post`/`read`/`list` — share findings across concurrent agents. Topic filtering + `since_id` pagination. |
 | `file_tree`        | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
 | `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice. Pass `paths[]` (max 10) for batch. Returns `etag`; pass it back on re-reads for `status=unchanged` (session-aware). |
 | `search_semantic`  | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
