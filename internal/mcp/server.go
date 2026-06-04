@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -617,6 +618,7 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 type SummarizeInput struct {
 	Path        string  `json:"path" jsonschema:"file path to summarize; relative paths are resolved against project_root"`
 	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	Mode        string  `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
 	StartLine   int     `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
 	EndLine     int     `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
 	Focus       string  `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
@@ -648,7 +650,14 @@ const maxSummarizeBytes = 64 * 1024
 
 func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	out := SummarizeOutput{}
-	if s.ChatClient == nil {
+
+	mode := strings.ToLower(strings.TrimSpace(in.Mode))
+	if mode == "" {
+		mode = "full"
+	}
+	isFull := mode == "full"
+
+	if isFull && s.ChatClient == nil {
 		return nil, SummarizeOutput{Status: "error", Hint: "chat client not configured on this server"}, nil
 	}
 	if strings.TrimSpace(in.Path) == "" {
@@ -668,8 +677,10 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 	}
 	s.markForeground(p)
 	out.Project = p.Root
-	out.Endpoint = s.ChatClient.Endpoint()
-	out.Model = s.ChatClient.ModelName()
+	if isFull {
+		out.Endpoint = s.ChatClient.Endpoint()
+		out.Model = s.ChatClient.ModelName()
+	}
 
 	// Resolve path under the project root. Reject anything that
 	// escapes it (so an MCP caller can't read /etc/passwd by passing
@@ -689,11 +700,11 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 	if err != nil || strings.HasPrefix(relTarget, "..") || relTarget == ".." {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("path %s is outside project root %s", target, p.Root)}, nil
 	}
-	st, err := os.Stat(realTarget)
+	fi, err := os.Stat(realTarget)
 	if err != nil {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("stat: %v", err)}, nil
 	}
-	if st.IsDir() {
+	if fi.IsDir() {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("%s is a directory — pass a file path", relTarget)}, nil
 	}
 	out.Path = relTarget
@@ -703,45 +714,129 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("read: %v", err)}, nil
 	}
 
-	slice, sliceStart, sliceEnd := sliceLines(data, in.StartLine, in.EndLine)
-	out.StartLine = sliceStart
-	out.EndLine = sliceEnd
+	switch {
+	case strings.HasPrefix(mode, "lines:"):
+		rest := strings.TrimPrefix(mode, "lines:")
+		start, end, ok := parseLinesRange(rest)
+		if !ok {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("invalid lines mode %q — expected lines:N-M (e.g. lines:10-40)", in.Mode)}, nil
+		}
+		slice, sliceStart, sliceEnd := sliceLines(data, start, end)
+		out.StartLine = sliceStart
+		out.EndLine = sliceEnd
+		out.Bytes = len(slice)
+		out.Status = "ok"
+		out.Content = string(slice)
+		return nil, out, nil
 
-	if len(slice) > maxSummarizeBytes {
-		slice = slice[:maxSummarizeBytes]
-		out.Truncated = true
-	}
-	out.Bytes = len(slice)
-
-	system := buildSummarizeSystem(in.Focus)
-	userContent := fmt.Sprintf("FILE: %s (lines %d-%d)\n\n```\n%s\n```",
-		relTarget, sliceStart, sliceEnd, slice)
-
-	resp, err := s.ChatClient.Generate(ctx, []chat.Message{
-		{Role: "system", Content: system},
-		{Role: "user", Content: userContent},
-	}, chat.Options{
-		Temperature: in.Temperature,
-		MaxTokens:   in.MaxTokens,
-	})
-	if err != nil {
-		if errors.Is(err, chat.ErrUnreachable) {
-			out.Status = "chat-service-unreachable"
-			out.Hint = "the local chat-completion service is offline."
+	case mode == "signatures":
+		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
+		}
+		defer st.Close()
+		syms, err := st.SymbolsByFile(ctx, relTarget)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
+		}
+		if len(syms) == 0 {
+			out.Status = "ok"
+			out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
 			return nil, out, nil
 		}
-		out.Status = "error"
-		out.Hint = fmt.Sprintf("chat: %v", err)
+		content := formatSignatures(data, syms, relTarget)
+		out.Status = "ok"
+		out.Content = content
+		out.Bytes = len(content)
+		return nil, out, nil
+
+	default: // full
+		slice, sliceStart, sliceEnd := sliceLines(data, in.StartLine, in.EndLine)
+		out.StartLine = sliceStart
+		out.EndLine = sliceEnd
+		if len(slice) > maxSummarizeBytes {
+			slice = slice[:maxSummarizeBytes]
+			out.Truncated = true
+		}
+		out.Bytes = len(slice)
+
+		system := buildSummarizeSystem(in.Focus)
+		userContent := fmt.Sprintf("FILE: %s (lines %d-%d)\n\n```\n%s\n```",
+			relTarget, sliceStart, sliceEnd, slice)
+
+		resp, err := s.ChatClient.Generate(ctx, []chat.Message{
+			{Role: "system", Content: system},
+			{Role: "user", Content: userContent},
+		}, chat.Options{
+			Temperature: in.Temperature,
+			MaxTokens:   in.MaxTokens,
+		})
+		if err != nil {
+			if errors.Is(err, chat.ErrUnreachable) {
+				out.Status = "chat-service-unreachable"
+				out.Hint = "the local chat-completion service is offline."
+				return nil, out, nil
+			}
+			out.Status = "error"
+			out.Hint = fmt.Sprintf("chat: %v", err)
+			return nil, out, nil
+		}
+
+		out.Status = "ok"
+		out.Content = resp.Content
+		out.FinishReason = resp.FinishReason
+		if resp.Model != "" {
+			out.Model = resp.Model
+		}
 		return nil, out, nil
 	}
+}
 
-	out.Status = "ok"
-	out.Content = resp.Content
-	out.FinishReason = resp.FinishReason
-	if resp.Model != "" {
-		out.Model = resp.Model
+// parseLinesRange parses "N-M" from a lines:N-M mode string.
+func parseLinesRange(s string) (start, end int, ok bool) {
+	i := strings.IndexByte(s, '-')
+	if i <= 0 {
+		return 0, 0, false
 	}
-	return nil, out, nil
+	n, err1 := strconv.Atoi(s[:i])
+	m, err2 := strconv.Atoi(s[i+1:])
+	if err1 != nil || err2 != nil || n < 1 || m < n {
+		return 0, 0, false
+	}
+	return n, m, true
+}
+
+// sigWindow is the max additional lines past start_line included as a
+// symbol's signature. Covers multi-line Go/Python/TS declarations
+// without pulling in the body.
+const sigWindow = 4
+
+// formatSignatures produces a compact listing of indexed symbols with
+// their opening signature lines extracted from src.
+func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string) string {
+	lines := bytes.Split(bytes.TrimRight(src, "\n"), []byte("\n"))
+	var b strings.Builder
+	fmt.Fprintf(&b, "FILE: %s (%d symbols)\n\n", relPath, len(syms))
+	for _, sym := range syms {
+		si := sym.StartLine - 1 // 0-indexed
+		if si < 0 || si >= len(lines) {
+			continue
+		}
+		ei := si + sigWindow
+		if e := sym.EndLine - 1; e < ei {
+			ei = e
+		}
+		if ei >= len(lines) {
+			ei = len(lines) - 1
+		}
+		fmt.Fprintf(&b, "%s %s (lines %d-%d)\n", sym.Kind, sym.QualifiedName, sym.StartLine, sym.EndLine)
+		for i := si; i <= ei; i++ {
+			b.Write(lines[i])
+			b.WriteByte('\n')
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // sliceLines returns the byte slice of `data` between lines start and

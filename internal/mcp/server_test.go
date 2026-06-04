@@ -799,3 +799,152 @@ func TestStartEagerWatchersNoopWhenDisabled(t *testing.T) {
 		t.Errorf("startEagerWatchers must be a no-op when AutoWatch disabled; got %d", got)
 	}
 }
+
+func TestParseLinesRange(t *testing.T) {
+	tests := []struct {
+		in        string
+		wantStart int
+		wantEnd   int
+		wantOK    bool
+	}{
+		{"10-40", 10, 40, true},
+		{"1-1", 1, 1, true},
+		{"1-100", 1, 100, true},
+		{"", 0, 0, false},
+		{"10", 0, 0, false},
+		{"40-10", 0, 0, false}, // end < start
+		{"0-10", 0, 0, false},  // start < 1
+		{"abc-10", 0, 0, false},
+		{"10-abc", 0, 0, false},
+		{"-10", 0, 0, false},
+	}
+	for _, tc := range tests {
+		s, e, ok := parseLinesRange(tc.in)
+		if ok != tc.wantOK {
+			t.Errorf("parseLinesRange(%q): ok=%v want %v", tc.in, ok, tc.wantOK)
+			continue
+		}
+		if ok && (s != tc.wantStart || e != tc.wantEnd) {
+			t.Errorf("parseLinesRange(%q): got %d-%d want %d-%d", tc.in, s, e, tc.wantStart, tc.wantEnd)
+		}
+	}
+}
+
+func TestSummarizeLinesMode(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	src := "line1\nline2\nline3\nline4\nline5\n"
+	writeFile(t, filepath.Join(projDir, "f.txt"), src)
+
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{IndexDir: cacheDir}
+	_, out, err := s.summarize(context.Background(), nil, SummarizeInput{
+		Path:        "f.txt",
+		ProjectRoot: projDir,
+		Mode:        "lines:2-4",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status=%q hint=%q", out.Status, out.Hint)
+	}
+	if out.Model != "" || out.Endpoint != "" {
+		t.Error("lines mode must not touch chat client fields")
+	}
+	for _, want := range []string{"line2", "line3", "line4"} {
+		if !strings.Contains(out.Content, want) {
+			t.Errorf("content missing %q; got: %s", want, out.Content)
+		}
+	}
+	if strings.Contains(out.Content, "line1") || strings.Contains(out.Content, "line5") {
+		t.Errorf("content leaked out-of-range lines; got: %s", out.Content)
+	}
+}
+
+func TestSummarizeLinesModeInvalidRange(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "f.txt"), "hello\n")
+
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{IndexDir: cacheDir}
+	_, out, _ := s.summarize(context.Background(), nil, SummarizeInput{
+		Path:        "f.txt",
+		ProjectRoot: projDir,
+		Mode:        "lines:bad",
+	})
+	if out.Status != "error" {
+		t.Errorf("expected error status for bad range, got %q", out.Status)
+	}
+}
+
+func TestSummarizeSignaturesModeNoIndex(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "f.go"), "package main\nfunc F() {}\n")
+
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+	// Open store so migration runs, but don't index — zero symbols.
+	st, err := store.Open(context.Background(), p.DBPath)
+	if err != nil {
+		t.Skip("fts5 not available:", err)
+	}
+	st.Close()
+
+	s := &Server{IndexDir: cacheDir}
+	_, out, err := s.summarize(context.Background(), nil, SummarizeInput{
+		Path:        "f.go",
+		ProjectRoot: projDir,
+		Mode:        "signatures",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status=%q hint=%q", out.Status, out.Hint)
+	}
+	if out.Hint == "" {
+		t.Error("expected a hint when no symbols indexed")
+	}
+}
+
+func TestFormatSignatures(t *testing.T) {
+	src := []byte("package main\n\nfunc Foo() {\n\treturn\n}\n\nfunc Bar(x int) int {\n\treturn x\n}\n")
+	syms := []store.GraphSymbol{
+		{Name: "Foo", QualifiedName: "Foo", Kind: "function", FilePath: "f.go", StartLine: 3, EndLine: 5},
+		{Name: "Bar", QualifiedName: "Bar", Kind: "function", FilePath: "f.go", StartLine: 7, EndLine: 9},
+	}
+	got := formatSignatures(src, syms, "f.go")
+	for _, want := range []string{
+		"FILE: f.go (2 symbols)",
+		"function Foo (lines 3-5)",
+		"func Foo()",
+		"function Bar (lines 7-9)",
+		"func Bar(x int) int {",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("formatSignatures output missing %q\ngot:\n%s", want, got)
+		}
+	}
+}
