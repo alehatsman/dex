@@ -479,6 +479,25 @@ func (s *Store) ImportsForDir(ctx context.Context, relDir string) ([]string, err
 	return scanStringColumn(rows)
 }
 
+// ImportsForFile returns the unique import targets of the Go package
+// that owns the given source file. File-level analog of ImportsForDir.
+func (s *Store) ImportsForFile(ctx context.Context, relPath string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		WITH file_pkg AS (
+		  SELECT DISTINCT package_path FROM graph_nodes
+		  WHERE file_path = ?
+		    AND package_path != ''
+		)
+		SELECT DISTINCT name FROM graph_nodes
+		WHERE kind = 'import'
+		  AND package_path IN (SELECT package_path FROM file_pkg)
+		ORDER BY name`, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return scanStringColumn(rows)
+}
+
 // UsedByPackages returns the Go package paths that import a package
 // whose source files live under relDir. import nodes carry their
 // importer in the package_path column (file_path is empty for them,
@@ -522,6 +541,31 @@ func scanStringColumn(rows *sql.Rows) ([]string, error) {
 	return out, rows.Err()
 }
 
+// FileCentrality returns the sum of PageRank across all graph nodes whose
+// file_path equals each indexed source file. Higher = more load-bearing.
+// Files with no graph nodes are absent from the map.
+func (s *Store) FileCentrality(ctx context.Context) (map[string]float64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT file_path, SUM(pagerank)
+		FROM graph_nodes
+		WHERE file_path != '' AND pagerank > 0
+		GROUP BY file_path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]float64)
+	for rows.Next() {
+		var path string
+		var rank float64
+		if err := rows.Scan(&path, &rank); err != nil {
+			return nil, err
+		}
+		out[path] = rank
+	}
+	return out, rows.Err()
+}
+
 // GraphSeenTime returns the timestamp a graph Run should stamp its
 // nodes/edges with — and prune by. It is max(now, latest stored
 // last_seen_at + 1ns) across graph_nodes and graph_edges, so a run's
@@ -549,4 +593,104 @@ func (s *Store) GraphSeenTime(ctx context.Context, now time.Time) (time.Time, er
 		ns = maxSeen.Int64 + 1
 	}
 	return time.Unix(0, ns), nil
+}
+
+// SmellSymbol is one flagged function or method in a smell report.
+type SmellSymbol struct {
+	QualifiedName string
+	Kind          string
+	FilePath      string
+	StartLine     int
+	EndLine       int
+	Lines         int
+}
+
+// SmellFile is one flagged file in a smell report.
+type SmellFile struct {
+	FilePath    string
+	SymbolCount int
+}
+
+// SmellReport groups all code-quality signals derived from the index.
+type SmellReport struct {
+	LongFunctions []SmellSymbol
+	DeadExports   []SmellSymbol
+	GodFiles      []SmellFile
+}
+
+// Smells queries three code-quality signals directly from graph_nodes:
+// long functions (body >= minFuncLines), exported symbols with no indexed
+// callers (dead exports), and files with many symbols (god files,
+// >= minFileSymbols). Results are capped at limit items per category.
+func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, limit int) (SmellReport, error) {
+	var r SmellReport
+
+	// Long functions.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT qualified_name, kind, file_path, start_line, end_line,
+		       (end_line - start_line) AS lines
+		FROM graph_nodes
+		WHERE kind IN ('function', 'method')
+		  AND file_path != ''
+		  AND (end_line - start_line) >= ?
+		ORDER BY (end_line - start_line) DESC
+		LIMIT ?`, minFuncLines, limit)
+	if err != nil {
+		return r, err
+	}
+	func() {
+		defer rows.Close()
+		for rows.Next() {
+			var s SmellSymbol
+			_ = rows.Scan(&s.QualifiedName, &s.Kind, &s.FilePath, &s.StartLine, &s.EndLine, &s.Lines)
+			r.LongFunctions = append(r.LongFunctions, s)
+		}
+	}()
+
+	// Dead exports: exported functions/methods with no incoming calls edges.
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT qualified_name, kind, file_path, start_line, end_line,
+		       (end_line - start_line) AS lines
+		FROM graph_nodes
+		WHERE kind IN ('function', 'method')
+		  AND file_path != ''
+		  AND in_degree = 0
+		  AND substr(name, 1, 1) BETWEEN 'A' AND 'Z'
+		ORDER BY file_path, start_line
+		LIMIT ?`, limit)
+	if err != nil {
+		return r, err
+	}
+	func() {
+		defer rows.Close()
+		for rows.Next() {
+			var s SmellSymbol
+			_ = rows.Scan(&s.QualifiedName, &s.Kind, &s.FilePath, &s.StartLine, &s.EndLine, &s.Lines)
+			r.DeadExports = append(r.DeadExports, s)
+		}
+	}()
+
+	// God files: files with >= minFileSymbols indexed symbols.
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT file_path, COUNT(*) AS symbol_count
+		FROM graph_nodes
+		WHERE kind IN ('function', 'method', 'struct', 'type', 'interface')
+		  AND file_path != ''
+		GROUP BY file_path
+		HAVING COUNT(*) >= ?
+		ORDER BY COUNT(*) DESC
+		LIMIT ?`, minFileSymbols, limit)
+	if err != nil {
+		return r, err
+	}
+	func() {
+		defer rows.Close()
+		for rows.Next() {
+			var f SmellFile
+			_ = rows.Scan(&f.FilePath, &f.SymbolCount)
+			r.GodFiles = append(r.GodFiles, f)
+		}
+	}()
+
+	return r, nil
 }

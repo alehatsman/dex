@@ -618,7 +618,7 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 type SummarizeInput struct {
 	Path        string  `json:"path" jsonschema:"file path to summarize; relative paths are resolved against project_root"`
 	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Mode        string  `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
+	Mode        string  `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
 	StartLine   int     `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
 	EndLine     int     `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
 	Focus       string  `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
@@ -750,6 +750,31 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		out.Bytes = len(content)
 		return nil, out, nil
 
+	case mode == "map":
+		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
+		}
+		defer st.Close()
+		syms, err := st.SymbolsByFile(ctx, relTarget)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
+		}
+		imports, err := st.ImportsForFile(ctx, relTarget)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("import query: %v", err)}, nil
+		}
+		if len(syms) == 0 && len(imports) == 0 {
+			out.Status = "ok"
+			out.Hint = "no indexed data for this file — run `dex index` first or use mode=full"
+			return nil, out, nil
+		}
+		content := formatMap(relTarget, syms, imports)
+		out.Status = "ok"
+		out.Content = content
+		out.Bytes = len(content)
+		return nil, out, nil
+
 	default: // full
 		slice, sliceStart, sliceEnd := sliceLines(data, in.StartLine, in.EndLine)
 		out.StartLine = sliceStart
@@ -835,6 +860,35 @@ func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string) stri
 			b.WriteByte('\n')
 		}
 		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// formatMap produces a compact dependency map for a file: its package-level
+// imports and exported declarations, sourced from the index (no LLM, no file
+// read). Unexported symbols are omitted so the output mirrors the public API.
+func formatMap(relPath string, syms []store.GraphSymbol, imports []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "FILE: %s\n\n", relPath)
+	if len(imports) > 0 {
+		b.WriteString("IMPORTS:\n")
+		for _, imp := range imports {
+			fmt.Fprintf(&b, "  %s\n", imp)
+		}
+		b.WriteByte('\n')
+	}
+	var exportedLines strings.Builder
+	count := 0
+	for _, sym := range syms {
+		if len(sym.Name) == 0 || sym.Name[0] < 'A' || sym.Name[0] > 'Z' {
+			continue
+		}
+		fmt.Fprintf(&exportedLines, "  %s %s (lines %d-%d)\n", sym.Kind, sym.QualifiedName, sym.StartLine, sym.EndLine)
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(&b, "EXPORTS (%d):\n", count)
+		b.WriteString(exportedLines.String())
 	}
 	return b.String()
 }
@@ -1122,9 +1176,13 @@ type toolSurface interface {
 	graphDeps(context.Context, *sdk.CallToolRequest, GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error)
 	graphCallers(context.Context, *sdk.CallToolRequest, CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error)
 	graphCallees(context.Context, *sdk.CallToolRequest, CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error)
+	graphImpact(context.Context, *sdk.CallToolRequest, ImpactInput) (*sdk.CallToolResult, ImpactOutput, error)
 	graphLinks(context.Context, *sdk.CallToolRequest, DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error)
 	graphBacklinks(context.Context, *sdk.CallToolRequest, DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error)
 	graphTags(context.Context, *sdk.CallToolRequest, TagInput) (*sdk.CallToolResult, TagOutput, error)
+	overview(context.Context, *sdk.CallToolRequest, OverviewInput) (*sdk.CallToolResult, OverviewOutput, error)
+	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
+	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 }
@@ -1209,11 +1267,48 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 		}, h.graphBacklinks)
 
 		sdk.AddTool(srv, &sdk.Tool{
+			Name: "graph_impact",
+			Description: "Transitive blast-radius analysis. Given a symbol, follows `calls` edges " +
+				"in the callers direction up to max_depth (default 3) and returns every reachable function " +
+				"with its hop depth and PageRank. Depth 1 = direct callers; depth 2 = their callers; etc. " +
+				"Use before editing a widely-called symbol to gauge the ripple. " +
+				"Same name resolution as graph_callers. Returns 'no-graph' when calls edges haven't been indexed yet.",
+		}, h.graphImpact)
+
+		sdk.AddTool(srv, &sdk.Tool{
 			Name: "graph_tags",
 			Description: "Query the markdown tag graph. Pass `tag` (a #tag without the #) to list the documents " +
 				"carrying it, ranked by doc importance — tag-based clustering. Or pass `doc` to list the tags that " +
 				"document carries. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet.",
 		}, h.graphTags)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "routes",
+			Description: "Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
+				"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
+				"and callers of registration functions (Handle, HandleFunc, AddTool, RegisterService, etc.). " +
+				"Returns each handler with its file location and the registration function that wires it in. " +
+				"Requires a graph index (`dex index . --graph=only`).",
+		}, h.routes)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "smells",
+			Description: "AST-based code quality signals derived from the graph index — no LLM required. " +
+				"Returns three categories: `long_functions` (bodies >= min_func_lines, default 80), " +
+				"`dead_exports` (exported functions/methods with no indexed callers), and " +
+				"`god_files` (files with >= min_file_symbols symbols, default 30). " +
+				"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues.",
+		}, h.smells)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "overview",
+			Description: "Task-relevant project map. Given a task description, ranks every indexed file by " +
+				"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
+				"`context` (top-k most relevant files with line counts and suggested view_summarize mode) and " +
+				"`distant` (all other indexed files). Use this as the first call in an unfamiliar codebase " +
+				"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
+				"no inlined content. Requires the embedding service.",
+		}, h.overview)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "index_status",
