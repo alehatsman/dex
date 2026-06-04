@@ -254,9 +254,10 @@ type ContextOutput struct {
 	// matrix). Callers join by path.
 	Annotations map[string]PathMeta `json:"annotations,omitempty"`
 	// SessionTask is the current session's declared task, if any.
-	// Populated from the per-project session store so agents can see
-	// what was declared without a separate session get call.
 	SessionTask string `json:"session_task,omitempty"`
+	// KnowledgeFacts are the top project facts ordered by salience,
+	// injected from the knowledge base so agents see accumulated context.
+	KnowledgeFacts []string `json:"knowledge_facts,omitempty"`
 }
 
 // ContextRouter is the exported entry point used by the CLI
@@ -310,6 +311,11 @@ func (s *Server) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in C
 
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
 		out.SessionTask = ss.Task
+	}
+	if facts, err := st.KnowledgeTopForAsk(ctx, 5); err == nil && len(facts) > 0 {
+		for _, f := range facts {
+			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+f.Body)
+		}
 	}
 
 	// enrichGraph sets out.Graph only when it has something to emit.
