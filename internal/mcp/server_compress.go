@@ -103,7 +103,7 @@ func (s *Server) compressOutput(_ context.Context, _ *sdk.CallToolRequest, in Co
 
 var (
 	reGoTestPass    = regexp.MustCompile(`^ok\s+`)
-	reGoTestFail    = regexp.MustCompile(`^(FAIL|---\s+FAIL|panic:|\s+Error:|=== RUN)`)
+	reGoTestFail    = regexp.MustCompile(`^(FAIL|---\s+FAIL|panic:|\s+Error:)`)
 	reGoTestSkip    = regexp.MustCompile(`^---\s+SKIP`)
 	reGoTestCovLine = regexp.MustCompile(`^coverage:`)
 )

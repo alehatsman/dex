@@ -1452,6 +1452,7 @@ type toolSurface interface {
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
 	compressOutput(context.Context, *sdk.CallToolRequest, CompressInput) (*sdk.CallToolResult, CompressOutput, error)
+	shellRun(context.Context, *sdk.CallToolRequest, ShellInput) (*sdk.CallToolResult, ShellOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 	compose(context.Context, *sdk.CallToolRequest, ComposeInput) (*sdk.CallToolResult, ComposeOutput, error)
@@ -1679,6 +1680,17 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 				"don't lose context across reconnects. No embedding required.",
 		}, h.session)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "ctx_shell",
+			Description: "Execute a shell command and return compressed output. " +
+				"Applies the same compression pipeline as compress_output — collapses build noise, " +
+				"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
+				"so raw command output never hits your context budget. " +
+				"Use raw:true to skip compression. " +
+				"File-write redirects (> >>) and tee are blocked; use the Write tool instead. " +
+				"Timeout: 60 s.",
+		}, h.shellRun)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "file_tree",
