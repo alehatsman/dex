@@ -125,6 +125,11 @@ func (p projectScoped) compressOutput(ctx context.Context, req *sdk.CallToolRequ
 	return p.s.compressOutput(ctx, req, in)
 }
 
+func (p projectScoped) compose(ctx context.Context, req *sdk.CallToolRequest, in ComposeInput) (*sdk.CallToolResult, ComposeOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.compose(ctx, req, in)
+}
+
 // status is daemon-global (not project-scoped), so the bound root is ignored
 // — matching the REST handleStatus and the stdio index_status tool.
 func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in StatusInput) (*sdk.CallToolResult, StatusOutput, error) {

@@ -257,6 +257,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/graph/tags", s.handleGraphTags(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/view/summarize", s.handleSummarize(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/search/compose", s.handleCompose(opts.Projects))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
@@ -561,6 +562,10 @@ func (s *Server) handleGraphTags(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleSummarize(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SummarizeInput, root string) { in.ProjectRoot = root }, s.Summarize)
+}
+
+func (s *Server) handleCompose(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *ComposeInput, root string) { in.ProjectRoot = root }, s.Compose)
 }
 
 func (s *Server) handleCompress() http.HandlerFunc {

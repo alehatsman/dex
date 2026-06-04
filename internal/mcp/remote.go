@@ -289,6 +289,12 @@ func (rc *remoteClient) routes(ctx context.Context, _ *sdk.CallToolRequest, in R
 	return nil, out, err
 }
 
+func (rc *remoteClient) compose(ctx context.Context, _ *sdk.CallToolRequest, in ComposeInput) (*sdk.CallToolResult, ComposeOutput, error) {
+	var out ComposeOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/compose"), in, &out)
+	return nil, out, err
+}
+
 // status maps to the daemon-global GET /v1/status (not project-scoped), so it
 // ignores the bound project id and sends no body — mirroring handleStatus.
 func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
