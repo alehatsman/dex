@@ -1,6 +1,6 @@
 ---
 id: embedding
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/embed/**"
@@ -85,4 +85,4 @@ specs' concern.
 - [x] No partial vectors are returned on any error.
 - [x] Health check does a single one-input embed and maps failures to unreachable vs server error.
 - [x] Exposes endpoint and model name for reporting/keying.
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

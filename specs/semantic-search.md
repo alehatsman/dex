@@ -1,6 +1,6 @@
 ---
 id: semantic-search
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/rerank/**"
@@ -35,6 +35,23 @@ path; building the index and the on-disk engine are sibling specs'.
   to semantic-only and orders by cosine similarity.
 - WHEN both legs run, dex pulls a wider candidate pool per leg than the final k
   so fusion has headroom to surface lexical-only or semantic-only hits.
+- WHEN the call graph is indexed, dex adds a third graph-proximity RRF lane:
+  files that are graph-neighbors of already-scoring files are retrieved and
+  fused at 0.5× weight, so callers/callees of a hit can surface without the
+  agent explicitly querying the graph.
+- WHERE BM25 is weighted, the path column is scored at 2× the body column
+  (`bm25(chunks_fts, 1.0, 2.0, 0.5)`) so path-bearing queries surface the
+  right file before its contents.
+- AFTER RRF fusion (and before any cross-encoder rerank), dex runs a local
+  reranking pass: test/fixture paths are penalized 0.3×; chunks whose `kind`
+  indicates a definition are boosted 1.5× when the query contains identifiers;
+  chunks from files with ≥2 hits receive a 1.15× coherence boost; and chunks
+  beyond the second from the same file are decayed by 0.7× per excess (MMR
+  diversity). This pass operates on RRF scores and degrades to cosine scores
+  for semantic-only results.
+- WHEN the same query is issued ≥4 times within 5 minutes, search appends a
+  hint advising the caller to store the finding in `knowledge` rather than
+  repeating the search.
 - IF the FTS query is malformed (e.g. unbalanced quotes), dex falls back to the
   semantic-only ranking rather than failing the search.
 - WHEN a reranker is configured and the fused pool is larger than k, dex reranks
@@ -79,6 +96,10 @@ path; building the index and the on-disk engine are sibling specs'.
 - [x] Embed query → vector KNN → top-k hits with path/kind/line/snippet/cosine
 - [x] Hybrid: FTS5/BM25 leg fused with semantic via RRF (k=60) when query non-empty
 - [x] Wider per-leg candidate pool than final k for fusion headroom
+- [x] Graph-proximity 3rd RRF lane (0.5× weight) when call graph is indexed
+- [x] BM25 path-column weighted 2× (`bm25(chunks_fts, 1.0, 2.0, 0.5)`)
+- [x] Post-RRF local rerank: noise penalty 0.3×, definition boost 1.5×, coherence boost 1.15×, MMR decay 0.7×
+- [x] Repeated identical search (≥4 in 5 min) → hint to use knowledge instead
 - [x] Empty query / disabled BM25 / malformed FTS → semantic-only fallback
 - [x] Cross-encoder rerank of fused pool when reranker wired and pool > k
 - [x] Rerank failure (unreachable/timeout/breaker-open) → silent pre-rerank order
@@ -86,4 +107,4 @@ path; building the index and the on-disk engine are sibling specs'.
 - [x] Consecutive-failure circuit breaker around the reranker
 - [x] Per-file diversity cap; k defaults to 8, clamped to max 30
 - [x] Embedding backend unreachable → distinct status + grep-fallback hint
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

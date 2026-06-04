@@ -1,6 +1,6 @@
 ---
 id: graph
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/graph/**"
@@ -104,4 +104,4 @@ so a consumer can branch on status instead of catching a failure.
       carry `metadata.language`
 - [x] Per-tool result caps + deterministic ordering
 - [x] Shared by `graph_*` MCP tools and `dex graph …` CLI
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

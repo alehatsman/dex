@@ -1,6 +1,6 @@
 ---
 id: indexing
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/index/**"
@@ -72,4 +72,4 @@ storage spec's, and reading it is the query specs'.
 - [x] Unreachable backend surfaces a distinct condition (consumer can fall back)
 - [x] Reindex drops + rebuilds; incremental updates only changed files
 - [x] Per-project index lock against concurrent indexers
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

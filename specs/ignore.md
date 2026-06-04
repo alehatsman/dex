@@ -1,6 +1,6 @@
 ---
 id: ignore
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/ignore/**"
@@ -78,4 +78,4 @@ them in the pipeline is the indexing spec.
 - [x] Binary detection (NUL byte in first 8 KB)
 - [x] Secret detection (first 4 KB regex panel), suppressed on test/fixture paths
 - [x] Tiny dependency-free TOML `[section]` + string-array parser for the config
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)
