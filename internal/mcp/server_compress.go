@@ -23,57 +23,63 @@ type CompressOutput struct {
 	SavedPct      int    `json:"saved_pct"`
 }
 
-func (s *Server) compressOutput(_ context.Context, _ *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
-	if in.Output == "" {
-		return nil, CompressOutput{Status: "ok", Compressed: ""}, nil
+// CompressText applies command-specific and generic compression patterns to
+// output text. command is a hint (e.g. "go test", "git diff") that selects
+// the pattern set; an empty or unrecognised command falls back to the generic
+// pass. maxLines caps the result (0 → 200). This is the pure-text entry point
+// shared by the MCP tool and the CLI compress-stdin command.
+func CompressText(output, command string, maxLines int) (compressed string, originalLines, outputLines int) {
+	if output == "" {
+		return "", 0, 0
 	}
-
-	maxLines := in.MaxLines
 	if maxLines <= 0 {
 		maxLines = 200
 	}
 
-	lines := strings.Split(strings.TrimRight(in.Output, "\n"), "\n")
-	original := len(lines)
+	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	originalLines = len(lines)
 
-	cmd := strings.ToLower(strings.TrimSpace(in.Command))
-	var compressed []string
+	cmd := strings.ToLower(strings.TrimSpace(command))
+	var out []string
 	switch {
 	case strings.HasPrefix(cmd, "go test"):
-		compressed = compressGoTest(lines)
+		out = compressGoTest(lines)
 	case strings.HasPrefix(cmd, "go build") || strings.HasPrefix(cmd, "go vet"):
-		compressed = compressGoBuild(lines)
+		out = compressGoBuild(lines)
 	case strings.HasPrefix(cmd, "git"):
-		compressed = compressGit(lines)
+		out = compressGit(lines)
 	case strings.HasPrefix(cmd, "cargo"):
-		compressed = compressCargo(lines)
+		out = compressCargo(lines)
 	case strings.HasPrefix(cmd, "npm ") || strings.HasPrefix(cmd, "yarn ") ||
 		strings.HasPrefix(cmd, "bun ") || strings.HasPrefix(cmd, "pnpm "):
-		compressed = compressNpm(lines)
+		out = compressNpm(lines)
 	case strings.HasPrefix(cmd, "docker"):
-		compressed = compressDocker(lines)
+		out = compressDocker(lines)
 	default:
-		compressed = compressGeneric(lines)
+		out = compressGeneric(lines)
 	}
 
-	// Always apply generic post-pass: blank collapse + hard cap.
-	compressed = collapseBlankLines(compressed)
-	if len(compressed) > maxLines {
-		cut := len(compressed) - maxLines
-		compressed = append(
-			[]string{fmt.Sprintf("[%d lines omitted]", cut)},
-			compressed[cut:]...)
+	out = collapseBlankLines(out)
+	if len(out) > maxLines {
+		cut := len(out) - maxLines
+		out = append([]string{fmt.Sprintf("[%d lines omitted]", cut)}, out[cut:]...)
 	}
 
-	out := strings.Join(compressed, "\n")
-	outLines := len(compressed)
+	return strings.Join(out, "\n"), originalLines, len(out)
+}
+
+func (s *Server) compressOutput(_ context.Context, _ *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
+	text, original, outLines := CompressText(in.Output, in.Command, in.MaxLines)
+	if in.Output == "" {
+		return nil, CompressOutput{Status: "ok", Compressed: ""}, nil
+	}
 	saved := 0
 	if original > 0 {
 		saved = (original - outLines) * 100 / original
 	}
 	return nil, CompressOutput{
 		Status:        "ok",
-		Compressed:    out,
+		Compressed:    text,
 		OriginalLines: original,
 		OutputLines:   outLines,
 		SavedPct:      saved,

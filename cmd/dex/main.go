@@ -28,7 +28,9 @@
 //	watch <path>                  Keep the index fresh as files change.
 //	clone <src> <dst>             Seed dst's index from src's (worktrees).
 //	guide <path>                  Render LLM_GUIDE.md from existing summaries.
-//	mcp                           Run as an MCP server over stdio.
+//	compress-stdin                Compress stdin through dex patterns; writes to stdout.
+//	shell-hook                    Print eval-able shell hook for passive output compression.
+//	mcp                           Run as an MCP server over stdio (DEX_TOOLS=ask|standard|power).
 //	version                       Print the build version.
 package main
 

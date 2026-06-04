@@ -151,3 +151,63 @@ func TestExposeRawTools(t *testing.T) {
 		}
 	}
 }
+
+func TestToolTierFromEnv(t *testing.T) {
+	cases := []struct {
+		dexTools string
+		rawTools string
+		wantTier toolTier
+	}{
+		{"", "", TierStandard}, // default
+		{"standard", "", TierStandard},
+		{"ask", "", TierAsk},
+		{"power", "", TierPower},
+		{"POWER", "", TierPower},      // case-insensitive
+		{"unknown", "", TierStandard}, // unrecognised → default
+		{"", "1", TierPower},          // legacy DEX_EXPOSE_RAW_TOOLS=1
+		{"ask", "1", TierPower},       // legacy takes precedence
+	}
+	for _, tc := range cases {
+		t.Setenv("DEX_TOOLS", tc.dexTools)
+		t.Setenv("DEX_EXPOSE_RAW_TOOLS", tc.rawTools)
+		if got := toolTierFromEnv(); got != tc.wantTier {
+			t.Errorf("DEX_TOOLS=%q DEX_EXPOSE_RAW_TOOLS=%q → tier %d, want %d",
+				tc.dexTools, tc.rawTools, got, tc.wantTier)
+		}
+	}
+}
+
+func TestBuildAnswerEvidenceSessionContext(t *testing.T) {
+	out := &ContextOutput{
+		SessionTask:    "refactor the watcher",
+		KnowledgeFacts: []string{"[Architecture] watch.go owns the file watcher", "[Gotcha] debounce is 500ms"},
+		SuggestedReads: []SuggestedRead{{Path: "watch.go", StartLine: 1, EndLine: 3, Content: "func Watch(){}"}},
+	}
+	ev := buildAnswerEvidence(out)
+
+	if !strings.Contains(ev, "SESSION CONTEXT:") {
+		t.Errorf("evidence missing SESSION CONTEXT block: %q", ev)
+	}
+	if !strings.Contains(ev, "Task: refactor the watcher") {
+		t.Errorf("evidence missing session task: %q", ev)
+	}
+	if !strings.Contains(ev, "[Architecture] watch.go owns the file watcher") {
+		t.Errorf("evidence missing knowledge fact: %q", ev)
+	}
+	// Session block must appear before code evidence.
+	sessionIdx := strings.Index(ev, "SESSION CONTEXT:")
+	codeIdx := strings.Index(ev, "watch.go")
+	if sessionIdx >= codeIdx {
+		t.Errorf("SESSION CONTEXT should precede code evidence (got positions %d vs %d)", sessionIdx, codeIdx)
+	}
+}
+
+func TestBuildAnswerEvidenceNoSessionContext(t *testing.T) {
+	out := &ContextOutput{
+		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "func A(){}"}},
+	}
+	ev := buildAnswerEvidence(out)
+	if strings.Contains(ev, "SESSION CONTEXT:") {
+		t.Errorf("expected no SESSION CONTEXT block when session/knowledge absent: %q", ev)
+	}
+}

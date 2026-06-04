@@ -78,13 +78,11 @@ func RunStdioRemote(ctx context.Context, opts RemoteOptions) error {
 
 	srv := sdk.NewServer(&sdk.Implementation{Name: "dex", Version: Version}, nil)
 
-	// The shim can't see the remote's chat wiring, so it registers
-	// view_summarize whenever raw tools are on (DEX_EXPOSE_RAW_TOOLS). If the
-	// remote has no chat client the /view/summarize endpoint returns
-	// 'chat-service-unreachable' — the same degradation a local server
-	// reports — so over-registering is harmless.
-	raw := exposeRawTools()
-	registerTools(srv, rc, raw, raw)
+	// The shim can't see the remote's chat wiring, so it always passes
+	// chatAvailable=true for view_summarize. If the remote has no chat client
+	// the /view/summarize endpoint returns 'chat-service-unreachable' — the
+	// same degradation a local server reports — so over-registering is harmless.
+	registerTools(srv, rc, toolTierFromEnv(), true)
 
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
