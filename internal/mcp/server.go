@@ -1718,6 +1718,10 @@ const (
 // toolTierFromEnv reads DEX_TOOLS (ask|standard|power). DEX_EXPOSE_RAW_TOOLS=1
 // is honoured as a backward-compatible alias for power. Default: standard.
 func toolTierFromEnv() toolTier {
+	if os.Getenv("DEX_TOOL_TIER") != "" && os.Getenv("DEX_TOOLS") == "" {
+		fmt.Fprintf(os.Stderr, "dex: warning: DEX_TOOL_TIER is not a recognised variable — did you mean DEX_TOOLS=%s?\n",
+			os.Getenv("DEX_TOOL_TIER"))
+	}
 	if exposeRawTools() {
 		return TierPower
 	}
