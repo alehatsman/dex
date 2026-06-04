@@ -1,7 +1,7 @@
 ---
 id: mcp-server
 status: living
-last_verified: c331a3c
+last_verified: b28afbd
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
@@ -9,6 +9,9 @@ covers:
   - "internal/mcp/answer.go"
   - "internal/mcp/server_graph.go"
   - "internal/mcp/server_summaries.go"
+  - "internal/mcp/server_noncode_map.go"
+  - "internal/mcp/server_compose.go"
+  - "internal/mcp/server_overview.go"
 ---
 # MCP Server (stdio)
 
@@ -45,8 +48,8 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - WHERE tool exposure is tiered, the surface is controlled by `DEX_TOOLS`
   (`ask|standard|power`; default `standard`); `DEX_EXPOSE_RAW_TOOLS=1` is a
   backward-compatible alias for `power`. `TierAsk` exposes only `ask`.
-  `TierStandard` adds `overview`, `session`, `knowledge`, `search_tree`, and
-  (when a chat model is wired) `view_summarize`. `TierPower` adds the full raw
+  `TierStandard` adds `overview`, `session`, `knowledge`, `search_tree`,
+  `search_compose`, and (when a chat model is wired) `view_summarize`. `TierPower` adds the full raw
   surface: `search_semantic`, `search_symbol`, `graph_neighbors`, `graph_deps`,
   `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`,
   `graph_tags`, `graph_impact`, `routes`, `smells`, `compress_output`, and
@@ -76,6 +79,23 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   that resolves a project lazily spawns one per-project file watcher (at most once
   per project per session) that keeps the index fresh and drains pending summaries
   in the background; the watcher shares the session context and drains on shutdown.
+- WHEN `view_summarize mode=map` is called on a non-code file (Markdown, JSON,
+  YAML, TOML, lock files), dex returns a structural outline — heading tree,
+  JSON key hierarchy (depth ≤ 3), YAML section hierarchy, TOML sections, or
+  lock-file dependency counts — without using the index or a chat model; code
+  files fall through to the existing symbol-map path.
+- WHEN `search_compose` is called (TierStandard), dex embeds the query, retrieves
+  top-K files by aggregate chunk score (default K=3, max 5), returns per-file
+  signatures and the single best-matching symbol body in one call — replacing the
+  search→signatures→lines round-trip pattern.
+- WHEN `view_summarize mode=signatures` or `mode=map` is called and the current
+  session has a declared task, dex appends the body of the symbol whose qualified
+  name best matches the task (BM25-style word-overlap, capped at 60 lines) so
+  the reader gets task-relevant detail without a follow-up lines: call.
+- WHEN `overview` is called and the chunk index is empty (indexing in progress or
+  not yet started), dex returns `status:"partial"` with project markers (go.mod,
+  package.json, Cargo.toml, …), a depth-2 filesystem tree, and top knowledge
+  facts rather than an error, so an agent can orient without a full index.
 - WHEN `spec_verify` is called (TierPower), dex reads the spec file's `## Checklist`
   items (falling back to `## Behavior` clauses), embeds each checked `[x]` item,
   retrieves top-5 code chunks from the index, and — when a chat model is wired —
@@ -105,7 +125,11 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `dex mcp` registers an MCP server on stdio, blocks until transport closes
 - [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
 - [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
-- [x] TierStandard: overview, session, knowledge, search_tree, view_summarize (chat required)
+- [x] TierStandard: overview, session, knowledge, search_tree, search_compose, view_summarize (chat required)
+- [x] `view_summarize mode=map` returns structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
+- [x] `search_compose`: single call returns top-K file signatures + best symbol body (replaces search→signatures→lines round-trip)
+- [x] Task-relevance inline: signatures/map append best-matching symbol body when session has a declared task
+- [x] `overview` returns `status:"partial"` with markers + depth-2 tree + knowledge facts when chunk index is empty
 - [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, routes, smells, compress_output, index_status, spec_verify
 - [x] Read-only tools carry `readOnlyHint: true` MCP annotation
 - [x] Per-project scoping: `project_root` → canonical index (cwd default)

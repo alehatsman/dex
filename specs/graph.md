@@ -1,7 +1,7 @@
 ---
 id: graph
 status: living
-last_verified: c331a3c
+last_verified: b28afbd
 owners: [aleh]
 covers:
   - "internal/graph/**"
@@ -61,6 +61,10 @@ so a consumer can branch on status instead of catching a failure.
   defaults and ceilings) and orders peers deterministically.
 - WHERE the same logic backs both surfaces, the `graph_*` MCP tools and the
   `dex graph …` CLI call one implementation.
+- WHEN `graph_impact` is called (TierPower), dex performs a transitive BFS over
+  incoming `calls` edges from the given symbol, returns all reachable callers
+  depth-sorted with their PageRank score, so a caller can gauge the blast radius
+  of a change before editing.
 
 ## Non-goals
 
@@ -104,5 +108,6 @@ so a consumer can branch on status instead of catching a failure.
       for Python, JS, TS, Rust, Java; edges stamped `provenance=sitter`, nodes
       carry `metadata.language`
 - [x] Per-tool result caps + deterministic ordering
+- [x] `graph_impact`: transitive BFS over incoming `calls` edges, depth-sorted with PageRank, blast-radius analysis
 - [x] Shared by `graph_*` MCP tools and `dex graph …` CLI
 - [x] Verified against the code by the verify workflow (flip to `living`)

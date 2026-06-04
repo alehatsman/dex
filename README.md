@@ -152,22 +152,42 @@ dex mcp                    # MCP server over stdio
 `dex env` prints effective config with sources; `dex -h` lists
 everything.
 
-When running as `dex mcp`, the server registers:
+When running as `dex mcp`, the server registers tools in three tiers controlled
+by `DEX_TOOLS=ask|standard|power` (default `standard`):
 
-| Tool              | Always on? | What it does                                                                |
-| ----------------- | ---------- | --------------------------------------------------------------------------- |
-| `ask`             | yes        | **Primary entry point.** Router + composed bundle.                          |
-| `search_semantic` | yes        | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
-| `search_symbol`   | yes        | Exact identifier lookup (SQL scan, no embedding).                           |
-| `graph_neighbors` | yes        | Vector neighbours of a known chunk at `path:start_line`.                    |
-| `graph_deps`      | yes        | `imports` edges for a file or package. Sourced from the static graph.       |
-| `graph_callers`   | yes        | Incoming `calls` edges (Go-only today).                                     |
-| `graph_callees`   | yes        | Outgoing `calls` edges (Go-only today).                                     |
-| `graph_links`     | yes        | Outgoing markdown `links`/`wikilinks` — docs a doc points to.               |
-| `graph_backlinks` | yes        | Incoming markdown `links`/`wikilinks` — what links to a doc (Obsidian-style).|
-| `graph_tags`      | yes        | Tag graph: `tag`→documents (ranked) or `doc`→tags. Tag-based clustering.     |
-| `index_status`    | yes        | Endpoint health (embed / chat / rerank) + indexed projects.                 |
-| `view_summarize`  | needs chat | One-shot file-or-range gist via the chat model. No retrieval.               |
+| Tool               | Tier      | What it does                                                                |
+| ------------------ | --------- | --------------------------------------------------------------------------- |
+| `ask`              | ask+      | **Primary entry point.** Router + composed bundle.                          |
+| `overview`         | standard+ | Project orientation — markers, package topology, key files.                 |
+| `search_compose`   | standard+ | Embed query → top-K file signatures + best symbol body in one call.         |
+| `session`          | standard+ | Declare / read a session task for task-relevance inline in summarize.       |
+| `knowledge`        | standard+ | Store / recall cross-session knowledge facts for this project.              |
+| `search_tree`      | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
+| `view_summarize`   | standard+ | Signatures / structural map / LLM gist / line slice of a file.              |
+| `search_semantic`  | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
+| `search_symbol`    | power     | Exact identifier lookup (SQL scan, no embedding).                           |
+| `graph_neighbors`  | power     | Vector neighbours of a known chunk at `path:start_line`.                    |
+| `graph_deps`       | power     | `imports` edges for a file or package. Sourced from the static graph.       |
+| `graph_callers`    | power     | Incoming `calls` edges (Go-only today).                                     |
+| `graph_callees`    | power     | Outgoing `calls` edges (Go-only today).                                     |
+| `graph_impact`     | power     | Transitive BFS over incoming `calls` — blast-radius analysis with PageRank. |
+| `graph_links`      | power     | Outgoing markdown `links`/`wikilinks` — docs a doc points to.               |
+| `graph_backlinks`  | power     | Incoming markdown `links`/`wikilinks` — what links to a doc (Obsidian-style).|
+| `graph_tags`       | power     | Tag graph: `tag`→documents (ranked) or `doc`→tags. Tag-based clustering.    |
+| `index_status`     | power     | Endpoint health (embed / chat / rerank) + indexed projects.                 |
+| `routes`           | power     | All reachable call paths between two symbols.                               |
+| `smells`           | power     | Structural code-smell report (hub files, isolated functions, …).            |
+| `spec_verify`      | power     | Verify a spec file's checklist against the live index.                      |
+
+`view_summarize mode=map` returns a structural outline for non-code files
+(Markdown heading tree, JSON key hierarchy, YAML/TOML sections, lock-file dep
+counts) without touching the index or a chat model. When the current session
+has a declared task (`session`), `mode=signatures` and `mode=map` append the
+body of the symbol whose name best matches the task — no follow-up lines: call.
+
+`overview` returns `status:"partial"` with project markers, a depth-2 filesystem
+tree, and top knowledge facts when the index is empty (indexing in progress), so
+an agent can orient before the first `dex index` completes.
 
 Every tool returns a `status` (`ok` / `no-index` / `no-graph` /
 `embedding-service-unreachable` / `chat-service-unreachable` / `error`)
@@ -214,8 +234,9 @@ neither is given the shim auto-resolves when the daemon serves exactly
 one project.
 
 Either way the tool surface and responses are identical to a local
-`dex mcp` — the same project scoping and bearer auth apply, and
-`DEX_EXPOSE_RAW_TOOLS=1` exposes the raw lanes.
+`dex mcp` — the same project scoping and bearer auth apply.
+`DEX_TOOLS=power` (or the legacy alias `DEX_EXPOSE_RAW_TOOLS=1`) exposes
+the full raw surface; `DEX_TOOLS=ask` narrows to just the `ask` tool.
 
 ## Environment
 
