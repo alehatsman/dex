@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -28,7 +31,7 @@ type OverviewFile struct {
 }
 
 type OverviewOutput struct {
-	Status       string         `json:"status"` // "ok" | "no-index" | "embedding-service-unreachable" | "error"
+	Status       string         `json:"status"` // "ok" | "partial" | "no-index" | "embedding-service-unreachable" | "error"
 	Hint         string         `json:"hint,omitempty"`
 	Project      string         `json:"project,omitempty"`
 	Task         string         `json:"task,omitempty"`
@@ -63,6 +66,23 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 		k = 20
 	}
 
+	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	if err != nil {
+		return nil, OverviewOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
+	}
+	defer func() { _ = st.Close() }()
+
+	// Line counts for all indexed code files — also used as the cold-start check.
+	lineCounts, err := st.CodeFilePaths(ctx)
+	if err != nil {
+		return nil, OverviewOutput{Status: "error", Hint: fmt.Sprintf("file index: %v", err)}, nil
+	}
+
+	// N17: cold-start partial overview when index is still being populated.
+	if len(lineCounts) == 0 {
+		return overviewPartial(ctx, st, p)
+	}
+
 	// Embed the task to drive semantic ranking.
 	vecs, err := s.EmbedClient.Embed(ctx, []string{in.Task})
 	if err != nil {
@@ -73,12 +93,6 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 		return nil, OverviewOutput{Status: "error", Hint: fmt.Sprintf("embed: %v", err)}, nil
 	}
 	vec := vecs[0]
-
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
-	if err != nil {
-		return nil, OverviewOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
-	}
-	defer func() { _ = st.Close() }()
 
 	// Semantic search: pull more hits than k so we can aggregate by file.
 	hits, err := st.Search(ctx, vec, in.Task, 50)
@@ -92,15 +106,9 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 		if h.Path == "" {
 			continue
 		}
-		if s := float64(h.Score); s > fileScore[h.Path] {
-			fileScore[h.Path] = s
+		if sc := float64(h.Score); sc > fileScore[h.Path] {
+			fileScore[h.Path] = sc
 		}
-	}
-
-	// Line counts for all indexed code files.
-	lineCounts, err := st.CodeFilePaths(ctx)
-	if err != nil {
-		return nil, OverviewOutput{Status: "error", Hint: fmt.Sprintf("file index: %v", err)}, nil
 	}
 
 	// Per-file centrality (best-effort; skip if no graph).
@@ -125,13 +133,13 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 
 	// Build context set.
 	contextSet := make(map[string]bool, k)
-	context := make([]OverviewFile, 0, k)
+	ctxFiles := make([]OverviewFile, 0, k)
 	for _, r := range scored {
-		if len(context) >= k {
+		if len(ctxFiles) >= k {
 			break
 		}
 		lc := lineCounts[r.path]
-		context = append(context, OverviewFile{
+		ctxFiles = append(ctxFiles, OverviewFile{
 			Path:          r.path,
 			Lines:         lc,
 			Score:         math.Round(r.score*1000) / 1000,
@@ -159,10 +167,113 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 		Status:       "ok",
 		Project:      p.Root,
 		Task:         in.Task,
-		Context:      context,
+		Context:      ctxFiles,
 		DistantCount: len(distant),
 		Distant:      truncated,
 	}, nil
+}
+
+// overviewPartial returns a useful partial response when the chunk index is
+// empty (cold start / indexing in progress). It scans the filesystem for
+// project-type markers, emits a depth-2 directory tree, and surfaces any
+// persistent knowledge facts — enough to start reasoning without a full index.
+func overviewPartial(ctx context.Context, st *store.Store, p *proj.Project) (*sdk.CallToolResult, OverviewOutput, error) {
+	facts, _ := st.KnowledgeTopForAsk(ctx, 5)
+	markers, tree := projectMarkersAndTree(p.Root)
+
+	var b strings.Builder
+	b.WriteString("INDEXING IN PROGRESS — partial overview from filesystem scan.\n\n")
+	if len(markers) > 0 {
+		b.WriteString("Project markers: ")
+		b.WriteString(strings.Join(markers, ", "))
+		b.WriteString("\n\n")
+	}
+	if len(tree) > 0 {
+		b.WriteString("Directory tree (depth 2):\n")
+		for _, entry := range tree {
+			b.WriteString(entry)
+			b.WriteByte('\n')
+		}
+		b.WriteByte('\n')
+	}
+	if len(facts) > 0 {
+		b.WriteString("Project knowledge:\n")
+		for _, f := range facts {
+			fmt.Fprintf(&b, "  [%s] %s\n", f.Archetype, f.Body)
+		}
+	}
+
+	return nil, OverviewOutput{
+		Status:  "partial",
+		Project: p.Root,
+		Hint:    b.String(),
+	}, nil
+}
+
+// projectMarkersAndTree scans the project root to detect project-type markers
+// and returns a depth-2 directory listing of non-hidden entries.
+func projectMarkersAndTree(root string) (markers []string, tree []string) {
+	knownMarkers := map[string]bool{
+		"go.mod": true, "go.sum": true,
+		"package.json": true, "package-lock.json": true, "yarn.lock": true,
+		"Cargo.toml": true, "Cargo.lock": true,
+		"pyproject.toml": true, "setup.py": true, "requirements.txt": true,
+		"pom.xml": true, "build.gradle": true,
+		"CMakeLists.txt": true,
+		"Makefile":       true, "makefile": true,
+		"Dockerfile": true,
+		"CLAUDE.md":  true,
+		"README.md":  true, "readme.md": true,
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, nil
+	}
+
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") && name != ".github" {
+			continue
+		}
+		if knownMarkers[name] {
+			markers = append(markers, name)
+		}
+		if e.IsDir() {
+			tree = append(tree, "  "+name+"/")
+			subEntries, err := os.ReadDir(filepath.Join(root, name))
+			if err != nil {
+				continue
+			}
+			shown := 0
+			for _, se := range subEntries {
+				if strings.HasPrefix(se.Name(), ".") {
+					continue
+				}
+				if shown >= 10 {
+					remaining := 0
+					for _, rem := range subEntries[shown:] {
+						if !strings.HasPrefix(rem.Name(), ".") {
+							remaining++
+						}
+					}
+					if remaining > 0 {
+						tree = append(tree, fmt.Sprintf("    … +%d more", remaining))
+					}
+					break
+				}
+				if se.IsDir() {
+					tree = append(tree, "    "+se.Name()+"/")
+				} else {
+					tree = append(tree, "    "+se.Name())
+				}
+				shown++
+			}
+		} else {
+			tree = append(tree, "  "+name)
+		}
+	}
+	return
 }
 
 // suggestMode returns the recommended view_summarize mode for a file of
