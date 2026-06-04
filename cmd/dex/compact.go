@@ -89,7 +89,7 @@ func cmdCompact(_ context.Context, args []string) (err error) {
 		if rel == "." {
 			return nil
 		}
-		if matcher.Match(rel, d.IsDir()) {
+		if matcher.MatchExclude(rel, d.IsDir()) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
