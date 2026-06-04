@@ -254,6 +254,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("GET /v1/projects", s.handleListProjects(opts.Projects))
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
 	authed.HandleFunc("POST /v1/compress", s.handleCompress())
+	authed.HandleFunc("POST /v1/shell", s.handleShell())
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/semantic", s.handleSearch(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/symbol", s.handleFindSymbol(opts.Projects))
@@ -631,6 +632,22 @@ func (s *Server) handleCompress() http.HandlerFunc {
 			return
 		}
 		out, err := s.CompressOutput(r.Context(), in)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+func (s *Server) handleShell() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in ShellInput
+		if err := decodeBody(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+		out, err := s.ShellRun(r.Context(), in)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
