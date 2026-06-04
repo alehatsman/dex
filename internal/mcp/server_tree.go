@@ -33,6 +33,7 @@ type SearchTreeOutput struct {
 	Entries     []TreeEntry `json:"entries,omitempty"`
 	TotalFiles  int         `json:"total_files"`
 	TotalChunks int         `json:"total_chunks"`
+	Text        string      `json:"text,omitempty"` // compact text tree for direct consumption
 }
 
 // SearchTree is the exported entry point used by CLI subcommands.
@@ -103,12 +104,37 @@ func (s *Server) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 
-	return nil, SearchTreeOutput{
+	out := SearchTreeOutput{
 		Status:      "ok",
 		Root:        p.Root,
 		Path:        in.Path,
 		Entries:     entries,
 		TotalFiles:  len(files),
 		TotalChunks: totalChunks,
-	}, nil
+		Text:        renderTreeText(entries, in.Path, len(files), totalChunks),
+	}
+	return nil, out, nil
+}
+
+// renderTreeText produces a compact indented text representation of the tree.
+func renderTreeText(entries []TreeEntry, rootPath string, totalFiles, totalChunks int) string {
+	var b strings.Builder
+	header := rootPath
+	if header == "" || header == "." {
+		header = "."
+	}
+	fmt.Fprintf(&b, "%s  (%d files, %d chunks)\n", header, totalFiles, totalChunks)
+	for _, e := range entries {
+		name := e.Path
+		// Show just the last component for readability.
+		if idx := strings.LastIndex(strings.TrimRight(name, "/"), "/"); idx >= 0 {
+			name = name[idx+1:]
+		}
+		if strings.HasSuffix(e.Path, "/") {
+			fmt.Fprintf(&b, "  %s  (%dc)\n", name, e.Chunks)
+		} else {
+			fmt.Fprintf(&b, "  %-40s %dc\n", name, e.Chunks)
+		}
+	}
+	return b.String()
 }
