@@ -402,4 +402,3 @@ func dexPluginManifest(raw []byte) bool {
 	s := string(raw)
 	return strings.Contains(s, `"mcp"`) && strings.Contains(s, `"dex"`)
 }
-

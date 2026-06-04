@@ -1418,7 +1418,7 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			files:            stats.Files,
 			chunks:           stats.Chunks,
 			nodes:            nodes,
-			edges:             edges,
+			edges:            edges,
 			pendingSummaries: stats.PendingSummaries,
 			lastSummarized:   stats.LastSummarized,
 			dim:              stats.Dim,
