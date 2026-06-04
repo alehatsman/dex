@@ -1562,6 +1562,13 @@ func (s *Store) getRerankCache() RerankCache {
 // distance ascending, which is similarity descending — no client-side
 // sort needed.
 func (s *Store) scoreSemantic(ctx context.Context, queryVec []float32, limit int) ([]scored, error) {
+	// An empty query vector means "no semantic leg": degraded search (when the
+	// embedding service is offline) passes a nil vector + query text to run
+	// BM25-only through the fusion path. Distinct from a zero vector below,
+	// which is a real embedding gone wrong and stays an error.
+	if len(queryVec) == 0 {
+		return nil, nil
+	}
 	if d := s.dim.Load(); d != 0 && int64(len(queryVec)) != d {
 		return nil, fmt.Errorf("query dim %d != index dim %d", len(queryVec), d)
 	}

@@ -326,6 +326,15 @@ methods, types, classes). Each chunk hits a self-hosted
 SSH-tunneled). Embeddings land in a `sqlite-vec` (`vec0`) virtual
 table; at query time, vec0 cosine KNN and SQLite FTS5/BM25 are fused
 via RRF, with an optional cross-encoder rerank over the fused pool.
+
+If the embedding endpoint is unreachable, dex **degrades instead of
+crashing**: the semantic leg drops out and search runs BM25-only, while
+`search_symbol`, the `graph_*` tools, `file_tree`, and `file_view`
+(`signatures`/`map`/`lines`) keep working — so `dex mcp`/`dex serve` stay useful
+on an already-indexed repo with ollama down. When `DEX_EMBED_URL` is unset and
+ollama is installed but not running, dex best-effort starts it (`ollama serve`;
+opt out with `DEX_NO_AUTO_OLLAMA=1`).
+
 Architecture diagram: [docs/architecture.md](docs/architecture.md).
 Storage schema, RRF math, vec0 KNN, multi-worktree workflow, embedding
 contract, code-gen details: [docs/internals.md](docs/internals.md).

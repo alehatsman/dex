@@ -37,6 +37,7 @@ var allEnvVars = []envVar{
 	{"DEX_EMBED_URL", "auto", "OpenAI-compatible /v1/embeddings base URL. Unset = probe ollama at localhost:11434, then fall back to http://127.0.0.1:8082.", "core", false},
 	{"DEX_EMBED_MODEL", "auto", "Model name for embed requests. Unset = use ollama-detected model when auto-detected, else Qwen/Qwen3-Embedding-4B.", "core", false},
 	{"DEX_INDEX_DIR", "~/.cache/dex", "Where per-project index files live.", "core", false},
+	{"DEX_NO_AUTO_OLLAMA", "", "Set 1|on to disable best-effort auto-start of a local ollama daemon when it's installed but not running (only attempted when DEX_EMBED_URL/DEX_CHAT_URL are unset).", "core", true},
 
 	// chat — required for generate / view_summarize / ask_codebase.
 	{"DEX_CHAT_URL", "auto", "OpenAI-compatible /v1/chat/completions base URL. Unset = probe ollama at localhost:11434 for a code model, then fall back to http://127.0.0.1:8081.", "chat", false},

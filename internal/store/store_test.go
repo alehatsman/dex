@@ -373,6 +373,32 @@ func TestSearchZeroQueryRejected(t *testing.T) {
 	}
 }
 
+// TestSearchNilVecBM25Only is the degraded-mode contract (issue #67): when the
+// embedding service is offline, callers pass a nil query vector + query text and
+// must get BM25-only results, not an error. An empty vector means "no semantic
+// leg" — distinct from the zero vector above, which stays an error.
+func TestSearchNilVecBM25Only(t *testing.T) {
+	st, ctx := newStore(t)
+	now := time.Now()
+	rows := []PendingChunk{
+		{Path: "noise.go", Kind: "fn", ContentSHA: "n1", Content: "func a() { return 1 }", Vec: []float32{1, 0, 0, 0}},
+		{Path: "auth.go", Kind: "fn", ContentSHA: "needle",
+			Content: "func validateToken(tok string) bool { return tok != \"\" }",
+			Vec:     []float32{0, 0, 1, 0}},
+	}
+	if err := st.UpsertMany(ctx, rows, now); err != nil {
+		t.Fatal(err)
+	}
+
+	hits, err := st.Search(ctx, nil, "validateToken", 5)
+	if err != nil {
+		t.Fatalf("nil-vec BM25 search must not error: %v", err)
+	}
+	if len(hits) == 0 || hits[0].Path != "auth.go" {
+		t.Errorf("BM25-only top hit = %q, want auth.go", pathOrNone(hits))
+	}
+}
+
 // TestSearchCacheInvalidation guards against the failure mode where
 // the in-RAM vector cache outlives a mutating operation and surfaces
 // chunks that were deleted/replaced. Each mutator must invalidate.
