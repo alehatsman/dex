@@ -34,7 +34,7 @@ func TestSynthesizeAnswerPopulatesAnswer(t *testing.T) {
 			{Path: "internal/watch/watch.go", StartLine: 40, EndLine: 50, Reason: "debounce", Content: "func debounce() {}"},
 		},
 	}
-	s.synthesizeAnswer(context.Background(), IntentBehaviorSearch, "where is debounce", out)
+	s.synthesizeAnswer(context.Background(), nil, IntentBehaviorSearch, "where is debounce", out)
 
 	if out.Answer == "" {
 		t.Fatal("expected Answer to be populated")
@@ -50,7 +50,7 @@ func TestSynthesizeAnswerNilChatClient(t *testing.T) {
 	out := &ContextOutput{
 		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "x"}},
 	}
-	s.synthesizeAnswer(context.Background(), IntentBehaviorSearch, "q", out)
+	s.synthesizeAnswer(context.Background(), nil, IntentBehaviorSearch, "q", out)
 	if out.Answer != "" {
 		t.Errorf("expected no answer with nil chat client, got %q", out.Answer)
 	}
@@ -62,7 +62,7 @@ func TestSynthesizeAnswerNoEvidence(t *testing.T) {
 	defer chatSrv.Close()
 	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake", 5*time.Second)}
 	out := &ContextOutput{} // empty bundle
-	s.synthesizeAnswer(context.Background(), IntentBehaviorSearch, "q", out)
+	s.synthesizeAnswer(context.Background(), nil, IntentBehaviorSearch, "q", out)
 	if out.Answer != "" {
 		t.Errorf("expected no answer with empty evidence, got %q", out.Answer)
 	}
@@ -76,7 +76,7 @@ func TestSynthesizeAnswerUnreachableDegrades(t *testing.T) {
 		Status:         "ok",
 		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "func A(){}"}},
 	}
-	s.synthesizeAnswer(context.Background(), IntentBehaviorSearch, "q", out)
+	s.synthesizeAnswer(context.Background(), nil, IntentBehaviorSearch, "q", out)
 	if out.Answer != "" {
 		t.Errorf("expected empty answer on unreachable chat, got %q", out.Answer)
 	}
@@ -108,9 +108,9 @@ func TestSynthesizeAnswerCacheHit(t *testing.T) {
 		return &ContextOutput{SuggestedReads: []SuggestedRead{{Path: "a.go", StartLine: 1, EndLine: 2, Content: "func A(){}"}}}
 	}
 	o1 := mk()
-	s.synthesizeAnswer(context.Background(), IntentBehaviorSearch, "same q", o1)
+	s.synthesizeAnswer(context.Background(), nil, IntentBehaviorSearch, "same q", o1)
 	o2 := mk()
-	s.synthesizeAnswer(context.Background(), IntentBehaviorSearch, "same q", o2)
+	s.synthesizeAnswer(context.Background(), nil, IntentBehaviorSearch, "same q", o2)
 
 	if o1.Answer != "cached answer" || o2.Answer != "cached answer" {
 		t.Fatalf("answers = %q / %q, want both 'cached answer'", o1.Answer, o2.Answer)

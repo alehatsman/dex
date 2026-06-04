@@ -5,6 +5,7 @@
 package chat
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -87,6 +88,14 @@ type chatResponse struct {
 	} `json:"error,omitempty"`
 }
 
+type streamChunk struct {
+	Choices []struct {
+		Delta        struct{ Content string `json:"content"` } `json:"delta"`
+		FinishReason string                                    `json:"finish_reason"`
+	} `json:"choices"`
+	Model string `json:"model"`
+}
+
 // Generate sends messages to the chat endpoint and returns the first
 // choice. We don't stream — the MCP tool returns once per call, so the
 // extra plumbing wouldn't change anything user-visible.
@@ -144,6 +153,89 @@ func (c *Client) Generate(ctx context.Context, messages []Message, opts Options)
 		Model:        parsed.Model,
 		FinishReason: parsed.Choices[0].FinishReason,
 	}, nil
+}
+
+// GenerateStream sends messages with stream=true and calls onToken for each
+// content delta as it arrives. Returns the assembled Response once the stream
+// ends. onToken is called synchronously from the read loop; it must not block.
+func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Options, onToken func(string)) (Response, error) {
+	if len(messages) == 0 {
+		return Response{}, fmt.Errorf("chat: no messages")
+	}
+	model := c.Model
+	if opts.Model != "" {
+		model = opts.Model
+	}
+	reqBody := chatRequest{Model: model, Messages: messages, Stream: true}
+	if opts.Temperature > 0 {
+		t := opts.Temperature
+		reqBody.Temperature = &t
+	}
+	if opts.MaxTokens > 0 {
+		m := opts.MaxTokens
+		reqBody.MaxTokens = &m
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return Response{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return Response{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Use a transport-only client so there is no read deadline on the stream.
+	streamClient := &http.Client{Transport: c.HTTP.Transport}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return Response{}, fmt.Errorf("%w: %v", ErrUnreachable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return Response{}, fmt.Errorf("chat: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))
+	}
+
+	var (
+		sb           strings.Builder
+		finishReason string
+		respModel    string
+	)
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		if payload == "[DONE]" {
+			break
+		}
+		var chunk streamChunk
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			continue
+		}
+		if chunk.Model != "" {
+			respModel = chunk.Model
+		}
+		for _, ch := range chunk.Choices {
+			if ch.FinishReason != "" {
+				finishReason = ch.FinishReason
+			}
+			if tok := ch.Delta.Content; tok != "" {
+				sb.WriteString(tok)
+				if onToken != nil {
+					onToken(tok)
+				}
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Response{}, fmt.Errorf("chat: stream read: %w", err)
+	}
+	return Response{Content: sb.String(), Model: respModel, FinishReason: finishReason}, nil
 }
 
 // Health does a cheap reachability check: a GET against /v1/models.

@@ -1060,7 +1060,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	h := sha256.Sum256(data)
 	etag := hex.EncodeToString(h[:])[:16]
 
-	var sessionID string
+	sessionID := "stdio" // fallback for stdio transport where req.Session is nil
 	if req != nil && req.Session != nil {
 		sessionID = req.Session.ID()
 	}
@@ -1177,13 +1177,24 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		userContent := fmt.Sprintf("FILE: %s (lines %d-%d)\n\n```\n%s\n```",
 			relTarget, sliceStart, sliceEnd, slice)
 
-		resp, err := s.ChatClient.Generate(ctx, []chat.Message{
+		chatMsgs := []chat.Message{
 			{Role: "system", Content: system},
 			{Role: "user", Content: userContent},
-		}, chat.Options{
-			Temperature: in.Temperature,
-			MaxTokens:   in.MaxTokens,
-		})
+		}
+		chatOpts := chat.Options{Temperature: in.Temperature, MaxTokens: in.MaxTokens}
+		var resp chat.Response
+		if req != nil && req.Session != nil {
+			sess := req.Session
+			resp, err = s.ChatClient.GenerateStream(ctx, chatMsgs, chatOpts, func(tok string) {
+				_ = sess.Log(ctx, &sdk.LoggingMessageParams{
+					Level:  "debug",
+					Logger: "dex/file_view",
+					Data:   tok,
+				})
+			})
+		} else {
+			resp, err = s.ChatClient.Generate(ctx, chatMsgs, chatOpts)
+		}
 		if err != nil {
 			hint := fmt.Sprintf("chat error (%v) — showing raw content", err)
 			if errors.Is(err, chat.ErrUnreachable) {
