@@ -146,10 +146,7 @@ This turns dex from a stateless query tool into a project-aware assistant.
 
 ### G5: Shell output compression tool
 
-**Gap:** lean-ctx intercepts all shell output; dex has no equivalent.  
-**Option A:** Add a `compress_output` MCP tool that accepts raw command output and returns compressed version (lean-ctx patterns ported to Go).  
-**Option B:** Ship a thin shell hook script (`eval "$(dex shell-hook)"`) that wraps commands.  
-Option A is simpler, more portable, and doesn't require shell integration.
+**Done.** `ctx_shell` MCP tool executes shell commands with compressed output. Three-tier output policy: `passthrough` (auth flows, dev servers, interactive REPLs — output unchanged), `verbatim` (curl, jq, cat, git log — ANSI stripped, structure preserved), `compress` (build/test/lint — 56+ patterns, 60–99% reduction). Auth-flow detection guards against compressing OAuth device-code output. Heredoc-to-file writes blocked in addition to `>` redirect and `tee`. REST at `/v1/projects/{id}/shell`.
 
 ### G6: Directory listing tool
 
@@ -229,6 +226,8 @@ Large reindex jobs can OOM a GPU if batches are too big. Detect free VRAM (via `
 | `944cbb8` | 6 lean-ctx features: `readOnlyHint=true` on 18 read-only MCP tools; view_summarize large-file mode hint (>250 lines); 3 new knowledge archetypes (Dependency/Pattern/Fact); cache-stable LLM prompt ordering (SESSION CONTEXT moved to suffix); post-RRF local reranking (noise penalties, definition boost, coherence boost, MMR diversity); BM25 path-column weighting 2× | N8–N13 (third-wave gaps) |
 | `ed5632f` | N14: structured map for Markdown/JSON/YAML/TOML/lock files (`server_noncode_map.go`); N15: `search_context` tool (search+signatures+best-symbol body in one call); N16: task-relevance inline in signatures/map modes | N14–N16 |
 | `249ea3c` | N17: cold-start `overview` partial view — project markers + depth-2 fs tree + knowledge when index is empty | N17 |
+| `eb1b0b1` | G5: `ctx_shell` MCP tool — execute shell commands with compressed output; 56+ patterns; `raw` flag; exit code; line savings metadata; REST at `/v1/projects/{id}/shell` | G5 |
+| `0523950` | G5+: `ctx_shell` output policy — `passthrough` (auth flows/dev servers/REPLs), `verbatim` (curl/jq/git log), `compress` (build/test/lint); auth-flow detection; heredoc-to-file block | G5 |
 | `e3efa07` | N20: `agent` coordination bus — `agents` + `agent_messages` tables; `announce`/`post`/`read`/`list` actions; TierStandard; REST at `/v1/projects/{id}/agent`; remote shim + streamable-HTTP MCP surface updated | N20 |
 
 All gaps G1–G9, G11, G12 are done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1. Second-wave gaps N1–N7 (lean-ctx 3.6.x) done as of `bc6d9d8`. Third-wave gaps N8–N13 (lean-ctx 3.6.13–3.7.x) done as of `944cbb8`. Fourth-wave gaps N14–N17 done as of `249ea3c`. N18, N21, N22 done as of `b1e4545`. N20 done as of `e3efa07`. N19 (activity-weighted nudge) remains open.
@@ -251,7 +250,7 @@ Ordered by impact-to-effort ratio.
 | 6 | **G3: Knowledge base** | High | Medium | ✅ done | `knowledge_facts` table; `knowledge` MCP tool; top-K injected into `ask` |
 | 7 | **G9: Tiered routing** | High | Medium | ✅ done | `DEX_CHAT_URL` unset → probe ollama for code model, else fallback |
 | 8 | **G10: Streaming responses** | Medium | Medium | blocked | Requires `ServerSession` in tool handler ctx — SDK gap; revisit when SDK exposes session via context |
-| 9 | **G5: Shell compression tool** | Medium | High | ✅ done | `compress_output` MCP tool; 13 command patterns + generic; POST /v1/compress REST endpoint |
+| 9 | **G5: Shell compression tool** | Medium | High | ✅ done | `ctx_shell` MCP tool; 3-tier output policy (passthrough/verbatim/compress); 56+ patterns; auth-flow protection; heredoc block; REST at `/v1/projects/{id}/shell` |
 | 10 | **G11: Embedding auto-pull** | Low | Low | ✅ done | `dex reindex --pull-model`; `index status` hints `ollama pull nomic-embed-text` when ollama is up but has no embed models |
 | 11 | **G12: VRAM-aware batch sizing** | Low | Medium | ✅ done | `embed.FreeVRAMGB()` probes nvidia-smi/system_profiler; auto batch 8/64/256 for <4/4-16/>16 GB VRAM |
 
