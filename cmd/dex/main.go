@@ -446,8 +446,23 @@ func newEmbedClient() *embed.Client {
 }
 
 func newChatClient() *chat.Client {
-	url := envOr("DEX_CHAT_URL", "http://127.0.0.1:8081")
-	model := envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct")
+	url := os.Getenv("DEX_CHAT_URL")
+	model := os.Getenv("DEX_CHAT_MODEL")
+
+	if url == "" {
+		if om, ok := embed.DetectOllamaChat(context.Background()); ok {
+			url = om.URL
+			if model == "" {
+				model = om.Name
+			}
+			fmt.Fprintf(os.Stderr, "dex: ollama chat model %q at %s\n", model, url)
+		} else {
+			url = "http://127.0.0.1:8081"
+		}
+	}
+	if model == "" {
+		model = "Qwen/Qwen2.5-Coder-7B-Instruct"
+	}
 	timeout := parseDuration("DEX_CHAT_TIMEOUT", envOr("DEX_CHAT_TIMEOUT", "120s"), 120*time.Second)
 	return chat.New(url, model, timeout)
 }

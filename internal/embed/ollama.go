@@ -25,6 +25,26 @@ var preferredEmbedModels = []string{
 	"all-minilm",
 }
 
+// preferredChatModels lists known ollama chat/LLM model name substrings in
+// priority order, skewed toward code understanding.
+var preferredChatModels = []string{
+	"qwen2.5-coder",
+	"deepseek-coder-v2",
+	"deepseek-coder",
+	"starcoder2",
+	"codegemma",
+	"codellama",
+	"qwen2.5",
+	"llama3.2",
+	"llama3.1",
+	"llama3",
+	"mistral",
+	"phi4",
+	"phi3",
+	"gemma2",
+	"gemma",
+}
+
 // OllamaModel is the result of a successful ollama embedding model discovery.
 type OllamaModel struct {
 	Name string // e.g. "nomic-embed-text:latest"
@@ -32,11 +52,12 @@ type OllamaModel struct {
 }
 
 // OllamaScan is the full result of an ollama discovery probe.
-// URL is set whenever ollama is reachable; EmbedModels may be empty if no
-// recognised embedding models are installed.
+// URL is set whenever ollama is reachable; EmbedModels/ChatModels may be
+// empty if no recognised models of that kind are installed.
 type OllamaScan struct {
 	URL         string   // e.g. "http://localhost:11434"
 	EmbedModels []string // recognised embed models, highest-priority first
+	ChatModels  []string // recognised chat/LLM models, highest-priority first
 }
 
 // DetectOllama probes the local ollama daemon (localhost:11434) for a known
@@ -48,10 +69,21 @@ func DetectOllama(ctx context.Context) (OllamaModel, bool) {
 	return detectOllamaFrom(tctx, ollamaBase)
 }
 
+// DetectOllamaChat probes the local ollama daemon for a chat/LLM model,
+// preferring code-capable models. Uses a 2-second timeout.
+func DetectOllamaChat(ctx context.Context) (OllamaModel, bool) {
+	tctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	scan, ok := scanOllamaFrom(tctx, ollamaBase)
+	if !ok || len(scan.ChatModels) == 0 {
+		return OllamaModel{}, false
+	}
+	return OllamaModel{Name: scan.ChatModels[0], URL: scan.URL}, true
+}
+
 // ScanOllama probes the local ollama daemon and returns all recognised
-// embedding models ordered by priority. Returns (scan, true) whenever ollama
-// is reachable — EmbedModels may still be empty if no known embed models are
-// installed. Uses a 2-second timeout.
+// embedding and chat models ordered by priority. Returns (scan, true)
+// whenever ollama is reachable. Uses a 2-second timeout.
 func ScanOllama(ctx context.Context) (OllamaScan, bool) {
 	tctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -93,19 +125,28 @@ func scanOllamaFrom(ctx context.Context, base string) (OllamaScan, bool) {
 		name string
 		pri  int
 	}
-	var found []ranked
+	var embedFound, chatFound []ranked
 	for _, m := range body.Models {
 		if pri := embedModelPriority(m.Name); pri >= 0 {
-			found = append(found, ranked{m.Name, pri})
+			embedFound = append(embedFound, ranked{m.Name, pri})
+			continue // embed-only models skip the chat list
+		}
+		if pri := chatModelPriority(m.Name); pri >= 0 {
+			chatFound = append(chatFound, ranked{m.Name, pri})
 		}
 	}
-	sort.Slice(found, func(i, j int) bool { return found[i].pri > found[j].pri })
+	sort.Slice(embedFound, func(i, j int) bool { return embedFound[i].pri > embedFound[j].pri })
+	sort.Slice(chatFound, func(i, j int) bool { return chatFound[i].pri > chatFound[j].pri })
 
-	names := make([]string, len(found))
-	for i, f := range found {
-		names[i] = f.name
+	embedNames := make([]string, len(embedFound))
+	for i, f := range embedFound {
+		embedNames[i] = f.name
 	}
-	return OllamaScan{URL: base, EmbedModels: names}, true
+	chatNames := make([]string, len(chatFound))
+	for i, f := range chatFound {
+		chatNames[i] = f.name
+	}
+	return OllamaScan{URL: base, EmbedModels: embedNames, ChatModels: chatNames}, true
 }
 
 // embedModelPriority returns a priority score for a model name (higher = better).
@@ -115,6 +156,18 @@ func embedModelPriority(name string) int {
 	for i, pattern := range preferredEmbedModels {
 		if strings.Contains(lower, pattern) {
 			return len(preferredEmbedModels) - i
+		}
+	}
+	return -1
+}
+
+// chatModelPriority returns a priority score for a chat/LLM model name.
+// Returns -1 for models not in the known chat list.
+func chatModelPriority(name string) int {
+	lower := strings.ToLower(name)
+	for i, pattern := range preferredChatModels {
+		if strings.Contains(lower, pattern) {
+			return len(preferredChatModels) - i
 		}
 	}
 	return -1
