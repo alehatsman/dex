@@ -136,6 +136,11 @@ func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.status(ctx, req, in)
 }
 
+func (p projectScoped) specVerify(ctx context.Context, req *sdk.CallToolRequest, in SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.specVerify(ctx, req, in)
+}
+
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at
 // /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
 // SDK permits reusing a server across sessions) and looked up by the {id} path
