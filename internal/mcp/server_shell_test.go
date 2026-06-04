@@ -219,6 +219,81 @@ func TestShellValidate(t *testing.T) {
 	if err := shellValidate("cmd | tee output.log"); err == nil {
 		t.Fatal("expected error for tee")
 	}
+	if err := shellValidate("cat <<EOF > file.py\nprint('x')\nEOF"); err == nil {
+		t.Fatal("expected error for heredoc file write")
+	}
+	if err := shellValidate("cat <<EOF\nhello\nEOF"); err != nil {
+		t.Fatalf("heredoc without redirect should be allowed: %v", err)
+	}
+}
+
+func TestClassifyCommand(t *testing.T) {
+	passthrough := []string{
+		"az login --use-device-code",
+		"gh auth login",
+		"npm run dev",
+		"cargo run",
+		"docker compose up",
+		"kubectl logs -f pod/foo",
+		"flask run",
+		"psql",
+	}
+	verbatim := []string{
+		"curl https://api.example.com/v1/users",
+		"jq . file.json",
+		"cat src/main.go",
+		"terraform show",
+		"kubectl get pods -o json",
+		"docker inspect container123",
+		"git log --oneline -10",
+	}
+	compress := []string{
+		"go test ./...",
+		"cargo build",
+		"npm install",
+		"make build",
+		"ruff check src/",
+		"grep -r pattern src/",
+	}
+	for _, cmd := range passthrough {
+		if got := classifyCommand(cmd); got != policyPassthrough {
+			t.Errorf("expected passthrough for %q, got %v", cmd, got)
+		}
+	}
+	for _, cmd := range verbatim {
+		if got := classifyCommand(cmd); got != policyVerbatim {
+			t.Errorf("expected verbatim for %q, got %v", cmd, got)
+		}
+	}
+	for _, cmd := range compress {
+		if got := classifyCommand(cmd); got != policyCompress {
+			t.Errorf("expected compress for %q, got %v", cmd, got)
+		}
+	}
+}
+
+func TestContainsAuthFlow(t *testing.T) {
+	yes := []string{
+		"To sign in, use a web browser to open https://microsoft.com/devicelogin and enter the code ABCD1234",
+		`{"device_code":"abc","user_code":"ABCD-1234","verification_uri":"https://example.com"}`,
+		"! First copy your one-time code: ABCD-1234\nPress Enter to open github.com",
+		"Go to https://accounts.google.com/auth\nEnter verification code: ",
+	}
+	no := []string{
+		"Compiling lean-ctx v2.0\nFinished release",
+		"On branch main\nnothing to commit",
+		"added 150 packages in 3s",
+	}
+	for _, s := range yes {
+		if !containsAuthFlow(s) {
+			t.Errorf("expected auth flow detected in: %q", s)
+		}
+	}
+	for _, s := range no {
+		if containsAuthFlow(s) {
+			t.Errorf("expected no auth flow in: %q", s)
+		}
+	}
 }
 
 func TestStripANSI(t *testing.T) {
