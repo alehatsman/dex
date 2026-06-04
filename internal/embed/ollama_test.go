@@ -138,3 +138,53 @@ func TestEmbedModelPriority_Ordering(t *testing.T) {
 		}
 	}
 }
+
+// ScanOllama tests
+
+func TestScanOllamaFrom_ReachableNoEmbedModels(t *testing.T) {
+	// Ollama is running but only has chat/LLM models — scan returns true with empty EmbedModels.
+	srv := newOllamaStub(t, []string{"llama3.2:3b", "mistral:7b"})
+	defer srv.Close()
+	scan, ok := scanOllamaFrom(context.Background(), srv.URL)
+	if !ok {
+		t.Fatal("expected true: ollama is reachable")
+	}
+	if len(scan.EmbedModels) != 0 {
+		t.Fatalf("expected empty EmbedModels, got %v", scan.EmbedModels)
+	}
+	if scan.URL != srv.URL {
+		t.Fatalf("URL mismatch: got %q", scan.URL)
+	}
+}
+
+func TestScanOllamaFrom_ReturnsAllEmbedModelsPriorityOrdered(t *testing.T) {
+	srv := newOllamaStub(t, []string{
+		"all-minilm:latest",
+		"llama3.2:3b",
+		"mxbai-embed-large:latest",
+		"nomic-embed-text:latest",
+	})
+	defer srv.Close()
+	scan, ok := scanOllamaFrom(context.Background(), srv.URL)
+	if !ok {
+		t.Fatal("expected true")
+	}
+	if len(scan.EmbedModels) != 3 {
+		t.Fatalf("expected 3 embed models, got %d: %v", len(scan.EmbedModels), scan.EmbedModels)
+	}
+	// First entry must be the highest-priority model.
+	if scan.EmbedModels[0] != "mxbai-embed-large:latest" {
+		t.Fatalf("first model: got %q, want mxbai-embed-large:latest", scan.EmbedModels[0])
+	}
+	// Last entry must be the lowest-priority embed model.
+	if scan.EmbedModels[2] != "all-minilm:latest" {
+		t.Fatalf("last model: got %q, want all-minilm:latest", scan.EmbedModels[2])
+	}
+}
+
+func TestScanOllamaFrom_Unreachable(t *testing.T) {
+	_, ok := scanOllamaFrom(context.Background(), "http://127.0.0.1:1")
+	if ok {
+		t.Fatal("expected false for unreachable server")
+	}
+}
