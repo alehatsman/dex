@@ -287,6 +287,7 @@ func New(p *proj.Project, s GraphStore, opts Options) *Indexer {
 	if log == nil {
 		log = nilLogger()
 	}
+	log = log.With("subsystem", "graph")
 	return &Indexer{project: p, store: s, opts: opts, log: log}
 }
 

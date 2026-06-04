@@ -112,11 +112,12 @@ type Options struct {
 
 // Indexer is the entry point.
 type Indexer struct {
-	Proj    *proj.Project
-	Store   *store.Store
-	Embed   *embed.Client
-	Ignore  *ignore.Matcher
-	Options Options
+	Proj     *proj.Project
+	Store    *store.Store
+	Embed    *embed.Client
+	Ignore   *ignore.Matcher
+	Options  Options
+	drainLog *slog.Logger // subsystem=drain logger, derived in New()
 }
 
 func New(p *proj.Project, st *store.Store, em *embed.Client, ig *ignore.Matcher, opt Options) *Indexer {
@@ -126,7 +127,9 @@ func New(p *proj.Project, st *store.Store, em *embed.Client, ig *ignore.Matcher,
 	if opt.Logger == nil {
 		opt.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Indexer{Proj: p, Store: st, Embed: em, Ignore: ig, Options: opt}
+	drainLog := opt.Logger.With("subsystem", "drain")
+	opt.Logger = opt.Logger.With("subsystem", "indexer")
+	return &Indexer{Proj: p, Store: st, Embed: em, Ignore: ig, Options: opt, drainLog: drainLog}
 }
 
 // Run walks the project, chunks new/changed files, embeds, and upserts.

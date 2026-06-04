@@ -74,6 +74,7 @@ func New(idx *index.Indexer, ig *ignore.Matcher, root string, opt Options) *Watc
 	if opt.Logger == nil {
 		opt.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	opt.Logger = opt.Logger.With("subsystem", "watch")
 	return &Watcher{indexer: idx, ig: ig, root: root, opts: opt}
 }
 
