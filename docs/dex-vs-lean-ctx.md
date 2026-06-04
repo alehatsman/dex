@@ -135,7 +135,7 @@ This is a small investment with outsized ergonomic returns.
 
 This turns dex from a stateless query tool into a project-aware assistant.
 
-### G4: More read modes for view_summarize
+### G4: More read modes for file_view
 
 **Partially done (recent commits):** `full`, `signatures`, `lines:N-M` landed.  
 **Still missing:**
@@ -154,12 +154,12 @@ Option A is simpler, more portable, and doesn't require shell integration.
 ### G6: Directory listing tool
 
 **Gap:** dex has no `ctx_tree` equivalent. Agents use `ask` or an external `ls`.  
-**Fix:** Add `search_tree(path, depth, filter)` — returns compact directory listing with file counts, filtered to indexed extensions. Useful for orientation without reading file contents.
+**Fix:** Add `file_tree(path, depth, filter)` — returns compact directory listing with file counts, filtered to indexed extensions. Useful for orientation without reading file contents.
 
 ### G7: Token tracking
 
 **Gap:** dex doesn't track or report token savings.  
-**Fix:** Add optional telemetry to `index_status`:
+**Fix:** Add optional telemetry to `status`:
 - Tokens served (cumulative)
 - Compression ratio achieved (via mode)
 - Cache hit rate (if file cache is added)
@@ -177,16 +177,16 @@ Auto-detect what's running:
 1. Probe ollama (localhost:11434) — list models, pick best embedding model by size/name
 2. Probe llama-server / vLLM candidates on common ports (8080, 8000, 11434)
 3. Check VRAM heuristic: NVIDIA via nvml.h (CGO optional), Apple via sysctl or IOKit
-4. Report discovery in index_status: { "local_embed": "nomic-embed-text:latest@ollama", "local_llm": "llama3.2:3b@ollama", "free_vram_gb": 18.4 }
+4. Report discovery in status: { "local_embed": "nomic-embed-text:latest@ollama", "local_llm": "llama3.2:3b@ollama", "free_vram_gb": 18.4 }
 ```
 
-Expose as `index_status` fields. Let the user and agent see what dex found.
+Expose as `status` fields. Let the user and agent see what dex found.
 
 ### G9: Tiered routing by GPU load
 
 When a local GPU endpoint exists, route differently:
 - **Embeddings:** Local ONNX or ollama embed model (low latency, no cost, no privacy concern)
-- **view_summarize:** Local LLM (ollama, llama-server) for non-sensitive files; remote for high-complexity requests
+- **file_view:** Local LLM (ollama, llama-server) for non-sensitive files; remote for high-complexity requests
 - **ask synthesis:** Local LLM if VRAM headroom exists; skip synthesis entirely if not (return raw hits)
 - **Reranking:** Local cross-encoder if available; fall back to score-based
 
@@ -195,7 +195,7 @@ Config: `DEX_LOCAL_EMBED_URL`, `DEX_LOCAL_LLM_URL`, `DEX_PREFER_LOCAL=true`. Aut
 ### G10: Streaming inference for ask/summarize
 
 lean-ctx uses request/response only. dex already has HTTP-MCP (streaming-capable).  
-Hook up streaming responses from local llama-server to MCP streaming events. Agents get the first tokens in <200ms instead of waiting for a full LLM response. This matters on large `view_summarize` calls.
+Hook up streaming responses from local llama-server to MCP streaming events. Agents get the first tokens in <200ms instead of waiting for a full LLM response. This matters on large `file_view` calls.
 
 ### G11: Embedding model auto-pull
 
@@ -227,7 +227,7 @@ Large reindex jobs can OOM a GPU if batches are too big. Detect free VRAM (via `
 | `9f7da0e` | Five tools in one commit: `view_summarize mode=map` (imports + exported symbols, no LLM); `graph_impact` (transitive caller BFS, depth-sorted); `overview` (task-relevant file ranking with centrality boost); `smells` (long functions, dead exports, god files via SQL); `routes` (HTTP/MCP/gRPC handler detection from name patterns + edges) | Partial G4 (`map` mode); `overview` is a lean-ctx `ctx_overview` analogue |
 | `bc6d9d8` | 7 lean-ctx features: graph-proximity RRF lane; graph-aware hints in `view_summarize`; 6 new shell compression patterns (kubectl/make/gh/pip/terraform/cmake); `session action=snapshot` recovery block; type-first ordering in `signatures` mode; repeated-search throttle hints; `knowledge action=export/import` | N1–N7 (second-wave gaps) |
 | `944cbb8` | 6 lean-ctx features: `readOnlyHint=true` on 18 read-only MCP tools; view_summarize large-file mode hint (>250 lines); 3 new knowledge archetypes (Dependency/Pattern/Fact); cache-stable LLM prompt ordering (SESSION CONTEXT moved to suffix); post-RRF local reranking (noise penalties, definition boost, coherence boost, MMR diversity); BM25 path-column weighting 2× | N8–N13 (third-wave gaps) |
-| `ed5632f` | N14: structured map for Markdown/JSON/YAML/TOML/lock files (`server_noncode_map.go`); N15: `search_compose` tool (search+signatures+best-symbol body in one call); N16: task-relevance inline in signatures/map modes | N14–N16 |
+| `ed5632f` | N14: structured map for Markdown/JSON/YAML/TOML/lock files (`server_noncode_map.go`); N15: `search_context` tool (search+signatures+best-symbol body in one call); N16: task-relevance inline in signatures/map modes | N14–N16 |
 | `249ea3c` | N17: cold-start `overview` partial view — project markers + depth-2 fs tree + knowledge when index is empty | N17 |
 
 All gaps G1–G9, G11, G12 are done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1. Second-wave gaps N1–N7 (lean-ctx 3.6.x) done as of `bc6d9d8`. Third-wave gaps N8–N13 (lean-ctx 3.6.13–3.7.x) done as of `944cbb8`. Fourth-wave gaps N14–N17 done as of `249ea3c`. N18–N22 open (low-impact quality-of-life).
@@ -244,8 +244,8 @@ Ordered by impact-to-effort ratio.
 |---|-----|--------|--------|--------|-------|
 | 1 | **G1: Local embedding via ollama auto-detect** | High | Low | ✅ done | `DEX_EMBED_URL` unset → probe localhost:11434, pick best embed model |
 | 2 | **G4: `map` read mode + `overview` tool** | High | Low | ✅ done | Landed in `9f7da0e` |
-| 3 | **G8: Local model discovery in index_status** | Medium | Low | ✅ done | `index_status` returns `OllamaEndpoint`, `OllamaEmbedModels`, `OllamaChatModels` |
-| 4 | **G6: search_tree tool** | Medium | Low | ✅ done | `search_tree` MCP tool + `FileTree()` store method |
+| 3 | **G8: Local model discovery in status** | Medium | Low | ✅ done | `status` returns `OllamaEndpoint`, `OllamaEmbedModels`, `OllamaChatModels` |
+| 4 | **G6: file_tree tool** | Medium | Low | ✅ done | `file_tree` MCP tool + `FileTree()` store method |
 | 5 | **G2: Session memory** | High | Medium | ✅ done | `sessions`/`session_files` tables; `session` MCP tool |
 | 6 | **G3: Knowledge base** | High | Medium | ✅ done | `knowledge_facts` table; `knowledge` MCP tool; top-K injected into `ask` |
 | 7 | **G9: Tiered routing** | High | Medium | ✅ done | `DEX_CHAT_URL` unset → probe ollama for code model, else fallback |
@@ -259,26 +259,26 @@ Ordered by impact-to-effort ratio.
 | # | Gap | Impact | Effort | Status | Notes |
 |---|-----|--------|--------|--------|-------|
 | N1 | **Graph proximity 3rd RRF lane** | High | Medium | ✅ done | `GraphNeighborFiles` + `HitsForFiles`; fused at 0.5× weight via `fuseWithGraphNeighbors` |
-| N2 | **Graph-aware hints in view_summarize** | Medium | Low | ✅ done | `graphRelatedHint` appends `# Related (call graph): ...` in signatures + map modes |
+| N2 | **Graph-aware hints in file_view** | Medium | Low | ✅ done | `graphRelatedHint` appends `# Related (call graph): ...` in signatures + map modes |
 | N3 | **More shell compression patterns** | Medium | Low | ✅ done | kubectl, make, gh, pip/uv, terraform, cmake/ninja added (7 → 13 handlers) |
-| N4 | **Session survival snapshot** | Medium | Low | ✅ done | `session action=snapshot` emits view_summarize + search_semantic recovery calls |
+| N4 | **Session survival snapshot** | Medium | Low | ✅ done | `session action=snapshot` emits file_view + search_semantic recovery calls |
 | N5 | **Prefix-cache-friendly ordering** | Low | Low | ✅ done | `formatSignatures` emits types/structs/interfaces before functions/methods |
 | N6 | **Progressive search throttling** | Low | Low | ✅ done | Repeated identical searches (≥4 in 5 min) surface a hint to use knowledge instead |
 | N7 | **Knowledge export/import** | Low | Low | ✅ done | `knowledge action=export` → JSON; `action=import` ← `[{archetype,body,confidence},...]` |
 | N8 | **`readOnlyHint` MCP annotations** | Medium | Low | ✅ done | 18 read-only tools annotated; enables Claude Code plan mode without prompts |
-| N9 | **view_summarize mode hint** | Low | Low | ✅ done | >250-line files in full mode emit `⚠` hint suggesting signatures/map |
+| N9 | **file_view mode hint** | Low | Low | ✅ done | >250-line files in full mode emit `⚠` hint suggesting signatures/map |
 | N10 | **Expand knowledge archetypes** | Low | Low | ✅ done | Added Dependency (1.1×), Pattern (1.0×), Fact (1.0×) |
 | N11 | **Cache-stable prompt ordering** | Low | Low | ✅ done | SESSION CONTEXT moved to end of `buildAnswerEvidence` — code prefix is stable for KV-cache |
 | N12 | **Post-RRF local reranking** | High | Medium | ✅ done | `rerankLocal()`: noise 0.3×, definition boost 1.5×, coherence 1.15×, MMR decay 0.7× |
 | N13 | **BM25 path-column weighting** | Medium | Low | ✅ done | `bm25(chunks_fts, 1.0, 2.0, 0.5)` — path column weighted 2× for path-aware queries |
 | N14 | **Structured `map` mode for non-code files** | High | Low-Medium | ✅ done | `nonCodeMap()` in `server_noncode_map.go`: Markdown heading tree, JSON key structure, YAML hierarchy, TOML sections, lock-file dep counts. Early-returns before store.Open — no index needed. |
-| N15 | **Composite `search_compose` tool** | High | Medium | ✅ done | `search_compose` MCP tool in `server_compose.go`. Embeds query, aggregates top-k files, returns signatures + best-symbol body in one call. TierStandard; REST at `/v1/projects/{id}/search/compose`. |
+| N15 | **Composite `search_context` tool** | High | Medium | ✅ done | `search_context` MCP tool in `server_compose.go`. Embeds query, aggregates top-k files, returns signatures + best-symbol body in one call. TierStandard; REST at `/v1/projects/{id}/search/context`. |
 | N16 | **Task-relevance inline in `signatures`/`map` mode** | Medium | Medium | ✅ done | `inlineTaskSymbol()` appended after `formatSignatures`/`formatMap`; word-overlap scoring via `tokenizeWords`+`symbolQueryScore`; body capped at 60 lines; no-op when no session task. |
 | N17 | **Cold-start `overview` partial view** | Medium | Low | ✅ done | `overview` opens store before embedding, checks `len(lineCounts)==0`; `overviewPartial()` returns status="partial" with project markers, depth-2 fs tree, and knowledge facts. |
 | N18 | **Knowledge revision tracking** | Low | Low | ☐ open | lean-ctx 3.6.24: `KnowledgeFact` gains `revision_count`. Re-storing a fact on the same key increments revision and archives the previous body. Output shows "Remembered (revision 1)" vs "Confirmed (revision 3, confirmed 2×)"; recall displays `rev N` for multi-revision facts. dex current: updating a fact silently replaces it. Fix: add `revision_count INT DEFAULT 0` to `knowledge_facts`; increment on update; surface `rev N` in `knowledge action=list` output. |
-| N19 | **Activity-weighted knowledge nudge** | Low | Medium | ☐ open | lean-ctx 3.6.24: tracks weighted activity per session — edits +4, shell test/build +3, shell +2, new file read +1. When `weighted_score ≥ 20` AND `significant_tools ≥ 5` AND no knowledge recorded in 8 minutes, surfaces a context-sensitive hint to record findings. dex current: no nudge mechanism. Fix: accumulate activity weights in the session layer (can be in-memory per server lifetime); append a hint to `search_semantic` or `view_summarize` responses when threshold is crossed. |
+| N19 | **Activity-weighted knowledge nudge** | Low | Medium | ☐ open | lean-ctx 3.6.24: tracks weighted activity per session — edits +4, shell test/build +3, shell +2, new file read +1. When `weighted_score ≥ 20` AND `significant_tools ≥ 5` AND no knowledge recorded in 8 minutes, surfaces a context-sensitive hint to record findings. dex current: no nudge mechanism. Fix: accumulate activity weights in the session layer (can be in-memory per server lifetime); append a hint to `search_semantic` or `file_view` responses when threshold is crossed. |
 | N20 | **Multi-agent coordination bus** | Medium | Medium | ☐ open | lean-ctx 3.7.1 adds `ctx_agent` (register/list/post/read) for agents sharing findings. dex equivalent: add `agent` MCP tool backed by a new `agent_messages` table — agents announce themselves, post findings, read peers' findings. Useful in orchestration scenarios where dex is queried by multiple concurrent agents. |
-| N21 | **Batch file reads (`ctx_multi_read`)** | Low | Low | ☐ open | lean-ctx added `ctx_multi_read` to read N files in a single MCP round-trip. dex equivalent: add `view_summarize` an optional `paths[]` param (list of files) that returns a concatenated/interleaved result. Reduces latency for agents doing multi-file context gathering. |
+| N21 | **Batch file reads (`ctx_multi_read`)** | Low | Low | ☐ open | lean-ctx added `ctx_multi_read` to read N files in a single MCP round-trip. dex equivalent: add `file_view` an optional `paths[]` param (list of files) that returns a concatenated/interleaved result. Reduces latency for agents doing multi-file context gathering. |
 | N22 | **Knowledge auto-consolidation** | Low | Low | ☐ open | lean-ctx added `ctx_knowledge action=consolidate` — auto-extracts facts from the current session into permanent knowledge entries. dex equivalent: `knowledge action=consolidate` sends recent session findings + decisions to the chat LLM and stores the distilled facts. Requires `DEX_CHAT_URL`. |
 
 ---
@@ -288,7 +288,7 @@ Ordered by impact-to-effort ratio.
 - **No bundled inference.** dex doesn't link llama.cpp or ship ONNX models. `docs/vision.md` is clear.
 - **No breaking API changes.** Existing tool names stay stable.
 - **SQLite-first.** New storage (sessions, knowledge) goes into the existing per-project DB.
-- **Graceful degradation.** Every GPU/local-model feature has a no-model fallback. dex works without any model endpoint for graph, symbol, and `view_summarize` signatures/lines modes.
+- **Graceful degradation.** Every GPU/local-model feature has a no-model fallback. dex works without any model endpoint for graph, symbol, and `file_view` signatures/lines modes.
 - **Go stdlib and minimal deps.** No heavy ML frameworks in the binary.
 
 ---

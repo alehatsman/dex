@@ -243,7 +243,7 @@ func (rc *remoteClient) graphTags(ctx context.Context, _ *sdk.CallToolRequest, i
 
 func (rc *remoteClient) summarize(ctx context.Context, _ *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	var out SummarizeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/summarize"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/file/view"), in, &out)
 	return nil, out, err
 }
 
@@ -279,7 +279,7 @@ func (rc *remoteClient) overview(ctx context.Context, _ *sdk.CallToolRequest, in
 
 func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	var out SmellsOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/smells"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/code/smells"), in, &out)
 	return nil, out, err
 }
 
@@ -291,7 +291,7 @@ func (rc *remoteClient) routes(ctx context.Context, _ *sdk.CallToolRequest, in R
 
 func (rc *remoteClient) compose(ctx context.Context, _ *sdk.CallToolRequest, in ComposeInput) (*sdk.CallToolResult, ComposeOutput, error) {
 	var out ComposeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/compose"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/context"), in, &out)
 	return nil, out, err
 }
 

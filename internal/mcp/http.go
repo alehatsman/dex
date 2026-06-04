@@ -23,7 +23,8 @@ package mcp
 //	POST /projects/{id}/graph/backlinks    — body: DocLinkInput
 //	POST /projects/{id}/graph/tags         — body: TagInput
 //	GET  /projects/{id}/graph/packages     — whole package import DAG
-//	POST /projects/{id}/view/summarize     — body: SummarizeInput
+//	POST /projects/{id}/file/view          — body: SummarizeInput
+//	POST /projects/{id}/search/context     — body: ComposeInput
 //	*    /projects/{id}/mcp                 — native streamable-HTTP MCP
 //	                                          transport (http_mcp.go), not REST
 //
@@ -256,8 +257,8 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/graph/backlinks", s.handleGraphBacklinks(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/tags", s.handleGraphTags(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/view/summarize", s.handleSummarize(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/search/compose", s.handleCompose(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/file/view", s.handleSummarize(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/search/context", s.handleCompose(opts.Projects))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:

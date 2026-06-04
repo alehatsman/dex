@@ -1,8 +1,8 @@
 package mcp
 
-// search_compose — single-call search+signatures+body tool (N15).
+// search_context — single-call search+signatures+body tool (N15).
 // inlineTaskSymbol / tokenizeWords / symbolQueryScore — shared helpers
-// used by compose and by the N16 task-relevance inline in view_summarize.
+// used by compose and by the N16 task-relevance inline in file_view.
 
 import (
 	"context"
