@@ -110,10 +110,6 @@ type Server struct {
 	// a knowledge-nudge hint when the agent has done significant work but
 	// hasn't recorded any findings. Key: project root; value: *activityState.
 	activityTracker sync.Map
-
-	// tier is the tool tier active for this server instance; set by
-	// registerTools so ctx_nav can report which tools are actually available.
-	tier toolTier
 }
 
 type throttleEntry struct {
@@ -1755,11 +1751,6 @@ func toolTierFromEnv() toolTier {
 // DEX_EXPOSE_RAW_TOOLS=1 is honoured as a backward-compatible alias for power.
 // The `dex` CLI subcommands are unaffected by tier.
 func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable bool) {
-	// Stamp the active tier onto the server so ctx_nav can report it accurately.
-	if s, ok := h.(*Server); ok {
-		s.tier = tier
-	}
-
 	// Power-only: raw search / graph / analysis lanes. Useful for CLI parity,
 	// A-B debugging, and power users — too noisy for everyday agents.
 	if tier >= TierPower {

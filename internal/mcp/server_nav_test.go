@@ -40,7 +40,7 @@ func TestNavTierFiltering(t *testing.T) {
 }
 
 func TestNavHandlerReturnsGuide(t *testing.T) {
-	s := &Server{tier: TierStandard}
+	s := &Server{}
 	_, out, err := s.nav(context.Background(), nil, NavInput{})
 	if err != nil {
 		t.Fatalf("nav: %v", err)
