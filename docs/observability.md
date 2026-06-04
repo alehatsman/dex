@@ -8,8 +8,17 @@ All structured log output from dex follows these rules:
 |-------|------|-------------|
 | `subsystem` | string | Source subsystem (see roster below). Attached via `.With()` at logger construction — every line from a subsystem carries it automatically. |
 | `duration_ms` | int64 | Elapsed time in integer milliseconds. Always `int64`, never a string duration. Use `logx.DurMS(d)` at call sites. |
+| `err` | error | Error value. Use the bare key `"err"`, not `"error"`. |
+| `path` | string | File path (relative to project root). |
+| `root` | string | Project root (absolute path). |
+| `dir` | string | Package or directory path (relative to project root). |
+| `kind` | string | Chunk kind (`file_summary`, `chunk_summary`, `package_summary`, `repo_summary`). |
+| `count` | int | Row or item count in context-specific log messages. |
+| `batch` | int | Current batch number (1-based) in a multi-batch loop. |
+| `batch_total` | int | Total number of batches in a multi-batch loop. |
+| `chunks` | int | Number of chunks in the current operation. |
+| `start_line` | int | Start line of a chunk within its source file. |
 | `op` | string | Optional operation name when a subsystem runs multiple distinct operations (e.g. `"embed"`, `"walk"`, `"prune"`). |
-| `err` | string | Error value. Use the bare key `"err"`, not `"error"`. |
 
 Durations are always `int64` milliseconds (`duration_ms`) for machine parseability. Never log raw `time.Duration` values (they serialize as `"123ms"` strings, which break numeric queries).
 

@@ -130,7 +130,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			case chunk.KindChunkSummary:
 				res, stalehit, err := ix.processChunkSummary(egctx, p)
 				if err != nil {
-					ix.drainLog.Warn("chunk summary drain failed", "id", p.ID, "path", p.Path, "start", p.StartLine, "err", err)
+					ix.drainLog.Warn("chunk summary drain failed", "id", p.ID, "path", p.Path, "start_line", p.StartLine, "err", err)
 					_ = ix.Store.BumpPendingAttempts(ctx, p.ID, err.Error())
 					return nil
 				}
@@ -216,7 +216,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			generated += len(batch)
 			ix.drainLog.Info("drain: embed batch",
 				"batch", start/batchSize+1,
-				"of", totalBatches,
+				"batch_total", totalBatches,
 				"chunks", len(batch),
 				logx.DurMS(time.Since(batchStart)))
 		}
