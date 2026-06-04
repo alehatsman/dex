@@ -302,3 +302,9 @@ func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ St
 	err := rc.do(ctx, http.MethodGet, rc.base+"/v1/status", nil, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) specVerify(ctx context.Context, _ *sdk.CallToolRequest, in SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error) {
+	var out SpecVerifyOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/spec/verify"), in, &out)
+	return nil, out, err
+}

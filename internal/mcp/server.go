@@ -1445,6 +1445,7 @@ type toolSurface interface {
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 	compose(context.Context, *sdk.CallToolRequest, ComposeInput) (*sdk.CallToolResult, ComposeOutput, error)
+	specVerify(context.Context, *sdk.CallToolRequest, SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error)
 }
 
 // toolTier controls how many tools are exposed to MCP clients.
@@ -1620,6 +1621,19 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
 		}, h.status)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "spec_verify",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: "Verify a spec file against the project's code index. Reads the spec's ## Checklist " +
+				"items (or ## Behavior clauses as fallback), embeds each clause, retrieves the top-5 matching " +
+				"code chunks, and — when a chat model is configured — asks the model to judge whether the code " +
+				"implements the clause (pass/fail/unknown). Returns per-item verdicts with code citations " +
+				"(path:line), pass/fail/unknown counts, and a drift flag if commits have landed on covered paths " +
+				"since the spec's last_verified commit. " +
+				"Pass no_judge:true to skip the LLM pass and get raw citations only. " +
+				"Returns 'no-index' when the project hasn't been indexed yet.",
+		}, h.specVerify)
 	}
 
 	// Standard+ tools: orientation and persistent memory. Exposed by default so
