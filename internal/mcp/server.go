@@ -1093,6 +1093,13 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("invalid lines mode %q — expected lines:N-M (e.g. lines:10-40)", in.Mode)}, nil
 		}
 		slice, sliceStart, sliceEnd := sliceLines(data, start, end)
+		if sliceStart > sliceEnd {
+			fileLines := chunk.LineCount(data)
+			return nil, SummarizeOutput{
+				Status: "error",
+				Hint:   fmt.Sprintf("line range %d-%d is past EOF (file has %d lines)", start, end, fileLines),
+			}, nil
+		}
 		out.StartLine = sliceStart
 		out.EndLine = sliceEnd
 		out.Bytes = len(slice)
