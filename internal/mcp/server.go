@@ -222,6 +222,9 @@ func (s *Server) readCacheMark(sessionID, relPath, etag string) {
 // sessionAutoFile records relPath in the active session (if one with a task
 // exists) without blocking the caller. Safe to call from any mode.
 func (s *Server) sessionAutoFile(dbPath, relPath string) {
+	if _, err := os.Stat(dbPath); err != nil {
+		return // no index yet — nothing to track
+	}
 	go func() {
 		ctx := context.Background()
 		st, err := store.OpenWith(ctx, dbPath, s.StoreOpts)
