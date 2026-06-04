@@ -23,7 +23,7 @@ them in the pipeline is the indexing spec.
 
 ## Behavior
 
-- WHERE no `[index].include` is declared in `.dex/config.toml`, the matcher
+- WHERE no `index.include` is declared in `.dex/config.yml`, the matcher
   selects no file at all — indexing is opt-in, so dex never embeds a tree the
   owner didn't ask for, and callers warn so an empty index isn't silent.
 - WHEN an include allow-list is configured, a file is kept only if it matches an
@@ -34,7 +34,7 @@ them in the pipeline is the indexing spec.
   patterns remain reachable at any depth; only the exclude set prunes a subtree.
 - WHEN evaluating exclusions, the matcher composes, in order, hard-coded
   DefaultPatterns, the repo-root `.gitignore`, the repo-root `.dexignore`, and
-  `.dex/config.toml` `[index].ignore`, and evaluates them with full gitignore
+  `.dex/config.yml` `index.ignore`, and evaluates them with full gitignore
   semantics (anchoring, negation, `**`, dir-only patterns, later-pattern-wins).
 - WHERE nested `.gitignore`/`.dexignore` files exist below the root, they are
   intentionally not read — only the repo-root files contribute patterns.
@@ -61,7 +61,7 @@ them in the pipeline is the indexing spec.
   size/orchestration limits that consume these decisions are the **indexing**
   spec; here only the selection logic.
 - **The on-disk index / config storage.** How the index is stored is **storage**;
-  this spec only parses `.dex/config.toml`'s `[index]` section for patterns.
+  this spec only parses `.dex/config.yml`'s `index:` section for patterns.
 - **Triggering re-selection on change.** Re-running selection when files change
   is the **watch** spec; watch reuses this matcher.
 - **Per-language chunking detail.** Which extensions map to which tree-sitter
@@ -69,9 +69,9 @@ them in the pipeline is the indexing spec.
 
 ## Checklist
 
-- [x] Opt-in include allow-list (`.dex/config.toml` `[index].include`); no include → select nothing
+- [x] Opt-in include allow-list (`.dex/config.yml` `index.include`); no include → select nothing
 - [x] Include gates files only; directories descend (file-only patterns work at depth)
-- [x] Exclude chain: DefaultPatterns + root `.gitignore` + root `.dexignore` + `[index].ignore`, full gitignore semantics
+- [x] Exclude chain: DefaultPatterns + root `.gitignore` + root `.dexignore` + `index.ignore`, full gitignore semantics
 - [x] Nested ignore files below root intentionally not read
 - [x] DefaultPatterns cover vendor/build/lockfiles/minified/generated/secret-name/license families
 - [x] Directory inputs get trailing-slash so dir-only patterns match

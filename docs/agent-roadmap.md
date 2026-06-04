@@ -23,8 +23,8 @@ is strict: **env var > config file > default**, so the dotfiles/systemd env
 layer still wins and nothing that worked before changes — but a checkout that
 pins `config.yml` drops its env surface to ~zero. `DEX_SERVE_TOKEN` is a secret
 and is never read from the file. `dex env` shows the per-setting source
-(`env|file|default`). (Indexing include/ignore stays in `.dex/config.toml`
-`[index]`, owned by `internal/ignore`.)
+(`env|file|default`). (Indexing include/ignore stays in `.dex/config.yml`
+`index:`, owned by `internal/ignore`.)
 
 ---
 

@@ -434,13 +434,13 @@ func cliLogger() *slog.Logger {
 }
 
 // warnIfNoInclude prints a prominent notice when a project has no
-// `[index].include` in .dex/config.toml. Indexing is opt-in, so without
+// `index.include` in .dex/config.yml. Indexing is opt-in, so without
 // it the run produces an empty index — surface that instead of letting
 // it look like a silent success.
 func warnIfNoInclude(ig *ignore.Matcher, root string) {
 	if !ig.IncludeConfigured() {
 		fmt.Fprintf(os.Stderr,
-			"⚠ no [index].include in %s/.dex/config.toml — nothing will be indexed\n", root)
+			"⚠ no index.include in %s/.dex/config.yml — nothing will be indexed\n", root)
 	}
 }
 

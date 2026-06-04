@@ -19,7 +19,7 @@ Flat files, per-project, scattered across `~/.config/lean-ctx/`.
 | Embeddings | Optional Qdrant or in-memory | external or `vectors/` |
 | File read cache | In-memory (zstd) | Session-aware etag cache (`readCache`: sessionID→path→hash); `status=unchanged` on re-reads |
 | TF-IDF semantic cache | In-memory | — |
-| Config | TOML | `config.toml` |
+| Config | TOML | `.dex/config.yml` (index + endpoints/models/tools) |
 | Stats | JSON | `stats.json` |
 
 **Inference:** ONNX model runs in-process (`rten` runtime). Default model: `all-MiniLM-L6-v2`. No external endpoint needed. Optional Qdrant for persistent vectors.

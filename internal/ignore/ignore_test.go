@@ -11,7 +11,7 @@ func TestDefaultsIgnoreVendorDirs(t *testing.T) {
 	root := t.TempDir()
 	// Include everything so this exercises the exclude layer in isolation
 	// (without an include list the opt-in model would skip every file).
-	writeConfig(t, root, "[index]\ninclude = [\"*\"]\n")
+	writeConfig(t, root, "index:\n  include: [\"*\"]\n")
 	m, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestGitignoreAndMcsearchIgnore(t *testing.T) {
 		[]byte("scratch/\n!scratch/keep.md\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeConfig(t, root, "[index]\ninclude = [\"*\"]\n")
+	writeConfig(t, root, "index:\n  include: [\"*\"]\n")
 	m, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestDoubleStarPatterns(t *testing.T) {
 		[]byte("**/__pycache__/\n**/*.bak\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeConfig(t, root, "[index]\ninclude = [\"*\"]\n")
+	writeConfig(t, root, "index:\n  include: [\"*\"]\n")
 	m, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -335,14 +335,14 @@ func trim(s string) string {
 	return s
 }
 
-// writeConfig writes a .dex/config.toml under root.
+// writeConfig writes a .dex/config.yml under root.
 func writeConfig(t *testing.T, root, body string) {
 	t.Helper()
 	dir := filepath.Join(root, ".dex")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -350,13 +350,13 @@ func writeConfig(t *testing.T, root, body string) {
 func TestIncludeAllowList(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, root, `# dex config
-[index]
-include = [
-  "cmd/",
-  "internal/",
-  "*.md",
-]
-ignore = ["internal/legacy/"]
+index:
+  include:
+    - cmd/
+    - internal/
+    - "*.md"
+  ignore:
+    - internal/legacy/
 `)
 	m, err := New(root)
 	if err != nil {
@@ -398,7 +398,7 @@ ignore = ["internal/legacy/"]
 }
 
 func TestNoIncludeIndexesNothing(t *testing.T) {
-	root := t.TempDir() // no .dex/config.toml
+	root := t.TempDir() // no .dex/config.yml
 	m, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -433,17 +433,16 @@ func TestNoIncludeIndexesNothing(t *testing.T) {
 func TestLoadIndexConfig(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, root, `# leading comment
-[other]
-key = "ignored"
+other:
+  key: ignored
 
-[index]
-include = [
-  "cmd/",       # trailing comment
-  "internal/",
-  "*.md",
-]
-ignore = ["testdata/", "benchmark/results/",]
-scalar = "skipped quietly"
+index:
+  include:
+    - cmd/        # trailing comment
+    - internal/
+    - "*.md"
+  ignore: ["testdata/", "benchmark/results/"]
+  scalar: skipped quietly
 `)
 	cfg, err := loadIndexConfig(root)
 	if err != nil {
@@ -469,9 +468,9 @@ func TestLoadIndexConfigEdgeCases(t *testing.T) {
 		t.Errorf("missing file: got %+v, want zero", cfg)
 	}
 
-	// Single-line array + empty array.
+	// Flow-style sequence + empty sequence.
 	root := t.TempDir()
-	writeConfig(t, root, "[index]\ninclude = [\"a/\", \"b/\"]\nignore = []\n")
+	writeConfig(t, root, "index:\n  include: [\"a/\", \"b/\"]\n  ignore: []\n")
 	cfg, err = loadIndexConfig(root)
 	if err != nil {
 		t.Fatal(err)
@@ -479,14 +478,14 @@ func TestLoadIndexConfigEdgeCases(t *testing.T) {
 	if !slices.Equal(cfg.Include, []string{"a/", "b/"}) {
 		t.Errorf("Include = %v, want [a/ b/]", cfg.Include)
 	}
-	if cfg.Ignore != nil {
-		t.Errorf("Ignore = %v, want nil", cfg.Ignore)
+	if len(cfg.Ignore) != 0 {
+		t.Errorf("Ignore = %v, want empty", cfg.Ignore)
 	}
 
-	// Unterminated array → error.
+	// Malformed YAML → error.
 	bad := t.TempDir()
-	writeConfig(t, bad, "[index]\ninclude = [\n  \"a/\",\n")
+	writeConfig(t, bad, "index:\n  include: [\n  \"a/\",\n")
 	if _, err := loadIndexConfig(bad); err == nil {
-		t.Error("unterminated array: want error, got nil")
+		t.Error("malformed yaml: want error, got nil")
 	}
 }
