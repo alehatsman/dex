@@ -225,14 +225,17 @@ Large reindex jobs can OOM a GPU if batches are too big. Detect free VRAM (via `
 | `6a7c924` | Native HTTP-MCP transport at `/v1/projects/{id}/mcp` | None in lean-ctx (dex-specific) |
 | `e681778` | Remote stdio shim (`dex mcp --remote`); `toolSurface` abstraction | None in lean-ctx (dex-specific) |
 | `9f7da0e` | Five tools in one commit: `view_summarize mode=map` (imports + exported symbols, no LLM); `graph_impact` (transitive caller BFS, depth-sorted); `overview` (task-relevant file ranking with centrality boost); `smells` (long functions, dead exports, god files via SQL); `routes` (HTTP/MCP/gRPC handler detection from name patterns + edges) | Partial G4 (`map` mode); `overview` is a lean-ctx `ctx_overview` analogue |
+| `bc6d9d8` | 7 lean-ctx features: graph-proximity RRF lane; graph-aware hints in `view_summarize`; 6 new shell compression patterns (kubectl/make/gh/pip/terraform/cmake); `session action=snapshot` recovery block; type-first ordering in `signatures` mode; repeated-search throttle hints; `knowledge action=export/import` | N1–N7 (second-wave gaps) |
 
-All gaps G1–G9, G11, G12 are now done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1.
+All gaps G1–G9, G11, G12 are done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1. Second-wave gaps N1–N7 (identified in June 2026 comparison against lean-ctx 3.6.x) are all done as of `bc6d9d8`.
 
 ---
 
 ## 7. Priority Ranking
 
 Ordered by impact-to-effort ratio.
+
+### Original gaps (G-series)
 
 | # | Gap | Impact | Effort | Status | Notes |
 |---|-----|--------|--------|--------|-------|
@@ -244,9 +247,21 @@ Ordered by impact-to-effort ratio.
 | 6 | **G3: Knowledge base** | High | Medium | ✅ done | `knowledge_facts` table; `knowledge` MCP tool; top-K injected into `ask` |
 | 7 | **G9: Tiered routing** | High | Medium | ✅ done | `DEX_CHAT_URL` unset → probe ollama for code model, else fallback |
 | 8 | **G10: Streaming responses** | Medium | Medium | blocked | Requires `ServerSession` in tool handler ctx — SDK gap; revisit when SDK exposes session via context |
-| 9 | **G5: Shell compression tool** | Medium | High | ✅ done | `compress_output` MCP tool; 7 command patterns + generic; POST /v1/compress REST endpoint |
+| 9 | **G5: Shell compression tool** | Medium | High | ✅ done | `compress_output` MCP tool; 13 command patterns + generic; POST /v1/compress REST endpoint |
 | 10 | **G11: Embedding auto-pull** | Low | Low | ✅ done | `dex reindex --pull-model`; `index status` hints `ollama pull nomic-embed-text` when ollama is up but has no embed models |
 | 11 | **G12: VRAM-aware batch sizing** | Low | Medium | ✅ done | `embed.FreeVRAMGB()` probes nvidia-smi/system_profiler; auto batch 8/64/256 for <4/4-16/>16 GB VRAM |
+
+### Second-wave gaps (N-series, lean-ctx 3.6.x features not in original doc)
+
+| # | Gap | Impact | Effort | Status | Notes |
+|---|-----|--------|--------|--------|-------|
+| N1 | **Graph proximity 3rd RRF lane** | High | Medium | ✅ done | `GraphNeighborFiles` + `HitsForFiles`; fused at 0.5× weight via `fuseWithGraphNeighbors` |
+| N2 | **Graph-aware hints in view_summarize** | Medium | Low | ✅ done | `graphRelatedHint` appends `# Related (call graph): ...` in signatures + map modes |
+| N3 | **More shell compression patterns** | Medium | Low | ✅ done | kubectl, make, gh, pip/uv, terraform, cmake/ninja added (7 → 13 handlers) |
+| N4 | **Session survival snapshot** | Medium | Low | ✅ done | `session action=snapshot` emits view_summarize + search_semantic recovery calls |
+| N5 | **Prefix-cache-friendly ordering** | Low | Low | ✅ done | `formatSignatures` emits types/structs/interfaces before functions/methods |
+| N6 | **Progressive search throttling** | Low | Low | ✅ done | Repeated identical searches (≥4 in 5 min) surface a hint to use knowledge instead |
+| N7 | **Knowledge export/import** | Low | Low | ✅ done | `knowledge action=export` → JSON; `action=import` ← `[{archetype,body,confidence},...]` |
 
 ---
 
