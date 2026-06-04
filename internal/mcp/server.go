@@ -1173,7 +1173,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		Version: Version,
 	}, nil)
 
-	registerTools(srv, s, exposeRawTools(), s.ChatClient != nil)
+	registerTools(srv, s, toolTierFromEnv(), s.ChatClient != nil)
 
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
@@ -1208,16 +1208,48 @@ type toolSurface interface {
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 }
 
+// toolTier controls how many tools are exposed to MCP clients.
+//
+//   - TierAsk      — ask only (minimal, escape-hatch)
+//   - TierStandard — ask + orientation + memory tools (default)
+//   - TierPower    — everything (old DEX_EXPOSE_RAW_TOOLS=1)
+type toolTier int
+
+const (
+	TierAsk      toolTier = iota // ask only
+	TierStandard                 // ask + overview + session + knowledge + search_tree + view_summarize
+	TierPower                    // full raw surface: search_*, graph_*, smells, routes, compress_output, index_status
+)
+
+// toolTierFromEnv reads DEX_TOOLS (ask|standard|power). DEX_EXPOSE_RAW_TOOLS=1
+// is honoured as a backward-compatible alias for power. Default: standard.
+func toolTierFromEnv() toolTier {
+	if exposeRawTools() {
+		return TierPower
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_TOOLS"))) {
+	case "power":
+		return TierPower
+	case "ask":
+		return TierAsk
+	default:
+		return TierStandard
+	}
+}
+
 // registerTools wires the dex tool surface onto srv, dispatching to h.
 //
-// Thin surface: `ask` is the sole tool agents see by default — it composes the
-// raw lanes below and (when a chat client is wired) synthesizes the answer, so
-// the raw lanes are redundant for agents. rawTools (DEX_EXPOSE_RAW_TOOLS=1)
-// registers them too (CLI parity / power use / A-B debugging). The `dex` CLI
-// subcommands are unaffected. registerSummarize gates view_summarize on chat
-// availability; it is still only registered when rawTools is on.
-func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize bool) {
-	if rawTools {
+// Tiers (DEX_TOOLS env var, default: standard):
+//   - TierAsk      → ask only
+//   - TierStandard → ask + overview + session + knowledge + search_tree + view_summarize (if chat)
+//   - TierPower    → everything above plus the raw search/graph/analysis tools
+//
+// DEX_EXPOSE_RAW_TOOLS=1 is honoured as a backward-compatible alias for power.
+// The `dex` CLI subcommands are unaffected by tier.
+func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable bool) {
+	// Power-only: raw search / graph / analysis lanes. Useful for CLI parity,
+	// A-B debugging, and power users — too noisy for everyday agents.
+	if tier >= TierPower {
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "search_semantic",
 			Description: "Prefer `ask` for general code-understanding questions — it composes this " +
@@ -1322,6 +1354,25 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 		}, h.smells)
 
 		sdk.AddTool(srv, &sdk.Tool{
+			Name: "compress_output",
+			Description: "Compress raw shell command output before using it in your context. " +
+				"Pass the full output and a command hint (e.g. 'go test', 'git log', 'npm install', 'cargo build', 'docker build'). " +
+				"Strips progress spinners, download noise, and consecutive duplicates; for go test keeps only failures " +
+				"and summaries; for git diffs >80 lines strips unchanged context lines. " +
+				"Returns compressed text, original/output line counts, and saved_pct. " +
+				"No project index required — pure text transformation.",
+		}, h.compressOutput)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "index_status",
+			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
+		}, h.status)
+	}
+
+	// Standard+ tools: orientation and persistent memory. Exposed by default so
+	// agents can accumulate project context without any configuration.
+	if tier >= TierStandard {
+		sdk.AddTool(srv, &sdk.Tool{
 			Name: "overview",
 			Description: "Task-relevant project map. Given a task description, ranks every indexed file by " +
 				"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
@@ -1361,20 +1412,16 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 				"Returns 'no-index' when the project hasn't been indexed yet.",
 		}, h.searchTree)
 
-		sdk.AddTool(srv, &sdk.Tool{
-			Name: "compress_output",
-			Description: "Compress raw shell command output before using it in your context. " +
-				"Pass the full output and a command hint (e.g. 'go test', 'git log', 'npm install', 'cargo build', 'docker build'). " +
-				"Strips progress spinners, download noise, and consecutive duplicates; for go test keeps only failures " +
-				"and summaries; for git diffs >80 lines strips unchanged context lines. " +
-				"Returns compressed text, original/output line counts, and saved_pct. " +
-				"No project index required — pure text transformation.",
-		}, h.compressOutput)
-
-		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "index_status",
-			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
-		}, h.status)
+		if chatAvailable {
+			sdk.AddTool(srv, &sdk.Tool{
+				Name: "view_summarize",
+				Description: "Prefer `ask` first — its `suggested_reads` will name the file worth " +
+					"summarizing. Use view_summarize directly only when you already know which file you need digested. " +
+					"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
+					"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
+					"On error, returns 'chat-service-unreachable' or 'error'.",
+			}, h.summarize)
+		}
 	}
 
 	sdk.AddTool(srv, &sdk.Tool{
@@ -1405,23 +1452,10 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 			"only to override. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep.",
 	}, h.contextRouter)
 
-	if registerSummarize && rawTools {
-		sdk.AddTool(srv, &sdk.Tool{
-			Name: "view_summarize",
-			Description: "Prefer `ask` first — its `suggested_reads` will name the file worth " +
-				"summarizing. Use view_summarize directly only when you already know which file you need digested. " +
-				"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
-				"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
-				"On error, returns 'chat-service-unreachable' or 'error'.",
-		}, h.summarize)
-	}
 }
 
-// exposeRawTools reports whether the raw lanes (search_*, graph_*,
-// view_summarize, index_status) should be registered alongside `ask`.
-// Off by default so agents see a single tool; DEX_EXPOSE_RAW_TOOLS=1
-// (or true/on/yes) restores the full surface for CLI parity, power use,
-// and A-B debugging.
+// exposeRawTools is kept for backward compatibility — DEX_EXPOSE_RAW_TOOLS=1
+// (or true/on/yes) maps to TierPower in toolTierFromEnv.
 func exposeRawTools() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_EXPOSE_RAW_TOOLS"))) {
 	case "1", "true", "on", "yes":
