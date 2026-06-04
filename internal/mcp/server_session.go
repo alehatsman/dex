@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,7 +13,7 @@ import (
 
 type SessionInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear"`
+	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot"`
 	Task        string `json:"task,omitempty"         jsonschema:"task description for set_task action"`
 	Note        string `json:"note,omitempty"         jsonschema:"note text for add_note action"`
 	File        string `json:"file,omitempty"         jsonschema:"relative file path for add_file action"`
@@ -28,6 +29,7 @@ type SessionFileOutput struct {
 type SessionOutput struct {
 	Status    string              `json:"status"` // "ok" | "no-index" | "error"
 	Hint      string              `json:"hint,omitempty"`
+	Content   string              `json:"content,omitempty"` // snapshot markdown (action=snapshot only)
 	ID        int64               `json:"id,omitempty"`
 	StartedAt string              `json:"started_at,omitempty"`
 	UpdatedAt string              `json:"updated_at,omitempty"`
@@ -82,10 +84,12 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 			return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
 		}
 		return nil, SessionOutput{Status: "ok"}, nil
+	case "snapshot":
+		return s.sessionSnapshot(ctx, st, p.Root)
 	case "get", "":
 		// fall through to the read below
 	default:
-		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: set_task | add_note | add_file | get | clear", in.Action)}, nil
+		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: set_task | add_note | add_file | get | clear | snapshot", in.Action)}, nil
 	}
 
 	ss, ok, err := st.SessionGet(ctx)
@@ -112,4 +116,57 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		})
 	}
 	return nil, out, nil
+}
+
+// sessionSnapshot generates a structured recovery block for use after context
+// compaction. It lists view_summarize and search_semantic calls that will
+// cheaply re-establish context for the declared task and touched files.
+func (s *Server) sessionSnapshot(ctx context.Context, st *store.Store, projectRoot string) (*sdk.CallToolResult, SessionOutput, error) {
+	ss, ok, err := st.SessionGet(ctx)
+	if err != nil {
+		return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	if !ok {
+		return nil, SessionOutput{Status: "ok", Hint: "no active session — start one with action=set_task"}, nil
+	}
+
+	var b strings.Builder
+	b.WriteString("# Session Recovery Snapshot\n\n")
+
+	if ss.Task != "" {
+		b.WriteString("## Task\n")
+		b.WriteString(ss.Task)
+		b.WriteString("\n\n")
+		b.WriteString("## Re-establish context\n\n")
+		fmt.Fprintf(&b, "```\nsearch_semantic: {\"query\": %q, \"project_root\": %q}\n```\n\n", ss.Task, projectRoot)
+	}
+
+	if len(ss.Files) > 0 {
+		b.WriteString("## Files to re-read\n\n")
+		seen := make(map[string]struct{}, len(ss.Files))
+		for _, f := range ss.Files {
+			if _, dup := seen[f.Path]; dup {
+				continue
+			}
+			seen[f.Path] = struct{}{}
+			mode := "signatures"
+			if f.Op == "write" {
+				mode = "map"
+			}
+			fmt.Fprintf(&b, "```\nview_summarize: {\"path\": %q, \"mode\": %q, \"project_root\": %q}\n```\n",
+				f.Path, mode, projectRoot)
+		}
+		b.WriteString("\n")
+	}
+
+	if ss.Notes != "" {
+		b.WriteString("## Session notes\n\n")
+		b.WriteString(ss.Notes)
+		b.WriteString("\n")
+	}
+
+	return nil, SessionOutput{
+		Status:  "ok",
+		Content: b.String(),
+	}, nil
 }

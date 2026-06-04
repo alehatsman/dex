@@ -694,3 +694,108 @@ func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, limit 
 
 	return r, nil
 }
+
+// GraphNeighborFiles returns file paths that are graph-adjacent (1-hop via any
+// edge kind) to any of the seed files. Seed files are excluded from results.
+// Results are ordered by PageRank so the most architecturally central
+// neighbors rank first. Used by the search layer as a graph-proximity RRF lane.
+func (s *Store) GraphNeighborFiles(ctx context.Context, seeds []string, limit int) ([]string, error) {
+	if len(seeds) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	seedSet := make(map[string]struct{}, len(seeds))
+	for _, p := range seeds {
+		seedSet[p] = struct{}{}
+	}
+	args := make([]any, len(seeds)+1)
+	for i, p := range seeds {
+		args[i] = p
+	}
+	args[len(seeds)] = limit * 3 // over-fetch; seeds filtered client-side
+
+	rows, err := s.db.QueryContext(ctx, `
+		WITH seed_nodes AS (
+		  SELECT id FROM graph_nodes WHERE file_path IN (`+inPlaceholders(len(seeds))+`)
+		),
+		neighbor_ids AS (
+		  SELECT dst_id AS id FROM graph_edges WHERE src_id IN (SELECT id FROM seed_nodes)
+		  UNION
+		  SELECT src_id AS id FROM graph_edges WHERE dst_id IN (SELECT id FROM seed_nodes)
+		)
+		SELECT DISTINCT gn.file_path
+		FROM graph_nodes gn
+		JOIN neighbor_ids ni ON gn.id = ni.id
+		WHERE gn.file_path != ''
+		ORDER BY gn.pagerank DESC
+		LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, err
+		}
+		if _, isSeed := seedSet[fp]; isSeed {
+			continue
+		}
+		out = append(out, fp)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, rows.Err()
+}
+
+// HitsForFiles returns chunks for the given file paths ordered by graph
+// PageRank descending, so the most architecturally central chunks come first.
+// Used as input for the graph-proximity RRF lane in search fusion.
+func (s *Store) HitsForFiles(ctx context.Context, paths []string, k int) ([]Hit, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if k <= 0 {
+		k = 30
+	}
+	const batchSize = 500
+	var out []Hit
+	for i := 0; i < len(paths) && len(out) < k; i += batchSize {
+		end := min(i+batchSize, len(paths))
+		slice := paths[i:end]
+		want := k - len(out)
+		args := make([]any, len(slice)+1)
+		for j, p := range slice {
+			args[j] = p
+		}
+		args[len(slice)] = want
+
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT c.path, c.kind, c.name, c.start_line, c.end_line,
+			       COALESCE(gn.pagerank, 0) AS pr
+			FROM chunks c
+			LEFT JOIN graph_nodes gn ON gn.chunk_id = c.id
+			WHERE c.path IN (`+inPlaceholders(len(slice))+`)
+			ORDER BY pr DESC
+			LIMIT ?`, args...)
+		if err != nil {
+			return nil, err
+		}
+		func() {
+			defer rows.Close()
+			for rows.Next() {
+				var h Hit
+				var pr float64
+				_ = rows.Scan(&h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &pr)
+				h.Score = float32(pr)
+				out = append(out, h)
+			}
+		}()
+	}
+	return out, nil
+}

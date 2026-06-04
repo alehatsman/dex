@@ -89,6 +89,46 @@ type Server struct {
 	// watcherWG lets RunStdio wait for all watcher goroutines to drain
 	// before returning.
 	watcherWG sync.WaitGroup
+
+	// searchThrottle tracks per-session repeated searches for the same
+	// (query, project) pair. After 4 identical searches a hint is added;
+	// after 7 a stronger warning fires. Resets after 5 minutes of idle.
+	searchThrottle   sync.Map // key: string → *throttleEntry
+	searchThrottleMu sync.Mutex
+}
+
+type throttleEntry struct {
+	count  int
+	lastAt time.Time
+}
+
+// searchThrottleHint increments the repetition counter for (query, project)
+// and returns a hint string when the pattern crosses a threshold. Returns ""
+// on first few calls. Counters reset after 5 minutes of idle.
+func (s *Server) searchThrottleHint(query, project string) string {
+	const idleReset = 5 * time.Minute
+	key := project + "\x00" + query
+	now := time.Now()
+
+	raw, _ := s.searchThrottle.LoadOrStore(key, &throttleEntry{})
+	e := raw.(*throttleEntry)
+
+	s.searchThrottleMu.Lock()
+	if now.Sub(e.lastAt) > idleReset {
+		e.count = 0
+	}
+	e.count++
+	e.lastAt = now
+	count := e.count
+	s.searchThrottleMu.Unlock()
+
+	switch {
+	case count >= 7:
+		return fmt.Sprintf("search_semantic called %d times with identical query — consider storing findings via knowledge action=add instead of re-searching.", count)
+	case count >= 4:
+		return fmt.Sprintf("repeated search (%d times) — if this keeps returning the same results, store key findings with the knowledge tool.", count)
+	}
+	return ""
 }
 
 // Search, FindSymbol, Related, Summarize are thin exported wrappers
@@ -373,7 +413,25 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		}
 	}
 
+	// Graph-proximity lane: boost chunks from files graph-adjacent to
+	// recently-touched session files. Silently skips when no session exists
+	// or the graph hasn't been built — never fails the search.
+	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && len(ss.Files) > 0 {
+		seeds := make([]string, 0, len(ss.Files))
+		for _, f := range ss.Files {
+			seeds = append(seeds, f.Path)
+		}
+		if neighbors, err := st.GraphNeighborFiles(ctx, seeds, 15); err == nil && len(neighbors) > 0 {
+			if graphHits, err := st.HitsForFiles(ctx, neighbors, k*2); err == nil && len(graphHits) > 0 {
+				hits = fuseWithGraphNeighbors(hits, graphHits, k)
+			}
+		}
+	}
+
 	out.Status = "ok"
+	if hint := s.searchThrottleHint(in.Query, p.Root); hint != "" {
+		out.Hint = hint
+	}
 	for _, h := range hits {
 		if excluded(h.Path, in.Exclude) {
 			continue
@@ -449,6 +507,55 @@ func fuseWithSymbols(semantic, symbol []store.Hit, n int) []store.Hit {
 		scores[hk] += 1.0 / float32(kRRF+i+1)
 		if _, exists := byKey[hk]; !exists {
 			h.Score = 1.0 // exact name match
+			byKey[hk] = h
+		}
+	}
+
+	type ranked struct {
+		key   hitKey
+		score float32
+	}
+	all := make([]ranked, 0, len(scores))
+	for hk, s := range scores {
+		all = append(all, ranked{hk, s})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].score > all[j].score })
+	if len(all) > n {
+		all = all[:n]
+	}
+
+	out := make([]store.Hit, 0, len(all))
+	for _, r := range all {
+		h := byKey[r.key]
+		h.RRFScore = r.score
+		out = append(out, h)
+	}
+	return out
+}
+
+// fuseWithGraphNeighbors merges semantic+symbol hits with graph-proximity
+// hits via Reciprocal Rank Fusion (k=60). Graph hits represent chunks from
+// files that are graph-adjacent to recently-touched session files, so they
+// carry structural relevance even when lexically or semantically distant.
+// The graph lane is weighted at 0.5× to avoid drowning out direct matches.
+func fuseWithGraphNeighbors(primary, graphHits []store.Hit, n int) []store.Hit {
+	const kRRF = 60
+	type hitKey struct {
+		path string
+		line int
+	}
+	scores := make(map[hitKey]float32, len(primary)+len(graphHits))
+	byKey := make(map[hitKey]store.Hit, len(primary)+len(graphHits))
+
+	for i, h := range primary {
+		hk := hitKey{h.Path, h.StartLine}
+		scores[hk] += 1.0 / float32(kRRF+i+1)
+		byKey[hk] = h
+	}
+	for i, h := range graphHits {
+		hk := hitKey{h.Path, h.StartLine}
+		scores[hk] += 0.5 / float32(kRRF+i+1)
+		if _, exists := byKey[hk]; !exists {
 			byKey[hk] = h
 		}
 	}
@@ -750,6 +857,9 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 			return nil, out, nil
 		}
 		content := formatSignatures(data, syms, relTarget)
+		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
+			content += related
+		}
 		out.Status = "ok"
 		out.Content = content
 		out.Bytes = len(content)
@@ -775,6 +885,9 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 			return nil, out, nil
 		}
 		content := formatMap(relTarget, syms, imports)
+		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
+			content += related
+		}
 		out.Status = "ok"
 		out.Content = content
 		out.Bytes = len(content)
@@ -836,6 +949,17 @@ func parseLinesRange(s string) (start, end int, ok bool) {
 	return n, m, true
 }
 
+// graphRelatedHint returns a compact "Related (call graph): ..." line
+// listing files graph-adjacent to relPath, or "" when the graph is absent
+// or has no neighbors. Never fails — graph errors are silently swallowed.
+func graphRelatedHint(ctx context.Context, st *store.Store, relPath string) string {
+	neighbors, err := st.GraphNeighborFiles(ctx, []string{relPath}, 8)
+	if err != nil || len(neighbors) == 0 {
+		return ""
+	}
+	return "\n# Related (call graph): " + strings.Join(neighbors, ", ") + "\n"
+}
+
 // sigWindow is the max additional lines past start_line included as a
 // symbol's signature. Covers multi-line Go/Python/TS declarations
 // without pulling in the body.
@@ -843,14 +967,23 @@ const sigWindow = 4
 
 // formatSignatures produces a compact listing of indexed symbols with
 // their opening signature lines extracted from src.
+//
+// Output order: types/structs/interfaces first (stable declarations that
+// LLM providers can prefix-cache), then functions/methods (volatile bodies).
+// Within each group, source order is preserved.
 func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string) string {
 	lines := bytes.Split(bytes.TrimRight(src, "\n"), []byte("\n"))
 	var b strings.Builder
 	fmt.Fprintf(&b, "FILE: %s (%d symbols)\n\n", relPath, len(syms))
-	for _, sym := range syms {
-		si := sym.StartLine - 1 // 0-indexed
+
+	// Emit type declarations first (struct, interface, type), then callables.
+	isTypeKind := func(kind string) bool {
+		return kind == "struct" || kind == "interface" || kind == "type"
+	}
+	writeSym := func(sym store.GraphSymbol) {
+		si := sym.StartLine - 1
 		if si < 0 || si >= len(lines) {
-			continue
+			return
 		}
 		ei := si + sigWindow
 		if e := sym.EndLine - 1; e < ei {
@@ -865,6 +998,16 @@ func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string) stri
 			b.WriteByte('\n')
 		}
 		b.WriteByte('\n')
+	}
+	for _, sym := range syms {
+		if isTypeKind(sym.Kind) {
+			writeSym(sym)
+		}
+	}
+	for _, sym := range syms {
+		if !isTypeKind(sym.Kind) {
+			writeSym(sym)
+		}
 	}
 	return b.String()
 }
