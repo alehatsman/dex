@@ -76,6 +76,12 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   that resolves a project lazily spawns one per-project file watcher (at most once
   per project per session) that keeps the index fresh and drains pending summaries
   in the background; the watcher shares the session context and drains on shutdown.
+- WHEN `spec_verify` is called (TierPower), dex reads the spec file's `## Checklist`
+  items (falling back to `## Behavior` clauses), embeds each checked `[x]` item,
+  retrieves top-5 code chunks from the index, and — when a chat model is wired —
+  judges each clause as `pass`/`fail`/`unknown`; unchecked `[ ]` items are returned
+  as `pending` without judgment; drift is detected via `git log <last_verified>..HEAD`
+  over the spec's `covers` paths and reported in `drift_commits`.
 
 ## Non-goals
 
@@ -100,7 +106,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
 - [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
 - [x] TierStandard: overview, session, knowledge, search_tree, view_summarize (chat required)
-- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, routes, smells, compress_output, index_status
+- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, routes, smells, compress_output, index_status, spec_verify
 - [x] Read-only tools carry `readOnlyHint: true` MCP annotation
 - [x] Per-project scoping: `project_root` → canonical index (cwd default)
 - [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
