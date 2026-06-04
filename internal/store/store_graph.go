@@ -393,6 +393,22 @@ func (s *Store) TopCentralByDir(ctx context.Context, relDir string, k int, expor
 	return scanSymbols(rows)
 }
 
+// SymbolsByFile returns all graph nodes whose file_path exactly matches
+// relPath, ordered by start_line. Returns nil (not an error) when no
+// nodes are indexed for that file.
+func (s *Store) SymbolsByFile(ctx context.Context, relPath string) ([]GraphSymbol, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT name, qualified_name, kind, file_path, start_line, end_line, pagerank, in_degree
+		FROM graph_nodes
+		WHERE file_path = ?
+		ORDER BY start_line`,
+		relPath)
+	if err != nil {
+		return nil, err
+	}
+	return scanSymbols(rows)
+}
+
 func scanSymbols(rows *sql.Rows) ([]GraphSymbol, error) {
 	defer func() { _ = rows.Close() }()
 	var out []GraphSymbol
