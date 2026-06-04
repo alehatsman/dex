@@ -210,6 +210,20 @@ func (s *Server) readCacheMark(sessionID, relPath, etag string) {
 	s.readCache[sessionID][relPath] = etag
 }
 
+// sessionAutoFile records relPath in the active session (if one with a task
+// exists) without blocking the caller. Safe to call from any mode.
+func (s *Server) sessionAutoFile(dbPath, relPath string) {
+	go func() {
+		ctx := context.Background()
+		st, err := store.OpenWith(ctx, dbPath, s.StoreOpts)
+		if err != nil {
+			return
+		}
+		defer st.Close()
+		_ = st.SessionTrackFile(ctx, relPath, "read")
+	}()
+}
+
 // searchThrottleHint increments the repetition counter for (query, project)
 // and returns a hint string when the pattern crosses a threshold. Returns ""
 // on first few calls. Counters reset after 5 minutes of idle.
@@ -1069,6 +1083,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Etag = etag
 		out.Content = string(slice)
 		s.readCacheMark(sessionID, relTarget, etag)
+		s.sessionAutoFile(p.DBPath, relTarget)
 		return nil, out, nil
 
 	case mode == "signatures":
@@ -1097,6 +1112,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Content = content
 		out.Bytes = len(content)
 		s.readCacheMark(sessionID, relTarget, etag)
+		s.sessionAutoFile(p.DBPath, relTarget)
 		return nil, out, nil
 
 	case mode == "map":
@@ -1140,6 +1156,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Content = content
 		out.Bytes = len(content)
 		s.readCacheMark(sessionID, relTarget, etag)
+		s.sessionAutoFile(p.DBPath, relTarget)
 		return nil, out, nil
 
 	default: // full
@@ -1270,12 +1287,17 @@ func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []
 	isTypeKind := func(kind string) bool {
 		return kind == "struct" || kind == "interface" || kind == "type"
 	}
-	exported := func(name string) bool {
-		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
+	// Only top-level named symbols (func/type/var/const) count as exported,
+	// not struct fields, imports, or file-level nodes.
+	exported := func(sym store.GraphSymbol) bool {
+		if sym.Kind == "field" || sym.Kind == "import" || sym.Kind == "file" {
+			return false
+		}
+		return len(sym.Name) > 0 && sym.Name[0] >= 'A' && sym.Name[0] <= 'Z'
 	}
 	writeSym := func(sym store.GraphSymbol) {
 		si := sym.StartLine - 1
-		exp := exported(sym.Name)
+		exp := exported(sym)
 		if exp {
 			marker := "⊛"
 			fmt.Fprintf(&b, "%s %s (lines %d-%d)\n", marker, sym.QualifiedName, sym.StartLine, sym.EndLine)
