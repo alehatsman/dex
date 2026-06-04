@@ -253,6 +253,10 @@ type ContextOutput struct {
 	// are populated depends on intent (see enrich.go for the gating
 	// matrix). Callers join by path.
 	Annotations map[string]PathMeta `json:"annotations,omitempty"`
+	// SessionTask is the current session's declared task, if any.
+	// Populated from the per-project session store so agents can see
+	// what was declared without a separate session get call.
+	SessionTask string `json:"session_task,omitempty"`
 }
 
 // ContextRouter is the exported entry point used by the CLI
@@ -302,6 +306,10 @@ func (s *Server) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in C
 		out.Stale = true
 		out.Hint = fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
 			time.Since(stats.LastIndex).Round(time.Hour), p.Root)
+	}
+
+	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
+		out.SessionTask = ss.Task
 	}
 
 	// enrichGraph sets out.Graph only when it has something to emit.

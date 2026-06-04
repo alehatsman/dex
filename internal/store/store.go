@@ -304,6 +304,25 @@ func (s *Store) migrate(ctx context.Context) error {
 		   UNIQUE(path, kind, content_sha1)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_pending_summaries_queued ON pending_summaries(queued_at)`,
+		// sessions / session_files — lightweight cross-call memory: current
+		// task, notes, and recently-accessed files. One session per project
+		// (highest id = current). Files cascade-delete with the session.
+		`CREATE TABLE IF NOT EXISTS sessions (
+		   id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		   started_at   INTEGER NOT NULL,
+		   updated_at   INTEGER NOT NULL,
+		   task         TEXT NOT NULL DEFAULT '',
+		   notes        TEXT NOT NULL DEFAULT ''
+		 )`,
+		`CREATE TABLE IF NOT EXISTS session_files (
+		   id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		   session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		   path       TEXT NOT NULL,
+		   op         TEXT NOT NULL DEFAULT 'read',
+		   touched_at INTEGER NOT NULL,
+		   UNIQUE(session_id, path)
+		 )`,
+		`CREATE INDEX IF NOT EXISTS idx_session_files_session ON session_files(session_id, touched_at)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
