@@ -17,7 +17,7 @@ Flat files, per-project, scattered across `~/.config/lean-ctx/`.
 | Latest session pointer | JSON | `sessions/latest.json` |
 | BM25 index | Binary + zstd | `vectors/{namespace_hash}/bm25_index.bin.zst` |
 | Embeddings | Optional Qdrant or in-memory | external or `vectors/` |
-| File read cache | In-memory (zstd) | — |
+| File read cache | In-memory (zstd) | Session-aware etag cache (`readCache`: sessionID→path→hash); `status=unchanged` on re-reads |
 | TF-IDF semantic cache | In-memory | — |
 | Config | TOML | `config.toml` |
 | Stats | JSON | `stats.json` |
@@ -279,6 +279,7 @@ Ordered by impact-to-effort ratio.
 | N19 | **Activity-weighted knowledge nudge** | Low | Medium | ☐ open | lean-ctx 3.6.24: tracks weighted activity per session — edits +4, shell test/build +3, shell +2, new file read +1. When `weighted_score ≥ 20` AND `significant_tools ≥ 5` AND no knowledge recorded in 8 minutes, surfaces a context-sensitive hint to record findings. dex current: no nudge mechanism. Fix: accumulate activity weights in the session layer (can be in-memory per server lifetime); append a hint to `search_semantic` or `file_view` responses when threshold is crossed. |
 | N20 | **Multi-agent coordination bus** | Medium | Medium | ☐ open | lean-ctx 3.7.1 adds `ctx_agent` (register/list/post/read) for agents sharing findings. dex equivalent: add `agent` MCP tool backed by a new `agent_messages` table — agents announce themselves, post findings, read peers' findings. Useful in orchestration scenarios where dex is queried by multiple concurrent agents. |
 | N21 | **Batch file reads (`ctx_multi_read`)** | Low | Low | ✅ done | `file_view` accepts optional `paths[]` (max 10, same mode); returns concatenated `## path\ncontent` sections in one call. Path-traversal check applied per entry. (`b1e4545`) |
+| N22 | **Session-aware re-read cache (`ctx_read` caching)** | Medium | Low | ✅ done | `file_view` returns `etag` (sha256[:16]) on every response. On re-reads with matching etag, server checks in-memory `readCache` (sessionID→path→etag); returns `status=unchanged` only when this session previously received the file at that hash — prevents false hits from stale etags in new sessions or after context compression. (`8c7dc09`) |
 | N22 | **Knowledge auto-consolidation** | Low | Low | ✅ done | `knowledge action=consolidate` reads session task + notes, asks chat LLM to extract a JSON array of facts, stores each via `KnowledgeAdd`. Requires `DEX_CHAT_URL`; no-op hint when chat is unconfigured. (`7fa3eda`) |
 
 ---

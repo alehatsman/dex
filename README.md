@@ -163,7 +163,7 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 | `session`          | standard+ | Declare / read a session task for task-relevance inline in file_view.       |
 | `knowledge`        | standard+ | Store / recall / consolidate cross-session facts; revision tracking on re-add. |
 | `file_tree`        | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
-| `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice. Pass `paths[]` (max 10) for batch. |
+| `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice. Pass `paths[]` (max 10) for batch. Returns `etag`; pass it back on re-reads for `status=unchanged` (session-aware). |
 | `search_semantic`  | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
 | `search_symbol`    | power     | Exact identifier lookup (SQL scan, no embedding).                           |
 | `graph_neighbors`  | power     | Vector neighbours of a known chunk at `path:start_line`.                    |
