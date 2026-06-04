@@ -1060,9 +1060,11 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	h := sha256.Sum256(data)
 	etag := hex.EncodeToString(h[:])[:16]
 
-	sessionID := "stdio" // fallback for stdio transport where req.Session is nil
+	sessionID := "stdio" // fallback: stdio transport returns "" from ID()
 	if req != nil && req.Session != nil {
-		sessionID = req.Session.ID()
+		if id := req.Session.ID(); id != "" {
+			sessionID = id
+		}
 	}
 	if in.Etag != "" && in.Etag == etag && s.readCacheCheck(sessionID, relTarget, etag) {
 		return nil, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, nil
