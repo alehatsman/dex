@@ -24,6 +24,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
+	"github.com/alehatsman/dex/internal/logx"
 )
 
 type Options struct {
@@ -192,7 +193,7 @@ func (w *Watcher) flush(ctx context.Context) {
 			}
 		} else {
 			if w.opts.Verbose {
-				w.opts.Logger.Info("re-indexed", "elapsed", time.Since(start).Round(time.Millisecond))
+				w.opts.Logger.Info("re-indexed", logx.DurMS(time.Since(start)))
 			}
 			if w.opts.AfterIndex != nil {
 				if hookErr := w.opts.AfterIndex(ctx); hookErr != nil && !errors.Is(hookErr, context.Canceled) {
