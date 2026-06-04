@@ -449,6 +449,7 @@ func newEmbedClient() *embed.Client {
 	model := os.Getenv("DEX_EMBED_MODEL")
 
 	if url == "" {
+		ensureOllamaRunning() // best-effort: start ollama if installed-but-down
 		if om, ok := embed.DetectOllama(context.Background()); ok {
 			url = om.URL
 			if model == "" {
@@ -486,6 +487,7 @@ func newChatClient() *chat.Client {
 	model := os.Getenv("DEX_CHAT_MODEL")
 
 	if url == "" {
+		ensureOllamaRunning() // best-effort: start ollama if installed-but-down
 		if om, ok := embed.DetectOllamaChat(context.Background()); ok {
 			url = om.URL
 			if model == "" {
@@ -971,11 +973,20 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	t0 := time.Now()
 	vecs, err := em.Embed(ctx, []string{q})
 	embedDur := time.Since(t0)
+	var queryVec []float32
 	if err != nil {
-		return err
+		if !errors.Is(err, embed.ErrUnreachable) {
+			return err
+		}
+		// Degrade, don't crash: drop the semantic leg and run BM25-only.
+		fmt.Fprintf(os.Stderr,
+			"dex: embedding service offline at %s — degraded to BM25-only (start ollama, or set DEX_EMBED_URL)\n",
+			em.Endpoint())
+	} else {
+		queryVec = vecs[0]
 	}
 	t1 := time.Now()
-	hits, err := st.Search(ctx, vecs[0], q, *k)
+	hits, err := st.Search(ctx, queryVec, q, *k)
 	searchDur := time.Since(t1)
 	if err != nil {
 		return err
