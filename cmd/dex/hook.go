@@ -15,9 +15,12 @@ package main
 //                                 appends 2>&1 | dex compress-stdin --command grep
 //                               Anything complex passes through unchanged.
 //
-//   redirect  PreToolUse(Read   For large files (>400 lines), compresses the
-//             Grep Search …)    content and redirects to a temp file to cut
-//                               token burn. Small files pass through unchanged.
+//   redirect  PreToolUse(Read   For large indexed code files (>400 lines),
+//             Grep Search …)    renders a signatures view (imports + top-level
+//                               declarations, bodies dropped) from the graph
+//                               index and redirects to a temp file. Files that
+//                               are small, unindexed, or have no graph symbols
+//                               pass through unchanged.
 //
 //   observe   PostToolUse       Appends a compact event record to
 //             Stop              $XDG_DATA_HOME/dex/hooks.jsonl for session
@@ -52,7 +55,7 @@ func cmdHook(ctx context.Context, args []string) error {
 	case "rewrite":
 		return hookRewrite()
 	case "redirect":
-		return hookRedirect()
+		return hookRedirect(ctx)
 	case "observe":
 		return hookObserve()
 	default:
@@ -356,14 +359,16 @@ func shellQuote(s string) string {
 
 // ─── redirect ─────────────────────────────────────────────────────────────
 
-// redirectLineThreshold is the line count above which a file is compressed
-// and redirected to a temp path. Below this the Read passes through as-is.
+// redirectLineThreshold is the line count above which a code file is
+// redirected to a signatures view. Below this the Read passes through as-is —
+// small files are cheap to read in full.
 const redirectLineThreshold = 400
 
-// hookRedirect handles PreToolUse for Read tools. Large files are run through
-// dex's compression pipeline and redirected to a temp file; the original
-// file is never modified.
-func hookRedirect() error {
+// hookRedirect handles PreToolUse for Read tools. Large indexed code files are
+// rendered to a signatures view (imports + declarations, bodies dropped) and
+// redirected to a temp file; the original file is never modified. Anything
+// that can't be turned into a useful signatures view passes through.
+func hookRedirect(ctx context.Context) error {
 	raw := hookReadStdin()
 	if len(raw) == 0 {
 		fmt.Print(hookAllow)
@@ -381,14 +386,14 @@ func hookRedirect() error {
 
 	switch payload.ToolName {
 	case "Read", "read", "ReadFile", "read_file":
-		redirectFileRead(payload.ToolInput)
+		redirectFileRead(ctx, payload.ToolInput)
 	default:
 		fmt.Print(hookAllow)
 	}
 	return nil
 }
 
-func redirectFileRead(rawInput json.RawMessage) {
+func redirectFileRead(ctx context.Context, rawInput json.RawMessage) {
 	var input struct {
 		Path string `json:"path"`
 	}
@@ -402,16 +407,15 @@ func redirectFileRead(rawInput json.RawMessage) {
 		fmt.Print(hookAllow)
 		return
 	}
-	if strings.Count(string(content), "\n")+1 < redirectLineThreshold {
+	lines := strings.Split(string(content), "\n")
+	if len(lines) < redirectLineThreshold {
 		fmt.Print(hookAllow)
 		return
 	}
 
-	compressed, _, _ := mcp.CompressText(string(content), "", 0)
-	// Only redirect when compression saves at least 20% of lines.
-	origLines := strings.Count(string(content), "\n") + 1
-	compLines := strings.Count(compressed, "\n") + 1
-	if compLines*100/origLines > 80 {
+	view := buildSignaturesView(ctx, input.Path, lines)
+	if view == "" {
+		// Not indexed, no symbols, or non-code file — read it normally.
 		fmt.Print(hookAllow)
 		return
 	}
@@ -421,7 +425,7 @@ func redirectFileRead(rawInput json.RawMessage) {
 		fmt.Print(hookAllow)
 		return
 	}
-	if _, err := tmp.WriteString(compressed); err != nil {
+	if _, err := tmp.WriteString(view); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
 		fmt.Print(hookAllow)
@@ -439,6 +443,94 @@ func redirectFileRead(rawInput json.RawMessage) {
 	if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
 		fmt.Print(hookAllow)
 	}
+}
+
+// buildSignaturesView renders a signatures view for an indexed code file:
+// a header, then one declaration line per top-level symbol (function, method,
+// type, struct, interface) in source order, with bodies dropped. Returns ""
+// when the project isn't indexed, the file has no graph symbols, or anything
+// fails — the caller falls back to a normal Read.
+func buildSignaturesView(ctx context.Context, absPath string, lines []string) string {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	base, err := indexDir()
+	if err != nil {
+		return ""
+	}
+	// The index is built for the project root, which is the Claude session's
+	// cwd — resolve from there, not from the file's directory (proj.Resolve
+	// treats the path it's given AS the root; it does not walk up to .git).
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	p, err := proj.Resolve(cwd, base)
+	if err != nil {
+		return ""
+	}
+	if _, err := os.Stat(p.DBPath); err != nil {
+		return ""
+	}
+	abs, err := filepath.Abs(absPath)
+	if err != nil {
+		return ""
+	}
+	relPath, err := filepath.Rel(p.Root, abs)
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		return ""
+	}
+	relPath = filepath.ToSlash(relPath)
+
+	st, err := openStore(ctx, p.DBPath)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = st.Close() }()
+
+	syms, err := st.SymbolsByFile(ctx, relPath)
+	if err != nil || len(syms) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	var rendered int
+	var body strings.Builder
+	for _, sym := range syms {
+		// Only top-level declarations — skip struct fields, imports, headings,
+		// and other body/structure detail that would bloat the view.
+		if !signatureKind(sym.Kind) {
+			continue
+		}
+		// start_line is 1-based; declaration sits at lines[start-1].
+		if sym.StartLine < 1 || sym.StartLine > len(lines) {
+			continue
+		}
+		decl := strings.TrimRight(lines[sym.StartLine-1], " \t")
+		if decl == "" {
+			continue
+		}
+		fmt.Fprintf(&body, "%s\t// :%d %s\n", decl, sym.StartLine, sym.Kind)
+		rendered++
+	}
+	if rendered == 0 {
+		return ""
+	}
+
+	fmt.Fprintf(&b, "// dex signatures view — %s (%d lines, %d declarations)\n", relPath, len(lines), rendered)
+	b.WriteString("// Bodies dropped. Read with a narrower line range, or use `dex view summarize`, for full detail.\n\n")
+	b.WriteString(body.String())
+	return b.String()
+}
+
+// signatureKind reports whether a graph node kind is a top-level declaration
+// worth emitting in the signatures view (vs. fields, imports, headings, etc.).
+func signatureKind(kind string) bool {
+	switch kind {
+	case "function", "method", "struct", "interface", "type", "class":
+		return true
+	}
+	return false
 }
 
 // ─── observe ──────────────────────────────────────────────────────────────
