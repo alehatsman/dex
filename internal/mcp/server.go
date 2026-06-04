@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -350,6 +352,21 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		out.Hint = fmt.Sprintf("search: %v", err)
 		return nil, out, nil
 	}
+
+	// Symbol leg: extract identifier tokens from the query, look them up
+	// by exact name, and RRF-fuse with the semantic results. Runs in the
+	// same request with no extra embedding round-trip — FindSymbol is a
+	// pure SQL index scan.
+	if idents := extractIdentifiers(in.Query); len(idents) > 0 {
+		symPool := k * 3
+		if symPool < 15 {
+			symPool = 15
+		}
+		if symHits := collectSymbolHits(ctx, st, idents, symPool); len(symHits) > 0 {
+			hits = fuseWithSymbols(hits, symHits, k)
+		}
+	}
+
 	out.Status = "ok"
 	for _, h := range hits {
 		if excluded(h.Path, in.Exclude) {
@@ -364,10 +381,92 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			BM25Score:   h.BM25Score,
 			RRFScore:    h.RRFScore,
 			RerankScore: h.RerankScore,
+			Role:        formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers),
 			Content:     h.Content,
 		})
 	}
 	return nil, out, nil
+}
+
+// collectSymbolHits runs FindSymbol for each identifier and returns a
+// deduplicated hit list (keyed by path+start_line), in the order they
+// surfaced across all identifier queries.
+func collectSymbolHits(ctx context.Context, st *store.Store, idents []string, pool int) []store.Hit {
+	seen := map[string]struct{}{}
+	var out []store.Hit
+	for _, id := range idents {
+		bare := id
+		if i := strings.LastIndex(bare, "."); i >= 0 {
+			bare = bare[i+1:]
+		}
+		hits, err := st.FindSymbol(ctx, bare, pool)
+		if err != nil {
+			continue
+		}
+		for _, h := range hits {
+			key := h.Path + ":" + strconv.Itoa(h.StartLine)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, h)
+			if len(out) >= pool {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+// fuseWithSymbols merges a semantic hit list with a symbol hit list via
+// Reciprocal Rank Fusion (k=60) and returns the top-n results. The
+// dedup key is (path, start_line). Semantic hits already carry Score /
+// BM25Score / RRFScore from the store; symbol-only hits get Score=1.0
+// (exact-match signal). The new RRFScore field reflects the cross-lane
+// fused rank for all returned hits.
+func fuseWithSymbols(semantic, symbol []store.Hit, n int) []store.Hit {
+	const kRRF = 60
+	type hitKey struct {
+		path string
+		line int
+	}
+	scores := make(map[hitKey]float32, len(semantic)+len(symbol))
+	byKey := make(map[hitKey]store.Hit, len(semantic)+len(symbol))
+
+	for i, h := range semantic {
+		hk := hitKey{h.Path, h.StartLine}
+		scores[hk] += 1.0 / float32(kRRF+i+1)
+		byKey[hk] = h
+	}
+	for i, h := range symbol {
+		hk := hitKey{h.Path, h.StartLine}
+		scores[hk] += 1.0 / float32(kRRF+i+1)
+		if _, exists := byKey[hk]; !exists {
+			h.Score = 1.0 // exact name match
+			byKey[hk] = h
+		}
+	}
+
+	type ranked struct {
+		key   hitKey
+		score float32
+	}
+	all := make([]ranked, 0, len(scores))
+	for hk, s := range scores {
+		all = append(all, ranked{hk, s})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].score > all[j].score })
+	if len(all) > n {
+		all = all[:n]
+	}
+
+	out := make([]store.Hit, 0, len(all))
+	for _, r := range all {
+		h := byKey[r.key]
+		h.RRFScore = r.score
+		out = append(out, h)
+	}
+	return out
 }
 
 // excluded returns true when path matches any entry in the exclude list.
@@ -949,8 +1048,11 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 			Name: "search_semantic",
 			Description: "Prefer `ask` for general code-understanding questions — it composes this " +
 				"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
-				"want raw semantic ranking without intent routing. " +
-				"Embeds the query and returns top-k matching chunks. Supports exclude list to skip paths. " +
+				"want raw ranking without intent routing. " +
+				"Embeds the query and returns top-k matching chunks. Identifier tokens in the query (CamelCase, " +
+				"snake_case, qualified names) are automatically looked up by exact symbol name and fused into the " +
+				"results via Reciprocal Rank Fusion — no separate search_symbol call needed. " +
+				"Supports exclude list to skip paths. " +
 				"On error, returns a structured status: 'no-index' (run dex index first), " +
 				"'embedding-service-unreachable' (fall back to grep), or 'ok'.",
 		}, h.search)
