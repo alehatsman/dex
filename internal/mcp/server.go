@@ -983,7 +983,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	isFull := mode == "full"
 
 	if isFull && s.ChatClient == nil {
-		return nil, SummarizeOutput{Status: "error", Hint: "chat client not configured on this server"}, nil
+		mode = "map"
+		isFull = false
 	}
 	if len(in.Paths) > 0 {
 		return s.summarizeBatch(ctx, in)
@@ -1085,7 +1086,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 			out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
 			return nil, out, nil
 		}
-		content := formatSignatures(data, syms, relTarget)
+		imports, _ := st.ImportsForFile(ctx, relTarget)
+		content := formatSignatures(data, syms, relTarget, imports)
 		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
 			content += related
 		}
@@ -1167,13 +1169,15 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 			MaxTokens:   in.MaxTokens,
 		})
 		if err != nil {
+			hint := fmt.Sprintf("chat error (%v) — showing raw content", err)
 			if errors.Is(err, chat.ErrUnreachable) {
-				out.Status = "chat-service-unreachable"
-				out.Hint = "the local chat-completion service is offline."
-				return nil, out, nil
+				hint = "chat service offline — showing raw content"
 			}
-			out.Status = "error"
-			out.Hint = fmt.Sprintf("chat: %v", err)
+			out.Status = "ok"
+			out.Etag = etag
+			out.Content = string(slice)
+			out.Hint = hint
+			s.readCacheMark(sessionID, relTarget, etag)
 			return nil, out, nil
 		}
 
@@ -1255,44 +1259,47 @@ func graphRelatedHint(ctx context.Context, st *store.Store, relPath string) stri
 	return "\n# Related (call graph): " + strings.Join(neighbors, ", ") + "\n"
 }
 
-// sigWindow is the max additional lines past start_line included as a
-// symbol's signature. Covers multi-line Go/Python/TS declarations
-// without pulling in the body.
-const sigWindow = 4
-
-// formatSignatures produces a compact listing of indexed symbols with
-// their opening signature lines extracted from src.
-//
-// Output order: types/structs/interfaces first (stable declarations that
-// LLM providers can prefix-cache), then functions/methods (volatile bodies).
-// Within each group, source order is preserved.
-func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string) string {
-	lines := bytes.Split(bytes.TrimRight(src, "\n"), []byte("\n"))
+// formatSignatures produces a compact symbol index for a file.
+// Each exported symbol gets its declaration line; unexported symbols are
+// listed without source. Output is ~10× smaller than mode=full.
+func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, imports []string) string {
+	srcLines := bytes.Split(bytes.TrimRight(src, "\n"), []byte("\n"))
+	totalLines := bytes.Count(src, []byte("\n")) + 1
 	var b strings.Builder
-	fmt.Fprintf(&b, "FILE: %s (%d symbols)\n\n", relPath, len(syms))
+	fmt.Fprintf(&b, "%s %dL (%d symbols)\n", relPath, totalLines, len(syms))
+	if len(imports) > 0 {
+		short := make([]string, len(imports))
+		for i, imp := range imports {
+			// Trim to the last path component for readability.
+			if idx := strings.LastIndex(imp, "/"); idx >= 0 {
+				short[i] = imp[idx+1:]
+			} else {
+				short[i] = imp
+			}
+		}
+		fmt.Fprintf(&b, "deps %s\n", strings.Join(short, ","))
+	}
+	b.WriteByte('\n')
 
-	// Emit type declarations first (struct, interface, type), then callables.
 	isTypeKind := func(kind string) bool {
 		return kind == "struct" || kind == "interface" || kind == "type"
 	}
+	exported := func(name string) bool {
+		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
+	}
 	writeSym := func(sym store.GraphSymbol) {
 		si := sym.StartLine - 1
-		if si < 0 || si >= len(lines) {
-			return
+		exp := exported(sym.Name)
+		if exp {
+			marker := "⊛"
+			fmt.Fprintf(&b, "%s %s (lines %d-%d)\n", marker, sym.QualifiedName, sym.StartLine, sym.EndLine)
+			if si >= 0 && si < len(srcLines) {
+				b.Write(srcLines[si])
+				b.WriteByte('\n')
+			}
+		} else {
+			fmt.Fprintf(&b, "  %s %s (lines %d-%d)\n", sym.Kind, sym.QualifiedName, sym.StartLine, sym.EndLine)
 		}
-		ei := si + sigWindow
-		if e := sym.EndLine - 1; e < ei {
-			ei = e
-		}
-		if ei >= len(lines) {
-			ei = len(lines) - 1
-		}
-		fmt.Fprintf(&b, "%s %s (lines %d-%d)\n", sym.Kind, sym.QualifiedName, sym.StartLine, sym.EndLine)
-		for i := si; i <= ei; i++ {
-			b.Write(lines[i])
-			b.WriteByte('\n')
-		}
-		b.WriteByte('\n')
 	}
 	for _, sym := range syms {
 		if isTypeKind(sym.Kind) {

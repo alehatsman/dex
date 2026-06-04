@@ -163,6 +163,21 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 		truncated = truncated[:maxDistant]
 	}
 
+	// Task classification hint.
+	kind, scope := classifyTask(in.Task)
+	hint = fmt.Sprintf("[TASK:%s SCOPE:%s] %s", kind, scope, outputHint(kind))
+
+	// Wake-up knowledge briefing.
+	facts, _ := st.KnowledgeTopForAsk(ctx, 5)
+	if len(facts) > 0 {
+		var kb strings.Builder
+		kb.WriteString("\nKNOWLEDGE:\n")
+		for _, f := range facts {
+			fmt.Fprintf(&kb, "  [%s] %s\n", f.Archetype, f.Body)
+		}
+		hint += kb.String()
+	}
+
 	return nil, OverviewOutput{
 		Status:       "ok",
 		Project:      p.Root,
@@ -170,7 +185,68 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 		Context:      ctxFiles,
 		DistantCount: len(distant),
 		Distant:      truncated,
+		Hint:         hint,
 	}, nil
+}
+
+// classifyTask infers a coarse task kind and scope from the task description.
+func classifyTask(task string) (kind, scope string) {
+	lower := strings.ToLower(task)
+	switch {
+	case containsAny(lower, "fix", "bug", "error", "crash", "panic", "fail", "broken", "wrong", "incorrect"):
+		kind = "fix"
+	case containsAny(lower, "add", "implement", "create", "build", "write", "new feature", "support"):
+		kind = "generate"
+	case containsAny(lower, "refactor", "clean", "rename", "move", "extract", "restructure"):
+		kind = "refactor"
+	case containsAny(lower, "debug", "trace", "diagnose", "investigate", "why", "how does"):
+		kind = "debug"
+	case containsAny(lower, "test", "coverage", "spec"):
+		kind = "test"
+	case containsAny(lower, "doc", "comment", "readme", "explain"):
+		kind = "docs"
+	default:
+		kind = "explore"
+	}
+	words := strings.Fields(task)
+	switch {
+	case len(words) <= 3:
+		scope = "narrow"
+	case len(words) <= 8:
+		scope = "medium"
+	default:
+		scope = "broad"
+	}
+	return
+}
+
+func containsAny(s string, keywords ...string) bool {
+	for _, kw := range keywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// outputHint returns a concise read-strategy hint for a task kind.
+func outputHint(kind string) string {
+	switch kind {
+	case "fix":
+		return "read callers → locate root cause → minimal patch"
+	case "generate":
+		return "read interfaces → implement → add tests"
+	case "refactor":
+		return "read full file → verify callers → edit → test"
+	case "debug":
+		return "trace call path → add logging → reproduce"
+	case "test":
+		return "read implementation → write table-driven tests"
+	case "docs":
+		return "read exported symbols → write concise docs"
+	default:
+		return "orient → read context files → reason"
+	}
 }
 
 // overviewPartial returns a useful partial response when the chunk index is
