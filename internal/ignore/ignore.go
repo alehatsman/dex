@@ -288,6 +288,18 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 	return false
 }
 
+// MatchExclude returns true if the relative path should be skipped based
+// solely on the exclude rules (.gitignore/.dexignore/defaults) — ignoring
+// the opt-in include allow-list. Used by commands like compact that apply
+// their own file-type filter and should not require .dex/config.toml.
+func (m *Matcher) MatchExclude(relPath string, isDir bool) bool {
+	p := filepath.ToSlash(relPath)
+	if isDir && !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	return m.g.MatchesPath(p)
+}
+
 // IndexableExt returns true if the file extension is one dex will
 // attempt to chunk.
 func IndexableExt(path string) bool {
