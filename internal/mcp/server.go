@@ -966,7 +966,7 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 // ─── tool: view_summarize ─────────────────────────────────────────────────
 
 type SummarizeInput struct {
-	Path        string   `json:"path" jsonschema:"file path to summarize; relative paths are resolved against project_root"`
+	Path        string   `json:"path,omitempty" jsonschema:"file path to summarize; relative paths are resolved against project_root; required when paths is not set"`
 	Paths       []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
 	ProjectRoot string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	Mode        string   `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
