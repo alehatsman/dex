@@ -1,7 +1,7 @@
 ---
 id: http-api
 status: living
-last_verified: c331a3c
+last_verified: b28afbd
 owners: [aleh]
 covers:
   - "internal/mcp/http.go"
@@ -49,7 +49,7 @@ tool interface for Claude is the mcp-server spec's.
   stats (chunk/file counts, last-indexed, pending summaries).
 - WHEN a client queries a project, the per-project routes mirror the dex tools:
   `POST .../ask`, `POST .../search/semantic`, `POST .../search/symbol`,
-  `POST .../graph/{neighbors,deps,callers,callees,links,backlinks,tags}`,
+  `POST .../search/compose`, `POST .../graph/{neighbors,deps,callers,callees,links,backlinks,tags}`,
   `GET .../graph/packages`, `GET .../summaries`, and `POST .../view/summarize`.
 - WHEN a handler returns a tool result, the same structured `status` the stdio
   tools use (`ok`/`no-index`/`embedding-service-unreachable`/`no-graph`/
@@ -93,7 +93,7 @@ tool interface for Claude is the mcp-server spec's.
 - [x] Bearer auth (`DEX_SERVE_TOKEN`), constant-time; 401 on missing/bad token
 - [x] No-token + non-loopback bind refused at startup
 - [x] Unauthenticated `healthz`/`version`; authed projects/status/per-project tool routes
-- [x] Per-project routes mirror tools (ask/search/graph/summaries/view); structured status in body
+- [x] Per-project routes mirror tools (ask/search/compose/graph/summaries/view); structured status in body
 - [x] Body size cap, access log, panic→500, bounded graceful shutdown
 - [x] Eager per-project watcher at startup (idempotent with lazy path)
 - [x] Native HTTP-MCP transport for direct `claude` attach — streamable handler at `/v1/projects/{id}/mcp` (dex #49)
