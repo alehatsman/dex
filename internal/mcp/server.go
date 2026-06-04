@@ -216,6 +216,11 @@ func (s *Server) Session(ctx context.Context, in SessionInput) (SessionOutput, e
 	return out, err
 }
 
+func (s *Server) Agent(ctx context.Context, in AgentInput) (AgentOutput, error) {
+	_, out, err := s.agent(ctx, nil, in)
+	return out, err
+}
+
 // ─── tool: search_semantic ────────────────────────────────────────────────
 
 type SearchInput struct {
@@ -1564,6 +1569,7 @@ type toolSurface interface {
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 	compose(context.Context, *sdk.CallToolRequest, ComposeInput) (*sdk.CallToolResult, ComposeOutput, error)
 	specVerify(context.Context, *sdk.CallToolRequest, SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error)
+	agent(context.Context, *sdk.CallToolRequest, AgentInput) (*sdk.CallToolResult, AgentOutput, error)
 }
 
 // toolTier controls how many tools are exposed to MCP clients.
@@ -1787,6 +1793,15 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 				"don't lose context across reconnects. No embedding required.",
 		}, h.session)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "agent",
+			Description: "Multi-agent coordination bus — share findings across concurrent agents that query the same dex instance. " +
+				"Actions: announce (register agent_id + role), post (publish a message with optional topic and body), " +
+				"read (poll messages; filter by topic; paginate with since_id), list (see active agents). " +
+				"Typical workflow: announce once at startup, post findings as you discover them, " +
+				"read peers' findings before duplicating work. No embedding required.",
+		}, h.agent)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "file_tree",

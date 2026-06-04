@@ -33,6 +33,7 @@ package mcp
 //	POST /projects/{id}/view/overview      — body: OverviewInput
 //	POST /projects/{id}/knowledge          — body: KnowledgeInput
 //	POST /projects/{id}/session            — body: SessionInput
+//	POST /projects/{id}/agent             — body: AgentInput
 //	*    /projects/{id}/mcp                 — native streamable-HTTP MCP
 //	                                          transport (http_mcp.go), not REST
 //
@@ -275,6 +276,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/view/overview", s.handleOverview(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/knowledge", s.handleKnowledge(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/session", s.handleSession(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/agent", s.handleAgent(opts.Projects))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
@@ -611,6 +613,10 @@ func (s *Server) handleKnowledge(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleSession(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SessionInput, root string) { in.ProjectRoot = root }, s.Session)
+}
+
+func (s *Server) handleAgent(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *AgentInput, root string) { in.ProjectRoot = root }, s.Agent)
 }
 
 func (s *Server) handleFileTree(projects map[string]string) http.HandlerFunc {
