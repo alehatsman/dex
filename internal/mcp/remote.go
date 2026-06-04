@@ -267,6 +267,12 @@ func (rc *remoteClient) searchTree(ctx context.Context, _ *sdk.CallToolRequest, 
 	return nil, out, err
 }
 
+func (rc *remoteClient) compressOutput(ctx context.Context, _ *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
+	var out CompressOutput
+	err := rc.do(ctx, http.MethodPost, rc.base+"/v1/compress", in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) overview(ctx context.Context, _ *sdk.CallToolRequest, in OverviewInput) (*sdk.CallToolResult, OverviewOutput, error) {
 	var out OverviewOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/overview"), in, &out)

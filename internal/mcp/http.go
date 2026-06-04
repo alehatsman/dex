@@ -243,6 +243,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed := http.NewServeMux()
 	authed.HandleFunc("GET /v1/projects", s.handleListProjects(opts.Projects))
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
+	authed.HandleFunc("POST /v1/compress", s.handleCompress())
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/semantic", s.handleSearch(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/symbol", s.handleFindSymbol(opts.Projects))
@@ -269,6 +270,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	mux.Handle("/v1/projects", wrapped)
 	mux.Handle("/v1/projects/", wrapped)
 	mux.Handle("/v1/status", wrapped)
+	mux.Handle("/v1/compress", wrapped)
 
 	return recoverMiddleware(logger, logMiddleware(logger, mux))
 }
@@ -559,6 +561,22 @@ func (s *Server) handleGraphTags(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleSummarize(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SummarizeInput, root string) { in.ProjectRoot = root }, s.Summarize)
+}
+
+func (s *Server) handleCompress() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in CompressInput
+		if err := decodeBody(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+		out, err := s.CompressOutput(r.Context(), in)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
 }
 
 // ─── package-level helpers exposed for cmd/dex/serve.go ─────────────────────
