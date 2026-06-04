@@ -112,11 +112,15 @@ linters:
         linters: [errcheck]
         text: "Error return value of `f\\.Close` is not checked"
 
-      # defer fw.Close() / f.Close() — fsnotify watcher and file handles;
-      # idiomatic best-effort cleanup in deferred position.
+      # defer fw.Close() / f.Close() — fsnotify watcher, file handles, and
+      # hook.go log writer; idiomatic best-effort cleanup in deferred position.
       - path: internal/(watch/watch|ignore/ignore)\.go
         linters: [errcheck]
         text: "Error return value of `(fw|f)\\.Close` is not checked"
+
+      - path: cmd/dex/hook\.go
+        linters: [errcheck]
+        text: "Error return value of `f\\.Close` is not checked"
 
       # fmt.Fprintf/Fprintln/Fprint to stdout/stderr in cmd/ — best-effort
       # writes to terminal output; ignoring the error is idiomatic Go CLI code.

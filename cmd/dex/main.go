@@ -28,6 +28,9 @@
 //	watch <path>                  Keep the index fresh as files change.
 //	clone <src> <dst>             Seed dst's index from src's (worktrees).
 //	guide <path>                  Render LLM_GUIDE.md from existing summaries.
+//	hook inject                   Claude Code UserPromptSubmit hook — injects dex context.
+//	hook redirect                 Claude Code PreToolUse(Read) hook — compresses large files.
+//	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
 //	mcp                           Run as an MCP server over stdio (DEX_TOOLS=ask|standard|power).
@@ -108,6 +111,8 @@ func main() {
 		err = cmdClone(ctx, args)
 	case "guide":
 		err = cmdGuide(ctx, args)
+	case "hook":
+		err = cmdHook(ctx, args)
 	case "compress-stdin":
 		err = cmdCompressStdin(args)
 	case "shell-hook":
@@ -225,6 +230,12 @@ build / maintenance:
                                           Flags: --addr=:8080 (default loopback
                                           when no token), --project (repeatable).
                                           DEX_SERVE_TOKEN gates non-loopback.
+  dex hook inject                    Claude Code UserPromptSubmit hook:
+                                          inject dex context before each turn.
+  dex hook redirect                  Claude Code PreToolUse(Read) hook:
+                                          compress large files to save tokens.
+  dex hook observe                   Claude Code PostToolUse/Stop hook:
+                                          append event to hooks.jsonl log.
   dex version                        print the build version
 
 env:
