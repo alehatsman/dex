@@ -1086,8 +1086,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 			out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
 			return nil, out, nil
 		}
-		imports, _ := st.ImportsForFile(ctx, relTarget)
-		content := formatSignatures(data, syms, relTarget, imports)
+		content := formatSignatures(data, syms, relTarget, nil)
 		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
 			content += related
 		}
@@ -1262,24 +1261,11 @@ func graphRelatedHint(ctx context.Context, st *store.Store, relPath string) stri
 // formatSignatures produces a compact symbol index for a file.
 // Each exported symbol gets its declaration line; unexported symbols are
 // listed without source. Output is ~10× smaller than mode=full.
-func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, imports []string) string {
+func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []string) string {
 	srcLines := bytes.Split(bytes.TrimRight(src, "\n"), []byte("\n"))
 	totalLines := bytes.Count(src, []byte("\n")) + 1
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %dL (%d symbols)\n", relPath, totalLines, len(syms))
-	if len(imports) > 0 {
-		short := make([]string, len(imports))
-		for i, imp := range imports {
-			// Trim to the last path component for readability.
-			if idx := strings.LastIndex(imp, "/"); idx >= 0 {
-				short[i] = imp[idx+1:]
-			} else {
-				short[i] = imp
-			}
-		}
-		fmt.Fprintf(&b, "deps %s\n", strings.Join(short, ","))
-	}
-	b.WriteByte('\n')
+	fmt.Fprintf(&b, "%s %dL (%d symbols)\n\n", relPath, totalLines, len(syms))
 
 	isTypeKind := func(kind string) bool {
 		return kind == "struct" || kind == "interface" || kind == "type"
