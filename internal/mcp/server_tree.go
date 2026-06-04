@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -69,6 +70,19 @@ func (s *Server) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 		return nil, SearchTreeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
 	defer func() { _ = st.Close() }()
+
+	// Validate that the requested subdirectory actually exists on disk before
+	// querying the index, so callers get not-found instead of a misleading
+	// ok+empty response when the path was never indexed or doesn't exist.
+	if prefix != "" {
+		if _, statErr := os.Stat(filepath.Join(p.Root, prefix)); errors.Is(statErr, os.ErrNotExist) {
+			return nil, SearchTreeOutput{
+				Status: "not-found",
+				Root:   p.Root,
+				Hint:   fmt.Sprintf("path %q does not exist under %s", prefix, p.Root),
+			}, nil
+		}
+	}
 
 	files, err := st.FileTree(ctx, prefix)
 	if err != nil {
