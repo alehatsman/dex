@@ -42,7 +42,7 @@ type ComposeBestSymbol struct {
 }
 
 type ComposeOutput struct {
-	Status     string             `json:"status"` // "ok" | "no-index" | "embedding-service-unreachable" | "error"
+	Status     string             `json:"status"` // "ok" | "no-matches" | "no-index" | "embedding-service-unreachable" | "error"
 	Hint       string             `json:"hint,omitempty"`
 	Project    string             `json:"project,omitempty"`
 	Query      string             `json:"query,omitempty"`
@@ -191,6 +191,11 @@ func (s *Server) compose(ctx context.Context, _ *sdk.CallToolRequest, in Compose
 				}
 			}
 		}
+	}
+
+	if len(out.Files) == 0 {
+		out.Status = "no-matches"
+		out.Hint = "no files matched the query — broaden the query or check the index is current"
 	}
 
 	return nil, out, nil
