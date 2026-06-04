@@ -1,6 +1,7 @@
 ---
 id: indexing
 status: living
+last_verified: c331a3c
 owners: [aleh]
 covers:
   - "internal/index/**"

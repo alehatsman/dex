@@ -1,6 +1,7 @@
 ---
 id: ask
 status: living
+last_verified: c331a3c
 owners: [aleh]
 covers:
   - "internal/chat/**"
