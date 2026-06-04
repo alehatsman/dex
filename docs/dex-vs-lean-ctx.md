@@ -226,7 +226,7 @@ Large reindex jobs can OOM a GPU if batches are too big. Detect free VRAM (via `
 | `e681778` | Remote stdio shim (`dex mcp --remote`); `toolSurface` abstraction | None in lean-ctx (dex-specific) |
 | `9f7da0e` | Five tools in one commit: `view_summarize mode=map` (imports + exported symbols, no LLM); `graph_impact` (transitive caller BFS, depth-sorted); `overview` (task-relevant file ranking with centrality boost); `smells` (long functions, dead exports, god files via SQL); `routes` (HTTP/MCP/gRPC handler detection from name patterns + edges) | Partial G4 (`map` mode); `overview` is a lean-ctx `ctx_overview` analogue |
 
-**G1** (ollama auto-detect) landed after `9f7da0e` — `DEX_EMBED_URL` unset now probes `localhost:11434`, selects best embed model by priority, falls back to `127.0.0.1:8082`. G4 `map` mode and `overview` tool also landed in `9f7da0e`. G2 (session memory) and G3 (knowledge base) remain open.
+All gaps G1–G9, G11, G12 are now done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1.
 
 ---
 
@@ -238,15 +238,15 @@ Ordered by impact-to-effort ratio.
 |---|-----|--------|--------|--------|-------|
 | 1 | **G1: Local embedding via ollama auto-detect** | High | Low | ✅ done | `DEX_EMBED_URL` unset → probe localhost:11434, pick best embed model |
 | 2 | **G4: `map` read mode + `overview` tool** | High | Low | ✅ done | Landed in `9f7da0e` |
-| 3 | **G8: Local model discovery in index_status** | Medium | Low | open | Surfaces GPU state; unblocks G9 |
-| 4 | **G6: search_tree tool** | Medium | Low | open | Single SQL query + filesystem stat |
-| 5 | **G2: Session memory** | High | Medium | open | Small schema addition; big UX win |
-| 6 | **G3: Knowledge base** | High | Medium | open | New table + 3 MCP tools; reuse existing SQLite |
-| 7 | **G9: Tiered routing** | High | Medium | open | Depends on G8; mostly routing logic |
-| 8 | **G10: Streaming responses** | Medium | Medium | open | MCP streaming already supported by transport layer |
-| 9 | **G5: Shell compression tool** | Medium | High | open | Port 56+ patterns; worth it if agents call it often |
-| 10 | **G11: Embedding auto-pull** | Low | Low | open | Nice-to-have; not blocking |
-| 11 | **G12: VRAM-aware batch sizing** | Low | Medium | open | Only matters for large codebases on constrained GPUs |
+| 3 | **G8: Local model discovery in index_status** | Medium | Low | ✅ done | `index_status` returns `OllamaEndpoint`, `OllamaEmbedModels`, `OllamaChatModels` |
+| 4 | **G6: search_tree tool** | Medium | Low | ✅ done | `search_tree` MCP tool + `FileTree()` store method |
+| 5 | **G2: Session memory** | High | Medium | ✅ done | `sessions`/`session_files` tables; `session` MCP tool |
+| 6 | **G3: Knowledge base** | High | Medium | ✅ done | `knowledge_facts` table; `knowledge` MCP tool; top-K injected into `ask` |
+| 7 | **G9: Tiered routing** | High | Medium | ✅ done | `DEX_CHAT_URL` unset → probe ollama for code model, else fallback |
+| 8 | **G10: Streaming responses** | Medium | Medium | blocked | Requires `ServerSession` in tool handler ctx — SDK gap; revisit when SDK exposes session via context |
+| 9 | **G5: Shell compression tool** | Medium | High | ✅ done | `compress_output` MCP tool; 7 command patterns + generic; POST /v1/compress REST endpoint |
+| 10 | **G11: Embedding auto-pull** | Low | Low | ✅ done | `dex reindex --pull-model`; `index status` hints `ollama pull nomic-embed-text` when ollama is up but has no embed models |
+| 11 | **G12: VRAM-aware batch sizing** | Low | Medium | ✅ done | `embed.FreeVRAMGB()` probes nvidia-smi/system_profiler; auto batch 8/64/256 for <4/4-16/>16 GB VRAM |
 
 ---
 
