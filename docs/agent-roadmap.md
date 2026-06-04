@@ -11,31 +11,16 @@ dropped, and items here don't duplicate it.
 
 ---
 
-## 1. Persistent per-tier model config (`.dex/models.toml`)
+## 1. ~~Persistent per-tier model config (`.dex/models.toml`)~~ — superseded
 
-**Why.** Tier model env vars (`DEX_{CHUNK,FILE,PACKAGE,REPO}_SUMMARY_MODEL`)
-are inherited from whatever process launched dex. The MCP server reads
-them from Claude's MCP env block; `dex watch` reads them from the
-systemd unit's `Environment=` lines; CLI invocations read them from the
-shell. Three independent surfaces with no shared source of truth — the
-operator can forget to set them in one place and silently get default
-7b across the board. We hit this exact failure during the v2 rollout.
-
-**Entry points.**
-- Extend `internal/guide/config.go` schema, or add `internal/index/config.go`.
-- Honor TOML at `<project_root>/.dex/models.toml`:
-  ```toml
-  [models]
-  chunk   = "qwen2.5-coder:3b"
-  file    = "qwen2.5-coder:7b"
-  package = "qwen2.5-coder:14b"
-  repo    = "qwen2.5-coder:32b"
-  ```
-- Precedence: env var > config file > inherited DEX_SUMMARY_MODEL.
-- Surface in `dex env` output with the resolved source per tier.
-
-**Done when.** A repo with `.dex/models.toml` uses the configured tier
-models regardless of which process launched dex, no env vars set.
+**Not needed.** The original motivation ("three independent surfaces, no
+shared source of truth") was solved at the dotfiles layer instead.
+`dotfiles/machines/main_pc/vars.yml` sets all four tier models;
+`dotfiles/components/dex/index.yml` stamps them into `claude mcp add -e
+DEX_{CHUNK,FILE,PACKAGE,REPO}_SUMMARY_MODEL=…` and into the systemd unit
+env in a single `mooncake apply`. Fleet default (all empty = inherit
+`DEX_SUMMARY_MODEL`) lives in `dotfiles/shared/variables.yml:148-151`.
+One apply, both surfaces in sync — no in-repo config file needed.
 
 ---
 
@@ -89,31 +74,13 @@ prose paragraph mentioning identifiers absent from the package's
 
 ---
 
-## 4. Multi-language graph extraction (Python / TS / Rust)
+## 4. ✅ Multi-language graph extraction (Python / TS / Rust)
 
-**Status.** Tracked in `docs/vision.md` scope cut #2 with the
-tree-sitter-based implementation sketch — per-language queries in
-`internal/graph/sitter_calls.go`, edges tagged `provenance: "sitter"`
-so the MCP layer distinguishes them from Go's type-resolved edges.
-This entry is the broader extractor framing.
-
-**Why.** Today's static graph is Go-only (`go/packages` + `go/types` in
-`internal/graph`). Non-Go projects get a guide with empty "Depends on"
-/ "Used by" sections — the most useful grounding signal disappears.
-Mooncake (Python+YAML) is the immediate driver: it's our biggest
-non-Go repo.
-
-**Entry points.**
-- `internal/graph/graph.go` — split the extractor interface so per-language
-  backends plug in.
-- Per-language tree-sitter queries (see vision scope cut #2). Same
-  approach the chunker uses; no per-language subprocess needed.
-- Schema reuse: same `graph_nodes` / `graph_edges` tables. `kind`
-  enum covers function / method / class / import already.
-
-**Done when.** `dex index <python-project>` populates `graph_nodes`
-with classes + functions + imports; `dex guide` renders "Exported
-API" and "Depends on" sections for Python packages.
+**Shipped.** Tree-sitter extractors for Python, TypeScript, JavaScript,
+Java, and Rust all landed (`fa41add`, `7cd40e7`, `4ae2018`, `0e0c5a8`,
+plus Python relative-import fix `265ebe8`). Edges carry
+`provenance: "sitter"` + `sitter_lang`. Specs updated in `2da3772`.
+Files: `internal/graph/sitter_{python,ts,javascript,java,rust}.go`.
 
 ---
 
@@ -155,19 +122,14 @@ that used to leak into the test result is gone.
 
 ## 7. Structured logging schema (`slog` attributes lockdown)
 
-**Why.** `slog` is in use throughout (`internal/index`, `internal/mcp`,
-`internal/watch`) but each call site picks its own attribute keys
-(`elapsed`, `took`, `count`, `n`, …). No tooling can reliably ingest
-the stream into Grafana / Loki / OTLP. Future on-call work
-(performance regressions, model swap measurements) needs this.
+**Partial.** `internal/logx/logx.go` (`19b05f2`) unified all timing
+sites to `duration_ms` via `logx.DurMS()`. That's the only canonical
+attr so far. Remaining work:
 
-**Entry points.**
-- Add `internal/obs/log.go` defining a small set of canonical attrs:
-  `phase`, `kind`, `duration_ms`, `count_in`, `count_out`, `model`,
-  `path`.
-- Audit every `Logger.Info` / `Warn` call; replace ad-hoc keys with
-  these canonicals.
-- Document the schema in `docs/observability.md`.
+- Define the full canonical set: `phase`, `kind`, `count_in`,
+  `count_out`, `model`, `path` — currently ad-hoc at each call site.
+- Audit every `Logger.Info` / `Warn` call and replace ad-hoc keys.
+- Write `docs/observability.md` documenting the schema.
 
 **Done when.** A grep across the codebase shows every log entry uses
 only the canonical attribute set. `slog` JSON output round-trips
@@ -251,22 +213,20 @@ re-indexing. Cross-machine smoke tested.
 
 ## Notes for the picker-upper
 
-- **Sequence sensibly.** Items 1 + 2 + 3 compound (config persistence
-  enables consistent quality across runs; stale GC keeps the table
-  clean; prompt grounding kills the hallucination at source). Tackle
-  them as a small series before moving on.
-- **Items 4 (multi-language), 5 (e2e test), 6 (flake fix) are
-  independent** — pick by mood/skill match.
-- **Items 7 + 8 + 9 are observability/DX work** — they don't change
-  user-visible behavior but compound future work. Worth a focused
-  sprint.
-- **Item 10 is a real feature ask** with implications for security
-  (sharing indexes = sharing summaries that may quote private code).
-  Don't ship without auth thought.
+Items 1–4 and 6 are closed. Open work: **5, 7, 8, 9, 10**.
+
+- **Item 5 (e2e pipeline test)** is the highest-leverage gap — a
+  missing test that would have caught a real bug. Pick this first.
+- **Items 7 + 8 + 9 are observability/DX work** — no user-visible
+  behavior change but they compound future on-call and onboarding.
+  Good focused sprint. Item 7 is partial (`duration_ms` done); finish
+  the canonical attr set + `docs/observability.md` before 8 or 9.
+- **Item 10 (index portability)** is a real feature with security
+  implications (shared indexes = shared summaries that may quote
+  private code). Don't ship without auth thought.
 
 For each item: open a worktree, conventional commit prefix (`feat:`,
-`fix:`, `docs:`), `--no-ff` merge to main, never auto-push. Mooncake's
-patterns and the codebase's tests speak for themselves — read first,
-write second.
+`fix:`, `docs:`), ff-merge to main via PR, never push main directly.
+Read first, write second.
 
 Godspeed, trooper.
