@@ -1,6 +1,7 @@
 ---
 id: mcp-server
 status: living
+last_verified: c331a3c
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
