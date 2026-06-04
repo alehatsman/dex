@@ -166,6 +166,16 @@ func (s *Server) CompressOutput(ctx context.Context, in CompressInput) (Compress
 	return out, err
 }
 
+func (s *Server) Knowledge(ctx context.Context, in KnowledgeInput) (KnowledgeOutput, error) {
+	_, out, err := s.knowledge(ctx, nil, in)
+	return out, err
+}
+
+func (s *Server) Session(ctx context.Context, in SessionInput) (SessionOutput, error) {
+	_, out, err := s.session(ctx, nil, in)
+	return out, err
+}
+
 // ─── tool: search_semantic ────────────────────────────────────────────────
 
 type SearchInput struct {
