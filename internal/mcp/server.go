@@ -403,7 +403,8 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// by exact name, and RRF-fuse with the semantic results. Runs in the
 	// same request with no extra embedding round-trip — FindSymbol is a
 	// pure SQL index scan.
-	if idents := extractIdentifiers(in.Query); len(idents) > 0 {
+	idents := extractIdentifiers(in.Query)
+	if len(idents) > 0 {
 		symPool := k * 3
 		if symPool < 15 {
 			symPool = 15
@@ -427,6 +428,8 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			}
 		}
 	}
+
+	hits = rerankLocal(hits, len(idents) > 0)
 
 	out.Status = "ok"
 	if hint := s.searchThrottleHint(in.Query, p.Root); hint != "" {
@@ -595,6 +598,81 @@ func excluded(path string, exclude []string) bool {
 		}
 	}
 	return false
+}
+
+// rerankLocal applies post-RRF quality signals before returning search results.
+// Passes: (1) noise penalties + definition boost, (2) file coherence boost,
+// (3) MMR-style diversity decay. Operates on RRFScore; falls back to cosine
+// Score when RRF didn't run (semantic-only search).
+func rerankLocal(hits []store.Hit, isSymbolQuery bool) []store.Hit {
+	if len(hits) == 0 {
+		return hits
+	}
+	for i := range hits {
+		if hits[i].RRFScore == 0 {
+			hits[i].RRFScore = hits[i].Score
+		}
+	}
+
+	// Pass 1: per-hit signals.
+	for i := range hits {
+		if isNoisePath(hits[i].Path) {
+			hits[i].RRFScore *= 0.3
+		}
+		if isSymbolQuery && isDefinitionKind(hits[i].Kind) {
+			hits[i].RRFScore *= 1.5
+		}
+	}
+
+	// Pass 2: file coherence — boost all chunks from files with ≥2 hits.
+	fileCnt := make(map[string]int, len(hits))
+	for _, h := range hits {
+		fileCnt[h.Path]++
+	}
+	for i := range hits {
+		if fileCnt[hits[i].Path] >= 2 {
+			hits[i].RRFScore *= 1.15
+		}
+	}
+	sort.Slice(hits, func(i, j int) bool { return hits[i].RRFScore > hits[j].RRFScore })
+
+	// Pass 3: MMR diversity — decay chunks beyond the 2nd from the same file.
+	seen := make(map[string]int, len(hits))
+	for i := range hits {
+		seen[hits[i].Path]++
+		for excess := seen[hits[i].Path] - 2; excess > 0; excess-- {
+			hits[i].RRFScore *= 0.7
+		}
+	}
+	sort.Slice(hits, func(i, j int) bool { return hits[i].RRFScore > hits[j].RRFScore })
+	return hits
+}
+
+// isNoisePath returns true for test files, examples, fixtures, and demo
+// directories that should rank lower in general code searches.
+func isNoisePath(path string) bool {
+	base := filepath.Base(path)
+	return strings.Contains(path, "_test.") ||
+		strings.Contains(path, "/testdata/") ||
+		strings.HasPrefix(base, "test_") ||
+		strings.Contains(path, "/example") ||
+		strings.Contains(path, "/demo/") ||
+		strings.Contains(path, "/fixture")
+}
+
+// isDefinitionKind returns true for tree-sitter node types that represent
+// a declaration site (function, method, struct, class, interface, type).
+func isDefinitionKind(kind string) bool {
+	if strings.HasSuffix(kind, ":window") {
+		return false
+	}
+	return strings.Contains(kind, "function") ||
+		strings.Contains(kind, "method") ||
+		strings.Contains(kind, "class") ||
+		strings.Contains(kind, "struct") ||
+		strings.Contains(kind, "interface") ||
+		strings.Contains(kind, "type_decl") ||
+		strings.Contains(kind, "impl_item")
 }
 
 // ─── tool: search_symbol ──────────────────────────────────────────────────
@@ -902,6 +980,10 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 			out.Truncated = true
 		}
 		out.Bytes = len(slice)
+
+		if lineCount := bytes.Count(data, []byte("\n")) + 1; lineCount > 250 {
+			out.Hint = fmt.Sprintf("⚠ Large file (%d lines): pass mode=signatures or mode=map to reduce tokens.", lineCount)
+		}
 
 		system := buildSummarizeSystem(in.Focus)
 		userContent := fmt.Sprintf("FILE: %s (lines %d-%d)\n\n```\n%s\n```",
@@ -1394,7 +1476,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 	// A-B debugging, and power users — too noisy for everyday agents.
 	if tier >= TierPower {
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "search_semantic",
+			Name:        "search_semantic",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Prefer `ask` for general code-understanding questions — it composes this " +
 				"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
 				"want raw ranking without intent routing. " +
@@ -1407,7 +1490,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.search)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "search_symbol",
+			Name:        "search_symbol",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Prefer `ask` — it detects identifiers in your question and runs this " +
 				"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
 				"already have the exact identifier name and want nothing else. " +
@@ -1415,7 +1499,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.findSymbol)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_neighbors",
+			Name:        "graph_neighbors",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Prefer `ask` — it includes neighborhood expansion as part of routing. " +
 				"Use graph_neighbors directly only when you already have the exact (path, start_line) of a chunk " +
 				"and want its cosine neighbors. " +
@@ -1423,7 +1508,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.related)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_deps",
+			Name:        "graph_deps",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Return the `imports` edges for a file or package — the package the file belongs to, " +
 				"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
 				"Pass `path` (relative file inside the project) OR `package` (full package path). " +
@@ -1431,7 +1517,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.graphDeps)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_callers",
+			Name:        "graph_callers",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
 				"Go-only for now (Python/JS/Rust callers fall back to ripgrep via `ask`). " +
 				"Accepts a bare name (`Foo`), a qualified method (`(*Server).RunStdio`), or a package-qualified " +
@@ -1440,14 +1527,16 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.graphCallers)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_callees",
+			Name:        "graph_callees",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
 				"Go-only for now. Same name resolution as graph_callers. " +
 				"Returns 'no-graph' when calls edges haven't been indexed yet.",
 		}, h.graphCallees)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_links",
+			Name:        "graph_links",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Return the markdown documents that the given doc LINKS TO — outgoing `links` " +
 				"(inline `[text](other.md)`) and `wikilinks` (`[[Note]]`) edges from the doc graph. " +
 				"Pass `doc` as a path relative to the project root (e.g. 'docs/spec.md'); a unique basename works too. " +
@@ -1456,14 +1545,16 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.graphLinks)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_backlinks",
+			Name:        "graph_backlinks",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Return the markdown documents that LINK TO the given doc — incoming `links`/`wikilinks` " +
 				"edges (Obsidian-style backlinks). Same `doc` resolution as graph_links. Useful for " +
 				"'what references this spec'. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet.",
 		}, h.graphBacklinks)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_impact",
+			Name:        "graph_impact",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Transitive blast-radius analysis. Given a symbol, follows `calls` edges " +
 				"in the callers direction up to max_depth (default 3) and returns every reachable function " +
 				"with its hop depth and PageRank. Depth 1 = direct callers; depth 2 = their callers; etc. " +
@@ -1472,14 +1563,16 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.graphImpact)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "graph_tags",
+			Name:        "graph_tags",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Query the markdown tag graph. Pass `tag` (a #tag without the #) to list the documents " +
 				"carrying it, ranked by doc importance — tag-based clustering. Or pass `doc` to list the tags that " +
 				"document carries. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet.",
 		}, h.graphTags)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "routes",
+			Name:        "routes",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
 				"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
 				"and callers of registration functions (Handle, HandleFunc, AddTool, RegisterService, etc.). " +
@@ -1488,7 +1581,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.routes)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "smells",
+			Name:        "smells",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "AST-based code quality signals derived from the graph index — no LLM required. " +
 				"Returns three categories: `long_functions` (bodies >= min_func_lines, default 80), " +
 				"`dead_exports` (exported functions/methods with no indexed callers), and " +
@@ -1497,7 +1591,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.smells)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "compress_output",
+			Name:        "compress_output",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Compress raw shell command output before using it in your context. " +
 				"Pass the full output and a command hint (e.g. 'go test', 'git log', 'npm install', 'cargo build', 'docker build'). " +
 				"Strips progress spinners, download noise, and consecutive duplicates; for go test keeps only failures " +
@@ -1508,6 +1603,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "index_status",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
 		}, h.status)
 	}
@@ -1516,7 +1612,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 	// agents can accumulate project context without any configuration.
 	if tier >= TierStandard {
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "overview",
+			Name:        "overview",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Task-relevant project map. Given a task description, ranks every indexed file by " +
 				"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
 				"`context` (top-k most relevant files with line counts and suggested view_summarize mode) and " +
@@ -1530,7 +1627,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 			Description: "Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
 				"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
 				"list (retrieve top-k facts ordered by salience), delete (remove a fact by id). " +
-				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation. " +
+				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
 				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
 				"as knowledge_facts. No embedding required.",
 		}, h.knowledge)
@@ -1546,7 +1643,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.session)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "search_tree",
+			Name:        "search_tree",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "List indexed files under a directory path. Returns individual files within " +
 				"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
 				"(dirs shown with trailing / and a summed chunk count). " +
@@ -1557,7 +1655,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 
 		if chatAvailable {
 			sdk.AddTool(srv, &sdk.Tool{
-				Name: "view_summarize",
+				Name:        "view_summarize",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: "Prefer `ask` first — its `suggested_reads` will name the file worth " +
 					"summarizing. Use view_summarize directly only when you already know which file you need digested. " +
 					"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
@@ -1568,7 +1667,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 	}
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "ask",
+		Name:        "ask",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: "PRIMARY ENTRY POINT for code-understanding questions — and, by default, the ONLY dex tool you " +
 			"need. Call this BEFORE Grep/Glob/Read fan-out. When a chat model is configured it returns `answer`: a " +
 			"synthesized, citation-bearing prose response (`path:line`) grounded in the evidence below — read that " +

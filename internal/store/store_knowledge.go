@@ -9,7 +9,7 @@ import (
 // KnowledgeFact is one persisted fact about the project.
 type KnowledgeFact struct {
 	ID         int64
-	Archetype  string // Architecture | Gotcha | Convention | Decision | Observation
+	Archetype  string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact
 	Body       string
 	Confidence float64 // 0–1
 	CreatedAt  time.Time
@@ -29,6 +29,12 @@ func archetypeWeight(a string) float64 {
 		return 1.2
 	case "Convention":
 		return 1.1
+	case "Dependency":
+		return 1.1
+	case "Pattern":
+		return 1.0
+	case "Fact":
+		return 1.0
 	default:
 		return 1.0
 	}
