@@ -155,32 +155,8 @@ dex hook redirect          # PreToolUse(Read)  → signatures view for big files
 dex hook observe           # PostToolUse/Stop  → append event to hooks.jsonl
 ```
 
-`dex env` prints effective config with sources (`env|file|default`); `dex -h`
-lists everything.
-
-Rather than threading the `DEX_*` knobs through the MCP env block, the systemd
-unit, and your shell, pin them once in `.dex/config.toml` (read from the working
-dir at startup). Precedence is **env var > config file > default**, so any env
-override still wins:
-
-```toml
-[endpoints]
-embed = "http://localhost:11434"   # DEX_EMBED_URL
-chat  = "http://localhost:11434"   # DEX_CHAT_URL
-
-[models]
-embed = "mxbai-embed-large"        # DEX_EMBED_MODEL
-chat  = "qwen2.5-coder:14b"        # DEX_CHAT_MODEL
-
-[tools]
-tier = "power"                     # DEX_TOOLS
-
-[env]                              # escape hatch: any DEX_* knob verbatim
-DEX_EMBED_CONCURRENCY = 8
-```
-
-`DEX_SERVE_TOKEN` is a secret and is never read from the file — keep it in the
-environment.
+`dex env` prints effective config with sources; `dex -h` lists
+everything.
 
 When running as `dex mcp`, the server registers tools in three tiers controlled
 by `DEX_TOOLS=ask|standard|power` (default `standard`):
