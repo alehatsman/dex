@@ -261,7 +261,7 @@ func (rc *remoteClient) session(ctx context.Context, _ *sdk.CallToolRequest, in 
 
 func (rc *remoteClient) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
 	var out SearchTreeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/tree"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/file/tree"), in, &out)
 	return nil, out, err
 }
 

@@ -24,7 +24,15 @@ package mcp
 //	POST /projects/{id}/graph/tags         — body: TagInput
 //	GET  /projects/{id}/graph/packages     — whole package import DAG
 //	POST /projects/{id}/file/view          — body: SummarizeInput
+//	POST /projects/{id}/file/tree          — body: SearchTreeInput
 //	POST /projects/{id}/search/context     — body: ComposeInput
+//	POST /projects/{id}/graph/impact       — body: ImpactInput
+//	POST /projects/{id}/graph/routes       — body: RoutesInput
+//	POST /projects/{id}/code/smells        — body: SmellsInput
+//	POST /projects/{id}/spec/verify        — body: SpecVerifyInput
+//	POST /projects/{id}/view/overview      — body: OverviewInput
+//	POST /projects/{id}/knowledge          — body: KnowledgeInput
+//	POST /projects/{id}/session            — body: SessionInput
 //	*    /projects/{id}/mcp                 — native streamable-HTTP MCP
 //	                                          transport (http_mcp.go), not REST
 //
@@ -258,7 +266,15 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/graph/tags", s.handleGraphTags(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/file/view", s.handleSummarize(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/file/tree", s.handleFileTree(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/context", s.handleCompose(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/impact", s.handleGraphImpact(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/routes", s.handleGraphRoutes(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/code/smells", s.handleCodeSmells(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/spec/verify", s.handleSpecVerify(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/view/overview", s.handleOverview(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/knowledge", s.handleKnowledge(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/session", s.handleSession(opts.Projects))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
@@ -567,6 +583,38 @@ func (s *Server) handleSummarize(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleCompose(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *ComposeInput, root string) { in.ProjectRoot = root }, s.Compose)
+}
+
+func (s *Server) handleGraphImpact(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *ImpactInput, root string) { in.ProjectRoot = root }, s.GraphImpact)
+}
+
+func (s *Server) handleGraphRoutes(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *RoutesInput, root string) { in.ProjectRoot = root }, s.Routes)
+}
+
+func (s *Server) handleCodeSmells(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *SmellsInput, root string) { in.ProjectRoot = root }, s.Smells)
+}
+
+func (s *Server) handleSpecVerify(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *SpecVerifyInput, root string) { in.ProjectRoot = root }, s.SpecVerify)
+}
+
+func (s *Server) handleOverview(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *OverviewInput, root string) { in.ProjectRoot = root }, s.Overview)
+}
+
+func (s *Server) handleKnowledge(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *KnowledgeInput, root string) { in.ProjectRoot = root }, s.Knowledge)
+}
+
+func (s *Server) handleSession(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *SessionInput, root string) { in.ProjectRoot = root }, s.Session)
+}
+
+func (s *Server) handleFileTree(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *SearchTreeInput, root string) { in.ProjectRoot = root }, s.SearchTree)
 }
 
 func (s *Server) handleCompress() http.HandlerFunc {
