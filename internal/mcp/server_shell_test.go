@@ -5,6 +5,182 @@ import (
 	"testing"
 )
 
+// ── compression pattern tests ─────────────────────────────────────────────────
+
+func TestCompressGrep(t *testing.T) {
+	var lines []string
+	for i := 1; i <= 15; i++ {
+		lines = append(lines, "src/foo.go:"+string(rune('0'+i%10))+": match content "+string(rune('0'+i%10)))
+	}
+	for i := 1; i <= 5; i++ {
+		lines = append(lines, "src/bar.go:"+string(rune('0'+i%10))+": other match")
+	}
+	out := compressGrep(lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "20 matches in 2F:") {
+		t.Fatalf("expected header '20 matches in 2F:', got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "src/foo.go (15):") {
+		t.Fatalf("expected foo.go grouped, got:\n%s", joined)
+	}
+}
+
+func TestCompressGrepNoMatches(t *testing.T) {
+	lines := []string{"no file path here", "just text", "more text"}
+	out := compressGrep(lines)
+	// should return original when nothing parseable
+	if strings.Join(out, "\n") != strings.Join(lines, "\n") {
+		t.Fatal("expected passthrough for non-grep output")
+	}
+}
+
+func TestCompressFind(t *testing.T) {
+	lines := []string{
+		"./src/main.go", "./src/util.go", "./src/helper.go",
+		"./cmd/main.go", "./cmd/serve.go",
+		"./internal/store/store.go",
+	}
+	out := compressFind(lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "6F") {
+		t.Fatalf("expected '6F' in header, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "src/") {
+		t.Fatalf("expected src/ dir, got:\n%s", joined)
+	}
+}
+
+func TestCompressEslint(t *testing.T) {
+	lines := []string{
+		"/project/src/app.ts",
+		"   1:10  error  'foo' is not defined  no-undef",
+		"   2:5   error  Missing semicolon      semi",
+		"   3:1   warning  Unexpected var       no-var",
+		"/project/src/util.ts",
+		"   5:3   error  'bar' is not defined  no-undef",
+		"",
+		"✖ 4 problems (3 errors, 1 warning)",
+	}
+	out := compressEslint(lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "3 errors") {
+		t.Fatalf("expected error count, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "no-undef") {
+		t.Fatalf("expected rule name, got:\n%s", joined)
+	}
+}
+
+func TestCompressRuff(t *testing.T) {
+	var lines []string
+	for i := 1; i <= 40; i++ {
+		lines = append(lines, "src/foo.py:"+string(rune('0'+i%10))+":1: E501 line too long")
+	}
+	for i := 1; i <= 10; i++ {
+		lines = append(lines, "src/bar.py:"+string(rune('0'+i%10))+":1: F401 unused import")
+	}
+	out := compressRuff("ruff check src/", lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "50 issues") {
+		t.Fatalf("expected issue count, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "E501") {
+		t.Fatalf("expected rule in output, got:\n%s", joined)
+	}
+}
+
+func TestCompressRuffClean(t *testing.T) {
+	lines := []string{"All checks passed!"}
+	out := compressRuff("ruff check", lines)
+	if strings.Join(out, "\n") != "clean" {
+		t.Fatalf("expected 'clean', got: %q", strings.Join(out, "\n"))
+	}
+}
+
+func TestCompressMypy(t *testing.T) {
+	lines := []string{
+		"src/app.py:10: error: Incompatible return value type  [return-value]",
+		"src/util.py:5: error: Argument 1 to 'foo' has incompatible type  [arg-type]",
+		"src/util.py:8: error: Cannot access member 'x'  [attr-defined]",
+		"Found 3 errors in 2 files (checked 5 source files)",
+	}
+	out := compressMypy(lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "3 errors in 2 files") {
+		t.Fatalf("expected summary, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "return-value") {
+		t.Fatalf("expected error code, got:\n%s", joined)
+	}
+}
+
+func TestCompressPytest(t *testing.T) {
+	lines := []string{
+		"collected 10 items",
+		"",
+		"PASSED tests/test_foo.py::test_one",
+		"PASSED tests/test_foo.py::test_two",
+		"FAILED tests/test_bar.py::test_bad - AssertionError",
+		"FAILED tests/test_bar.py::test_worse",
+		"",
+		"short test summary info",
+		"FAILED tests/test_bar.py::test_bad",
+		"FAILED tests/test_bar.py::test_worse",
+		"====== 2 failed, 2 passed in 0.42s ======",
+	}
+	out := compressPytest(lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "2 failed") {
+		t.Fatalf("expected summary line, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "test_bad") {
+		t.Fatalf("expected failed test name, got:\n%s", joined)
+	}
+}
+
+func TestCompressTsc(t *testing.T) {
+	lines := []string{
+		"src/app.ts(10,5): error TS2322: Type 'string' is not assignable to type 'number'.",
+		"src/util.ts(20,3): error TS2339: Property 'foo' does not exist on type 'Bar'.",
+		"Found 2 errors.",
+	}
+	out := compressTsc(lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "2 errors in 2 files") {
+		t.Fatalf("expected error summary, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "TS2322") {
+		t.Fatalf("expected TS error code, got:\n%s", joined)
+	}
+}
+
+func TestCompressLogDedup(t *testing.T) {
+	lines := []string{
+		"2024-01-01T10:00:00Z INFO starting server",
+		"2024-01-01T10:00:01Z INFO starting server",
+		"2024-01-01T10:00:02Z INFO starting server",
+		"2024-01-01T10:00:03Z INFO request received",
+		"2024-01-01T10:00:04Z INFO request received",
+		"2024-01-01T10:00:05Z ERROR connection failed",
+		"2024-01-01T10:00:06Z INFO starting server",
+		"2024-01-01T10:00:07Z INFO starting server",
+		"2024-01-01T10:00:08Z INFO done",
+		"2024-01-01T10:00:09Z INFO done",
+		"2024-01-01T10:00:10Z INFO done",
+	}
+	out := compressLogDedup(lines)
+	if out == nil {
+		t.Fatal("expected dedup to apply")
+	}
+	if len(out) >= len(lines) {
+		t.Fatalf("expected fewer lines after dedup: %d >= %d", len(out), len(lines))
+	}
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "x3") && !strings.Contains(joined, "x4") {
+		t.Fatalf("expected repeat count annotation, got:\n%s", joined)
+	}
+}
+
 func TestHasFileWriteRedirect(t *testing.T) {
 	blocked := []string{
 		"echo hello > output.txt",
