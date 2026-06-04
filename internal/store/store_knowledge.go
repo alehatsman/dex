@@ -88,7 +88,7 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []KnowledgeFact
 	for rows.Next() {
 		var f KnowledgeFact

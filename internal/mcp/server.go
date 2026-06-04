@@ -128,7 +128,10 @@ type activityState struct {
 // activityRecord adds weight for a tool call. weight >= 2 counts as significant.
 func (s *Server) activityRecord(project string, weight int) {
 	raw, _ := s.activityTracker.LoadOrStore(project, &activityState{})
-	a := raw.(*activityState)
+	a, ok := raw.(*activityState)
+	if !ok {
+		return
+	}
 	a.mu.Lock()
 	a.weightedScore += weight
 	if weight >= 2 {
@@ -140,7 +143,10 @@ func (s *Server) activityRecord(project string, weight int) {
 // activityKnowledgeRecorded resets the nudge clock when the agent stores a fact.
 func (s *Server) activityKnowledgeRecorded(project string) {
 	raw, _ := s.activityTracker.LoadOrStore(project, &activityState{})
-	a := raw.(*activityState)
+	a, ok := raw.(*activityState)
+	if !ok {
+		return
+	}
 	a.mu.Lock()
 	a.lastKnowledgeAt = time.Now()
 	a.mu.Unlock()
@@ -159,7 +165,10 @@ func (s *Server) activityNudge(project, sessionTask string) string {
 	if !loaded {
 		return ""
 	}
-	a := raw.(*activityState)
+	a, ok := raw.(*activityState)
+	if !ok {
+		return ""
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -233,7 +242,10 @@ func (s *Server) searchThrottleHint(query, project string) string {
 	now := time.Now()
 
 	raw, _ := s.searchThrottle.LoadOrStore(key, &throttleEntry{})
-	e := raw.(*throttleEntry)
+	e, ok := raw.(*throttleEntry)
+	if !ok {
+		return ""
+	}
 
 	s.searchThrottleMu.Lock()
 	if now.Sub(e.lastAt) > idleReset {
@@ -987,7 +999,7 @@ type SummarizeOutput struct {
 // alongside the system prompt and the summary itself.
 const maxSummarizeBytes = 64 * 1024
 
-func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
+func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) { //nolint:cyclop
 	out := SummarizeOutput{}
 
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
@@ -1241,6 +1253,7 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 		single := in
 		single.Path = rawPath
 		single.Paths = nil
+		single.Mode = mode
 		_, out, err := s.summarize(ctx, nil, single)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("%s: %v", rawPath, err)}, nil

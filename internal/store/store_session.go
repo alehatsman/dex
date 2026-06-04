@@ -50,7 +50,7 @@ func (s *Store) SessionGet(ctx context.Context) (SessionState, bool, error) {
 	if err != nil {
 		return ss, true, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var f SessionFile
 		var tsNs int64

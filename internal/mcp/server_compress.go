@@ -29,7 +29,7 @@ type CompressOutput struct {
 // the pattern set; an empty or unrecognised command falls back to the generic
 // pass. maxLines caps the result (0 → 200). This is the pure-text entry point
 // shared by the MCP tool and the CLI compress-stdin command.
-func CompressText(output, command string, maxLines int) (compressed string, originalLines, outputLines int) {
+func CompressText(output, command string, maxLines int) (compressed string, originalLines, outputLines int) { //nolint:cyclop
 	if output == "" {
 		return "", 0, 0
 	}
@@ -139,7 +139,7 @@ func compressGoTest(lines []string) []string {
 			strings.HasPrefix(l, "PASS"), strings.HasPrefix(l, "exit status"),
 			strings.HasPrefix(l, "?"):
 			out = append(out, l)
-		case strings.HasPrefix(l, "=== RUN"):
+		case strings.HasPrefix(l, "=== RUN"): //nolint:staticcheck
 			// suppress RUN lines; keep only results
 		}
 	}
@@ -549,7 +549,7 @@ func compressGrep(lines []string) []string {
 		}
 		file := caps[1]
 		lineNo := 0
-		fmt.Sscanf(caps[2], "%d", &lineNo)
+		_, _ = fmt.Sscanf(caps[2], "%d", &lineNo)
 		content := strings.TrimSpace(caps[3])
 		if len(content) > 120 {
 			content = content[:119] + "…"
@@ -932,7 +932,7 @@ func compressTsc(lines []string) []string {
 
 	joined := strings.Join(lines, "\n")
 	if caps := reTscCount.FindStringSubmatch(joined); caps != nil {
-		fmt.Sscanf(caps[1], "%d", &totalErrors)
+		_, _ = fmt.Sscanf(caps[1], "%d", &totalErrors)
 	}
 
 	for _, l := range lines {

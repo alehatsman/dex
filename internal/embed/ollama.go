@@ -219,7 +219,7 @@ func PullOllamaModel(ctx context.Context, model string, progress io.Writer) erro
 			return fmt.Errorf("ollama pull: %s", msg.Error)
 		}
 		if progress != nil && msg.Status != "" {
-			fmt.Fprintln(progress, msg.Status)
+			_, _ = fmt.Fprintln(progress, msg.Status)
 		}
 	}
 	return scanner.Err()
