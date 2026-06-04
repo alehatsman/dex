@@ -194,11 +194,11 @@ func TestBuildAnswerEvidenceSessionContext(t *testing.T) {
 	if !strings.Contains(ev, "[Architecture] watch.go owns the file watcher") {
 		t.Errorf("evidence missing knowledge fact: %q", ev)
 	}
-	// Session block must appear before code evidence.
+	// Session block must appear after code evidence (KV-cache: stable code prefix, dynamic tail).
 	sessionIdx := strings.Index(ev, "SESSION CONTEXT:")
 	codeIdx := strings.Index(ev, "watch.go")
-	if sessionIdx >= codeIdx {
-		t.Errorf("SESSION CONTEXT should precede code evidence (got positions %d vs %d)", sessionIdx, codeIdx)
+	if sessionIdx <= codeIdx {
+		t.Errorf("SESSION CONTEXT should follow code evidence (got positions %d vs %d)", sessionIdx, codeIdx)
 	}
 }
 

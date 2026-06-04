@@ -120,7 +120,7 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 		{"summarize", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.summarize(c, nil, SummarizeInput{})
 			return err
-		}, http.MethodPost, base + "/view/summarize"},
+		}, http.MethodPost, base + "/file/view"},
 		{"status", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.status(c, nil, StatusInput{})
 			return err
