@@ -938,12 +938,21 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
 			content += related
 		}
+		// N16: inline best task-relevant symbol body when a session task is declared.
+		content = inlineTaskSymbol(ctx, st, data, syms, content)
 		out.Status = "ok"
 		out.Content = content
 		out.Bytes = len(content)
 		return nil, out, nil
 
 	case mode == "map":
+		// N14: non-code files get a pure-Go structural outline; no index needed.
+		if content, ok := nonCodeMap(relTarget, data); ok {
+			out.Status = "ok"
+			out.Content = content
+			out.Bytes = len(content)
+			return nil, out, nil
+		}
 		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
@@ -965,6 +974,10 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		content := formatMap(relTarget, syms, imports)
 		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
 			content += related
+		}
+		// N16: inline best task-relevant symbol body when a session task is declared.
+		if len(syms) > 0 {
+			content = inlineTaskSymbol(ctx, st, data, syms, content)
 		}
 		out.Status = "ok"
 		out.Content = content
@@ -1431,6 +1444,7 @@ type toolSurface interface {
 	compressOutput(context.Context, *sdk.CallToolRequest, CompressInput) (*sdk.CallToolResult, CompressOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
+	compose(context.Context, *sdk.CallToolRequest, ComposeInput) (*sdk.CallToolResult, ComposeOutput, error)
 }
 
 // toolTier controls how many tools are exposed to MCP clients.
@@ -1652,6 +1666,16 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Use for orientation in an unfamiliar codebase before calling ask or view_summarize. " +
 				"Returns 'no-index' when the project hasn't been indexed yet.",
 		}, h.searchTree)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "search_compose",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: "Single-call alternative to the search → signatures → lines chain. " +
+				"Embeds the query, finds the top-k most relevant files, returns their symbol signatures " +
+				"and the body of the best-matching symbol — all in one round trip. " +
+				"Use at task-start to orient quickly without 2–3 follow-up calls. " +
+				"Requires the embedding service. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback.",
+		}, h.compose)
 
 		if chatAvailable {
 			sdk.AddTool(srv, &sdk.Tool{
