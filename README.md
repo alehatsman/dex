@@ -39,7 +39,7 @@ references" loop into one round-trip.
 
 ```bash
 git clone https://github.com/alehatsman/dex.git && cd dex
-mooncake task install   # → ~/.local/bin, no sudo; atomic rename-swap, so
+mooncake task install   # → ~/bin, no sudo; atomic rename-swap, so
                         #   it's safe to re-run while dex mcp/watch is live
 
 dex index ./            # build the index (chunks + Go graph)
@@ -147,6 +147,12 @@ dex clone <src> <dst>      # seed a worktree's index from a sibling
 dex reindex <path>         # drop and re-embed from scratch
 dex nuke <path>            # delete the on-disk index
 dex mcp                    # MCP server over stdio
+
+# Claude Code hooks (read JSON on stdin; see "Claude Code hooks" below)
+dex hook inject            # UserPromptSubmit  → inject ask context per prompt
+dex hook rewrite           # PreToolUse(Bash)  → rewrite rg/grep to dex
+dex hook redirect          # PreToolUse(Read)  → signatures view for big files
+dex hook observe           # PostToolUse/Stop  → append event to hooks.jsonl
 ```
 
 `dex env` prints effective config with sources; `dex -h` lists
@@ -202,6 +208,36 @@ Every tool returns a `status` (`ok` / `no-index` / `no-graph` /
 `embedding-service-unreachable` / `chat-service-unreachable` / `error`)
 with a human-readable `hint`, so the agent can fall back to grep
 instead of pretending success.
+
+## Claude Code hooks
+
+Beyond the MCP tools, dex can wire itself into Claude Code's
+[hook events](https://docs.claude.com/en/docs/claude-code/hooks) so the
+index works for the agent **without** it having to remember to call a
+tool. Each hook is a `dex hook <sub>` subcommand that reads the hook's
+JSON payload on stdin and emits the host's hook-output JSON on stdout.
+All four fail open — any error, timeout (3 s on stdin), or missing index
+passes the original action through untouched, so a hook never blocks or
+breaks a turn.
+
+| Hook (event)                | What it does                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `inject` (UserPromptSubmit) | Runs `ask` on the prompt and prepends `additionalContext` — suggested reads + symbols + a `next_action`. Skips prompts under 4 words; 10 s budget. |
+| `rewrite` (PreToolUse/Bash) | `rg PATTERN [PATH]` → `dex search semantic`; simple `grep -r …` gets piped through `dex compress-stdin`. Anything with pipes/redirs/unknown flags passes through. |
+| `redirect` (PreToolUse/Read)| For indexed code files >400 lines, redirects the Read to a **signatures view** (imports + top-level declarations, bodies dropped) built from the graph — ~97% fewer lines, head order kept. Small/unindexed/non-code files pass through. |
+| `observe` (PostToolUse, Stop, PreCompact) | Appends a compact `{ts, tool_name, tokens}` record to `$XDG_DATA_HOME/dex/hooks.jsonl` for session awareness. Fire-and-forget, no output. |
+
+The wiring lives in two committed files so a checkout is ready to go:
+
+- **`.claude/settings.json`** — the hook→command map Claude Code reads on
+  open. Active automatically; `mooncake task setup-hooks` also installs
+  the git pre-commit/pre-push gates alongside it.
+- **`.claude-plugin/manifest.json`** — a plugin descriptor (MCP command +
+  hook map + capabilities) for installing dex as a Claude Code plugin.
+
+The `redirect` and `inject` hooks need the project indexed (`dex index .`);
+`rewrite` and `observe` work without one. Set `DEX_INDEX_DIR` if your
+cache lives off the default path.
 
 ### Remote access
 
