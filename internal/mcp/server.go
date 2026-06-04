@@ -5,6 +5,8 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -95,11 +97,49 @@ type Server struct {
 	// after 7 a stronger warning fires. Resets after 5 minutes of idle.
 	searchThrottle   sync.Map // key: string → *throttleEntry
 	searchThrottleMu sync.Mutex
+
+	// readCache tracks which files each MCP session has already received,
+	// keyed by session ID then relative path. The value is the etag (content
+	// hash) at the time of delivery. Used by view_summarize to return
+	// status=unchanged on re-reads so the model can reuse context it already
+	// has instead of receiving the full content again.
+	readCache   map[string]map[string]string // sessionID → relPath → etag
+	readCacheMu sync.Mutex
 }
 
 type throttleEntry struct {
 	count  int
 	lastAt time.Time
+}
+
+// readCacheCheck returns true when this session has previously received
+// relPath at exactly this etag, meaning the model already has the content.
+func (s *Server) readCacheCheck(sessionID, relPath, etag string) bool {
+	if sessionID == "" {
+		return false
+	}
+	s.readCacheMu.Lock()
+	defer s.readCacheMu.Unlock()
+	if s.readCache == nil {
+		return false
+	}
+	return s.readCache[sessionID][relPath] == etag
+}
+
+// readCacheMark records that sessionID has received relPath at etag.
+func (s *Server) readCacheMark(sessionID, relPath, etag string) {
+	if sessionID == "" {
+		return
+	}
+	s.readCacheMu.Lock()
+	defer s.readCacheMu.Unlock()
+	if s.readCache == nil {
+		s.readCache = make(map[string]map[string]string)
+	}
+	if s.readCache[sessionID] == nil {
+		s.readCache[sessionID] = make(map[string]string)
+	}
+	s.readCache[sessionID][relPath] = etag
 }
 
 // searchThrottleHint increments the repetition counter for (query, project)
@@ -824,10 +864,11 @@ type SummarizeInput struct {
 	Focus       string  `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
 	Temperature float32 `json:"temperature,omitempty" jsonschema:"sampling temperature (0 = server default)"`
 	MaxTokens   int     `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
+	Etag        string  `json:"etag,omitempty" jsonschema:"content hash from a prior read; if the file is unchanged the server returns status=unchanged — re-use the content already in context instead of re-reading"`
 }
 
 type SummarizeOutput struct {
-	Status       string `json:"status"` // "ok" | "chat-service-unreachable" | "error"
+	Status       string `json:"status"` // "ok" | "unchanged" | "chat-service-unreachable" | "error"
 	Hint         string `json:"hint,omitempty"`
 	Project      string `json:"project,omitempty"`
 	Path         string `json:"path,omitempty"` // resolved path, relative to project root
@@ -839,6 +880,7 @@ type SummarizeOutput struct {
 	Endpoint     string `json:"endpoint,omitempty"`
 	Content      string `json:"content,omitempty"`
 	FinishReason string `json:"finish_reason,omitempty"`
+	Etag         string `json:"etag,omitempty"` // sha256[:16] of file content; pass back on re-reads
 }
 
 // maxSummarizeBytes caps the slice we send to the chat endpoint. Above
@@ -848,7 +890,7 @@ type SummarizeOutput struct {
 // alongside the system prompt and the summary itself.
 const maxSummarizeBytes = 64 * 1024
 
-func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
+func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	out := SummarizeOutput{}
 
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
@@ -914,6 +956,17 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("read: %v", err)}, nil
 	}
 
+	h := sha256.Sum256(data)
+	etag := hex.EncodeToString(h[:])[:16]
+
+	var sessionID string
+	if req != nil && req.Session != nil {
+		sessionID = req.Session.ID()
+	}
+	if in.Etag != "" && in.Etag == etag && s.readCacheCheck(sessionID, relTarget, etag) {
+		return nil, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, nil
+	}
+
 	switch {
 	case strings.HasPrefix(mode, "lines:"):
 		rest := strings.TrimPrefix(mode, "lines:")
@@ -926,7 +979,9 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		out.EndLine = sliceEnd
 		out.Bytes = len(slice)
 		out.Status = "ok"
+		out.Etag = etag
 		out.Content = string(slice)
+		s.readCacheMark(sessionID, relTarget, etag)
 		return nil, out, nil
 
 	case mode == "signatures":
@@ -951,16 +1006,20 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		// N16: inline best task-relevant symbol body when a session task is declared.
 		content = inlineTaskSymbol(ctx, st, data, syms, content)
 		out.Status = "ok"
+		out.Etag = etag
 		out.Content = content
 		out.Bytes = len(content)
+		s.readCacheMark(sessionID, relTarget, etag)
 		return nil, out, nil
 
 	case mode == "map":
 		// N14: non-code files get a pure-Go structural outline; no index needed.
 		if content, ok := nonCodeMap(relTarget, data); ok {
 			out.Status = "ok"
+			out.Etag = etag
 			out.Content = content
 			out.Bytes = len(content)
+			s.readCacheMark(sessionID, relTarget, etag)
 			return nil, out, nil
 		}
 		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
@@ -990,8 +1049,10 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 			content = inlineTaskSymbol(ctx, st, data, syms, content)
 		}
 		out.Status = "ok"
+		out.Etag = etag
 		out.Content = content
 		out.Bytes = len(content)
+		s.readCacheMark(sessionID, relTarget, etag)
 		return nil, out, nil
 
 	default: // full
@@ -1031,11 +1092,13 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		}
 
 		out.Status = "ok"
+		out.Etag = etag
 		out.Content = resp.Content
 		out.FinishReason = resp.FinishReason
 		if resp.Model != "" {
 			out.Model = resp.Model
 		}
+		s.readCacheMark(sessionID, relTarget, etag)
 		return nil, out, nil
 	}
 }
@@ -1709,6 +1772,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 					"summarizing. Use file_view directly only when you already know which file you need digested. " +
 					"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
 					"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
+					"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
+					"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
 					"On error, returns 'chat-service-unreachable' or 'error'.",
 			}, h.summarize)
 		}
