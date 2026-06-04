@@ -39,18 +39,19 @@ type logprobToken struct {
 // are absent (non-vLLM servers), the score degrades to a binary
 // yes=1 / no=0 / other=0.5.
 //
-// To bypass the model's thinking block (Qwen3-style <think>…</think>), the
-// request includes an assistant prefill of "<think>\n\n</think>\n\n" and the
-// vLLM-specific continue_final_message=true flag so max_tokens=1 lands
-// directly on "yes" or "no". Servers that don't understand
-// continue_final_message will ignore it and return a longer response; the
-// text-based fallback handles that transparently.
+// ThinkingPrefill: when true, the request includes an assistant prefill of
+// "<think>\n\n</think>\n\n" and the vLLM-specific continue_final_message=true
+// flag. This is required for Qwen3-style thinking models served on vLLM so
+// max_tokens=1 lands directly on "yes"/"no". Leave false (default) for
+// standard chat models and ollama — those ignore continue_final_message and
+// instead continue the XML pattern, generating "<" not "yes"/"no".
 type ChatReranker struct {
-	BaseURL     string
-	Model       string
-	Instruct    string // task description in the prompt; defaults to defaultInstruct
-	Concurrency int    // max concurrent HTTP calls (default 4)
-	HTTP        *http.Client
+	BaseURL         string
+	Model           string
+	Instruct        string // task description in the prompt; defaults to defaultInstruct
+	Concurrency     int    // max concurrent HTTP calls (default 4)
+	ThinkingPrefill bool   // true = vLLM + Qwen3-Reranker; false (default) = ollama / standard chat
+	HTTP            *http.Client
 }
 
 // NewChat creates a ChatReranker. concurrency ≤ 0 → 4; timeout ≤ 0 → 30 s.
@@ -161,28 +162,30 @@ func (c *ChatReranker) scoreOne(ctx context.Context, query, doc string) (float32
 		"Note that the answer can only be \"yes\" or \"no\"."
 	userPrompt := fmt.Sprintf("<Instruct>: %s\n\n<Query>: %s\n\n<Document>: %s", instruct, query, doc)
 
-	// Include an assistant prefill that closes the thinking block so the
-	// model's very next token is "yes" or "no" — paired with max_tokens=1
-	// this keeps each call as cheap as a single-token generation.
-	// continue_final_message and add_generation_prompt are vLLM extensions;
-	// standard servers ignore them.
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}
+	msgs := []message{
+		{Role: "system", Content: sysPrompt},
+		{Role: "user", Content: userPrompt},
+	}
 	reqMap := map[string]any{
-		"model": c.Model,
-		"messages": []message{
-			{Role: "system", Content: sysPrompt},
-			{Role: "user", Content: userPrompt},
-			{Role: "assistant", Content: "<think>\n\n</think>\n\n"},
-		},
-		"max_tokens":             1,
-		"temperature":            0,
-		"logprobs":               true,
-		"top_logprobs":           10,
-		"continue_final_message": true,
-		"add_generation_prompt":  false,
+		"model":        c.Model,
+		"messages":     msgs,
+		"max_tokens":   1,
+		"temperature":  0,
+		"logprobs":     true,
+		"top_logprobs": 10,
+	}
+	// ThinkingPrefill: vLLM + Qwen3-Reranker needs an assistant prefill to
+	// skip the <think>…</think> block so max_tokens=1 hits "yes"/"no" directly.
+	// Standard servers (ollama, etc.) ignore continue_final_message but still
+	// try to continue the XML pattern — producing "<" not "yes"/"no".
+	if c.ThinkingPrefill {
+		reqMap["messages"] = append(msgs, message{Role: "assistant", Content: "<think>\n\n</think>\n\n"})
+		reqMap["continue_final_message"] = true
+		reqMap["add_generation_prompt"] = false
 	}
 
 	body, err := json.Marshal(reqMap)
