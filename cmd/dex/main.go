@@ -434,11 +434,18 @@ func newEmbedClient() *embed.Client {
 		model = "Qwen/Qwen3-Embedding-4B"
 	}
 
-	rawBatch := envOr("DEX_EMBED_BATCH", "32")
-	batch, err := strconv.Atoi(rawBatch)
-	if err != nil || batch <= 0 {
-		fmt.Fprintf(os.Stderr, "warning: DEX_EMBED_BATCH=%q is not a positive integer; using 32\n", rawBatch)
-		batch = 32
+	batch := 32
+	if explicit := os.Getenv("DEX_EMBED_BATCH"); explicit != "" {
+		if v, err := strconv.Atoi(explicit); err != nil || v <= 0 {
+			fmt.Fprintf(os.Stderr, "warning: DEX_EMBED_BATCH=%q is not a positive integer; using 32\n", explicit)
+		} else {
+			batch = v
+		}
+	} else {
+		// No explicit batch size — probe VRAM and pick a suitable default.
+		if vram := embed.FreeVRAMGB(); vram > 0 {
+			batch = embed.BatchSizeForVRAM(vram, 32)
+		}
 	}
 	conc := envInt("DEX_EMBED_CONCURRENCY", 4)
 	timeout := parseDuration("DEX_EMBED_TIMEOUT", envOr("DEX_EMBED_TIMEOUT", "60s"), 60*time.Second)
@@ -1653,6 +1660,7 @@ func cmdReindex(ctx context.Context, args []string) error {
 	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")
 	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
 	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
+	pullModel := fs.Bool("pull-model", false, "pull the default ollama embedding model (nomic-embed-text) before reindexing")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -1661,6 +1669,15 @@ func cmdReindex(ctx context.Context, args []string) error {
 		return err
 	}
 	rest := fs.Args()
+
+	if *pullModel {
+		model := embed.DefaultPullModel
+		fmt.Printf("pulling ollama model %q …\n", model)
+		if err := embed.PullOllamaModel(ctx, model, os.Stdout); err != nil {
+			return fmt.Errorf("pull model: %w", err)
+		}
+		fmt.Printf("pulled %q — continuing with reindex\n", model)
+	}
 
 	if *all {
 		if len(rest) != 0 {

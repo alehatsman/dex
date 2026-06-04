@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -133,6 +134,23 @@ func printEndpoints(ctx context.Context) {
 			statusW, p.status,
 			modelW, displayCell(p.model),
 			displayCell(p.url))
+	}
+
+	// When the embed endpoint is unreachable and ollama is running but has no
+	// embed models, offer a one-liner to fix it.
+	var embedUnreachable bool
+	for _, p := range probes {
+		if p.name == "embed" && p.status == "UNREACHABLE" {
+			embedUnreachable = true
+			break
+		}
+	}
+	if embedUnreachable {
+		if scan, ok := embed.ScanOllama(context.Background()); ok && len(scan.EmbedModels) == 0 {
+			fmt.Printf("\nhint: ollama is running but has no embedding model — run:\n")
+			fmt.Printf("  ollama pull %s\n", embed.DefaultPullModel)
+			fmt.Printf("or: dex reindex --pull-model <path>\n")
+		}
 	}
 }
 
