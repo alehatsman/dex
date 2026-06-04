@@ -658,7 +658,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				eg.Go(func() error {
 					summary, err := summarizeChunk(egctx, ix.Options.Chat, ix.Options.SummaryModels.Chunk, j.rel, j.c)
 					if err != nil {
-						ix.Options.Logger.Warn("chunk summarize failed", "path", j.rel, "start", j.c.StartLine, "err", err)
+						ix.Options.Logger.Warn("chunk summarize failed", "path", j.rel, "start_line", j.c.StartLine, "err", err)
 						return nil
 					}
 					if strings.TrimSpace(summary) == "" {
@@ -752,7 +752,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			}
 			ix.Options.Logger.Info("index: embed batch",
 				"batch", start/batchSize+1,
-				"of", totalBatches,
+				"batch_total", totalBatches,
 				"chunks", len(batch),
 				logx.DurMS(time.Since(batchStart)))
 		}
