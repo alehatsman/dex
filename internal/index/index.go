@@ -340,6 +340,13 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			return nil
 		}
 		if d.IsDir() {
+			// Skip git worktree checkouts: they contain a .git FILE (not dir).
+			// Regular source dirs never have a .git file.
+			gitMarker := filepath.Join(path, ".git")
+			if fi, err2 := os.Lstat(gitMarker); err2 == nil && !fi.IsDir() {
+				_ = ix.Store.DeletePathPrefix(ctx, rel+"/")
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		// Skip symlinks. They risk (a) double-indexing the same content

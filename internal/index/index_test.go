@@ -251,6 +251,50 @@ func TestNewlyIgnoredEviction(t *testing.T) {
 	}
 }
 
+// TestWorktreeCheckoutSkipped verifies that a git worktree checkout nested
+// under the project root is not indexed. A worktree checkout is identified
+// by a .git FILE (not directory) inside it.
+func TestWorktreeCheckoutSkipped(t *testing.T) {
+	srv := fakeEmbedServer(t)
+	defer srv.Close()
+
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+	writeFile(t, filepath.Join(projDir, "main.go"), "package main\nfunc Main() {}\n")
+
+	// Simulate a git worktree checkout: a subdirectory with a .git FILE.
+	wtDir := filepath.Join(projDir, ".worktrees", "feat", "my-feature")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(wtDir, ".git"), "gitdir: /some/other/repo/.git/worktrees/my-feature\n")
+	writeFile(t, filepath.Join(wtDir, "main.go"), "package main\nfunc WorktreeFunc() {}\n")
+
+	ctx := context.Background()
+	p, _ := proj.Resolve(projDir, cacheDir)
+	_ = p.EnsureCacheDir()
+	st, _ := store.Open(ctx, p.DBPath)
+	defer st.Close()
+	ig, _ := ignore.New(p.Root)
+	ix := New(p, st, embed.New(srv.URL, "fake", 8, 5*time.Second), ig, Options{})
+
+	if err := ix.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stats, _ := st.Stats(ctx)
+	if stats.Files != 1 {
+		t.Errorf("expected 1 file indexed (worktree skipped), got %d", stats.Files)
+	}
+	// Verify no worktree paths appear in the index.
+	paths, _ := st.CodeFilePaths(ctx)
+	for p := range paths {
+		if strings.Contains(p, ".worktrees") {
+			t.Errorf("worktree path should not be indexed: %s", p)
+		}
+	}
+}
+
 // TestPruneAtSameMillisecond exercises the regression where two successive
 // Run() calls completing inside the same millisecond used to share a
 // last_seen_at value, defeating the strict-less-than PruneUnseen filter.
