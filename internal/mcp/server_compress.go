@@ -55,6 +55,19 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 		out = compressNpm(lines)
 	case strings.HasPrefix(cmd, "docker"):
 		out = compressDocker(lines)
+	case strings.HasPrefix(cmd, "kubectl"):
+		out = compressKubectl(lines)
+	case strings.HasPrefix(cmd, "make") || strings.HasPrefix(cmd, "gmake"):
+		out = compressMake(lines)
+	case strings.HasPrefix(cmd, "gh "):
+		out = compressGh(lines)
+	case strings.HasPrefix(cmd, "pip ") || strings.HasPrefix(cmd, "pip3 ") ||
+		strings.HasPrefix(cmd, "uv "):
+		out = compressPip(lines)
+	case strings.HasPrefix(cmd, "terraform") || strings.HasPrefix(cmd, "tofu"):
+		out = compressTerraform(lines)
+	case strings.HasPrefix(cmd, "cmake") || strings.HasPrefix(cmd, "ninja"):
+		out = compressCmake(lines)
 	default:
 		out = compressGeneric(lines)
 	}
@@ -272,6 +285,194 @@ func compressGeneric(lines []string) []string {
 		}
 		out = append(out, l)
 		prev = key
+	}
+	return out
+}
+
+// ── kubectl ───────────────────────────────────────────────────────────────────
+
+var (
+	reKubectlHealthy  = regexp.MustCompile(`\s+Running\s+0\s+`)
+	reKubectlProgress = regexp.MustCompile(`^(Waiting for|waiting for|Watching)`)
+	reKubectlBoiler   = regexp.MustCompile(`^(Warning: resource|kubectl\.kubernetes\.io)`)
+	reKubectlLogTS    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`)
+)
+
+func compressKubectl(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	prev := ""
+	for _, l := range lines {
+		switch {
+		case reKubectlHealthy.MatchString(l):
+			// drop fully-ready Running pods — keep only problematic ones
+		case reKubectlProgress.MatchString(l):
+			// drop "Waiting for deployment..." noise
+		case reKubectlBoiler.MatchString(l):
+			// drop annotation warnings
+		default:
+			// deduplicate log lines (strip timestamp for comparison)
+			key := l
+			if loc := reKubectlLogTS.FindStringIndex(l); loc != nil {
+				key = strings.TrimSpace(l[loc[1]:])
+			}
+			if key != "" && key == prev {
+				continue
+			}
+			out = append(out, l)
+			prev = key
+		}
+	}
+	if len(out) == 0 {
+		return lines
+	}
+	return out
+}
+
+// ── make ──────────────────────────────────────────────────────────────────────
+
+var (
+	reMakeEnter   = regexp.MustCompile(`^make(\[\d+\])?: (Entering|Leaving) directory`)
+	reMakeNothing = regexp.MustCompile(`^make(\[\d+\])?: Nothing to be done`)
+	reMakeTarget  = regexp.MustCompile(`^make(\[\d+\])?:`)
+)
+
+func compressMake(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		switch {
+		case reMakeEnter.MatchString(l):
+			// drop directory chatter
+		case reMakeNothing.MatchString(l):
+			// drop no-op messages
+		default:
+			out = append(out, l)
+		}
+	}
+	_ = reMakeTarget
+	if len(out) == 0 {
+		return lines
+	}
+	return out
+}
+
+// ── gh ────────────────────────────────────────────────────────────────────────
+
+var (
+	reGhSeparator = regexp.MustCompile(`^─+$|^═+$`)
+	reGhLabel     = regexp.MustCompile(`^(Labels|Assignees|Projects|Milestone|Reviewers):\s*$`)
+)
+
+func compressGh(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		switch {
+		case reGhSeparator.MatchString(strings.TrimSpace(l)):
+			// drop decorative separators
+		case reGhLabel.MatchString(l):
+			// drop empty metadata fields
+		default:
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		return lines
+	}
+	return out
+}
+
+// ── pip / uv ──────────────────────────────────────────────────────────────────
+
+var (
+	rePipCollect  = regexp.MustCompile(`^(Collecting|Downloading|Using cached|Obtaining)\s`)
+	rePipProgress = regexp.MustCompile(`^\s+\d+%\|`)
+	rePipDepSolve = regexp.MustCompile(`^(Requirement already satisfied|Looking in indexes)`)
+	rePipResolvUV = regexp.MustCompile(`^\s+(Resolved|Downloaded|Prepared|Installed|Uninstalled)\s`)
+)
+
+func compressPip(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		switch {
+		case rePipCollect.MatchString(l):
+			// drop per-package download lines
+		case rePipProgress.MatchString(l):
+			// drop progress bars
+		case rePipDepSolve.MatchString(l):
+			// drop "Requirement already satisfied" noise
+		case rePipResolvUV.MatchString(l):
+			// drop uv per-package resolution lines
+		default:
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		return lines
+	}
+	return out
+}
+
+// ── terraform / opentofu ──────────────────────────────────────────────────────
+
+var (
+	reTFRefresh   = regexp.MustCompile(`^.+: (Refreshing state\.\.\.|Still (creating|destroying|modifying)\.\.\.)`)
+	reTFProgress  = regexp.MustCompile(`^\s*[\d.]+s elapsed`)
+	reTFModHeader = regexp.MustCompile(`^Terraform (will|has) (perform|been working)`)
+)
+
+func compressTerraform(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		switch {
+		case reTFRefresh.MatchString(l):
+			// drop state-refresh and "still creating..." heartbeat lines
+		case reTFProgress.MatchString(l):
+			// drop elapsed-time lines
+		default:
+			out = append(out, l)
+		}
+	}
+	_ = reTFModHeader
+	if len(out) == 0 {
+		return lines
+	}
+	return out
+}
+
+// ── cmake / ninja ─────────────────────────────────────────────────────────────
+
+var (
+	reCmakeProgress = regexp.MustCompile(`^\[\s*\d+%\]`)
+	reCmakeDashes   = regexp.MustCompile(`^-{10,}`)
+	reNinjaProgress = regexp.MustCompile(`^\[\d+/\d+\] `)
+	reNinjaWarning  = regexp.MustCompile(`warning:`)
+)
+
+func compressCmake(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	warnCount := 0
+	for _, l := range lines {
+		switch {
+		case reCmakeDashes.MatchString(l):
+			// drop separator lines
+		case reCmakeProgress.MatchString(l):
+			// drop "[ 42%] Building..." progress lines
+		case reNinjaProgress.MatchString(l):
+			// drop ninja "[N/M] Compiling..." lines; keep warnings
+			if reNinjaWarning.MatchString(l) {
+				warnCount++
+				if warnCount <= 5 {
+					out = append(out, l)
+				}
+			}
+		default:
+			out = append(out, l)
+		}
+	}
+	if warnCount > 5 {
+		out = append(out, fmt.Sprintf("[%d additional warnings omitted]", warnCount-5))
+	}
+	if len(out) == 0 {
+		return lines
 	}
 	return out
 }
