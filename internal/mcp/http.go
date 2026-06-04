@@ -25,6 +25,7 @@ package mcp
 //	GET  /projects/{id}/graph/packages     — whole package import DAG
 //	POST /projects/{id}/file/view          — body: SummarizeInput
 //	POST /projects/{id}/file/tree          — body: SearchTreeInput
+//	POST /projects/{id}/search/grep        — body: SearchGrepInput
 //	POST /projects/{id}/search/context     — body: ComposeInput
 //	POST /projects/{id}/graph/impact       — body: ImpactInput
 //	POST /projects/{id}/graph/routes       — body: RoutesInput
@@ -269,6 +270,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/file/view", s.handleSummarize(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/file/tree", s.handleFileTree(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/search/grep", s.handleSearchGrep(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/context", s.handleCompose(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/impact", s.handleGraphImpact(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/routes", s.handleGraphRoutes(opts.Projects))
@@ -622,6 +624,10 @@ func (s *Server) handleAgent(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleFileTree(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SearchTreeInput, root string) { in.ProjectRoot = root }, s.SearchTree)
+}
+
+func (s *Server) handleSearchGrep(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *SearchGrepInput, root string) { in.ProjectRoot = root }, s.SearchGrep)
 }
 
 func (s *Server) handleCompress() http.HandlerFunc {

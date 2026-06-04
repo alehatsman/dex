@@ -405,6 +405,7 @@ func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInp
 
 	// Compress: but protect auth-flow output from modification.
 	if containsAuthFlow(clean) {
+		s.activityRecord(cwd, shellActivityWeight(in.Command))
 		return nil, ShellOutput{Output: clean, ExitCode: exitCode}, nil
 	}
 
@@ -414,6 +415,7 @@ func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInp
 		saved = (origLines - outLines) * 100 / origLines
 	}
 
+	s.activityRecord(cwd, shellActivityWeight(in.Command))
 	return nil, ShellOutput{
 		Output:        compressed,
 		ExitCode:      exitCode,
@@ -421,4 +423,16 @@ func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInp
 		OutputLines:   outLines,
 		SavedPct:      saved,
 	}, nil
+}
+
+// shellActivityWeight returns an activity weight for a shell command.
+// Build/test/run commands are more significant than casual lookups.
+func shellActivityWeight(cmd string) int {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	for _, kw := range []string{"test", "build", "run ", "cargo ", "go test", "go build", "npm ", "make ", "pytest"} {
+		if strings.Contains(lower, kw) {
+			return 3
+		}
+	}
+	return 2
 }

@@ -121,6 +121,11 @@ func (p projectScoped) searchTree(ctx context.Context, req *sdk.CallToolRequest,
 	return p.s.searchTree(ctx, req, in)
 }
 
+func (p projectScoped) searchGrep(ctx context.Context, req *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.searchGrep(ctx, req, in)
+}
+
 func (p projectScoped) compressOutput(ctx context.Context, req *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
 	return p.s.compressOutput(ctx, req, in)
 }
