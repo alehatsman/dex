@@ -416,8 +416,24 @@ func warnIfNoInclude(ig *ignore.Matcher, root string) {
 }
 
 func newEmbedClient() *embed.Client {
-	url := envOr("DEX_EMBED_URL", "http://127.0.0.1:8082")
-	model := envOr("DEX_EMBED_MODEL", "Qwen/Qwen3-Embedding-4B")
+	url := os.Getenv("DEX_EMBED_URL")
+	model := os.Getenv("DEX_EMBED_MODEL")
+
+	if url == "" {
+		if om, ok := embed.DetectOllama(context.Background()); ok {
+			url = om.URL
+			if model == "" {
+				model = om.Name
+			}
+			fmt.Fprintf(os.Stderr, "dex: ollama embed model %q at %s\n", model, url)
+		} else {
+			url = "http://127.0.0.1:8082"
+		}
+	}
+	if model == "" {
+		model = "Qwen/Qwen3-Embedding-4B"
+	}
+
 	rawBatch := envOr("DEX_EMBED_BATCH", "32")
 	batch, err := strconv.Atoi(rawBatch)
 	if err != nil || batch <= 0 {
