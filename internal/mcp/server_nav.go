@@ -225,7 +225,9 @@ avoid line. Execute next_action verbatim; honor avoid.
 `
 
 func (s *Server) nav(_ context.Context, _ *sdk.CallToolRequest, _ NavInput) (*sdk.CallToolResult, NavOutput, error) {
-	entries := navEntriesForTier(s.tier)
+	// toolTierFromEnv is the authoritative source — the tier is configured via
+	// DEX_TOOLS at startup and doesn't change during a server's lifetime.
+	entries := navEntriesForTier(toolTierFromEnv())
 	out := NavOutput{
 		Status: "ok",
 		Guide:  navGuide,

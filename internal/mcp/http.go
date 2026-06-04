@@ -297,6 +297,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	mux.Handle("/v1/projects/", wrapped)
 	mux.Handle("/v1/status", wrapped)
 	mux.Handle("/v1/compress", wrapped)
+	mux.Handle("/v1/nav", wrapped)
 
 	return recoverMiddleware(logger, logMiddleware(logger, mux))
 }
