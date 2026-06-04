@@ -307,7 +307,26 @@ Ordered by impact-to-effort ratio.
 
 ---
 
-## 9. What dex Can Do That lean-ctx Never Will
+## 9. Reference Hardware & Recommended Models
+
+Development machine: Apple Silicon, **64 GB unified memory**.
+
+| Role | Model | Size (Q4) | Fits in 64 GB | Notes |
+|------|-------|-----------|---------------|-------|
+| Embeddings (`DEX_EMBED_URL`) | `nomic-embed-text:latest` | 274 MB | ✅ | Fast, good quality; already pulled |
+| Code summarization / `file_view` (`DEX_CHAT_URL`) | `qwen2.5-coder:32b` | ~20 GB | ✅ | Best code comprehension at this size; pulled 2026-06-04 |
+| General chat / `ask` synthesis | `qwen2.5-coder:32b` | — | ✅ | Same model for both roles via ollama |
+| Previously attempted | `qwen2.5-coder:1.5b` | 986 MB | ✅ | Too small for useful summarization |
+| Previously attempted | `qwen2.5-coder:14b` | ~9 GB | ✅ | Good but not pulled; 32b preferred on 64 GB |
+
+**Ollama endpoint:** `http://localhost:11434` (default).  
+**dex env:** `DEX_EMBED_URL=http://localhost:11434` + `DEX_CHAT_URL=http://localhost:11434` + model auto-detected from `OLLAMA_CHAT_MODEL` or ollama list.
+
+With 64 GB unified memory, `qwen2.5-coder:32b` runs fully in-memory at ~20 GB, leaving 44 GB for the OS, Claude Code, and the index. No swapping, full token throughput.
+
+---
+
+## 10. What dex Can Do That lean-ctx Never Will
 
 lean-ctx is built around **context compression** for an LLM session. It's a runtime layer on top of the model conversation.
 
