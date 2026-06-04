@@ -271,6 +271,12 @@ func (rc *remoteClient) compressOutput(ctx context.Context, _ *sdk.CallToolReque
 	return nil, out, err
 }
 
+func (rc *remoteClient) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
+	var out ShellOutput
+	err := rc.do(ctx, http.MethodPost, rc.base+"/v1/shell", in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) overview(ctx context.Context, _ *sdk.CallToolRequest, in OverviewInput) (*sdk.CallToolResult, OverviewOutput, error) {
 	var out OverviewOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/overview"), in, &out)

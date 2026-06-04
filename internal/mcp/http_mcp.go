@@ -125,6 +125,11 @@ func (p projectScoped) compressOutput(ctx context.Context, req *sdk.CallToolRequ
 	return p.s.compressOutput(ctx, req, in)
 }
 
+// shellRun is not project-scoped; the cwd in ShellInput governs the working directory.
+func (p projectScoped) shellRun(ctx context.Context, req *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
+	return p.s.shellRun(ctx, req, in)
+}
+
 func (p projectScoped) compose(ctx context.Context, req *sdk.CallToolRequest, in ComposeInput) (*sdk.CallToolResult, ComposeOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.compose(ctx, req, in)
