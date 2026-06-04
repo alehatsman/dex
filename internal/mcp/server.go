@@ -993,6 +993,8 @@ type StatusOutput struct {
 	DraftEndpoint     string          `json:"draft_endpoint,omitempty"`
 	DraftReachable    bool            `json:"draft_reachable,omitempty"`
 	DraftModel        string          `json:"draft_model,omitempty"`
+	OllamaEndpoint    string          `json:"ollama_endpoint,omitempty"`
+	OllamaEmbedModels []string        `json:"ollama_embed_models,omitempty"`
 	Version           string          `json:"version"`
 	IndexDir          string          `json:"index_dir"`
 	Projects          []ProjectStatus `json:"projects,omitempty"`
@@ -1075,6 +1077,14 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 	if s.DraftClient != nil {
 		probe(&wg, s.DraftClient, func(ok bool, _ string) { out.DraftReachable = ok })
 	}
+	wg.Go(func() {
+		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if scan, ok := embed.ScanOllama(pctx); ok {
+			out.OllamaEndpoint = scan.URL
+			out.OllamaEmbedModels = scan.EmbedModels
+		}
+	})
 	wg.Wait()
 
 	if entries, err := os.ReadDir(s.IndexDir); err == nil {
