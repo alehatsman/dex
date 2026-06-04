@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -92,6 +94,8 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 			return nil, KnowledgeOutput{Status: "error", Hint: "body must be a JSON array [{archetype,body,confidence},...] for import"}, nil
 		}
 		return s.knowledgeImport(ctx, st, in.Body)
+	case "consolidate":
+		return s.knowledgeConsolidate(ctx, st)
 	case "list", "":
 		// fall through to read
 	default:
@@ -169,4 +173,102 @@ func (s *Server) knowledgeImport(ctx context.Context, st *store.Store, body stri
 		imported++
 	}
 	return nil, KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf("imported %d facts", imported)}, nil
+}
+
+func (s *Server) knowledgeConsolidate(ctx context.Context, st *store.Store) (*sdk.CallToolResult, KnowledgeOutput, error) {
+	if s.ChatClient == nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: "consolidate requires a chat model (set DEX_CHAT_URL)"}, nil
+	}
+	ss, ok, err := st.SessionGet(ctx)
+	if err != nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	if !ok || (ss.Task == "" && ss.Notes == "") {
+		return nil, KnowledgeOutput{Status: "ok", Hint: "no session content to consolidate"}, nil
+	}
+	var parts []string
+	if ss.Task != "" {
+		parts = append(parts, "Task: "+ss.Task)
+	}
+	if ss.Notes != "" {
+		parts = append(parts, "Session notes:\n"+ss.Notes)
+	}
+	system := `Extract 3-7 reusable project knowledge facts from the session content below. ` +
+		`Output ONLY a JSON array: [{"archetype":"Architecture|Gotcha|Convention|Decision|Observation|Dependency|Pattern|Fact","body":"one concise sentence","confidence":0.7}]. ` +
+		`Only include facts worth remembering across sessions. No preamble, no explanation.`
+	resp, err := s.ChatClient.Generate(ctx, []chat.Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: strings.Join(parts, "\n\n")},
+	}, chat.Options{MaxTokens: 1024})
+	if err != nil {
+		if errors.Is(err, chat.ErrUnreachable) {
+			return nil, KnowledgeOutput{Status: "chat-service-unreachable", Hint: "chat service is offline"}, nil
+		}
+		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("chat: %v", err)}, nil
+	}
+	raw := extractJSONArray(resp.Content)
+	var rows []knowledgeExportRow
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("parse LLM response: %v — got: %s", err, truncate(raw, 200))}, nil
+	}
+	stored := 0
+	for _, r := range rows {
+		if r.Body == "" {
+			continue
+		}
+		arch := r.Archetype
+		if arch == "" {
+			arch = "Observation"
+		}
+		conf := r.Confidence
+		if conf <= 0 {
+			conf = 0.75
+		}
+		if _, err := st.KnowledgeAdd(ctx, arch, r.Body, conf); err != nil {
+			continue
+		}
+		stored++
+	}
+	// Return the stored facts.
+	facts, _ := st.KnowledgeQuery(ctx, stored+5)
+	out := KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf("consolidated %d facts from session", stored)}
+	for _, f := range facts {
+		out.Facts = append(out.Facts, KnowledgeFactOutput{
+			ID:            f.ID,
+			Archetype:     f.Archetype,
+			Body:          f.Body,
+			Confidence:    f.Confidence,
+			HitCount:      f.HitCount,
+			RevisionCount: f.RevisionCount,
+			Salience:      f.Salience,
+			UpdatedAt:     f.UpdatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+	return nil, out, nil
+}
+
+// extractJSONArray pulls a JSON array out of an LLM response that might
+// wrap it in markdown code fences.
+func extractJSONArray(s string) string {
+	// Strip ```json ... ``` or ``` ... ``` fences.
+	for _, fence := range []string{"```json", "```"} {
+		if i := strings.Index(s, fence); i >= 0 {
+			s = s[i+len(fence):]
+			if j := strings.Index(s, "```"); j >= 0 {
+				return strings.TrimSpace(s[:j])
+			}
+		}
+	}
+	// Fall back: find first '['.
+	if i := strings.Index(s, "["); i >= 0 {
+		return strings.TrimSpace(s[i:])
+	}
+	return strings.TrimSpace(s)
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
