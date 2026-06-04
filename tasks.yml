@@ -107,7 +107,10 @@ tasks:
     desc: Build, install dex to ~/.local/bin, and restart any running instances
     steps:
       - shell: go mod download
-      - shell: go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
+      - shell: |
+          # sqlite-vec and go-tree-sitter/lua emit macOS-only deprecation/null-char warnings from C code we don't control
+          [ "$(uname -s)" = "Darwin" ] && export CGO_CFLAGS="-Wno-deprecated-declarations -Wno-null-character"
+          go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
       - name: copy binary and restart running instances
         shell: |
           INSTALL_PATH="${INSTALL_PATH:-$HOME/.local/bin}"
