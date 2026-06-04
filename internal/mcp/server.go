@@ -121,6 +121,11 @@ func (s *Server) Status(ctx context.Context) (StatusOutput, error) {
 	return out, err
 }
 
+func (s *Server) CompressOutput(ctx context.Context, in CompressInput) (CompressOutput, error) {
+	_, out, err := s.compressOutput(ctx, nil, in)
+	return out, err
+}
+
 // ─── tool: search_semantic ────────────────────────────────────────────────
 
 type SearchInput struct {
@@ -1198,6 +1203,7 @@ type toolSurface interface {
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
+	compressOutput(context.Context, *sdk.CallToolRequest, CompressInput) (*sdk.CallToolResult, CompressOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 }
@@ -1354,6 +1360,16 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 				"Use for orientation in an unfamiliar codebase before calling ask or view_summarize. " +
 				"Returns 'no-index' when the project hasn't been indexed yet.",
 		}, h.searchTree)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "compress_output",
+			Description: "Compress raw shell command output before using it in your context. " +
+				"Pass the full output and a command hint (e.g. 'go test', 'git log', 'npm install', 'cargo build', 'docker build'). " +
+				"Strips progress spinners, download noise, and consecutive duplicates; for go test keeps only failures " +
+				"and summaries; for git diffs >80 lines strips unchanged context lines. " +
+				"Returns compressed text, original/output line counts, and saved_pct. " +
+				"No project index required — pure text transformation.",
+		}, h.compressOutput)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "index_status",
