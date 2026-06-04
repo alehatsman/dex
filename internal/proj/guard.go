@@ -49,8 +49,15 @@ func CheckIndexable(p *Project, force bool) error {
 	if isInGitWorkTree(root) {
 		return nil
 	}
+	// Resolve symlinks before allowlist comparison only — on macOS /var → /private/var.
+	// We keep `root` un-resolved above so hard-deny and home-dir checks use the
+	// canonical path the caller passed in (consistent with os.UserHomeDir output).
+	resolvedRoot := root
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		resolvedRoot = real
+	}
 	for _, prefix := range allowlistPrefixes() {
-		if pathHasPrefix(root, prefix) {
+		if pathHasPrefix(resolvedRoot, prefix) {
 			return nil
 		}
 	}
@@ -83,7 +90,13 @@ func allowlistPrefixes() []string {
 		if p == "" || !filepath.IsAbs(p) {
 			continue
 		}
-		out = append(out, filepath.Clean(p))
+		p = filepath.Clean(p)
+		// On macOS /var → /private/var; resolve so the prefix matches
+		// a Project.Root that went through filepath.EvalSymlinks.
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			p = real
+		}
+		out = append(out, p)
 	}
 	return out
 }
