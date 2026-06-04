@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -33,8 +34,11 @@ type SessionOutput struct {
 	ID        int64               `json:"id,omitempty"`
 	StartedAt string              `json:"started_at,omitempty"`
 	UpdatedAt string              `json:"updated_at,omitempty"`
+	Duration  string              `json:"duration,omitempty"` // human-readable session age
 	Task      string              `json:"task,omitempty"`
 	Notes     string              `json:"notes,omitempty"`
+	NoteCount int                 `json:"note_count,omitempty"`
+	FileCount int                 `json:"file_count,omitempty"`
 	Files     []SessionFileOutput `json:"files,omitempty"`
 }
 
@@ -100,13 +104,20 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		return nil, SessionOutput{Status: "ok", Hint: "no session started — use action=set_task to begin"}, nil
 	}
 
+	noteCount := 0
+	if ss.Notes != "" {
+		noteCount = strings.Count(ss.Notes, "\n") + 1
+	}
 	out := SessionOutput{
 		Status:    "ok",
 		ID:        ss.ID,
 		StartedAt: ss.StartedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt: ss.UpdatedAt.Format("2006-01-02 15:04:05"),
+		Duration:  formatDuration(time.Since(ss.StartedAt)),
 		Task:      ss.Task,
 		Notes:     ss.Notes,
+		NoteCount: noteCount,
+		FileCount: len(ss.Files),
 	}
 	for _, f := range ss.Files {
 		out.Files = append(out.Files, SessionFileOutput{
@@ -169,4 +180,20 @@ func (s *Server) sessionSnapshot(ctx context.Context, st *store.Store, projectRo
 		Status:  "ok",
 		Content: b.String(),
 	}, nil
+}
+
+// formatDuration produces a compact human-readable duration string.
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	switch {
+	case h > 0:
+		return fmt.Sprintf("%dh%02dm", h, m)
+	case m > 0:
+		return fmt.Sprintf("%dm%02ds", m, s)
+	default:
+		return fmt.Sprintf("%ds", s)
+	}
 }
