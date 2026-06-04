@@ -28,7 +28,7 @@ type GrepMatch struct {
 }
 
 type SearchGrepOutput struct {
-	Status    string      `json:"status"` // "ok" | "no-matches" | "error"
+	Status    string      `json:"status"` // "ok" | "no-matches" | "not-found" | "error"
 	Hint      string      `json:"hint,omitempty"`
 	Project   string      `json:"project,omitempty"`
 	Matches   []GrepMatch `json:"matches,omitempty"`
@@ -63,6 +63,15 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	prefix := strings.Trim(in.Path, "/")
 	if prefix == "." {
 		prefix = ""
+	}
+	// Validate an explicit subdir exists before searching — otherwise a typo'd
+	// path silently falls through to walking the whole project root and returns
+	// a misleading "no-matches".
+	if prefix != "" {
+		if info, statErr := os.Stat(filepath.Join(p.Root, prefix)); statErr != nil || !info.IsDir() {
+			return nil, SearchGrepOutput{Status: "not-found", Project: p.Root,
+				Hint: fmt.Sprintf("path %q does not exist under %s", prefix, p.Root)}, nil
+		}
 	}
 	extFilter := strings.TrimPrefix(in.Ext, ".")
 

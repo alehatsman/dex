@@ -108,8 +108,8 @@ func (s *Server) specVerify(ctx context.Context, _ *sdk.CallToolRequest, in Spec
 	}
 
 	if len(spec.items) == 0 {
-		out.Status = "ok"
-		out.Hint = "no checklist items found in spec"
+		out.Status = "no-items"
+		out.Hint = "no checklist items found in spec — nothing to verify (expected `- [ ]`/`- [x]` lines)"
 		return nil, out, nil
 	}
 
