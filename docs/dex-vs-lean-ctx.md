@@ -235,8 +235,10 @@ Large reindex jobs can OOM a GPU if batches are too big. Detect free VRAM (via `
 | `25a7e36` | Fix `signatures` ⊛ marker: struct fields/imports/file nodes no longer marked exported; `SessionTrackFile` store method; `sessionAutoFile` async goroutine wired into all `file_view` success paths (N28) | N26 fix, N28 |
 | `d4e1962` | N29: `file_tree` `text` field — compact aligned column view with totals header | N29 |
 | `380338c` | N30: session metrics — `duration`, `file_count`, `note_count` in `session action=get` | N30 |
+| `5b390f9` | go-sdk upgrade v1.4.1 → v1.6.1: `ServerRequest[P].Session` is a direct field — G10 SDK blocker resolved | SDK dep |
+| `e9afeae` | G10: `chat.GenerateStream` (SSE `stream=true`); `ask` synthesis and `file_view` full-mode stream tokens via `req.Session.Log(level=debug, logger=dex/ask\|dex/file_view)` while the tool call is in flight; falls back to blocking `Generate` when no session (REST, batch, tests) | G10 |
 
-All gaps G1–G9, G11, G12 are done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1. Second-wave gaps N1–N7 (lean-ctx 3.6.x) done as of `bc6d9d8`. Third-wave gaps N8–N13 (lean-ctx 3.6.13–3.7.x) done as of `944cbb8`. Fourth-wave gaps N14–N17 done as of `249ea3c`. N18, N21, N22 done as of `b1e4545`. N20 done as of `e3efa07`. N19 (activity-weighted nudge) and N24 (search_grep) done as of `42f22e7`. N25–N27 done as of `6db98cd`. N28 and exported-field fix done as of `25a7e36`. N29 done as of `d4e1962`. N30 done as of `380338c`. **All gaps N1–N30 closed.**
+All gaps G1–G12 are done. go-sdk upgraded to v1.6.1 (`5b390f9`) — `ServerSession` is now a direct field on every tool request, unblocking G10. G10 landed in `e9afeae`: `chat.GenerateStream` (SSE) streams tokens via `req.Session.Log` in `ask` and `file_view` full mode. Second-wave gaps N1–N7 (lean-ctx 3.6.x) done as of `bc6d9d8`. Third-wave gaps N8–N13 (lean-ctx 3.6.13–3.7.x) done as of `944cbb8`. Fourth-wave gaps N14–N17 done as of `249ea3c`. N18, N21, N22 done as of `b1e4545`. N20 done as of `e3efa07`. N19 (activity-weighted nudge) and N24 (search_grep) done as of `42f22e7`. N25–N27 done as of `6db98cd`. N28 and exported-field fix done as of `25a7e36`. N29 done as of `d4e1962`. N30 done as of `380338c`. **All gaps G1–G12 and N1–N30 closed.**
 
 ---
 
@@ -255,7 +257,7 @@ Ordered by impact-to-effort ratio.
 | 5 | **G2: Session memory** | High | Medium | ✅ done | `sessions`/`session_files` tables; `session` MCP tool |
 | 6 | **G3: Knowledge base** | High | Medium | ✅ done | `knowledge_facts` table; `knowledge` MCP tool; top-K injected into `ask` |
 | 7 | **G9: Tiered routing** | High | Medium | ✅ done | `DEX_CHAT_URL` unset → probe ollama for code model, else fallback |
-| 8 | **G10: Streaming responses** | Medium | Medium | blocked | Requires `ServerSession` in tool handler ctx — SDK gap; revisit when SDK exposes session via context |
+| 8 | **G10: Streaming responses** | Medium | Medium | ✅ done | `chat.GenerateStream` (SSE) + `req.Session.Log` per token in `ask` and `file_view` full mode. go-sdk v1.6.1 exposes `req.Session` directly — SDK gap closed. (`e9afeae`) |
 | 9 | **G5: Shell compression tool** | Medium | High | ✅ done | `ctx_shell` MCP tool; 3-tier output policy (passthrough/verbatim/compress); 56+ patterns; auth-flow protection; heredoc block; REST at `/v1/projects/{id}/shell` |
 | 10 | **G11: Embedding auto-pull** | Low | Low | ✅ done | `dex reindex --pull-model`; `index status` hints `ollama pull nomic-embed-text` when ollama is up but has no embed models |
 | 11 | **G12: VRAM-aware batch sizing** | Low | Medium | ✅ done | `embed.FreeVRAMGB()` probes nvidia-smi/system_profiler; auto batch 8/64/256 for <4/4-16/>16 GB VRAM |
