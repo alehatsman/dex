@@ -186,11 +186,11 @@ func buildInjectContext(out mcp.ContextOutput) string {
 //
 // Rules (applied in order; first match wins):
 //
-//  rg PATTERN [PATH]         — simple form, no flags
-//    → dex search semantic [PATH] "PATTERN"
+//	rg PATTERN [PATH]         — simple form, no flags
+//	  → dex search semantic [PATH] "PATTERN"
 //
-//  grep [-rniI]* PATTERN [PATH] — simple recursive grep, no pipes/redirections
-//    → appends 2>&1 | dex compress-stdin --command grep
+//	grep [-rniI]* PATTERN [PATH] — simple recursive grep, no pipes/redirections
+//	  → appends 2>&1 | dex compress-stdin --command grep
 //
 // Anything complex (multiple flags, pipes, semicolons, subshells) passes
 // through unchanged. The hook must never break a working command.
