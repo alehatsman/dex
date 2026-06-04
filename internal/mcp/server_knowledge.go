@@ -18,7 +18,7 @@ type KnowledgeInput struct {
 	Action      string  `json:"action"                 jsonschema:"add | list | delete | export | import | consolidate"`
 	Archetype   string  `json:"archetype,omitempty"    jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default)"`
 	Body        string  `json:"body,omitempty"         jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
-	Confidence  float64 `json:"confidence,omitempty"   jsonschema:"0–1, default 0.8"`
+	Confidence  float64 `json:"confidence,omitempty"   jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
 	ID          int64   `json:"id,omitempty"           jsonschema:"fact id for delete action"`
 	K           int     `json:"k,omitempty"            jsonschema:"max facts to return for list (default 10)"`
 }
