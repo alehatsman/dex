@@ -1,7 +1,7 @@
 ---
 id: mcp-server
 status: living
-last_verified: b1e4545
+last_verified: e3efa07
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
@@ -13,6 +13,7 @@ covers:
   - "internal/mcp/server_compose.go"
   - "internal/mcp/server_overview.go"
   - "internal/mcp/server_knowledge.go"
+  - "internal/mcp/server_agent.go"
 ---
 # MCP Server (stdio)
 
@@ -49,7 +50,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - WHERE tool exposure is tiered, the surface is controlled by `DEX_TOOLS`
   (`ask|standard|power`; default `standard`); `DEX_EXPOSE_RAW_TOOLS=1` is a
   backward-compatible alias for `power`. `TierAsk` exposes only `ask`.
-  `TierStandard` adds `overview`, `session`, `knowledge`, `file_tree`,
+  `TierStandard` adds `overview`, `session`, `knowledge`, `agent`, `file_tree`,
   `search_context`, and (when a chat model is wired) `file_view`. `TierPower` adds the full raw
   surface: `search_semantic`, `search_symbol`, `graph_neighbors`, `graph_deps`,
   `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`,
@@ -116,6 +117,17 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   judges each clause as `pass`/`fail`/`unknown`; unchecked `[ ]` items are returned
   as `pending` without judgment; drift is detected via `git log <last_verified>..HEAD`
   over the spec's `covers` paths and reported in `drift_commits`.
+- WHEN `agent` is called (TierStandard), it manages a per-project multi-agent
+  coordination bus backed by `agents` and `agent_messages` SQLite tables.
+  `action=announce` registers or refreshes an agent by `agent_id` and `role` (upsert).
+  `action=post` appends a message with an optional `topic` and required `body`,
+  bumps the poster's `last_seen_at`, and returns the new `message_id`.
+  `action=read` returns messages in insertion order filtered by optional `topic` and
+  paginated via `since_id` (exclusive lower bound on message id); `limit` defaults to
+  50 (max 200).
+  `action=list` returns all registered agents ordered by `last_seen_at` descending.
+  The bus is useful in orchestration scenarios where multiple concurrent agents
+  query the same dex instance and need to share findings or avoid duplicate work.
 
 ## Non-goals
 
@@ -153,5 +165,6 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `file_view paths[]` batch: max 10 files, same mode, concatenated `## path` output; path-traversal check per entry
 - [x] `knowledge` revision tracking: `revision_count` incremented on re-add; "Confirmed (revision N)." response; `rev N` in list
 - [x] `knowledge action=consolidate`: LLM-extracts facts from session notes and stores them
+- [x] `agent` coordination bus (TierStandard): `announce`/`post`/`read`/`list` actions; topic filtering; `since_id` pagination; REST at `/v1/projects/{id}/agent`
 - [x] Remote access for containerized agents: stdio→REST shim (`dex mcp --remote`, `remote.go`) + native HTTP-MCP at `/v1/projects/{id}/mcp` (`http_mcp.go`)
 - [x] Verified against the code by the verify workflow (flip to `living`)
