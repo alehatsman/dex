@@ -72,7 +72,7 @@ var allEnvVars = []envVar{
 	{"DEX_WATCH_DEBOUNCE", "500ms", "Quiet window before the MCP auto-watcher re-indexes after a burst of fs events.", "summary", false},
 
 	// tuning — hidden unless --all. Most installs leave these alone.
-	{"DEX_EMBED_BATCH", "32", "Max chunks per /v1/embeddings call.", "tuning", false},
+	{"DEX_EMBED_BATCH", "auto", "Max chunks per /v1/embeddings call. Unset = VRAM-aware auto (8/64/256 for <4 GB/4-16 GB/>16 GB); explicit value overrides.", "tuning", false},
 	{"DEX_EMBED_CONCURRENCY", "4", "Parallel /v1/embeddings calls in flight (1 = sequential, the historical default).", "tuning", false},
 	{"DEX_EMBED_TIMEOUT", "60s", "HTTP timeout per embed call.", "tuning", false},
 	{"DEX_INDEX_CONCURRENCY", "0", "Parallel file readers/chunkers in Pass 1 of `index` (0 = GOMAXPROCS).", "tuning", false},

@@ -1,8 +1,12 @@
 package embed
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -171,4 +175,52 @@ func chatModelPriority(name string) int {
 		}
 	}
 	return -1
+}
+
+// DefaultPullModel is the ollama model pulled by PullOllamaModel when no
+// specific model is requested.
+const DefaultPullModel = "nomic-embed-text"
+
+// PullOllamaModel asks the local ollama daemon to pull model (e.g.
+// "nomic-embed-text"). Progress lines from the streaming pull response are
+// written to progress (may be nil). Returns when the pull is complete or the
+// context is cancelled.
+func PullOllamaModel(ctx context.Context, model string, progress io.Writer) error {
+	payload, err := json.Marshal(map[string]any{"name": model, "stream": true})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ollamaBase+"/api/pull", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ollama pull: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("ollama pull: status %d: %s", resp.StatusCode, bytes.TrimSpace(body))
+	}
+	// Stream NDJSON progress lines.
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var msg struct {
+			Status string `json:"status"`
+			Error  string `json:"error,omitempty"`
+		}
+		if err := json.Unmarshal(line, &msg); err != nil {
+			continue
+		}
+		if msg.Error != "" {
+			return fmt.Errorf("ollama pull: %s", msg.Error)
+		}
+		if progress != nil && msg.Status != "" {
+			fmt.Fprintln(progress, msg.Status)
+		}
+	}
+	return scanner.Err()
 }
