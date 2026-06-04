@@ -1,7 +1,7 @@
 ---
 id: ignore
 status: living
-last_verified: c331a3c
+last_verified: c7f0611
 owners: [aleh]
 covers:
   - "internal/ignore/**"
@@ -78,5 +78,5 @@ them in the pipeline is the indexing spec.
 - [x] Indexable extension allowlist + known indexable basenames
 - [x] Binary detection (NUL byte in first 8 KB)
 - [x] Secret detection (first 4 KB regex panel), suppressed on test/fixture paths
-- [x] Tiny dependency-free TOML `[section]` + string-array parser for the config
+- [x] Config parsed via `gopkg.in/yaml.v3` from `.dex/config.yml` `index:` section; no hand-rolled parser
 - [x] Verified against the code by the verify workflow (flip to `living`)

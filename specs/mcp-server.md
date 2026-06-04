@@ -1,7 +1,7 @@
 ---
 id: mcp-server
 status: living
-last_verified: e3efa07
+last_verified: 3a975eb
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
@@ -14,6 +14,8 @@ covers:
   - "internal/mcp/server_overview.go"
   - "internal/mcp/server_knowledge.go"
   - "internal/mcp/server_agent.go"
+  - "internal/mcp/server_nav.go"
+  - "internal/mcp/server_grep.go"
 ---
 # MCP Server (stdio)
 
@@ -50,17 +52,18 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - WHERE tool exposure is tiered, the surface is controlled by `DEX_TOOLS`
   (`ask|standard|power`; default `standard`); `DEX_EXPOSE_RAW_TOOLS=1` is a
   backward-compatible alias for `power`. `TierAsk` exposes only `ask`.
-  `TierStandard` adds `ctx_overview`, `ctx_session`, `ctx_knowledge`, `ctx_agent`, `file_tree`,
-  `search_context`, and (when a chat model is wired) `file_view`. `TierPower` adds the full raw
-  surface: `search_semantic`, `search_symbol`, `graph_neighbors`, `graph_deps`,
-  `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`,
-  `graph_tags`, `graph_impact`, `graph_routes`, `graph_smells`, `compress_output`, and
-  `status`.
+  `TierStandard` adds `ctx_nav`, `ctx_overview`, `ctx_session`, `ctx_knowledge`, `ctx_agent`,
+  `ctx_shell`, `file_tree`, `search_grep`, `search_context`, and (when a chat model is wired)
+  `file_view`. `TierPower` adds the full raw surface: `search_semantic`, `search_symbol`,
+  `graph_neighbors`, `graph_deps`, `graph_callers`, `graph_callees`, `graph_links`,
+  `graph_backlinks`, `graph_tags`, `graph_impact`, `graph_routes`, `graph_smells`,
+  `compress_output`, and `status`.
 - WHERE a tool is named, it follows the **naming convention**: a category
   prefix groups related tools so an agent can guess a name from its purpose —
-  `search_*` (retrieval lanes), `graph_*` (static-graph queries, incl.
-  `graph_smells`), `file_*` (file access), `ctx_*` (cross-cutting agent
-  context: `ctx_overview`, `ctx_session`, `ctx_knowledge`, `ctx_agent`,
+  `search_*` (retrieval lanes: `search_semantic`, `search_symbol`, `search_context`,
+  `search_grep`), `graph_*` (static-graph queries, incl. `graph_smells`),
+  `file_*` (file access: `file_view`, `file_tree`), `ctx_*` (cross-cutting agent
+  context: `ctx_nav`, `ctx_overview`, `ctx_session`, `ctx_knowledge`, `ctx_agent`,
   `ctx_shell`), `spec_*` (spec verification). The sole prefix-free names are
   the primary entry verb `ask` and the meta-tools `status` / `compress_output`.
   REST routes keep resource-noun paths (`/session`, `/view/overview`) — the
@@ -137,6 +140,31 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   `action=list` returns all registered agents ordered by `last_seen_at` descending.
   The bus is useful in orchestration scenarios where multiple concurrent agents
   query the same dex instance and need to share findings or avoid duplicate work.
+- WHEN `ctx_nav` is called (TierStandard), dex returns a structured tool-routing
+  guide listing every tool available at the active tier — its name, tier membership
+  (`all`/`standard`/`power`), one-line purpose, and a when-to-call guidance line.
+  The response also includes a `guide` field: a concise markdown routing summary
+  oriented toward the active tier's tool surface. `ctx_nav` requires no index,
+  no embedding, and no chat model; it is a zero-argument orientation call intended
+  to be made once at session start in an unfamiliar project. REST parity at
+  `GET /v1/nav` (global, not project-scoped).
+- WHEN `ctx_shell` is called (TierStandard), dex executes a shell command and returns
+  compressed output. The output policy is three-tier: `passthrough` for auth flows,
+  interactive REPLs, and dev servers (output unchanged, auth device-codes preserved);
+  `verbatim` for curl, jq, cat, git log (ANSI stripped, structure preserved);
+  `compress` for build/test/lint runs (56+ patterns, 60–99% line reduction). File-write
+  redirects (`>`, `>>`) and `tee` are blocked; the caller must use the Write tool.
+  `raw:true` skips compression. Exits and returns `exit_code`, `lines_saved`, and
+  `output`. Timeout: 60 s.
+- WHEN `search_grep` is called (TierStandard), dex performs a literal or RE2-regex
+  pattern search across all indexed project files. The search uses the index's file
+  list when available (inheriting the project's ignore rules); when the index is
+  absent it falls back to a filesystem walk skipping `.git`, `vendor`, and
+  `node_modules`. Returns up to `max_results` matches (default 50) with path, line
+  number, and trimmed content. Returns `status:"no-matches"` when nothing matches.
+  `search_grep` complements `ask`/`search_semantic` for exact-match queries —
+  cross-cutting symbol references, import paths, string literals — that semantic
+  search misses.
 
 ## Non-goals
 
@@ -160,7 +188,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `dex mcp` registers an MCP server on stdio, blocks until transport closes
 - [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
 - [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
-- [x] TierStandard: overview, session, knowledge, file_tree, search_context, file_view (chat required)
+- [x] TierStandard: ctx_nav, ctx_overview, ctx_session, ctx_knowledge, ctx_agent, ctx_shell, file_tree, search_grep, search_context, file_view (chat required)
 - [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, graph_routes, graph_smells, compress_output, status, spec_check
 - [x] `file_view mode=map` returns structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
 - [x] `search_context`: single call returns top-K file signatures + best symbol body (replaces search→signatures→lines round-trip)
@@ -175,5 +203,9 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `ctx_knowledge` revision tracking: `revision_count` incremented on re-add; "Confirmed (revision N)." response; `rev N` in list
 - [x] `knowledge action=consolidate`: LLM-extracts facts from session notes and stores them
 - [x] `ctx_agent` coordination bus (TierStandard): `announce`/`post`/`read`/`list` actions; topic filtering; `since_id` pagination; REST at `/v1/projects/{id}/agent`
+- [x] `ctx_nav` (TierStandard): returns structured tool catalogue + markdown routing guide; zero-arg, no index/embed required; REST at `GET /v1/nav`
+- [x] `ctx_shell` (TierStandard): 3-tier output policy (passthrough/verbatim/compress); auth-flow detection; heredoc/redirect block; `raw:true`; 60 s timeout; REST at `POST /v1/shell`
+- [x] `search_grep` (TierStandard): RE2 pattern search over indexed files; index file-list when available, fs-walk fallback; `max_results` cap (default 50); `no-matches` status
+- [x] Tool naming category-prefix convention: `search_*`, `graph_*`, `file_*`, `ctx_*`, `spec_*`; `ask`/`status`/`compress_output` are prefix-free
 - [x] Remote access for containerized agents: stdio→REST shim (`dex mcp --remote`, `remote.go`) + native HTTP-MCP at `/v1/projects/{id}/mcp` (`http_mcp.go`)
 - [x] Verified against the code by the verify workflow (flip to `living`)

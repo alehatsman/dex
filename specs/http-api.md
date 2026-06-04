@@ -1,7 +1,7 @@
 ---
 id: http-api
 status: living
-last_verified: b28afbd
+last_verified: 3a975eb
 owners: [aleh]
 covers:
   - "internal/mcp/http.go"
@@ -43,16 +43,19 @@ tool interface for Claude is the mcp-server spec's.
   bare `:port` all-interfaces form), `dex serve` refuses to start — an
   unauthenticated public listener is rejected at startup.
 - WHERE liveness is unauthenticated, `GET /v1/healthz` and `GET /v1/version`
-  answer without a token; all other routes are authenticated.
+  answer without a token; `GET /v1/nav` (tool-routing guide, not project-scoped) is
+  also unauthenticated; all other routes are authenticated.
 - WHEN a client lists the served projects, `GET /v1/projects` returns each id with
   its root; `GET /v1/status` returns global endpoint health plus per-project index
   stats (chunk/file counts, last-indexed, pending summaries).
 - WHEN a client queries a project, the per-project routes mirror the dex tools:
-  `POST .../ask`, `POST .../search/{semantic,symbol,context}`,
+  `POST .../ask`, `POST .../search/{semantic,symbol,context,grep}`,
   `POST .../graph/{neighbors,deps,callers,callees,links,backlinks,tags,impact,routes}`,
   `GET .../graph/packages`, `GET .../summaries`, `POST .../file/{view,tree}`,
   `POST .../code/smells`, `POST .../spec/verify`, `POST .../view/overview`,
-  `POST .../knowledge`, and `POST .../session`.
+  `POST .../knowledge`, `POST .../session`, and `POST .../shell`.
+  `GET /v1/nav` is a global (non-project-scoped) route that returns the dex
+  tool-routing guide for the active server configuration.
 - WHEN a handler returns a tool result, the same structured `status` the stdio
   tools use (`ok`/`no-index`/`embedding-service-unreachable`/`no-graph`/
   `not-found`/`error`) is carried in the JSON body with HTTP 200; a malformed
@@ -94,8 +97,9 @@ tool interface for Claude is the mcp-server spec's.
 - [x] `{id}` URL scoping; unknown id 404, body project field overridden server-side
 - [x] Bearer auth (`DEX_SERVE_TOKEN`), constant-time; 401 on missing/bad token
 - [x] No-token + non-loopback bind refused at startup
-- [x] Unauthenticated `healthz`/`version`; authed projects/status/per-project tool routes
-- [x] Per-project routes mirror all MCP tools (ask/search/*/graph/*/file/*/code/smells/spec/verify/view/overview/knowledge/session); structured status in body
+- [x] Unauthenticated `healthz`/`version`/`GET /v1/nav`; authed projects/status/per-project tool routes
+- [x] Per-project routes mirror all MCP tools (ask/search/{semantic,symbol,context,grep}/graph/*/file/*/code/smells/spec/verify/view/overview/knowledge/session/shell); structured status in body
+- [x] `GET /v1/nav` global route — tool-routing guide for the active tier; no project scoping; unauthenticated
 - [x] Body size cap, access log, panic→500, bounded graceful shutdown
 - [x] Eager per-project watcher at startup (idempotent with lazy path)
 - [x] Native HTTP-MCP transport for direct `claude` attach — streamable handler at `/v1/projects/{id}/mcp` (dex #49)

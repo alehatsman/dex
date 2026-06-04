@@ -1,7 +1,7 @@
 ---
 id: indexing
 status: living
-last_verified: c331a3c
+last_verified: fcd4397
 owners: [aleh]
 covers:
   - "internal/index/**"
@@ -36,10 +36,17 @@ storage spec's, and reading it is the query specs'.
   failures; any chunk larger than the byte cap is split to fit.
 - WHEN chunks are embedded, dex sends them in batches to an OpenAI-compatible
   `/v1/embeddings` endpoint and stores the returned float32 vectors.
-- IF the embedding backend is unreachable, indexing surfaces a distinct
+- IF the embedding backend is unreachable at index time, indexing surfaces a distinct
   unreachable condition rather than silently producing an empty or partial index,
-  so a consumer can degrade (e.g. fall back to grep) instead of trusting a broken
-  index.
+  so a consumer can degrade (e.g. fall back to grep) instead of trusting a broken index.
+- WHEN the embedding backend is unreachable at query time (search, ask), dex degrades
+  to BM25-only — the semantic lane is skipped, symbol and graph lanes run, and the
+  caller gets real results rather than an error; the response carries
+  `status:"embedding-service-unreachable"` with a hint to start the endpoint.
+- WHEN `DEX_EMBED_URL` and `DEX_CHAT_URL` are both unset and ollama is installed but
+  not listening on its default port, dex attempts a best-effort `ollama serve` (detached,
+  polled, bounded); this auto-start runs once per process and can be disabled with
+  `DEX_NO_AUTO_OLLAMA=1`.
 - WHEN a repo is reindexed, the existing index is dropped and rebuilt from
   scratch — reindex is destructive by design, so it must only run from a binary
   whose storage support is intact, never one that would rebuild into a crippled
@@ -70,7 +77,9 @@ storage spec's, and reading it is the query specs'.
 - [x] Opt-in via `.dex/config.yml` `index.include`; no include → empty index
 - [x] Tree-sitter top-level-decl chunking; sliding-window fallback; byte cap
 - [x] Batched embedding to an OpenAI-compatible `/v1/embeddings`
-- [x] Unreachable backend surfaces a distinct condition (consumer can fall back)
+- [x] Unreachable backend at index time surfaces a distinct condition (not a silent empty index)
+- [x] Query-time embed unreachable degrades to BM25-only; `status:"embedding-service-unreachable"` returned
+- [x] Ollama auto-start: when `DEX_EMBED_URL`/`DEX_CHAT_URL` unset and ollama installed but down, best-effort `ollama serve`; opt-out via `DEX_NO_AUTO_OLLAMA=1`
 - [x] Reindex drops + rebuilds; incremental updates only changed files
 - [x] Per-project index lock against concurrent indexers
 - [x] Verified against the code by the verify workflow (flip to `living`)
