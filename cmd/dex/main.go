@@ -29,7 +29,8 @@
 //	clone <src> <dst>             Seed dst's index from src's (worktrees).
 //	guide <path>                  Render LLM_GUIDE.md from existing summaries.
 //	hook inject                   Claude Code UserPromptSubmit hook — injects dex context.
-//	hook redirect                 Claude Code PreToolUse(Read) hook — compresses large files.
+//	hook rewrite                  Claude Code PreToolUse(Bash) hook — rewrites rg/grep to dex.
+//	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
@@ -232,7 +233,9 @@ build / maintenance:
                                           DEX_SERVE_TOKEN gates non-loopback.
   dex hook inject                    Claude Code UserPromptSubmit hook:
                                           inject dex context before each turn.
-  dex hook redirect                  Claude Code PreToolUse(Read) hook:
+  dex hook rewrite                   Claude Code PreToolUse(Bash) hook:
+                                          rewrite rg/grep to dex search.
+  dex hook redirect                  Claude Code PreToolUse(Read/Grep/…) hook:
                                           compress large files to save tokens.
   dex hook observe                   Claude Code PostToolUse/Stop hook:
                                           append event to hooks.jsonl log.
