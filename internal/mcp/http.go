@@ -65,6 +65,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/alehatsman/dex/internal/logx"
 	"github.com/alehatsman/dex/internal/proj"
 )
 
@@ -370,7 +371,7 @@ func logMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
-			"duration_ms", time.Since(start).Milliseconds(),
+			logx.DurMS(time.Since(start)),
 			"remote", r.RemoteAddr)
 	})
 }

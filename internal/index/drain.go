@@ -16,6 +16,7 @@ import (
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/lock"
+	"github.com/alehatsman/dex/internal/logx"
 	"github.com/alehatsman/dex/internal/store"
 	"golang.org/x/sync/errgroup"
 )
@@ -217,7 +218,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 				"batch", start/batchSize+1,
 				"of", totalBatches,
 				"chunks", len(batch),
-				"took", time.Since(batchStart).Round(time.Millisecond))
+				logx.DurMS(time.Since(batchStart)))
 		}
 	}
 
@@ -246,7 +247,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 		"generated", generated,
 		"stale_dropped", len(stale),
 		"remaining", remaining,
-		"elapsed", time.Since(startTime).Round(time.Millisecond))
+		logx.DurMS(time.Since(startTime)))
 	return generated, remaining, nil
 }
 

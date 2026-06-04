@@ -21,6 +21,7 @@ import (
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/ignore"
+	"github.com/alehatsman/dex/internal/logx"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 	"golang.org/x/sync/errgroup"
@@ -425,7 +426,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		"slow_files", len(slowFiles),
 		"mtime_fast_path", mtimeSkips.Load(),
 		"skipped", skipped.Load(),
-		"elapsed", time.Since(startTime).Round(time.Millisecond))
+		logx.DurMS(time.Since(startTime)))
 
 	// Pass 2: one batch query for all slow-path files instead of N per-file
 	// queries. Also include unique package dirs so we can check package
@@ -750,10 +751,10 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				"batch", start/batchSize+1,
 				"of", totalBatches,
 				"chunks", len(batch),
-				"took", time.Since(batchStart).Round(time.Millisecond))
+				logx.DurMS(time.Since(batchStart)))
 		}
 		ix.Options.Logger.Info("index: embedding done",
-			"elapsed", time.Since(embedStart).Round(time.Millisecond))
+			logx.DurMS(time.Since(embedStart)))
 	}
 
 	// Pass 5: package summaries — one per directory, generated from the
@@ -927,7 +928,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		"summaries_queued", summariesQueued,
 		"pruned", pruned,
 		"skipped", skipped.Load(),
-		"elapsed", time.Since(startTime).Round(time.Millisecond))
+		logx.DurMS(time.Since(startTime)))
 	return nil
 }
 
