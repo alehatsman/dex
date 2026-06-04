@@ -995,6 +995,7 @@ type StatusOutput struct {
 	DraftModel        string          `json:"draft_model,omitempty"`
 	OllamaEndpoint    string          `json:"ollama_endpoint,omitempty"`
 	OllamaEmbedModels []string        `json:"ollama_embed_models,omitempty"`
+	OllamaChatModels  []string        `json:"ollama_chat_models,omitempty"`
 	Version           string          `json:"version"`
 	IndexDir          string          `json:"index_dir"`
 	Projects          []ProjectStatus `json:"projects,omitempty"`
@@ -1083,6 +1084,7 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 		if scan, ok := embed.ScanOllama(pctx); ok {
 			out.OllamaEndpoint = scan.URL
 			out.OllamaEmbedModels = scan.EmbedModels
+			out.OllamaChatModels = scan.ChatModels
 		}
 	})
 	wg.Wait()

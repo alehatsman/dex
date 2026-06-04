@@ -39,8 +39,8 @@ var allEnvVars = []envVar{
 	{"DEX_INDEX_DIR", "~/.cache/dex", "Where per-project index files live.", "core", false},
 
 	// chat — required for generate / view_summarize / ask_codebase.
-	{"DEX_CHAT_URL", "http://127.0.0.1:8081", "OpenAI-compatible /v1/chat/completions base URL.", "chat", false},
-	{"DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct", "Model for the chat leg.", "chat", false},
+	{"DEX_CHAT_URL", "auto", "OpenAI-compatible /v1/chat/completions base URL. Unset = probe ollama at localhost:11434 for a code model, then fall back to http://127.0.0.1:8081.", "chat", false},
+	{"DEX_CHAT_MODEL", "auto", "Model for the chat leg. Unset = use ollama-detected code model when auto-detected, else Qwen/Qwen2.5-Coder-7B-Instruct.", "chat", false},
 
 	// rerank — optional, off by default.
 	{"DEX_RERANK_URL", "", "Rerank server base URL.", "rerank", true},

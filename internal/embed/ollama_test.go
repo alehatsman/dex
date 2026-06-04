@@ -188,3 +188,46 @@ func TestScanOllamaFrom_Unreachable(t *testing.T) {
 		t.Fatal("expected false for unreachable server")
 	}
 }
+
+func TestScanOllamaFrom_ChatAndEmbedSeparated(t *testing.T) {
+	// embed models must not leak into ChatModels; chat models must not leak into EmbedModels.
+	srv := newOllamaStub(t, []string{
+		"nomic-embed-text:latest",
+		"qwen2.5-coder:7b",
+		"llama3.2:3b",
+		"mxbai-embed-large:latest",
+	})
+	defer srv.Close()
+	scan, ok := scanOllamaFrom(context.Background(), srv.URL)
+	if !ok {
+		t.Fatal("expected true")
+	}
+	if len(scan.EmbedModels) != 2 {
+		t.Fatalf("embed: want 2, got %d: %v", len(scan.EmbedModels), scan.EmbedModels)
+	}
+	if len(scan.ChatModels) != 2 {
+		t.Fatalf("chat: want 2, got %d: %v", len(scan.ChatModels), scan.ChatModels)
+	}
+	// qwen2.5-coder should rank above llama3.2
+	if scan.ChatModels[0] != "qwen2.5-coder:7b" {
+		t.Fatalf("chat[0]: want qwen2.5-coder:7b, got %q", scan.ChatModels[0])
+	}
+	// mxbai embed model must not appear in ChatModels
+	for _, m := range scan.ChatModels {
+		if m == "nomic-embed-text:latest" || m == "mxbai-embed-large:latest" {
+			t.Errorf("embed model %q leaked into ChatModels", m)
+		}
+	}
+}
+
+func TestChatModelPriority(t *testing.T) {
+	if chatModelPriority("qwen2.5-coder:7b") <= chatModelPriority("llama3.2:3b") {
+		t.Error("qwen2.5-coder should outrank llama3.2")
+	}
+	if chatModelPriority("nomic-embed-text:latest") >= 0 {
+		t.Error("embed model should not be recognised as chat model")
+	}
+	if chatModelPriority("unknown-model:latest") >= 0 {
+		t.Error("unknown model should return -1")
+	}
+}
