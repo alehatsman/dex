@@ -1628,7 +1628,7 @@ func (s *Store) scoreBM25(ctx context.Context, queryText string, limit int) ([]s
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT chunks_fts.rowid,
-		        bm25(chunks_fts) * CASE chunks.kind
+		        bm25(chunks_fts, 1.0, 2.0, 0.5) * CASE chunks.kind
 		            WHEN 'window' THEN 0.7
 		            ELSE 1.0
 		          END AS weighted_rank

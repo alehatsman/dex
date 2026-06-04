@@ -125,27 +125,6 @@ func buildAnswerEvidence(out *ContextOutput) string {
 		return budget > 0
 	}
 
-	// Session context: declared task and accumulated knowledge facts. Prepended
-	// so the model understands what the agent is working on before reading code.
-	if out.SessionTask != "" || len(out.KnowledgeFacts) > 0 {
-		if !write("SESSION CONTEXT:\n") {
-			return b.String()
-		}
-		if out.SessionTask != "" {
-			if !write(fmt.Sprintf("Task: %s\n", out.SessionTask)) {
-				return b.String()
-			}
-		}
-		for _, f := range out.KnowledgeFacts {
-			if !write(fmt.Sprintf("- %s\n", f)) {
-				return b.String()
-			}
-		}
-		if !write("\n") {
-			return b.String()
-		}
-	}
-
 	// Curated reads carry the richest signal (inlined source slices).
 	for _, r := range out.SuggestedReads {
 		if strings.TrimSpace(r.Content) == "" {
@@ -208,6 +187,24 @@ func buildAnswerEvidence(out *ContextOutput) string {
 		}
 		for _, e := range out.Graph.Edges {
 			if !write(fmt.Sprintf("- %s --%s--> %s\n", e.From, e.Kind, e.To)) {
+				return b.String()
+			}
+		}
+	}
+
+	// Session context appended last: code content forms a stable prefix for
+	// LLM provider KV-cache; dynamic task/facts only invalidate the tail.
+	if out.SessionTask != "" || len(out.KnowledgeFacts) > 0 {
+		if !write("\nSESSION CONTEXT:\n") {
+			return b.String()
+		}
+		if out.SessionTask != "" {
+			if !write(fmt.Sprintf("Task: %s\n", out.SessionTask)) {
+				return b.String()
+			}
+		}
+		for _, f := range out.KnowledgeFacts {
+			if !write(fmt.Sprintf("- %s\n", f)) {
 				return b.String()
 			}
 		}
