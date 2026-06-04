@@ -1327,8 +1327,12 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 	setHelp(fs,
 		"Show endpoint health and project stats (chunks/files/graph). Optional path narrows to one project. (MCP: status)",
 		"dex index status [<path>]")
+	format := fs.String("format", "text", "output format: text|json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
+	}
+	if *format != "text" && *format != "json" {
+		return fmt.Errorf("unknown --format=%s (want text|json)", *format)
 	}
 	rest := fs.Args()
 	checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -1338,12 +1342,6 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Header line up top groups version + index dir so the rest of
-	// the output reads as content under a single banner instead of
-	// orphaned bits between sections.
-	fmt.Printf("dex %s · %s\n\n", mcp.Version, base)
-	printEndpoints(checkCtx)
-	fmt.Println()
 
 	if len(rest) == 1 {
 		// Per-project status
@@ -1353,6 +1351,9 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		}
 		if _, err := os.Stat(p.DBPath); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
+				if *format == "json" {
+					return json.NewEncoder(os.Stdout).Encode(map[string]any{"project": p.Root, "status": "not-indexed"})
+				}
 				fmt.Printf("\n%s\n  not indexed — run: dex index %s\n", p.Root, p.Root)
 				return nil
 			}
@@ -1368,13 +1369,32 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			return err
 		}
 		nodes, edges, _ := st.GraphStats(ctx)
+		if *format == "json" {
+			return json.NewEncoder(os.Stdout).Encode(map[string]any{
+				"project":           p.Root,
+				"status":            "ok",
+				"files":             stats.Files,
+				"chunks":            stats.Chunks,
+				"dim":               stats.Dim,
+				"nodes":             nodes,
+				"edges":             edges,
+				"pending_summaries": stats.PendingSummaries,
+				"last_index":        stats.LastIndex,
+			})
+		}
+		// Header line up top groups version + index dir so the rest of
+		// the output reads as content under a single banner instead of
+		// orphaned bits between sections.
+		fmt.Printf("dex %s · %s\n\n", mcp.Version, base)
+		printEndpoints(checkCtx)
+		fmt.Println()
 		fmt.Printf("  %s\n", p.Root)
 		printProjectStatLines("    ", projectStats{
 			lastIndex:        stats.LastIndex,
 			files:            stats.Files,
 			chunks:           stats.Chunks,
 			nodes:            nodes,
-			edges:            edges,
+			edges:             edges,
 			pendingSummaries: stats.PendingSummaries,
 			lastSummarized:   stats.LastSummarized,
 			dim:              stats.Dim,
@@ -1392,6 +1412,12 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			fmt.Printf("    → stale — run: dex index %s\n", p.Root)
 		}
 		return nil
+	}
+	if *format == "text" {
+		// Header only in text mode
+		fmt.Printf("dex %s · %s\n\n", mcp.Version, base)
+		printEndpoints(checkCtx)
+		fmt.Println()
 	}
 
 	// All-project summary
@@ -1480,6 +1506,9 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 	}
 
 	if len(rows) == 0 && empties == 0 {
+		if *format == "json" {
+			return json.NewEncoder(os.Stdout).Encode(map[string]any{"projects": []any{}})
+		}
 		fmt.Println("projects (0 indexed)")
 		fmt.Println("  no projects indexed yet — run: dex index <path>")
 		return nil
@@ -1494,6 +1523,33 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		}
 		return rows[i].last.After(rows[j].last)
 	})
+
+	if *format == "json" {
+		type jsonRow struct {
+			Project          string    `json:"project"`
+			Files            int       `json:"files"`
+			Chunks           int       `json:"chunks"`
+			Nodes            int64     `json:"nodes"`
+			Edges            int64     `json:"edges"`
+			PendingSummaries int       `json:"pending_summaries,omitempty"`
+			LastIndex        time.Time `json:"last_index"`
+			Corrupt          bool      `json:"corrupt,omitempty"`
+		}
+		out := make([]jsonRow, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, jsonRow{
+				Project:          r.root,
+				Files:            r.files,
+				Chunks:           r.chunks,
+				Nodes:            r.nodes,
+				Edges:            r.edges,
+				PendingSummaries: r.pendingSummaries,
+				LastIndex:        r.last,
+				Corrupt:          r.corrupt,
+			})
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"projects": out})
+	}
 
 	fmt.Printf("projects (%d indexed)\n", len(rows))
 
