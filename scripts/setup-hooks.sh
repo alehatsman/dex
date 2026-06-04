@@ -74,18 +74,32 @@ HOOK_EOF
 chmod +x "$HOOKS_DIR/pre-push"
 echo "  ✓ pre-push → mooncake task ci"
 
+# ----- Claude Code hooks (.claude/settings.json) ----------------------------
+# The settings.json in .claude/ is already committed and wired automatically
+# when Claude Code opens this project. This step is a no-op reminder — the
+# file exists in the repo and needs no local writes.
+CLAUDE_SETTINGS="$REPO_ROOT/.claude/settings.json"
+if [[ -f "$CLAUDE_SETTINGS" ]]; then
+  echo "  ✓ Claude Code hooks already wired via .claude/settings.json"
+else
+  echo "  ⚠ .claude/settings.json missing — Claude Code hooks not active."
+  echo "    Run: git checkout HEAD -- .claude/settings.json"
+fi
+
 cat <<EOM
 
 Installed:
-  pre-commit  → 'mooncake task ci-fast' (~seconds). Catches stub panics, agent
-                TODOs, and unformatted code before they land in a commit.
-  pre-push    → 'mooncake task ci'      (~1 min). Full build + test + lint + vuln
-                + arch-snapshot + dupl before commits leave the machine.
+  pre-commit     → 'mooncake task ci-fast' (~seconds). vet + gofmt + ai-lint.
+  pre-push       → 'mooncake task ci' (~1 min). Full build + test + lint + vuln
+                   + arch-snapshot + dupl before commits leave the machine.
 
-Bypass either with --no-verify when you really need it.
+Claude Code hooks (.claude/settings.json — committed, active automatically):
+  UserPromptSubmit → 'dex hook inject'    inject relevant file paths each turn.
+  PreToolUse(Read) → 'dex hook redirect'  compress large files to save tokens.
+  PostToolUse/Stop → 'dex hook observe'   append event to hooks.jsonl log.
 
-If 'mooncake' isn't on PATH yet, install it from:
-  https://github.com/alehatsman/mooncake
-Then:
-  mooncake task install-tools
+Bypass git hooks with --no-verify. Disable dex hooks: DEX_HOOK_INJECT=0.
+
+If 'mooncake' isn't on PATH yet:  https://github.com/alehatsman/mooncake
+Then: mooncake task install-tools
 EOM

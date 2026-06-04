@@ -1,0 +1,32 @@
+{
+  "name": "dex",
+  "version": "0.1.0",
+  "description": "Local semantic-search MCP server. Indexes a repo and serves hybrid BM25+vector search, symbol lookup, call graph, and per-file summaries over MCP.",
+  "homepage": "https://github.com/alehatsman/dex",
+  "install": {
+    "command": "go install github.com/alehatsman/dex/cmd/dex@latest",
+    "note": "Requires a running embed service (e.g. Ollama). Set DEX_EMBED_URL + DEX_EMBED_MODEL, then run: dex index <path>"
+  },
+  "mcp": {
+    "command": "dex",
+    "args": ["mcp"],
+    "env": {}
+  },
+  "hooks": {
+    "UserPromptSubmit": "dex hook inject",
+    "PreToolUse": {
+      "Read": "dex hook redirect"
+    },
+    "PostToolUse": "dex hook observe",
+    "Stop": "dex hook observe",
+    "PreCompact": "dex hook observe"
+  },
+  "skills": [],
+  "capabilities": [
+    "semantic-search",
+    "symbol-lookup",
+    "code-graph",
+    "file-summarize",
+    "session-context"
+  ]
+}
