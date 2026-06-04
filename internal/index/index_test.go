@@ -21,6 +21,7 @@ import (
 	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/guide"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
@@ -1198,5 +1199,126 @@ func TestCommitPackageSummaryIgnoresCancellation(t *testing.T) {
 	}
 	if rows[0] != "Stub package summary." {
 		t.Errorf("unexpected package_summary content: %q", rows[0])
+	}
+}
+
+// TestWatcherPipelinePreservesSummaries exercises the full loop that the
+// PruneUnseen bug broke: a non-defer index pass builds package + repo
+// summaries; a subsequent watcher (defer) pass over the same unchanged
+// files must not prune those summaries; a drain brings file-level
+// summaries up to date; guide.Render must succeed without "no summaries"
+// error.
+//
+// To verify the test catches a regression: revert the PruneUnseen
+// exclusion for 'package_summary'/'repo_summary' — pass 2 will prune
+// them and guide.Render will fail with "no summaries in index".
+func TestWatcherPipelinePreservesSummaries(t *testing.T) {
+	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"role": "assistant", "content": "Stub summary."}},
+			},
+		})
+	}))
+	defer chatSrv.Close()
+
+	embedSrv := fakeEmbedServer(t)
+	defer embedSrv.Close()
+
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+	writeFile(t, filepath.Join(projDir, "go.mod"), "module example.com/watcher\n\ngo 1.26\n")
+	writeFile(t, filepath.Join(projDir, "main.go"), "package main\n\nfunc Hello() string { return \"hello\" }\n")
+
+	// long.go produces a structural chunk eligible for chunk_summary.
+	long := "package main\n\nfunc LongFunc() {\n"
+	for i := range chunkSummaryMinLines {
+		long += fmt.Sprintf("\t// line %d\n", i+1)
+	}
+	long += "}\n"
+	writeFile(t, filepath.Join(projDir, "long.go"), long)
+
+	ctx := context.Background()
+	p, _ := proj.Resolve(projDir, cacheDir)
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatalf("EnsureCacheDir: %v", err)
+	}
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+
+	ig, _ := ignore.New(p.Root)
+	em := embed.New(embedSrv.URL, "fake", 8, 5*time.Second)
+	cc := chat.New(chatSrv.URL, "fake", 10*time.Second)
+
+	newIndexer := func(defer_ bool) *Indexer {
+		return New(p, st, em, ig, Options{
+			Summarize:          true,
+			DeferSummaries:     defer_,
+			Chat:               cc,
+			SummaryConcurrency: 4,
+		})
+	}
+
+	// Pass 1: full non-defer index — generates package_summary + repo_summary.
+	if err := newIndexer(false).Run(ctx); err != nil {
+		t.Fatalf("pass 1 Run: %v", err)
+	}
+
+	pkgAfterPass1, err := st.AllSummariesByKind(ctx, chunk.KindPackageSummary)
+	if err != nil {
+		t.Fatalf("AllSummariesByKind(package_summary) after pass 1: %v", err)
+	}
+	if len(pkgAfterPass1) == 0 {
+		t.Fatal("pass 1 must produce at least one package_summary")
+	}
+	repoAfterPass1, err := st.AllSummariesByKind(ctx, chunk.KindRepoSummary)
+	if err != nil {
+		t.Fatalf("AllSummariesByKind(repo_summary) after pass 1: %v", err)
+	}
+	if len(repoAfterPass1) == 0 {
+		t.Fatal("pass 1 must produce a repo_summary")
+	}
+
+	// Pass 2: watcher (defer) mode over the same unchanged files.
+	// PruneUnseen must NOT evict the existing package_summary / repo_summary rows.
+	if err := newIndexer(true).Run(ctx); err != nil {
+		t.Fatalf("pass 2 Run (watcher defer): %v", err)
+	}
+
+	pkgAfterPass2, err := st.AllSummariesByKind(ctx, chunk.KindPackageSummary)
+	if err != nil {
+		t.Fatalf("AllSummariesByKind(package_summary) after pass 2: %v", err)
+	}
+	if len(pkgAfterPass2) == 0 {
+		t.Error("watcher pass must not prune package_summary rows — PruneUnseen regression")
+	}
+	repoAfterPass2, err := st.AllSummariesByKind(ctx, chunk.KindRepoSummary)
+	if err != nil {
+		t.Fatalf("AllSummariesByKind(repo_summary) after pass 2: %v", err)
+	}
+	if len(repoAfterPass2) == 0 {
+		t.Error("watcher pass must not prune repo_summary rows — PruneUnseen regression")
+	}
+
+	// Drain the file-level pending summaries enqueued by pass 2.
+	ix := newIndexer(true)
+	if _, err := ix.DrainPendingSummaries(ctx); err != nil {
+		t.Fatalf("DrainPendingSummaries: %v", err)
+	}
+
+	// guide.Render must succeed and return a non-empty body.
+	// A regression (summaries pruned) causes: "no summaries in index".
+	cfg := guide.Config{Output: "LLM_GUIDE.md"}
+	res, err := guide.Render(ctx, st, projDir, cfg, guide.Options{Stdout: true})
+	if err != nil {
+		t.Fatalf("guide.Render after full pipeline: %v", err)
+	}
+	if res.Body == "" {
+		t.Error("guide.Render returned empty body — expected rendered markdown")
 	}
 }
