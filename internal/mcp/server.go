@@ -1193,6 +1193,7 @@ type toolSurface interface {
 	overview(context.Context, *sdk.CallToolRequest, OverviewInput) (*sdk.CallToolResult, OverviewOutput, error)
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
+	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 }
@@ -1319,6 +1320,16 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 				"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
 				"no inlined content. Requires the embedding service.",
 		}, h.overview)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "search_tree",
+			Description: "List indexed files under a directory path. Returns individual files within " +
+				"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
+				"(dirs shown with trailing / and a summed chunk count). " +
+				"No embedding required — reads directly from the index. " +
+				"Use for orientation in an unfamiliar codebase before calling ask or view_summarize. " +
+				"Returns 'no-index' when the project hasn't been indexed yet.",
+		}, h.searchTree)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "index_status",

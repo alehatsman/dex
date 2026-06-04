@@ -502,6 +502,42 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	return st, nil
 }
 
+// FileEntry is one indexed file with its chunk count.
+type FileEntry struct {
+	Path   string
+	Chunks int
+}
+
+// FileTree returns indexed files whose path starts with prefix, with per-file
+// chunk counts ordered by path. Pass "" to list all files in the project.
+func (s *Store) FileTree(ctx context.Context, prefix string) ([]FileEntry, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if prefix == "" {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT path, COUNT(*) FROM chunks GROUP BY path ORDER BY path`)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT path, COUNT(*) FROM chunks WHERE path LIKE ? ESCAPE '\' GROUP BY path ORDER BY path`,
+			escapeLike(prefix)+"/%")
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FileEntry
+	for rows.Next() {
+		var f FileEntry
+		if err := rows.Scan(&f.Path, &f.Chunks); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
 // SetLastIndexedAt records the wall-clock time of the most recent
 // successful (full or incremental) re-index.
 func (s *Store) SetLastIndexedAt(ctx context.Context, t time.Time) error {

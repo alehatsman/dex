@@ -106,6 +106,11 @@ func (p projectScoped) routes(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.routes(ctx, req, in)
 }
 
+func (p projectScoped) searchTree(ctx context.Context, req *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.searchTree(ctx, req, in)
+}
+
 // status is daemon-global (not project-scoped), so the bound root is ignored
 // — matching the REST handleStatus and the stdio index_status tool.
 func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
