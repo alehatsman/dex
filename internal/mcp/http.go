@@ -160,6 +160,7 @@ func (s *Server) RunHTTP(ctx context.Context, opts RunHTTPOptions) error {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	opts.Logger = opts.Logger.With("subsystem", "mcp")
 	if opts.ReadHeaderTimeout == 0 {
 		opts.ReadHeaderTimeout = 5 * time.Second
 	}

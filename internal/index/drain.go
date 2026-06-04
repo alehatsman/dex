@@ -92,7 +92,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	if len(pending) == 0 {
 		return 0, 0, nil
 	}
-	ix.Options.Logger.Info("drain: batch starting", "pending", len(pending), "max", max)
+	ix.drainLog.Info("drain: batch starting", "pending", len(pending), "max", max)
 
 	conc := ix.Options.SummaryConcurrency
 	if conc < 1 {
@@ -116,7 +116,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			case chunk.KindFileSummary:
 				res, stalehit, err := ix.processFileSummary(egctx, p)
 				if err != nil {
-					ix.Options.Logger.Warn("file summary drain failed", "id", p.ID, "path", p.Path, "err", err)
+					ix.drainLog.Warn("file summary drain failed", "id", p.ID, "path", p.Path, "err", err)
 					_ = ix.Store.BumpPendingAttempts(ctx, p.ID, err.Error())
 					return nil
 				}
@@ -130,7 +130,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			case chunk.KindChunkSummary:
 				res, stalehit, err := ix.processChunkSummary(egctx, p)
 				if err != nil {
-					ix.Options.Logger.Warn("chunk summary drain failed", "id", p.ID, "path", p.Path, "start", p.StartLine, "err", err)
+					ix.drainLog.Warn("chunk summary drain failed", "id", p.ID, "path", p.Path, "start", p.StartLine, "err", err)
 					_ = ix.Store.BumpPendingAttempts(ctx, p.ID, err.Error())
 					return nil
 				}
@@ -142,7 +142,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 					results[i] = res
 				}
 			default:
-				ix.Options.Logger.Warn("unknown pending kind", "id", p.ID, "kind", p.Kind)
+				ix.drainLog.Warn("unknown pending kind", "id", p.ID, "kind", p.Kind)
 				_ = ix.Store.BumpPendingAttempts(ctx, p.ID, "unknown kind")
 			}
 			return nil
@@ -166,7 +166,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			batchSize = 32
 		}
 		totalBatches := (len(successful) + batchSize - 1) / batchSize
-		ix.Options.Logger.Info("drain: embedding summaries",
+		ix.drainLog.Info("drain: embedding summaries",
 			"chunks", len(successful),
 			"batches", totalBatches,
 			"batch_size", batchSize)
@@ -214,7 +214,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 				}
 			}
 			generated += len(batch)
-			ix.Options.Logger.Info("drain: embed batch",
+			ix.drainLog.Info("drain: embed batch",
 				"batch", start/batchSize+1,
 				"of", totalBatches,
 				"chunks", len(batch),
@@ -230,7 +230,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 		}
 	}
 	if len(stale) > 0 {
-		ix.Options.Logger.Info("drain: dropped stale rows", "count", len(stale))
+		ix.drainLog.Info("drain: dropped stale rows", "count", len(stale))
 	}
 
 	remaining, err = ix.Store.CountPendingSummaries(ctx)
@@ -243,7 +243,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	if generated > 0 {
 		_ = ix.Store.SetLastSummarizedAt(ctx, time.Now())
 	}
-	ix.Options.Logger.Info("drain: batch done",
+	ix.drainLog.Info("drain: batch done",
 		"generated", generated,
 		"stale_dropped", len(stale),
 		"remaining", remaining,
@@ -293,7 +293,7 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 	if batchSize <= 0 {
 		batchSize = 10
 	}
-	logger := ix.Options.Logger
+	logger := ix.drainLog
 	verbose := ix.Options.Verbose
 	// Exponential backoff state shared across calls. The watcher may
 	// invoke the returned closure many times within a session; without
@@ -431,7 +431,7 @@ func (ix *Indexer) DrainPendingSummaries(ctx context.Context) (int, error) {
 			}
 		}
 	}
-	ix.Options.Logger.Info("drain: cascading package + repo summaries")
+	ix.drainLog.Info("drain: cascading package + repo summaries")
 	cascadeGen, err := ix.CascadePackageRepoSummaries(ctx)
 	if err != nil {
 		return total, err
@@ -687,14 +687,14 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 			grounding := ix.fetchPackageGrounding(egctx, j.dir, modPath)
 			summary, err := summarizePackage(egctx, ix.Options.Chat, ix.Options.SummaryModels.Package, j.dir, fileSummaries, grounding)
 			if err != nil {
-				ix.Options.Logger.Warn("package summarize failed", "dir", j.dir, "err", err)
+				ix.drainLog.Warn("package summarize failed", "dir", j.dir, "err", err)
 				return nil
 			}
 			if strings.TrimSpace(summary) == "" {
 				return nil
 			}
 			if err := ix.commitPackageSummary(ctx, j.dir, j.pkgSHA, summary, startTime); err != nil {
-				ix.Options.Logger.Warn("commit package_summary failed", "dir", j.dir, "err", err)
+				ix.drainLog.Warn("commit package_summary failed", "dir", j.dir, "err", err)
 				return nil
 			}
 			generated.Add(1)
@@ -733,7 +733,7 @@ func (ix *Indexer) commitPackageSummary(ctx context.Context, dir, pkgSHA, summar
 		return err
 	}
 	if _, err := ix.Store.DeleteOtherSummariesForPath(cctx, dir, chunk.KindPackageSummary, pkgSHA); err != nil {
-		ix.Options.Logger.Warn("gc stale package_summary failed", "path", dir, "err", err)
+		ix.drainLog.Warn("gc stale package_summary failed", "path", dir, "err", err)
 	}
 	return nil
 }
@@ -797,7 +797,7 @@ func (ix *Indexer) topRepoSummaryInput(ctx context.Context) (contents, dirs []st
 		for i, r := range pkgRows {
 			paths[i] = r.Path
 		}
-		ix.Options.Logger.Info("repo summary input", "count", len(pkgRows), "paths", strings.Join(paths, ","))
+		ix.drainLog.Info("repo summary input", "count", len(pkgRows), "paths", strings.Join(paths, ","))
 	}
 	contents = make([]string, len(pkgRows))
 	dirs = make([]string, len(pkgRows))
@@ -831,7 +831,7 @@ func (ix *Indexer) cascadeRepoSummary(ctx context.Context, startTime time.Time, 
 	grounding := ix.fetchRepoGrounding(ctx, pkgDirs)
 	summary, err := summarizeRepo(ctx, ix.Options.Chat, ix.Options.SummaryModels.Repo, pkgSummaries, grounding)
 	if err != nil {
-		ix.Options.Logger.Warn("repo summarize failed", "err", err)
+		ix.drainLog.Warn("repo summarize failed", "err", err)
 		return 0, nil
 	}
 	if strings.TrimSpace(summary) == "" {
@@ -839,7 +839,7 @@ func (ix *Indexer) cascadeRepoSummary(ctx context.Context, startTime time.Time, 
 	}
 	vecs, err := ix.Embed.Embed(ctx, []string{chunk.KindRepoSummary + "\n" + summary})
 	if err != nil {
-		ix.Options.Logger.Warn("repo summary embed failed", "err", err)
+		ix.drainLog.Warn("repo summary embed failed", "err", err)
 		return 0, nil
 	}
 	rows := []store.PendingChunk{{
@@ -853,7 +853,7 @@ func (ix *Indexer) cascadeRepoSummary(ctx context.Context, startTime time.Time, 
 		return 0, err
 	}
 	if _, err := ix.Store.DeleteOtherSummariesForPath(ctx, ".", chunk.KindRepoSummary, repoSHA); err != nil {
-		ix.Options.Logger.Warn("gc stale repo_summary failed", "err", err)
+		ix.drainLog.Warn("gc stale repo_summary failed", "err", err)
 	}
 	return 1, nil
 }
