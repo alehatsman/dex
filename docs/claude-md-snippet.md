@@ -121,7 +121,7 @@ APIs. Three reinforcing layers:
    `graph_deps`, `graph_callers`, `graph_callees`, `view_summarize`)
    begins with "Prefer `ask` …; use this directly only when …". The
    raw tool descriptions use the new names: `file_view`, `status`,
-   `search_context`, `file_tree`, `graph_routes`, `code_smells`.
+   `search_context`, `file_tree`, `graph_routes`, `graph_smells`.
 2. **CLAUDE.md** (this snippet): codifies the rule in the
    project's instruction file Claude actually reads.
 3. **Prose `next_action` / `avoid`**: every router response carries
