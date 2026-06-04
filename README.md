@@ -161,9 +161,9 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 | `overview`         | standard+ | Project orientation — markers, package topology, key files.                 |
 | `search_context`   | standard+ | Embed query → top-K file signatures + best symbol body in one call.         |
 | `session`          | standard+ | Declare / read a session task for task-relevance inline in file_view.       |
-| `knowledge`        | standard+ | Store / recall cross-session knowledge facts for this project.              |
+| `knowledge`        | standard+ | Store / recall / consolidate cross-session facts; revision tracking on re-add. |
 | `file_tree`        | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
-| `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice of a file.              |
+| `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice. Pass `paths[]` (max 10) for batch. |
 | `search_semantic`  | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
 | `search_symbol`    | power     | Exact identifier lookup (SQL scan, no embedding).                           |
 | `graph_neighbors`  | power     | Vector neighbours of a known chunk at `path:start_line`.                    |
@@ -184,6 +184,14 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 counts) without touching the index or a chat model. When the current session
 has a declared task (`session`), `mode=signatures` and `mode=map` append the
 body of the symbol whose name best matches the task — no follow-up lines: call.
+Pass `paths[]` (max 10) to read multiple files in one round-trip; each file is
+returned as a `## path` section in the combined output.
+
+`knowledge action=consolidate` (requires `DEX_CHAT_URL`) reads the current
+session notes, asks the chat model to extract factual findings, and stores each
+one — turning ad-hoc session state into durable facts automatically.
+Re-storing a known fact increments its `revision_count`; responses show
+"Confirmed (revision N)." so the agent knows whether a fact is new or repeated.
 
 `overview` returns `status:"partial"` with project markers, a depth-2 filesystem
 tree, and top knowledge facts when the index is empty (indexing in progress), so
