@@ -81,6 +81,69 @@ func TestGenerateNoMessages(t *testing.T) {
 	}
 }
 
+func sseHandler(tokens []string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, tok := range tokens {
+			chunk := streamChunk{Model: "fake-stream"}
+			chunk.Choices = []struct {
+				Delta        struct{ Content string `json:"content"` } `json:"delta"`
+				FinishReason string                                    `json:"finish_reason"`
+			}{{Delta: struct{ Content string `json:"content"` }{Content: tok}}}
+			b, _ := json.Marshal(chunk)
+			_, _ = w.Write([]byte("data: " + string(b) + "\n\n"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	})
+}
+
+func TestGenerateStreamAssemblesTokens(t *testing.T) {
+	srv := httptest.NewServer(sseHandler([]string{"hel", "lo ", "world"}))
+	defer srv.Close()
+	c := New(srv.URL, "fake", 5*time.Second)
+
+	var got []string
+	resp, err := c.GenerateStream(context.Background(), []Message{{Role: "user", Content: "hi"}}, Options{}, func(tok string) {
+		got = append(got, tok)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Content != "hello world" {
+		t.Errorf("content = %q, want %q", resp.Content, "hello world")
+	}
+	if strings.Join(got, "") != "hello world" {
+		t.Errorf("tokens = %v, joined = %q, want %q", got, strings.Join(got, ""), "hello world")
+	}
+	if resp.Model != "fake-stream" {
+		t.Errorf("model = %q, want fake-stream", resp.Model)
+	}
+}
+
+func TestGenerateStreamNilCallback(t *testing.T) {
+	srv := httptest.NewServer(sseHandler([]string{"ok"}))
+	defer srv.Close()
+	c := New(srv.URL, "fake", 5*time.Second)
+	resp, err := c.GenerateStream(context.Background(), []Message{{Role: "user", Content: "hi"}}, Options{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Content != "ok" {
+		t.Errorf("content = %q, want ok", resp.Content)
+	}
+}
+
+func TestGenerateStreamNoMessages(t *testing.T) {
+	c := New("http://example/", "m", time.Second)
+	_, err := c.GenerateStream(context.Background(), nil, Options{}, nil)
+	if err == nil {
+		t.Fatal("expected error for empty messages")
+	}
+}
+
 func TestNewDefaults(t *testing.T) {
 	c := New("http://example/", "m", 0)
 	if c.HTTP.Timeout != 120*time.Second {

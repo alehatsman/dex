@@ -266,7 +266,7 @@ func (s *Server) ContextRouter(ctx context.Context, in ContextInput) (*sdk.CallT
 	return s.contextRouter(ctx, nil, in)
 }
 
-func (s *Server) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
+func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
 	if strings.TrimSpace(in.Question) == "" {
 		return nil, ContextOutput{Status: "error", Hint: "question is empty — pass a natural-language question about the codebase"}, nil
 	}
@@ -417,7 +417,11 @@ func (s *Server) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in C
 	// Synthesize a grounded prose answer from the evidence just
 	// assembled. Best-effort: a missing/unreachable chat client leaves
 	// out.Answer empty and the agent falls back to the evidence bundle.
-	s.synthesizeAnswer(ctx, intent, in.Question, &out)
+	var session *sdk.ServerSession
+	if req != nil {
+		session = req.Session
+	}
+	s.synthesizeAnswer(ctx, session, intent, in.Question, &out)
 	return nil, out, nil
 }
 

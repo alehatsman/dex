@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/alehatsman/dex/internal/chat"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // answerMaxTokens caps synthesis length. Answers are meant to be a
@@ -46,7 +47,11 @@ const answerMaxEvidenceBytes = 12 * 1024
 // is wired or no usable evidence text exists. Chat-layer failures are
 // swallowed: a missing answer degrades to the evidence-only bundle,
 // never an error to the caller.
-func (s *Server) synthesizeAnswer(ctx context.Context, intent, question string, out *ContextOutput) {
+//
+// When session is non-nil, tokens are streamed to the client via Log
+// notifications as they arrive, so the agent sees output before the
+// tool call completes.
+func (s *Server) synthesizeAnswer(ctx context.Context, session *sdk.ServerSession, intent, question string, out *ContextOutput) {
 	if s.ChatClient == nil {
 		return
 	}
@@ -63,10 +68,27 @@ func (s *Server) synthesizeAnswer(ctx context.Context, intent, question string, 
 		return
 	}
 
-	resp, err := s.ChatClient.Generate(ctx, []chat.Message{
+	msgs := []chat.Message{
 		{Role: "system", Content: answerSystemPrompt},
 		{Role: "user", Content: buildAnswerUser(question, intent, evidence)},
-	}, chat.Options{MaxTokens: answerMaxTokens})
+	}
+	opts := chat.Options{MaxTokens: answerMaxTokens}
+
+	var (
+		resp chat.Response
+		err  error
+	)
+	if session != nil {
+		resp, err = s.ChatClient.GenerateStream(ctx, msgs, opts, func(tok string) {
+			_ = session.Log(ctx, &sdk.LoggingMessageParams{
+				Level:  "debug",
+				Logger: "dex/ask",
+				Data:   tok,
+			})
+		})
+	} else {
+		resp, err = s.ChatClient.Generate(ctx, msgs, opts)
+	}
 	if err != nil {
 		// Unreachable / any chat error → leave Answer empty; the agent
 		// still has the full evidence bundle and next_action.
