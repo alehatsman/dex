@@ -1890,7 +1890,9 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"(path:line), pass/fail/unknown counts, and a drift flag if commits have landed on covered paths " +
 				"since the spec's last_verified commit. " +
 				"Pass no_judge:true to skip the LLM pass and get raw citations only. " +
-				"Returns 'no-index' when the project hasn't been indexed yet.",
+				"Returns 'no-index' when the project hasn't been indexed yet. " +
+				"Response shape: {status, results: [{item, checked, status, reason, cites}], pass_count, fail_count, unknown_count, pending_count}. " +
+				"Note: the per-item array is keyed 'results' (not 'items').",
 		}, h.specVerify)
 	}
 
