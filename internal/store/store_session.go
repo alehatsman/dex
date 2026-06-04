@@ -129,6 +129,22 @@ func (s *Store) SessionAddFile(ctx context.Context, path, op string) error {
 	return err
 }
 
+// SessionTrackFile records a file access only when a task-bearing session
+// already exists. Unlike SessionAddFile it never creates a new session.
+func (s *Store) SessionTrackFile(ctx context.Context, path, op string) error {
+	var id int64
+	var task string
+	err := s.db.QueryRowContext(ctx, `SELECT id, task FROM sessions ORDER BY id DESC LIMIT 1`).Scan(&id, &task)
+	if err != nil || task == "" {
+		return nil // no active session with a task — skip silently
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO session_files(session_id, path, op, touched_at)
+		   VALUES(?,?,?,?)`,
+		id, path, op, time.Now().UnixNano())
+	return err
+}
+
 // SessionClear deletes the current session (files cascade via FK).
 func (s *Store) SessionClear(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id=(SELECT MAX(id) FROM sessions)`)
