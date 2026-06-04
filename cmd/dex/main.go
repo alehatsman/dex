@@ -77,6 +77,15 @@ func main() {
 	}
 	cmd, args := os.Args[1], os.Args[2:]
 
+	// Fill DEX_* gaps from .dex/config.yml in the working dir (env still wins).
+	// Collapses the env-var sprawl into one per-project file; see config_file.go.
+	if wd, werr := os.Getwd(); werr == nil {
+		if cerr := applyProjectConfig(wd); cerr != nil {
+			fmt.Fprintf(os.Stderr, "dex: %v\n", cerr)
+			os.Exit(2)
+		}
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
