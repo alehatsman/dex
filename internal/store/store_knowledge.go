@@ -8,14 +8,15 @@ import (
 
 // KnowledgeFact is one persisted fact about the project.
 type KnowledgeFact struct {
-	ID         int64
-	Archetype  string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact
-	Body       string
-	Confidence float64 // 0–1
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	HitCount   int
-	Salience   float64 // pre-computed: confidence * archetypeWeight * recency
+	ID            int64
+	Archetype     string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact
+	Body          string
+	Confidence    float64 // 0–1
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	HitCount      int
+	RevisionCount int
+	Salience      float64 // pre-computed: confidence * archetypeWeight * recency
 }
 
 // archetypeWeight returns the base salience weight for a known archetype.
@@ -42,8 +43,9 @@ func archetypeWeight(a string) float64 {
 
 // KnowledgeAdd inserts or updates a fact. Facts are deduplicated by body text
 // (case-sensitive). Updating an existing fact bumps its confidence and
-// updated_at without creating a duplicate.
-func (s *Store) KnowledgeAdd(ctx context.Context, archetype, body string, confidence float64) error {
+// updated_at without creating a duplicate. Returns the revision_count after
+// insert/update (0 = first time stored, 1 = first revision, etc.).
+func (s *Store) KnowledgeAdd(ctx context.Context, archetype, body string, confidence float64) (int, error) {
 	if confidence <= 0 {
 		confidence = 0.8
 	}
@@ -52,14 +54,20 @@ func (s *Store) KnowledgeAdd(ctx context.Context, archetype, body string, confid
 	}
 	now := time.Now().UnixNano()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count)
-		   VALUES(?,?,?,?,?,0)
+		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count)
+		   VALUES(?,?,?,?,?,0,0)
 		   ON CONFLICT(body) DO UPDATE SET
 		     archetype=excluded.archetype,
 		     confidence=MAX(confidence, excluded.confidence),
-		     updated_at=excluded.updated_at`,
+		     updated_at=excluded.updated_at,
+		     revision_count=revision_count+1`,
 		archetype, body, confidence, now, now)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	var rev int
+	_ = s.db.QueryRowContext(ctx, `SELECT revision_count FROM knowledge_facts WHERE body=?`, body).Scan(&rev)
+	return rev, nil
 }
 
 // KnowledgeQuery returns the top-k facts ordered by salience
@@ -73,7 +81,7 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 		k = 50
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
 		   FROM knowledge_facts
 		   ORDER BY confidence DESC, updated_at DESC
 		   LIMIT ?`, k)
@@ -85,7 +93,7 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 	for rows.Next() {
 		var f KnowledgeFact
 		var cNs, uNs int64
-		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount); err != nil {
+		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount); err != nil {
 			return nil, err
 		}
 		f.CreatedAt = time.Unix(0, cNs)

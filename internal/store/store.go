@@ -332,7 +332,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		   confidence REAL NOT NULL DEFAULT 0.8,
 		   created_at INTEGER NOT NULL,
 		   updated_at INTEGER NOT NULL,
-		   hit_count  INTEGER NOT NULL DEFAULT 0,
+		   hit_count      INTEGER NOT NULL DEFAULT 0,
+		   revision_count INTEGER NOT NULL DEFAULT 0,
 		   UNIQUE(body)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_knowledge_confidence ON knowledge_facts(confidence DESC, updated_at DESC)`,
@@ -398,6 +399,20 @@ func (s *Store) migrate(ctx context.Context) error {
 			`INSERT INTO meta(key, value) VALUES('centrality_cols_added', '1')
 			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
 			return fmt.Errorf("migrate: centrality flag: %w", err)
+		}
+	}
+	var knowledgeRevColAdded string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='knowledge_rev_col_added'`).Scan(&knowledgeRevColAdded)
+	if knowledgeRevColAdded != "1" {
+		if _, err := s.db.ExecContext(ctx,
+			`ALTER TABLE knowledge_facts ADD COLUMN revision_count INTEGER NOT NULL DEFAULT 0`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate: add revision_count column: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('knowledge_rev_col_added', '1')
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return fmt.Errorf("migrate: knowledge_rev_col flag: %w", err)
 		}
 	}
 	return nil
