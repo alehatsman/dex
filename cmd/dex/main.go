@@ -106,6 +106,10 @@ func main() {
 		err = cmdClone(ctx, args)
 	case "guide":
 		err = cmdGuide(ctx, args)
+	case "compress-stdin":
+		err = cmdCompressStdin(args)
+	case "shell-hook":
+		err = cmdShellHook(args)
 	case "version", "-V", "--version":
 		fmt.Println(mcp.Version)
 		return
@@ -496,14 +500,20 @@ func newRerankClient() rerank.HealthChecker {
 	}
 	model := envOr("DEX_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
 	timeout := parseDuration("DEX_RERANK_TIMEOUT", envOr("DEX_RERANK_TIMEOUT", "5s"), 5*time.Second)
-	if os.Getenv("DEX_RERANK_STYLE") == "chat" {
+	style := os.Getenv("DEX_RERANK_STYLE")
+	if style == "chat" || style == "chat-vllm" {
 		rawConc := envOr("DEX_RERANK_CONCURRENCY", "4")
 		concurrency, cerr := strconv.Atoi(rawConc)
 		if cerr != nil || concurrency <= 0 {
 			fmt.Fprintf(os.Stderr, "warning: DEX_RERANK_CONCURRENCY=%q is not a positive integer; using 4\n", rawConc)
 			concurrency = 4
 		}
-		return rerank.NewChat(url, model, concurrency, timeout)
+		c := rerank.NewChat(url, model, concurrency, timeout)
+		// chat-vllm: enable <think> assistant prefill for Qwen3-Reranker on vLLM.
+		// Plain chat (ollama / standard servers) must NOT set this — they continue
+		// the XML pattern and generate "<" instead of "yes"/"no".
+		c.ThinkingPrefill = style == "chat-vllm"
+		return c
 	}
 	return rerank.New(url, model, timeout)
 }
