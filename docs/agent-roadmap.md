@@ -11,18 +11,16 @@ dropped, and items here don't duplicate it.
 
 ---
 
-## 1. ✅ Operational config in `.dex/config.toml` (env-var consolidation)
+## 1. ~~Persistent per-tier model config (`.dex/models.toml`)~~ — superseded
 
-**Shipped.** The dotfiles layer centralized the *source* of the ~17 `DEX_*`
-knobs but the operator still felt the *sprawl* — vars stamped across the MCP
-env block, the systemd unit, and the shell, with no single place to read or
-pin them. `.dex/config.toml` now carries `[endpoints]`, `[models]`, `[tools]`,
-and an `[env]` escape hatch (`cmd/dex/config_file.go`), resolved at startup
-from the working dir. Precedence is strict: **env var > config file >
-default**, so the dotfiles/systemd env layer still wins and nothing that
-worked before changes — but a checkout that pins `config.toml` drops its env
-surface to ~zero. `DEX_SERVE_TOKEN` is a secret and is never read from the
-file. `dex env` shows the per-setting source (`env|file|default`).
+**Not needed.** The original motivation ("three independent surfaces, no
+shared source of truth") was solved at the dotfiles layer instead.
+`dotfiles/machines/main_pc/vars.yml` sets all four tier models;
+`dotfiles/components/dex/index.yml` stamps them into `claude mcp add -e
+DEX_{CHUNK,FILE,PACKAGE,REPO}_SUMMARY_MODEL=…` and into the systemd unit
+env in a single `mooncake apply`. Fleet default (all empty = inherit
+`DEX_SUMMARY_MODEL`) lives in `dotfiles/shared/variables.yml:148-151`.
+One apply, both surfaces in sync — no in-repo config file needed.
 
 ---
 

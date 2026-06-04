@@ -99,7 +99,7 @@ var allEnvVars = []envVar{
 type effVar struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
-	Source string `json:"source"` // env | file | default | unset | disabled
+	Source string `json:"source"` // env | default | unset | disabled
 	Group  string `json:"group"`
 	Doc    string `json:"doc"`
 }
@@ -111,12 +111,7 @@ func resolveEnv(vars []envVar) []effVar {
 		var val, src string
 		switch {
 		case raw != "":
-			val = raw
-			if fileSourcedKeys[v.Name] {
-				src = "file" // populated from .dex/config.toml, not the environment
-			} else {
-				src = "env"
-			}
+			val, src = raw, "env"
 		case v.Default != "":
 			val, src = v.Default, "default"
 		case v.Disable:
@@ -138,7 +133,7 @@ func resolveEnv(vars []envVar) []effVar {
 func cmdEnv(_ context.Context, args []string) error {
 	fs := flag.NewFlagSet("env", flag.ContinueOnError)
 	setHelp(fs,
-		"Print effective DEX_* configuration with sources (env|file|default|disabled|unset).",
+		"Print effective DEX_* configuration with sources (env|default|disabled|unset).",
 		"dex env [--all] [--doc] [--format=text|json]")
 	format := fs.String("format", "text", "output format: text | json")
 	showAll := fs.Bool("all", false, "include tuning knobs (default: core/chat/rerank/compress/draft only)")
