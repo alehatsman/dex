@@ -156,6 +156,11 @@ func (p projectScoped) agent(ctx context.Context, req *sdk.CallToolRequest, in A
 	return p.s.agent(ctx, req, in)
 }
 
+// nav is daemon-global (not project-scoped); bound root is ignored.
+func (p projectScoped) nav(ctx context.Context, req *sdk.CallToolRequest, in NavInput) (*sdk.CallToolResult, NavOutput, error) {
+	return p.s.nav(ctx, req, in)
+}
+
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at
 // /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
 // SDK permits reusing a server across sessions) and looked up by the {id} path

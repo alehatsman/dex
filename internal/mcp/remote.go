@@ -326,3 +326,9 @@ func (rc *remoteClient) agent(ctx context.Context, _ *sdk.CallToolRequest, in Ag
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/agent"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) nav(ctx context.Context, _ *sdk.CallToolRequest, _ NavInput) (*sdk.CallToolResult, NavOutput, error) {
+	var out NavOutput
+	err := rc.do(ctx, http.MethodGet, rc.base+"/v1/nav", nil, &out)
+	return nil, out, err
+}

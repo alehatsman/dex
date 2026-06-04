@@ -110,6 +110,10 @@ type Server struct {
 	// a knowledge-nudge hint when the agent has done significant work but
 	// hasn't recorded any findings. Key: project root; value: *activityState.
 	activityTracker sync.Map
+
+	// tier is the tool tier active for this server instance; set by
+	// registerTools so ctx_nav can report which tools are actually available.
+	tier toolTier
 }
 
 type throttleEntry struct {
@@ -295,6 +299,11 @@ func (s *Server) Summarize(ctx context.Context, in SummarizeInput) (SummarizeOut
 
 func (s *Server) Status(ctx context.Context) (StatusOutput, error) {
 	_, out, err := s.status(ctx, nil, StatusInput{})
+	return out, err
+}
+
+func (s *Server) Nav(ctx context.Context) (NavOutput, error) {
+	_, out, err := s.nav(ctx, nil, NavInput{})
 	return out, err
 }
 
@@ -1700,6 +1709,7 @@ type toolSurface interface {
 	compose(context.Context, *sdk.CallToolRequest, ComposeInput) (*sdk.CallToolResult, ComposeOutput, error)
 	specVerify(context.Context, *sdk.CallToolRequest, SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error)
 	agent(context.Context, *sdk.CallToolRequest, AgentInput) (*sdk.CallToolResult, AgentOutput, error)
+	nav(context.Context, *sdk.CallToolRequest, NavInput) (*sdk.CallToolResult, NavOutput, error)
 }
 
 // toolTier controls how many tools are exposed to MCP clients.
@@ -1745,6 +1755,11 @@ func toolTierFromEnv() toolTier {
 // DEX_EXPOSE_RAW_TOOLS=1 is honoured as a backward-compatible alias for power.
 // The `dex` CLI subcommands are unaffected by tier.
 func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable bool) {
+	// Stamp the active tier onto the server so ctx_nav can report it accurately.
+	if s, ok := h.(*Server); ok {
+		s.tier = tier
+	}
+
 	// Power-only: raw search / graph / analysis lanes. Useful for CLI parity,
 	// A-B debugging, and power users — too noisy for everyday agents.
 	if tier >= TierPower {
@@ -1938,6 +1953,15 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Typical workflow: announce once at startup, post findings as you discover them, " +
 				"read peers' findings before duplicating work. No embedding required.",
 		}, h.agent)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "ctx_nav",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: "Return the dex tool-routing guide — which tools exist, their tier, and when to call each. " +
+				"Call this once at session start in an unfamiliar project to orient yourself before asking questions. " +
+				"Returns a `guide` field (markdown routing guide) and a `tools` list (structured per-tool entries). " +
+				"No index or embedding required.",
+		}, h.nav)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "ctx_shell",

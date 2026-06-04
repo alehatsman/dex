@@ -256,6 +256,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed := http.NewServeMux()
 	authed.HandleFunc("GET /v1/projects", s.handleListProjects(opts.Projects))
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
+	authed.HandleFunc("GET /v1/nav", s.handleNav)
 	authed.HandleFunc("POST /v1/compress", s.handleCompress())
 	authed.HandleFunc("POST /v1/shell", s.handleShell())
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
@@ -486,6 +487,15 @@ func (s *Server) handleListProjects(projects map[string]string) http.HandlerFunc
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	out, err := s.Status(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
+	out, err := s.Nav(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
