@@ -21,3 +21,20 @@ token's name is your identity in every claim/comment, so never share one.
 
 No code without an owned issue. Worktrees for non-trivial changes; never
 auto-push; ask before merge; conventional branches/commits.
+
+## Build / test — always via mooncake task
+
+**Never use bare `go build`, `go test`, or `go install` directly** — the
+project requires `-tags sqlite_fts5` for FTS5 support (mattn/go-sqlite3)
+and without it store tests panic and the built binary drops BM25 search.
+The canonical commands:
+
+```
+mooncake task install   # build + install to ~/bin/dex
+mooncake task test      # go test -tags sqlite_fts5 ./...
+mooncake task ci-fast   # pre-commit gate (build + test + vet + fmt-check)
+mooncake task ci        # full pre-push gate
+```
+
+`GO_TAGS=sqlite_fts5` is declared once in `tasks.yml:37` and threaded into
+every task automatically. Do not repeat it at call sites.
