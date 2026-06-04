@@ -146,7 +146,7 @@ func checkIndexDir() doctorCheck {
 		}
 	}
 	_ = os.Remove(tmp.Name())
-	tmp.Close()
+	_ = tmp.Close()
 
 	n := countIndexedProjects(base)
 	noun := "projects"
