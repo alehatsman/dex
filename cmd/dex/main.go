@@ -127,6 +127,8 @@ func main() {
 		err = cmdCompressStdin(args)
 	case "shell-hook":
 		err = cmdShellHook(args)
+	case "doctor":
+		err = cmdDoctor(ctx, args)
 	case "version", "-V", "--version":
 		fmt.Println(mcp.Version)
 		return
@@ -163,6 +165,7 @@ func usage() {
   dex ask "where is the watcher?"    one-shot router; emits suggested reads
   dex mcp                            run as MCP server (stdio) — point your agent at it
   dex env --doc                      see effective config with inline docs
+  dex doctor                         check the setup is working end-to-end
 
   <path> defaults to cwd on every query/view/graph command.
 
@@ -248,6 +251,7 @@ build / maintenance:
                                           compress large files to save tokens.
   dex hook observe                   Claude Code PostToolUse/Stop hook:
                                           append event to hooks.jsonl log.
+  dex doctor                         check the setup: index dir, endpoints, config, MCP wiring
   dex version                        print the build version
 
 env:
