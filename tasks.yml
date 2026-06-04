@@ -113,7 +113,7 @@ tasks:
           go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
       - name: copy binary and restart running instances
         shell: |
-          INSTALL_PATH="${INSTALL_PATH:-$HOME/.local/bin}"
+          INSTALL_PATH="${INSTALL_PATH:-$HOME/bin}"
           mkdir -p "$INSTALL_PATH"
           cp {{ BIN }} "$INSTALL_PATH/{{ BIN }}.new"
           mv -f "$INSTALL_PATH/{{ BIN }}.new" "$INSTALL_PATH/{{ BIN }}"
