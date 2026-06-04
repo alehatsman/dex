@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -68,8 +69,29 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 		out = compressTerraform(lines)
 	case strings.HasPrefix(cmd, "cmake") || strings.HasPrefix(cmd, "ninja"):
 		out = compressCmake(lines)
+	case strings.HasPrefix(cmd, "grep ") || strings.HasPrefix(cmd, "rg ") ||
+		strings.HasPrefix(cmd, "ag ") || strings.HasPrefix(cmd, "ack "):
+		out = compressGrep(lines)
+	case strings.HasPrefix(cmd, "find ") || strings.HasPrefix(cmd, "fd "):
+		out = compressFind(lines)
+	case strings.HasPrefix(cmd, "eslint") || strings.HasPrefix(cmd, "npx eslint") ||
+		strings.HasPrefix(cmd, "biome"):
+		out = compressEslint(lines)
+	case strings.HasPrefix(cmd, "ruff"):
+		out = compressRuff(cmd, lines)
+	case strings.HasPrefix(cmd, "mypy"):
+		out = compressMypy(lines)
+	case strings.HasPrefix(cmd, "pytest") || strings.HasPrefix(cmd, "python -m pytest") ||
+		strings.HasPrefix(cmd, "python3 -m pytest"):
+		out = compressPytest(lines)
+	case strings.HasPrefix(cmd, "tsc") || strings.HasPrefix(cmd, "npx tsc"):
+		out = compressTsc(lines)
 	default:
-		out = compressGeneric(lines)
+		if dedupd := compressLogDedup(lines); dedupd != nil {
+			out = dedupd
+		} else {
+			out = compressGeneric(lines)
+		}
 	}
 
 	out = collapseBlankLines(out)
@@ -489,6 +511,503 @@ func collapseBlankLines(lines []string) []string {
 		} else {
 			blanks = 0
 			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// compactLines returns at most max non-empty lines with a trailer if truncated.
+func compactLines(lines []string, max int) []string {
+	var nonEmpty []string
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			nonEmpty = append(nonEmpty, l)
+		}
+	}
+	if len(nonEmpty) <= max {
+		return nonEmpty
+	}
+	return append(nonEmpty[:max], fmt.Sprintf("... (%d more lines)", len(nonEmpty)-max))
+}
+
+// ── grep / rg / ag ────────────────────────────────────────────────────────────
+
+var reGrepLine = regexp.MustCompile(`^([^:]+):(\d+):(.*)$`)
+
+func compressGrep(lines []string) []string {
+	type match struct {
+		line    int
+		content string
+	}
+	byFile := make(map[string][]match)
+	order := []string{}
+	total := 0
+	for _, l := range lines {
+		caps := reGrepLine.FindStringSubmatch(l)
+		if caps == nil {
+			continue
+		}
+		file := caps[1]
+		lineNo := 0
+		fmt.Sscanf(caps[2], "%d", &lineNo)
+		content := strings.TrimSpace(caps[3])
+		if len(content) > 120 {
+			content = content[:119] + "…"
+		}
+		if _, seen := byFile[file]; !seen {
+			order = append(order, file)
+		}
+		byFile[file] = append(byFile[file], match{lineNo, content})
+		total++
+	}
+	if total == 0 {
+		return lines
+	}
+
+	perFile := 10
+	if total > 200 {
+		perFile = 5
+	}
+
+	var out []string
+	out = append(out, fmt.Sprintf("%d matches in %dF:", total, len(byFile)))
+	// sort by most matches first
+	sort.Slice(order, func(i, j int) bool {
+		return len(byFile[order[i]]) > len(byFile[order[j]])
+	})
+	for _, file := range order {
+		matches := byFile[file]
+		path := strings.TrimPrefix(file, "./")
+		out = append(out, fmt.Sprintf("\n%s (%d):", path, len(matches)))
+		shown := matches
+		if len(shown) > perFile {
+			shown = shown[:perFile]
+		}
+		for _, m := range shown {
+			if m.line > 0 {
+				out = append(out, fmt.Sprintf("  %d: %s", m.line, m.content))
+			} else {
+				out = append(out, fmt.Sprintf("  %s", m.content))
+			}
+		}
+		if len(matches) > perFile {
+			out = append(out, fmt.Sprintf("  ... +%d more", len(matches)-perFile))
+		}
+	}
+	return out
+}
+
+// ── find / fd ─────────────────────────────────────────────────────────────────
+
+var reFindSkip = regexp.MustCompile(`node_modules/|\.git/|target/(debug|release)/|__pycache__/|\.next/|dist/`)
+
+func compressFind(lines []string) []string {
+	byDir := make(map[string][]string)
+	order := []string{}
+	total := 0
+	for _, l := range lines {
+		path := strings.TrimSpace(strings.TrimPrefix(l, "./"))
+		if path == "" || reFindSkip.MatchString(path) {
+			continue
+		}
+		total++
+		slash := strings.LastIndex(path, "/")
+		var dir, file string
+		if slash >= 0 {
+			dir = path[:slash]
+			file = path[slash+1:]
+		} else {
+			dir = "."
+			file = path
+		}
+		if _, seen := byDir[dir]; !seen {
+			order = append(order, dir)
+		}
+		byDir[dir] = append(byDir[dir], file)
+	}
+	if total == 0 || len(lines) < 5 {
+		return lines
+	}
+
+	sort.Strings(order)
+	var out []string
+	out = append(out, fmt.Sprintf("%dF %dD:", total, len(byDir)))
+	for _, dir := range order {
+		files := byDir[dir]
+		out = append(out, "")
+		out = append(out, dir+"/")
+		shown := files
+		if len(shown) > 10 {
+			shown = shown[:10]
+		}
+		var buf strings.Builder
+		for _, f := range shown {
+			if buf.Len() > 0 && buf.Len()+len(f)+1 > 60 {
+				out = append(out, "  "+buf.String())
+				buf.Reset()
+			}
+			if buf.Len() > 0 {
+				buf.WriteByte(' ')
+			}
+			buf.WriteString(f)
+		}
+		if buf.Len() > 0 {
+			out = append(out, "  "+buf.String())
+		}
+		if len(files) > 10 {
+			out = append(out, fmt.Sprintf("  ... +%d more", len(files)-10))
+		}
+	}
+	return out
+}
+
+// ── eslint / biome ────────────────────────────────────────────────────────────
+
+var (
+	reEslintFile = regexp.MustCompile(`^(/\S+|[A-Za-z]:\\\S+|\S+\.\w+)$`)
+	reEslintDiag = regexp.MustCompile(`^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$`)
+)
+
+func compressEslint(lines []string) []string {
+	byRule := make(map[string][2]int) // [errors, warnings]
+	ruleOrder := []string{}
+	fileCount := 0
+	totalErr, totalWarn := 0, 0
+
+	for _, l := range lines {
+		if reEslintFile.MatchString(strings.TrimSpace(l)) {
+			fileCount++
+			continue
+		}
+		if caps := reEslintDiag.FindStringSubmatch(l); caps != nil {
+			rule := caps[5]
+			cur := byRule[rule]
+			if _, seen := byRule[rule]; !seen {
+				ruleOrder = append(ruleOrder, rule)
+			}
+			if caps[3] == "error" {
+				cur[0]++
+				totalErr++
+			} else {
+				cur[1]++
+				totalWarn++
+			}
+			byRule[rule] = cur
+		}
+	}
+
+	if totalErr == 0 && totalWarn == 0 {
+		if len(lines) <= 5 {
+			return lines
+		}
+		return compactLines(lines, 10)
+	}
+
+	var out []string
+	out = append(out, fmt.Sprintf("%d errors, %d warnings in %d files", totalErr, totalWarn, fileCount))
+
+	sort.Slice(ruleOrder, func(i, j int) bool {
+		ai, aj := byRule[ruleOrder[i]], byRule[ruleOrder[j]]
+		return ai[0]+ai[1] > aj[0]+aj[1]
+	})
+	for _, rule := range ruleOrder {
+		if len(out)-1 >= 10 {
+			break
+		}
+		cnt := byRule[rule]
+		out = append(out, fmt.Sprintf("  %s: %d", rule, cnt[0]+cnt[1]))
+	}
+	if len(ruleOrder) > 10 {
+		out = append(out, fmt.Sprintf("  ... +%d more rules", len(ruleOrder)-10))
+	}
+	return out
+}
+
+// ── ruff ──────────────────────────────────────────────────────────────────────
+
+var (
+	reRuffCheck  = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$`)
+	reRuffFixed  = regexp.MustCompile(`Found (\d+) errors?.*?(\d+) fixable`)
+	reRuffFormat = regexp.MustCompile(`(\d+) files? reformatted`)
+)
+
+func compressRuff(cmd string, lines []string) []string {
+	joined := strings.Join(lines, "\n")
+	trimmed := strings.TrimSpace(joined)
+	if trimmed == "" || strings.Contains(trimmed, "All checks passed") {
+		return []string{"clean"}
+	}
+
+	if strings.Contains(cmd, "format") || strings.Contains(cmd, "fmt") {
+		if caps := reRuffFormat.FindStringSubmatch(joined); caps != nil {
+			return []string{caps[0]}
+		}
+		return compactLines(lines, 5)
+	}
+
+	byRule := make(map[string]int)
+	ruleOrder := []string{}
+	files := make(map[string]struct{})
+	var issueLines []string
+
+	for _, l := range lines {
+		if caps := reRuffCheck.FindStringSubmatch(l); caps != nil {
+			file, rule := caps[1], caps[4]
+			files[file] = struct{}{}
+			if _, seen := byRule[rule]; !seen {
+				ruleOrder = append(ruleOrder, rule)
+			}
+			byRule[rule]++
+			issueLines = append(issueLines, l)
+		}
+	}
+
+	if len(byRule) == 0 {
+		if caps := reRuffFixed.FindStringSubmatch(joined); caps != nil {
+			return []string{fmt.Sprintf("%s errors (%s fixable)", caps[1], caps[2])}
+		}
+		return compactLines(lines, 10)
+	}
+
+	total := len(issueLines)
+	if total <= 30 {
+		return lines
+	}
+
+	sort.Slice(ruleOrder, func(i, j int) bool {
+		return byRule[ruleOrder[i]] > byRule[ruleOrder[j]]
+	})
+
+	var out []string
+	out = append(out, fmt.Sprintf("%d issues in %d files", total, len(files)))
+	shown := issueLines
+	if len(shown) > 20 {
+		shown = shown[:20]
+	}
+	for _, l := range shown {
+		out = append(out, "  "+l)
+	}
+	if len(issueLines) > 20 {
+		out = append(out, fmt.Sprintf("  ... +%d more issues", len(issueLines)-20))
+	}
+	out = append(out, "", "by rule:")
+	for i, rule := range ruleOrder {
+		if i >= 8 {
+			out = append(out, fmt.Sprintf("  ... +%d more rules", len(ruleOrder)-8))
+			break
+		}
+		out = append(out, fmt.Sprintf("  %s: %d", rule, byRule[rule]))
+	}
+	return out
+}
+
+// ── mypy ──────────────────────────────────────────────────────────────────────
+
+var (
+	reMypyDiag    = regexp.MustCompile(`^(.+?):(\d+):\s+(error|warning|note):\s+(.+?)(?:\s+\[(.+)\])?$`)
+	reMypySummary = regexp.MustCompile(`Found (\d+) errors? in (\d+) files?`)
+)
+
+func compressMypy(lines []string) []string {
+	byCode := make(map[string]int)
+	codeOrder := []string{}
+	bySev := make(map[string]int)
+	files := make(map[string]struct{})
+	var first []string
+
+	for _, l := range lines {
+		if caps := reMypyDiag.FindStringSubmatch(l); caps != nil {
+			file, sev := caps[1], caps[3]
+			code := caps[5]
+			files[file] = struct{}{}
+			bySev[sev]++
+			if code != "" {
+				if _, seen := byCode[code]; !seen {
+					codeOrder = append(codeOrder, code)
+				}
+				byCode[code]++
+			}
+			if len(first) < 5 {
+				short := file
+				if i := strings.LastIndex(file, "/"); i >= 0 {
+					short = file[i+1:]
+				}
+				codeStr := "?"
+				if code != "" {
+					codeStr = code
+				}
+				first = append(first, fmt.Sprintf("  %s:%s [%s] %s", short, caps[2], codeStr, caps[4]))
+			}
+		}
+	}
+
+	joined := strings.Join(lines, "\n")
+	if caps := reMypySummary.FindStringSubmatch(joined); caps != nil {
+		sort.Slice(codeOrder, func(i, j int) bool {
+			return byCode[codeOrder[i]] > byCode[codeOrder[j]]
+		})
+		var out []string
+		out = append(out, fmt.Sprintf("%s errors in %s files", caps[1], caps[2]))
+		for i, code := range codeOrder {
+			if i >= 6 {
+				out = append(out, fmt.Sprintf("  ... +%d more codes", len(codeOrder)-6))
+				break
+			}
+			out = append(out, fmt.Sprintf("  [%s]: %d", code, byCode[code]))
+		}
+		if len(first) > 0 {
+			out = append(out, "Top errors:")
+			out = append(out, first...)
+		}
+		return out
+	}
+
+	if len(files) > 0 {
+		total := 0
+		for _, v := range bySev {
+			total += v
+		}
+		var out []string
+		out = append(out, fmt.Sprintf("%d issues in %d files (%d errors, %d warnings)",
+			total, len(files), bySev["error"], bySev["warning"]))
+		out = append(out, first...)
+		return out
+	}
+
+	return compactLines(lines, 8)
+}
+
+// ── pytest ────────────────────────────────────────────────────────────────────
+
+var (
+	rePytestResult  = regexp.MustCompile(`^(PASSED|FAILED|ERROR)\s+(.+?)(?:\s+-\s+(.+))?$`)
+	rePytestSummary = regexp.MustCompile(`=+ ([\d]+ passed|[\d]+ failed|[\w ,]+) in ([\d.]+)s =+`)
+	rePytestShort   = regexp.MustCompile(`^(FAILED|ERROR) (.+)$`)
+)
+
+func compressPytest(lines []string) []string {
+	var failed []string
+	var summaryLine string
+
+	for _, l := range lines {
+		if caps := rePytestSummary.FindStringSubmatch(l); caps != nil {
+			summaryLine = l
+		}
+		if caps := rePytestShort.FindStringSubmatch(l); caps != nil {
+			name := strings.TrimSpace(caps[2])
+			failed = append(failed, "  FAIL: "+name)
+		}
+		_ = rePytestResult
+	}
+
+	if summaryLine == "" {
+		return compactLines(lines, 20)
+	}
+
+	var out []string
+	// keep the summary bar
+	out = append(out, strings.TrimSpace(summaryLine))
+	if len(failed) > 0 && len(failed) <= 20 {
+		out = append(out, "")
+		out = append(out, failed...)
+	} else if len(failed) > 20 {
+		out = append(out, "")
+		out = append(out, failed[:20]...)
+		out = append(out, fmt.Sprintf("  ... +%d more failures", len(failed)-20))
+	}
+	return out
+}
+
+// ── tsc ───────────────────────────────────────────────────────────────────────
+
+var (
+	reTscError = regexp.MustCompile(`(\S+)\((\d+),\d+\):\s+error\s+(TS\d+):\s+(.+)`)
+	reTscCount = regexp.MustCompile(`Found (\d+) error`)
+)
+
+func compressTsc(lines []string) []string {
+	var errors []string
+	files := make(map[string]struct{})
+	totalErrors := 0
+
+	joined := strings.Join(lines, "\n")
+	if caps := reTscCount.FindStringSubmatch(joined); caps != nil {
+		fmt.Sscanf(caps[1], "%d", &totalErrors)
+	}
+
+	for _, l := range lines {
+		if caps := reTscError.FindStringSubmatch(l); caps != nil {
+			file, lineNo, code, msg := caps[1], caps[2], caps[3], caps[4]
+			files[file] = struct{}{}
+			if len(msg) > 40 {
+				msg = msg[:40] + "..."
+			}
+			if len(errors) < 10 {
+				short := file
+				if i := strings.LastIndex(file, "/"); i >= 0 {
+					short = file[i+1:]
+				}
+				errors = append(errors, fmt.Sprintf("  %s:%s %s %s", short, lineNo, code, msg))
+			}
+		}
+	}
+
+	if len(errors) == 0 {
+		return lines
+	}
+
+	var out []string
+	out = append(out, fmt.Sprintf("%d errors in %d files:", totalErrors, len(files)))
+	out = append(out, errors...)
+	return out
+}
+
+// ── log dedup ─────────────────────────────────────────────────────────────────
+
+var reLogTimestamp = regexp.MustCompile(`^\[?\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]\s]*\]?\s*`)
+
+// compressLogDedup strips timestamps and deduplicates repeated lines.
+// Returns nil if it can't reduce the input (fewer than 10 lines or no duplicates found).
+func compressLogDedup(lines []string) []string {
+	if len(lines) < 10 {
+		return nil
+	}
+
+	type entry struct {
+		line  string
+		count int
+	}
+	var entries []entry
+	seen := make(map[string]int) // key → index in entries
+
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		key := reLogTimestamp.ReplaceAllString(l, "")
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if idx, ok := seen[key]; ok {
+			entries[idx].count++
+		} else {
+			seen[key] = len(entries)
+			entries = append(entries, entry{l, 1})
+		}
+	}
+
+	// Only apply if we actually removed duplicates.
+	if len(entries) >= len(lines) {
+		return nil
+	}
+
+	var out []string
+	for _, e := range entries {
+		if e.count > 1 {
+			out = append(out, fmt.Sprintf("%s  (x%d)", e.line, e.count))
+		} else {
+			out = append(out, e.line)
 		}
 	}
 	return out
