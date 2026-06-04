@@ -72,6 +72,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		if err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 		}
+		s.activityKnowledgeRecorded(p.Root)
 		hint := "Remembered."
 		if rev == 1 {
 			hint = "Confirmed (revision 2)."

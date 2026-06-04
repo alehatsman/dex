@@ -410,6 +410,10 @@ func (s *Server) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in C
 	if embedFailed && out.Hint == "" {
 		out.Hint = "embed offline; results from symbol lane only."
 	}
+	s.activityRecord(p.Root, 1)
+	if out.Hint == "" {
+		out.Hint = s.activityNudge(p.Root, out.SessionTask)
+	}
 	// Synthesize a grounded prose answer from the evidence just
 	// assembled. Best-effort: a missing/unreachable chat client leaves
 	// out.Answer empty and the agent falls back to the evidence bundle.

@@ -105,11 +105,79 @@ type Server struct {
 	// has instead of receiving the full content again.
 	readCache   map[string]map[string]string // sessionID → relPath → etag
 	readCacheMu sync.Mutex
+
+	// activityTracker accumulates per-project tool-call weights to surface
+	// a knowledge-nudge hint when the agent has done significant work but
+	// hasn't recorded any findings. Key: project root; value: *activityState.
+	activityTracker sync.Map
 }
 
 type throttleEntry struct {
 	count  int
 	lastAt time.Time
+}
+
+type activityState struct {
+	mu               sync.Mutex
+	weightedScore    int
+	significantCalls int // calls with weight >= 2
+	lastKnowledgeAt  time.Time
+	lastNudgeAt      time.Time
+}
+
+// activityRecord adds weight for a tool call. weight >= 2 counts as significant.
+func (s *Server) activityRecord(project string, weight int) {
+	raw, _ := s.activityTracker.LoadOrStore(project, &activityState{})
+	a := raw.(*activityState)
+	a.mu.Lock()
+	a.weightedScore += weight
+	if weight >= 2 {
+		a.significantCalls++
+	}
+	a.mu.Unlock()
+}
+
+// activityKnowledgeRecorded resets the nudge clock when the agent stores a fact.
+func (s *Server) activityKnowledgeRecorded(project string) {
+	raw, _ := s.activityTracker.LoadOrStore(project, &activityState{})
+	a := raw.(*activityState)
+	a.mu.Lock()
+	a.lastKnowledgeAt = time.Now()
+	a.mu.Unlock()
+}
+
+// activityNudge returns a hint when the agent has done substantial work without
+// recording findings. sessionTask makes the message context-sensitive. Returns ""
+// when below threshold or the nudge was already shown recently.
+func (s *Server) activityNudge(project, sessionTask string) string {
+	const (
+		scoreThreshold = 20
+		callThreshold  = 5
+		quietWindow    = 8 * time.Minute
+	)
+	raw, loaded := s.activityTracker.Load(project)
+	if !loaded {
+		return ""
+	}
+	a := raw.(*activityState)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.weightedScore < scoreThreshold || a.significantCalls < callThreshold {
+		return ""
+	}
+	now := time.Now()
+	if !a.lastKnowledgeAt.IsZero() && now.Sub(a.lastKnowledgeAt) < quietWindow {
+		return ""
+	}
+	if !a.lastNudgeAt.IsZero() && now.Sub(a.lastNudgeAt) < quietWindow {
+		return ""
+	}
+	a.lastNudgeAt = now
+	if sessionTask != "" {
+		return fmt.Sprintf("You've done significant work on %q — consider recording key findings with knowledge action=add so they survive a session reset.", sessionTask)
+	}
+	return "Significant activity detected — consider recording key findings with knowledge action=add so they survive a session reset."
 }
 
 // readCacheCheck returns true when this session has previously received
@@ -472,23 +540,31 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// Graph-proximity lane: boost chunks from files graph-adjacent to
 	// recently-touched session files. Silently skips when no session exists
 	// or the graph hasn't been built — never fails the search.
-	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && len(ss.Files) > 0 {
-		seeds := make([]string, 0, len(ss.Files))
-		for _, f := range ss.Files {
-			seeds = append(seeds, f.Path)
-		}
-		if neighbors, err := st.GraphNeighborFiles(ctx, seeds, 15); err == nil && len(neighbors) > 0 {
-			if graphHits, err := st.HitsForFiles(ctx, neighbors, k*2); err == nil && len(graphHits) > 0 {
-				hits = fuseWithGraphNeighbors(hits, graphHits, k)
+	var sessionTask string
+	if ss, ok, err := st.SessionGet(ctx); err == nil && ok {
+		sessionTask = ss.Task
+		if len(ss.Files) > 0 {
+			seeds := make([]string, 0, len(ss.Files))
+			for _, f := range ss.Files {
+				seeds = append(seeds, f.Path)
+			}
+			if neighbors, err := st.GraphNeighborFiles(ctx, seeds, 15); err == nil && len(neighbors) > 0 {
+				if graphHits, err := st.HitsForFiles(ctx, neighbors, k*2); err == nil && len(graphHits) > 0 {
+					hits = fuseWithGraphNeighbors(hits, graphHits, k)
+				}
 			}
 		}
 	}
 
 	hits = rerankLocal(hits, len(idents) > 0)
+	s.activityRecord(p.Root, 1)
 
 	out.Status = "ok"
 	if hint := s.searchThrottleHint(in.Query, p.Root); hint != "" {
 		out.Hint = hint
+	}
+	if out.Hint == "" {
+		out.Hint = s.activityNudge(p.Root, sessionTask)
 	}
 	for _, h := range hits {
 		if excluded(h.Path, in.Exclude) {
@@ -1109,6 +1185,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 			out.Model = resp.Model
 		}
 		s.readCacheMark(sessionID, relTarget, etag)
+		s.activityRecord(p.Root, 1)
 		return nil, out, nil
 	}
 }
@@ -1562,6 +1639,7 @@ type toolSurface interface {
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
+	searchGrep(context.Context, *sdk.CallToolRequest, SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error)
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
 	compressOutput(context.Context, *sdk.CallToolRequest, CompressInput) (*sdk.CallToolResult, CompressOutput, error)
@@ -1825,6 +1903,19 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Use for orientation in an unfamiliar codebase before calling ask or file_view. " +
 				"Returns 'no-index' when the project hasn't been indexed yet.",
 		}, h.searchTree)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "search_grep",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: "Regex search over project files — no embedding required. " +
+				"Complements ask/search_semantic for exact-match queries: cross-cutting symbol references, " +
+				"import paths, string literals, or patterns that semantic search misses. " +
+				"Searches the indexed file list when available (respects .gitignore via the index); " +
+				"falls back to walking the project directory and skipping .git/vendor/node_modules. " +
+				"Accepts an RE2 regex pattern, optional relative path prefix, and optional extension filter. " +
+				"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
+				"Returns 'no-matches' when nothing matches. Use ask for conceptual queries.",
+		}, h.searchGrep)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "search_context",
