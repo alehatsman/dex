@@ -266,7 +266,7 @@ func (s *Server) ContextRouter(ctx context.Context, in ContextInput) (*sdk.CallT
 	return s.contextRouter(ctx, nil, in)
 }
 
-func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
+func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) { //nolint:cyclop
 	if strings.TrimSpace(in.Question) == "" {
 		return nil, ContextOutput{Status: "error", Hint: "question is empty — pass a natural-language question about the codebase"}, nil
 	}

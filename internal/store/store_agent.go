@@ -41,7 +41,7 @@ func (s *Store) AgentList(ctx context.Context) ([]Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Agent
 	for rows.Next() {
 		var a Agent
@@ -97,7 +97,7 @@ func (s *Store) AgentRead(ctx context.Context, topic string, sinceID int64, limi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []AgentMessage
 	for rows.Next() {
 		var m AgentMessage
