@@ -1,6 +1,6 @@
 ---
 id: storage
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/store/**"
@@ -102,4 +102,4 @@ query specs'.
   chunks while preserving valid summaries.
 - [ ] Hybrid read path (vector + BM25 fused) with graceful FTS-parse fallback and
   a bounded rerank cache.
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

@@ -1,6 +1,6 @@
 ---
 id: ask
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/chat/**"
@@ -40,7 +40,13 @@ mechanics belong to the lane specs.
 - WHILE assembling the evidence block for synthesis, `ask` orders it the way an
   agent would read — curated reads first, then remaining semantic hits, then
   symbol signatures/docs, then graph edges — and bounds it to a byte budget sized
-  for the smallest common local context window.
+  for the smallest common local context window. Session task and injected
+  knowledge facts are appended last so the code prefix is stable for LLM provider
+  KV-cache; only the dynamic tail changes across calls.
+- WHEN a session task or knowledge facts are present for the project, `ask`
+  appends them as a SESSION CONTEXT block at the tail of the evidence passed to
+  the LLM, so the model understands what the agent is working on and avoids
+  re-discovering known facts.
 - IF the chat client is absent, returns `ErrUnreachable`, or yields an empty
   answer, `ask` leaves `answer` empty and returns the evidence bundle unchanged
   with `status` still `ok` — synthesis failure never becomes a caller error.
@@ -86,8 +92,8 @@ mechanics belong to the lane specs.
 - [x] A grounded prose `answer` with `path:line` citations is composed when a chat client is configured and reachable.
 - [x] Answer synthesis is best-effort: absent/unreachable/empty chat leaves `answer` empty with `status` still `ok`.
 - [x] Non-unreachable chat failures are surfaced as a `hint` note, not an error.
-- [x] Evidence is ordered (reads → semantic → symbols → graph) and byte-bounded for the local context window.
+- [x] Evidence is ordered (reads → semantic → symbols → graph → SESSION CONTEXT) and byte-bounded for the local context window; session/knowledge appended last for KV-cache stability.
 - [x] Repeated (question, intent, model, evidence) answers are served from a bounded in-memory cache.
 - [x] The chat client distinguishes transport `ErrUnreachable` from non-2xx / server-error responses and probes reachability via `GET /v1/models`.
 - [x] `dex ask` mirrors the MCP `ask` input one-to-one (intent/k/no-inline/format).
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

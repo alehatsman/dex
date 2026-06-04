@@ -1,6 +1,6 @@
 ---
 id: http-api
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/mcp/http.go"
@@ -96,4 +96,4 @@ tool interface for Claude is the mcp-server spec's.
 - [x] Body size cap, access log, panic→500, bounded graceful shutdown
 - [x] Eager per-project watcher at startup (idempotent with lazy path)
 - [x] Native HTTP-MCP transport for direct `claude` attach — streamable handler at `/v1/projects/{id}/mcp` (dex #49)
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

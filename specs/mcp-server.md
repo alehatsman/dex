@@ -1,6 +1,6 @@
 ---
 id: mcp-server
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
@@ -41,11 +41,17 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   composes the matching lanes, and returns a compact bundle (semantic hits,
   symbols, suggested reads with inlined contents, a `next_action`, an `avoid`
   line); a caller MAY override the inferred intent.
-- WHERE raw lanes are opt-in, `search_semantic`, `search_symbol`,
-  `graph_neighbors`, `graph_deps`, `graph_callers`, `graph_callees`,
-  `graph_links`, `graph_backlinks`, `graph_tags`, `index_status`, and (with a
-  chat model) `view_summarize` are registered only when `DEX_EXPOSE_RAW_TOOLS`
-  is set (1/true/on/yes), for CLI parity and power use.
+- WHERE tool exposure is tiered, the surface is controlled by `DEX_TOOLS`
+  (`ask|standard|power`; default `standard`); `DEX_EXPOSE_RAW_TOOLS=1` is a
+  backward-compatible alias for `power`. `TierAsk` exposes only `ask`.
+  `TierStandard` adds `overview`, `session`, `knowledge`, `search_tree`, and
+  (when a chat model is wired) `view_summarize`. `TierPower` adds the full raw
+  surface: `search_semantic`, `search_symbol`, `graph_neighbors`, `graph_deps`,
+  `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`,
+  `graph_tags`, `graph_impact`, `routes`, `smells`, `compress_output`, and
+  `index_status`.
+- WHERE MCP annotations are set, all read-only tools carry `readOnlyHint: true`
+  so hosts (e.g. Claude Code plan mode) can skip approval prompts for them.
 - WHEN any tool resolves a project, it canonicalizes the caller's `project_root`
   (defaulting to the server's working directory) to a single per-project index,
   so every tool reads the index for exactly the repo the agent is working in.
@@ -90,11 +96,14 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 ## Checklist
 
 - [x] `dex mcp` registers an MCP server on stdio, blocks until transport closes
-- [x] `ask` is the sole default tool; composes lanes + synthesizes cited answer
-- [x] Raw tools (search_*/graph_*/view_summarize/index_status) gated on `DEX_EXPOSE_RAW_TOOLS`
+- [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
+- [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
+- [x] TierStandard: overview, session, knowledge, search_tree, view_summarize (chat required)
+- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, routes, smells, compress_output, index_status
+- [x] Read-only tools carry `readOnlyHint: true` MCP annotation
 - [x] Per-project scoping: `project_root` → canonical index (cwd default)
 - [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
 - [x] Path traversal rejected in `view_summarize` (must resolve inside project root)
 - [x] Lazy per-project auto-watcher spawned per session, drains on shutdown
 - [ ] Remote stdio→REST / HTTP-MCP transport for containerized agents (dex #6)
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

@@ -1,6 +1,6 @@
 ---
 id: symbol-search
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/store/store.go"
@@ -76,4 +76,4 @@ typo into an actionable retry rather than a dead end.
 - [x] Empty-name → error; missing index → no-index status naming `dex index`
 - [x] Caller-settable result cap (default 10), honored by match + fallback
 - [x] Shared by `search_symbol` MCP tool and `dex search symbol` CLI (text/JSON)
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)

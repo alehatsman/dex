@@ -1,6 +1,6 @@
 ---
 id: watch
-status: draft
+status: living
 owners: [aleh]
 covers:
   - "internal/watch/**"
@@ -94,4 +94,4 @@ the summaries themselves belongs to the indexing spec — watch only triggers it
 - [x] Foreground-yield + exponential backoff in the idle drainer
 - [ ] Idle/watch-driven package+repo cascade survives preemption and converges
       across retries (durable per-package commit) — tracked by #33
-- [ ] Verified against the code by the verify workflow (flip to `living`)
+- [x] Verified against the code by the verify workflow (flip to `living`)
