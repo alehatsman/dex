@@ -337,6 +337,23 @@ func (s *Store) migrate(ctx context.Context) error {
 		   UNIQUE(body)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_knowledge_confidence ON knowledge_facts(confidence DESC, updated_at DESC)`,
+		// agents / agent_messages — multi-agent coordination bus. Agents
+		// announce themselves, post findings, and read peers' messages.
+		// Useful when multiple concurrent agents share one dex instance.
+		`CREATE TABLE IF NOT EXISTS agents (
+		   id           TEXT PRIMARY KEY,
+		   role         TEXT NOT NULL DEFAULT '',
+		   announced_at INTEGER NOT NULL,
+		   last_seen_at INTEGER NOT NULL
+		 )`,
+		`CREATE TABLE IF NOT EXISTS agent_messages (
+		   id        INTEGER PRIMARY KEY AUTOINCREMENT,
+		   agent_id  TEXT NOT NULL,
+		   topic     TEXT NOT NULL DEFAULT '',
+		   body      TEXT NOT NULL,
+		   posted_at INTEGER NOT NULL
+		 )`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_messages_topic ON agent_messages(topic, id)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {

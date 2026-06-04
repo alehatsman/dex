@@ -308,3 +308,9 @@ func (rc *remoteClient) specVerify(ctx context.Context, _ *sdk.CallToolRequest, 
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/spec/verify"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) agent(ctx context.Context, _ *sdk.CallToolRequest, in AgentInput) (*sdk.CallToolResult, AgentOutput, error) {
+	var out AgentOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/agent"), in, &out)
+	return nil, out, err
+}
