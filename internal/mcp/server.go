@@ -816,29 +816,31 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 // ─── tool: view_summarize ─────────────────────────────────────────────────
 
 type SummarizeInput struct {
-	Path        string  `json:"path" jsonschema:"file path to summarize; relative paths are resolved against project_root"`
-	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Mode        string  `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
-	StartLine   int     `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
-	EndLine     int     `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
-	Focus       string  `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
-	Temperature float32 `json:"temperature,omitempty" jsonschema:"sampling temperature (0 = server default)"`
-	MaxTokens   int     `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
+	Path        string   `json:"path" jsonschema:"file path to summarize; relative paths are resolved against project_root"`
+	Paths       []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
+	ProjectRoot string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	Mode        string   `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
+	StartLine   int      `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
+	EndLine     int      `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
+	Focus       string   `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
+	Temperature float32  `json:"temperature,omitempty" jsonschema:"sampling temperature (0 = server default)"`
+	MaxTokens   int      `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
 }
 
 type SummarizeOutput struct {
-	Status       string `json:"status"` // "ok" | "chat-service-unreachable" | "error"
-	Hint         string `json:"hint,omitempty"`
-	Project      string `json:"project,omitempty"`
-	Path         string `json:"path,omitempty"` // resolved path, relative to project root
-	StartLine    int    `json:"start_line,omitempty"`
-	EndLine      int    `json:"end_line,omitempty"`
-	Bytes        int    `json:"bytes,omitempty"`     // how many bytes were sent to the model
-	Truncated    bool   `json:"truncated,omitempty"` // true if the slice was cut to fit the cap
-	Model        string `json:"model,omitempty"`
-	Endpoint     string `json:"endpoint,omitempty"`
-	Content      string `json:"content,omitempty"`
-	FinishReason string `json:"finish_reason,omitempty"`
+	Status       string   `json:"status"` // "ok" | "chat-service-unreachable" | "error"
+	Hint         string   `json:"hint,omitempty"`
+	Project      string   `json:"project,omitempty"`
+	Path         string   `json:"path,omitempty"` // resolved path, relative to project root
+	Paths        []string `json:"paths,omitempty"`
+	StartLine    int      `json:"start_line,omitempty"`
+	EndLine      int      `json:"end_line,omitempty"`
+	Bytes        int      `json:"bytes,omitempty"`     // how many bytes were sent to the model
+	Truncated    bool     `json:"truncated,omitempty"` // true if the slice was cut to fit the cap
+	Model        string   `json:"model,omitempty"`
+	Endpoint     string   `json:"endpoint,omitempty"`
+	Content      string   `json:"content,omitempty"`
+	FinishReason string   `json:"finish_reason,omitempty"`
 }
 
 // maxSummarizeBytes caps the slice we send to the chat endpoint. Above
@@ -859,6 +861,9 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 
 	if isFull && s.ChatClient == nil {
 		return nil, SummarizeOutput{Status: "error", Hint: "chat client not configured on this server"}, nil
+	}
+	if len(in.Paths) > 0 {
+		return s.summarizeBatch(ctx, in)
 	}
 	if strings.TrimSpace(in.Path) == "" {
 		return nil, SummarizeOutput{Status: "error", Hint: "path is empty"}, nil
@@ -1038,6 +1043,46 @@ func (s *Server) summarize(ctx context.Context, _ *sdk.CallToolRequest, in Summa
 		}
 		return nil, out, nil
 	}
+}
+
+// summarizeBatch handles file_view when paths[] is provided.
+// All files are processed with the same mode in a single call.
+func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
+	const maxBatch = 10
+	if len(in.Paths) > maxBatch {
+		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("batch too large: max %d files per call, got %d", maxBatch, len(in.Paths))}, nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(in.Mode))
+	if mode == "" {
+		mode = "signatures"
+	}
+	var sb strings.Builder
+	var resolvedPaths []string
+	var project string
+	for _, rawPath := range in.Paths {
+		single := in
+		single.Path = rawPath
+		single.Paths = nil
+		_, out, err := s.summarize(ctx, nil, single)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("%s: %v", rawPath, err)}, nil
+		}
+		if project == "" {
+			project = out.Project
+		}
+		if out.Status != "ok" {
+			fmt.Fprintf(&sb, "## %s\n⚠ %s\n\n", rawPath, out.Hint)
+			continue
+		}
+		fmt.Fprintf(&sb, "## %s\n%s\n\n", out.Path, out.Content)
+		resolvedPaths = append(resolvedPaths, out.Path)
+	}
+	return nil, SummarizeOutput{
+		Status:  "ok",
+		Project: project,
+		Content: strings.TrimRight(sb.String(), "\n"),
+		Paths:   resolvedPaths,
+	}, nil
 }
 
 // parseLinesRange parses "N-M" from a lines:N-M mode string.
@@ -1709,6 +1754,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 					"summarizing. Use file_view directly only when you already know which file you need digested. " +
 					"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
 					"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
+					"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
 					"On error, returns 'chat-service-unreachable' or 'error'.",
 			}, h.summarize)
 		}
