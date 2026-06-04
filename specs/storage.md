@@ -1,7 +1,7 @@
 ---
 id: storage
 status: living
-last_verified: c331a3c
+last_verified: b1e4545
 owners: [aleh]
 covers:
   - "internal/store/**"
@@ -71,6 +71,10 @@ query specs'.
 - WHEN a search reorders results with a reranker, the store memoizes rerank
   results in a bounded in-memory cache keyed on the query and candidate set, so
   repeated queries in a session don't repay the cross-encoder cost.
+- WHEN `knowledge action=add` stores a fact whose key (archetype + normalized
+  body) already exists, the store increments `revision_count` on the row rather
+  than inserting a duplicate, so callers can distinguish a new fact ("Remembered.")
+  from a repeated confirmation ("Confirmed (revision N).").
 
 ## Non-goals
 
@@ -103,4 +107,6 @@ query specs'.
   chunks while preserving valid summaries.
 - [ ] Hybrid read path (vector + BM25 fused) with graceful FTS-parse fallback and
   a bounded rerank cache.
+- [x] `knowledge_facts.revision_count` incremented on ON CONFLICT UPDATE; migrated
+  on existing DBs via guarded `ALTER TABLE` + meta flag.
 - [x] Verified against the code by the verify workflow (flip to `living`)

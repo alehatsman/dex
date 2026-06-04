@@ -1,7 +1,7 @@
 ---
 id: mcp-server
 status: living
-last_verified: b28afbd
+last_verified: b1e4545
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
@@ -12,6 +12,7 @@ covers:
   - "internal/mcp/server_noncode_map.go"
   - "internal/mcp/server_compose.go"
   - "internal/mcp/server_overview.go"
+  - "internal/mcp/server_knowledge.go"
 ---
 # MCP Server (stdio)
 
@@ -96,6 +97,19 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   not yet started), dex returns `status:"partial"` with project markers (go.mod,
   package.json, Cargo.toml, …), a depth-2 filesystem tree, and top knowledge
   facts rather than an error, so an agent can orient without a full index.
+- WHEN `file_view` is called with a `paths[]` list (max 10 paths), dex reads each
+  file in the same mode and returns a concatenated result with `## path` section
+  headers — collapsing a multi-file context-gathering loop into one round-trip;
+  the per-path path-traversal check still applies to every entry.
+- WHEN `knowledge action=add` stores a fact that was already known, the response
+  shows "Confirmed (revision N)." rather than "Remembered." so a caller can tell
+  whether the fact is new or repeatedly confirmed; `knowledge action=list` surfaces
+  `rev N` annotations for facts with `revision_count > 1`.
+- WHEN `knowledge action=consolidate` is called (requires `DEX_CHAT_URL`), dex
+  reads the current session task and recent session notes, asks the chat LLM to
+  extract a JSON array of factual findings, and stores each extracted fact via the
+  normal `KnowledgeAdd` path — turning ad-hoc session state into durable facts
+  without the caller enumerating them manually.
 - WHEN `spec_verify` is called (TierPower), dex reads the spec file's `## Checklist`
   items (falling back to `## Behavior` clauses), embeds each checked `[x]` item,
   retrieves top-5 code chunks from the index, and — when a chat model is wired —
@@ -136,5 +150,8 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
 - [x] Path traversal rejected in `file_view` (must resolve inside project root)
 - [x] Lazy per-project auto-watcher spawned per session, drains on shutdown
-- [ ] Remote stdio→REST / HTTP-MCP transport for containerized agents (dex #6)
+- [x] `file_view paths[]` batch: max 10 files, same mode, concatenated `## path` output; path-traversal check per entry
+- [x] `knowledge` revision tracking: `revision_count` incremented on re-add; "Confirmed (revision N)." response; `rev N` in list
+- [x] `knowledge action=consolidate`: LLM-extracts facts from session notes and stores them
+- [x] Remote access for containerized agents: stdio→REST shim (`dex mcp --remote`, `remote.go`) + native HTTP-MCP at `/v1/projects/{id}/mcp` (`http_mcp.go`)
 - [x] Verified against the code by the verify workflow (flip to `living`)
