@@ -1194,6 +1194,7 @@ type toolSurface interface {
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
+	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 }
@@ -1320,6 +1321,16 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 				"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
 				"no inlined content. Requires the embedding service.",
 		}, h.overview)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "session",
+			Description: "Manage per-project session memory across tool calls. " +
+				"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
+				"add_file (track a file you read/wrote), get (retrieve the current session state), " +
+				"clear (reset the session). " +
+				"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
+				"don't lose context across reconnects. No embedding required.",
+		}, h.session)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "search_tree",
