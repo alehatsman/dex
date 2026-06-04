@@ -159,11 +159,11 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 | ------------------ | --------- | --------------------------------------------------------------------------- |
 | `ask`              | ask+      | **Primary entry point.** Router + composed bundle.                          |
 | `overview`         | standard+ | Project orientation — markers, package topology, key files.                 |
-| `search_compose`   | standard+ | Embed query → top-K file signatures + best symbol body in one call.         |
-| `session`          | standard+ | Declare / read a session task for task-relevance inline in summarize.       |
+| `search_context`   | standard+ | Embed query → top-K file signatures + best symbol body in one call.         |
+| `session`          | standard+ | Declare / read a session task for task-relevance inline in file_view.       |
 | `knowledge`        | standard+ | Store / recall cross-session knowledge facts for this project.              |
-| `search_tree`      | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
-| `view_summarize`   | standard+ | Signatures / structural map / LLM gist / line slice of a file.              |
+| `file_tree`        | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
+| `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice of a file.              |
 | `search_semantic`  | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
 | `search_symbol`    | power     | Exact identifier lookup (SQL scan, no embedding).                           |
 | `graph_neighbors`  | power     | Vector neighbours of a known chunk at `path:start_line`.                    |
@@ -174,12 +174,12 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 | `graph_links`      | power     | Outgoing markdown `links`/`wikilinks` — docs a doc points to.               |
 | `graph_backlinks`  | power     | Incoming markdown `links`/`wikilinks` — what links to a doc (Obsidian-style).|
 | `graph_tags`       | power     | Tag graph: `tag`→documents (ranked) or `doc`→tags. Tag-based clustering.    |
-| `index_status`     | power     | Endpoint health (embed / chat / rerank) + indexed projects.                 |
-| `routes`           | power     | All reachable call paths between two symbols.                               |
-| `smells`           | power     | Structural code-smell report (hub files, isolated functions, …).            |
+| `graph_routes`     | power     | All reachable call paths between two symbols.                               |
+| `code_smells`      | power     | Structural code-smell report (hub files, isolated functions, …).            |
+| `status`           | power     | Endpoint health (embed / chat / rerank) + indexed projects.                 |
 | `spec_verify`      | power     | Verify a spec file's checklist against the live index.                      |
 
-`view_summarize mode=map` returns a structural outline for non-code files
+`file_view mode=map` returns a structural outline for non-code files
 (Markdown heading tree, JSON key hierarchy, YAML/TOML sections, lock-file dep
 counts) without touching the index or a chat model. When the current session
 has a declared task (`session`), `mode=signatures` and `mode=map` append the
@@ -245,7 +245,7 @@ the full raw surface; `DEX_TOOLS=ask` narrows to just the `ask` tool.
 | `DEX_EMBED_URL`   | `http://127.0.0.1:8082`          | OpenAI-shape `/v1/embeddings` base URL.                                       |
 | `DEX_EMBED_MODEL` | `Qwen/Qwen3-Embedding-4B`        | Embedding model name forwarded as `model`.                                    |
 | `DEX_INDEX_DIR`   | `~/.cache/dex`                   | Per-project index files.                                                      |
-| `DEX_CHAT_URL`    | `http://127.0.0.1:8081`          | `/v1/chat/completions` — `generate`, `view_summarize`, index-time summaries. |
+| `DEX_CHAT_URL`    | `http://127.0.0.1:8081`          | `/v1/chat/completions` — `generate`, `file_view`, index-time summaries.     |
 | `DEX_CHAT_MODEL`  | `Qwen/Qwen2.5-Coder-7B-Instruct` | Chat model.                                                                   |
 
 Tuning knobs (rerank, compress, draft, summary, batch sizes, timeouts,

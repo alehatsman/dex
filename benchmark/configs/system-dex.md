@@ -7,7 +7,7 @@ You have access to a local code intelligence MCP server (`dex`) with these tools
 - `mcp__dex__search_semantic` — hybrid cosine+BM25 retrieval
 - `mcp__dex__search_symbol`   — symbol lookup by name
 - `mcp__dex__graph_callers` / `graph_callees` / `graph_deps` / `graph_neighbors` — Go static call graph
-- `mcp__dex__view_summarize`  — file/package summaries
+- `mcp__dex__file_view`       — file/package summaries
 
 Prefer dex tools over `grep` / `find` / raw `Read`. Use `Read` only to confirm a specific path:line.
 

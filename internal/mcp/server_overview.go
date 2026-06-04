@@ -276,7 +276,7 @@ func projectMarkersAndTree(root string) (markers []string, tree []string) {
 	return
 }
 
-// suggestMode returns the recommended view_summarize mode for a file of
+// suggestMode returns the recommended file_view mode for a file of
 // the given line count: short files can be read in full; large files are
 // best approached via their symbol map.
 func suggestMode(lines int) string {

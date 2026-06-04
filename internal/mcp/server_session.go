@@ -119,7 +119,7 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 }
 
 // sessionSnapshot generates a structured recovery block for use after context
-// compaction. It lists view_summarize and search_semantic calls that will
+// compaction. It lists file_view and search_semantic calls that will
 // cheaply re-establish context for the declared task and touched files.
 func (s *Server) sessionSnapshot(ctx context.Context, st *store.Store, projectRoot string) (*sdk.CallToolResult, SessionOutput, error) {
 	ss, ok, err := st.SessionGet(ctx)
@@ -153,7 +153,7 @@ func (s *Server) sessionSnapshot(ctx context.Context, st *store.Store, projectRo
 			if f.Op == "write" {
 				mode = "map"
 			}
-			fmt.Fprintf(&b, "```\nview_summarize: {\"path\": %q, \"mode\": %q, \"project_root\": %q}\n```\n",
+			fmt.Fprintf(&b, "```\nfile_view: {\"path\": %q, \"mode\": %q, \"project_root\": %q}\n```\n",
 				f.Path, mode, projectRoot)
 		}
 		b.WriteString("\n")

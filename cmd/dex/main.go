@@ -16,9 +16,9 @@
 //	graph backlinks <path> <doc>  Docs that link to this markdown doc (MCP: graph_backlinks).
 //	graph tags <path> --tag|--doc Tag→docs or doc→tags (MCP: graph_tags).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
-//	view summarize <path> <file>  Summarize a file slice (MCP: view_summarize).
+//	view summarize <path> <file>  Summarize a file slice (MCP: file_view).
 //	index <path>                  Build or refresh the per-project index.
-//	index status [<path>]         Endpoint health + indexed projects (MCP: index_status).
+//	index status [<path>]         Endpoint health + indexed projects (MCP: status).
 //	index summarize <path>        Drain the pending_summaries queue (CLI-only).
 //	generate <path> <prompt>      Generate code grounded in the project's index.
 //	env                           Print effective env-var configuration.
@@ -179,11 +179,11 @@ usage (query — mirrors the MCP tool surface):
   dex graph export [<path>]          dump graph_nodes/graph_edges as JSONL
                                           Flags: --output=<dir>
   dex view summarize [<path>] <file> summarize a file slice via the chat model
-                                          (MCP: view_summarize). Flags: --start, --end,
+                                          (MCP: file_view). Flags: --start, --end,
                                           --focus, --temperature, --max-tokens, --v,
                                           --format=text|json
   dex index status [<path>]          endpoint health + project stats
-                                          (MCP: index_status)
+                                          (MCP: status)
 
 build / maintenance:
   dex index <path>                   build or refresh the index. Runs chunk+embed
@@ -1118,7 +1118,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 // ─── view ──────────────────────────────────────────────────────────────────
 
 // cmdView dispatches `dex view <summarize>`. Mirrors the MCP
-// `view_summarize` tool by parking it under a `view` group so future
+// `file_view` tool by parking it under a `view` group so future
 // view-style ops (e.g. `view chunk`) land next to it.
 func cmdView(ctx context.Context, args []string) error {
 	if len(args) < 1 {
@@ -1130,7 +1130,7 @@ func cmdView(ctx context.Context, args []string) error {
 		return cmdViewSummarize(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
-  dex view summarize <path> <file>   summarize a file slice (MCP: view_summarize)`)
+  dex view summarize <path> <file>   summarize a file slice (MCP: file_view)`)
 		return nil
 	default:
 		return fmt.Errorf("unknown view subcommand: %s (have: summarize)", sub)
@@ -1140,7 +1140,7 @@ func cmdView(ctx context.Context, args []string) error {
 func cmdViewSummarize(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("view summarize", flag.ContinueOnError)
 	setHelp(fs,
-		"Summarize a file slice via the chat model (MCP: view_summarize).",
+		"Summarize a file slice via the chat model (MCP: file_view).",
 		"dex view summarize [flags] [<path>] <file>")
 	start := fs.Int("start", 0, "first line to summarize (1-indexed; 0 = beginning of file)")
 	end := fs.Int("end", 0, "last line to summarize (1-indexed, inclusive; 0 = end of file)")
@@ -1311,7 +1311,7 @@ func cmdGenerate(ctx context.Context, args []string) error {
 func cmdIndexStatus(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("index status", flag.ContinueOnError)
 	setHelp(fs,
-		"Show endpoint health and project stats (chunks/files/graph). Optional path narrows to one project. (MCP: index_status)",
+		"Show endpoint health and project stats (chunks/files/graph). Optional path narrows to one project. (MCP: status)",
 		"dex index status [<path>]")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err

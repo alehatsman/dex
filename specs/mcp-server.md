@@ -48,12 +48,12 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - WHERE tool exposure is tiered, the surface is controlled by `DEX_TOOLS`
   (`ask|standard|power`; default `standard`); `DEX_EXPOSE_RAW_TOOLS=1` is a
   backward-compatible alias for `power`. `TierAsk` exposes only `ask`.
-  `TierStandard` adds `overview`, `session`, `knowledge`, `search_tree`,
-  `search_compose`, and (when a chat model is wired) `view_summarize`. `TierPower` adds the full raw
+  `TierStandard` adds `overview`, `session`, `knowledge`, `file_tree`,
+  `search_context`, and (when a chat model is wired) `file_view`. `TierPower` adds the full raw
   surface: `search_semantic`, `search_symbol`, `graph_neighbors`, `graph_deps`,
   `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`,
-  `graph_tags`, `graph_impact`, `routes`, `smells`, `compress_output`, and
-  `index_status`.
+  `graph_tags`, `graph_impact`, `graph_routes`, `code_smells`, `compress_output`, and
+  `status`.
 - WHERE MCP annotations are set, all read-only tools carry `readOnlyHint: true`
   so hosts (e.g. Claude Code plan mode) can skip approval prompts for them.
 - WHEN any tool resolves a project, it canonicalizes the caller's `project_root`
@@ -66,29 +66,29 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - IF the embedding service is unreachable, a search/ask tool returns
   `status:"embedding-service-unreachable"` with the endpoint and a hint to fall
   back to grep/Glob/ripgrep — never a partial or empty result masquerading as ok.
-- IF the chat service is unreachable, `view_summarize` returns
+- IF the chat service is unreachable, `file_view` returns
   `status:"chat-service-unreachable"`; graph tools that lack indexed edges return
   `status:"no-graph"`; symbol lookup with no match returns `status:"not-found"`,
   surfacing near-miss candidates when any exist.
 - WHILE the index is older than 24h, a search response is flagged `stale:true`
   with a hint to re-index, but still answers.
-- WHEN a tool reads or summarizes a file path, the path must resolve inside the
-  project root; a path escaping the root is rejected so an MCP caller can't read
-  arbitrary files.
+- WHEN `file_view` reads or summarizes a file path, the path must resolve inside
+  the project root; a path escaping the root is rejected so an MCP caller can't
+  read arbitrary files.
 - WHILE the stdio session is live and auto-watch is enabled, the first request
   that resolves a project lazily spawns one per-project file watcher (at most once
   per project per session) that keeps the index fresh and drains pending summaries
   in the background; the watcher shares the session context and drains on shutdown.
-- WHEN `view_summarize mode=map` is called on a non-code file (Markdown, JSON,
+- WHEN `file_view mode=map` is called on a non-code file (Markdown, JSON,
   YAML, TOML, lock files), dex returns a structural outline — heading tree,
   JSON key hierarchy (depth ≤ 3), YAML section hierarchy, TOML sections, or
   lock-file dependency counts — without using the index or a chat model; code
   files fall through to the existing symbol-map path.
-- WHEN `search_compose` is called (TierStandard), dex embeds the query, retrieves
+- WHEN `search_context` is called (TierStandard), dex embeds the query, retrieves
   top-K files by aggregate chunk score (default K=3, max 5), returns per-file
   signatures and the single best-matching symbol body in one call — replacing the
   search→signatures→lines round-trip pattern.
-- WHEN `view_summarize mode=signatures` or `mode=map` is called and the current
+- WHEN `file_view mode=signatures` or `mode=map` is called and the current
   session has a declared task, dex appends the body of the symbol whose qualified
   name best matches the task (BM25-style word-overlap, capped at 60 lines) so
   the reader gets task-relevant detail without a follow-up lines: call.
@@ -125,16 +125,16 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `dex mcp` registers an MCP server on stdio, blocks until transport closes
 - [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
 - [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
-- [x] TierStandard: overview, session, knowledge, search_tree, search_compose, view_summarize (chat required)
-- [x] `view_summarize mode=map` returns structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
-- [x] `search_compose`: single call returns top-K file signatures + best symbol body (replaces search→signatures→lines round-trip)
+- [x] TierStandard: overview, session, knowledge, file_tree, search_context, file_view (chat required)
+- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, graph_routes, code_smells, compress_output, status, spec_verify
+- [x] `file_view mode=map` returns structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
+- [x] `search_context`: single call returns top-K file signatures + best symbol body (replaces search→signatures→lines round-trip)
 - [x] Task-relevance inline: signatures/map append best-matching symbol body when session has a declared task
 - [x] `overview` returns `status:"partial"` with markers + depth-2 tree + knowledge facts when chunk index is empty
-- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, routes, smells, compress_output, index_status, spec_verify
 - [x] Read-only tools carry `readOnlyHint: true` MCP annotation
 - [x] Per-project scoping: `project_root` → canonical index (cwd default)
 - [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
-- [x] Path traversal rejected in `view_summarize` (must resolve inside project root)
+- [x] Path traversal rejected in `file_view` (must resolve inside project root)
 - [x] Lazy per-project auto-watcher spawned per session, drains on shutdown
 - [ ] Remote stdio→REST / HTTP-MCP transport for containerized agents (dex #6)
 - [x] Verified against the code by the verify workflow (flip to `living`)

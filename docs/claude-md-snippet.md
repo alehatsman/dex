@@ -67,11 +67,12 @@ and an `avoid` line you can follow verbatim.
 
 **Sister tools** (call directly only when you already know the leg you want):
 - `search_semantic`, `search_symbol` — raw retrieval legs.
+- `search_context` — top-K file signatures + best symbol body in one call.
 - `graph_neighbors` — cosine neighbours of a known chunk.
 - `graph_deps` — `imports` for a file or package.
 - `graph_callers`, `graph_callees` — precise call edges (Go-only).
-- `view_summarize` — chat-model file/range gist.
-- `index_status` — endpoint health + indexed projects.
+- `file_view` — signatures / structural map / LLM gist / line slice of a file.
+- `status` — endpoint health + indexed projects.
 ```
 
 ---
@@ -118,7 +119,9 @@ APIs. Three reinforcing layers:
    "Call this BEFORE Grep/Glob/Read fan-out." Each leg
    (`search_semantic`, `search_symbol`, `graph_neighbors`,
    `graph_deps`, `graph_callers`, `graph_callees`, `view_summarize`)
-   begins with "Prefer `ask` …; use this directly only when …".
+   begins with "Prefer `ask` …; use this directly only when …". The
+   raw tool descriptions use the new names: `file_view`, `status`,
+   `search_context`, `file_tree`, `graph_routes`, `code_smells`.
 2. **CLAUDE.md** (this snippet): codifies the rule in the
    project's instruction file Claude actually reads.
 3. **Prose `next_action` / `avoid`**: every router response carries

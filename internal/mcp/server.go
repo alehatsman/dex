@@ -1457,8 +1457,8 @@ type toolTier int
 
 const (
 	TierAsk      toolTier = iota // ask only
-	TierStandard                 // ask + overview + session + knowledge + search_tree + view_summarize
-	TierPower                    // full raw surface: search_*, graph_*, smells, routes, compress_output, index_status
+	TierStandard                 // ask + overview + session + knowledge + file_tree + search_context + file_view
+	TierPower                    // full raw surface: search_*, graph_*, code_smells, graph_routes, compress_output, status
 )
 
 // toolTierFromEnv reads DEX_TOOLS (ask|standard|power). DEX_EXPOSE_RAW_TOOLS=1
@@ -1481,7 +1481,7 @@ func toolTierFromEnv() toolTier {
 //
 // Tiers (DEX_TOOLS env var, default: standard):
 //   - TierAsk      → ask only
-//   - TierStandard → ask + overview + session + knowledge + search_tree + view_summarize (if chat)
+//   - TierStandard → ask + overview + session + knowledge + file_tree + search_context + file_view (if chat)
 //   - TierPower    → everything above plus the raw search/graph/analysis tools
 //
 // DEX_EXPOSE_RAW_TOOLS=1 is honoured as a backward-compatible alias for power.
@@ -1586,7 +1586,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.graphTags)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "routes",
+			Name:        "graph_routes",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
 				"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
@@ -1596,7 +1596,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.routes)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "smells",
+			Name:        "code_smells",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "AST-based code quality signals derived from the graph index — no LLM required. " +
 				"Returns three categories: `long_functions` (bodies >= min_func_lines, default 80), " +
@@ -1617,7 +1617,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.compressOutput)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "index_status",
+			Name:        "status",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times.",
 		}, h.status)
@@ -1644,7 +1644,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Task-relevant project map. Given a task description, ranks every indexed file by " +
 				"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
-				"`context` (top-k most relevant files with line counts and suggested view_summarize mode) and " +
+				"`context` (top-k most relevant files with line counts and suggested file_view mode) and " +
 				"`distant` (all other indexed files). Use this as the first call in an unfamiliar codebase " +
 				"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
 				"no inlined content. Requires the embedding service.",
@@ -1671,18 +1671,18 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.session)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "search_tree",
+			Name:        "file_tree",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "List indexed files under a directory path. Returns individual files within " +
 				"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
 				"(dirs shown with trailing / and a summed chunk count). " +
 				"No embedding required — reads directly from the index. " +
-				"Use for orientation in an unfamiliar codebase before calling ask or view_summarize. " +
+				"Use for orientation in an unfamiliar codebase before calling ask or file_view. " +
 				"Returns 'no-index' when the project hasn't been indexed yet.",
 		}, h.searchTree)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "search_compose",
+			Name:        "search_context",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Single-call alternative to the search → signatures → lines chain. " +
 				"Embeds the query, finds the top-k most relevant files, returns their symbol signatures " +
@@ -1693,10 +1693,10 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 
 		if chatAvailable {
 			sdk.AddTool(srv, &sdk.Tool{
-				Name:        "view_summarize",
+				Name:        "file_view",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: "Prefer `ask` first — its `suggested_reads` will name the file worth " +
-					"summarizing. Use view_summarize directly only when you already know which file you need digested. " +
+					"summarizing. Use file_view directly only when you already know which file you need digested. " +
 					"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
 					"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
 					"On error, returns 'chat-service-unreachable' or 'error'.",
