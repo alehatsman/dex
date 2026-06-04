@@ -44,6 +44,11 @@ _dex_run() {
   shift
   command "$cmd" "$@" 2>&1 | dex compress-stdin --command "$cmd"
 }
+# Tool-driver commands: aliasing is safe because their output is consumed by a
+# human/agent, not captured in scripts. Core unix utilities (grep/find/rg/ls)
+# are deliberately NOT aliased — wrapping them merges stderr and clobbers exit
+# codes, breaking 'grep -q', "$(grep …)" capture, and pipelines. Those are
+# handled surgically by 'dex hook rewrite' instead.
 alias git='_dex_run git'
 alias go='_dex_run go'
 alias cargo='_dex_run cargo'
@@ -52,6 +57,23 @@ alias yarn='_dex_run yarn'
 alias bun='_dex_run bun'
 alias pnpm='_dex_run pnpm'
 alias docker='_dex_run docker'
+alias kubectl='_dex_run kubectl'
+alias make='_dex_run make'
+alias gmake='_dex_run gmake'
+alias gh='_dex_run gh'
+alias pip='_dex_run pip'
+alias pip3='_dex_run pip3'
+alias uv='_dex_run uv'
+alias terraform='_dex_run terraform'
+alias tofu='_dex_run tofu'
+alias cmake='_dex_run cmake'
+alias ninja='_dex_run ninja'
+alias eslint='_dex_run eslint'
+alias biome='_dex_run biome'
+alias ruff='_dex_run ruff'
+alias mypy='_dex_run mypy'
+alias pytest='_dex_run pytest'
+alias tsc='_dex_run tsc'
 `
 
 func cmdShellHook(_ []string) error {
