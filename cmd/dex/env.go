@@ -90,6 +90,7 @@ var allEnvVars = []envVar{
 	{"DEX_POWER_SAVE", "", "Set 1|on to disable `dex watch` background summary draining (e.g. on battery).", "tuning", false},
 	{"DEX_MAX_HITS_PER_FILE", "", "Cap hits per file in search results (0 = no cap).", "tuning", false},
 	{"DEX_ALLOW_PATHS", "", "Colon-separated path prefixes accepted outside git work trees.", "tuning", false},
+	{"DEX_TOOLS", "standard", "MCP tool surface tier: ask (ask only) | standard (default, ask + overview/session/knowledge/file_tree/search_context/file_view) | power (everything). DEX_EXPOSE_RAW_TOOLS=1 is an alias for power.", "tuning", false},
 	{"DEX_EXPOSE_RAW_TOOLS", "", "Set 1|on to also register the raw MCP lanes (search_*, graph_*, file_view, status) alongside `ask`. Alias for DEX_TOOLS=power. Default off: agents see `ask` only.", "tuning", true},
 }
 
