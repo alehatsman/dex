@@ -1194,6 +1194,7 @@ type toolSurface interface {
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
+	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
@@ -1321,6 +1322,16 @@ func registerTools(srv *sdk.Server, h toolSurface, rawTools, registerSummarize b
 				"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
 				"no inlined content. Requires the embedding service.",
 		}, h.overview)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "knowledge",
+			Description: "Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
+				"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
+				"list (retrieve top-k facts ordered by salience), delete (remove a fact by id). " +
+				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation. " +
+				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
+				"as knowledge_facts. No embedding required.",
+		}, h.knowledge)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "session",

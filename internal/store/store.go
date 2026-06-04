@@ -323,6 +323,19 @@ func (s *Store) migrate(ctx context.Context) error {
 		   UNIQUE(session_id, path)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_session_files_session ON session_files(session_id, touched_at)`,
+		// knowledge_facts — agent-accumulated project facts. One row per
+		// unique body (UNIQUE constraint). Salience computed on read.
+		`CREATE TABLE IF NOT EXISTS knowledge_facts (
+		   id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		   archetype  TEXT NOT NULL DEFAULT 'Observation',
+		   body       TEXT NOT NULL,
+		   confidence REAL NOT NULL DEFAULT 0.8,
+		   created_at INTEGER NOT NULL,
+		   updated_at INTEGER NOT NULL,
+		   hit_count  INTEGER NOT NULL DEFAULT 0,
+		   UNIQUE(body)
+		 )`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_confidence ON knowledge_facts(confidence DESC, updated_at DESC)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
