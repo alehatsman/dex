@@ -1999,9 +1999,15 @@ func (s *Store) RelatedChunks(ctx context.Context, path string, startLine int, k
 	}
 	var blob []byte
 	var sourceID int64
+	// Find the most specific chunk whose span contains startLine.
+	// Exact-start match is preferred; when backfillComments shifted the
+	// stored start_line to a leading doc comment, callers passing the
+	// declaration line still resolve to the right chunk.
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, vec FROM chunks WHERE path = ? AND start_line = ?`,
-		path, startLine).Scan(&sourceID, &blob)
+		`SELECT id, vec FROM chunks
+		 WHERE path = ? AND start_line <= ? AND end_line >= ?
+		 ORDER BY (end_line - start_line) ASC LIMIT 1`,
+		path, startLine, startLine).Scan(&sourceID, &blob)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("no chunk at %s:%d", path, startLine)
