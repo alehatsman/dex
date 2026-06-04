@@ -869,6 +869,42 @@ func TestSummarizeLinesMode(t *testing.T) {
 	}
 }
 
+func TestSummarizeLinesEtagUnchanged(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "f.txt"), "line1\nline2\nline3\n")
+
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{IndexDir: cacheDir}
+	in := SummarizeInput{Path: "f.txt", ProjectRoot: projDir, Mode: "lines:1-3"}
+
+	// First call: no etag — must return content.
+	_, out1, err := s.summarize(context.Background(), nil, in)
+	if err != nil || out1.Status != "ok" {
+		t.Fatalf("first call: status=%q err=%v", out1.Status, err)
+	}
+	if out1.Etag == "" {
+		t.Fatal("first call returned no etag")
+	}
+
+	// Second call with matching etag: must return status=unchanged.
+	in.Etag = out1.Etag
+	_, out2, err := s.summarize(context.Background(), nil, in)
+	if err != nil {
+		t.Fatalf("second call error: %v", err)
+	}
+	if out2.Status != "unchanged" {
+		t.Errorf("status = %q, want unchanged (etag cache miss on stdio transport)", out2.Status)
+	}
+}
+
 func TestSummarizeLinesModeInvalidRange(t *testing.T) {
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
