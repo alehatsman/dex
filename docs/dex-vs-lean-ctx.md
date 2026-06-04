@@ -226,8 +226,9 @@ Large reindex jobs can OOM a GPU if batches are too big. Detect free VRAM (via `
 | `e681778` | Remote stdio shim (`dex mcp --remote`); `toolSurface` abstraction | None in lean-ctx (dex-specific) |
 | `9f7da0e` | Five tools in one commit: `view_summarize mode=map` (imports + exported symbols, no LLM); `graph_impact` (transitive caller BFS, depth-sorted); `overview` (task-relevant file ranking with centrality boost); `smells` (long functions, dead exports, god files via SQL); `routes` (HTTP/MCP/gRPC handler detection from name patterns + edges) | Partial G4 (`map` mode); `overview` is a lean-ctx `ctx_overview` analogue |
 | `bc6d9d8` | 7 lean-ctx features: graph-proximity RRF lane; graph-aware hints in `view_summarize`; 6 new shell compression patterns (kubectl/make/gh/pip/terraform/cmake); `session action=snapshot` recovery block; type-first ordering in `signatures` mode; repeated-search throttle hints; `knowledge action=export/import` | N1–N7 (second-wave gaps) |
+| `944cbb8` | 6 lean-ctx features: `readOnlyHint=true` on 18 read-only MCP tools; view_summarize large-file mode hint (>250 lines); 3 new knowledge archetypes (Dependency/Pattern/Fact); cache-stable LLM prompt ordering (SESSION CONTEXT moved to suffix); post-RRF local reranking (noise penalties, definition boost, coherence boost, MMR diversity); BM25 path-column weighting 2× | N8–N13 (third-wave gaps) |
 
-All gaps G1–G9, G11, G12 are done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1. Second-wave gaps N1–N7 (identified in June 2026 comparison against lean-ctx 3.6.x) are all done as of `bc6d9d8`.
+All gaps G1–G9, G11, G12 are done. G10 (streaming MCP responses) remains blocked on an SDK gap — `ServerSession` is not injectable into tool handler context in go-sdk v1.4.1. Second-wave gaps N1–N7 (lean-ctx 3.6.x) done as of `bc6d9d8`. Third-wave gaps N8–N13 (lean-ctx 3.6.13–3.7.x) done as of `944cbb8`.
 
 ---
 
@@ -262,6 +263,12 @@ Ordered by impact-to-effort ratio.
 | N5 | **Prefix-cache-friendly ordering** | Low | Low | ✅ done | `formatSignatures` emits types/structs/interfaces before functions/methods |
 | N6 | **Progressive search throttling** | Low | Low | ✅ done | Repeated identical searches (≥4 in 5 min) surface a hint to use knowledge instead |
 | N7 | **Knowledge export/import** | Low | Low | ✅ done | `knowledge action=export` → JSON; `action=import` ← `[{archetype,body,confidence},...]` |
+| N8 | **`readOnlyHint` MCP annotations** | Medium | Low | ✅ done | 18 read-only tools annotated; enables Claude Code plan mode without prompts |
+| N9 | **view_summarize mode hint** | Low | Low | ✅ done | >250-line files in full mode emit `⚠` hint suggesting signatures/map |
+| N10 | **Expand knowledge archetypes** | Low | Low | ✅ done | Added Dependency (1.1×), Pattern (1.0×), Fact (1.0×) |
+| N11 | **Cache-stable prompt ordering** | Low | Low | ✅ done | SESSION CONTEXT moved to end of `buildAnswerEvidence` — code prefix is stable for KV-cache |
+| N12 | **Post-RRF local reranking** | High | Medium | ✅ done | `rerankLocal()`: noise 0.3×, definition boost 1.5×, coherence 1.15×, MMR decay 0.7× |
+| N13 | **BM25 path-column weighting** | Medium | Low | ✅ done | `bm25(chunks_fts, 1.0, 2.0, 0.5)` — path column weighted 2× for path-aware queries |
 
 ---
 
