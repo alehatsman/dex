@@ -155,7 +155,8 @@ func (s *Server) compose(ctx context.Context, _ *sdk.CallToolRequest, in Compose
 
 		var sigs string
 		if len(syms) > 0 {
-			sigs = formatSignatures(data, syms, f.path)
+			imports, _ := st.ImportsForFile(ctx, f.path)
+			sigs = formatSignatures(data, syms, f.path, imports)
 		} else if content, ok := nonCodeMap(f.path, data); ok {
 			sigs = content
 		}

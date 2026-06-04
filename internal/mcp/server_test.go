@@ -1000,12 +1000,13 @@ func TestFormatSignatures(t *testing.T) {
 		{Name: "Foo", QualifiedName: "Foo", Kind: "function", FilePath: "f.go", StartLine: 3, EndLine: 5},
 		{Name: "Bar", QualifiedName: "Bar", Kind: "function", FilePath: "f.go", StartLine: 7, EndLine: 9},
 	}
-	got := formatSignatures(src, syms, "f.go")
+	got := formatSignatures(src, syms, "f.go", nil)
 	for _, want := range []string{
-		"FILE: f.go (2 symbols)",
-		"function Foo (lines 3-5)",
+		"f.go",
+		"(2 symbols)",
+		"⊛ Foo (lines 3-5)",
 		"func Foo()",
-		"function Bar (lines 7-9)",
+		"⊛ Bar (lines 7-9)",
 		"func Bar(x int) int {",
 	} {
 		if !strings.Contains(got, want) {
