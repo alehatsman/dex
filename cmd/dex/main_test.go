@@ -26,7 +26,7 @@ import (
 )
 
 // writeIndexAll opts the temp project into indexing everything. Indexing
-// is opt-in (.dex/config.toml [index].include); without an include list
+// is opt-in (.dex/config.yml index.include); without an include list
 // the matcher skips every file, so these indexer-driven tests would see
 // an empty index. Mirrors the include = ["*"] escape used in the ignore
 // tests.
@@ -36,8 +36,8 @@ func writeIndexAll(t *testing.T, dir string) {
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"),
-		[]byte("[index]\ninclude = [\"*\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"),
+		[]byte("index:\n  include: [\"*\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

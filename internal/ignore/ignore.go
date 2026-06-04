@@ -1,7 +1,7 @@
 // Package ignore decides which files to skip during indexing.
 //
-// Indexing is opt-in: a project is only indexed once .dex/config.toml
-// declares an `[index].include` allow-list. With no include configured,
+// Indexing is opt-in: a project is only indexed once .dex/config.yml
+// declares an `index.include` allow-list. With no include configured,
 // every file is skipped — "index nothing until opted in".
 //
 // The full filter chain a file passes through:
@@ -16,10 +16,10 @@
 //     b. .gitignore at the project root (root file only; nested
 //     .gitignore files are intentionally not read).
 //     c. .dexignore at the project root (same syntax).
-//     d. .dex/config.toml `[index].ignore` (same syntax).
+//     d. .dex/config.yml `index.ignore` (same syntax).
 //
-//  2. Include allow-list (opt-in): the .dex/config.toml
-//     `[index].include` patterns, same gitignore grammar. A FILE is
+//  2. Include allow-list (opt-in): the .dex/config.yml
+//     `index.include` patterns, same gitignore grammar. A FILE is
 //     kept only if it matches an include pattern; with no include
 //     configured, all files are dropped. Directories are never filtered
 //     by include — the walk still descends into every non-excluded
@@ -202,7 +202,7 @@ var IndexableExtensions = map[string]bool{
 // semantics) is delegated to github.com/sabhiram/go-gitignore so we
 // don't reinvent — and subtly miss — the corner cases of a
 // 20-year-old spec. We only contribute the DefaultPatterns,
-// .dexignore / .dex/config.toml composition, and the wider always-skip
+// .dexignore / .dex/config.yml composition, and the wider always-skip
 // rules.
 type Matcher struct {
 	g       *gitignore.GitIgnore // exclude set
@@ -210,9 +210,9 @@ type Matcher struct {
 }
 
 // New builds the exclude set from DefaultPatterns + project-root
-// .gitignore + .dexignore + .dex/config.toml `[index].ignore` (in that
+// .gitignore + .dexignore + .dex/config.yml `index.ignore` (in that
 // order — later wins per gitignore semantics), and the opt-in include
-// allow-list from `[index].include`. When no include is configured the
+// allow-list from `index.include`. When no include is configured the
 // Matcher skips every file (index-nothing-until-opted-in).
 func New(root string) (*Matcher, error) {
 	cfg, err := loadIndexConfig(root)
@@ -239,7 +239,7 @@ func New(root string) (*Matcher, error) {
 }
 
 // IncludeConfigured reports whether the project declared a non-empty
-// `[index].include` in .dex/config.toml. When false, Match skips every
+// `index.include` in .dex/config.yml. When false, Match skips every
 // file and the index will be empty — callers warn so that's not silent.
 func (m *Matcher) IncludeConfigured() bool {
 	return m.include != nil
@@ -291,7 +291,7 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 // MatchExclude returns true if the relative path should be skipped based
 // solely on the exclude rules (.gitignore/.dexignore/defaults) — ignoring
 // the opt-in include allow-list. Used by commands like compact that apply
-// their own file-type filter and should not require .dex/config.toml.
+// their own file-type filter and should not require .dex/config.yml.
 func (m *Matcher) MatchExclude(relPath string, isDir bool) bool {
 	p := filepath.ToSlash(relPath)
 	if isDir && !strings.HasSuffix(p, "/") {

@@ -177,8 +177,8 @@ env:                              # escape hatch: any DEX_* knob verbatim
 ```
 
 `DEX_SERVE_TOKEN` is a secret and is never read from the file — keep it in the
-environment. (Indexing include/ignore globs live separately in
-`.dex/config.toml` under `[index]`.)
+environment. (Indexing include/ignore globs live in the same file under the
+`index:` section — see "What gets indexed" below.)
 
 When running as `dex mcp`, the server registers tools in three tiers controlled
 by `DEX_TOOLS=ask|standard|power` (default `standard`):
@@ -385,12 +385,12 @@ no shell). For a host-bound `/cache`, add `--user "$(id -u):$(id -g)"`
 ## What gets indexed
 
 Indexing is **opt-in**. dex indexes nothing until a project declares an
-allow-list in `.dex/config.toml`:
+allow-list in `.dex/config.yml`:
 
-```toml
-[index]
-include = ["cmd/", "internal/", "*.md"]  # gitignore grammar; file-level allow-list
-ignore  = ["testdata/"]                  # appended to the exclude set below
+```yaml
+index:
+  include: ["cmd/", "internal/", "*.md"]  # gitignore grammar; file-level allow-list
+  ignore:  ["testdata/"]                  # appended to the exclude set below
 ```
 
 With no config (or an empty `include`), the index stays empty — `dex

@@ -28,7 +28,7 @@ storage spec's, and reading it is the query specs'.
   an indexable-extension/-basename allowlist, skipping binaries), splits each into
   chunks, embeds them, and stores the vectors with their file/location metadata.
 - WHERE indexing is opt-in, a repo is only indexed when it declares an include
-  set (`.dex/config.toml` `[index].include`); without one, the matcher selects no
+  set (`.dex/config.yml` `index.include`); without one, the matcher selects no
   files and the index stays empty, so dex never embeds an un-opted-in tree.
 - WHEN a file is chunked, dex extracts top-level declarations (functions, methods,
   classes, types) using a tree-sitter grammar where one exists, and falls back to
@@ -67,7 +67,7 @@ storage spec's, and reading it is the query specs'.
 ## Checklist
 
 - [x] Walk + filter (ignore, indexable ext/basename, skip binary)
-- [x] Opt-in via `.dex/config.toml` `[index].include`; no include → empty index
+- [x] Opt-in via `.dex/config.yml` `index.include`; no include → empty index
 - [x] Tree-sitter top-level-decl chunking; sliding-window fallback; byte cap
 - [x] Batched embedding to an OpenAI-compatible `/v1/embeddings`
 - [x] Unreachable backend surfaces a distinct condition (consumer can fall back)
