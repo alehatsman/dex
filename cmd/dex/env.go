@@ -34,8 +34,8 @@ type envVar struct {
 
 var allEnvVars = []envVar{
 	// core — every install touches these.
-	{"DEX_EMBED_URL", "http://127.0.0.1:8082", "OpenAI-compatible /v1/embeddings base URL.", "core", false},
-	{"DEX_EMBED_MODEL", "Qwen/Qwen3-Embedding-4B", "Model name forwarded as `model`.", "core", false},
+	{"DEX_EMBED_URL", "auto", "OpenAI-compatible /v1/embeddings base URL. Unset = probe ollama at localhost:11434, then fall back to http://127.0.0.1:8082.", "core", false},
+	{"DEX_EMBED_MODEL", "auto", "Model name for embed requests. Unset = use ollama-detected model when auto-detected, else Qwen/Qwen3-Embedding-4B.", "core", false},
 	{"DEX_INDEX_DIR", "~/.cache/dex", "Where per-project index files live.", "core", false},
 
 	// chat — required for generate / view_summarize / ask_codebase.
