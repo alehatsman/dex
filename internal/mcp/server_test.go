@@ -929,6 +929,71 @@ func TestSummarizeSignaturesModeNoIndex(t *testing.T) {
 	}
 }
 
+func TestSummarizeMapModeNoIndex(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "f.go"), "package main\nfunc F() {}\n")
+
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(context.Background(), p.DBPath)
+	if err != nil {
+		t.Skip("fts5 not available:", err)
+	}
+	st.Close()
+
+	s := &Server{IndexDir: cacheDir}
+	_, out, err := s.summarize(context.Background(), nil, SummarizeInput{
+		Path:        "f.go",
+		ProjectRoot: projDir,
+		Mode:        "map",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status=%q hint=%q", out.Status, out.Hint)
+	}
+	if out.Hint == "" {
+		t.Error("expected a hint when no data indexed")
+	}
+	if out.Model != "" || out.Endpoint != "" {
+		t.Error("map mode must not touch chat client fields")
+	}
+}
+
+func TestFormatMap(t *testing.T) {
+	syms := []store.GraphSymbol{
+		{Name: "Server", QualifiedName: "mcp.Server", Kind: "struct", FilePath: "server.go", StartLine: 10, EndLine: 50},
+		{Name: "unexported", QualifiedName: "mcp.unexported", Kind: "struct", FilePath: "server.go", StartLine: 55, EndLine: 60},
+		{Name: "Run", QualifiedName: "mcp.Server.Run", Kind: "method", FilePath: "server.go", StartLine: 100, EndLine: 120},
+	}
+	imports := []string{"context", "fmt", "os"}
+	got := formatMap("server.go", syms, imports)
+	for _, want := range []string{
+		"FILE: server.go",
+		"IMPORTS:",
+		"  context",
+		"  fmt",
+		"  os",
+		"EXPORTS (2):",
+		"struct mcp.Server",
+		"method mcp.Server.Run",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("formatMap missing %q\ngot:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "unexported") {
+		t.Errorf("formatMap leaked unexported symbol; got:\n%s", got)
+	}
+}
+
 func TestFormatSignatures(t *testing.T) {
 	src := []byte("package main\n\nfunc Foo() {\n\treturn\n}\n\nfunc Bar(x int) int {\n\treturn x\n}\n")
 	syms := []store.GraphSymbol{

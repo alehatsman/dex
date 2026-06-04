@@ -66,6 +66,11 @@ func (p projectScoped) graphCallees(ctx context.Context, req *sdk.CallToolReques
 	return p.s.graphCallees(ctx, req, in)
 }
 
+func (p projectScoped) graphImpact(ctx context.Context, req *sdk.CallToolRequest, in ImpactInput) (*sdk.CallToolResult, ImpactOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphImpact(ctx, req, in)
+}
+
 func (p projectScoped) graphLinks(ctx context.Context, req *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.graphLinks(ctx, req, in)
@@ -84,6 +89,21 @@ func (p projectScoped) graphTags(ctx context.Context, req *sdk.CallToolRequest, 
 func (p projectScoped) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.summarize(ctx, req, in)
+}
+
+func (p projectScoped) overview(ctx context.Context, req *sdk.CallToolRequest, in OverviewInput) (*sdk.CallToolResult, OverviewOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.overview(ctx, req, in)
+}
+
+func (p projectScoped) smells(ctx context.Context, req *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.smells(ctx, req, in)
+}
+
+func (p projectScoped) routes(ctx context.Context, req *sdk.CallToolRequest, in RoutesInput) (*sdk.CallToolResult, RoutesOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.routes(ctx, req, in)
 }
 
 // status is daemon-global (not project-scoped), so the bound root is ignored

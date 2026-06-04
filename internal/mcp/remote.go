@@ -219,6 +219,12 @@ func (rc *remoteClient) graphCallees(ctx context.Context, _ *sdk.CallToolRequest
 	return nil, out, err
 }
 
+func (rc *remoteClient) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in ImpactInput) (*sdk.CallToolResult, ImpactOutput, error) {
+	var out ImpactOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/impact"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) graphLinks(ctx context.Context, _ *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
 	var out DocLinkOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/links"), in, &out)
@@ -240,6 +246,24 @@ func (rc *remoteClient) graphTags(ctx context.Context, _ *sdk.CallToolRequest, i
 func (rc *remoteClient) summarize(ctx context.Context, _ *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	var out SummarizeOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/summarize"), in, &out)
+	return nil, out, err
+}
+
+func (rc *remoteClient) overview(ctx context.Context, _ *sdk.CallToolRequest, in OverviewInput) (*sdk.CallToolResult, OverviewOutput, error) {
+	var out OverviewOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/overview"), in, &out)
+	return nil, out, err
+}
+
+func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
+	var out SmellsOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/smells"), in, &out)
+	return nil, out, err
+}
+
+func (rc *remoteClient) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesInput) (*sdk.CallToolResult, RoutesOutput, error) {
+	var out RoutesOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/routes"), in, &out)
 	return nil, out, err
 }
 

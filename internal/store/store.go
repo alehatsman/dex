@@ -1941,6 +1941,33 @@ func (s *Store) RelatedChunks(ctx context.Context, path string, startLine int, k
 	return s.fetchHits(ctx, scores, scoreContext{})
 }
 
+// CodeFilePaths returns every non-summary file in the chunks table
+// mapped to its inferred line count (max end_line across all its chunks).
+// Used by overview to enumerate the indexed codebase without loading content.
+func (s *Store) CodeFilePaths(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT path, MAX(end_line)
+		FROM chunks
+		WHERE kind NOT IN ('file_summary','chunk_summary','package_summary','repo_summary')
+		  AND path != ''
+		GROUP BY path
+		ORDER BY path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var p string
+		var lc int
+		if err := rows.Scan(&p, &lc); err != nil {
+			return nil, err
+		}
+		out[p] = lc
+	}
+	return out, rows.Err()
+}
+
 func encodeVec(v []float32) []byte {
 	buf := make([]byte, 4*len(v))
 	for i, x := range v {
