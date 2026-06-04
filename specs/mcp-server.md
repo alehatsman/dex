@@ -50,12 +50,21 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - WHERE tool exposure is tiered, the surface is controlled by `DEX_TOOLS`
   (`ask|standard|power`; default `standard`); `DEX_EXPOSE_RAW_TOOLS=1` is a
   backward-compatible alias for `power`. `TierAsk` exposes only `ask`.
-  `TierStandard` adds `overview`, `session`, `knowledge`, `agent`, `file_tree`,
+  `TierStandard` adds `ctx_overview`, `ctx_session`, `ctx_knowledge`, `ctx_agent`, `file_tree`,
   `search_context`, and (when a chat model is wired) `file_view`. `TierPower` adds the full raw
   surface: `search_semantic`, `search_symbol`, `graph_neighbors`, `graph_deps`,
   `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`,
-  `graph_tags`, `graph_impact`, `graph_routes`, `code_smells`, `compress_output`, and
+  `graph_tags`, `graph_impact`, `graph_routes`, `graph_smells`, `compress_output`, and
   `status`.
+- WHERE a tool is named, it follows the **naming convention**: a category
+  prefix groups related tools so an agent can guess a name from its purpose —
+  `search_*` (retrieval lanes), `graph_*` (static-graph queries, incl.
+  `graph_smells`), `file_*` (file access), `ctx_*` (cross-cutting agent
+  context: `ctx_overview`, `ctx_session`, `ctx_knowledge`, `ctx_agent`,
+  `ctx_shell`), `spec_*` (spec verification). The sole prefix-free names are
+  the primary entry verb `ask` and the meta-tools `status` / `compress_output`.
+  REST routes keep resource-noun paths (`/session`, `/view/overview`) — the
+  `ctx_` prefix is an MCP tool-discovery convention, not a REST one.
 - WHERE MCP annotations are set, all read-only tools carry `readOnlyHint: true`
   so hosts (e.g. Claude Code plan mode) can skip approval prompts for them.
 - WHEN any tool resolves a project, it canonicalizes the caller's `project_root`
@@ -94,7 +103,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   session has a declared task, dex appends the body of the symbol whose qualified
   name best matches the task (BM25-style word-overlap, capped at 60 lines) so
   the reader gets task-relevant detail without a follow-up lines: call.
-- WHEN `overview` is called and the chunk index is empty (indexing in progress or
+- WHEN `ctx_overview` is called and the chunk index is empty (indexing in progress or
   not yet started), dex returns `status:"partial"` with project markers (go.mod,
   package.json, Cargo.toml, …), a depth-2 filesystem tree, and top knowledge
   facts rather than an error, so an agent can orient without a full index.
@@ -111,13 +120,13 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   extract a JSON array of factual findings, and stores each extracted fact via the
   normal `KnowledgeAdd` path — turning ad-hoc session state into durable facts
   without the caller enumerating them manually.
-- WHEN `spec_verify` is called (TierPower), dex reads the spec file's `## Checklist`
+- WHEN `spec_check` is called (TierPower), dex reads the spec file's `## Checklist`
   items (falling back to `## Behavior` clauses), embeds each checked `[x]` item,
   retrieves top-5 code chunks from the index, and — when a chat model is wired —
   judges each clause as `pass`/`fail`/`unknown`; unchecked `[ ]` items are returned
   as `pending` without judgment; drift is detected via `git log <last_verified>..HEAD`
   over the spec's `covers` paths and reported in `drift_commits`.
-- WHEN `agent` is called (TierStandard), it manages a per-project multi-agent
+- WHEN `ctx_agent` is called (TierStandard), it manages a per-project multi-agent
   coordination bus backed by `agents` and `agent_messages` SQLite tables.
   `action=announce` registers or refreshes an agent by `agent_id` and `role` (upsert).
   `action=post` appends a message with an optional `topic` and required `body`,
@@ -152,19 +161,19 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
 - [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
 - [x] TierStandard: overview, session, knowledge, file_tree, search_context, file_view (chat required)
-- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, graph_routes, code_smells, compress_output, status, spec_verify
+- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, graph_routes, graph_smells, compress_output, status, spec_check
 - [x] `file_view mode=map` returns structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
 - [x] `search_context`: single call returns top-K file signatures + best symbol body (replaces search→signatures→lines round-trip)
 - [x] Task-relevance inline: signatures/map append best-matching symbol body when session has a declared task
-- [x] `overview` returns `status:"partial"` with markers + depth-2 tree + knowledge facts when chunk index is empty
+- [x] `ctx_overview` returns `status:"partial"` with markers + depth-2 tree + knowledge facts when chunk index is empty
 - [x] Read-only tools carry `readOnlyHint: true` MCP annotation
 - [x] Per-project scoping: `project_root` → canonical index (cwd default)
 - [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
 - [x] Path traversal rejected in `file_view` (must resolve inside project root)
 - [x] Lazy per-project auto-watcher spawned per session, drains on shutdown
 - [x] `file_view paths[]` batch: max 10 files, same mode, concatenated `## path` output; path-traversal check per entry
-- [x] `knowledge` revision tracking: `revision_count` incremented on re-add; "Confirmed (revision N)." response; `rev N` in list
+- [x] `ctx_knowledge` revision tracking: `revision_count` incremented on re-add; "Confirmed (revision N)." response; `rev N` in list
 - [x] `knowledge action=consolidate`: LLM-extracts facts from session notes and stores them
-- [x] `agent` coordination bus (TierStandard): `announce`/`post`/`read`/`list` actions; topic filtering; `since_id` pagination; REST at `/v1/projects/{id}/agent`
+- [x] `ctx_agent` coordination bus (TierStandard): `announce`/`post`/`read`/`list` actions; topic filtering; `since_id` pagination; REST at `/v1/projects/{id}/agent`
 - [x] Remote access for containerized agents: stdio→REST shim (`dex mcp --remote`, `remote.go`) + native HTTP-MCP at `/v1/projects/{id}/mcp` (`http_mcp.go`)
 - [x] Verified against the code by the verify workflow (flip to `living`)

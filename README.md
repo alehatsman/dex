@@ -164,11 +164,11 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 | Tool               | Tier      | What it does                                                                |
 | ------------------ | --------- | --------------------------------------------------------------------------- |
 | `ask`              | ask+      | **Primary entry point.** Router + composed bundle.                          |
-| `overview`         | standard+ | Project orientation — markers, package topology, key files.                 |
+| `ctx_overview`         | standard+ | Project orientation — markers, package topology, key files.                 |
 | `search_context`   | standard+ | Embed query → top-K file signatures + best symbol body in one call.         |
-| `session`          | standard+ | Declare / read a session task for task-relevance inline in file_view.       |
-| `knowledge`        | standard+ | Store / recall / consolidate cross-session facts; revision tracking on re-add. |
-| `agent`            | standard+ | Multi-agent coordination bus: `announce`/`post`/`read`/`list` — share findings across concurrent agents. Topic filtering + `since_id` pagination. |
+| `ctx_session`          | standard+ | Declare / read a session task for task-relevance inline in file_view.       |
+| `ctx_knowledge`        | standard+ | Store / recall / consolidate cross-session facts; revision tracking on re-add. |
+| `ctx_agent`            | standard+ | Multi-agent coordination bus: `announce`/`post`/`read`/`list` — share findings across concurrent agents. Topic filtering + `since_id` pagination. |
 | `file_tree`        | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
 | `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice. Pass `paths[]` (max 10) for batch. Returns `etag`; pass it back on re-reads for `status=unchanged` (session-aware). |
 | `search_semantic`  | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
@@ -182,14 +182,14 @@ by `DEX_TOOLS=ask|standard|power` (default `standard`):
 | `graph_backlinks`  | power     | Incoming markdown `links`/`wikilinks` — what links to a doc (Obsidian-style).|
 | `graph_tags`       | power     | Tag graph: `tag`→documents (ranked) or `doc`→tags. Tag-based clustering.    |
 | `graph_routes`     | power     | All reachable call paths between two symbols.                               |
-| `code_smells`      | power     | Structural code-smell report (hub files, isolated functions, …).            |
+| `graph_smells`      | power     | Structural code-smell report (hub files, isolated functions, …).            |
 | `status`           | power     | Endpoint health (embed / chat / rerank) + indexed projects.                 |
-| `spec_verify`      | power     | Verify a spec file's checklist against the live index.                      |
+| `spec_check`      | power     | Verify a spec file's checklist against the live index.                      |
 
 `file_view mode=map` returns a structural outline for non-code files
 (Markdown heading tree, JSON key hierarchy, YAML/TOML sections, lock-file dep
 counts) without touching the index or a chat model. When the current session
-has a declared task (`session`), `mode=signatures` and `mode=map` append the
+has a declared task (`ctx_session`), `mode=signatures` and `mode=map` append the
 body of the symbol whose name best matches the task — no follow-up lines: call.
 Pass `paths[]` (max 10) to read multiple files in one round-trip; each file is
 returned as a `## path` section in the combined output.
@@ -200,7 +200,7 @@ one — turning ad-hoc session state into durable facts automatically.
 Re-storing a known fact increments its `revision_count`; responses show
 "Confirmed (revision N)." so the agent knows whether a fact is new or repeated.
 
-`overview` returns `status:"partial"` with project markers, a depth-2 filesystem
+`ctx_overview` returns `status:"partial"` with project markers, a depth-2 filesystem
 tree, and top knowledge facts when the index is empty (indexing in progress), so
 an agent can orient before the first `dex index` completes.
 

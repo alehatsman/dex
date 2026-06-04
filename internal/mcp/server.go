@@ -1711,8 +1711,8 @@ type toolTier int
 
 const (
 	TierAsk      toolTier = iota // ask only
-	TierStandard                 // ask + overview + session + knowledge + file_tree + search_context + file_view
-	TierPower                    // full raw surface: search_*, graph_*, code_smells, graph_routes, compress_output, status
+	TierStandard                 // ask + ctx_overview + ctx_session + ctx_knowledge + file_tree + search_context + file_view
+	TierPower                    // full raw surface: search_*, graph_*, graph_smells, graph_routes, compress_output, status
 )
 
 // toolTierFromEnv reads DEX_TOOLS (ask|standard|power). DEX_EXPOSE_RAW_TOOLS=1
@@ -1739,7 +1739,7 @@ func toolTierFromEnv() toolTier {
 //
 // Tiers (DEX_TOOLS env var, default: standard):
 //   - TierAsk      → ask only
-//   - TierStandard → ask + overview + session + knowledge + file_tree + search_context + file_view (if chat)
+//   - TierStandard → ask + ctx_overview + ctx_session + ctx_knowledge + file_tree + search_context + file_view (if chat)
 //   - TierPower    → everything above plus the raw search/graph/analysis tools
 //
 // DEX_EXPOSE_RAW_TOOLS=1 is honoured as a backward-compatible alias for power.
@@ -1854,7 +1854,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.routes)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "code_smells",
+			Name:        "graph_smells",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "AST-based code quality signals derived from the graph index — no LLM required. " +
 				"Returns three categories: `long_functions` (bodies >= min_func_lines, default 80), " +
@@ -1881,7 +1881,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.status)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "spec_verify",
+			Name:        "spec_check",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Verify a spec file against the project's code index. Reads the spec's ## Checklist " +
 				"items (or ## Behavior clauses as fallback), embeds each clause, retrieves the top-5 matching " +
@@ -1900,7 +1900,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 	// agents can accumulate project context without any configuration.
 	if tier >= TierStandard {
 		sdk.AddTool(srv, &sdk.Tool{
-			Name:        "overview",
+			Name:        "ctx_overview",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: "Task-relevant project map. Given a task description, ranks every indexed file by " +
 				"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
@@ -1911,7 +1911,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.overview)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "knowledge",
+			Name: "ctx_knowledge",
 			Description: "Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
 				"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
 				"list (retrieve top-k facts ordered by salience), delete (remove a fact by id). " +
@@ -1921,7 +1921,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.knowledge)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "session",
+			Name: "ctx_session",
 			Description: "Manage per-project session memory across tool calls. " +
 				"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
 				"add_file (track a file you read/wrote), get (retrieve the current session state), " +
@@ -1931,7 +1931,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.session)
 
 		sdk.AddTool(srv, &sdk.Tool{
-			Name: "agent",
+			Name: "ctx_agent",
 			Description: "Multi-agent coordination bus — share findings across concurrent agents that query the same dex instance. " +
 				"Actions: announce (register agent_id + role), post (publish a message with optional topic and body), " +
 				"read (poll messages; filter by topic; paginate with since_id), list (see active agents). " +
