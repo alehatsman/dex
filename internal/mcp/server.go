@@ -1188,6 +1188,7 @@ type SummarizeInput struct {
 	MaxTokens    int      `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
 	Etag         string   `json:"etag,omitempty" jsonschema:"content hash from a prior read; if the file is unchanged the server returns status=unchanged — re-use the content already in context instead of re-reading"`
 	BudgetTokens int      `json:"budget_tokens,omitempty" jsonschema:"optional remaining context budget in tokens; when set, dex auto-downgrades mode to fit (full→signatures→map→handle) — omit for no budget constraint"`
+	Task         string   `json:"task,omitempty" jsonschema:"optional current task description (e.g. from ctx_session); when set, dex selects the compression level automatically — Generate/Test tasks use aggressive (no LLM), others use lightweight cleanup"`
 }
 
 type SummarizeOutput struct {
@@ -1222,6 +1223,16 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		mode = "full"
 	}
 	isFull := mode == "full"
+
+	// Task-aware mode selection (#130): when the caller declares a task and
+	// hasn't forced a specific mode, override to the most appropriate compression.
+	// Generate/Test → aggressive (no LLM, comments stripped); others stay as-is.
+	if in.Task != "" && mode == "full" {
+		if override := compress.TaskToMode(in.Task); override != "" {
+			mode = override
+			isFull = false
+		}
+	}
 
 	if isFull && s.ChatClient == nil {
 		mode = "map"
@@ -2269,6 +2280,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 					"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
 					"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
 					"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
+					"Pass `task` (your current task from ctx_session) to get automatic compression routing: " +
+					"Generate/Test tasks use aggressive mode (strips comments, no LLM call), others apply lightweight cleanup. " +
 					"On error, returns 'chat-service-unreachable' or 'error'.",
 			}, h.summarize)
 		}
