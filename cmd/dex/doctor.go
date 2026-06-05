@@ -321,8 +321,7 @@ func checkMCPWiring() doctorCheck {
 		status: docWarn,
 		detail: "dex not found in Claude Code MCP configuration",
 		hints: []string{
-			"add to ~/.claude/settings.json:",
-			`  "mcpServers": {"dex": {"command": "dex", "args": ["mcp"]}}`,
+			"run: claude mcp add --scope user dex -- dex mcp",
 			"or install via the plugin: dex has a .claude-plugin/manifest.json",
 		},
 	}
@@ -333,8 +332,17 @@ func checkMCPWiring() doctorCheck {
 func dexMCPLocation() string {
 	home, _ := os.UserHomeDir()
 
-	// 1. ~/.claude/settings.json (global)
 	if home != "" {
+		// 1. ~/.claude.json — primary storage for `claude mcp add --scope user`.
+		//    Claude Code writes mcpServers here, NOT to settings.json.
+		if raw, err := os.ReadFile(filepath.Join(home, ".claude.json")); err == nil {
+			if dexMCPConfigured(raw) {
+				return "~/.claude.json"
+			}
+		}
+
+		// 2. ~/.claude/settings.json — kept for completeness; mcpServers is not
+		//    a valid settings.json field but some tooling may write it there.
 		if raw, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json")); err == nil {
 			if dexMCPConfigured(raw) {
 				return "~/.claude/settings.json"
@@ -342,14 +350,14 @@ func dexMCPLocation() string {
 		}
 	}
 
-	// 2. .claude/settings.json in cwd (project-level)
+	// 3. .claude/settings.json in cwd (project-level)
 	if wd, err := os.Getwd(); err == nil {
 		if raw, err := os.ReadFile(filepath.Join(wd, ".claude", "settings.json")); err == nil {
 			if dexMCPConfigured(raw) {
 				return ".claude/settings.json"
 			}
 		}
-		// 3. .claude-plugin/manifest.json in cwd (plugin manifest)
+		// 4. .claude-plugin/manifest.json in cwd (plugin manifest)
 		if raw, err := os.ReadFile(filepath.Join(wd, ".claude-plugin", "manifest.json")); err == nil {
 			if dexPluginManifest(raw) {
 				return ".claude-plugin/manifest.json"
