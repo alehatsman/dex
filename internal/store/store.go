@@ -1972,7 +1972,7 @@ func buildFTSQuery(q string, mode FTSMode) string {
 			i++
 		}
 		for _, t := range tokenize(string(runes[start:i])) {
-			terms = append(terms, expandCamelTerm(`"`+t+`"`))
+			terms = append(terms, expandSPLADE(strings.ToLower(t), expandCamelTerm(`"`+t+`"`)))
 		}
 	}
 
