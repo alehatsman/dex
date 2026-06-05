@@ -27,6 +27,6 @@ coverage.txt
 # Ignore the dex cache (index.db etc.) but track the committed
 # opt-in config so a fresh checkout/reindex doesn't zero its index.
 .dex/*
-!.dex/config.toml
+!.dex/config.yml
 
 data/
