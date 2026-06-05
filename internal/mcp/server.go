@@ -112,6 +112,10 @@ type Server struct {
 	bounce     *bounceTracker
 	bounceOnce sync.Once
 
+	// loop is the per-server loop detector. Lazily initialised by ld().
+	loop     *loopDetector
+	loopOnce sync.Once
+
 	// activityTracker accumulates per-project tool-call weights to surface
 	// a knowledge-nudge hint when the agent has done significant work but
 	// hasn't recorded any findings. Key: project root; value: *activityState.
@@ -135,6 +139,11 @@ type activityState struct {
 func (s *Server) bt() *bounceTracker {
 	s.bounceOnce.Do(func() { s.bounce = newBounceTracker() })
 	return s.bounce
+}
+
+func (s *Server) ld() *loopDetector {
+	s.loopOnce.Do(func() { s.loop = newLoopDetector() })
+	return s.loop
 }
 
 func (s *Server) activityRecord(project string, weight int) {
@@ -604,12 +613,21 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	hits = rerankLocal(hits, len(idents) > 0)
 	s.activityRecord(p.Root, 1)
 
+	// Loop detection: block/reduce/hint before building the response.
+	ldLevel, ldHint := s.ld().Check("search_semantic", argsKey(in.Query), true)
+	if ldLevel == ThrottleBlock {
+		return nil, SearchOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
+	}
+
 	out.Status = "ok"
 	if hint := s.searchThrottleHint(in.Query, p.Root); hint != "" {
 		out.Hint = hint
 	}
 	if out.Hint == "" {
 		out.Hint = s.activityNudge(p.Root, sessionTask)
+	}
+	if ldHint != "" && out.Hint == "" {
+		out.Hint = ldHint
 	}
 	for _, h := range hits {
 		if excluded(h.Path, in.Exclude) {
@@ -627,6 +645,10 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			Role:        formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers),
 			Content:     h.Content,
 		})
+	}
+	if ldLevel == ThrottleReduce && len(out.Hits) > 5 {
+		out.Hits = out.Hits[:5]
+		out.Hint = ldHint + " [reduced: showing top 5]"
 	}
 	return nil, out, nil
 }
@@ -883,11 +905,19 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
 	defer st.Close()
+	ldLevel, ldHint := s.ld().Check("search_symbol", argsKey(in.Name), true)
+	if ldLevel == ThrottleBlock {
+		return nil, FindSymbolOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
+	}
+
 	hits, err := st.FindSymbol(ctx, in.Name, in.K)
 	if err != nil {
 		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("search_symbol: %v", err)}, nil
 	}
 	out := FindSymbolOutput{Status: "ok", Project: p.Root}
+	if ldHint != "" {
+		out.Hint = ldHint
+	}
 	if len(hits) == 0 {
 		out.Status = "not-found"
 		hint := fmt.Sprintf("no chunk with name=%q in the index; check spelling or re-index if recently added.", in.Name)
@@ -910,6 +940,10 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 			Role:      formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers),
 			Content:   h.Content,
 		})
+	}
+	if ldLevel == ThrottleReduce && len(out.Hits) > 5 {
+		out.Hits = out.Hits[:5]
+		out.Hint = ldHint + " [reduced: showing top 5]"
 	}
 	return nil, out, nil
 }
