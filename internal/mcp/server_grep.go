@@ -115,6 +115,17 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 		})
 	}
 
+	// Narrow the candidate set using the trigram index before reading files.
+	// Falls back to the full filePaths list when the pattern has no word
+	// trigrams (pure regex metacharacters) or the index cannot narrow.
+	if len(filePaths) > 0 {
+		tgKey := trigramCacheKey{root: p.Root, prefix: prefix, ext: extFilter}
+		idx := s.tgCache.getOrBuild(tgKey, filePaths)
+		if narrowed, ok := idx.Narrow(in.Pattern); ok {
+			filePaths = narrowed
+		}
+	}
+
 	var matches []GrepMatch
 	truncated := false
 outer:
