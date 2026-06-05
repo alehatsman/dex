@@ -49,7 +49,7 @@ const (
 )
 
 // classifyCommand returns the output policy for the given command.
-// Priority: passthrough > verbatim > compress.
+// Priority: passthrough > verbatim > test-runner > compress.
 func classifyCommand(command string) shellPolicy {
 	if isPassthroughCommand(command) {
 		return policyPassthrough
@@ -57,7 +57,103 @@ func classifyCommand(command string) shellPolicy {
 	if isVerbatimCommand(command) {
 		return policyVerbatim
 	}
+	// Test runner output must be preserved verbatim — agents need the full
+	// pass/fail breakdown, not a compressed summary that may lose failures.
+	if isTestRunnerCommand(command) {
+		return policyVerbatim
+	}
 	return policyCompress
+}
+
+// testRunnerPrefixes — commands known to produce test result output that must
+// be preserved verbatim regardless of length.
+var testRunnerPrefixes = []string{
+	"cargo test", "cargo nextest", "nextest",
+	"pytest", "python -m pytest", "python3 -m pytest",
+	"go test", "gotestsum",
+	"npm test", "npm run test", "pnpm test", "pnpm run test",
+	"yarn test", "bun test", "deno test",
+	"jest", "vitest", "mocha", "jasmine",
+	"npx jest", "npx vitest", "npx mocha",
+	"dotnet test", "mix test",
+	"rspec", "bundle exec rspec", "phpunit",
+	"./gradlew test", "gradle test", "mvn test", "ctest",
+}
+
+// isTestRunnerCommand returns true when the effective command (after stripping
+// leading env-var assignments like RUST_BACKTRACE=1) is a known test runner.
+func isTestRunnerCommand(command string) bool {
+	cmd := strings.TrimSpace(command)
+	// strip leading VAR=value prefixes
+	for {
+		first := strings.SplitN(cmd, " ", 2)
+		if len(first) < 2 || !strings.Contains(first[0], "=") {
+			break
+		}
+		cmd = strings.TrimSpace(first[1])
+	}
+	cl := strings.ToLower(cmd)
+	for _, p := range testRunnerPrefixes {
+		if cl == p || strings.HasPrefix(cl, p+" ") || strings.HasPrefix(cl, p+"\t") {
+			return true
+		}
+	}
+	return false
+}
+
+// buildToolPrefixes — commands that produce compiler/linter diagnostics.
+// When these tools produce error output, compression must be skipped.
+var buildToolPrefixes = []string{
+	"go build", "go vet", "go generate", "golangci-lint",
+	"tsc", "npx tsc",
+	"eslint", "biome", "hadolint", "yamllint", "oxlint",
+	"mypy", "pyright", "basedpyright",
+	"ruff check",
+	"cargo build", "cargo check", "cargo clippy", "rustc",
+	"gcc ", "g++ ", "cc ", "clang ", "clang++ ",
+	"cmake ", "ninja ",
+	"make", "gmake",
+	"dotnet build",
+	"./gradlew build", "gradle build", "mvn compile", "mvn verify",
+	"swift build", "zig build",
+	"shellcheck", "rubocop", "mix compile", "mix credo",
+}
+
+var buildErrorMarkers = []string{
+	"error:", "error[", "Error:", "FAILED", " failed",
+	"cannot find", "undefined", "panicked at",
+	"could not compile", "compilation failed", "BUILD FAILED",
+}
+
+// isBuildToolWithErrors returns true when the command is a known build/lint
+// tool AND the output contains error indicators. In this case compression
+// must be skipped — agents need the full diagnostic (file path, line, note).
+func isBuildToolWithErrors(cmd, output string) bool {
+	cl := strings.ToLower(strings.TrimSpace(cmd))
+	// strip leading env-var prefixes
+	for {
+		first := strings.SplitN(cl, " ", 2)
+		if len(first) < 2 || !strings.Contains(first[0], "=") {
+			break
+		}
+		cl = strings.TrimSpace(first[1])
+	}
+	found := false
+	for _, p := range buildToolPrefixes {
+		if cl == strings.TrimRight(p, " ") || strings.HasPrefix(cl, p) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	for _, marker := range buildErrorMarkers {
+		if strings.Contains(output, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // passthroughCommands is the canonical list of commands whose output must never
@@ -145,8 +241,23 @@ var passthroughPrefixes = []string{
 // passthroughContains are substrings that make any command passthrough.
 var passthroughContains = []string{"--use-device-code"}
 
+// passthroughNot are prefixes that look like passthrough commands (e.g. bare
+// psql) but are actually one-shot queries when flags like -c/-e are present.
+// Checked before the passthrough prefix scan so they fall through to verbatim.
+var passthroughNot = []string{
+	"psql -c", "psql --command",
+	"mysql -e", "mysql --execute",
+	"mariadb -e",
+	"redis-cli --eval",
+}
+
 func isPassthroughCommand(command string) bool {
 	cl := strings.ToLower(strings.TrimSpace(command))
+	for _, exc := range passthroughNot {
+		if strings.HasPrefix(cl, exc) {
+			return false
+		}
+	}
 	for _, sub := range passthroughContains {
 		if strings.Contains(cl, sub) {
 			return true
@@ -172,28 +283,66 @@ var verbatimPrefixes = []string{
 	"curl ", "wget ", "http ", "xh ", "curlie ", "grpcurl ",
 	// Data format tools
 	"jq ", "jq\t", "yq ", "yq\t", "fx ", "gron ", "mlr ", "dasel ",
-	"csvlook ", "csvcut ", "csvjson ", "in2csv ",
+	"csvlook ", "csvcut ", "csvjson ", "in2csv ", "xq ",
 	// File viewers (non-streaming)
 	"cat ", "bat ", "batcat ", "pygmentize ",
-	"head ", "xxd ", "hexdump ", "od ", "strings ",
+	"head ", "xxd ", "hexdump ", "od ", "strings ", "file ",
+	// Binary / crypto inspection
+	"openssl ", "gpg ", "age ", "ssh-keygen ", "certutil ",
+	// DNS / network inspection
+	"dig ", "nslookup ", "host ", "whois ", "drill ", "resolvectl ",
 	// Infra inspection (read-only)
 	"terraform output", "terraform show", "terraform state show",
 	"terraform state list", "terraform state pull",
 	"tofu output", "tofu show", "tofu state",
-	"docker inspect", "podman inspect",
+	"docker inspect", "docker ps", "docker images",
+	"podman inspect", "podman ps", "podman images",
 	"kubectl get ", "kubectl describe ", "kubectl explain ",
-	// Cloud CLI queries
-	"aws ec2 describe", "aws s3 ls", "aws iam list",
-	"gcloud compute instances list", "gcloud projects list",
+	"helm get ", "helm list", "helm ls", "helm template",
+	// Cloud CLI queries (passthrough handles login/auth subcommands first)
+	"aws ", "gcloud ", "az ",
+	// CLI API data — structured JSON responses
+	"gh api", "gh --json", "glab api",
+	// Package manager info (read-only, not install)
+	"npm list", "npm audit", "npm outdated", "npm info",
+	"cargo metadata", "cargo tree",
+	"go list ", "go version", "go env",
+	"brew list", "brew info", "brew outdated",
+	"apt list", "apt show", "dpkg -l",
+	"pip list", "pip show", "pip freeze",
+	// Config / metadata viewers
+	"git config", "git remote", "git rev-parse", "git ls-files",
+	"git ls-tree", "git for-each-ref", "git cat-file", "git name-rev",
+	"git describe", "git shortlog",
+	"kubectl config view", "kubectl config get-contexts",
+	// Git write commands — output carries confirmation/rejection messages
+	// that agents must read verbatim (merge conflicts, push rejections, etc.)
+	"git push", "git pull", "git merge", "git commit", "git rebase",
+	"git cherry-pick", "git reset", "git stash",
+	// System queries
+	"stat ", "wc ", "id ", "whoami", "hostname", "uname",
+	"lscpu", "lsblk", "base64 ", "sha256sum ", "sha1sum ", "md5sum ",
+	"readlink ", "realpath ", "which ", "type ",
+	"ip addr", "ip link", "ip route", "ifconfig", "ss -", "netstat ",
+	"df ", "du ", "free ", "uptime", "lsof ",
+	// Language one-liners (produce data, not interactive)
+	"python -c", "python3 -c", "node -e", "ruby -e", "perl -e", "php -r",
 	// Version / help (always short, never worth compressing)
 	"--version", "-v ", "--help", "-h ",
 	// Environment dumps
 	"env", "printenv", "set ",
 	// Archive listing
-	"tar -t", "tar --list", "unzip -l", "zip -sf",
+	"tar -t", "tar --list", "unzip -l", "zip -sf", "lsar ",
+	// One-shot database queries (bare psql/mysql are passthrough REPLs)
+	"psql -c", "psql --command", "mysql -e", "mysql --execute",
+	"mariadb -e", "sqlite3 ", "mongosh --eval", "redis-cli --eval",
 	// Git data (log/show/diff/blame produce structured output agents read)
 	"git log ", "git show ", "git diff ", "git blame ",
 	"git stash list", "git tag", "git branch",
+	// Non-streaming log viewers
+	"journalctl --no-pager", "journalctl -u", "journalctl -b",
+	// Clipboard read
+	"pbpaste", "wl-paste", "xclip -o", "xsel -o",
 }
 
 func isVerbatimCommand(command string) bool {
@@ -394,6 +543,23 @@ func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInp
 		if orig > 0 {
 			saved = (orig - out) * 100 / orig
 		}
+		return nil, ShellOutput{
+			Output:        compressed,
+			ExitCode:      exitCode,
+			OriginalLines: orig,
+			OutputLines:   out,
+			SavedPct:      saved,
+		}, nil
+	}
+
+	// Build tool with errors: preserve full diagnostics verbatim (#81).
+	if isBuildToolWithErrors(in.Command, clean) {
+		compressed, orig, out := CompressText(clean, "", 0)
+		saved := 0
+		if orig > 0 {
+			saved = (orig - out) * 100 / orig
+		}
+		s.activityRecord(cwd, shellActivityWeight(in.Command))
 		return nil, ShellOutput{
 			Output:        compressed,
 			ExitCode:      exitCode,
