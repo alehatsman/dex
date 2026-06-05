@@ -80,7 +80,8 @@ func isFixturePathRaw(p string) bool {
 	p = filepath.ToSlash(p)
 	for _, seg := range strings.Split(p, "/") {
 		switch seg {
-		case "testdata", "__fixtures__":
+		case "testdata", "__fixtures__",
+			"testutil", "mock", "mocks", "stub", "stubs", "fake", "fakes":
 			return true
 		}
 	}
