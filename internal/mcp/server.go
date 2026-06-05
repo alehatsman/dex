@@ -1118,6 +1118,19 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		mode = selectAffordableMode(mode, fileTokens, in.BudgetTokens)
 	}
 
+	// Dependency manifest shortcut (#125): for package.json, go.mod, Cargo.toml,
+	// etc. return a compact summary directly — 10-50× token reduction.
+	if isDepsFilename(filepath.Base(realTarget)) && mode != "full" {
+		if summary, ok := compressDepsFile(relTarget, data); ok {
+			out.Status = "ok"
+			out.Etag = etag
+			out.Bytes = len(data)
+			out.Content = summary
+			s.readCacheMark(sessionID, relTarget, etag)
+			return nil, out, nil
+		}
+	}
+
 	switch {
 	case strings.HasPrefix(mode, "lines:"):
 		rest := strings.TrimPrefix(mode, "lines:")
