@@ -980,8 +980,8 @@ func rerankLocal(hits []store.Hit, isSymbolQuery bool) []store.Hit {
 
 	// Pass 1: per-hit signals.
 	for i := range hits {
-		if isNoisePath(hits[i].Path) {
-			hits[i].RRFScore *= 0.3
+		if pen := pathPenalty(hits[i].Path); pen != 1.0 {
+			hits[i].RRFScore *= float32(pen)
 		}
 		if isSymbolQuery && isDefinitionKind(hits[i].Kind) {
 			hits[i].RRFScore *= 1.5
@@ -1012,16 +1012,80 @@ func rerankLocal(hits []store.Hit, isSymbolQuery bool) []store.Hit {
 	return hits
 }
 
-// isNoisePath returns true for test files, examples, fixtures, and demo
-// directories that should rank lower in general code searches.
-func isNoisePath(path string) bool {
-	base := filepath.Base(path)
-	return strings.Contains(path, "_test.") ||
-		strings.Contains(path, "/testdata/") ||
-		strings.HasPrefix(base, "test_") ||
-		strings.Contains(path, "/example") ||
-		strings.Contains(path, "/demo/") ||
-		strings.Contains(path, "/fixture")
+// pathPenalty returns a multiplicative down-rank factor in (0,1] for paths
+// that are typically low-signal for implementation searches (CoRNStack ICLR
+// 2025 multipliers, extended with compat/legacy/barrel/stub tiers).
+// Penalties are applied multiplicatively so a test file inside a legacy dir
+// gets 0.3 × 0.3 = 0.09×.
+func pathPenalty(path string) float64 {
+	p := filepath.ToSlash(path)
+	penalty := 1.0
+	if isTestPath(p) {
+		penalty *= 0.3
+	}
+	if isCompatLegacyPath(p) {
+		penalty *= 0.3
+	}
+	if isExampleDocsPath(p) {
+		penalty *= 0.3
+	}
+	if isReexportBarrel(p) {
+		penalty *= 0.5
+	}
+	if isTypeStub(p) {
+		penalty *= 0.7
+	}
+	return penalty
+}
+
+func isCompatLegacyPath(p string) bool {
+	return hasPathSegment(p, "compat") ||
+		hasPathSegment(p, "legacy") ||
+		hasPathSegment(p, "deprecated")
+}
+
+func isExampleDocsPath(p string) bool {
+	return hasPathSegment(p, "examples") ||
+		hasPathSegment(p, "example") ||
+		hasPathSegment(p, "demo") ||
+		hasPathSegment(p, "docs_src") ||
+		hasPathSegment(p, "samples") ||
+		hasPathSegment(p, "tutorials") ||
+		hasPathSegment(p, "cookbook")
+}
+
+// hasPathSegment returns true when any /-delimited segment of p equals seg.
+func hasPathSegment(p, seg string) bool {
+	for {
+		idx := strings.Index(p, seg)
+		if idx < 0 {
+			return false
+		}
+		// Must be at start or preceded by /
+		if idx > 0 && p[idx-1] != '/' {
+			p = p[idx+len(seg):]
+			continue
+		}
+		// Must be followed by / or end of string
+		end := idx + len(seg)
+		if end == len(p) || p[end] == '/' {
+			return true
+		}
+		p = p[end:]
+	}
+}
+
+func isReexportBarrel(p string) bool {
+	b := filepath.Base(p)
+	return b == "index.ts" || b == "index.tsx" ||
+		b == "__init__.py" ||
+		b == "package-info.java" ||
+		b == "mod.rs" // Rust re-export modules
+}
+
+func isTypeStub(p string) bool {
+	lower := strings.ToLower(p)
+	return strings.HasSuffix(lower, ".d.ts") || strings.HasSuffix(lower, ".pyi")
 }
 
 // isDefinitionKind returns true for tree-sitter node types that represent
