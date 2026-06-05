@@ -611,6 +611,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	}
 
 	hits = rerankLocal(hits, len(idents) > 0)
+	hits = ecsRerank(hits, extractTaskKWs(sessionTask))
 	s.activityRecord(p.Root, 1)
 
 	// Loop detection: block/reduce/hint before building the response.
