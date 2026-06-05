@@ -45,7 +45,7 @@ func Resolve(path, baseCacheDir string) (*Project, error) {
 	real, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("path does not exist: %s", abs)
+			return nil, fmt.Errorf("path does not exist: %s: %w", abs, os.ErrNotExist)
 		}
 		return nil, fmt.Errorf("resolve %s: %w", abs, err)
 	}
@@ -61,6 +61,29 @@ func Resolve(path, baseCacheDir string) (*Project, error) {
 	cache := filepath.Join(baseCacheDir, id)
 	return &Project{
 		Root:          real,
+		ID:            id,
+		CacheDir:      cache,
+		DBPath:        filepath.Join(cache, "index.db"),
+		LockPath:      filepath.Join(cache, "index.lock"),
+		DrainLockPath: filepath.Join(cache, "summary.lock"),
+		ActivityPath:  filepath.Join(cache, "last_query"),
+	}, nil
+}
+
+// ResolveDeleted computes the Project identity for a path that no longer
+// exists on disk. The cache ID is sha256(abs(path)), which matches what
+// Resolve would have produced when the path was not a symlink. Use only
+// for cleanup (nuke) operations — the returned Root may not be canonical.
+func ResolveDeleted(path, baseCacheDir string) (*Project, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path %q: %w", path, err)
+	}
+	sum := sha256.Sum256([]byte(abs))
+	id := hex.EncodeToString(sum[:])
+	cache := filepath.Join(baseCacheDir, id)
+	return &Project{
+		Root:          abs,
 		ID:            id,
 		CacheDir:      cache,
 		DBPath:        filepath.Join(cache, "index.db"),

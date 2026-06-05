@@ -83,6 +83,45 @@ func TestResolveErrors(t *testing.T) {
 	}
 }
 
+func TestResolveWrapsErrNotExist(t *testing.T) {
+	cache := t.TempDir()
+	_, err := Resolve("/this/path/does/not/exist", cache)
+	if err == nil {
+		t.Fatal("expected error for missing path")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected error to wrap os.ErrNotExist, got %v", err)
+	}
+}
+
+func TestResolveDeleted(t *testing.T) {
+	cache := t.TempDir()
+	dir := t.TempDir()
+
+	// Resolve while dir exists to get the canonical ID.
+	live, err := Resolve(dir, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove the directory and resolve via ResolveDeleted.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	dead, err := ResolveDeleted(dir, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// IDs must match so we can find and delete the existing cache.
+	if live.ID != dead.ID {
+		t.Errorf("ID mismatch: live=%s dead=%s", live.ID, dead.ID)
+	}
+	if dead.CacheDir != live.CacheDir {
+		t.Errorf("CacheDir mismatch: live=%s dead=%s", live.CacheDir, dead.CacheDir)
+	}
+}
+
 func TestEnsureCacheDir(t *testing.T) {
 	cache := t.TempDir()
 	dir := t.TempDir()
