@@ -51,6 +51,11 @@ func (p projectScoped) related(ctx context.Context, req *sdk.CallToolRequest, in
 	return p.s.related(ctx, req, in)
 }
 
+func (p projectScoped) findRelated(ctx context.Context, req *sdk.CallToolRequest, in FindRelatedInput) (*sdk.CallToolResult, FindRelatedOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.findRelated(ctx, req, in)
+}
+
 func (p projectScoped) graphDeps(ctx context.Context, req *sdk.CallToolRequest, in GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.graphDeps(ctx, req, in)
