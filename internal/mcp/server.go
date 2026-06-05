@@ -121,6 +121,10 @@ type Server struct {
 	// a knowledge-nudge hint when the agent has done significant work but
 	// hasn't recorded any findings. Key: project root; value: *activityState.
 	activityTracker sync.Map
+
+	// tgCache holds per-(root,prefix,ext) RAM-resident trigram indices used
+	// by searchGrep to narrow candidate files before reading them.
+	tgCache trigramCache
 }
 
 type throttleEntry struct {
