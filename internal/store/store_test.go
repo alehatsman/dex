@@ -1161,3 +1161,98 @@ func TestChunkAt(t *testing.T) {
 		t.Errorf("expected 'no chunk at' error for missing file, got: %v", err)
 	}
 }
+
+func TestClassifyQueryType(t *testing.T) {
+	tests := []struct {
+		q    string
+		want queryType
+	}{
+		// Symbol queries
+		{"SearchInput", querySymbol},
+		{"(*Store).Search", querySymbol},
+		{"store.Hit", querySymbol},
+		{"server_compress", querySymbol},
+		{"MY_CONST", querySymbol},
+		{"Store Search", querySymbol},
+		// Architecture queries
+		{"how does the indexer work", queryArchitecture},
+		{"where is the BM25 logic", queryArchitecture},
+		{"architecture of the search pipeline", queryArchitecture},
+		{"data flow through the embed layer", queryArchitecture},
+		{"explain the pipeline component", queryArchitecture},
+		// NL queries
+		{"find all embedding errors", queryNL},
+		{"retry logic for failed chunks", queryNL},
+		{"search for files that match a pattern", queryNL},
+		{"", queryNL},
+	}
+	for _, tt := range tests {
+		got := classifyQueryType(tt.q)
+		if got != tt.want {
+			t.Errorf("classifyQueryType(%q) = %d, want %d", tt.q, got, tt.want)
+		}
+	}
+}
+
+func TestRRFWeights(t *testing.T) {
+	b, d := rrfWeights(querySymbol)
+	if b != 1.4 || d != 0.6 {
+		t.Errorf("symbol weights: got bm25=%.1f dense=%.1f, want 1.4 0.6", b, d)
+	}
+	b, d = rrfWeights(queryArchitecture)
+	if b != 0.6 || d != 1.4 {
+		t.Errorf("arch weights: got bm25=%.1f dense=%.1f, want 0.6 1.4", b, d)
+	}
+	b, d = rrfWeights(queryNL)
+	if b != 1.0 || d != 1.0 {
+		t.Errorf("nl weights: got bm25=%.1f dense=%.1f, want 1.0 1.0", b, d)
+	}
+}
+
+func TestAdaptiveRRFSymbolBoostsBM25(t *testing.T) {
+	// Insert two chunks: one is the exact symbol name (BM25 should score high),
+	// one is semantically close (dense should score high).
+	st, ctx := newStore(t)
+	now := time.Now()
+	rows := []PendingChunk{
+		// "SearchInput" appears verbatim — BM25 exact match
+		{Path: "types.go", Kind: "fn", StartLine: 1, EndLine: 5, ContentSHA: "t1",
+			Content: "type SearchInput struct { Query string }", Vec: []float32{0.8, 0.6, 0, 0}},
+		// Semantically close but doesn't contain the token
+		{Path: "semantic.go", Kind: "fn", StartLine: 1, EndLine: 5, ContentSHA: "t2",
+			Content: "func ProcessQuery(q string) {}",
+			Vec:     []float32{1.0, 0, 0, 0}}, // closest dense
+		// Unrelated
+		{Path: "other.go", Kind: "fn", StartLine: 1, EndLine: 5, ContentSHA: "t3",
+			Content: "func UnrelatedFunc() {}", Vec: []float32{0, 0, 1, 0}},
+	}
+	if err := st.UpsertMany(ctx, rows, now); err != nil {
+		t.Fatal(err)
+	}
+	// Symbol query: BM25 weight 1.4 should lift types.go (exact token match)
+	hits, err := st.Search(ctx, []float32{1.0, 0, 0, 0}, "SearchInput", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("no hits")
+	}
+	// types.go has the exact token — should be in top-2
+	found := false
+	for i, h := range hits[:min(2, len(hits))] {
+		if h.Path == "types.go" {
+			found = true
+			_ = i
+		}
+	}
+	if !found {
+		t.Errorf("expected types.go (exact BM25 match) in top-2; got: %v", hits)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
