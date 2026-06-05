@@ -16,6 +16,10 @@ func AggressiveCompress(content, ext string) string {
 		lines = halveIndentation(lines)
 	}
 	lines = normalizeBlankLines(lines)
+	// Per-language entropy pass: drop low-information lines using the
+	// language-calibrated threshold (denser languages preserve more lines).
+	thresh := thresholdsFor(ext)
+	lines = dropLowEntropyLines(lines, thresh.entropyFilterThreshold())
 	return SafeguardRatio(content, strings.Join(lines, "\n"))
 }
 
