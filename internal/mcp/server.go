@@ -1460,6 +1460,12 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	// Generate/Test → aggressive (no LLM, comments stripped); others stay as-is.
 	if in.Task != "" && mode == "full" {
 		if override := compress.TaskToMode(in.Task); override != "" {
+			// Adaptive policy (#109): if this (intent, mode) pair has been penalized
+			// by prior output-ratio feedback, downgrade to a less lossy mode.
+			if p2, h2 := s.resolveProject(in.ProjectRoot); h2 == "" {
+				pt := compress.LoadPolicy(p2.CacheDir)
+				override = pt.ChooseMode(compress.IntentFromTask(in.Task), override)
+			}
 			mode = override
 			isFull = false
 		}
@@ -2249,6 +2255,7 @@ type toolSurface interface {
 	specVerify(context.Context, *sdk.CallToolRequest, SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error)
 	agent(context.Context, *sdk.CallToolRequest, AgentInput) (*sdk.CallToolResult, AgentOutput, error)
 	nav(context.Context, *sdk.CallToolRequest, NavInput) (*sdk.CallToolResult, NavOutput, error)
+	feedback(context.Context, *sdk.CallToolRequest, FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error)
 }
 
 // toolTier controls how many tools are exposed to MCP clients.
@@ -2494,6 +2501,17 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 				"don't lose context across reconnects. No embedding required."),
 		}, h.session)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "ctx_feedback",
+			Description: "Report output-ratio feedback to the adaptive compression policy. " +
+				"Call once per turn after you finish responding: pass your intent (read|search|refactor|generate|test|debug|review), " +
+				"the ratio of your output tokens to context tokens (output_tokens / context_tokens), " +
+				"and the file_view mode used on the last file read this turn (ctx_read_last_mode). " +
+				"Dex uses this to learn which compression modes cause thin responses and automatically " +
+				"downgrades them for future turns with the same intent. " +
+				"Skip when no file_view was called this turn. No embedding required.",
+		}, h.feedback)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "ctx_agent",

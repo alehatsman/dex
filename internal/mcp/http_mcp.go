@@ -166,6 +166,11 @@ func (p projectScoped) nav(ctx context.Context, req *sdk.CallToolRequest, in Nav
 	return p.s.nav(ctx, req, in)
 }
 
+func (p projectScoped) feedback(ctx context.Context, req *sdk.CallToolRequest, in FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.feedback(ctx, req, in)
+}
+
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at
 // /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
 // SDK permits reusing a server across sessions) and looked up by the {id} path
