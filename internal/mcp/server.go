@@ -21,6 +21,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/chunk"
+	"github.com/alehatsman/dex/internal/compress"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
@@ -1266,6 +1267,24 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		s.sessionAutoFile(p.DBPath, relTarget)
 		return nil, out, nil
 
+	case mode == "aggressive":
+		ext := filepath.Ext(realTarget)
+		content := compress.AggressiveCompress(string(data), ext)
+		out.Status = "ok"
+		out.Etag = etag
+		out.Content = content
+		out.Bytes = len(content)
+		origLines := bytes.Count(data, []byte("\n")) + 1
+		compLines := strings.Count(content, "\n") + 1
+		if origLines > compLines {
+			out.Hint = fmt.Sprintf("aggressive: %d → %d lines (%.0f%% reduction)",
+				origLines, compLines, float64(origLines-compLines)*100/float64(origLines))
+		}
+		s.readCacheMark(sessionID, relTarget, etag)
+		bt.recordCompressed(sessionID, relTarget)
+		s.sessionAutoFile(p.DBPath, relTarget)
+		return nil, out, nil
+
 	default: // full
 		slice, sliceStart, sliceEnd := sliceLines(data, in.StartLine, in.EndLine)
 		out.StartLine = sliceStart
@@ -1281,8 +1300,9 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		}
 
 		system := buildSummarizeSystem(in.Focus)
+		cleaned := compress.LightweightCleanup(string(slice))
 		userContent := fmt.Sprintf("FILE: %s (lines %d-%d)\n\n```\n%s\n```",
-			relTarget, sliceStart, sliceEnd, slice)
+			relTarget, sliceStart, sliceEnd, cleaned)
 
 		chatMsgs := []chat.Message{
 			{Role: "system", Content: system},
