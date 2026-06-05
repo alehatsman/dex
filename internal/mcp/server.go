@@ -350,6 +350,8 @@ type SearchInput struct {
 	ProjectRoot string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	K           int      `json:"k,omitempty" jsonschema:"number of results to return (default 8, max 30)"`
 	Exclude     []string `json:"exclude,omitempty" jsonschema:"path prefixes to skip (e.g. ['vendor/', 'internal/legacy/'])"`
+	Languages   []string `json:"languages,omitempty" jsonschema:"restrict results to these languages (e.g. ['go','typescript']); accepts language names or raw extensions (.rs, .go)"`
+	PathGlob    string   `json:"path_glob,omitempty" jsonschema:"glob pattern matched against relative file path (e.g. 'internal/**', '**/test*')"`
 }
 
 type SearchHit struct {
@@ -539,6 +541,18 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	if k > 30 {
 		k = 30
 	}
+	// When language or path filters are active, over-fetch so post-filter
+	// trimming still returns k results. candidateK = clamp(k*10, 50, 500).
+	candidateK := k
+	if len(in.Languages) > 0 || in.PathGlob != "" {
+		candidateK = k * 10
+		if candidateK < 50 {
+			candidateK = 50
+		}
+		if candidateK > 500 {
+			candidateK = 500
+		}
+	}
 
 	em := s.EmbedClient
 	vecs, err := em.Embed(ctx, []string{in.Query})
@@ -569,7 +583,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			time.Since(stats.LastIndex).Round(time.Hour), p.Root)
 	}
 
-	hits, err := st.Search(ctx, vecs[0], in.Query, k)
+	hits, err := st.Search(ctx, vecs[0], in.Query, candidateK)
 	if err != nil {
 		out.Status = "error"
 		out.Hint = fmt.Sprintf("search: %v", err)
@@ -582,7 +596,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// pure SQL index scan.
 	idents := extractIdentifiers(in.Query)
 	if len(idents) > 0 {
-		symPool := k * 3
+		symPool := candidateK * 3
 		if symPool < 15 {
 			symPool = 15
 		}
@@ -613,6 +627,10 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	hits = rerankLocal(hits, len(idents) > 0)
 	hits = ecsRerank(hits, extractTaskKWs(sessionTask))
 	s.activityRecord(p.Root, 1)
+
+	// Apply language and path_glob filters post-ranking, then trim to k.
+	exts := langToExtensions(in.Languages)
+	hits = filterHits(hits, exts, in.PathGlob, k)
 
 	// Loop detection: block/reduce/hint before building the response.
 	ldLevel, ldHint := s.ld().Check("search_semantic", argsKey(in.Query), true)
@@ -797,6 +815,147 @@ func excluded(path string, exclude []string) bool {
 		}
 	}
 	return false
+}
+
+// langToExtensions maps human-readable language names to their file extensions.
+// Raw extensions (with or without leading dot) pass through unchanged.
+func langToExtensions(langs []string) []string {
+	aliasMap := map[string][]string{
+		"typescript":  {"ts", "tsx"},
+		"javascript":  {"js", "jsx", "mjs", "cjs"},
+		"c++":         {"cpp", "hpp", "cc", "hh"},
+		"cpp":         {"cpp", "hpp", "cc", "hh"},
+		"cc":          {"cpp", "hpp", "cc", "hh"},
+		"ruby":        {"rb"},
+		"kotlin":      {"kt", "kts"},
+		"yaml":        {"yaml", "yml"},
+		"yml":         {"yaml", "yml"},
+		"python":      {"py"},
+		"java":        {"java"},
+		"go":          {"go"},
+		"rust":        {"rs"},
+		"c":           {"c", "h"},
+		"swift":       {"swift"},
+		"scala":       {"scala"},
+		"shell":       {"sh", "bash"},
+		"bash":        {"sh", "bash"},
+		"html":        {"html", "htm"},
+		"css":         {"css"},
+		"json":        {"json"},
+		"markdown":    {"md", "mdx"},
+		"proto":       {"proto"},
+		"sql":         {"sql"},
+		"toml":        {"toml"},
+	}
+	seen := make(map[string]struct{})
+	var out []string
+	for _, lang := range langs {
+		normalized := strings.ToLower(strings.TrimSpace(lang))
+		if exts, ok := aliasMap[normalized]; ok {
+			for _, e := range exts {
+				if _, dup := seen[e]; !dup {
+					seen[e] = struct{}{}
+					out = append(out, e)
+				}
+			}
+		} else {
+			// Raw extension: strip leading dot
+			ext := strings.TrimPrefix(normalized, ".")
+			if _, dup := seen[ext]; !dup {
+				seen[ext] = struct{}{}
+				out = append(out, ext)
+			}
+		}
+	}
+	return out
+}
+
+// matchGlob matches pattern against path with support for ** (matches any
+// number of path segments). A trailing /** suffix is treated as a directory
+// prefix match. Single * is handled by filepath.Match per-segment.
+func matchGlob(pattern, path string) bool {
+	// Fast path: no double-star — delegate to filepath.Match directly.
+	if !strings.Contains(pattern, "**") {
+		ok, err := filepath.Match(pattern, path)
+		return err == nil && ok
+	}
+	// Split on ** and match each segment in order.
+	parts := strings.Split(pattern, "**")
+	remaining := path
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		// Trim leading separator from part for cleaner matching.
+		part = strings.Trim(part, "/")
+		if part == "" {
+			continue
+		}
+		if i == 0 {
+			// First segment must be a prefix.
+			if !strings.HasPrefix(remaining, part) {
+				return false
+			}
+			remaining = remaining[len(part):]
+			remaining = strings.TrimPrefix(remaining, "/")
+		} else if i == len(parts)-1 {
+			// Last segment must be a suffix.
+			ok, err := filepath.Match(part, filepath.Base(remaining))
+			if err != nil || !ok {
+				// Also try matching the full remaining path against part.
+				ok2, _ := filepath.Match(part, remaining)
+				if !ok2 {
+					return false
+				}
+			}
+		} else {
+			idx := strings.Index(remaining, part)
+			if idx < 0 {
+				return false
+			}
+			remaining = remaining[idx+len(part):]
+			remaining = strings.TrimPrefix(remaining, "/")
+		}
+	}
+	return true
+}
+
+// filterHits applies optional language (by extension) and path_glob filters,
+// then trims to at most limit results. When exts and glob are both empty
+// the slice is trimmed to limit unchanged.
+func filterHits(hits []store.Hit, exts []string, glob string, limit int) []store.Hit {
+	if len(exts) == 0 && glob == "" {
+		if len(hits) > limit {
+			return hits[:limit]
+		}
+		return hits
+	}
+	out := hits[:0]
+	for _, h := range hits {
+		if len(exts) > 0 {
+			ext := strings.TrimPrefix(filepath.Ext(h.Path), ".")
+			matched := false
+			for _, e := range exts {
+				if ext == e {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+		if glob != "" {
+			if !matchGlob(glob, h.Path) {
+				continue
+			}
+		}
+		out = append(out, h)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 // rerankLocal applies post-RRF quality signals before returning search results.
@@ -1842,6 +2001,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"snake_case, qualified names) are automatically looked up by exact symbol name and fused into the " +
 				"results via Reciprocal Rank Fusion — no separate search_symbol call needed. " +
 				"Supports exclude list to skip paths. " +
+				"Optional 'languages' (e.g. ['go','typescript']) and 'path_glob' (e.g. 'internal/**') narrow results " +
+				"to specific file types or directories; when active, candidates are over-fetched to compensate for filtering. " +
 				"On error, returns a structured status: 'no-index' (run dex index first), " +
 				"'embedding-service-unreachable' (fall back to grep), or 'ok'.",
 		}, h.search)
