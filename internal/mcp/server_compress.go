@@ -114,7 +114,9 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	case strings.HasPrefix(cmd, "tsc") || strings.HasPrefix(cmd, "npx tsc"):
 		out = compressTsc(lines)
 	default:
-		if dedupd := compressLogDedup(lines); dedupd != nil {
+		if blocked := compressLogBlock(lines); blocked != nil {
+			out = blocked
+		} else if dedupd := compressLogDedup(lines); dedupd != nil {
 			out = dedupd
 		} else {
 			out = compressGeneric(lines)
@@ -1219,4 +1221,189 @@ func verbatimCompact(lines []string) []string {
 func compressLogDedup(lines []string) []string {
 	compact := verbatimCompact(lines)
 	return compact
+}
+
+// ── log block compressor ──────────────────────────────────────────────────────
+
+var (
+	reBlockHeader  = regexp.MustCompile(`^(===|---|###|##|Step\s+\d|STEP\s+\d|stage\s+\d)`)
+	reGitCommitHdr = regexp.MustCompile(`^commit\s+[0-9a-f]{7,}`)
+	reGitDiffHdrB  = regexp.MustCompile(`^diff --git `)
+)
+
+// isBlockBoundary returns true for lines that start a new logical block
+// (CI step header, git commit, section separator, markdown h2/h3).
+func isBlockBoundary(l string) bool {
+	t := strings.TrimSpace(l)
+	if t == "" {
+		return false
+	}
+	return reBlockHeader.MatchString(t) ||
+		reGitCommitHdr.MatchString(t) ||
+		reGitDiffHdrB.MatchString(t)
+}
+
+// isErrorLogLine returns true when a line contains a severe-severity keyword.
+func isErrorLogLine(l string) bool {
+	ll := strings.ToLower(l)
+	for _, kw := range []string{"error", "critical", "fatal", "panic", "exception"} {
+		if strings.Contains(ll, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// dedupBlockLines collapses consecutive near-identical lines (after
+// timestamp/hash normalization) into "[Nx] line" entries.
+func dedupBlockLines(lines []string) []string {
+	var out []string
+	var prevNorm, prevDisplay string
+	var run int
+
+	flush := func() {
+		if prevDisplay == "" {
+			return
+		}
+		if run > 1 {
+			out = append(out, fmt.Sprintf("[%dx] %s", run, prevDisplay))
+		} else {
+			out = append(out, prevDisplay)
+		}
+	}
+
+	for _, l := range lines {
+		display := normalizeTimestamps(l)
+		display = normalizeHashes(display)
+		norm := strings.TrimSpace(display)
+		if norm == "" {
+			continue
+		}
+		if norm == prevNorm {
+			run++
+		} else {
+			flush()
+			prevDisplay = display
+			prevNorm = norm
+			run = 1
+		}
+	}
+	flush()
+	return out
+}
+
+// compressLogBlock is a block-aware log compressor for CI/CD and service logs:
+//  1. Detects block boundaries (CI step headers, git commits, section marks).
+//  2. Deduplicates consecutive lines within each block independently.
+//  3. Surfaces error lines at the top of the output.
+//  4. Truncates overlong blocks: single block >30 → last 15; multi-block >20 → first 5 + omit + last 5.
+//
+// Returns nil when the output has no block structure or no significant reduction.
+func compressLogBlock(lines []string) []string {
+	if len(lines) < 20 {
+		return nil
+	}
+
+	// Quick scan: count block headers and duplicate lines
+	var boundaries int
+	var dupes int
+	prevNorm := ""
+	for _, l := range lines {
+		if isBlockBoundary(l) {
+			boundaries++
+		}
+		norm := strings.TrimSpace(normalizeHashes(normalizeTimestamps(l)))
+		if norm == prevNorm && norm != "" {
+			dupes++
+		}
+		prevNorm = norm
+	}
+	// Apply only when there are blocks OR ≥30% duplicate lines
+	if boundaries == 0 && float64(dupes)/float64(len(lines)) < 0.30 {
+		return nil
+	}
+
+	// Collect error lines for surfacing
+	var errLines []string
+	for _, l := range lines {
+		if isErrorLogLine(l) && !isBoilerplateLine(l) {
+			errLines = append(errLines, "  "+strings.TrimSpace(l))
+		}
+	}
+
+	// Split into blocks (each boundary line starts a new block)
+	type block struct {
+		header string
+		body   []string
+	}
+	var blocks []block
+	cur := block{}
+	for _, l := range lines {
+		if isBlockBoundary(l) {
+			if cur.header != "" || len(cur.body) > 0 {
+				blocks = append(blocks, cur)
+			}
+			cur = block{header: l}
+		} else {
+			cur.body = append(cur.body, l)
+		}
+	}
+	if cur.header != "" || len(cur.body) > 0 {
+		blocks = append(blocks, cur)
+	}
+
+	const singleBlockMax = 30
+	const multiBlockMax = 20
+	const headLines = 5
+	const tailLines = 5
+	const tailLinesLong = 15
+
+	// Build output
+	var out []string
+	totalUnique := 0
+
+	for _, b := range blocks {
+		deduped := dedupBlockLines(b.body)
+
+		var blockOut []string
+		if b.header != "" {
+			blockOut = append(blockOut, b.header)
+		}
+
+		if boundaries > 1 && len(deduped) > multiBlockMax {
+			// Multi-block: head + omit notice + tail
+			head := deduped[:headLines]
+			tail := deduped[len(deduped)-tailLines:]
+			omit := len(deduped) - headLines - tailLines
+			blockOut = append(blockOut, head...)
+			blockOut = append(blockOut, fmt.Sprintf("[%d lines omitted]", omit))
+			blockOut = append(blockOut, tail...)
+		} else if boundaries <= 1 && len(deduped) > singleBlockMax {
+			// Single long block: keep last tailLinesLong
+			omit := len(deduped) - tailLinesLong
+			blockOut = append(blockOut, fmt.Sprintf("[%d lines omitted]", omit))
+			blockOut = append(blockOut, deduped[len(deduped)-tailLinesLong:]...)
+		} else {
+			blockOut = append(blockOut, deduped...)
+		}
+
+		out = append(out, blockOut...)
+		out = append(out, "")
+		totalUnique += len(deduped)
+	}
+
+	if totalUnique >= len(lines) {
+		return nil
+	}
+
+	// Build header + error summary
+	header := fmt.Sprintf("%d lines → %d unique", len(lines), totalUnique)
+	var prefix []string
+	prefix = append(prefix, header)
+	if len(errLines) > 0 {
+		prefix = append(prefix, fmt.Sprintf("%d errors:", len(errLines)))
+		prefix = append(prefix, errLines...)
+	}
+	prefix = append(prefix, "")
+	return append(prefix, out...)
 }
