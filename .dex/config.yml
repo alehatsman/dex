@@ -1,0 +1,13 @@
+index:
+  include:
+    - cmd/
+    - internal/
+    - specs/
+    - docs/
+    - "*.md"
+    - go.mod
+    - tasks.yml
+  ignore:
+    - internal/testdata/
+    - benchmark/
+    - data/
