@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/compress"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -124,6 +125,12 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	}
 
 	out = collapseBlankLines(out)
+
+	// Terse pass: deterministic function-word stripping + abbreviations +
+	// zero-unique-token line dedup. Quality gate (3% minimum) is internal.
+	if tr := compress.TerseCompress(strings.Join(out, "\n"), compress.Level3); tr.Applied {
+		out = strings.Split(tr.Output, "\n")
+	}
 
 	// shorter_only guard: never emit a result that's longer than the original.
 	if len(out) >= originalLines {
