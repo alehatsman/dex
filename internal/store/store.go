@@ -2145,6 +2145,27 @@ func (s *Store) RelatedChunks(ctx context.Context, path string, startLine int, k
 	return s.fetchHits(ctx, scores, scoreContext{})
 }
 
+// ChunkAt returns the most specific indexed chunk whose span contains
+// startLine in path. Used by search_similar to obtain the source chunk's
+// content for embedding. Returns an error matching "no chunk at" when the
+// location isn't indexed.
+func (s *Store) ChunkAt(ctx context.Context, path string, startLine int) (Hit, error) {
+	var h Hit
+	err := s.db.QueryRowContext(ctx,
+		`SELECT path, kind, name, start_line, end_line, content FROM chunks
+		 WHERE path = ? AND start_line <= ? AND end_line >= ?
+		 ORDER BY (end_line - start_line) ASC LIMIT 1`,
+		path, startLine, startLine).
+		Scan(&h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &h.Content)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Hit{}, fmt.Errorf("no chunk at %s:%d", path, startLine)
+		}
+		return Hit{}, err
+	}
+	return h, nil
+}
+
 // CodeFilePaths returns every non-summary file in the chunks table
 // mapped to its inferred line count (max end_line across all its chunks).
 // Used by overview to enumerate the indexed codebase without loading content.

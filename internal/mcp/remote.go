@@ -199,6 +199,12 @@ func (rc *remoteClient) related(ctx context.Context, _ *sdk.CallToolRequest, in 
 	return nil, out, err
 }
 
+func (rc *remoteClient) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in FindRelatedInput) (*sdk.CallToolResult, FindRelatedOutput, error) {
+	var out FindRelatedOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/similar"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error) {
 	var out GraphDepsOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/deps"), in, &out)
