@@ -139,6 +139,11 @@ outer:
 		}
 	}
 
+	ldLevel, ldHint := s.ld().Check("search_grep", argsKey(in.Pattern), true)
+	if ldLevel == ThrottleBlock {
+		return nil, SearchGrepOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
+	}
+
 	status := "ok"
 	if len(matches) == 0 {
 		status = "no-matches"
@@ -152,6 +157,13 @@ outer:
 	}
 	if truncated {
 		out.Hint = fmt.Sprintf("results capped at %d — narrow the pattern or path to see more", maxResults)
+	}
+	if ldLevel == ThrottleReduce && len(out.Matches) > 10 {
+		out.Matches = out.Matches[:10]
+		out.Total = 10
+		out.Hint = ldHint + " [reduced: showing top 10]"
+	} else if ldHint != "" && out.Hint == "" {
+		out.Hint = ldHint
 	}
 	return nil, out, nil
 }

@@ -421,6 +421,28 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	if req != nil {
 		session = req.Session
 	}
+	// Loop detection: check after evidence is assembled so a block still
+	// fires even when the question changes but the search pattern repeats.
+	ldLevel, ldHint := s.ld().Check("ask", argsKey(in.Question), true)
+	if ldLevel == ThrottleBlock {
+		out.Status = "loop-blocked"
+		out.Hint = ldHint
+		out.SemanticHits = nil
+		out.Symbols = nil
+		return nil, out, nil
+	}
+	if ldLevel == ThrottleReduce {
+		if len(out.SemanticHits) > 3 {
+			out.SemanticHits = out.SemanticHits[:3]
+		}
+		if len(out.Symbols) > 3 {
+			out.Symbols = out.Symbols[:3]
+		}
+		out.Hint = ldHint + " [reduced]"
+	} else if ldHint != "" && out.Hint == "" {
+		out.Hint = ldHint
+	}
+
 	s.synthesizeAnswer(ctx, session, intent, in.Question, &out)
 	return nil, out, nil
 }
