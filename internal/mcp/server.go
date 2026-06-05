@@ -522,7 +522,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 	}
 }
 
-func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
+func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) { //nolint:cyclop
 	out := SearchOutput{}
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, SearchOutput{Status: "error", Hint: "query is empty — pass a natural-language description or code fragment"}, nil
