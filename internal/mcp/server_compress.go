@@ -64,7 +64,8 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	case strings.HasPrefix(cmd, "cargo"):
 		out = compressCargo(lines)
 	case strings.HasPrefix(cmd, "npm ") || strings.HasPrefix(cmd, "yarn ") ||
-		strings.HasPrefix(cmd, "bun ") || strings.HasPrefix(cmd, "pnpm "):
+		strings.HasPrefix(cmd, "bun ") || strings.HasPrefix(cmd, "pnpm ") ||
+		strings.HasPrefix(cmd, "turbo ") || strings.HasPrefix(cmd, "nx "):
 		out = compressNpm(lines)
 	case strings.HasPrefix(cmd, "docker"):
 		out = compressDocker(lines)
@@ -75,11 +76,14 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	case strings.HasPrefix(cmd, "gh "):
 		out = compressGh(lines)
 	case strings.HasPrefix(cmd, "pip ") || strings.HasPrefix(cmd, "pip3 ") ||
-		strings.HasPrefix(cmd, "uv "):
+		strings.HasPrefix(cmd, "uv ") || strings.HasPrefix(cmd, "conda ") ||
+		strings.HasPrefix(cmd, "mamba ") || strings.HasPrefix(cmd, "pipx "):
 		out = compressPip(lines)
 	case strings.HasPrefix(cmd, "terraform") || strings.HasPrefix(cmd, "tofu"):
 		out = compressTerraform(lines)
-	case strings.HasPrefix(cmd, "cmake") || strings.HasPrefix(cmd, "ninja"):
+	case strings.HasPrefix(cmd, "cmake") || strings.HasPrefix(cmd, "ninja") ||
+		strings.HasPrefix(cmd, "gcc ") || strings.HasPrefix(cmd, "g++ ") ||
+		strings.HasPrefix(cmd, "cc "):
 		out = compressCmake(lines)
 	case strings.HasPrefix(cmd, "grep ") || strings.HasPrefix(cmd, "rg ") ||
 		strings.HasPrefix(cmd, "ag ") || strings.HasPrefix(cmd, "ack "):
@@ -87,14 +91,19 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	case strings.HasPrefix(cmd, "find ") || strings.HasPrefix(cmd, "fd "):
 		out = compressFind(lines)
 	case strings.HasPrefix(cmd, "eslint") || strings.HasPrefix(cmd, "npx eslint") ||
-		strings.HasPrefix(cmd, "biome"):
+		strings.HasPrefix(cmd, "biome") || strings.HasPrefix(cmd, "hadolint") ||
+		strings.HasPrefix(cmd, "yamllint") || strings.HasPrefix(cmd, "markdownlint") ||
+		strings.HasPrefix(cmd, "oxlint"):
 		out = compressEslint(lines)
 	case strings.HasPrefix(cmd, "ruff"):
 		out = compressRuff(cmd, lines)
-	case strings.HasPrefix(cmd, "mypy"):
+	case strings.HasPrefix(cmd, "mypy") ||
+		strings.HasPrefix(cmd, "pyright") || strings.HasPrefix(cmd, "basedpyright"):
 		out = compressMypy(lines)
 	case strings.HasPrefix(cmd, "pytest") || strings.HasPrefix(cmd, "python -m pytest") ||
-		strings.HasPrefix(cmd, "python3 -m pytest"):
+		strings.HasPrefix(cmd, "python3 -m pytest") || strings.HasPrefix(cmd, "vitest") ||
+		strings.HasPrefix(cmd, "jest") || strings.HasPrefix(cmd, "mocha") ||
+		strings.HasPrefix(cmd, "jasmine"):
 		out = compressPytest(lines)
 	case strings.HasPrefix(cmd, "tsc") || strings.HasPrefix(cmd, "npx tsc"):
 		out = compressTsc(lines)
