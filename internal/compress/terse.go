@@ -249,5 +249,23 @@ func tokenSet(line string) map[string]struct{} {
 	return out
 }
 
+// AbbreviateText applies the abbreviation dictionary to a single string,
+// replacing whole-word verbose terms with their compact equivalents.
+// Trailing punctuation is stripped before lookup and reattached after.
+func AbbreviateText(s string) string {
+	words := strings.Fields(s)
+	for j, w := range words {
+		stripped := strings.TrimRight(w, ".,;:!?\"'")
+		suffix := w[len(stripped):]
+		if abbr, ok := abbreviations[strings.ToLower(stripped)]; ok {
+			if len(stripped) > 0 && stripped[0] >= 'A' && stripped[0] <= 'Z' {
+				abbr = strings.ToUpper(abbr[:1]) + abbr[1:]
+			}
+			words[j] = abbr + suffix
+		}
+	}
+	return strings.Join(words, " ")
+}
+
 // countTokens approximates token count via whitespace-split word count.
 func countTokens(s string) int { return len(strings.Fields(s)) }

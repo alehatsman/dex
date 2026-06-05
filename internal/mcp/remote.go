@@ -82,7 +82,7 @@ func RunStdioRemote(ctx context.Context, opts RemoteOptions) error {
 	// chatAvailable=true for view_summarize. If the remote has no chat client
 	// the /view/summarize endpoint returns 'chat-service-unreachable' — the
 	// same degradation a local server reports — so over-registering is harmless.
-	registerTools(srv, rc, toolTierFromEnv(), true)
+	registerTools(srv, rc, toolTierFromEnv(), true, descriptionModeFromEnv())
 
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
