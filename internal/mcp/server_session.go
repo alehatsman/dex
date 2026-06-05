@@ -5,20 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	dexctx "github.com/alehatsman/dex/internal/ctx"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type SessionInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot"`
+	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot | budget"`
 	Task        string `json:"task,omitempty"         jsonschema:"task description for set_task action"`
 	Note        string `json:"note,omitempty"         jsonschema:"note text for add_note action"`
 	File        string `json:"file,omitempty"         jsonschema:"relative file path for add_file action"`
 	Op          string `json:"op,omitempty"           jsonschema:"file operation: read (default) or write"`
+	WindowSize  int    `json:"window_size,omitempty"  jsonschema:"context window size in tokens for budget action (default 128000)"`
 }
 
 type SessionFileOutput struct {
@@ -40,6 +43,12 @@ type SessionOutput struct {
 	NoteCount int                 `json:"note_count,omitempty"`
 	FileCount int                 `json:"file_count,omitempty"`
 	Files     []SessionFileOutput `json:"files,omitempty"`
+	// Budget fields (action=budget only)
+	WindowSize     int     `json:"window_size,omitempty"`
+	UsedTokens     int     `json:"used_tokens,omitempty"`
+	RemainingTokens int    `json:"remaining_tokens,omitempty"`
+	Utilization    float64 `json:"utilization,omitempty"`
+	Recommendation string  `json:"recommendation,omitempty"`
 }
 
 func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in SessionInput) (*sdk.CallToolResult, SessionOutput, error) {
@@ -90,6 +99,8 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		return nil, SessionOutput{Status: "ok"}, nil
 	case "snapshot":
 		return s.sessionSnapshot(ctx, st, p.Root)
+	case "budget":
+		return s.sessionBudget(ctx, st, p.Root, in.WindowSize)
 	case "get", "":
 		// fall through to the read below
 	default:
@@ -127,6 +138,59 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		})
 	}
 	return nil, out, nil
+}
+
+// sessionBudget estimates context window utilization for the current session.
+// It reads file sizes from disk to approximate tokens consumed, then returns
+// utilization, remaining capacity, and a pressure-level recommendation.
+func (s *Server) sessionBudget(ctx context.Context, st *store.Store, projectRoot string, windowSize int) (*sdk.CallToolResult, SessionOutput, error) {
+	if windowSize <= 0 {
+		windowSize = dexctx.DefaultWindowSize
+	}
+
+	ss, ok, err := st.SessionGet(ctx)
+	if err != nil {
+		return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	if !ok {
+		ledger := dexctx.Ledger{WindowSize: windowSize}
+		return nil, SessionOutput{
+			Status:          "ok",
+			Hint:            "no active session",
+			WindowSize:      ledger.WindowSize,
+			UsedTokens:      0,
+			RemainingTokens: ledger.Remaining(),
+			Utilization:     0,
+			Recommendation:  string(ledger.Pressure()),
+		}, nil
+	}
+
+	var used int
+	// task + notes: rough token estimate from byte length
+	used += dexctx.BytesToTokens(int64(len(ss.Task) + len(ss.Notes)))
+
+	// files: estimate from actual file size on disk (deduped by path)
+	seen := make(map[string]struct{}, len(ss.Files))
+	for _, f := range ss.Files {
+		if _, dup := seen[f.Path]; dup {
+			continue
+		}
+		seen[f.Path] = struct{}{}
+		abs := filepath.Join(projectRoot, f.Path)
+		if info, statErr := os.Stat(abs); statErr == nil {
+			used += dexctx.BytesToTokens(info.Size())
+		}
+	}
+
+	ledger := dexctx.Ledger{WindowSize: windowSize, UsedTokens: used}
+	return nil, SessionOutput{
+		Status:          "ok",
+		WindowSize:      ledger.WindowSize,
+		UsedTokens:      ledger.UsedTokens,
+		RemainingTokens: ledger.Remaining(),
+		Utilization:     ledger.Utilization(),
+		Recommendation:  string(ledger.Pressure()),
+	}, nil
 }
 
 // sessionSnapshot generates a structured recovery block for use after context
