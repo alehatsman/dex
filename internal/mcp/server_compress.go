@@ -55,6 +55,12 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	cmd := strings.ToLower(strings.TrimSpace(command))
 	var out []string
 	switch {
+	case (strings.HasPrefix(cmd, "cat ") || strings.HasPrefix(cmd, "bat ") ||
+		strings.HasPrefix(cmd, "batcat ")) && isDepsFilename(depsFileArg(cmd)):
+		// cat package.json / cat go.mod / cat Cargo.toml → compact deps summary
+		if summary, ok := compressDepsFile(depsFileArg(cmd), []byte(strings.Join(lines, "\n"))); ok {
+			out = strings.Split(summary, "\n")
+		}
 	case strings.HasPrefix(cmd, "go test"):
 		out = compressGoTest(lines)
 	case strings.HasPrefix(cmd, "go build") || strings.HasPrefix(cmd, "go vet"):
