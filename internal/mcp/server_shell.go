@@ -375,7 +375,7 @@ func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInp
 	rawBytes := buf.String()
 
 	if in.Raw {
-		return nil, ShellOutput{Output: stripANSI(rawBytes), ExitCode: exitCode}, nil
+		return nil, ShellOutput{Output: maskSensitiveData(stripANSI(rawBytes)), ExitCode: exitCode}, nil
 	}
 
 	policy := classifyCommand(in.Command)
@@ -385,7 +385,7 @@ func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInp
 		return nil, ShellOutput{Output: rawBytes, ExitCode: exitCode}, nil
 	}
 
-	clean := stripANSI(rawBytes)
+	clean := maskSensitiveData(stripANSI(rawBytes))
 
 	// Verbatim: strip ANSI, preserve content (only hard-cap via maxLines).
 	if policy == policyVerbatim {
