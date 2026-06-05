@@ -8,6 +8,8 @@ import (
 // AggressiveCompress strips comments, normalizes indentation, and collapses
 // structural noise from source code. ext is the file extension (e.g. ".go").
 // Returns original content if compression degrades quality (SafeguardRatio).
+// When the ROI gate fires (≥3 identifiers qualify), a §MAP legend is prepended
+// and high-frequency identifiers are replaced with αN short refs.
 func AggressiveCompress(content, ext string) string {
 	lines := strings.Split(content, "\n")
 	lines = stripComments(lines, ext)
@@ -21,7 +23,10 @@ func AggressiveCompress(content, ext string) string {
 	thresh := thresholdsFor(ext)
 	lines = dropLowEntropyLines(lines, thresh.entropyFilterThreshold())
 	compressed := ApplyTokenReductions(strings.Join(lines, "\n"), ext)
-	return SafeguardRatio(content, compressed)
+	compressed = SafeguardRatio(content, compressed)
+	// Symbol map: replace high-ROI identifiers with αN refs when profitable.
+	sm := BuildSymbolMap(compressed)
+	return sm.ApplyWithLegend(compressed)
 }
 
 // LightweightCleanup applies conservative cleanup safe for any file content:
