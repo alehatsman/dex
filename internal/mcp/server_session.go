@@ -11,13 +11,14 @@ import (
 
 	dexctx "github.com/alehatsman/dex/internal/ctx"
 	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/heatmap"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type SessionInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot | budget"`
+	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot | budget | heatmap"`
 	Task        string `json:"task,omitempty"         jsonschema:"task description for set_task action"`
 	Note        string `json:"note,omitempty"         jsonschema:"note text for add_note action"`
 	File        string `json:"file,omitempty"         jsonschema:"relative file path for add_file action"`
@@ -102,10 +103,12 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		return s.sessionSnapshot(ctx, st, p.Root)
 	case "budget":
 		return s.sessionBudget(ctx, st, p.Root, in.WindowSize)
+	case "heatmap":
+		return s.sessionHeatmap(p.CacheDir)
 	case "get", "":
 		// fall through to the read below
 	default:
-		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: set_task | add_note | add_file | get | clear | snapshot", in.Action)}, nil
+		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: set_task | add_note | add_file | get | clear | snapshot | budget | heatmap", in.Action)}, nil
 	}
 
 	ss, ok, err := st.SessionGet(ctx)
@@ -261,6 +264,12 @@ func formatDuration(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%ds", s)
 	}
+}
+
+// sessionHeatmap returns the file access heatmap for a project.
+func (s *Server) sessionHeatmap(cacheDir string) (*sdk.CallToolResult, SessionOutput, error) {
+	hm := heatmap.Load(cacheDir)
+	return nil, SessionOutput{Status: "ok", Content: hm.Format(15)}, nil
 }
 
 // FeedbackInput is the input for the ctx_feedback MCP tool.
