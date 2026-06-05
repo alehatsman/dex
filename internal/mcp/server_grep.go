@@ -42,7 +42,7 @@ func (s *Server) SearchGrep(ctx context.Context, in SearchGrepInput) (SearchGrep
 	return out, err
 }
 
-func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
+func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) { //nolint:cyclop
 	p, hint := s.resolveProject(in.ProjectRoot)
 	if hint != "" {
 		return nil, SearchGrepOutput{Status: "error", Hint: hint}, nil

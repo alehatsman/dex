@@ -48,23 +48,6 @@ func TestExpandCamelTerm(t *testing.T) {
 	}
 }
 
-func TestPathEnrichSuffix(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"internal/store/auth_handler.go", "internal store auth handler go"},
-		{"cmd/dex/main.go", "cmd dex main go"},
-		{"simple.go", "simple go"},
-	}
-	for _, c := range cases {
-		got := pathEnrichSuffix(c.in)
-		if got != c.want {
-			t.Errorf("pathEnrichSuffix(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 func TestBuildFTSQueryCamelExpansion(t *testing.T) {
 	// A CamelCase token should expand to include sub-tokens.
 	q := buildFTSQuery("AuthService", FTSModeAuto)

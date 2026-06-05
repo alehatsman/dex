@@ -32,7 +32,7 @@ type trigramCache struct {
 // The first call for a key builds synchronously.
 func (c *trigramCache) getOrBuild(key trigramCacheKey, files []string) *trigram.Index {
 	v, _ := c.m.LoadOrStore(key, &trigramCacheEntry{})
-	entry := v.(*trigramCacheEntry)
+	entry, _ := v.(*trigramCacheEntry)
 
 	entry.mu.Lock()
 	idx := entry.idx
@@ -72,10 +72,5 @@ func (c *trigramCache) getOrBuild(key trigramCacheKey, files []string) *trigram.
 	}
 
 	return idx
-}
-
-// invalidate drops the cached index for a key, forcing a fresh build next call.
-func (c *trigramCache) invalidate(key trigramCacheKey) {
-	c.m.Delete(key)
 }
 

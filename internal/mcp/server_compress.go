@@ -286,7 +286,6 @@ func compressGoBuild(lines []string) []string {
 // ── git ──────────────────────────────────────────────────────────────────────
 
 var (
-	reGitDiffHunk    = regexp.MustCompile(`^@@`)
 	reGitDiffHunkParse = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 )
 

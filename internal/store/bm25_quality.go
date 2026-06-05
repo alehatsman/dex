@@ -57,13 +57,3 @@ func expandCamelTerm(term string) string {
 	return "(" + strings.Join(all, " OR ") + ")"
 }
 
-// pathEnrichSuffix returns a space-separated string of path component tokens
-// for appending to BM25 document content at index time. Splitting on '/',
-// '.', and '_' makes sub-path terms (stems, package names, word segments)
-// searchable via the content column.
-//
-//	"internal/store/auth_handler.go" → "internal store auth handler go"
-func pathEnrichSuffix(path string) string {
-	r := strings.NewReplacer("/", " ", ".", " ", "_", " ")
-	return r.Replace(path)
-}

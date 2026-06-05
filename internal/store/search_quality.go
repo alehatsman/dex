@@ -84,12 +84,12 @@ func (s *Store) fetchPathsForIDs(ctx context.Context, ids []int64) (map[int64]st
 		args[i] = id
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, path FROM chunks WHERE id IN (`+inPlaceholders(len(ids))+`)`,
+		`SELECT id, path FROM chunks WHERE id IN (`+inPlaceholders(len(ids))+`)`, //nolint:gosec
 		args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make(map[int64]string, len(ids))
 	for rows.Next() {
 		var id int64
