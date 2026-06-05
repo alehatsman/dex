@@ -12,9 +12,10 @@ import (
 )
 
 type CompressInput struct {
-	Output   string `json:"output"              jsonschema:"raw command output to compress"`
-	Command  string `json:"command,omitempty"   jsonschema:"command name hint (e.g. 'go test', 'git log', 'npm install') — selects compression patterns"`
-	MaxLines int    `json:"max_lines,omitempty" jsonschema:"hard cap on output lines (default 200)"`
+	Output      string  `json:"output"                 jsonschema:"raw command output to compress"`
+	Command     string  `json:"command,omitempty"      jsonschema:"command name hint (e.g. 'go test', 'git log', 'npm install') — selects compression patterns"`
+	MaxLines    int     `json:"max_lines,omitempty"    jsonschema:"hard cap on output lines (default 200)"`
+	TargetRatio float64 `json:"target_ratio,omitempty" jsonschema:"optional output/input token ratio target in (0,1) — e.g. 0.4 means compress to 40% of original; uses information-bottleneck binary search; applied after pattern passes"`
 }
 
 type CompressOutput struct {
@@ -207,10 +208,21 @@ func extractSafetyLines(lines []string, max int) []string {
 }
 
 func (s *Server) compressOutput(_ context.Context, _ *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
-	text, original, outLines := CompressText(in.Output, in.Command, in.MaxLines)
 	if in.Output == "" {
 		return nil, CompressOutput{Status: "ok", Compressed: ""}, nil
 	}
+	text, original, outLines := CompressText(in.Output, in.Command, in.MaxLines)
+
+	// Information-bottleneck pass: binary-search entropy threshold to hit the
+	// caller's target ratio. Applied after pattern passes so the IB search
+	// operates on already-compressed output.
+	if in.TargetRatio > 0 && in.TargetRatio < 1 {
+		if ib := compress.CompressIB(text, in.TargetRatio); ib != text {
+			text = ib
+			outLines = len(strings.Split(text, "\n"))
+		}
+	}
+
 	saved := 0
 	if original > 0 {
 		saved = (original - outLines) * 100 / original
