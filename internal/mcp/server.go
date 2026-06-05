@@ -1751,6 +1751,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 // summarizeBatch handles file_view when paths[] is provided.
 // All files are processed with the same mode in a single call.
+// When 3+ files are successfully read, a TF-IDF codebook is applied to
+// replace repeated lines (imports, boilerplate) with short §N refs.
 func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	const maxBatch = 10
 	if len(in.Paths) > maxBatch {
@@ -1760,9 +1762,17 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 	if mode == "" {
 		mode = "signatures"
 	}
-	var sb strings.Builder
-	var resolvedPaths []string
+
+	type fileResult struct {
+		path    string // resolved path (or "" for errors)
+		header  string // "## <path>" or "## <rawPath>\n⚠ <hint>"
+		content string // file content (empty for errors)
+		ok      bool
+	}
+
+	results := make([]fileResult, 0, len(in.Paths))
 	var project string
+
 	for _, rawPath := range in.Paths {
 		single := in
 		single.Path = rawPath
@@ -1776,12 +1786,45 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 			project = out.Project
 		}
 		if out.Status != "ok" {
-			fmt.Fprintf(&sb, "## %s\n⚠ %s\n\n", rawPath, out.Hint)
+			results = append(results, fileResult{
+				header: fmt.Sprintf("## %s\n⚠ %s", rawPath, out.Hint),
+			})
 			continue
 		}
-		fmt.Fprintf(&sb, "## %s\n%s\n\n", out.Path, out.Content)
-		resolvedPaths = append(resolvedPaths, out.Path)
+		results = append(results, fileResult{
+			path:    out.Path,
+			header:  fmt.Sprintf("## %s", out.Path),
+			content: out.Content,
+			ok:      true,
+		})
 	}
+
+	// Build codebook from successfully-read file contents.
+	var fileContents []string
+	for _, r := range results {
+		if r.ok {
+			fileContents = append(fileContents, r.content)
+		}
+	}
+	cb := compress.BuildCodebook(fileContents)
+
+	var sb strings.Builder
+	if !cb.Empty() {
+		sb.WriteString(cb.Legend())
+		sb.WriteByte('\n')
+	}
+
+	var resolvedPaths []string
+	for _, r := range results {
+		if r.ok {
+			content := cb.Apply(r.content)
+			fmt.Fprintf(&sb, "%s\n%s\n\n", r.header, content)
+			resolvedPaths = append(resolvedPaths, r.path)
+		} else {
+			fmt.Fprintf(&sb, "%s\n\n", r.header)
+		}
+	}
+
 	return nil, SummarizeOutput{
 		Status:  "ok",
 		Project: project,
