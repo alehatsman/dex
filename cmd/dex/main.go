@@ -1714,7 +1714,15 @@ func cmdNuke(_ context.Context, args []string) error {
 	}
 	p, err := proj.Resolve(rest[0], base)
 	if err != nil {
-		return err
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		// Path is gone — compute the cache key directly from the supplied
+		// string (no realpath resolution possible) and fall through.
+		p, err = proj.ResolveDeleted(rest[0], base)
+		if err != nil {
+			return err
+		}
 	}
 	if _, err := os.Stat(p.CacheDir); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
