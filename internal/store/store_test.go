@@ -1119,3 +1119,45 @@ func TestFindSymbolCandidates(t *testing.T) {
 		t.Errorf("k=2 cap not honored; got %d: %v", len(got4), got4)
 	}
 }
+
+func TestChunkAt(t *testing.T) {
+	st, ctx := newStore(t)
+	now := time.Now()
+	rows := []PendingChunk{
+		{Path: "foo.go", Kind: "fn", StartLine: 5, EndLine: 15, ContentSHA: "a1", Content: "func Foo() {}", Vec: []float32{1, 0, 0, 0}},
+		{Path: "foo.go", Kind: "fn", StartLine: 20, EndLine: 30, ContentSHA: "a2", Content: "func Bar() {}", Vec: []float32{0, 1, 0, 0}},
+	}
+	if err := st.UpsertMany(ctx, rows, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// Exact start line.
+	h, err := st.ChunkAt(ctx, "foo.go", 5)
+	if err != nil {
+		t.Fatalf("ChunkAt(foo.go, 5): %v", err)
+	}
+	if h.StartLine != 5 || h.EndLine != 15 || h.Content != "func Foo() {}" {
+		t.Errorf("unexpected chunk: %+v", h)
+	}
+
+	// Mid-span line.
+	h, err = st.ChunkAt(ctx, "foo.go", 10)
+	if err != nil {
+		t.Fatalf("ChunkAt(foo.go, 10): %v", err)
+	}
+	if h.StartLine != 5 {
+		t.Errorf("mid-span: got StartLine=%d, want 5", h.StartLine)
+	}
+
+	// Not found.
+	_, err = st.ChunkAt(ctx, "foo.go", 100)
+	if err == nil || !strings.Contains(err.Error(), "no chunk at") {
+		t.Errorf("expected 'no chunk at' error, got: %v", err)
+	}
+
+	// Wrong file.
+	_, err = st.ChunkAt(ctx, "missing.go", 5)
+	if err == nil || !strings.Contains(err.Error(), "no chunk at") {
+		t.Errorf("expected 'no chunk at' error for missing file, got: %v", err)
+	}
+}
