@@ -122,12 +122,67 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 		return output, originalLines, originalLines
 	}
 
+	// Over-compression guard: >95% token reduction on small output is almost
+	// always signal loss (e.g. compressing a one-line compiler error to nothing).
+	origTok := estimateTokens(stripped)
+	if origTok > 100 && origTok < 2000 {
+		if float64(estimateTokens(strings.Join(out, "\n")))/float64(origTok) < 0.05 {
+			return output, originalLines, originalLines
+		}
+	}
+
 	if len(out) > maxLines {
 		cut := len(out) - maxLines
-		out = append([]string{fmt.Sprintf("[%d lines omitted]", cut)}, out[cut:]...)
+		omitted := out[:cut]
+		tail := out[cut:]
+		needles := extractSafetyLines(omitted, 200)
+		if len(needles) > 0 {
+			header := fmt.Sprintf("[%d lines omitted, %d diagnostic lines preserved]", cut, len(needles))
+			var head []string
+			head = append(head, header)
+			head = append(head, needles...)
+			out = append(head, tail...)
+		} else {
+			notice := fmt.Sprintf("[%d lines omitted — output too large for context window]", cut)
+			out = append([]string{notice}, tail...)
+		}
 	}
 
 	return strings.Join(out, "\n"), originalLines, len(out)
+}
+
+// estimateTokens approximates token count via word count (fast, no BPE needed).
+func estimateTokens(s string) int { return len(strings.Fields(s)) }
+
+// safetyNeedles are patterns that must survive truncation — errors, panics,
+// test outcomes, security events, and diagnostic markers.
+var safetyNeedleStrs = []string{
+	"CRITICAL", "FATAL", "panic", "FAILED", "unhealthy", "Exited", "OOMKilled",
+	"DETACHED HEAD", "detached", "vulnerability", "CVE-", "denied", "unauthorized",
+	"forbidden", "segfault", "Segmentation fault", "SIGSEGV", "SIGKILL", "killed",
+	"out of memory", "stack overflow", "permission denied", "certificate", "expired",
+	"corrupt", "test result:", "panicked", "assertion", "traceback", "tests run",
+	// lower-case variants matched case-insensitively via strings.Contains on lower
+	"error", "warning", "failed", "passed", "passing",
+}
+
+// extractSafetyLines scans lines for safety needles and returns up to max
+// matching lines (preserving order). Case-insensitive match.
+func extractSafetyLines(lines []string, max int) []string {
+	var out []string
+	for _, l := range lines {
+		if len(out) >= max {
+			break
+		}
+		ll := strings.ToLower(l)
+		for _, needle := range safetyNeedleStrs {
+			if strings.Contains(ll, strings.ToLower(needle)) {
+				out = append(out, l)
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (s *Server) compressOutput(_ context.Context, _ *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
