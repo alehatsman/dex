@@ -15,6 +15,7 @@ package mcp
 //	POST /projects/{id}/ask                — body: ContextInput
 //	POST /projects/{id}/search/semantic    — body: SearchInput
 //	POST /projects/{id}/search/symbol      — body: FindSymbolInput
+//	POST /projects/{id}/search/similar     — body: FindRelatedInput
 //	POST /projects/{id}/graph/neighbors    — body: RelatedInput
 //	POST /projects/{id}/graph/deps         — body: GraphDepsInput
 //	POST /projects/{id}/graph/callers      — body: CallEdgeInput
@@ -262,6 +263,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/semantic", s.handleSearch(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/symbol", s.handleFindSymbol(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/search/similar", s.handleFindRelated(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/summaries", s.handleSummaries(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/neighbors", s.handleRelated(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/deps", s.handleGraphDeps(opts.Projects))
@@ -565,6 +567,10 @@ func (s *Server) handleFindSymbol(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleRelated(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *RelatedInput, root string) { in.ProjectRoot = root }, s.Related)
+}
+
+func (s *Server) handleFindRelated(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *FindRelatedInput, root string) { in.ProjectRoot = root }, s.FindRelated)
 }
 
 func (s *Server) handleGraphDeps(projects map[string]string) http.HandlerFunc {
