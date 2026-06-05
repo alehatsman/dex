@@ -338,3 +338,9 @@ func (rc *remoteClient) nav(ctx context.Context, _ *sdk.CallToolRequest, _ NavIn
 	err := rc.do(ctx, http.MethodGet, rc.base+"/v1/nav", nil, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) feedback(ctx context.Context, _ *sdk.CallToolRequest, in FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error) {
+	var out FeedbackOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/feedback"), in, &out)
+	return nil, out, err
+}
