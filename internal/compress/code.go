@@ -250,3 +250,45 @@ func stripHTMLComments(lines []string) []string {
 	}
 	return out
 }
+
+// TaskToMode classifies a free-text task description and returns the
+// recommended file_view mode override, or "" to keep the caller's mode.
+//
+// Routing:
+//
+//	Generate / Test tasks → "aggressive" (strip comments + halve indent;
+//	  code structure is all that matters, no LLM call needed)
+//	All other intents   → "" (keep caller mode; LightweightCleanup already
+//	  applied in full mode as of #128)
+//
+// A future bottleneck pass (#115) will handle FixBug/Debug/Refactor/Review
+// with ratio-adjusted filtering; for now those fall through to the default.
+func TaskToMode(task string) string {
+	lower := strings.ToLower(task)
+	if containsAny(lower, generateKWs) || containsAny(lower, testKWs) {
+		return "aggressive"
+	}
+	return ""
+}
+
+// generateKWs matches code-generation tasks where comments are noise.
+var generateKWs = []string{
+	"generat", "implement", "add feat", "add the feat", "write", "creat",
+	"scaffold", "build out", "code up",
+}
+
+// testKWs matches test-writing tasks where comments are noise.
+var testKWs = []string{
+	"add test", "write test", "unit test", "integrat test", "test case",
+	"spec", "benchmark",
+}
+
+// containsAny reports whether s contains any of the given substrings.
+func containsAny(s string, needles []string) bool {
+	for _, n := range needles {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
+}
