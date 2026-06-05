@@ -1358,6 +1358,104 @@ type scored struct {
 // Cormack et al. (2009); behavior is robust to values in [10, 100].
 const rrfK = 60
 
+// queryType classifies an incoming query to drive adaptive RRF weights.
+// SACL (EMNLP 2025): query structure is a strong signal for which retrieval
+// modality (lexical vs dense) dominates. Weights below are empirically tuned:
+//   Symbol:       BM25 1.4 × dense 0.6  — exact token match dominates
+//   Architecture: BM25 0.6 × dense 1.4  — semantic similarity dominates
+//   NL (default): BM25 1.0 × dense 1.0  — equal contribution
+type queryType int
+
+const (
+	queryNL           queryType = iota
+	querySymbol                 // CamelCase / snake_case / qualified names
+	queryArchitecture           // "how does", "architecture", "data flow", …
+)
+
+// classifyQueryType returns the queryType for q using lightweight heuristics.
+// NL is the safe default when neither Symbol nor Architecture patterns fire.
+func classifyQueryType(q string) queryType {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return queryNL
+	}
+	lower := strings.ToLower(q)
+
+	// Architecture: multi-token phrases about structure/design.
+	archPhrases := []string{
+		"how does", "how is", "where is", "where are",
+		"architecture", "design pattern", "data flow", "control flow",
+		"module structure", "component", "pipeline", "layer",
+	}
+	for _, p := range archPhrases {
+		if strings.Contains(lower, p) {
+			return queryArchitecture
+		}
+	}
+
+	// Symbol: single token that looks like a code identifier.
+	// Fire only when the entire query is one token (no whitespace except
+	// qualifiers like "Foo::Bar" or "obj.method").
+	fields := strings.Fields(q)
+	if len(fields) == 1 {
+		tok := fields[0]
+		if looksLikeIdentifier(tok) {
+			return querySymbol
+		}
+	}
+	// Two-token queries where both tokens are identifiers (e.g. "Store Search").
+	if len(fields) == 2 && looksLikeIdentifier(fields[0]) && looksLikeIdentifier(fields[1]) {
+		return querySymbol
+	}
+
+	return queryNL
+}
+
+// looksLikeIdentifier returns true for tokens that match common code
+// identifier patterns: CamelCase, PascalCase, snake_case, SCREAMING_CASE,
+// qualified names (Foo::bar, obj.method, (*T).Method), private _foo.
+func looksLikeIdentifier(tok string) bool {
+	if len(tok) == 0 {
+		return false
+	}
+	// Strip leading sigils (* & ( )).
+	stripped := strings.TrimLeft(tok, "(*&")
+	stripped = strings.TrimRight(stripped, ")")
+	if stripped == "" {
+		return false
+	}
+	// Must contain only identifier runes plus qualifiers . :: _ -
+	for _, r := range stripped {
+		if !isIdentRune(r) {
+			return false
+		}
+	}
+	// Contains at least one uppercase letter, underscore, or qualifier
+	// (avoids matching plain lowercase words like "go" or "run").
+	hasUpper := strings.IndexFunc(stripped, func(r rune) bool { return r >= 'A' && r <= 'Z' }) >= 0
+	hasQual := strings.ContainsAny(stripped, "._:")
+	hasUnderscore := strings.Contains(stripped, "_") && len(stripped) > 3
+	return hasUpper || hasQual || hasUnderscore
+}
+
+func isIdentRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') || r == '_' || r == '.' || r == ':' || r == '-' ||
+		r == '(' || r == ')' || r == '*' || r == '&'
+}
+
+// rrfWeights returns the BM25 and dense RRF multiplicative weights for qt.
+func rrfWeights(qt queryType) (bm25W, denseW float32) {
+	switch qt {
+	case querySymbol:
+		return 1.4, 0.6
+	case queryArchitecture:
+		return 0.6, 1.4
+	default:
+		return 1.0, 1.0
+	}
+}
+
 // Search returns the top-k chunks ranked by hybrid scoring with optional
 // per-file diversity via Options.MaxHitsPerFile.
 func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error) {
@@ -1463,13 +1561,17 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 		}
 	}
 
-	// Fuse via RRF.
+	// Fuse via weighted RRF. Weights are query-type-adaptive (SACL EMNLP 2025):
+	// symbol queries favour lexical, architecture queries favour dense,
+	// NL queries use equal weights. Scale-free property is preserved —
+	// the constant multipliers cancel in relative ranking.
+	bm25W, denseW := rrfWeights(classifyQueryType(queryText))
 	rrf := make(map[int64]float32, len(semRank)+len(bm25Rank))
 	for id, r := range semRank {
-		rrf[id] += 1.0 / float32(rrfK+r)
+		rrf[id] += denseW / float32(rrfK+r)
 	}
 	for id, r := range bm25Rank {
-		rrf[id] += 1.0 / float32(rrfK+r)
+		rrf[id] += bm25W / float32(rrfK+r)
 	}
 
 	// Batch-fetch paths for the full fused pool — used by noise penalties,
