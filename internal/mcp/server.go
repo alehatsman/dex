@@ -106,6 +106,12 @@ type Server struct {
 	readCache   map[string]map[string]string // sessionID → relPath → etag
 	readCacheMu sync.Mutex
 
+	// bounce detects "compression thrash": same file re-requested within
+	// bounceWindow after receiving a compressed view. shouldForceFull
+	// returns true on the second request and clears the flag (single-use).
+	bounce     *bounceTracker
+	bounceOnce sync.Once
+
 	// activityTracker accumulates per-project tool-call weights to surface
 	// a knowledge-nudge hint when the agent has done significant work but
 	// hasn't recorded any findings. Key: project root; value: *activityState.
@@ -126,6 +132,11 @@ type activityState struct {
 }
 
 // activityRecord adds weight for a tool call. weight >= 2 counts as significant.
+func (s *Server) bt() *bounceTracker {
+	s.bounceOnce.Do(func() { s.bounce = newBounceTracker() })
+	return s.bounce
+}
+
 func (s *Server) activityRecord(project string, weight int) {
 	raw, _ := s.activityTracker.LoadOrStore(project, &activityState{})
 	a, ok := raw.(*activityState)
@@ -971,16 +982,17 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 // ─── tool: view_summarize ─────────────────────────────────────────────────
 
 type SummarizeInput struct {
-	Path        string   `json:"path,omitempty" jsonschema:"file path to summarize; relative paths are resolved against project_root; required when paths is not set"`
-	Paths       []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
-	ProjectRoot string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Mode        string   `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
-	StartLine   int      `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
-	EndLine     int      `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
-	Focus       string   `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
-	Temperature float32  `json:"temperature,omitempty" jsonschema:"sampling temperature (0 = server default)"`
-	MaxTokens   int      `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
-	Etag        string   `json:"etag,omitempty" jsonschema:"content hash from a prior read; if the file is unchanged the server returns status=unchanged — re-use the content already in context instead of re-reading"`
+	Path         string   `json:"path,omitempty" jsonschema:"file path to summarize; relative paths are resolved against project_root; required when paths is not set"`
+	Paths        []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
+	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	Mode         string   `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
+	StartLine    int      `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
+	EndLine      int      `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
+	Focus        string   `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
+	Temperature  float32  `json:"temperature,omitempty" jsonschema:"sampling temperature (0 = server default)"`
+	MaxTokens    int      `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
+	Etag         string   `json:"etag,omitempty" jsonschema:"content hash from a prior read; if the file is unchanged the server returns status=unchanged — re-use the content already in context instead of re-reading"`
+	BudgetTokens int      `json:"budget_tokens,omitempty" jsonschema:"optional remaining context budget in tokens; when set, dex auto-downgrades mode to fit (full→signatures→map→handle) — omit for no budget constraint"`
 }
 
 type SummarizeOutput struct {
@@ -1090,6 +1102,22 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return nil, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, nil
 	}
 
+	// Bounce detection (#98): if this file was recently delivered compressed
+	// and the agent is re-requesting it, escalate to full mode.
+	bt := s.bt()
+	bt.recordRead(sessionID, relTarget)
+	if bt.shouldForceFull(sessionID, relTarget) && mode != "full" {
+		mode = "full"
+		isFull = mode == "full" && s.ChatClient != nil
+	}
+
+	// Budget-aware downgrade (#106): auto-select the richest mode that fits
+	// within the caller's remaining context budget. No-op when BudgetTokens=0.
+	if in.BudgetTokens > 0 && !isFull {
+		fileTokens := len(data) / 4 // ~4 bytes per token (rough approximation)
+		mode = selectAffordableMode(mode, fileTokens, in.BudgetTokens)
+	}
+
 	switch {
 	case strings.HasPrefix(mode, "lines:"):
 		rest := strings.TrimPrefix(mode, "lines:")
@@ -1141,6 +1169,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Content = content
 		out.Bytes = len(content)
 		s.readCacheMark(sessionID, relTarget, etag)
+		bt.recordCompressed(sessionID, relTarget)
 		s.sessionAutoFile(p.DBPath, relTarget)
 		return nil, out, nil
 
@@ -1185,6 +1214,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Content = content
 		out.Bytes = len(content)
 		s.readCacheMark(sessionID, relTarget, etag)
+		bt.recordCompressed(sessionID, relTarget)
 		s.sessionAutoFile(p.DBPath, relTarget)
 		return nil, out, nil
 
