@@ -1050,3 +1050,79 @@ func TestFormatSignatures(t *testing.T) {
 		}
 	}
 }
+
+func TestLangToExtensions(t *testing.T) {
+	tests := []struct {
+		langs []string
+		want  []string
+	}{
+		{[]string{"go"}, []string{"go"}},
+		{[]string{"typescript"}, []string{"ts", "tsx"}},
+		{[]string{"Go", "TypeScript"}, []string{"go", "ts", "tsx"}},
+		{[]string{".rs"}, []string{"rs"}},
+		{[]string{"rs"}, []string{"rs"}},
+		{[]string{"typescript", "javascript"}, []string{"ts", "tsx", "js", "jsx", "mjs", "cjs"}},
+		// dedup: typescript appears twice
+		{[]string{"typescript", "typescript"}, []string{"ts", "tsx"}},
+		{nil, nil},
+	}
+	for _, tt := range tests {
+		got := langToExtensions(tt.langs)
+		if len(got) != len(tt.want) {
+			t.Errorf("langToExtensions(%v) = %v, want %v", tt.langs, got, tt.want)
+			continue
+		}
+		for i, g := range got {
+			if g != tt.want[i] {
+				t.Errorf("langToExtensions(%v)[%d] = %q, want %q", tt.langs, i, g, tt.want[i])
+			}
+		}
+	}
+}
+
+func TestFilterHits(t *testing.T) {
+	makeHits := func(paths ...string) []store.Hit {
+		hits := make([]store.Hit, len(paths))
+		for i, p := range paths {
+			hits[i].Path = p
+		}
+		return hits
+	}
+	paths := func(hits []store.Hit) []string {
+		out := make([]string, len(hits))
+		for i, h := range hits {
+			out[i] = h.Path
+		}
+		return out
+	}
+
+	// No filter — just trim.
+	got := filterHits(makeHits("a.go", "b.go", "c.go"), nil, "", 2)
+	if p := paths(got); len(p) != 2 || p[0] != "a.go" {
+		t.Errorf("trim: got %v", p)
+	}
+
+	// Language filter: keep only .go
+	got = filterHits(makeHits("a.go", "b.ts", "c.go", "d.py"), []string{"go"}, "", 10)
+	if p := paths(got); len(p) != 2 || p[0] != "a.go" || p[1] != "c.go" {
+		t.Errorf("lang filter go: got %v", p)
+	}
+
+	// Path glob filter.
+	got = filterHits(makeHits("internal/mcp/server.go", "cmd/dex/main.go", "internal/store/store.go"), nil, "internal/**", 10)
+	if p := paths(got); len(p) != 2 || p[0] != "internal/mcp/server.go" {
+		t.Errorf("path glob: got %v", p)
+	}
+
+	// Combined: lang + glob.
+	got = filterHits(makeHits("internal/mcp/server.go", "internal/mcp/server_test.go", "cmd/dex/main.go"), []string{"go"}, "internal/mcp/**", 10)
+	if p := paths(got); len(p) != 2 {
+		t.Errorf("lang+glob: got %v", p)
+	}
+
+	// Limit respected after filtering.
+	got = filterHits(makeHits("a.go", "b.go", "c.go", "d.go"), []string{"go"}, "", 2)
+	if p := paths(got); len(p) != 2 {
+		t.Errorf("limit after filter: got %v", p)
+	}
+}
