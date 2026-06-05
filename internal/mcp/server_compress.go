@@ -126,6 +126,12 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 
 	out = collapseBlankLines(out)
 
+	// Entropy pass: drop low-information lines using Shannon entropy + marker
+	// + trigram-repetition scoring. Quality gate preserves paths and idents.
+	if ef := compress.EntropyFilter(out, compress.EntropyThresholdStandard); ef != nil {
+		out = ef
+	}
+
 	// Terse pass: deterministic function-word stripping + abbreviations +
 	// zero-unique-token line dedup. Quality gate (3% minimum) is internal.
 	if tr := compress.TerseCompress(strings.Join(out, "\n"), compress.Level3); tr.Applied {
