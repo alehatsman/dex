@@ -236,7 +236,9 @@ func TestClassifyCommand(t *testing.T) {
 		"docker compose up",
 		"kubectl logs -f pod/foo",
 		"flask run",
-		"psql",
+		"psql",           // bare REPL → passthrough
+		"mysql",          // bare REPL → passthrough
+		"redis-cli",      // bare REPL → passthrough
 	}
 	verbatim := []string{
 		"curl https://api.example.com/v1/users",
@@ -246,14 +248,32 @@ func TestClassifyCommand(t *testing.T) {
 		"kubectl get pods -o json",
 		"docker inspect container123",
 		"git log --oneline -10",
+		// test runners — full output required (#82)
+		"go test ./...",
+		"cargo test --workspace",
+		"pytest tests/",
+		"RUST_BACKTRACE=1 cargo test",
+		"jest --coverage",
+		// git write commands — confirmation must be verbatim (#81/#123)
+		"git push origin main",
+		"git pull --rebase",
+		"git merge feature-branch",
+		"git commit -m 'fix'",
+		// one-shot DB queries (not the REPL)
+		"psql -c \"SELECT 1\"",
+		"mysql -e 'SHOW TABLES'",
+		// cloud + API queries
+		"aws s3 ls",
+		"gh api repos/owner/repo",
+		"docker ps",
 	}
 	compress := []string{
-		"go test ./...",
 		"cargo build",
 		"npm install",
 		"make build",
 		"ruff check src/",
 		"grep -r pattern src/",
+		"golangci-lint run ./...",
 	}
 	for _, cmd := range passthrough {
 		if got := classifyCommand(cmd); got != policyPassthrough {
