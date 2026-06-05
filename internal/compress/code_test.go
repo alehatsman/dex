@@ -254,3 +254,34 @@ func TestLightweightCleanup(t *testing.T) {
 		t.Error("trailing content lost")
 	}
 }
+
+func TestTaskToMode(t *testing.T) {
+	aggressive := []string{
+		"implement the new auth handler",
+		"generate a parser for this grammar",
+		"write the migration script",
+		"add test coverage for the store package",
+		"write unit tests for compress.go",
+		"scaffold a new CLI command",
+	}
+	neutral := []string{
+		"fix the race condition in watch.go",
+		"debug why the index is slow",
+		"refactor the server into smaller files",
+		"review the PR changes",
+		"explore how the graph package works",
+		"deploy the new binary",
+		"",
+	}
+
+	for _, task := range aggressive {
+		if got := TaskToMode(task); got != "aggressive" {
+			t.Errorf("TaskToMode(%q) = %q, want %q", task, got, "aggressive")
+		}
+	}
+	for _, task := range neutral {
+		if got := TaskToMode(task); got != "" {
+			t.Errorf("TaskToMode(%q) = %q, want %q (no override)", task, got, "")
+		}
+	}
+}
