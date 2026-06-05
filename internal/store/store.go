@@ -1404,6 +1404,30 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	for id, r := range bm25Rank {
 		rrf[id] += 1.0 / float32(rrfK+r)
 	}
+
+	// Batch-fetch paths for the full fused pool — used by noise penalties,
+	// session proximity boost, and MMR diversity below. Fast PK lookup.
+	allIDs := make([]int64, 0, len(rrf))
+	for id := range rrf {
+		allIDs = append(allIDs, id)
+	}
+	pathFor, _ := s.fetchPathsForIDs(ctx, allIDs) // degrade gracefully on error
+
+	// Noise penalties: down-rank test/legacy/barrel files so agents hit
+	// implementation files first (CoRNStack ICLR 2025 multipliers).
+	for id, p := range pathFor {
+		if pen := noisePenalty(p); pen != 1.0 {
+			rrf[id] *= float32(pen)
+		}
+	}
+
+	// Session graph proximity boost (#118): files the agent recently
+	// touched in this session get an extra RRF addend, making search
+	// context-aware without explicit path filtering.
+	for id, bonus := range s.sessionProximityBonus(ctx, pathFor) {
+		rrf[id] += bonus
+	}
+
 	fused := make([]scored, 0, len(rrf))
 	for id, r := range rrf {
 		fused = append(fused, scored{id, r})
@@ -1426,9 +1450,9 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 		}
 	}
 
-	if len(fused) > k {
-		fused = fused[:k]
-	}
+	// MMR diversity (#113): greedy selection with exponential decay for
+	// repeated chunks from the same file, preventing single-file dominance.
+	fused = applyMMR(fused, pathFor, k)
 	return s.fetchHits(ctx, fused, scoreContext{semCosine: semCosine, bm25Score: bm25Score})
 }
 
