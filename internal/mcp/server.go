@@ -23,6 +23,7 @@ import (
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/compress"
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/heatmap"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
 	"github.com/alehatsman/dex/internal/proj"
@@ -1518,6 +1519,24 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	if err != nil || strings.HasPrefix(relTarget, "..") || relTarget == ".." {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("path %s is outside project root %s", target, p.Root)}, nil
 	}
+	// Heatmap recording (#108): on every successful file_view, record the
+	// access and compression savings. Fires after the function returns so
+	// out.Bytes and out.Status are final. Best-effort — never blocks the read.
+	cacheDir := p.CacheDir
+	defer func() {
+		if out.Status != "ok" {
+			return
+		}
+		hm := heatmap.Load(cacheDir)
+		origTok := out.Bytes / 4
+		compTok := len(out.Content) / 4
+		saved := origTok - compTok
+		if saved < 0 {
+			saved = 0
+		}
+		hm.RecordAccess(relTarget, origTok, saved)
+		_ = hm.Save(cacheDir)
+	}()
 	fi, err := os.Stat(realTarget)
 	if err != nil {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("stat: %v", err)}, nil
@@ -2497,7 +2516,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
 				"add_file (track a file you read/wrote), get (retrieve the current session state), " +
 				"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
-				"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical). " +
+				"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical), " +
+				"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files). " +
 				"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 				"don't lose context across reconnects. No embedding required."),
 		}, h.session)
