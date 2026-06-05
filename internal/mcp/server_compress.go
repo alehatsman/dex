@@ -199,29 +199,83 @@ func compressGoBuild(lines []string) []string {
 
 var (
 	reGitDiffHunk    = regexp.MustCompile(`^@@`)
-	reGitDiffContext = regexp.MustCompile(`^[ ]`)
+	reGitDiffHunkParse = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 )
 
 func compressGit(lines []string) []string {
-	// For long diffs, keep only +/- lines and hunk headers; drop context.
 	if len(lines) < 80 {
 		return lines
 	}
+	// Reformat to compact +N:/−N: notation — much denser than unified diff.
+	compact := compactDiff(lines)
+	if len(compact) < len(lines) {
+		return compact
+	}
+	// Fallback: strip context lines only.
 	var out []string
 	for _, l := range lines {
-		switch {
-		case reGitDiffHunk.MatchString(l):
-			out = append(out, l) // keep @@ hunk headers
-		case reGitDiffContext.MatchString(l):
-			// drop unchanged context lines
-		default:
-			out = append(out, l)
+		if len(l) > 0 && l[0] == ' ' {
+			continue
 		}
+		out = append(out, l)
 	}
 	if len(out) >= len(lines) {
 		return lines
 	}
 	return out
+}
+
+// compactDiff reformats unified diff output to lean +N:/−N: notation.
+// File header lines (diff --git, index, ---, +++) are preserved; @@ hunks
+// are replaced by numbered change lines; context lines are dropped.
+// A summary line is appended: "diff +A/-D lines".
+func compactDiff(lines []string) []string {
+	var out []string
+	var added, removed int
+	oldLine, newLine := 0, 0
+
+	for _, l := range lines {
+		if len(l) == 0 {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(l, "diff ") || strings.HasPrefix(l, "--- ") ||
+			strings.HasPrefix(l, "+++ "):
+			out = append(out, l)
+		case strings.HasPrefix(l, "index ") || strings.HasPrefix(l, "new file") ||
+			strings.HasPrefix(l, "deleted file") || strings.HasPrefix(l, "old mode") ||
+			strings.HasPrefix(l, "new mode"):
+			// skip low-signal metadata
+		case reGitDiffHunkParse.MatchString(l):
+			m := reGitDiffHunkParse.FindStringSubmatch(l)
+			oldLine = mustAtoi(m[1])
+			newLine = mustAtoi(m[2])
+		case l[0] == '-':
+			out = append(out, fmt.Sprintf("-%d: %s", oldLine, l[1:]))
+			oldLine++
+			removed++
+		case l[0] == '+':
+			out = append(out, fmt.Sprintf("+%d: %s", newLine, l[1:]))
+			newLine++
+			added++
+		default: // context line (space prefix)
+			oldLine++
+			newLine++
+		}
+	}
+	out = append(out, fmt.Sprintf("diff +%d/-%d lines", added, removed))
+	return out
+}
+
+func mustAtoi(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // ── cargo ────────────────────────────────────────────────────────────────────
