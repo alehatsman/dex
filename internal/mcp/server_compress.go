@@ -24,6 +24,10 @@ type CompressOutput struct {
 	SavedPct      int    `json:"saved_pct"`
 }
 
+// minCompressLines is the minimum number of lines required before any pattern
+// runs — tiny outputs gain nothing and can only be made worse.
+const minCompressLines = 5
+
 // CompressText applies command-specific and generic compression patterns to
 // output text. command is a hint (e.g. "go test", "git diff") that selects
 // the pattern set; an empty or unrecognised command falls back to the generic
@@ -37,8 +41,16 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 		maxLines = 200
 	}
 
-	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	// Strip ANSI escape codes so patterns match colored terminal output.
+	stripped := stripANSI(output)
+
+	lines := strings.Split(strings.TrimRight(stripped, "\n"), "\n")
 	originalLines = len(lines)
+
+	// Skip compression for tiny outputs and auth flows.
+	if originalLines < minCompressLines || containsAuthFlow(stripped) {
+		return output, originalLines, originalLines
+	}
 
 	cmd := strings.ToLower(strings.TrimSpace(command))
 	var out []string
@@ -95,6 +107,12 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	}
 
 	out = collapseBlankLines(out)
+
+	// shorter_only guard: never emit a result that's longer than the original.
+	if len(out) >= originalLines {
+		return output, originalLines, originalLines
+	}
+
 	if len(out) > maxLines {
 		cut := len(out) - maxLines
 		out = append([]string{fmt.Sprintf("[%d lines omitted]", cut)}, out[cut:]...)
