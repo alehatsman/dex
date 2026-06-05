@@ -432,6 +432,73 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate: knowledge_rev_col flag: %w", err)
 		}
 	}
+	// Path enrichment (#110): rebuild FTS triggers so that each chunk's
+	// BM25 document includes path component tokens (split on '/', '.', '_').
+	// Enables queries like "auth handler" to surface "auth_handler.go"
+	// even when content alone wouldn't rank it first.
+	// Requires a full FTS rebuild because existing rows were indexed
+	// without the path suffix.
+	var ftsPathEnrich string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='fts_path_enrich'`).Scan(&ftsPathEnrich)
+	if ftsPathEnrich != "1" {
+		pathEnrichMigration := []string{
+			// Drop the old triggers that inserted plain content.
+			`DROP TRIGGER IF EXISTS chunks_ai`,
+			`DROP TRIGGER IF EXISTS chunks_ad`,
+			`DROP TRIGGER IF EXISTS chunks_au`,
+			// New triggers: append path component tokens to the FTS content
+			// field. replace(replace(replace(path,'/','.'),' ','_',' '))
+			// produces "internal store auth handler go" from
+			// "internal/store/auth_handler.go".
+			`CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+			   INSERT INTO chunks_fts(rowid, content, path, kind)
+			   VALUES (new.id,
+			           new.content || ' ' || replace(replace(replace(new.path, '/', ' '), '.', ' '), '_', ' '),
+			           new.path, new.kind);
+			 END`,
+			`CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+			   INSERT INTO chunks_fts(chunks_fts, rowid, content, path, kind)
+			   VALUES('delete', old.id,
+			          old.content || ' ' || replace(replace(replace(old.path, '/', ' '), '.', ' '), '_', ' '),
+			          old.path, old.kind);
+			 END`,
+			`CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+			   INSERT INTO chunks_fts(chunks_fts, rowid, content, path, kind)
+			   VALUES('delete', old.id,
+			          old.content || ' ' || replace(replace(replace(old.path, '/', ' '), '.', ' '), '_', ' '),
+			          old.path, old.kind);
+			   INSERT INTO chunks_fts(rowid, content, path, kind)
+			   VALUES (new.id,
+			           new.content || ' ' || replace(replace(replace(new.path, '/', ' '), '.', ' '), '_', ' '),
+			           new.path, new.kind);
+			 END`,
+		}
+		for _, q := range pathEnrichMigration {
+			if _, err := s.db.ExecContext(ctx, q); err != nil {
+				return fmt.Errorf("migrate fts_path_enrich: %w (%s)", err, q)
+			}
+		}
+		// Rebuild FTS from scratch: drop + recreate so existing rows get
+		// the enriched content. The 'delete-all' + INSERT-from-SELECT
+		// pattern avoids dropping the FTS virtual table itself (which would
+		// require recreating shadow tables and re-registering the tokenizer).
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO chunks_fts(chunks_fts) VALUES('delete-all')`); err != nil {
+			return fmt.Errorf("migrate fts_path_enrich: delete-all: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO chunks_fts(rowid, content, path, kind)
+			 SELECT id,
+			        content || ' ' || replace(replace(replace(path, '/', ' '), '.', ' '), '_', ' '),
+			        path, kind
+			 FROM chunks`); err != nil {
+			return fmt.Errorf("migrate fts_path_enrich: repopulate: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('fts_path_enrich', '1')
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return fmt.Errorf("migrate fts_path_enrich: flag: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1803,7 +1870,7 @@ func buildFTSQuery(q string, mode FTSMode) string {
 			i++
 		}
 		for _, t := range tokenize(string(runes[start:i])) {
-			terms = append(terms, `"`+t+`"`)
+			terms = append(terms, expandCamelTerm(`"`+t+`"`))
 		}
 	}
 

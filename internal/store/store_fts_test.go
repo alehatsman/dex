@@ -51,10 +51,10 @@ func TestBuildFTSQuery(t *testing.T) {
 			want:  `"validate" AND "token" AND "signature"`,
 		},
 		{
-			name:  "unicode identifier kept",
+			name:  "unicode identifier kept, CamelCase expanded",
 			query: "ParseRFC3339Núñez",
 			mode:  FTSModeAuto,
-			want:  `"ParseRFC3339Núñez"`,
+			want:  `("ParseRFC3339Núñez" OR "Parse" OR "RFC3339Núñez")`,
 		},
 		{
 			name:  "non-ASCII script kept",
@@ -63,10 +63,10 @@ func TestBuildFTSQuery(t *testing.T) {
 			want:  `"ユーザー認証"`,
 		},
 		{
-			name:  "punctuation stripped, internal underscore kept",
+			name:  "punctuation stripped, CamelCase token expanded",
 			query: "validate_token. signOne!",
 			mode:  FTSModeAuto,
-			want:  `"validate_token" AND "signOne"`,
+			want:  `"validate_token" AND ("signOne" OR "sign" OR "One")`,
 		},
 		{
 			name:  "quoted phrase preserved",
