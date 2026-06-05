@@ -66,6 +66,57 @@ func TestBuildFTSQueryCamelExpansion(t *testing.T) {
 	}
 }
 
+func TestExpandSPLADE(t *testing.T) {
+	cases := []struct {
+		token    string
+		camel    string
+		wantSubs []string // substrings that must appear in result
+	}{
+		// known token: wraps with synonyms
+		{"auth", `"auth"`, []string{`"auth"`, `"authentication"`, `"jwt"`, `"credential"`}},
+		// known token: camel expression preserved as-is inside the group
+		{"db", `"db"`, []string{`"db"`, `"database"`, `"sql"`, `"transaction"`}},
+		// unknown token: returned unchanged
+		{"foobar", `"foobar"`, []string{`"foobar"`}},
+	}
+	for _, c := range cases {
+		got := expandSPLADE(c.token, c.camel)
+		for _, want := range c.wantSubs {
+			if !containsStr(got, want) {
+				t.Errorf("expandSPLADE(%q, %q) = %q, missing %q", c.token, c.camel, got, want)
+			}
+		}
+		// unknown token must return the camel expression unchanged
+		if _, ok := spladesExpansions[c.token]; !ok && got != c.camel {
+			t.Errorf("expandSPLADE(%q): no expansion expected, got %q", c.token, got)
+		}
+	}
+}
+
+func TestBuildFTSQuerySPLADE(t *testing.T) {
+	// "auth" should produce a query containing synonyms.
+	q := buildFTSQuery("auth middleware", FTSModeAuto)
+	for _, want := range []string{"auth", "authentication", "jwt", "middleware", "interceptor"} {
+		if !containsStr(q, want) {
+			t.Errorf("buildFTSQuery(auth middleware) = %q, missing %q", q, want)
+		}
+	}
+
+	// "db migration" should expand both terms.
+	q2 := buildFTSQuery("db migration", FTSModeAuto)
+	for _, want := range []string{"db", "database", "sql"} {
+		if !containsStr(q2, want) {
+			t.Errorf("buildFTSQuery(db migration) = %q, missing %q", q2, want)
+		}
+	}
+
+	// token not in dict: no extra synonyms, original preserved.
+	q3 := buildFTSQuery("foobar", FTSModeAuto)
+	if q3 != `"foobar"` {
+		t.Errorf("buildFTSQuery(foobar) = %q, want %q", q3, `"foobar"`)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
 }
