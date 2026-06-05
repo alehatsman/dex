@@ -176,8 +176,13 @@ func TestCompressLogDedup(t *testing.T) {
 		t.Fatalf("expected fewer lines after dedup: %d >= %d", len(out), len(lines))
 	}
 	joined := strings.Join(out, "\n")
-	if !strings.Contains(joined, "x3") && !strings.Contains(joined, "x4") {
-		t.Fatalf("expected repeat count annotation, got:\n%s", joined)
+	// verbatimCompact deduplicates consecutive runs: [3x], [2x], [2x], [3x].
+	if !strings.Contains(joined, "[3x]") && !strings.Contains(joined, "[2x]") {
+		t.Fatalf("expected [Nx] run annotation, got:\n%s", joined)
+	}
+	// Timestamps replaced with [TS].
+	if strings.Contains(joined, "2024-01-01") {
+		t.Fatalf("expected timestamps replaced with [TS], got:\n%s", joined)
 	}
 }
 
