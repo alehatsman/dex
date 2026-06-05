@@ -1352,8 +1352,12 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		"Show endpoint health and project stats (chunks/files/graph). Optional path narrows to one project. (MCP: status)",
 		"dex index status [<path>]")
 	format := fs.String("format", "text", "output format: text|json")
+	jsonFlag := fs.Bool("json", false, "shorthand for --format=json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
+	}
+	if *jsonFlag {
+		*format = "json"
 	}
 	if *format != "text" && *format != "json" {
 		return fmt.Errorf("unknown --format=%s (want text|json)", *format)
