@@ -2445,7 +2445,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 			Description: "Manage per-project session memory across tool calls. " +
 				"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
 				"add_file (track a file you read/wrote), get (retrieve the current session state), " +
-				"clear (reset the session). " +
+				"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
+				"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical). " +
 				"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 				"don't lose context across reconnects. No embedding required.",
 		}, h.session)
