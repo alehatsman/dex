@@ -64,6 +64,36 @@ func (ix *Indexer) batchForPace() int {
 	return 0
 }
 
+// drainItem processes one pending summary row. Returns the result to upsert
+// (nil on error or cache hit) and whether the row is stale. Errors are
+// logged and the attempt counter bumped; they are never propagated so the
+// errgroup can continue to the next row. bumpCtx is the outer context used
+// for BumpPendingAttempts so it survives errgroup cancellation.
+func (ix *Indexer) drainItem(ctx, bumpCtx context.Context, p store.PendingSummary) (*drainResult, bool) {
+	switch p.Kind {
+	case chunk.KindFileSummary:
+		res, stale, err := ix.processFileSummary(ctx, p)
+		if err != nil {
+			ix.drainLog.Warn("file summary drain failed", "id", p.ID, "path", p.Path, "err", err)
+			_ = ix.Store.BumpPendingAttempts(bumpCtx, p.ID, err.Error())
+			return nil, false
+		}
+		return res, stale
+	case chunk.KindChunkSummary:
+		res, stale, err := ix.processChunkSummary(ctx, p)
+		if err != nil {
+			ix.drainLog.Warn("chunk summary drain failed", "id", p.ID, "path", p.Path, "start_line", p.StartLine, "err", err)
+			_ = ix.Store.BumpPendingAttempts(bumpCtx, p.ID, err.Error())
+			return nil, false
+		}
+		return res, stale
+	default:
+		ix.drainLog.Warn("unknown pending kind", "id", p.ID, "kind", p.Kind)
+		_ = ix.Store.BumpPendingAttempts(bumpCtx, p.ID, "unknown kind")
+		return nil, false
+	}
+}
+
 // DrainPendingSummariesBatch processes up to `max` rows from
 // pending_summaries (file_summary + chunk_summary kinds). Pass 0 for
 // "no limit" — drain everything currently queued.
@@ -127,38 +157,11 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	for i := range pending {
 		p := pending[i]
 		eg.Go(func() error {
-			switch p.Kind {
-			case chunk.KindFileSummary:
-				res, stalehit, err := ix.processFileSummary(egctx, p)
-				if err != nil {
-					ix.drainLog.Warn("file summary drain failed", "id", p.ID, "path", p.Path, "err", err)
-					_ = ix.Store.BumpPendingAttempts(ctx, p.ID, err.Error())
-					return nil
-				}
-				if stalehit {
-					addStale(p.ID)
-					return nil
-				}
-				if res != nil {
-					results[i] = res
-				}
-			case chunk.KindChunkSummary:
-				res, stalehit, err := ix.processChunkSummary(egctx, p)
-				if err != nil {
-					ix.drainLog.Warn("chunk summary drain failed", "id", p.ID, "path", p.Path, "start_line", p.StartLine, "err", err)
-					_ = ix.Store.BumpPendingAttempts(ctx, p.ID, err.Error())
-					return nil
-				}
-				if stalehit {
-					addStale(p.ID)
-					return nil
-				}
-				if res != nil {
-					results[i] = res
-				}
-			default:
-				ix.drainLog.Warn("unknown pending kind", "id", p.ID, "kind", p.Kind)
-				_ = ix.Store.BumpPendingAttempts(ctx, p.ID, "unknown kind")
+			res, isStale := ix.drainItem(egctx, ctx, p)
+			if isStale {
+				addStale(p.ID)
+			} else if res != nil {
+				results[i] = res
 			}
 			return nil
 		})
