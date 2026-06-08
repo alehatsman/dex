@@ -2,74 +2,219 @@ package store
 
 import (
 	"context"
-	"math"
+	"sort"
 	"strings"
 )
 
-// noisePenalty returns a score multiplier for a file path.
-// Test files, legacy code, examples, and barrel/stub files are
-// down-ranked so agents hit implementation files first.
+// ApplyLocalRerank is the single canonical post-RRF quality reranker. It is the
+// one place noise penalties, definition/coherence boosts, and MMR diversity are
+// applied — every search surface (Store.Search, and the MCP fusing tools that
+// call SearchFused then fuse extra legs) funnels through it exactly once, so the
+// ordering is identical regardless of entry point.
+//
+// Passes, operating on RRFScore (falling back to cosine Score when RRF didn't
+// run, i.e. semantic-only search):
+//  1. per-hit: path noise penalty (multiplicative) + definition boost
+//     (1.5× for symbol queries on declaration-kind chunks)
+//  2. file coherence: chunks from files with ≥2 hits get a 1.15× boost
+//  3. MMR diversity: chunks beyond the 2nd from the same file decay 0.7× per
+//     excess, preventing one large file from dominating the top-k
+//
+// When a cross-encoder already ordered the pool (any hit carries a non-zero
+// RerankScore), the cross-encoder result is authoritative and this is a no-op —
+// it must not clobber the reranker's ordering by re-sorting on RRFScore.
+//
 // Multipliers from CoRNStack ICLR 2025 / lean-ctx search_reranking.
-func noisePenalty(path string) float64 {
-	p := strings.ToLower(path)
-	switch {
-	case strings.Contains(p, "_test") ||
-		strings.Contains(p, "/tests/") ||
-		strings.HasSuffix(p, "_test.go"):
-		return 0.3
-	case strings.Contains(p, "legacy") ||
-		strings.Contains(p, "deprecated") ||
-		strings.Contains(p, "compat"):
-		return 0.3
-	case strings.Contains(p, "/examples/") || strings.HasPrefix(p, "examples/") ||
-		strings.Contains(p, "/fixtures/") || strings.HasPrefix(p, "fixtures/") ||
-		strings.Contains(p, "/testdata/") || strings.HasPrefix(p, "testdata/"):
-		return 0.3
-	case strings.HasSuffix(p, ".d.ts") ||
-		strings.HasSuffix(p, ".pyi"):
-		return 0.7
+func ApplyLocalRerank(hits []Hit, isSymbolQuery bool) []Hit {
+	if len(hits) == 0 {
+		return hits
 	}
-	return 1.0
-}
-
-// applyMMR applies Maximal Marginal Relevance (Carbonell & Goldstein, SIGIR 1998)
-// to the sorted fused pool. Each additional chunk from the same file gets its
-// effective score multiplied by mmrDecay^n where n is the number of chunks from
-// that file already selected. This prevents one large file from dominating the
-// top-k results. Returns at most k items.
-func applyMMR(pool []scored, pathFor map[int64]string, k int) []scored {
-	const mmrDecay = 0.5
-
-	if len(pool) <= k {
-		return pool
-	}
-
-	fileCount := make(map[string]int, k)
-	out := make([]scored, 0, k)
-	remaining := make([]scored, len(pool))
-	copy(remaining, pool)
-
-	for len(out) < k && len(remaining) > 0 {
-		best := 0
-		bestScore := float32(-1)
-		for i, c := range remaining {
-			n := fileCount[pathFor[c.id]]
-			var s float32
-			if n == 0 {
-				s = c.score
-			} else {
-				s = c.score * float32(math.Pow(mmrDecay, float64(n)))
-			}
-			if s > bestScore {
-				bestScore = s
-				best = i
-			}
+	// Respect a cross-encoder ordering if one ran; don't re-sort over it.
+	for i := range hits {
+		if hits[i].RerankScore != 0 {
+			return hits
 		}
-		out = append(out, remaining[best])
-		fileCount[pathFor[remaining[best].id]]++
-		remaining = append(remaining[:best], remaining[best+1:]...)
+	}
+
+	// Rerank on a scratch score per hit — seeded from RRFScore, falling back to
+	// cosine Score when RRF didn't run (semantic-only search). The Hit.RRFScore
+	// field is left untouched so the "RRF didn't run → RRFScore == 0" contract
+	// holds for callers that inspect it (e.g. DisableBM25).
+	type ranked struct {
+		h Hit
+		s float32
+	}
+	arr := make([]ranked, len(hits))
+	for i := range hits {
+		base := hits[i].RRFScore
+		if base == 0 {
+			base = hits[i].Score
+		}
+		arr[i] = ranked{hits[i], base}
+	}
+
+	// Pass 1: per-hit signals.
+	for i := range arr {
+		if pen := pathPenalty(arr[i].h.Path); pen != 1.0 {
+			arr[i].s *= float32(pen)
+		}
+		if isSymbolQuery && isDefinitionKind(arr[i].h.Kind) {
+			arr[i].s *= 1.5
+		}
+	}
+
+	// Pass 2: file coherence — boost all chunks from files with ≥2 hits.
+	fileCnt := make(map[string]int, len(arr))
+	for i := range arr {
+		fileCnt[arr[i].h.Path]++
+	}
+	for i := range arr {
+		if fileCnt[arr[i].h.Path] >= 2 {
+			arr[i].s *= 1.15
+		}
+	}
+	sort.SliceStable(arr, func(i, j int) bool { return arr[i].s > arr[j].s })
+
+	// Pass 3: MMR diversity — decay chunks beyond the 2nd from the same file.
+	seen := make(map[string]int, len(arr))
+	for i := range arr {
+		seen[arr[i].h.Path]++
+		for excess := seen[arr[i].h.Path] - 2; excess > 0; excess-- {
+			arr[i].s *= 0.7
+		}
+	}
+	sort.SliceStable(arr, func(i, j int) bool { return arr[i].s > arr[j].s })
+
+	out := make([]Hit, len(arr))
+	for i := range arr {
+		out[i] = arr[i].h
 	}
 	return out
+}
+
+// pathPenalty returns a multiplicative down-rank factor in (0,1] for paths that
+// are typically low-signal for implementation searches (CoRNStack ICLR 2025
+// multipliers, extended with compat/legacy/barrel/stub tiers). Penalties stack
+// multiplicatively, so a test file inside a legacy dir gets 0.3 × 0.3 = 0.09×.
+//
+// Self-contained (no dependency on the mcp package) so the store layer owns its
+// own path classification.
+func pathPenalty(path string) float64 {
+	p := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
+	penalty := 1.0
+	if isTestPath(p) {
+		penalty *= 0.3
+	}
+	if isCompatLegacyPath(p) {
+		penalty *= 0.3
+	}
+	if isExampleDocsPath(p) {
+		penalty *= 0.3
+	}
+	if isReexportBarrel(p) {
+		penalty *= 0.5
+	}
+	if isTypeStub(p) {
+		penalty *= 0.7
+	}
+	return penalty
+}
+
+// isTestPath mirrors the mcp package's test/fixture classification: a path is
+// "test" if it lives in a fixture/mock/stub directory or its basename carries a
+// per-language test/spec suffix. Kept in sync with mcp.isFixturePathRaw +
+// mcp.pathTags so the reranker demotes exactly what the suggested-reads ranker
+// does.
+func isTestPath(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		switch seg {
+		case "testdata", "__fixtures__",
+			"testutil", "mock", "mocks", "stub", "stubs", "fake", "fakes":
+			return true
+		}
+	}
+	base := p
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		base = p[i+1:]
+	}
+	return strings.HasSuffix(base, "_test.go") ||
+		strings.HasSuffix(base, ".test.ts") ||
+		strings.HasSuffix(base, ".test.tsx") ||
+		strings.HasSuffix(base, ".test.js") ||
+		strings.HasSuffix(base, ".test.jsx") ||
+		strings.HasSuffix(base, ".spec.ts") ||
+		strings.HasSuffix(base, ".spec.tsx") ||
+		strings.HasSuffix(base, ".spec.js") ||
+		strings.HasSuffix(base, ".spec.jsx") ||
+		strings.HasSuffix(base, "_test.py") ||
+		(strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py")) ||
+		strings.HasSuffix(base, "_spec.rb") ||
+		strings.HasSuffix(base, "_test.rs")
+}
+
+func isCompatLegacyPath(p string) bool {
+	return hasPathSegment(p, "compat") ||
+		hasPathSegment(p, "legacy") ||
+		hasPathSegment(p, "deprecated")
+}
+
+func isExampleDocsPath(p string) bool {
+	return hasPathSegment(p, "examples") ||
+		hasPathSegment(p, "example") ||
+		hasPathSegment(p, "demo") ||
+		hasPathSegment(p, "docs_src") ||
+		hasPathSegment(p, "samples") ||
+		hasPathSegment(p, "tutorials") ||
+		hasPathSegment(p, "cookbook")
+}
+
+// hasPathSegment returns true when any /-delimited segment of p equals seg.
+func hasPathSegment(p, seg string) bool {
+	for {
+		idx := strings.Index(p, seg)
+		if idx < 0 {
+			return false
+		}
+		if idx > 0 && p[idx-1] != '/' {
+			p = p[idx+len(seg):]
+			continue
+		}
+		end := idx + len(seg)
+		if end == len(p) || p[end] == '/' {
+			return true
+		}
+		p = p[end:]
+	}
+}
+
+func isReexportBarrel(p string) bool {
+	base := p
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		base = p[i+1:]
+	}
+	return base == "index.ts" || base == "index.tsx" ||
+		base == "__init__.py" ||
+		base == "package-info.java" ||
+		base == "mod.rs" // Rust re-export modules
+}
+
+func isTypeStub(p string) bool {
+	return strings.HasSuffix(p, ".d.ts") || strings.HasSuffix(p, ".pyi")
+}
+
+// isDefinitionKind returns true for tree-sitter node types that represent a
+// declaration site (function, method, struct, class, interface, type).
+func isDefinitionKind(kind string) bool {
+	if strings.HasSuffix(kind, ":window") {
+		return false
+	}
+	return strings.Contains(kind, "function") ||
+		strings.Contains(kind, "method") ||
+		strings.Contains(kind, "class") ||
+		strings.Contains(kind, "struct") ||
+		strings.Contains(kind, "interface") ||
+		strings.Contains(kind, "type_decl") ||
+		strings.Contains(kind, "impl_item")
 }
 
 // fetchPathsForIDs returns a map from chunk ID to file path for the given

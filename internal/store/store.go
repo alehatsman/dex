@@ -1331,7 +1331,7 @@ func (s *Store) SearchSummaries(ctx context.Context, queryVec []float32, queryTe
 	if candidates < 50 {
 		candidates = 50
 	}
-	hits, err := s.searchRaw(ctx, queryVec, queryText, candidates)
+	hits, err := s.searchRaw(ctx, queryVec, queryText, candidates, true)
 	if err != nil || len(hits) == 0 {
 		return hits, err
 	}
@@ -1361,9 +1361,10 @@ const rrfK = 60
 // queryType classifies an incoming query to drive adaptive RRF weights.
 // SACL (EMNLP 2025): query structure is a strong signal for which retrieval
 // modality (lexical vs dense) dominates. Weights below are empirically tuned:
-//   Symbol:       BM25 1.4 × dense 0.6  — exact token match dominates
-//   Architecture: BM25 0.6 × dense 1.4  — semantic similarity dominates
-//   NL (default): BM25 1.0 × dense 1.0  — equal contribution
+//
+//	Symbol:       BM25 1.4 × dense 0.6  — exact token match dominates
+//	Architecture: BM25 0.6 × dense 1.4  — semantic similarity dominates
+//	NL (default): BM25 1.0 × dense 1.0  — equal contribution
 type queryType int
 
 const (
@@ -1457,13 +1458,69 @@ func rrfWeights(qt queryType) (bm25W, denseW float32) {
 }
 
 // Search returns the top-k chunks ranked by hybrid scoring with optional
-// per-file diversity via Options.MaxHitsPerFile.
+// per-file diversity via Options.MaxHitsPerFile. The canonical local quality
+// rerank (noise/definition/coherence/MMR) is applied exactly once, here.
 func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error) {
-	hits, err := s.searchRaw(ctx, queryVec, queryText, k)
+	hits, err := s.searchRaw(ctx, queryVec, queryText, k, true)
 	if err != nil || len(hits) == 0 || s.opts.MaxHitsPerFile <= 0 {
 		return hits, err
 	}
 	return diversify(hits, s.opts.MaxHitsPerFile), nil
+}
+
+// SearchFused returns RRF-fused (+ session-proximity) candidates WITHOUT the
+// local quality rerank or the cross-encoder pass. Callers that fuse additional
+// retrieval legs (exact-symbol lookup, graph neighbors) use this and then call
+// ApplyLocalRerank once over the combined set, so the quality rerank runs
+// exactly once — never twice, as happened when these callers stacked their own
+// rerank on top of Store.Search's.
+func (s *Store) SearchFused(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error) {
+	return s.searchRaw(ctx, queryVec, queryText, k, false)
+}
+
+// RerankFused is the single rerank entry point for callers that fuse their own
+// extra retrieval legs onto a SearchFused pool (the mcp search tools). It runs
+// the cross-encoder over the final union when a reranker is wired and the pool
+// exceeds k — its ordering is authoritative and it populates Hit.RerankScore —
+// and otherwise (or on a reranker outage) falls back to the canonical local
+// quality rerank. Trims to k. This guarantees the rerank runs exactly once over
+// the complete candidate set, regardless of which legs the caller fused in.
+func (s *Store) RerankFused(ctx context.Context, queryText string, hits []Hit, k int) ([]Hit, error) {
+	if k <= 0 {
+		k = 8
+	}
+	if s.opts.Reranker != nil && len(hits) > k {
+		docs := make([]string, len(hits))
+		for i := range hits {
+			docs[i] = hits[i].Content
+		}
+		scores, err := s.rerankDocs(ctx, queryText, docs)
+		switch {
+		case err == nil:
+			ordered := make([]Hit, 0, len(scores))
+			for _, sc := range scores {
+				if sc.Index < 0 || sc.Index >= len(hits) {
+					continue
+				}
+				h := hits[sc.Index]
+				h.RerankScore = sc.Score
+				ordered = append(ordered, h)
+			}
+			if len(ordered) > k {
+				ordered = ordered[:k]
+			}
+			return ordered, nil
+		case errors.Is(err, rerank.ErrUnreachable):
+			// reranker outage — fall through to the local quality rerank
+		default:
+			return nil, err
+		}
+	}
+	out := ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol)
+	if len(out) > k {
+		out = out[:k]
+	}
+	return out, nil
 }
 
 // diversify caps the number of hits per unique file path, preserving
@@ -1488,7 +1545,12 @@ func diversify(hits []Hit, maxPerFile int) []Hit {
 // is scale-free, so the two heterogenous scoring schemes compose without
 // per-corpus tuning. When `queryText` is empty (or BM25 disabled),
 // search degrades to semantic-only.
-func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error) {
+//
+// When applyLocal is true the canonical ApplyLocalRerank (noise / definition /
+// coherence / MMR) and the optional cross-encoder pass run here. When false the
+// fused candidates are returned untouched so a caller can fuse extra legs and
+// rerank the union exactly once (see SearchFused).
+func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText string, k int, applyLocal bool) ([]Hit, error) {
 	if k <= 0 {
 		k = 8
 	}
@@ -1504,7 +1566,17 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 		if len(semScores) == 0 {
 			return nil, nil
 		}
-		return s.fetchHits(ctx, semScores, scoreContext{})
+		hits, err := s.fetchHits(ctx, semScores, scoreContext{})
+		if err != nil {
+			return nil, err
+		}
+		if applyLocal {
+			hits = ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol)
+			if len(hits) > k {
+				hits = hits[:k]
+			}
+		}
+		return hits, nil
 	}
 
 	// Pull more candidates per leg than the final k so fusion has
@@ -1582,13 +1654,10 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	}
 	pathFor, _ := s.fetchPathsForIDs(ctx, allIDs) // degrade gracefully on error
 
-	// Noise penalties: down-rank test/legacy/barrel files so agents hit
-	// implementation files first (CoRNStack ICLR 2025 multipliers).
-	for id, p := range pathFor {
-		if pen := noisePenalty(p); pen != 1.0 {
-			rrf[id] *= float32(pen)
-		}
-	}
+	// Note: noise penalties / definition / coherence / MMR are NOT applied
+	// here — they belong to the single canonical reranker (ApplyLocalRerank),
+	// invoked once at the tail when applyLocal is set. Applying them inline
+	// here too would double-penalize callers that rerank again downstream.
 
 	// Session graph proximity boost (#118): files the agent recently
 	// touched in this session get an extra RRF addend, making search
@@ -1603,26 +1672,42 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	}
 	sort.Slice(fused, func(i, j int) bool { return fused[i].score > fused[j].score })
 
-	// Rerank stage: only fires if a client is wired and we actually
-	// have more candidates than k (otherwise reordering is a no-op).
-	// On ErrUnreachable, fall through to the pre-rerank truncation so
-	// reranker outages never surface as search failures.
+	// SearchFused path: hand back the FULL fused candidate pool (k*5, not
+	// trimmed to k) without the cross-encoder or local rerank, so the caller
+	// can fuse additional legs and then rerank the union exactly once via
+	// RerankFused. Trimming here would starve the downstream cross-encoder of
+	// the candidate pool it needs.
+	if !applyLocal {
+		return s.fetchHits(ctx, fused, scoreContext{semCosine: semCosine, bm25Score: bm25Score})
+	}
+
+	// Cross-encoder rerank: only fires if a client is wired and we actually
+	// have more candidates than k (otherwise reordering is a no-op). Its
+	// ordering is authoritative, so it returns directly. On ErrUnreachable,
+	// fall through to the local rerank so reranker outages never surface as
+	// search failures.
 	if s.opts.Reranker != nil && len(fused) > k {
 		reranked, rerankScore, err := s.rerank(ctx, queryText, fused, k)
 		switch {
 		case err == nil:
 			return s.fetchHits(ctx, reranked, scoreContext{semCosine: semCosine, bm25Score: bm25Score, rrfScore: rrf, rerankScore: rerankScore})
 		case errors.Is(err, rerank.ErrUnreachable):
-			// fall through to non-reranked path
+			// fall through to local rerank
 		default:
 			return nil, err
 		}
 	}
 
-	// MMR diversity (#113): greedy selection with exponential decay for
-	// repeated chunks from the same file, preventing single-file dominance.
-	fused = applyMMR(fused, pathFor, k)
-	return s.fetchHits(ctx, fused, scoreContext{semCosine: semCosine, bm25Score: bm25Score})
+	// Canonical local rerank over the full fused pool, then trim to k.
+	hits, err := s.fetchHits(ctx, fused, scoreContext{semCosine: semCosine, bm25Score: bm25Score})
+	if err != nil {
+		return nil, err
+	}
+	hits = ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol)
+	if len(hits) > k {
+		hits = hits[:k]
+	}
+	return hits, nil
 }
 
 // inPlaceholders returns a comma-separated list of n SQL "?" bind vars,
@@ -1630,6 +1715,29 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 func inPlaceholders(n int) string {
 	s := strings.Repeat("?,", n)
 	return s[:len(s)-1]
+}
+
+// rerankDocs delegates to the configured reranker under the per-call deadline
+// (Options.RerankTimeout, default 1500ms) and maps a deadline expiry to
+// rerank.ErrUnreachable so callers degrade to the pre-rerank ordering instead
+// of surfacing a hard search failure. Shared by the scored-based rerank (simple
+// Store.Search path, with id-keyed LRU cache) and the Hit-based RerankFused
+// (fusing callers) so the deadline + error semantics live in one place.
+func (s *Store) rerankDocs(ctx context.Context, queryText string, docs []string) ([]rerank.Score, error) {
+	timeout := s.opts.RerankTimeout
+	if timeout <= 0 {
+		timeout = 1500 * time.Millisecond
+	}
+	rerankCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	scores, err := s.opts.Reranker.Rerank(rerankCtx, queryText, docs)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, fmt.Errorf("%w: rerank timed out after %s", rerank.ErrUnreachable, timeout)
+		}
+		return nil, err
+	}
+	return scores, nil
 }
 
 // rerank fetches `Content` for the fused pool, sends (query, docs) to
@@ -1699,21 +1807,8 @@ func (s *Store) rerank(ctx context.Context, queryText string, fused []scored, k 
 		docIDs = append(docIDs, sc.id)
 	}
 
-	timeout := s.opts.RerankTimeout
-	if timeout <= 0 {
-		timeout = 1500 * time.Millisecond
-	}
-	rerankCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	scores, err := s.opts.Reranker.Rerank(rerankCtx, queryText, docs)
+	scores, err := s.rerankDocs(ctx, queryText, docs)
 	if err != nil {
-		// Surface a deadline as ErrUnreachable so the existing fallback
-		// in Search degrades to the pre-rerank ordering. Without this,
-		// the timeout would propagate as DeadlineExceeded and bubble
-		// up to the caller as a hard search failure.
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			return nil, nil, fmt.Errorf("%w: rerank timed out after %s", rerank.ErrUnreachable, timeout)
-		}
 		return nil, nil, err
 	}
 
