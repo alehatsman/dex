@@ -28,6 +28,7 @@ import (
 	"github.com/alehatsman/dex/internal/index"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/rerank"
+	"github.com/alehatsman/dex/internal/slo"
 	"github.com/alehatsman/dex/internal/store"
 	"github.com/alehatsman/dex/internal/watch"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -150,6 +151,39 @@ type Server struct {
 	// tgCache holds per-(root,prefix,ext) RAM-resident trigram indices used
 	// by searchGrep to narrow candidate files before reading them.
 	tgCache trigramCache
+}
+
+// sloFor returns the per-project SLO tracker. Config is loaded once from
+// .dex/config.yml on first access; subsequent calls for the same root are
+// served from the process-local registry in the slo package.
+func (s *Server) sloFor(root string) *slo.Tracker {
+	return slo.ForProject(root)
+}
+
+// sloAnnotation returns a non-empty annotation string when any warn/throttle
+// violations are present; empty string when there are none or only block violations.
+func sloAnnotation(vs []slo.Violation) string {
+	var parts []string
+	for _, v := range vs {
+		if v.SLO.Action == slo.ActionBlock {
+			continue
+		}
+		parts = append(parts, v.Annotation())
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ")
+}
+
+// sloBlock returns the block message from the first block violation, or "".
+func sloBlock(vs []slo.Violation) string {
+	for _, v := range vs {
+		if v.SLO.Action == slo.ActionBlock {
+			return v.BlockMessage()
+		}
+	}
+	return ""
 }
 
 type throttleEntry struct {
@@ -698,6 +732,17 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	if ldLevel == ThrottleReduce && len(out.Hits) > 5 {
 		out.Hits = out.Hits[:5]
 		out.Hint = ldHint + " [reduced: showing top 5]"
+	}
+
+	// SLO monitoring: record this tool call and check thresholds.
+	tr := s.sloFor(p.Root)
+	tr.RecordToolCall()
+	if ann := sloAnnotation(tr.Check()); ann != "" {
+		if out.Hint == "" {
+			out.Hint = ann
+		} else {
+			out.Hint += " " + ann
+		}
 	}
 	return nil, out, nil
 }
@@ -1335,6 +1380,21 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	}
 	s.markForeground(p)
 	out.Project = p.Root
+
+	// SLO monitoring: record the tool call, check for throttle/block.
+	{
+		tr := s.sloFor(p.Root)
+		tr.RecordToolCall()
+		if tr.ConsumeThrottle() && mode == "full" {
+			// Throttle: downgrade full→signatures to reduce token output.
+			mode = "signatures"
+			isFull = false
+		}
+		if blockMsg := sloBlock(tr.Check()); blockMsg != "" {
+			return nil, SummarizeOutput{Status: "error", Hint: blockMsg}, nil
+		}
+	}
+
 	if isFull {
 		out.Endpoint = s.ChatClient.Endpoint()
 		out.Model = s.ChatClient.ModelName()
@@ -1362,6 +1422,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	// access and compression savings. Fires after the function returns so
 	// out.Bytes and out.Status are final. Best-effort — never blocks the read.
 	cacheDir := p.CacheDir
+	sloTracker := s.sloFor(p.Root)
 	defer func() {
 		if out.Status != "ok" {
 			return
@@ -1375,6 +1436,16 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		}
 		hm.RecordAccess(relTarget, origTok, saved)
 		_ = hm.Save(cacheDir)
+
+		// SLO: record output tokens and append any warn annotations.
+		sloTracker.RecordTokens(len(out.Content) / 4)
+		if ann := sloAnnotation(sloTracker.Check()); ann != "" {
+			if out.Hint == "" {
+				out.Hint = ann
+			} else {
+				out.Hint += " " + ann
+			}
+		}
 	}()
 	fi, err := os.Stat(realTarget)
 	if err != nil {
