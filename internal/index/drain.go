@@ -473,11 +473,12 @@ func (ix *Indexer) processFileSummary(ctx context.Context, p store.PendingSummar
 	if len(slice) > summarizeCap {
 		slice = slice[:summarizeCap]
 	}
-	currentSHA := chunkSHA(string(slice))
+	currentSHA := chunkSHA(fileSummaryPromptVersion + "\x00" + string(slice))
 	if currentSHA != p.ContentSHA {
 		return nil, true, nil // file changed; drop pending
 	}
-	summary, err := summarizeFile(ctx, ix.Options.Chat, ix.Options.SummaryModels.File, p.Path, slice)
+	subjects := RecentCommitSubjects(ctx, ix.Proj.Root, p.Path, 3)
+	summary, err := summarizeFile(ctx, ix.Options.Chat, ix.Options.SummaryModels.File, p.Path, slice, subjects)
 	if err != nil {
 		return nil, false, err
 	}

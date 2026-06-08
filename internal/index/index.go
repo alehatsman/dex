@@ -530,7 +530,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				slice = slice[:summarizeCap]
 				truncated = true
 			}
-			fileSHA := chunkSHA(string(slice))
+			fileSHA := chunkSHA(fileSummaryPromptVersion + "\x00" + string(slice))
 			if pkgFiles != nil {
 				dir := filepath.Dir(sf.rel)
 				pkgFiles[dir] = append(pkgFiles[dir], pkgFileEntry{path: sf.rel, sha: fileSHA})
@@ -638,7 +638,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			for i := range fileSummaryJobs {
 				j := fileSummaryJobs[i]
 				eg.Go(func() error {
-					summary, err := summarizeFile(egctx, ix.Options.Chat, ix.Options.SummaryModels.File, j.rel, j.slice)
+					subjects := RecentCommitSubjects(egctx, ix.Proj.Root, j.rel, 3)
+					summary, err := summarizeFile(egctx, ix.Options.Chat, ix.Options.SummaryModels.File, j.rel, j.slice, subjects)
 					if err != nil {
 						ix.Options.Logger.Warn("summarize failed", "path", j.rel, "err", err)
 						return nil
@@ -1137,21 +1138,39 @@ func buildRepoUserPrompt(pkgSummaries []string, extra repoGrounding) string {
 	return b.String()
 }
 
+// fileSummaryPromptVersion is mixed into the file_summary cache key.
+// Bump this whenever the summarizeFile prompt changes so stale cached
+// summaries are regenerated on the next index run.
+const fileSummaryPromptVersion = "v2"
+
 // summarizeFile asks the chat endpoint for a tight, retrieval-friendly
-// summary of one file. Returns the summary text or an error if the
-// chat call fails. Caller decides whether the failure is fatal — the
-// indexer logs and skips so one bad file doesn't break a whole run.
-func summarizeFile(ctx context.Context, cc *chat.Client, model, rel string, data []byte) (string, error) {
+// summary of one file. recentSubjects is an optional list of recent commit
+// subjects for the file; when non-empty they are injected as a RECENT CHANGES
+// section so the model understands *why* the file is shaped the way it is.
+// Returns the summary text or an error if the chat call fails. Caller decides
+// whether the failure is fatal — the indexer logs and skips so one bad file
+// doesn't break a whole run.
+func summarizeFile(ctx context.Context, cc *chat.Client, model, rel string, data []byte, recentSubjects []string) (string, error) {
 	const system = "You are a code summarizer. Summarize this single file in 2-4 sentences so a reader can decide whether to open it. " +
 		"Lead with what the file does. Name the exported types and functions verbatim. Note any non-obvious side effects or invariants. " +
 		"No prose padding, no apologies, no restating the prompt. " +
 		"Only describe what is actually present in the file. Do not infer features by association " +
 		"(e.g. a library import does not mean its most famous use case is in play). If a feature " +
 		"is not in the code, omit it."
-	user := fmt.Sprintf("FILE: %s\n\n```\n%s\n```", rel, data)
+	var sb strings.Builder
+	if len(recentSubjects) > 0 {
+		sb.WriteString("RECENT CHANGES (last commits touching this file):\n")
+		for _, s := range recentSubjects {
+			sb.WriteString("- ")
+			sb.WriteString(s)
+			sb.WriteByte('\n')
+		}
+		sb.WriteString("Use these to understand *why* the code is shaped the way it is, not as a description of current behavior.\n\n")
+	}
+	fmt.Fprintf(&sb, "FILE: %s\n\n```\n%s\n```", rel, data)
 	resp, err := cc.Generate(ctx, []chat.Message{
 		{Role: "system", Content: system},
-		{Role: "user", Content: user},
+		{Role: "user", Content: sb.String()},
 	}, chat.Options{Model: model, MaxTokens: 300, Temperature: 0.1})
 	if err != nil {
 		return "", err

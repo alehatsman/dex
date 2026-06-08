@@ -73,7 +73,7 @@ func TestSummarizePropagatesModel(t *testing.T) {
 			name:  "file uses File model",
 			model: "balanced:7b",
 			call: func() error {
-				_, err := summarizeFile(ctx, cc, "balanced:7b", "x.go", []byte("package x"))
+				_, err := summarizeFile(ctx, cc, "balanced:7b", "x.go", []byte("package x"), nil)
 				return err
 			},
 		},
@@ -126,7 +126,7 @@ func TestSummarizeEmptyModelUsesClientDefault(t *testing.T) {
 	cc := chat.New(srv.URL, "client-default", 5*time.Second)
 	ctx := context.Background()
 
-	if _, err := summarizeFile(ctx, cc, "", "x.go", []byte("package x")); err != nil {
+	if _, err := summarizeFile(ctx, cc, "", "x.go", []byte("package x"), nil); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()
