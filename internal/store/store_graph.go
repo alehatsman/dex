@@ -845,24 +845,200 @@ func fuseWithGraphNeighbors(primary, graphHits []Hit, n int) []Hit {
 	return out
 }
 
-// fuseSessionGraph expands the hit set with graph-adjacent files of recently
-// session-touched files, fusing at 0.5× RRF weight. Silently returns primary
-// unchanged when the session is absent, the graph is unbuilt, or any store
-// call fails — graph proximity is best-effort and must not degrade search.
-func (s *Store) fuseSessionGraph(ctx context.Context, hits []Hit, n int) []Hit {
-	ss, ok, err := s.SessionGet(ctx)
-	if err != nil || !ok || len(ss.Files) == 0 {
+// SeedFile is a file with an initial activation weight for SpreadActivation.
+type SeedFile struct {
+	Path   string
+	Weight float32
+}
+
+// fileEdge is one entry from fileEdgesBidirectional.
+type fileEdge struct {
+	srcFile string
+	dstFile string
+	outDeg  int // distinct neighbor files for srcFile (for fan-out normalization)
+}
+
+// fileEdgesBidirectional returns file-level edges (both directions) for the
+// given source files, along with each source file's distinct out-degree.
+func (s *Store) fileEdgesBidirectional(ctx context.Context, files []string) ([]fileEdge, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(files))
+	for i, f := range files {
+		args[i] = f
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		WITH active_nodes AS (
+		  SELECT id, file_path FROM graph_nodes
+		  WHERE file_path IN (`+inPlaceholders(len(files))+`) AND file_path != ''
+		),
+		fwd AS (
+		  SELECT an.file_path AS src_file, gn.file_path AS dst_file
+		  FROM graph_edges ge
+		  JOIN active_nodes an ON an.id = ge.src_id
+		  JOIN graph_nodes gn ON gn.id = ge.dst_id
+		  WHERE gn.file_path != '' AND gn.file_path != an.file_path
+		),
+		rev AS (
+		  SELECT an.file_path AS src_file, gn.file_path AS dst_file
+		  FROM graph_edges ge
+		  JOIN active_nodes an ON an.id = ge.dst_id
+		  JOIN graph_nodes gn ON gn.id = ge.src_id
+		  WHERE gn.file_path != '' AND gn.file_path != an.file_path
+		),
+		all_edges AS (
+		  SELECT src_file, dst_file FROM fwd
+		  UNION
+		  SELECT src_file, dst_file FROM rev
+		),
+		out_degrees AS (
+		  SELECT src_file, COUNT(*) AS out_deg FROM all_edges GROUP BY src_file
+		)
+		SELECT ae.src_file, ae.dst_file, od.out_deg
+		FROM all_edges ae
+		JOIN out_degrees od ON od.src_file = ae.src_file`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []fileEdge
+	for rows.Next() {
+		var e fileEdge
+		if err := rows.Scan(&e.srcFile, &e.dstFile, &e.outDeg); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// SpreadActivation runs spreading activation over the file-level call graph.
+// Seeds carry initial activation weights (typically proportional to RRF scores).
+// Energy spreads bidirectionally along graph_edges with fan-out normalization
+// (each unit of energy distributes equally across all connected files) and
+// per-hop decay (0.7). Pulses below threshold (1e-4) are pruned. After maxHops
+// iterations the top-n non-seed files by accumulated activation are returned.
+func (s *Store) SpreadActivation(ctx context.Context, seeds []SeedFile, n int) ([]string, error) {
+	const (
+		decay     = float32(0.7)
+		threshold = float32(1e-4)
+		maxHops   = 4
+	)
+	if len(seeds) == 0 || n <= 0 {
+		return nil, nil
+	}
+	seedSet := make(map[string]struct{}, len(seeds))
+	activation := make(map[string]float32, len(seeds)*8)
+	for _, sf := range seeds {
+		seedSet[sf.Path] = struct{}{}
+		activation[sf.Path] = sf.Weight
+	}
+
+	for range maxHops {
+		var active []string
+		for path, energy := range activation {
+			if energy > threshold {
+				active = append(active, path)
+			}
+		}
+		if len(active) == 0 {
+			break
+		}
+		edges, err := s.fileEdgesBidirectional(ctx, active)
+		if err != nil {
+			return nil, err
+		}
+		if len(edges) == 0 {
+			break
+		}
+		// Spread using snapshot of current activation to ensure parallel semantics.
+		snapshot := make(map[string]float32, len(activation))
+		for p, e := range activation {
+			snapshot[p] = e
+		}
+		for _, e := range edges {
+			energy := snapshot[e.srcFile]
+			if energy <= threshold || e.outDeg == 0 {
+				continue
+			}
+			activation[e.dstFile] += energy * decay / float32(e.outDeg)
+		}
+	}
+
+	type result struct {
+		path   string
+		energy float32
+	}
+	var results []result
+	for path, energy := range activation {
+		if _, isSeed := seedSet[path]; isSeed {
+			continue
+		}
+		if energy > threshold {
+			results = append(results, result{path, energy})
+		}
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].energy > results[j].energy
+	})
+	if len(results) > n {
+		results = results[:n]
+	}
+	out := make([]string, len(results))
+	for i, r := range results {
+		out[i] = r.path
+	}
+	return out, nil
+}
+
+// FuseSpreadingActivation expands the hit set using spreading activation seeded
+// from both the session-recent files and the top semantic hits. Energy spreads
+// along bidirectional graph edges with fan-out normalization and per-hop decay,
+// then activated files are fused at 0.5× RRF weight. Silently returns primary
+// hits unchanged on session absence, empty graph, or any store failure — graph
+// proximity is best-effort and must not degrade search.
+func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) []Hit {
+	if len(hits) == 0 {
 		return hits
 	}
-	seeds := make([]string, 0, len(ss.Files))
-	for _, f := range ss.Files {
-		seeds = append(seeds, f.Path)
+
+	// Build seed set: session-recent files (weight 1.0) + top semantic hits
+	// (weight proportional to score). Dedup by path; first write wins.
+	seeds := make([]SeedFile, 0, 16)
+	seen := make(map[string]struct{}, 16)
+
+	if ss, ok, err := s.SessionGet(ctx); err == nil && ok {
+		for _, f := range ss.Files {
+			if _, dup := seen[f.Path]; !dup {
+				seeds = append(seeds, SeedFile{Path: f.Path, Weight: 1.0})
+				seen[f.Path] = struct{}{}
+			}
+		}
 	}
-	neighbors, err := s.GraphNeighborFiles(ctx, seeds, 15)
-	if err != nil || len(neighbors) == 0 {
+
+	// Normalize hit scores to [0,1] and add as seeds.
+	var maxScore float32
+	for _, h := range hits {
+		if h.Score > maxScore {
+			maxScore = h.Score
+		}
+	}
+	if maxScore <= 0 {
+		maxScore = 1
+	}
+	for _, h := range hits {
+		if _, dup := seen[h.Path]; !dup {
+			seeds = append(seeds, SeedFile{Path: h.Path, Weight: h.Score / maxScore})
+			seen[h.Path] = struct{}{}
+		}
+	}
+
+	activated, err := s.SpreadActivation(ctx, seeds, 15)
+	if err != nil || len(activated) == 0 {
 		return hits
 	}
-	graphHits, err := s.HitsForFiles(ctx, neighbors, n*2)
+	graphHits, err := s.HitsForFiles(ctx, activated, n*2)
 	if err != nil || len(graphHits) == 0 {
 		return hits
 	}

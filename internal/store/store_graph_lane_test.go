@@ -89,3 +89,120 @@ func hitPaths(hits []Hit) []string {
 	}
 	return out
 }
+
+// TestSpreadActivationTwoHop verifies that SpreadActivation finds files two hops
+// away from seeds, not just direct neighbors.
+//
+// Graph: seed.go → hop1.go → hop2.go
+// hop2.go has no direct edge to seed.go; only spreading activation reaches it.
+func TestSpreadActivationTwoHop(t *testing.T) {
+	st, ctx := newStore(t)
+	now := time.Now()
+
+	if err := st.GraphUpsertNodes(ctx, []GraphNodeRow{
+		{ID: "n:seed", Kind: "file", Name: "seed.go", FilePath: "seed.go", ContentHash: "hs"},
+		{ID: "n:hop1", Kind: "file", Name: "hop1.go", FilePath: "hop1.go", ContentHash: "h1"},
+		{ID: "n:hop2", Kind: "file", Name: "hop2.go", FilePath: "hop2.go", ContentHash: "h2"},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.GraphUpsertEdges(ctx, []GraphEdgeRow{
+		{ID: "e:sh1", Kind: "calls", SrcID: "n:seed", DstID: "n:hop1", FilePath: "seed.go", ContentHash: "esh1"},
+		{ID: "e:h1h2", Kind: "calls", SrcID: "n:hop1", DstID: "n:hop2", FilePath: "hop1.go", ContentHash: "eh1h2"},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	seeds := []SeedFile{{Path: "seed.go", Weight: 1.0}}
+	activated, err := st.SpreadActivation(ctx, seeds, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := make(map[string]bool, len(activated))
+	for _, p := range activated {
+		found[p] = true
+	}
+	if !found["hop1.go"] {
+		t.Errorf("hop1.go (1-hop neighbor) not in activated: %v", activated)
+	}
+	if !found["hop2.go"] {
+		t.Errorf("hop2.go (2-hop neighbor) not in activated: %v", activated)
+	}
+	for _, p := range activated {
+		if p == "seed.go" {
+			t.Errorf("seed.go should not appear in spreading activation results")
+		}
+	}
+}
+
+// TestSpreadActivationFanOutNorm verifies fan-out normalization: a hub with many
+// edges distributes less energy per neighbor than a node with a single edge.
+//
+// Graph:
+//
+//	hub.go → neighbor_a.go
+//	hub.go → neighbor_b.go
+//	hub.go → neighbor_c.go  (3 neighbors → each gets 1/3 × decay × seed_weight)
+//	solo.go → solo_neighbor.go  (1 neighbor → gets 1/1 × decay × seed_weight)
+//
+// solo_neighbor.go should have higher activation than any hub neighbor.
+func TestSpreadActivationFanOutNorm(t *testing.T) {
+	st, ctx := newStore(t)
+	now := time.Now()
+
+	nodes := []GraphNodeRow{
+		{ID: "n:hub", Kind: "file", Name: "hub.go", FilePath: "hub.go", ContentHash: "hh"},
+		{ID: "n:na", Kind: "file", Name: "neighbor_a.go", FilePath: "neighbor_a.go", ContentHash: "na"},
+		{ID: "n:nb", Kind: "file", Name: "neighbor_b.go", FilePath: "neighbor_b.go", ContentHash: "nb"},
+		{ID: "n:nc", Kind: "file", Name: "neighbor_c.go", FilePath: "neighbor_c.go", ContentHash: "nc"},
+		{ID: "n:solo", Kind: "file", Name: "solo.go", FilePath: "solo.go", ContentHash: "hs"},
+		{ID: "n:sn", Kind: "file", Name: "solo_neighbor.go", FilePath: "solo_neighbor.go", ContentHash: "sn"},
+	}
+	if err := st.GraphUpsertNodes(ctx, nodes, now); err != nil {
+		t.Fatal(err)
+	}
+	edges := []GraphEdgeRow{
+		{ID: "e:ha", Kind: "calls", SrcID: "n:hub", DstID: "n:na", FilePath: "hub.go", ContentHash: "eha"},
+		{ID: "e:hb", Kind: "calls", SrcID: "n:hub", DstID: "n:nb", FilePath: "hub.go", ContentHash: "ehb"},
+		{ID: "e:hc", Kind: "calls", SrcID: "n:hub", DstID: "n:nc", FilePath: "hub.go", ContentHash: "ehc"},
+		{ID: "e:ss", Kind: "calls", SrcID: "n:solo", DstID: "n:sn", FilePath: "solo.go", ContentHash: "ess"},
+	}
+	if err := st.GraphUpsertEdges(ctx, edges, now); err != nil {
+		t.Fatal(err)
+	}
+
+	seeds := []SeedFile{
+		{Path: "hub.go", Weight: 1.0},
+		{Path: "solo.go", Weight: 1.0},
+	}
+	activated, err := st.SpreadActivation(ctx, seeds, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	actByPath := make(map[string]float32)
+	// Re-run to get energy values — use fileEdgesBidirectional to verify ranking.
+	// Instead, check ordering directly from the returned slice (sorted by energy desc).
+	// solo_neighbor should appear before any of hub's neighbors in results.
+	soloIdx := -1
+	for i, p := range activated {
+		if p == "solo_neighbor.go" {
+			soloIdx = i
+		}
+		actByPath[p] = 0
+		_ = actByPath
+	}
+	if soloIdx < 0 {
+		t.Fatalf("solo_neighbor.go not in results: %v", activated)
+	}
+	for i, p := range activated {
+		switch p {
+		case "neighbor_a.go", "neighbor_b.go", "neighbor_c.go":
+			if i < soloIdx {
+				t.Errorf("%s (hub neighbor, idx %d) ranked before solo_neighbor.go (idx %d) — fan-out normalization not working",
+					p, i, soloIdx)
+			}
+		}
+	}
+}

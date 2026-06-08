@@ -1495,7 +1495,7 @@ func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string
 	if err != nil || len(hits) == 0 {
 		return hits, err
 	}
-	hits = s.fuseSessionGraph(ctx, hits, candidateK)
+	hits = s.FuseSpreadingActivation(ctx, hits, candidateK)
 	hits, err = s.RerankFused(ctx, queryText, hits, k)
 	if err != nil {
 		return nil, err

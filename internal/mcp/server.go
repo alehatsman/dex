@@ -616,24 +616,14 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		}
 	}
 
-	// Graph-proximity lane: boost chunks from files graph-adjacent to
-	// recently-touched session files. Silently skips when no session exists
-	// or the graph hasn't been built — never fails the search.
+	// Graph-proximity lane: spreading activation from session-recent files and
+	// the current semantic hits. Silently skips when no session exists or the
+	// graph hasn't been built — never fails the search.
 	var sessionTask string
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok {
 		sessionTask = ss.Task
-		if len(ss.Files) > 0 {
-			seeds := make([]string, 0, len(ss.Files))
-			for _, f := range ss.Files {
-				seeds = append(seeds, f.Path)
-			}
-			if neighbors, err := st.GraphNeighborFiles(ctx, seeds, 15); err == nil && len(neighbors) > 0 {
-				if graphHits, err := st.HitsForFiles(ctx, neighbors, k*2); err == nil && len(graphHits) > 0 {
-					hits = fuseWithGraphNeighbors(hits, graphHits, k)
-				}
-			}
-		}
 	}
+	hits = st.FuseSpreadingActivation(ctx, hits, candidateK)
 
 	hits, err = st.RerankFused(ctx, in.Query, hits, candidateK)
 	if err != nil {
