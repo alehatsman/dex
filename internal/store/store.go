@@ -592,6 +592,12 @@ type Stats struct {
 	// embed_model meta key — those adopt the next caller's model on
 	// the first EnsureEmbedModel call.
 	EmbedModel string
+	// SummarizableFiles is the number of distinct source files (non-summary
+	// chunks) that are candidates for file_summary generation.
+	SummarizableFiles int
+	// SummarizedFiles is the number of distinct files that already have a
+	// file_summary chunk. Coverage = SummarizedFiles / SummarizableFiles.
+	SummarizedFiles int
 }
 
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
@@ -637,6 +643,14 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 			st.LastSummarized = time.Unix(0, ts)
 		}
 	}
+	// Summary coverage: how many source files have a file_summary vs total.
+	_ = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(DISTINCT path) FROM chunks
+		  WHERE kind NOT IN ('file_summary','chunk_summary','package_summary','repo_summary')`).
+		Scan(&st.SummarizableFiles)
+	_ = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(DISTINCT path) FROM chunks WHERE kind = 'file_summary'`).
+		Scan(&st.SummarizedFiles)
 	return st, nil
 }
 
