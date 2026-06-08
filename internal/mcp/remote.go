@@ -350,3 +350,9 @@ func (rc *remoteClient) prefetch(ctx context.Context, _ *sdk.CallToolRequest, in
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/prefetch"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) workspaceSearch(ctx context.Context, _ *sdk.CallToolRequest, in WorkspaceSearchInput) (*sdk.CallToolResult, WorkspaceSearchOutput, error) {
+	var out WorkspaceSearchOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/workspace"), in, &out)
+	return nil, out, err
+}

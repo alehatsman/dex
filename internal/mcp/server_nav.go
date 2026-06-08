@@ -100,6 +100,12 @@ var allNavEntries = []NavEntry{
 		Purpose: "Compute blast-radius of changed files and read the most relevant graph neighbors.",
 		When:    "After editing a file, to proactively read what it affects — surfaces implementors, callers, and test files before you ask for them. Requires graph index.",
 	},
+	{
+		Name:    "search_workspace",
+		Tier:    "standard",
+		Purpose: "Hybrid search across all projects in .dex/workspace.yml; merges results with RRF and tags by [project:name].",
+		When:    "Multi-project codebases where a query spans multiple repos (microservices, monorepo splits). Requires workspace.yml + each project indexed.",
+	},
 	// Power-tier tools (shown only in TierPower responses)
 	{
 		Name:    "search_semantic",

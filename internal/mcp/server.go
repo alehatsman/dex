@@ -2214,6 +2214,7 @@ type toolSurface interface {
 	nav(context.Context, *sdk.CallToolRequest, NavInput) (*sdk.CallToolResult, NavOutput, error)
 	feedback(context.Context, *sdk.CallToolRequest, FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error)
 	prefetch(context.Context, *sdk.CallToolRequest, PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error)
+	workspaceSearch(context.Context, *sdk.CallToolRequest, WorkspaceSearchInput) (*sdk.CallToolResult, WorkspaceSearchOutput, error)
 }
 
 // toolTier controls how many tools are exposed to MCP clients.
@@ -2548,6 +2549,20 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Returns files[] with content inlined — no follow-up reads needed. " +
 				"Requires a graph index (dex index --graph)."),
 		}, h.prefetch)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "search_workspace",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Search across all projects listed in .dex/workspace.yml. " +
+				"Runs hybrid search independently per project and merges results with RRF, " +
+				"tagging each hit with [project:name] so you know which project it came from. " +
+				"Create .dex/workspace.yml to enable:\n" +
+				"  projects:\n" +
+				"    - path: /absolute/or/relative/path\n" +
+				"      label: my-service   # optional\n" +
+				"Returns 'no-workspace' when no workspace.yml is found. " +
+				"Requires the embedding service and each project to be indexed."),
+		}, h.workspaceSearch)
 
 		if chatAvailable {
 			sdk.AddTool(srv, &sdk.Tool{
