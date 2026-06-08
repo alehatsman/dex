@@ -33,6 +33,30 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// ServerInstructions returns the MCP server instructions block that Claude Code
+// receives at session init. It maps dex tools to their native equivalents so
+// the agent uses them without being explicitly asked.
+func ServerInstructions() string {
+	return `dex is active — prefer its MCP tools over native equivalents:
+
+Tool mapping (use these instead):
+- ask(question)                instead of free-form reasoning about code structure
+- search_semantic(q, path)     instead of Grep/rg for concept/intent searches
+- search_symbol(name, path)    instead of Grep for exact identifier lookup
+- ctx_shell(command)           instead of Bash for shell commands (compressed output)
+- file_view(file)              instead of Read for large files (>400 lines)
+- graph_callers / graph_callees  instead of manual cross-ref tracing
+- graph_deps(path)             instead of manual import scanning
+
+Workflow:
+1. Orient: ask(question) — routes intent, returns suggested_reads + next_action
+2. Locate: search_semantic or search_symbol
+3. Read: file_view for large files; native Read for small ones
+4. Shell: ctx_shell(command) for build/test output
+
+Start every session by calling ask() with the task description.`
+}
+
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
 // Zero value (Enabled=false) disables auto-watching entirely; tools
 // behave exactly as before.
@@ -2091,7 +2115,9 @@ func (s *Server) RunStdio(ctx context.Context) error {
 	srv := sdk.NewServer(&sdk.Implementation{
 		Name:    "dex",
 		Version: Version,
-	}, nil)
+	}, &sdk.ServerOptions{
+		Instructions: ServerInstructions(),
+	})
 
 	registerTools(srv, s, toolTierFromEnv(), s.ChatClient != nil, descriptionModeFromEnv())
 

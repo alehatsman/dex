@@ -34,6 +34,7 @@
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
+//	setup                         Write Claude Code routing rules to ~/.claude/rules/dex.md.
 //	mcp                           Run as an MCP server over stdio (DEX_TOOLS=ask|standard|power).
 //	version                       Print the build version.
 package main
@@ -129,6 +130,8 @@ func main() {
 		err = cmdCompressStdin(args)
 	case "shell-hook":
 		err = cmdShellHook(args)
+	case "setup":
+		err = cmdSetup(args)
 	case "doctor":
 		err = cmdDoctor(ctx, args)
 	case "version", "-V", "--version":
@@ -253,6 +256,10 @@ build / maintenance:
                                           compress large files to save tokens.
   dex hook observe                   Claude Code PostToolUse/Stop hook:
                                           append event to hooks.jsonl log.
+  dex setup                          write dex routing rules to
+                                          $CLAUDE_CONFIG_DIR/rules/dex.md so
+                                          Claude Code uses dex tools by default.
+                                          Flags: --dry-run
   dex doctor                         check the setup: index dir, endpoints, config, MCP wiring
   dex version                        print the build version
 
