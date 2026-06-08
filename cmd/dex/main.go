@@ -2171,7 +2171,7 @@ func cmdReindex(ctx context.Context, args []string) error {
 	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")
 	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
 	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
-	pullModel := fs.Bool("pull-model", false, "pull the default ollama embedding model (nomic-embed-text) before reindexing")
+	pullModel := fs.Bool("pull-model", false, "pull the default ollama embedding model (qwen3-embedding:4b) before reindexing")
 	summarize := fs.Bool("summarize", false, "generate per-file and per-chunk summaries via the chat endpoint (auto-enabled when DEX_SUMMARY_URL is set)")
 	summarizeDefer := fs.Bool("summarize-defer", true, "queue summaries into pending_summaries instead of generating them inline; `dex index summarize` (or watch idle) drains the queue later. Implies --summarize. Pass --summarize-defer=false to disable.")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {

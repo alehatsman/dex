@@ -19,6 +19,7 @@ const ollamaBase = "http://localhost:11434"
 // priority order (index 0 = highest priority). Matching is case-insensitive
 // substring so "nomic-embed-text:latest" matches "nomic-embed-text".
 var preferredEmbedModels = []string{
+	"qwen3-embedding",
 	"mxbai-embed-large",
 	"nomic-embed-text",
 	"granite-embedding",
@@ -99,7 +100,16 @@ func detectOllamaFrom(ctx context.Context, base string) (OllamaModel, bool) {
 	if !ok || len(scan.EmbedModels) == 0 {
 		return OllamaModel{}, false
 	}
-	return OllamaModel{Name: scan.EmbedModels[0], URL: scan.URL}, true
+	// Verify each candidate is actually live — a model listed in /api/tags may
+	// not be loadable (removed from disk, corrupt layer, etc.). Return the first
+	// one that passes a real embed probe rather than trusting the tag list alone.
+	for _, name := range scan.EmbedModels {
+		c := New(base, name, 1, 2*time.Second)
+		if c.Health(ctx) == nil {
+			return OllamaModel{Name: name, URL: base}, true
+		}
+	}
+	return OllamaModel{}, false
 }
 
 func scanOllamaFrom(ctx context.Context, base string) (OllamaScan, bool) {
@@ -179,7 +189,7 @@ func chatModelPriority(name string) int {
 
 // DefaultPullModel is the ollama model pulled by PullOllamaModel when no
 // specific model is requested.
-const DefaultPullModel = "nomic-embed-text"
+const DefaultPullModel = "qwen3-embedding:4b"
 
 // PullOllamaModel asks the local ollama daemon to pull model (e.g.
 // "nomic-embed-text"). Progress lines from the streaming pull response are

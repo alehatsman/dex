@@ -8,25 +8,51 @@ import (
 	"testing"
 )
 
+// newOllamaStub serves /api/tags with models and /v1/embeddings with a dummy
+// vector. All listed models are considered live (health probes succeed).
 func newOllamaStub(t *testing.T, models []string) *httptest.Server {
 	t.Helper()
+	return newOllamaStubWithLive(t, models, nil)
+}
+
+// newOllamaStubWithLive serves /api/tags with models but only accepts
+// /v1/embeddings for models in liveModels (nil = all live).
+func newOllamaStubWithLive(t *testing.T, models []string, liveModels map[string]bool) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/tags" {
+		switch r.URL.Path {
+		case "/api/tags":
+			type model struct {
+				Name string `json:"name"`
+			}
+			type response struct {
+				Models []model `json:"models"`
+			}
+			body := response{}
+			for _, name := range models {
+				body.Models = append(body.Models, model{Name: name})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(body) //nolint:errcheck
+		case "/v1/embeddings":
+			if liveModels != nil {
+				var req struct {
+					Model string `json:"model"`
+				}
+				json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+				if !liveModels[req.Model] {
+					http.Error(w, "model not found", http.StatusNotFound)
+					return
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			// Minimal valid OpenAI-shape embeddings response.
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"data": []map[string]any{{"embedding": []float32{0.1}, "index": 0}},
+			})
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		type model struct {
-			Name string `json:"name"`
-		}
-		type response struct {
-			Models []model `json:"models"`
-		}
-		body := response{}
-		for _, name := range models {
-			body.Models = append(body.Models, model{Name: name})
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(body) //nolint:errcheck
 	}))
 }
 
@@ -64,20 +90,38 @@ func TestDetectOllamaFrom_NonEmbedModelsIgnored(t *testing.T) {
 }
 
 func TestDetectOllamaFrom_PicksHighestPriority(t *testing.T) {
-	// mxbai-embed-large ranks above nomic-embed-text and all-minilm.
+	// qwen3-embedding ranks above mxbai-embed-large, nomic-embed-text, and all-minilm.
 	srv := newOllamaStub(t, []string{
 		"all-minilm:latest",
 		"llama3.2:3b",
 		"nomic-embed-text:latest",
 		"mxbai-embed-large:latest",
+		"qwen3-embedding:4b",
 	})
 	defer srv.Close()
 	m, ok := detectOllamaFrom(context.Background(), srv.URL)
 	if !ok {
 		t.Fatal("expected model to be found")
 	}
-	if m.Name != "mxbai-embed-large:latest" {
-		t.Fatalf("got %q, want mxbai-embed-large:latest", m.Name)
+	if m.Name != "qwen3-embedding:4b" {
+		t.Fatalf("got %q, want qwen3-embedding:4b", m.Name)
+	}
+}
+
+func TestDetectOllamaFrom_SkipsUnhealthyModel(t *testing.T) {
+	// nomic-embed-text is listed but cannot serve embeds; qwen3-embedding can.
+	// detectOllamaFrom must skip the broken model and return the working one.
+	srv := newOllamaStubWithLive(t,
+		[]string{"nomic-embed-text:latest", "qwen3-embedding:4b"},
+		map[string]bool{"qwen3-embedding:4b": true},
+	)
+	defer srv.Close()
+	m, ok := detectOllamaFrom(context.Background(), srv.URL)
+	if !ok {
+		t.Fatal("expected a live model to be found")
+	}
+	if m.Name != "qwen3-embedding:4b" {
+		t.Fatalf("got %q, want qwen3-embedding:4b", m.Name)
 	}
 }
 
@@ -105,6 +149,7 @@ func TestEmbedModelPriority_KnownModels(t *testing.T) {
 		name    string
 		wantPos bool
 	}{
+		{"qwen3-embedding:4b", true},
 		{"mxbai-embed-large:latest", true},
 		{"nomic-embed-text:latest", true},
 		{"bge-m3:latest", true},
@@ -127,6 +172,7 @@ func TestEmbedModelPriority_KnownModels(t *testing.T) {
 func TestEmbedModelPriority_Ordering(t *testing.T) {
 	// Higher-quality models must rank above lower-quality ones.
 	pairs := [][2]string{
+		{"qwen3-embedding", "mxbai-embed-large"},
 		{"mxbai-embed-large", "nomic-embed-text"},
 		{"nomic-embed-text", "all-minilm"},
 		{"bge-large", "bge-base"},
