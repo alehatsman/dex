@@ -686,11 +686,11 @@ func enrichBlame(ctx context.Context, projectRoot string, paths []string, meta m
 	}
 	for _, p := range paths {
 		cctx, cancel := context.WithTimeout(ctx, blameTimeout)
-		// %h|%ad|%an with date=short keeps the field compact.
+		// %h|%ad|%an|%s with date=short keeps the field compact.
 		cmd := exec.CommandContext(cctx, "git",
 			"-C", projectRoot,
 			"log", "-1",
-			"--format=%h|%ad|%an",
+			"--format=%h|%ad|%an|%s",
 			"--date=short",
 			"--", p,
 		)
@@ -703,12 +703,15 @@ func enrichBlame(ctx context.Context, projectRoot string, paths []string, meta m
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 3)
+		parts := strings.SplitN(line, "|", 4)
 		if len(parts) < 3 {
 			continue
 		}
 		m := getOrInit(meta, p)
 		m.LastCommit = parts[0] + " " + parts[1]
+		if len(parts) == 4 && parts[3] != "" {
+			m.LastCommit += " " + parts[3]
+		}
 		m.LastAuthor = parts[2]
 	}
 }
