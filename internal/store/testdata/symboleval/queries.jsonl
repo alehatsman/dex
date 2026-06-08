@@ -1,0 +1,12 @@
+{"name":"AuthService","text":"AuthService","tags":["authservice","auth"],"k":5,"class":"def","relevant":"auth/service.go"}
+{"name":"parseConfig","text":"parseConfig","tags":["parseconfig","config"],"k":5,"class":"def","relevant":"config/parse.go"}
+{"name":"RetryPolicy","text":"RetryPolicy","tags":["retrypolicy","retry"],"k":5,"class":"def","relevant":"retry/policy.go"}
+{"name":"NewLRUCache","text":"NewLRUCache","tags":["newlrucache","cache"],"k":5,"class":"def","relevant":"cache/lru.go"}
+{"name":"HandleWebhook","text":"HandleWebhook","tags":["handlewebhook","webhook"],"k":5,"class":"def","relevant":"webhook/handler.go"}
+{"name":"TokenBucket","text":"TokenBucket","tags":["tokenbucket","ratelimit"],"k":5,"class":"def","relevant":"ratelimit/bucket.go"}
+{"name":"MAX_RETRIES","text":"MAX_RETRIES","tags":["max_retries","limits"],"k":5,"class":"constvar","relevant":"config/limits.go"}
+{"name":"SCHEMA_VERSION","text":"SCHEMA_VERSION","tags":["schema_version","db"],"k":5,"class":"constvar","relevant":"db/version.go"}
+{"name":"DEFAULT_TIMEOUT","text":"DEFAULT_TIMEOUT","tags":["default_timeout","net"],"k":5,"class":"constvar","relevant":"net/defaults.go"}
+{"name":"DispatchEvent","text":"DispatchEvent","tags":["dispatchevent","events"],"k":5,"class":"buried_def","relevant":"bigsvc/handler.go"}
+{"name":"SerializeAll","text":"SerializeAll","tags":["serializeall","serial"],"k":5,"class":"buried_def","relevant":"ser/all.go"}
+{"name":"ValidateToken","text":"ValidateToken","tags":["validatetoken","authz"],"k":5,"class":"buried_def","relevant":"authz/validate.go"}

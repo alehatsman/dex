@@ -110,6 +110,13 @@ type Options struct {
 	// MaxHitsPerFile, when > 0, caps results returned per unique file path.
 	// Applied after ranking, before final truncation to k. Zero = no cap.
 	MaxHitsPerFile int
+
+	// DefinitionBoost is the multiplier applied in ApplyLocalRerank to
+	// declaration-kind chunks (function/method/class/struct/…) for symbol
+	// queries, lifting the definition site over window/orphan fragments that
+	// merely mention the symbol. Zero = the default (defaultDefinitionBoost).
+	// Tuned against the symbol-query eval set (see symbol_eval_test.go, #146).
+	DefinitionBoost float64
 }
 
 type Store struct {
@@ -1516,7 +1523,7 @@ func (s *Store) RerankFused(ctx context.Context, queryText string, hits []Hit, k
 			return nil, err
 		}
 	}
-	out := ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol)
+	out := ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol, s.opts.DefinitionBoost)
 	if len(out) > k {
 		out = out[:k]
 	}
@@ -1571,7 +1578,7 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 			return nil, err
 		}
 		if applyLocal {
-			hits = ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol)
+			hits = ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol, s.opts.DefinitionBoost)
 			if len(hits) > k {
 				hits = hits[:k]
 			}
@@ -1703,7 +1710,7 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	if err != nil {
 		return nil, err
 	}
-	hits = ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol)
+	hits = ApplyLocalRerank(hits, classifyQueryType(queryText) == querySymbol, s.opts.DefinitionBoost)
 	if len(hits) > k {
 		hits = hits[:k]
 	}

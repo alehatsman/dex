@@ -66,7 +66,7 @@ func TestApplyLocalRerank_MMRNoDominance(t *testing.T) {
 		{Name: "b1", Path: "b.go", RRFScore: 0.6},
 		{Name: "b2", Path: "b.go", RRFScore: 0.5},
 	}
-	out := ApplyLocalRerank(hits, false)
+	out := ApplyLocalRerank(hits, false, 0)
 	if len(out) != 5 {
 		t.Fatalf("want 5 results, got %d", len(out))
 	}
@@ -94,7 +94,7 @@ func TestApplyLocalRerank_RespectsCrossEncoder(t *testing.T) {
 		{Name: "x", Path: "a.go", RRFScore: 0.1, RerankScore: 0.9},
 		{Name: "y", Path: "b.go", RRFScore: 0.9, RerankScore: 0.1},
 	}
-	out := ApplyLocalRerank(hits, false)
+	out := ApplyLocalRerank(hits, false, 0)
 	if out[0].Name != "x" {
 		t.Errorf("cross-encoder order must be preserved; got first = %q", out[0].Name)
 	}

@@ -6,6 +6,23 @@ import (
 	"strings"
 )
 
+// defaultDefinitionBoost is the multiplier applied to declaration-kind chunks
+// for symbol queries when Options.DefinitionBoost is unset.
+//
+// Chosen with data from the symbol-query eval set (symbol_eval_test.go, #146):
+//   - A boost is needed — without it a declaration buried by a short,
+//     symbol-dense window/doc fragment stays mis-ranked (MRR 0.958 → 1.000 at
+//     boost ≥ 1.5 on the eval set).
+//   - 3.0 (lean-ctx / CoRNStack ICLR 2025) was previously UNSAFE: it buried
+//     orphan-chunked top-level const/var definitions under the functions that
+//     use them. Closing that blind spot (isBoostableDefinitionKind now covers
+//     orphan) removed the regression, so the whole 1.5–6.0 range is at the
+//     optimal plateau (perfect recall) on the eval set.
+//   - 3.0 sits in that plateau and matches the cited research, with more margin
+//     for deeper-buried declarations than 1.5, so we adopt it rather than
+//     copying it blindly.
+const defaultDefinitionBoost = 3.0
+
 // ApplyLocalRerank is the single canonical post-RRF quality reranker. It is the
 // one place noise penalties, definition/coherence boosts, and MMR diversity are
 // applied — every search surface (Store.Search, and the MCP fusing tools that
@@ -15,19 +32,25 @@ import (
 // Passes, operating on RRFScore (falling back to cosine Score when RRF didn't
 // run, i.e. semantic-only search):
 //  1. per-hit: path noise penalty (multiplicative) + definition boost
-//     (1.5× for symbol queries on declaration-kind chunks)
+//     (defBoost× for symbol queries on declaration-kind chunks)
 //  2. file coherence: chunks from files with ≥2 hits get a 1.15× boost
 //  3. MMR diversity: chunks beyond the 2nd from the same file decay 0.7× per
 //     excess, preventing one large file from dominating the top-k
 //
-// When a cross-encoder already ordered the pool (any hit carries a non-zero
-// RerankScore), the cross-encoder result is authoritative and this is a no-op —
-// it must not clobber the reranker's ordering by re-sorting on RRFScore.
+// defBoost is the definition-boost multiplier; pass <= 0 to use
+// defaultDefinitionBoost. When a cross-encoder already ordered the pool (any
+// hit carries a non-zero RerankScore), the cross-encoder result is
+// authoritative and this is a no-op — it must not clobber that ordering by
+// re-sorting on RRFScore.
 //
-// Multipliers from CoRNStack ICLR 2025 / lean-ctx search_reranking.
-func ApplyLocalRerank(hits []Hit, isSymbolQuery bool) []Hit {
+// Multipliers from CoRNStack ICLR 2025 / lean-ctx search_reranking; the
+// definition boost was tuned against the symbol-query eval set (#146).
+func ApplyLocalRerank(hits []Hit, isSymbolQuery bool, defBoost float64) []Hit {
 	if len(hits) == 0 {
 		return hits
+	}
+	if defBoost <= 0 {
+		defBoost = defaultDefinitionBoost
 	}
 	// Respect a cross-encoder ordering if one ran; don't re-sort over it.
 	for i := range hits {
@@ -58,8 +81,8 @@ func ApplyLocalRerank(hits []Hit, isSymbolQuery bool) []Hit {
 		if pen := pathPenalty(arr[i].h.Path); pen != 1.0 {
 			arr[i].s *= float32(pen)
 		}
-		if isSymbolQuery && isDefinitionKind(arr[i].h.Kind) {
-			arr[i].s *= 1.5
+		if isSymbolQuery && isBoostableDefinitionKind(arr[i].h.Kind) {
+			arr[i].s *= float32(defBoost)
 		}
 	}
 
@@ -215,6 +238,22 @@ func isDefinitionKind(kind string) bool {
 		strings.Contains(kind, "interface") ||
 		strings.Contains(kind, "type_decl") ||
 		strings.Contains(kind, "impl_item")
+}
+
+// isBoostableDefinitionKind reports whether a chunk kind is a symbol's
+// definition site for the purpose of the symbol-query definition boost. It is
+// isDefinitionKind plus the "orphan" kind — how dex chunks top-level
+// const/var/import declarations that have no enclosing structural node.
+//
+// Without the orphan case the boost has a blind spot: a query for a top-level
+// constant (e.g. MAX_RETRIES) would lift the functions that *use* it over the
+// constant's own definition, because the using-functions are declaration-kind
+// and the const's chunk is not. Including orphan keeps definitions and their
+// callers on equal footing, so the boost is safe to raise. (See
+// symbol_eval_test.go / #146.) "window" (free-form/doc fragments) stays
+// unboosted, which is exactly what the boost is meant to out-rank.
+func isBoostableDefinitionKind(kind string) bool {
+	return kind == "orphan" || isDefinitionKind(kind)
 }
 
 // fetchPathsForIDs returns a map from chunk ID to file path for the given
