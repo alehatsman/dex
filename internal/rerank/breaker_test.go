@@ -29,6 +29,16 @@ func (s *stubInner) Health(_ context.Context) error {
 func (*stubInner) Endpoint() string  { return "stub" }
 func (*stubInner) ModelName() string { return "stub-model" }
 
+// fakeClock is a controllable monotonic time source. Driving the breaker's
+// cooldown through it makes the open→short-circuit→recover transitions
+// deterministic — no real sleeps, no dependency on wall-clock advancement
+// (which is also non-monotonic under WSL2/NTP — cf. the prune clock-flake
+// class, dex #32).
+type fakeClock struct{ t time.Time }
+
+func (c *fakeClock) now() time.Time         { return c.t }
+func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
 func TestBreakerTripsAfterThreshold(t *testing.T) {
 	inner := &stubInner{rerankErr: fmt.Errorf("%w: down", ErrUnreachable)}
 	b := NewBreaker(inner, 3, 30*time.Second)
@@ -105,24 +115,52 @@ func TestBreakerSkipsNonReachabilityErrors(t *testing.T) {
 	}
 }
 
+// TestBreakerReopensAfterWindow drives the full open→short-circuit→recover
+// cycle through an injected clock, so the 30s cooldown is exercised
+// deterministically with no real sleep (the previous version slept 15ms and
+// raced the open window — a wall-clock flake, cf. dex #32).
 func TestBreakerReopensAfterWindow(t *testing.T) {
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
 	inner := &stubInner{rerankErr: fmt.Errorf("%w: down", ErrUnreachable)}
-	b := NewBreaker(inner, 2, 10*time.Millisecond)
+	b := NewBreaker(inner, 2, 30*time.Second)
+	b.now = clk.now
+	ctx := context.Background()
 
-	// Trip the breaker.
-	_, _ = b.Rerank(context.Background(), "q", []string{"d"})
-	_, _ = b.Rerank(context.Background(), "q", []string{"d"})
+	// Trip the breaker (threshold 2).
+	_, _ = b.Rerank(ctx, "q", []string{"d"})
+	_, _ = b.Rerank(ctx, "q", []string{"d"})
 	if !b.State().Open {
 		t.Fatal("breaker not open after threshold")
 	}
 
-	// Wait past the open window.
-	time.Sleep(15 * time.Millisecond)
+	// While open: every call short-circuits without touching the inner,
+	// even as time advances up to (but not past) the cooldown boundary.
+	callsAtOpen := inner.rerankCalls
+	for _, step := range []time.Duration{0, 10 * time.Second, 19*time.Second + 999*time.Millisecond} {
+		clk.advance(step)
+		if _, err := b.Rerank(ctx, "q", []string{"d"}); !errors.Is(err, ErrUnreachable) {
+			t.Fatalf("open short-circuit err = %v, want ErrUnreachable", err)
+		}
+		if !b.State().Open {
+			t.Fatalf("breaker closed early at +%s, total %s into a 30s window", step, clk.t.Sub(time.Unix(1_700_000_000, 0)))
+		}
+	}
+	if inner.rerankCalls != callsAtOpen {
+		t.Errorf("inner called %d times while open; want 0 (short-circuit)", inner.rerankCalls-callsAtOpen)
+	}
 
-	// Next call should reach the inner client (probe), not short-circuit.
+	// Cross the cooldown boundary and let the inner recover. The next call
+	// half-opens: it probes the now-healthy inner, succeeds, and resets.
+	clk.advance(time.Second) // now 30.999s in, past the 30s window
+	inner.rerankErr = nil
 	callsBefore := inner.rerankCalls
-	_, _ = b.Rerank(context.Background(), "q", []string{"d"})
+	if _, err := b.Rerank(ctx, "q", []string{"d"}); err != nil {
+		t.Fatalf("probe call after cooldown errored: %v", err)
+	}
 	if inner.rerankCalls == callsBefore {
-		t.Errorf("probe call did not reach inner client after window elapsed")
+		t.Error("probe call did not reach inner client after window elapsed")
+	}
+	if st := b.State(); st.Open || st.ConsecutiveFails != 0 {
+		t.Errorf("breaker not recovered after cooldown + success (state=%+v)", st)
 	}
 }

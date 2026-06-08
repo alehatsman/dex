@@ -42,6 +42,13 @@ type Breaker struct {
 	mu               sync.Mutex
 	openUntil        time.Time
 	consecutiveFails int
+
+	// now is the clock the breaker reads. Defaults to time.Now; tests
+	// inject a controllable clock so the open→cooldown→recover
+	// transitions are deterministic instead of depending on real
+	// wall-clock advancement (which is also non-monotonic under WSL2/NTP
+	// — cf. the prune clock-flake class, dex #32).
+	now func() time.Time
 }
 
 // NewBreaker wraps inner with a breaker using the given threshold and
@@ -53,7 +60,7 @@ func NewBreaker(inner HealthChecker, threshold int, openFor time.Duration) *Brea
 	if openFor <= 0 {
 		openFor = 30 * time.Second
 	}
-	return &Breaker{Inner: inner, Threshold: threshold, OpenFor: openFor}
+	return &Breaker{Inner: inner, Threshold: threshold, OpenFor: openFor, now: time.Now}
 }
 
 // Endpoint passes through to the inner reranker.
@@ -92,7 +99,7 @@ func (b *Breaker) State() BreakerState {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	st := BreakerState{ConsecutiveFails: b.consecutiveFails}
-	if now := time.Now(); !b.openUntil.IsZero() && now.Before(b.openUntil) {
+	if now := b.now(); !b.openUntil.IsZero() && now.Before(b.openUntil) {
 		st.Open = true
 		st.OpenUntil = b.openUntil
 	}
@@ -105,7 +112,7 @@ func (b *Breaker) isOpen() bool {
 	if b.openUntil.IsZero() {
 		return false
 	}
-	if time.Now().Before(b.openUntil) {
+	if b.now().Before(b.openUntil) {
 		return true
 	}
 	// Window elapsed — reset to half-open (the next call probes).
@@ -128,6 +135,6 @@ func (b *Breaker) record(err error) {
 	}
 	b.consecutiveFails++
 	if b.consecutiveFails >= b.Threshold {
-		b.openUntil = time.Now().Add(b.OpenFor)
+		b.openUntil = b.now().Add(b.OpenFor)
 	}
 }
