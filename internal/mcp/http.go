@@ -285,6 +285,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/knowledge", s.handleKnowledge(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/session", s.handleSession(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/agent", s.handleAgent(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/prefetch", s.handlePrefetch(opts.Projects))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
@@ -639,6 +640,10 @@ func (s *Server) handleSession(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleAgent(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *AgentInput, root string) { in.ProjectRoot = root }, s.Agent)
+}
+
+func (s *Server) handlePrefetch(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *PrefetchInput, root string) { in.ProjectRoot = root }, s.Prefetch)
 }
 
 func (s *Server) handleFileTree(projects map[string]string) http.HandlerFunc {

@@ -171,6 +171,11 @@ func (p projectScoped) feedback(ctx context.Context, req *sdk.CallToolRequest, i
 	return p.s.feedback(ctx, req, in)
 }
 
+func (p projectScoped) prefetch(ctx context.Context, req *sdk.CallToolRequest, in PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.prefetch(ctx, req, in)
+}
+
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at
 // /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
 // SDK permits reusing a server across sessions) and looked up by the {id} path

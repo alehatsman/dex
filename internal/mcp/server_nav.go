@@ -94,6 +94,12 @@ var allNavEntries = []NavEntry{
 		Purpose: "Send a file slice to the chat model for a digested summary (signatures, structure, gist).",
 		When:    "You already know which file to digest. Prefer ask's suggested_reads first — they name the right file.",
 	},
+	{
+		Name:    "ctx_prefetch",
+		Tier:    "standard",
+		Purpose: "Compute blast-radius of changed files and read the most relevant graph neighbors.",
+		When:    "After editing a file, to proactively read what it affects — surfaces implementors, callers, and test files before you ask for them. Requires graph index.",
+	},
 	// Power-tier tools (shown only in TierPower responses)
 	{
 		Name:    "search_semantic",

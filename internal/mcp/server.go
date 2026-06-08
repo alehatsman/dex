@@ -2187,6 +2187,7 @@ type toolSurface interface {
 	agent(context.Context, *sdk.CallToolRequest, AgentInput) (*sdk.CallToolResult, AgentOutput, error)
 	nav(context.Context, *sdk.CallToolRequest, NavInput) (*sdk.CallToolResult, NavOutput, error)
 	feedback(context.Context, *sdk.CallToolRequest, FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error)
+	prefetch(context.Context, *sdk.CallToolRequest, PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error)
 }
 
 // toolTier controls how many tools are exposed to MCP clients.
@@ -2507,6 +2508,20 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Use at task-start to orient quickly without 2–3 follow-up calls. " +
 				"Requires the embedding service. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback."),
 		}, h.compose)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name:        "ctx_prefetch",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Compute the blast-radius of changed files and prefetch the most relevant neighbors. " +
+				"Given a list of files you've edited (or plan to edit), walks the import/call graph via spreading " +
+				"activation to find which other files are structurally related, then reads each at the appropriate " +
+				"fidelity. Pass budget_tokens to auto-select mode per file: " +
+				"≥80% budget remaining → full summary (LLM), ≥40% → map (imports+symbols), else → signatures. " +
+				"Without budget_tokens all files are read in signatures mode (fast, no LLM). " +
+				"Pass task to boost files whose paths match task keywords. " +
+				"Returns files[] with content inlined — no follow-up reads needed. " +
+				"Requires a graph index (dex index --graph)."),
+		}, h.prefetch)
 
 		if chatAvailable {
 			sdk.AddTool(srv, &sdk.Tool{

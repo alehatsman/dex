@@ -344,3 +344,9 @@ func (rc *remoteClient) feedback(ctx context.Context, _ *sdk.CallToolRequest, in
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/feedback"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) prefetch(ctx context.Context, _ *sdk.CallToolRequest, in PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error) {
+	var out PrefetchOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/prefetch"), in, &out)
+	return nil, out, err
+}
