@@ -1,7 +1,6 @@
 package compress
 
 import (
-	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -13,8 +12,20 @@ import (
 // alphanumeric + underscore only.
 var identRe = regexp.MustCompile(`\b[a-zA-Z][a-zA-Z0-9_]{5,}\b`)
 
-// SymbolMap replaces high-ROI identifiers with short αN refs to reduce
-// token count on verbose source files read in aggressive mode.
+// singleTokenRefs is a curated set of characters that each tokenize to exactly
+// 1 BPE token in o200k_base (verified by TestRefCharTokenCosts). All are
+// non-ASCII, so identRe (pure ASCII) can never match them — refs cannot collide
+// with identifier text in Apply.
+//
+// Greek lowercase (18) + circled digits ①-⑤ (⑥+ cost 2 tokens) = 23 slots.
+var singleTokenRefs = []string{
+	"α", "β", "γ", "δ", "ε", "ζ", "η", "θ",
+	"λ", "μ", "ξ", "π", "σ", "τ", "φ", "χ", "ψ", "ω",
+	"①", "②", "③", "④", "⑤",
+}
+
+// SymbolMap replaces high-ROI identifiers with short single-token refs to
+// reduce token count on verbose source files read in aggressive mode.
 type SymbolMap struct {
 	// entries sorted longest-first to prevent partial-match conflicts
 	// ("handleRequestError" replaced before "handleRequest").
@@ -23,27 +34,26 @@ type SymbolMap struct {
 
 type symEntry struct {
 	ident string
-	ref   string // α1, α2, …
+	ref   string // single Unicode char from singleTokenRefs
 }
 
-// BuildSymbolMap scans content for identifiers that appear often enough
-// to justify a codebook entry, applies the ROI gate, and returns a
-// SymbolMap ready for Apply. Returns an empty (no-op) SymbolMap when
-// savings would not justify a legend.
+// BuildSymbolMap scans content for identifiers that appear often enough to
+// justify a codebook entry, applies the ROI gate, and returns a SymbolMap
+// ready for Apply. Returns an empty (no-op) SymbolMap when savings would not
+// justify a legend.
 func BuildSymbolMap(content string) SymbolMap {
 	counts := countIdentifiers(content)
 
 	type candidate struct {
 		ident       string
 		occurrences int
+		netSavings  int // totalSavings - entryCost, for cap selection
 	}
 	var candidates []candidate
 
-	nextID := 1
 	for ident, n := range counts {
-		if shouldRegisterSym(ident, n, nextID) {
-			candidates = append(candidates, candidate{ident, n})
-			nextID++
+		if net, ok := symROI(ident, n); ok {
+			candidates = append(candidates, candidate{ident, n, net})
 		}
 	}
 
@@ -52,25 +62,34 @@ func BuildSymbolMap(content string) SymbolMap {
 		return SymbolMap{}
 	}
 
-	// Sort longest-first to avoid partial-match conflicts during Apply.
+	// Sort by net savings descending: when we hit the slot cap, the highest-ROI
+	// identifiers keep their refs and lower-ROI ones are dropped.
 	sort.Slice(candidates, func(i, j int) bool {
-		if len(candidates[i].ident) != len(candidates[j].ident) {
-			return len(candidates[i].ident) > len(candidates[j].ident)
-		}
-		return candidates[i].ident < candidates[j].ident
+		return candidates[i].netSavings > candidates[j].netSavings
 	})
+	if len(candidates) > len(singleTokenRefs) {
+		candidates = candidates[:len(singleTokenRefs)]
+	}
 
+	// Assign refs, then re-sort longest-ident-first for Apply correctness.
 	entries := make([]symEntry, len(candidates))
 	for i, c := range candidates {
-		entries[i] = symEntry{ident: c.ident, ref: fmt.Sprintf("α%d", i+1)}
+		entries[i] = symEntry{ident: c.ident, ref: singleTokenRefs[i]}
 	}
+	sort.Slice(entries, func(i, j int) bool {
+		if len(entries[i].ident) != len(entries[j].ident) {
+			return len(entries[i].ident) > len(entries[j].ident)
+		}
+		return entries[i].ident < entries[j].ident
+	})
+
 	return SymbolMap{entries: entries}
 }
 
 // Empty returns true when the map has no entries (Apply is a no-op).
 func (sm SymbolMap) Empty() bool { return len(sm.entries) == 0 }
 
-// Legend returns the αMAP header to prepend to compressed output.
+// Legend returns the §MAP header to prepend to compressed output.
 func (sm SymbolMap) Legend() string {
 	if sm.Empty() {
 		return ""
@@ -87,7 +106,7 @@ func (sm SymbolMap) Legend() string {
 	return sb.String()
 }
 
-// Apply replaces each registered identifier in content with its αN ref.
+// Apply replaces each registered identifier in content with its ref.
 // Entries are processed longest-first so longer identifiers win over
 // their shorter prefixes.
 func (sm SymbolMap) Apply(content string) string {
@@ -120,9 +139,7 @@ func countIdentifiers(content string) map[string]int {
 }
 
 // symTokens returns the real BPE token count for a string (default o200k_base),
-// minimum 1. BPE splits long snake_case/camelCase identifiers into several
-// tokens, so this surfaces savings the old rune/4 estimate hid — the ROI gate
-// stops skipping profitable symbols.
+// minimum 1.
 func symTokens(s string) int {
 	t := tokens.Count(s)
 	if t < 1 {
@@ -131,20 +148,21 @@ func symTokens(s string) int {
 	return t
 }
 
-// shouldRegisterSym returns true when registering ident as αnextID saves
-// more tokens across all its occurrences than the legend entry costs.
-func shouldRegisterSym(ident string, occurrences, nextID int) bool {
+// symROI returns (netSavings, true) when registering ident with a 1-token ref
+// saves more tokens across all occurrences than the legend entry costs.
+// All refs in singleTokenRefs cost exactly 1 token, so refToks is hard-coded.
+func symROI(ident string, occurrences int) (int, bool) {
 	if len(ident) < 6 {
-		return false
+		return 0, false
 	}
+	const refToks = 1
 	identToks := symTokens(ident)
-	shortID := fmt.Sprintf("α%d", nextID)
-	shortToks := symTokens(shortID)
-	savingPer := identToks - shortToks
+	savingPer := identToks - refToks
 	if savingPer <= 0 {
-		return false
+		return 0, false
 	}
 	totalSavings := occurrences * savingPer
-	entryCost := identToks + shortToks + 2 // 2 = "  " prefix + "=" + "\n"
-	return totalSavings > entryCost
+	entryCost := identToks + refToks + 2 // ident + ref + "  …=…\n" overhead
+	net := totalSavings - entryCost
+	return net, net > 0
 }
