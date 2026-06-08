@@ -783,55 +783,6 @@ func fuseWithSymbols(semantic, symbol []store.Hit, n int) []store.Hit {
 	return out
 }
 
-// fuseWithGraphNeighbors merges semantic+symbol hits with graph-proximity
-// hits via Reciprocal Rank Fusion (k=60). Graph hits represent chunks from
-// files that are graph-adjacent to recently-touched session files, so they
-// carry structural relevance even when lexically or semantically distant.
-// The graph lane is weighted at 0.5× to avoid drowning out direct matches.
-func fuseWithGraphNeighbors(primary, graphHits []store.Hit, n int) []store.Hit {
-	const kRRF = 60
-	type hitKey struct {
-		path string
-		line int
-	}
-	scores := make(map[hitKey]float32, len(primary)+len(graphHits))
-	byKey := make(map[hitKey]store.Hit, len(primary)+len(graphHits))
-
-	for i, h := range primary {
-		hk := hitKey{h.Path, h.StartLine}
-		scores[hk] += 1.0 / float32(kRRF+i+1)
-		byKey[hk] = h
-	}
-	for i, h := range graphHits {
-		hk := hitKey{h.Path, h.StartLine}
-		scores[hk] += 0.5 / float32(kRRF+i+1)
-		if _, exists := byKey[hk]; !exists {
-			byKey[hk] = h
-		}
-	}
-
-	type ranked struct {
-		key   hitKey
-		score float32
-	}
-	all := make([]ranked, 0, len(scores))
-	for hk, s := range scores {
-		all = append(all, ranked{hk, s})
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].score > all[j].score })
-	if len(all) > n {
-		all = all[:n]
-	}
-
-	out := make([]store.Hit, 0, len(all))
-	for _, r := range all {
-		h := byKey[r.key]
-		h.RRFScore = r.score
-		out = append(out, h)
-	}
-	return out
-}
-
 // excluded returns true when path matches any entry in the exclude list.
 // An exclude entry matches if path equals it or path has it as a prefix
 // (treating it as a directory prefix).

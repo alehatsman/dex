@@ -2258,7 +2258,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	var priorEmbedModel string
 	if prior, err := store.Open(ctx, p.DBPath); err == nil {
 		priorEmbedModel = prior.EmbedModel()
-		prior.Close()
+		_ = prior.Close()
 	}
 	if err := clearCacheKeepLock(p); err != nil {
 		return err
