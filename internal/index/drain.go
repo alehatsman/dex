@@ -47,9 +47,16 @@ func (ix *Indexer) foregroundBusy() bool {
 	return ok && time.Since(ts) < ix.Options.YieldWindow
 }
 
+// durabilityWindow caps how many pending rows are loaded into memory per
+// DrainPendingSummariesBatch call when the caller passes max=0 (unbounded).
+// Progress is committed to the store after every window; a crash loses at
+// most this many generated summaries. Distinct from pacing: no sleep is
+// injected — throughput is unchanged.
+const durabilityWindow = 64
+
 // batchForPace caps rows per whole-queue drain call. 0 (unbounded —
-// drain everything in one call) when pacing is off; a bounded batch
-// when SummaryPace > 0 so DrainPendingSummaries can sleep between them.
+// use durabilityWindow) when pacing is off; a bounded batch when
+// SummaryPace > 0 so DrainPendingSummaries can sleep between them.
 func (ix *Indexer) batchForPace() int {
 	if ix.Options.SummaryPace > 0 {
 		return 10
@@ -85,14 +92,22 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	}
 	startTime := time.Now()
 
-	pending, err := ix.Store.ListPendingSummaries(ctx, max)
+	// Apply the durability window: when max=0 (unbounded), cap the load so
+	// each call commits at most durabilityWindow rows. The outer loop in
+	// DrainPendingSummaries iterates until remaining==0, so throughput is
+	// unaffected — only the in-memory window shrinks.
+	limit := max
+	if limit == 0 {
+		limit = durabilityWindow
+	}
+	pending, err := ix.Store.ListPendingSummaries(ctx, limit)
 	if err != nil {
 		return 0, 0, fmt.Errorf("list pending: %w", err)
 	}
 	if len(pending) == 0 {
 		return 0, 0, nil
 	}
-	ix.drainLog.Info("drain: batch starting", "pending", len(pending), "max", max)
+	ix.drainLog.Info("drain: batch starting", "pending", len(pending), "limit", limit)
 
 	conc := ix.Options.SummaryConcurrency
 	if conc < 1 {
