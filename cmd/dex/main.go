@@ -437,6 +437,56 @@ func cliLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 }
 
+// indexProgressPrinter returns an index.Options.Progress callback that writes
+// human-readable progress to stderr (text mode) or NDJSON to stdout (json mode).
+// Returns nil when no TTY is attached and format is text — avoids cluttering
+// piped output with carriage-return lines.
+func indexProgressPrinter(format string) func(phase string, done, total int) {
+	if format == "json" {
+		return func(phase string, done, total int) {
+			pct := 0.0
+			if total > 0 {
+				pct = float64(done) / float64(total)
+			}
+			_ = json.NewEncoder(os.Stdout).Encode(struct {
+				Type     string  `json:"type"`
+				Phase    string  `json:"phase"`
+				Done     int     `json:"done"`
+				Total    int     `json:"total"`
+				Progress float64 `json:"progress"`
+			}{"progress", phase, done, total, pct})
+		}
+	}
+	// Text mode: only emit when stderr is a terminal.
+	fi, err := os.Stderr.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return nil
+	}
+	var lastPhase string
+	return func(phase string, done, total int) {
+		if phase != lastPhase {
+			if lastPhase != "" {
+				fmt.Fprint(os.Stderr, "\r\033[K") // clear the in-progress line
+			}
+			lastPhase = phase
+		}
+		switch phase {
+		case "walk":
+			fmt.Fprintf(os.Stderr, "\r  walk: %d files scanned", done)
+		case "embed":
+			if total > 0 {
+				pct := done * 100 / total
+				fmt.Fprintf(os.Stderr, "\r  embedding: %d/%d chunks (%d%%)", done, total, pct)
+			} else {
+				fmt.Fprintf(os.Stderr, "\r  embedding: %d chunks", done)
+			}
+			if done >= total && total > 0 {
+				fmt.Fprint(os.Stderr, "\r\033[K") // clear when done
+			}
+		}
+	}
+}
+
 // warnIfNoInclude prints a prominent notice when a project has no
 // `index.include` in .dex/config.yml. Indexing is opt-in, so without
 // it the run produces an empty index — surface that instead of letting
@@ -821,6 +871,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 			Verbose:     *verbose,
 			Logger:      cliLogger(),
 			Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0),
+			Progress:    indexProgressPrinter(*format),
 		}
 		// Auto-enable summarize when a dedicated summary endpoint is
 		// configured. DEX_CHAT_URL is NOT a trigger — users often
