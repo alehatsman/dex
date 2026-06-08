@@ -123,6 +123,63 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	case strings.HasPrefix(cmd, "next build") || strings.HasPrefix(cmd, "npx next build") ||
 		strings.HasPrefix(cmd, "vite build") || strings.HasPrefix(cmd, "npx vite build"):
 		out = compressNextBuild(cmd, lines)
+	case strings.HasPrefix(cmd, "helm "):
+		out = compressHelm(cmd, lines)
+	case strings.HasPrefix(cmd, "ansible") || strings.HasPrefix(cmd, "ansible-playbook"):
+		out = compressAnsible(lines)
+	case strings.HasPrefix(cmd, "mvn ") || strings.HasPrefix(cmd, "./mvnw ") ||
+		strings.HasPrefix(cmd, "mvnw ") || strings.HasPrefix(cmd, "gradle ") ||
+		strings.HasPrefix(cmd, "./gradlew ") || strings.HasPrefix(cmd, "gradlew "):
+		out = compressMaven(cmd, lines)
+	case strings.HasPrefix(cmd, "bazel "):
+		out = compressBazel(cmd, lines)
+	case strings.HasPrefix(cmd, "poetry "):
+		out = compressPoetry(cmd, lines)
+	case strings.HasPrefix(cmd, "npx prisma ") || strings.HasPrefix(cmd, "prisma "):
+		out = compressPrisma(cmd, lines)
+	case strings.HasPrefix(cmd, "prettier ") || strings.HasPrefix(cmd, "npx prettier "):
+		out = compressPrettier(lines)
+	case strings.HasPrefix(cmd, "rubocop") || strings.HasPrefix(cmd, "bundle ") ||
+		strings.HasPrefix(cmd, "rake ") || strings.HasPrefix(cmd, "rails "):
+		out = compressRuby(cmd, lines)
+	case strings.HasPrefix(cmd, "composer "):
+		out = compressComposer(cmd, lines)
+	case strings.HasPrefix(cmd, "php artisan "):
+		out = compressArtisan(cmd[4:], lines)
+	case strings.HasPrefix(cmd, "mix "):
+		out = compressMix(cmd, lines)
+	case strings.HasPrefix(cmd, "swift "):
+		out = compressSwiftBuild(cmd, lines)
+	case strings.HasPrefix(cmd, "zig "):
+		out = compressZig(cmd, lines)
+	case strings.HasPrefix(cmd, "ps ") || cmd == "ps":
+		if compressed := compressPs(lines); compressed != nil {
+			out = compressed
+		}
+	case strings.HasPrefix(cmd, "du ") || cmd == "du":
+		if compressed := compressDu(lines); compressed != nil {
+			out = compressed
+		}
+	case strings.HasPrefix(cmd, "ping "):
+		if compressed := compressPing(lines); compressed != nil {
+			out = compressed
+		}
+	case strings.HasPrefix(cmd, "systemctl ") || cmd == "systemctl" ||
+		strings.HasPrefix(cmd, "journalctl"):
+		out = compressSystemd(cmd, lines)
+	case cmd == "ls" || strings.HasPrefix(cmd, "ls ") || strings.HasPrefix(cmd, "ls -"):
+		if compressed := compressLs(lines); compressed != nil {
+			out = compressed
+		}
+	case strings.HasPrefix(cmd, "mysql ") || cmd == "mysql" ||
+		strings.HasPrefix(cmd, "mariadb "):
+		out = compressMySQL(cmd, lines)
+	case strings.HasPrefix(cmd, "psql ") || cmd == "psql":
+		out = compressPsql(cmd, lines)
+	case strings.HasPrefix(cmd, "env") || cmd == "env" || cmd == "printenv" ||
+		strings.HasPrefix(cmd, "printenv ") || cmd == "export" ||
+		strings.HasPrefix(cmd, "export "):
+		out = compressEnvFilter(lines)
 	default:
 		if blocked := compressLogBlock(lines); blocked != nil {
 			out = blocked
