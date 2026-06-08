@@ -186,6 +186,64 @@ func TestCompressLogDedup(t *testing.T) {
 	}
 }
 
+func TestCompressLogDedupUUID(t *testing.T) {
+	// Lines that differ only in UUID and log-level should dedup.
+	lines := []string{
+		"INFO  req 550e8400-e29b-41d4-a716-446655440000 started",
+		"INFO  req 6ba7b810-9dad-11d1-80b4-00c04fd430c8 started",
+		"INFO  req 7c9e6679-7425-40de-944b-e07fc1f90ae7 started",
+		"INFO  req a8098c1a-f86e-11da-bd1a-00112444be1e started",
+		"WARN  req 550e8400-e29b-41d4-a716-111111110000 started",
+		"DEBUG req 550e8400-e29b-41d4-a716-222222220000 started",
+		"INFO  req 550e8400-e29b-41d4-a716-333333330000 started",
+		"INFO  req 550e8400-e29b-41d4-a716-444444440000 started",
+		"INFO  req 550e8400-e29b-41d4-a716-555555550000 started",
+		"INFO  req 550e8400-e29b-41d4-a716-666666660000 started",
+		"INFO  req 550e8400-e29b-41d4-a716-777777770000 started",
+	}
+	out := compressLogDedup(lines)
+	if out == nil {
+		t.Fatal("expected dedup to apply")
+	}
+	if len(out) >= len(lines) {
+		t.Fatalf("expected fewer lines after UUID+loglevel dedup: got %d, want < %d\n%s",
+			len(out), len(lines), strings.Join(out, "\n"))
+	}
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "x]") {
+		t.Fatalf("expected run annotation, got:\n%s", joined)
+	}
+}
+
+func TestNormalizeLineForDedup(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{
+			// timestamp → [TS], log level stripped
+			"2024-01-01T10:00:00Z INFO request started",
+			"[TS] request started",
+		},
+		{
+			// UUID → [UUID], log level stripped
+			"INFO  req 550e8400-e29b-41d4-a716-446655440000 started",
+			"req [UUID] started",
+		},
+		{
+			// bare hex hash → [HASH], log level stripped
+			"ERROR connection failed: abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+			"connection failed: [HASH]",
+		},
+	}
+	for _, c := range cases {
+		got := normalizeLineForDedup(c.in)
+		if got != c.want {
+			t.Errorf("normalizeLineForDedup(%q)\n got:  %q\n want: %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestHasFileWriteRedirect(t *testing.T) {
 	blocked := []string{
 		"echo hello > output.txt",
