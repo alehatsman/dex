@@ -20,7 +20,10 @@ token's name is your identity in every claim/comment, so never share one.
    (`mgit issue unclaim <n>` if you drop it).
 
 No code without an owned issue. Worktrees for non-trivial changes; never
-auto-push; ask before merge; conventional branches/commits.
+auto-push; ask before merge; conventional branches/commits. Merge
+fast-forward only: `mgit pr merge <n> --ff-only` — the bare command
+defaults to a merge commit (moongit #360), so always pass `--ff-only`;
+if `main` advanced, rebase your branch and re-merge.
 
 ## Build / test — always via mooncake task
 
