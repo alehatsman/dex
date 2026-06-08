@@ -1195,6 +1195,11 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 		}
 	}
 
+	// Graph-proximity lane: spreading activation from session-recent files and
+	// the current semantic hits. Silently skips when no session exists or the
+	// graph hasn't been built — never fails the search.
+	hits = st.FuseSpreadingActivation(ctx, hits, candidateK)
+
 	hits, err = st.RerankFused(ctx, src.Content, hits, candidateK)
 	if err != nil {
 		return nil, FindRelatedOutput{Status: "error", Hint: fmt.Sprintf("rerank: %v", err)}, nil

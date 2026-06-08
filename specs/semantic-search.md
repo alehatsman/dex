@@ -6,7 +6,9 @@ owners: [aleh]
 covers:
   - "internal/rerank/**"
   - "internal/store/store.go"
+  - "internal/store/store_graph.go"
   - "internal/store/rerank_cache.go"
+  - "internal/mcp/server.go"
 ---
 # Semantic Search
 
