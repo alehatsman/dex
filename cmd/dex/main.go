@@ -46,6 +46,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -58,6 +59,7 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/chat"
+	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/ignore"
@@ -809,6 +811,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 		"dex index [flags] <path>")
 	verbose := fs.Bool("v", false, "verbose")
 	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")
+	dryRun := fs.Bool("dry-run", false, "walk the file tree and show what would be indexed, without writing to the index")
 	summarize := fs.Bool("summarize", false, "generate per-file and per-chunk summaries via the chat endpoint (auto-enabled when DEX_SUMMARY_URL is set)")
 	summarizeDefer := fs.Bool("summarize-defer", true, "queue summaries into pending_summaries instead of generating them inline; `dex index summarize` (or watch idle) drains the queue later. Implies --summarize. Chat endpoint not required at index time. Pass --summarize-defer=false to disable.")
 	graphMode := fs.String("graph", "on", "graph phase: on|off|only ('on' runs both phases, 'off' skips graph, 'only' skips chunk/embed and just refreshes the graph)")
@@ -843,6 +846,14 @@ func cmdIndex(ctx context.Context, args []string) error {
 	if err := proj.CheckIndexable(p, *force); err != nil {
 		return err
 	}
+	ig, err := ignore.New(p.Root)
+	if err != nil {
+		return err
+	}
+	if *dryRun {
+		warnIfNoInclude(ig, p.Root)
+		return runIndexDryRun(ctx, p, ig, *verbose, *format)
+	}
 	if err := p.EnsureCacheDir(); err != nil {
 		return err
 	}
@@ -862,10 +873,6 @@ func cmdIndex(ctx context.Context, args []string) error {
 
 	// Phase 1: chunk + embed (skipped when --graph=only).
 	if *graphMode != "only" {
-		ig, err := ignore.New(p.Root)
-		if err != nil {
-			return err
-		}
 		warnIfNoInclude(ig, p.Root)
 		opts := index.Options{
 			Verbose:     *verbose,
@@ -936,6 +943,160 @@ func cmdIndex(ctx context.Context, args []string) error {
 	fmt.Printf("  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
 	if gstats != nil {
 		_ = reportGraphStats(p.Root, gstats, "text")
+	}
+	return nil
+}
+
+// runIndexDryRun walks the file tree applying all filters and prints a report
+// of what would be indexed, without writing anything to the store.
+func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, verbose bool, format string) error {
+	type fileEntry struct {
+		path   string
+		chunks int
+	}
+	type skipEntry struct {
+		path   string
+		reason string
+	}
+
+	var (
+		included    []fileEntry
+		skipped     []skipEntry
+		skipIgnore  int
+		skipBinary  int
+		skipSecret  int
+		skipSize    int
+		totalChunks int
+	)
+
+	const maxSize = int64(1 << 20) // 1 MB — mirrors index.Options default
+
+	walkErr := filepath.WalkDir(p.Root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		rel, _ := filepath.Rel(p.Root, path)
+		if rel == "." {
+			return nil
+		}
+		if ig.Match(rel, d.IsDir()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			skipped = append(skipped, skipEntry{path: rel, reason: "ignored"})
+			skipIgnore++
+			return nil
+		}
+		if d.IsDir() {
+			gitMarker := filepath.Join(path, ".git")
+			if fi, err2 := os.Lstat(gitMarker); err2 == nil && !fi.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if !ignore.IndexableExt(path) && !ignore.IndexableBasename(path) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.Size() > maxSize {
+			skipped = append(skipped, skipEntry{path: rel, reason: "too-large"})
+			skipSize++
+			return nil
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // symlinks already rejected above
+		if err != nil {
+			return nil
+		}
+		if ignore.LooksBinary(data) {
+			skipped = append(skipped, skipEntry{path: rel, reason: "binary"})
+			skipBinary++
+			return nil
+		}
+		if !ignore.IsTestPath(rel) && ignore.LooksLikeSecret(data) {
+			skipped = append(skipped, skipEntry{path: rel, reason: "secret-pattern"})
+			skipSecret++
+			return nil
+		}
+		chunks, _ := chunk.Chunks(ctx, rel, data)
+		included = append(included, fileEntry{path: rel, chunks: len(chunks)})
+		totalChunks += len(chunks)
+		return nil
+	})
+	if walkErr != nil {
+		return fmt.Errorf("walk: %w", walkErr)
+	}
+
+	totalSkipped := len(skipped)
+
+	if format == "json" {
+		type skipBreakdown struct {
+			Ignored   int `json:"ignored"`
+			Binary    int `json:"binary"`
+			Secret    int `json:"secret_pattern"`
+			TooLarge  int `json:"too_large"`
+		}
+		type dryRunResult struct {
+			Project  string        `json:"project"`
+			DryRun   bool          `json:"dry_run"`
+			Files    int           `json:"files"`
+			Chunks   int           `json:"chunks"`
+			Skipped  int           `json:"skipped"`
+			Breakdown skipBreakdown `json:"skip_breakdown"`
+		}
+		return json.NewEncoder(os.Stdout).Encode(dryRunResult{
+			Project: p.Root,
+			DryRun:  true,
+			Files:   len(included),
+			Chunks:  totalChunks,
+			Skipped: totalSkipped,
+			Breakdown: skipBreakdown{
+				Ignored:  skipIgnore,
+				Binary:   skipBinary,
+				Secret:   skipSecret,
+				TooLarge: skipSize,
+			},
+		})
+	}
+
+	if verbose {
+		for _, f := range included {
+			fmt.Printf("  include  %-60s  %d chunks\n", f.path, f.chunks)
+		}
+		for _, s := range skipped {
+			fmt.Printf("  skip     %-60s  %s\n", s.path, s.reason)
+		}
+		if len(included)+len(skipped) > 0 {
+			fmt.Println()
+		}
+	}
+
+	fmt.Printf("dry-run: %s\n", p.Root)
+	fmt.Printf("  would index: %d files  %d chunks\n", len(included), totalChunks)
+
+	if totalSkipped > 0 || skipIgnore > 0 {
+		var parts []string
+		if skipIgnore > 0 {
+			parts = append(parts, fmt.Sprintf("%d ignored", skipIgnore))
+		}
+		if skipBinary > 0 {
+			parts = append(parts, fmt.Sprintf("%d binary", skipBinary))
+		}
+		if skipSecret > 0 {
+			parts = append(parts, fmt.Sprintf("%d secret-pattern", skipSecret))
+		}
+		if skipSize > 0 {
+			parts = append(parts, fmt.Sprintf("%d too-large", skipSize))
+		}
+		fmt.Printf("  skipped: %d files (%s)\n", totalSkipped, strings.Join(parts, ", "))
 	}
 	return nil
 }
