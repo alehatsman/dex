@@ -457,3 +457,122 @@ func TestCompressGoTest(t *testing.T) {
 		t.Fatal("ok line should be preserved")
 	}
 }
+
+// ── playwright ────────────────────────────────────────────────────────────────
+
+func TestCompressPlaywright_Summary(t *testing.T) {
+	lines := []string{
+		"Running 42 tests using 4 workers",
+		"",
+		"  1) example › login page › should redirect unauthenticated user",
+		"  2) example › login page › should show error on bad password",
+		"",
+		"  42 passed (30s)",
+		"  2 failed",
+		"  1 skipped",
+		"  Finished in 30123ms",
+	}
+	out := compressPlaywright("playwright test", lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "42") || !strings.Contains(joined, "passed") {
+		t.Fatalf("expected pass count in output:\n%s", joined)
+	}
+	if !strings.Contains(joined, "failed:") {
+		t.Fatalf("expected failed section:\n%s", joined)
+	}
+	if !strings.Contains(joined, "should redirect") {
+		t.Fatalf("expected failed test name:\n%s", joined)
+	}
+}
+
+func TestCompressPlaywright_AllPassed(t *testing.T) {
+	lines := []string{
+		"Running 10 tests using 2 workers",
+		"  10 passed (5s)",
+		"  0 failed",
+		"  Finished in 5000ms",
+	}
+	out := compressPlaywright("playwright test", lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "10") || !strings.Contains(joined, "passed") {
+		t.Fatalf("expected pass summary:\n%s", joined)
+	}
+	if strings.Contains(joined, "failed:") {
+		t.Fatalf("should not have failed section when 0 failures:\n%s", joined)
+	}
+}
+
+func TestCompressCypress(t *testing.T) {
+	lines := []string{
+		"  3 passing (2s)",
+		"  1 failing",
+		"  2 pending",
+	}
+	out := compressPlaywright("cypress run", lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "passing") && !strings.Contains(joined, "passed") {
+		t.Fatalf("expected pass count:\n%s", joined)
+	}
+}
+
+// ── next build ────────────────────────────────────────────────────────────────
+
+func TestCompressNextBuild_Routes(t *testing.T) {
+	lines := []string{
+		"   Creating an optimized production build ...",
+		" ✓ Compiled successfully",
+		"",
+		"Route (app)                              Size     First Load JS",
+		"┌ ○ /                                    5.2 kB          89 kB",
+		"├ ○ /about                               1.1 kB          85 kB",
+		"├ ● /blog/[slug]                         2.3 kB          86 kB",
+		"└ ○ /contact                             980 B           84 kB",
+		"",
+		"○  (Static)   prerendered as static content",
+		"● (SSG)       prerendered as static HTML (uses getStaticProps)",
+		"",
+		"Compiled in 12.4s",
+	}
+	out := compressNextBuild("next build", lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "routes:") {
+		t.Fatalf("expected routes section:\n%s", joined)
+	}
+	if !strings.Contains(joined, "/about") {
+		t.Fatalf("expected route paths:\n%s", joined)
+	}
+}
+
+func TestCompressNextBuild_Error(t *testing.T) {
+	lines := []string{
+		"   Creating an optimized production build ...",
+		"Failed to compile.",
+		"",
+		"./src/app/page.tsx",
+		"Type error: Cannot find module '@/components/Hero'",
+	}
+	out := compressNextBuild("next build", lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "BUILD ERROR") {
+		t.Fatalf("expected BUILD ERROR header:\n%s", joined)
+	}
+}
+
+func TestCompressViteBuild(t *testing.T) {
+	lines := []string{
+		"vite v5.0.0 building for production...",
+		"✓ 1523 modules transformed.",
+		"dist/index.html                  0.46 kB │ gzip:  0.30 kB",
+		"dist/assets/index-DiwrgTda.css  29.03 kB │ gzip:  5.11 kB",
+		"dist/assets/index-Ce5dlfks.js  144.52 kB │ gzip: 46.14 kB",
+		"✓ built in 2.35s",
+	}
+	out := compressNextBuild("vite build", lines)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "built") {
+		t.Fatalf("expected built header:\n%s", joined)
+	}
+	if !strings.Contains(joined, "chunks:") {
+		t.Fatalf("expected chunks section:\n%s", joined)
+	}
+}

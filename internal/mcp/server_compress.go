@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
@@ -115,6 +116,12 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 		out = compressPytest(lines)
 	case strings.HasPrefix(cmd, "tsc") || strings.HasPrefix(cmd, "npx tsc"):
 		out = compressTsc(lines)
+	case strings.HasPrefix(cmd, "npx playwright") || strings.HasPrefix(cmd, "playwright") ||
+		strings.HasPrefix(cmd, "npx cypress") || strings.HasPrefix(cmd, "cypress"):
+		out = compressPlaywright(cmd, lines)
+	case strings.HasPrefix(cmd, "next build") || strings.HasPrefix(cmd, "npx next build") ||
+		strings.HasPrefix(cmd, "vite build") || strings.HasPrefix(cmd, "npx vite build"):
+		out = compressNextBuild(cmd, lines)
 	default:
 		if blocked := compressLogBlock(lines); blocked != nil {
 			out = blocked
@@ -1448,4 +1455,236 @@ func compressLogBlock(lines []string) []string {
 	}
 	prefix = append(prefix, "")
 	return append(prefix, out...)
+}
+
+// ── playwright / cypress ──────────────────────────────────────────────────────
+
+var rePwFailed = regexp.MustCompile(`^\s+\d+\)\s+(.+)$`)
+
+// compressPlaywright compresses Playwright and Cypress test output into a
+// summary line + failed test list.
+func compressPlaywright(command string, lines []string) []string {
+	if strings.Contains(command, "cypress") {
+		return compressCypress(lines)
+	}
+
+	var passed, failed, skipped int
+	var failedNames []string
+	var duration string
+
+	for _, l := range lines {
+		ll := strings.ToLower(strings.TrimSpace(l))
+		if n, ok := extractNumberBefore(ll, "passed"); ok {
+			passed = n
+		}
+		if n, ok := extractNumberBefore(ll, "failed"); ok {
+			failed = n
+		}
+		if n, ok := extractNumberBefore(ll, "skipped"); ok {
+			skipped = n
+		}
+		if m := rePwFailed.FindStringSubmatch(l); m != nil {
+			failedNames = append(failedNames, strings.TrimSpace(m[1]))
+		}
+		if strings.Contains(ll, "finished in") || strings.Contains(ll, "duration") {
+			duration = strings.TrimSpace(l)
+		}
+	}
+
+	total := passed + failed + skipped
+	if total == 0 {
+		return compressGeneric(lines)
+	}
+
+	out := []string{
+		fmt.Sprintf("%d tests: %d passed, %d failed, %d skipped", total, passed, failed, skipped),
+	}
+	if len(failedNames) > 0 {
+		out = append(out, "failed:")
+		for _, n := range failedNames {
+			if len(out) > 12 {
+				out = append(out, fmt.Sprintf("  ... +%d more", len(failedNames)-10))
+				break
+			}
+			out = append(out, "  "+n)
+		}
+	}
+	if duration != "" {
+		out = append(out, duration)
+	}
+	return out
+}
+
+func compressCypress(lines []string) []string {
+	var passed, failed, pending int
+	for _, l := range lines {
+		ll := strings.ToLower(strings.TrimSpace(l))
+		if strings.Contains(ll, "passing") {
+			passed += extractFirstInt(ll)
+		}
+		if strings.Contains(ll, "failing") {
+			failed += extractFirstInt(ll)
+		}
+		if strings.Contains(ll, "pending") {
+			pending += extractFirstInt(ll)
+		}
+	}
+	total := passed + failed + pending
+	if total == 0 {
+		return compressGeneric(lines)
+	}
+	return []string{
+		fmt.Sprintf("%d tests: %d passed, %d failed, %d pending", total, passed, failed, pending),
+	}
+}
+
+// extractNumberBefore finds a number immediately before keyword in s (e.g. "5 passed").
+func extractNumberBefore(s, keyword string) (int, bool) {
+	pos := strings.Index(s, keyword)
+	if pos < 0 {
+		return 0, false
+	}
+	fields := strings.Fields(s[:pos])
+	if len(fields) == 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(fields[len(fields)-1])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// extractFirstInt returns the first integer found in s, or 0.
+func extractFirstInt(s string) int {
+	for _, f := range strings.Fields(s) {
+		if n, err := strconv.Atoi(f); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+// ── next build / vite build ───────────────────────────────────────────────────
+
+var (
+	reNextRoute    = regexp.MustCompile(`[○●λƒ◐]\s+(/\S*)`)
+	reNextSize     = regexp.MustCompile(`(\d+\.?\d*)\s*(kB|MB|B)\b`)
+	reNextBuildTime = regexp.MustCompile(`(?:compiled|built|done|ready)\s+(?:in\s+)?(\d+\.?\d*\s*[ms]+)`)
+	reViteChunk    = regexp.MustCompile(`dist/(\S+)\s+(\d+\.?\d*\s*[kKMm]?B)`)
+)
+
+// compressNextBuild compresses Next.js and Vite build output into a route/chunk
+// summary with total size and build time.
+func compressNextBuild(command string, lines []string) []string {
+	if strings.Contains(command, "vite") {
+		return compressViteBuild(lines)
+	}
+
+	var routes []string
+	var totalKB float64
+	var buildTime string
+	var errors []string
+
+	for _, l := range lines {
+		if m := reNextRoute.FindStringSubmatch(l); m != nil {
+			size := ""
+			if sm := reNextSize.FindStringSubmatch(l); sm != nil {
+				size = sm[1] + " " + sm[2]
+			}
+			if size != "" {
+				routes = append(routes, fmt.Sprintf("%s (%s)", m[1], size))
+			} else {
+				routes = append(routes, m[1])
+			}
+		}
+		if m := reNextBuildTime.FindStringSubmatch(strings.ToLower(l)); m != nil {
+			buildTime = m[1]
+		}
+		if ll := strings.ToLower(l); strings.Contains(ll, "error") && !strings.Contains(ll, "0 error") {
+			errors = append(errors, strings.TrimSpace(l))
+		}
+		if sm := reNextSize.FindStringSubmatch(l); sm != nil {
+			val, _ := strconv.ParseFloat(sm[1], 64)
+			switch sm[2] {
+			case "MB":
+				totalKB += val * 1024
+			case "kB":
+				totalKB += val
+			default:
+				totalKB += val / 1024
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		out := []string{"BUILD ERROR:"}
+		return append(out, errors...)
+	}
+
+	header := "built"
+	if buildTime != "" {
+		header = fmt.Sprintf("built (%s)", buildTime)
+	}
+	out := []string{header}
+
+	if len(routes) > 0 {
+		out = append(out, fmt.Sprintf("%d routes:", len(routes)))
+		for _, r := range routes {
+			if len(out) > 17 {
+				out = append(out, fmt.Sprintf("  ... +%d more", len(routes)-15))
+				break
+			}
+			out = append(out, "  "+r)
+		}
+	}
+
+	if totalKB > 0 {
+		if totalKB > 1024 {
+			out = append(out, fmt.Sprintf("total: %.1f MB", totalKB/1024))
+		} else {
+			out = append(out, fmt.Sprintf("total: %.0f kB", totalKB))
+		}
+	}
+
+	if len(out) == 1 && out[0] == "built" {
+		return compressGeneric(lines)
+	}
+	return out
+}
+
+func compressViteBuild(lines []string) []string {
+	var chunks []string
+	var buildTime string
+
+	for _, l := range lines {
+		if m := reViteChunk.FindStringSubmatch(l); m != nil {
+			chunks = append(chunks, fmt.Sprintf("%s: %s", m[1], m[2]))
+		}
+		if m := reNextBuildTime.FindStringSubmatch(strings.ToLower(l)); m != nil {
+			buildTime = m[1]
+		}
+	}
+
+	header := "built"
+	if buildTime != "" {
+		header = fmt.Sprintf("built (%s)", buildTime)
+	}
+	out := []string{header}
+
+	if len(chunks) > 0 {
+		out = append(out, fmt.Sprintf("%d chunks:", len(chunks)))
+		for _, c := range chunks {
+			if len(out) > 12 {
+				out = append(out, fmt.Sprintf("  ... +%d more", len(chunks)-10))
+				break
+			}
+			out = append(out, "  "+c)
+		}
+	}
+
+	if len(out) == 1 && out[0] == "built" {
+		return compressGeneric(lines)
+	}
+	return out
 }
