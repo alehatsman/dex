@@ -448,6 +448,15 @@ func warnIfNoInclude(ig *ignore.Matcher, root string) {
 	}
 }
 
+// isStaleEmbed reports whether the index's recorded embed model is known to
+// differ from the active model. It only compares against the explicit
+// DEX_EMBED_MODEL env var — no network calls. Returns false when either side
+// is unknown (empty), so pre-migration indexes are never falsely flagged.
+func isStaleEmbed(indexModel string) bool {
+	active := os.Getenv("DEX_EMBED_MODEL")
+	return active != "" && indexModel != "" && active != indexModel
+}
+
 // newEmbedClient constructs an embed.Client from env vars, falling back to
 // indexModel (the model recorded in the target index) when DEX_EMBED_MODEL is
 // unset. Callers that have an open *store.Store should pass st.EmbedModel();
@@ -1408,18 +1417,28 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			return err
 		}
 		nodes, edges, _ := st.GraphStats(ctx)
+		stale := isStaleEmbed(stats.EmbedModel)
 		if *format == "json" {
-			return json.NewEncoder(os.Stdout).Encode(map[string]any{
-				"project":           p.Root,
-				"status":            "ok",
-				"files":             stats.Files,
-				"chunks":            stats.Chunks,
-				"dim":               stats.Dim,
-				"nodes":             nodes,
-				"edges":             edges,
-				"pending_summaries": stats.PendingSummaries,
-				"last_index":        stats.LastIndex,
-			})
+			out := map[string]any{
+				"project":            p.Root,
+				"status":             "ok",
+				"files":              stats.Files,
+				"chunks":             stats.Chunks,
+				"dim":                stats.Dim,
+				"nodes":              nodes,
+				"edges":              edges,
+				"pending_summaries":  stats.PendingSummaries,
+				"last_index":         stats.LastIndex,
+				"summarizable_files": stats.SummarizableFiles,
+				"summarized_files":   stats.SummarizedFiles,
+			}
+			if stats.SummarizableFiles > 0 {
+				out["summary_coverage"] = float64(stats.SummarizedFiles) / float64(stats.SummarizableFiles)
+			}
+			if stale {
+				out["stale"] = true
+			}
+			return json.NewEncoder(os.Stdout).Encode(out)
 		}
 		// Header line up top groups version + index dir so the rest of
 		// the output reads as content under a single banner instead of
@@ -1429,23 +1448,29 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		fmt.Println()
 		fmt.Printf("  %s\n", p.Root)
 		printProjectStatLines("    ", projectStats{
-			lastIndex:        stats.LastIndex,
-			files:            stats.Files,
-			chunks:           stats.Chunks,
-			nodes:            nodes,
-			edges:            edges,
-			pendingSummaries: stats.PendingSummaries,
-			lastSummarized:   stats.LastSummarized,
-			dim:              stats.Dim,
+			lastIndex:         stats.LastIndex,
+			files:             stats.Files,
+			chunks:            stats.Chunks,
+			nodes:             nodes,
+			edges:             edges,
+			pendingSummaries:  stats.PendingSummaries,
+			lastSummarized:    stats.LastSummarized,
+			dim:               stats.Dim,
+			summarizableFiles: stats.SummarizableFiles,
+			summarizedFiles:   stats.SummarizedFiles,
+			stale:             stale,
 		})
 		// Action hints only on the per-project view — the
 		// multi-project listing keeps the per-block content uniform.
-		if stats.PendingSummaries > 0 {
+		if stats.PendingSummaries > 0 && !stale {
 			if os.Getenv("DEX_SUMMARY_URL") != "" || os.Getenv("DEX_CHAT_URL") != "" {
 				fmt.Printf("    → `dex watch` will drain in the background, or run: dex index summarize %s\n", p.Root)
 			} else {
 				fmt.Printf("    → set DEX_SUMMARY_URL or DEX_CHAT_URL to enable summary draining\n")
 			}
+		}
+		if stale {
+			fmt.Printf("    → embed model changed — run: dex reindex %s\n", p.Root)
 		}
 		if !stats.LastIndex.IsZero() && time.Since(stats.LastIndex) > 24*time.Hour {
 			fmt.Printf("    → stale — run: dex index %s\n", p.Root)
@@ -1470,17 +1495,20 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 	}
 
 	type row struct {
-		root             string
-		cacheHash        string // first 5 chars of cache dir name; used for untagged display
-		chunks           int
-		files            int
-		nodes            int64
-		edges            int64
-		last             time.Time
-		pendingSummaries int
-		lastSummarized   time.Time
-		corrupt          bool
-		empty            bool
+		root              string
+		cacheHash         string // first 5 chars of cache dir name; used for untagged display
+		chunks            int
+		files             int
+		nodes             int64
+		edges             int64
+		last              time.Time
+		pendingSummaries  int
+		lastSummarized    time.Time
+		summarizableFiles int
+		summarizedFiles   int
+		stale             bool
+		corrupt           bool
+		empty             bool
 	}
 	results := make([]row, len(entries))
 	sem := make(chan struct{}, 8)
@@ -1519,15 +1547,18 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 				root = fmt.Sprintf("untagged (%s…)", cacheHash)
 			}
 			results[idx] = row{
-				root:             root,
-				cacheHash:        cacheHash,
-				chunks:           stats.Chunks,
-				files:            stats.Files,
-				nodes:            nodes,
-				edges:            edges,
-				last:             stats.LastIndex,
-				pendingSummaries: stats.PendingSummaries,
-				lastSummarized:   stats.LastSummarized,
+				root:              root,
+				cacheHash:         cacheHash,
+				chunks:            stats.Chunks,
+				files:             stats.Files,
+				nodes:             nodes,
+				edges:             edges,
+				last:              stats.LastIndex,
+				pendingSummaries:  stats.PendingSummaries,
+				lastSummarized:    stats.LastSummarized,
+				summarizableFiles: stats.SummarizableFiles,
+				summarizedFiles:   stats.SummarizedFiles,
+				stale:             isStaleEmbed(stats.EmbedModel),
 			}
 		}(i, e.Name(), dbPath)
 	}
@@ -1565,27 +1596,39 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 
 	if *format == "json" {
 		type jsonRow struct {
-			Project          string    `json:"project"`
-			Files            int       `json:"files"`
-			Chunks           int       `json:"chunks"`
-			Nodes            int64     `json:"nodes"`
-			Edges            int64     `json:"edges"`
-			PendingSummaries int       `json:"pending_summaries,omitempty"`
-			LastIndex        time.Time `json:"last_index"`
-			Corrupt          bool      `json:"corrupt,omitempty"`
+			Project           string    `json:"project"`
+			Files             int       `json:"files"`
+			Chunks            int       `json:"chunks"`
+			Nodes             int64     `json:"nodes"`
+			Edges             int64     `json:"edges"`
+			PendingSummaries  int       `json:"pending_summaries,omitempty"`
+			SummarizableFiles int       `json:"summarizable_files,omitempty"`
+			SummarizedFiles   int       `json:"summarized_files,omitempty"`
+			SummaryCoverage   *float64  `json:"summary_coverage,omitempty"`
+			LastIndex         time.Time `json:"last_index"`
+			Corrupt           bool      `json:"corrupt,omitempty"`
+			Stale             bool      `json:"stale,omitempty"`
 		}
 		out := make([]jsonRow, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, jsonRow{
-				Project:          r.root,
-				Files:            r.files,
-				Chunks:           r.chunks,
-				Nodes:            r.nodes,
-				Edges:            r.edges,
-				PendingSummaries: r.pendingSummaries,
-				LastIndex:        r.last,
-				Corrupt:          r.corrupt,
-			})
+			jr := jsonRow{
+				Project:           r.root,
+				Files:             r.files,
+				Chunks:            r.chunks,
+				Nodes:             r.nodes,
+				Edges:             r.edges,
+				PendingSummaries:  r.pendingSummaries,
+				SummarizableFiles: r.summarizableFiles,
+				SummarizedFiles:   r.summarizedFiles,
+				LastIndex:         r.last,
+				Corrupt:           r.corrupt,
+				Stale:             r.stale,
+			}
+			if r.summarizableFiles > 0 {
+				v := float64(r.summarizedFiles) / float64(r.summarizableFiles)
+				jr.SummaryCoverage = &v
+			}
+			out = append(out, jr)
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"projects": out})
 	}
@@ -1608,13 +1651,16 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		}
 		fmt.Printf("  %s\n", r.root)
 		printProjectStatLines("    ", projectStats{
-			lastIndex:        r.last,
-			files:            r.files,
-			chunks:           r.chunks,
-			nodes:            r.nodes,
-			edges:            r.edges,
-			pendingSummaries: r.pendingSummaries,
-			lastSummarized:   r.lastSummarized,
+			lastIndex:         r.last,
+			files:             r.files,
+			chunks:            r.chunks,
+			nodes:             r.nodes,
+			edges:             r.edges,
+			pendingSummaries:  r.pendingSummaries,
+			lastSummarized:    r.lastSummarized,
+			summarizableFiles: r.summarizableFiles,
+			summarizedFiles:   r.summarizedFiles,
+			stale:             r.stale,
 		})
 	}
 	if empties > 0 {
