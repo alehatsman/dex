@@ -34,7 +34,7 @@
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
-//	setup                         Write Claude Code routing rules to ~/.claude/rules/dex.md.
+//	setup                         Guided first-run wizard: check endpoints, index cwd, write Claude routing rules.
 //	mcp                           Run as an MCP server over stdio (DEX_TOOLS=ask|standard|power).
 //	version                       Print the build version.
 package main
@@ -75,7 +75,12 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		usage()
+		// TTY: friendly quickstart. Non-TTY: short error.
+		if stdinIsTTY() {
+			usageQuickstart()
+		} else {
+			fmt.Fprintln(os.Stderr, "dex: no command given — run 'dex help'")
+		}
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
@@ -131,18 +136,29 @@ func main() {
 	case "shell-hook":
 		err = cmdShellHook(args)
 	case "setup":
-		err = cmdSetup(args)
+		err = cmdSetup(ctx, args)
 	case "doctor":
 		err = cmdDoctor(ctx, args)
+	case "completion":
+		err = cmdCompletion(args)
+	case "config":
+		err = cmdConfig(args)
 	case "version", "-V", "--version":
 		fmt.Println(mcp.Version)
 		return
-	case "-h", "--help", "help":
-		usage()
+	case "-h", "--help":
+		usageConcise()
+		return
+	case "help":
+		if len(args) > 0 && args[0] == "all" {
+			usageFull()
+		} else {
+			usageConcise()
+		}
 		return
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		usage()
+		usageConcise()
 		os.Exit(2)
 	}
 	if err != nil {
@@ -163,9 +179,61 @@ func main() {
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, `quickstart:
+// usageQuickstart prints a minimal (~10 line) getting-started screen.
+// Shown on bare `dex` when stdin is a TTY.
+func usageQuickstart() {
+	fmt.Fprintln(os.Stderr, "dex — local semantic search for Claude Code\n\n"+
+		"quickstart:\n"+
+		"  dex setup                          guided first-run wizard (check + index + MCP)\n"+
+		"  dex doctor                         verify endpoints, index dir, and MCP wiring\n"+
+		"  dex index .                        build the per-project index (chunks + graph)\n"+
+		`  dex ask "where is the watcher?"    one-shot router — picks intent, fuses search lanes`+"\n"+
+		"  dex mcp                            run as MCP server (stdio) for Claude Code\n\n"+
+		"  <path> defaults to cwd on every query/view/graph command.\n\n"+
+		"run `dex help` for common commands · `dex help all` for the full reference")
+}
+
+// usageConcise prints ~30 lines covering the everyday command set.
+// Shown by `dex help` / `dex --help` / `-h`.
+func usageConcise() {
+	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
+
+query:
+  dex ask [<path>] <q...>            one-shot router: semantic + symbol + graph
+                                       Flags: --intent, --k, --format, --max-content-bytes
+  dex search semantic [<path>] <q...> hybrid top-k chunks
+                                       Flags: --k, --rerank=off, --explain, --max-content-bytes
+  dex search symbol [<path>] <name>  exact identifier lookup
+  dex view summarize [<path>] <file> summarize a file slice via the chat model
+  dex index status [<path>]          endpoint health + project stats
+  dex graph <sub> [<path>] ...       graph traversal (deps/callers/callees/links/…)
+
+build / maintenance:
+  dex index <path>                   build or refresh the index  (--dry-run to preview)
+  dex watch <path>                   keep the index fresh as files change
+  dex reindex <path>                 drop and re-embed from scratch
+  dex nuke <path>                    delete the on-disk index
+
+config / setup:
+  dex setup                          guided first-run wizard
+  dex config init                    scaffold .dex/config.yml with commented defaults
+  dex env [--all] [--doc]            print effective DEX_* configuration
+  dex doctor                         check setup: endpoints, index dir, MCP wiring
+  dex mcp                            run as an MCP server over stdio
+  dex completion bash|zsh|fish       shell tab-completion scripts
+  dex version                        print the build version
+
+  run 'dex help all' for the full reference (every subcommand, flag, env var, examples)`)
+}
+
+// usageFull is the exhaustive reference — the original usage() content plus exit codes.
+// Shown by `dex help all`.
+func usageFull() {
+	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
+
+quickstart:
   cd ~/code/myproject
+  dex setup                          guided first-run wizard (check + index + MCP)
   dex index .                        build the per-project index (chunks + graph)
   dex ask "where is the watcher?"    one-shot router; emits suggested reads
   dex mcp                            run as MCP server (stdio) — point your agent at it
@@ -174,16 +242,18 @@ func usage() {
 
   <path> defaults to cwd on every query/view/graph command.
 
-usage (query — mirrors the MCP tool surface):
+query (mirrors the MCP tool surface):
   dex ask [<path>] <q...>            one-shot router (MCP: ask). Picks intent,
                                           fuses semantic + symbol + graph; returns
                                           suggested_reads and a prose next_action.
-                                          Flags: --intent, --k, --format=text|json
+                                          Flags: --intent, --k, --format=text|json,
+                                          --no-inline, --max-content-bytes, -v
   dex search semantic [<path>] <q...> hybrid top-k chunks (MCP: search_semantic)
                                           Flags: --k, --rerank=off, --explain,
-                                          --format=text|json
+                                          --format=text|json, --max-content-bytes, -v
   dex search symbol [<path>] <name>  exact identifier lookup (MCP: search_symbol)
-                                          Flags: --k, --format=text|json
+                                          Flags: --k, --format=text|json,
+                                          --max-content-bytes, -v
   dex graph neighbors [<path>] <file> <line>
                                           vector neighbours of a chunk (MCP: graph_neighbors)
   dex graph deps [<path>] [flags]    package imports (MCP: graph_deps)
@@ -203,7 +273,7 @@ usage (query — mirrors the MCP tool surface):
                                           Flags: --output=<dir>
   dex view summarize [<path>] <file> summarize a file slice via the chat model
                                           (MCP: file_view). Flags: --start, --end,
-                                          --focus, --temperature, --max-tokens, --v,
+                                          --focus, --temperature, --max-tokens, -v,
                                           --format=text|json
   dex index status [<path>]          endpoint health + project stats
                                           (MCP: status)
@@ -212,15 +282,15 @@ build / maintenance:
   dex index <path>                   build or refresh the index. Runs chunk+embed
                                           AND the Go static graph. Flags: --graph=off
                                           skips graph, --graph=only refreshes just the
-                                          graph layer. Other flags: --v, --force,
-                                          --summarize[-defer], --format=text|json
+                                          graph layer. Other flags: -v, --force,
+                                          --summarize[-defer], --dry-run, --format=text|json
   dex index summarize <path>         drain pending_summaries: generate summaries
                                           queued by `+"`dex index --summarize-defer`"+`,
                                           embed them, upsert as summary chunks, then
                                           cascade to package + repo summaries
   dex generate <path> <prompt>       RAG: top-k chunks → chat endpoint
   dex env                            print effective env-var config with sources
-                                          Flags: --all, --doc, --format=text|json
+                                          Flags: --all, --doc, -v, --format=text|json
   dex compact <path>                 concatenate indexable files under <path>
                                           to stdout with `+"`===== <relpath> =====`"+`
                                           headers. Honors .gitignore/.dexignore
@@ -256,11 +326,14 @@ build / maintenance:
                                           compress large files to save tokens.
   dex hook observe                   Claude Code PostToolUse/Stop hook:
                                           append event to hooks.jsonl log.
-  dex setup                          write dex routing rules to
-                                          $CLAUDE_CONFIG_DIR/rules/dex.md so
-                                          Claude Code uses dex tools by default.
-                                          Flags: --dry-run
+  dex setup                          guided first-run wizard: check endpoints,
+                                          offer to index cwd, write Claude Code
+                                          routing rules. Flags: --check
   dex doctor                         check the setup: index dir, endpoints, config, MCP wiring
+                                          Flags: -v
+  dex config init                    scaffold .dex/config.yml with commented defaults
+                                          Flags: --force, --full
+  dex completion bash|zsh|fish       output shell tab-completion script
   dex version                        print the build version
 
 env:
@@ -268,7 +341,16 @@ env:
   matter for 80% of setups: DEX_EMBED_URL, DEX_EMBED_MODEL,
   DEX_INDEX_DIR, DEX_CHAT_URL, DEX_CHAT_MODEL.
   Tuning knobs (timeouts, batch sizes, optional rerank/compress/draft
-  endpoints) — see docs/tuning.md or run `+"`dex env --all --doc`"+`.`)
+  endpoints) — see docs/tuning.md or run `+"`dex env --all --doc`"+`.
+
+exit codes:
+  0    success
+  1    runtime error (index not found, embed unreachable, etc.)
+  2    usage error (bad flags, missing arguments, unknown command)
+  130  interrupted (SIGINT / Ctrl-C)
+
+  dex setup --check exits 1 when setup is incomplete.
+  dex guide --check exits 1 when LLM_GUIDE.md is out of date.`)
 }
 
 // splitProjectArg peels an optional <path> off the front of a
@@ -352,10 +434,11 @@ func reorderFlags(fs *flag.FlagSet, args []string) []string {
 }
 
 // setHelp wires `<cmd> -h` to print a one-line summary, a usage pattern
-// showing positional args, and the auto-generated flag defaults. The
-// default flag.FlagSet usage prints only flags and omits everything
-// the user actually needs to invoke the command.
-func setHelp(fs *flag.FlagSet, oneLiner, usagePattern string) {
+// showing positional args, the auto-generated flag defaults, optional
+// examples, and a pointer to the full reference.
+// The variadic examples parameter accepts concrete invocation lines; each
+// is printed under an "examples:" header. Pass none to omit that section.
+func setHelp(fs *flag.FlagSet, oneLiner, usagePattern string, examples ...string) {
 	fs.Usage = func() {
 		out := fs.Output()
 		fmt.Fprintln(out, oneLiner)
@@ -369,6 +452,15 @@ func setHelp(fs *flag.FlagSet, oneLiner, usagePattern string) {
 			fmt.Fprintln(out, "flags:")
 			fs.PrintDefaults()
 		}
+		if len(examples) > 0 {
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "examples:")
+			for _, ex := range examples {
+				fmt.Fprintln(out, "  "+ex)
+			}
+		}
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "see also: dex help all")
 	}
 }
 
@@ -1046,17 +1138,17 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 
 	if format == "json" {
 		type skipBreakdown struct {
-			Ignored   int `json:"ignored"`
-			Binary    int `json:"binary"`
-			Secret    int `json:"secret_pattern"`
-			TooLarge  int `json:"too_large"`
+			Ignored  int `json:"ignored"`
+			Binary   int `json:"binary"`
+			Secret   int `json:"secret_pattern"`
+			TooLarge int `json:"too_large"`
 		}
 		type dryRunResult struct {
-			Project  string        `json:"project"`
-			DryRun   bool          `json:"dry_run"`
-			Files    int           `json:"files"`
-			Chunks   int           `json:"chunks"`
-			Skipped  int           `json:"skipped"`
+			Project   string        `json:"project"`
+			DryRun    bool          `json:"dry_run"`
+			Files     int           `json:"files"`
+			Chunks    int           `json:"chunks"`
+			Skipped   int           `json:"skipped"`
 			Breakdown skipBreakdown `json:"skip_breakdown"`
 		}
 		return json.NewEncoder(os.Stdout).Encode(dryRunResult{
@@ -1172,13 +1264,22 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("search semantic", flag.ContinueOnError)
 	setHelp(fs,
 		"Hybrid top-k chunks for a query (MCP: search_semantic).",
-		"dex search semantic [flags] [<path>] <query...>")
+		"dex search semantic [flags] [<path>] <query...>",
+		`dex search semantic . "retry logic"`,
+		`dex search semantic . --k=16 --explain "rate limiter"`,
+		`dex search semantic . --max-content-bytes=4000 "error handling"`,
+	)
 	k := fs.Int("k", 8, "number of results to return")
 	rerankFlag := fs.String("rerank", "", "set to 'off' to skip the rerank stage for this query (no effect when DEX_RERANK_URL is unset)")
 	format := fs.String("format", "text", "output format: text | json")
 	explain := fs.Bool("explain", false, "show per-chunk score breakdown and stage timings")
+	maxContentBytes := fs.Int("max-content-bytes", 1500, "truncate content display at N bytes (0 = no limit)")
+	verbose := fs.Bool("v", false, "verbose: show score breakdown and timing (equivalent to --explain)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
+	}
+	if *verbose {
+		*explain = true
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) == 0 {
@@ -1270,7 +1371,7 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 				}
 				fmt.Println(header)
 			}
-			fmt.Println(truncate(h.Content, 1500))
+			fmt.Println(truncate(h.Content, *maxContentBytes))
 			fmt.Println()
 		}
 		if *explain {
@@ -1289,9 +1390,14 @@ func cmdSearchSymbol(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("search symbol", flag.ContinueOnError)
 	setHelp(fs,
 		"Exact identifier lookup (MCP: search_symbol).",
-		"dex search symbol [flags] [<path>] <name>")
+		"dex search symbol [flags] [<path>] <name>",
+		`dex search symbol . "RateLimiter"`,
+		`dex search symbol . --k=20 "func.*Handler"`,
+	)
 	k := fs.Int("k", 10, "max results to return")
 	format := fs.String("format", "text", "output format: text | json")
+	maxContentBytes := fs.Int("max-content-bytes", 1500, "truncate content display at N bytes (0 = no limit)")
+	_ = fs.Bool("v", false, "verbose (accepted, currently no-op)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -1324,7 +1430,7 @@ func cmdSearchSymbol(ctx context.Context, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	}
-	printSearchHitResult(out.Status, out.Hint, out.Project, out.Hits)
+	printSearchHitResult(out.Status, out.Hint, out.Project, out.Hits, *maxContentBytes)
 	return nil
 }
 
@@ -1338,11 +1444,17 @@ func cmdAsk(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("ask", flag.ContinueOnError)
 	setHelp(fs,
 		"One-shot router — composes semantic + symbol + graph; emit suggested_reads + next_action. Use this BEFORE grep loops.",
-		"dex ask [flags] [<path>] <question...>")
+		"dex ask [flags] [<path>] <question...>",
+		`dex ask . "where is the rate limiter?"`,
+		`dex ask . --intent symbol_lookup "RateLimiter"`,
+		`dex ask . --format json "retry logic" | jq .suggested_reads`,
+	)
 	intent := fs.String("intent", "", "force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context")
 	k := fs.Int("k", 8, "max hits per lane (capped at 30)")
 	format := fs.String("format", "text", "output format: text | json")
 	noInline := fs.Bool("no-inline", false, "skip inlining raw file contents into suggested_reads (stored chunk/file summaries are still emitted; use --format=json to inspect)")
+	maxContentBytes := fs.Int("max-content-bytes", 0, "truncate content display at N bytes (0 = no limit; applies to text output only)")
+	verbose := fs.Bool("v", false, "verbose: show wall-clock timing")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -1368,6 +1480,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 	}
 
 	s, _ := newServerFromEnv(base)
+	t0 := time.Now()
 	_, out, err := s.ContextRouter(ctx, mcp.ContextInput{
 		Project:  p.Root,
 		Question: question,
@@ -1375,6 +1488,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 		K:        *k,
 		NoInline: *noInline,
 	})
+	elapsed := time.Since(t0)
 	if err != nil {
 		return err
 	}
@@ -1385,7 +1499,10 @@ func cmdAsk(ctx context.Context, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	case "", "text":
-		printContextText(out)
+		printContextText(out, *maxContentBytes)
+		if *verbose {
+			fmt.Fprintf(os.Stderr, "timing: %dms\n", elapsed.Milliseconds())
+		}
 		return nil
 	default:
 		return fmt.Errorf("unknown format %q (want text|json)", *format)

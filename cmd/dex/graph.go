@@ -120,7 +120,7 @@ func cmdGraphNeighbors(ctx context.Context, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	}
-	printSearchHitResult(out.Status, out.Hint, out.Project, out.Hits)
+	printSearchHitResult(out.Status, out.Hint, out.Project, out.Hits, 1500)
 	return nil
 }
 

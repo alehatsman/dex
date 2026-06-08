@@ -43,13 +43,18 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	setHelp(fs,
 		"Check the dex setup: index dir, endpoints, project config, and MCP wiring.",
-		"dex doctor")
+		"dex doctor",
+		"dex doctor",
+		"dex doctor -v",
+	)
+	verbose := fs.Bool("v", false, "verbose: accepted for consistency (endpoint details always shown)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("doctor takes no arguments")
 	}
+	_ = verbose
 
 	fmt.Printf("dex doctor  (%s)\n\n", mcp.Version)
 

@@ -285,17 +285,19 @@ func hitsToJSON(hits []store.Hit) []queryJSONHit {
 	return out
 }
 
-// truncate clips s to n bytes, snapping back to a UTF-8 boundary so we
-// don't emit a half-rune sequence to the terminal.
+// truncate clips s to n bytes (n=0 means no limit), snapping back to a UTF-8
+// boundary so we don't emit a half-rune sequence to the terminal.
+// The truncation indicator names the byte limit so users know what to pass
+// to --max-content-bytes to see more.
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	if n == 0 || len(s) <= n {
 		return s
 	}
 	cut := n
 	for cut > 0 && (s[cut]&0xC0) == 0x80 {
 		cut--
 	}
-	return s[:cut] + "\n…(truncated)"
+	return s[:cut] + fmt.Sprintf("\n…(truncated at %d bytes; pass --max-content-bytes to override)", n)
 }
 
 // relativeTime formats a timestamp as a human-friendly relative string
@@ -323,7 +325,9 @@ func relativeTime(t time.Time) string {
 // by the search-style MCP tools (search_semantic, search_symbol,
 // graph_neighbors). Single helper keeps the CLI's text output for all
 // three surfaces visually identical.
-func printSearchHitResult(status, hint, project string, hits []mcp.SearchHit) {
+// maxBytes controls content truncation (0 = no limit; 1500 is the default
+// that callers pass when no --max-content-bytes flag is set).
+func printSearchHitResult(status, hint, project string, hits []mcp.SearchHit, maxBytes int) {
 	if status != "" && status != "ok" {
 		fmt.Fprintf(os.Stderr, "status: %s\n", status)
 		if hint != "" {
@@ -352,27 +356,26 @@ func printSearchHitResult(status, hint, project string, hits []mcp.SearchHit) {
 		}
 		fmt.Println(header)
 		if h.Content != "" {
-			fmt.Println(truncate(h.Content, 1500))
+			fmt.Println(truncate(h.Content, maxBytes))
 		}
 		fmt.Println()
 	}
 }
 
 // printContextText emits a human-readable rendering of a ContextOutput.
-// Mirrors the layout cmdQuery uses for hits so the two surfaces feel
-// like the same tool. The per-section helpers below take the relevant
-// slice/map directly so each one is independently testable.
-func printContextText(out mcp.ContextOutput) {
+// maxBytes limits content display (0 = no limit). Mirrors the layout
+// cmdQuery uses for hits so the two surfaces feel like the same tool.
+func printContextText(out mcp.ContextOutput, maxBytes int) {
 	if out.Status != "ok" {
 		printContextError(out)
 		return
 	}
 	printContextHeader(out)
-	printSuggestedReads(out.SuggestedReads)
+	printSuggestedReads(out.SuggestedReads, maxBytes)
 	printSymbols(out.Symbols)
 	printReferences(out.References)
 	printAnnotations(out.Annotations)
-	printSemanticHits(out.SemanticHits)
+	printSemanticHits(out.SemanticHits, maxBytes)
 	printGraph(out.Graph)
 	printNextActionAndAvoid(out)
 }
@@ -398,7 +401,7 @@ func printContextHeader(out mcp.ContextOutput) {
 	fmt.Println()
 }
 
-func printSuggestedReads(reads []mcp.SuggestedRead) {
+func printSuggestedReads(reads []mcp.SuggestedRead, maxBytes int) {
 	if len(reads) == 0 {
 		return
 	}
@@ -410,10 +413,11 @@ func printSuggestedReads(reads []mcp.SuggestedRead) {
 		}
 		fmt.Printf("  %d. %s\n     reason: %s\n", i+1, loc, r.Reason)
 		if r.Content != "" {
-			for line := range strings.SplitSeq(strings.TrimRight(r.Content, "\n"), "\n") {
+			body := truncate(r.Content, maxBytes)
+			for line := range strings.SplitSeq(strings.TrimRight(body, "\n"), "\n") {
 				fmt.Printf("     │ %s\n", line)
 			}
-			if r.Truncated {
+			if r.Truncated && maxBytes == 0 {
 				fmt.Println("     │ … (truncated; Read the file for the rest)")
 			}
 		}
@@ -484,7 +488,7 @@ func printAnnotations(anns map[string]mcp.PathMeta) {
 	fmt.Println()
 }
 
-func printSemanticHits(hits []mcp.SemHit) {
+func printSemanticHits(hits []mcp.SemHit, maxBytes int) {
 	if len(hits) == 0 {
 		return
 	}
@@ -500,7 +504,8 @@ func printSemanticHits(hits []mcp.SemHit) {
 		// line range points at source that wouldn't match if re-read,
 		// so inline the body here.
 		if strings.HasSuffix(h.Kind, "_summary") && h.Content != "" {
-			for line := range strings.SplitSeq(strings.TrimRight(h.Content, "\n"), "\n") {
+			body := truncate(h.Content, maxBytes)
+			for line := range strings.SplitSeq(strings.TrimRight(body, "\n"), "\n") {
 				fmt.Printf("     │ %s\n", line)
 			}
 		}

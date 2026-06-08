@@ -1,19 +1,171 @@
-// `dex setup` — write Claude Code routing rules to ~/.claude/rules/dex.md.
+// `dex setup` — guided first-run wizard.
 //
-// This makes dex tools the default instead of native equivalents by injecting
-// a versioned rules block that Claude Code auto-loads from $CLAUDE_CONFIG_DIR/rules/.
-// Safe to run multiple times — idempotent when already up to date, upgrades a
-// stale block, appends to an existing file that predates dex.
+// Walks a new user through: diagnose endpoints, offer to index the cwd,
+// surface MCP wiring commands, write Claude Code routing rules, and show a
+// working example. Idempotent and re-runnable. Non-interactive (CI/dotfiles):
+// `dex setup --check`.
+//
+// Note: `dex guide` is already taken by the LLM_GUIDE.md renderer; this
+// command uses the name `setup` instead.
 package main
 
 import (
+	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/alehatsman/dex/internal/mcp"
+	"github.com/alehatsman/dex/internal/proj"
 )
+
+func cmdSetup(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	setHelp(fs,
+		"Guided first-run wizard: check setup, optionally index the cwd, show MCP wiring.",
+		"dex setup [--check]",
+		"dex setup          # interactive walkthrough",
+		"dex setup --check  # CI: exit 0 if fully set up, 1 otherwise",
+	)
+	checkOnly := fs.Bool("check", false, "non-interactive: exit 0 if setup is complete, 1 otherwise")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("setup takes no arguments")
+	}
+
+	fmt.Printf("dex setup  (%s)\n\n", mcp.Version)
+
+	// ── step 1: run doctor checks ────────────────────────────────────────
+	epCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	checks := []doctorCheck{
+		checkIndexDir(),
+	}
+	checks = append(checks, checkEndpoints(epCtx)...)
+	checks = append(checks, checkProjectConfig())
+	checks = append(checks, checkMCPWiring())
+
+	labelW := 0
+	for _, c := range checks {
+		if len(c.name) > labelW {
+			labelW = len(c.name)
+		}
+	}
+
+	var issues, critFails int
+	for _, c := range checks {
+		fmt.Printf("  %-*s  %s  %s\n", labelW, c.name, docSym(c.status), c.detail)
+		for _, h := range c.hints {
+			fmt.Printf("  %-*s     →  %s\n", labelW, "", h)
+		}
+		if c.status == docFail || c.status == docWarn {
+			issues++
+		}
+		if c.status == docFail && c.critical {
+			critFails++
+		}
+	}
+	fmt.Println()
+
+	// ── check-only mode ───────────────────────────────────────────────────
+	if *checkOnly {
+		if critFails > 0 {
+			fmt.Fprintf(os.Stderr, "setup incomplete: %d critical issue(s)\n", critFails)
+			os.Exit(1)
+		}
+		if issues > 0 {
+			fmt.Fprintf(os.Stderr, "setup incomplete: %d issue(s)\n", issues)
+			os.Exit(1)
+		}
+		fmt.Println("setup complete")
+		return nil
+	}
+
+	if critFails > 0 {
+		fmt.Printf("⚠ %d critical issue(s) — fix endpoints before continuing\n", critFails)
+		fmt.Println("  run `dex doctor` for details and hints")
+		fmt.Println()
+		fmt.Println("next: `dex help` for common commands")
+		return nil
+	}
+
+	// ── step 2: check whether cwd is indexed ─────────────────────────────
+	wd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	if p, perr := proj.Resolve(wd, base); perr == nil {
+		if _, serr := os.Stat(p.DBPath); os.IsNotExist(serr) {
+			fmt.Printf("current project is not indexed: %s\n", wd)
+			if stdinIsTTY() {
+				fmt.Fprintf(os.Stderr, "  run `dex index .` now? [y/N] ")
+				reader := bufio.NewReader(os.Stdin)
+				line, _ := reader.ReadString('\n')
+				if ans := strings.TrimSpace(strings.ToLower(line)); ans == "y" || ans == "yes" {
+					fmt.Println()
+					if ixErr := cmdIndex(ctx, []string{wd}); ixErr != nil {
+						fmt.Fprintf(os.Stderr, "  index failed: %v\n  fix the issue and re-run `dex index .`\n", ixErr)
+					}
+				} else {
+					fmt.Println("  skipped — run: dex index .")
+				}
+			} else {
+				fmt.Println("  run: dex index .")
+			}
+			fmt.Println()
+		} else {
+			fmt.Printf("✓ %s is indexed\n\n", wd)
+		}
+	}
+
+	// ── step 3: MCP wiring ────────────────────────────────────────────────
+	if dexMCPLocation() == "" {
+		fmt.Println("MCP is not wired to Claude Code. To register dex:")
+		fmt.Println("  claude mcp add --scope user dex -- dex mcp")
+		fmt.Println()
+	} else {
+		fmt.Printf("✓ MCP configured (%s)\n\n", dexMCPLocation())
+	}
+
+	// ── step 4: write Claude Code routing rules ───────────────────────────
+	if rulesPath, pathErr := claudeRulesPath(); pathErr == nil {
+		action, newContent, buildErr := buildRulesContent(rulesPath)
+		if buildErr == nil && action != "already up to date" {
+			if mkErr := os.MkdirAll(filepath.Dir(rulesPath), 0o755); mkErr == nil {
+				_ = os.WriteFile(rulesPath, []byte(newContent), 0o644)
+			}
+		}
+		if action == "already up to date" {
+			fmt.Printf("✓ Claude Code routing rules up to date (%s)\n\n", rulesPath)
+		} else {
+			fmt.Printf("✓ Claude Code routing rules written (%s)\n\n", rulesPath)
+		}
+	}
+
+	// ── step 5: show a working example ───────────────────────────────────
+	fmt.Println("try it:")
+	fmt.Println(`  dex ask . "where is the main entry point?"`)
+	fmt.Println()
+
+	// ── step 6: pointer to help ───────────────────────────────────────────
+	fmt.Println("next: `dex help` for common commands · `dex help all` for the full reference")
+
+	return nil
+}
+
+// ── Claude Code routing rules ─────────────────────────────────────────────
 
 const (
 	rulesMarker    = "# dex — semantic search & context routing"
@@ -44,47 +196,6 @@ const rulesContent = `# dex — semantic search & context routing
 - ` + "`ask(task)`" + ` at the start of every session to orient on the codebase
 <!-- /dex -->`
 
-func cmdSetup(args []string) error {
-	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
-	dryRun := fs.Bool("dry-run", false, "print what would be written without modifying any files")
-	setHelp(fs,
-		"Write dex routing rules to $CLAUDE_CONFIG_DIR/rules/dex.md.\n"+
-			"Claude Code auto-loads all files from that directory at session start,\n"+
-			"so dex tools become the default without any further configuration.",
-		"dex setup [--dry-run]")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() > 0 {
-		return fmt.Errorf("setup takes no arguments")
-	}
-
-	rulesPath, err := claudeRulesPath()
-	if err != nil {
-		return err
-	}
-
-	action, newContent, err := buildRulesContent(rulesPath)
-	if err != nil {
-		return err
-	}
-
-	if *dryRun {
-		fmt.Printf("would write %s (%s)\n\n%s\n", rulesPath, action, newContent)
-		return nil
-	}
-
-	if err := os.MkdirAll(filepath.Dir(rulesPath), 0o755); err != nil {
-		return fmt.Errorf("create rules dir: %w", err)
-	}
-	if err := os.WriteFile(rulesPath, []byte(newContent), 0o644); err != nil {
-		return fmt.Errorf("write rules: %w", err)
-	}
-
-	fmt.Printf("%s  %s\n", action, rulesPath)
-	return nil
-}
-
 // claudeRulesPath returns $CLAUDE_CONFIG_DIR/rules/dex.md, falling back to
 // ~/.claude/rules/dex.md when the env var is unset.
 func claudeRulesPath() (string, error) {
@@ -108,18 +219,15 @@ func buildRulesContent(path string) (action, content string, err error) {
 		if !errors.Is(readErr, os.ErrNotExist) {
 			return "", "", fmt.Errorf("read %s: %w", path, readErr)
 		}
-		// New file — write rules only.
 		return "created", rulesContent + "\n", nil
 	}
 
 	s := string(existing)
 
-	// Already current.
 	if strings.Contains(s, rulesVersion) {
 		return "already up to date", s, nil
 	}
 
-	// Stale dex block — replace the marked section.
 	if strings.Contains(s, rulesMarker) {
 		start := strings.Index(s, rulesMarker)
 		end := strings.Index(s, rulesEndMarker)
@@ -140,7 +248,6 @@ func buildRulesContent(path string) (action, content string, err error) {
 		return "updated", b.String(), nil
 	}
 
-	// File exists but no dex block — append.
 	var b strings.Builder
 	b.WriteString(s)
 	if !strings.HasSuffix(s, "\n") {

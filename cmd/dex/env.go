@@ -140,12 +140,20 @@ func cmdEnv(_ context.Context, args []string) error {
 	fs := flag.NewFlagSet("env", flag.ContinueOnError)
 	setHelp(fs,
 		"Print effective DEX_* configuration with sources (env|file|default|disabled|unset).",
-		"dex env [--all] [--doc] [--format=text|json]")
+		"dex env [--all] [--doc] [--format=text|json]",
+		"dex env",
+		"dex env --all --doc",
+		`dex env --format json | jq '.[] | select(.source == "env")'`,
+	)
 	format := fs.String("format", "text", "output format: text | json")
 	showAll := fs.Bool("all", false, "include tuning knobs (default: core/chat/rerank/compress/draft only)")
 	doc := fs.Bool("doc", false, "include doc strings in text output")
+	verbose := fs.Bool("v", false, "verbose: include doc strings (equivalent to --doc)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
+	}
+	if *verbose {
+		*doc = true
 	}
 
 	resolved := resolveEnv(allEnvVars)
