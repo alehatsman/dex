@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path"
+	"sort"
 	"time"
 )
 
@@ -798,4 +799,72 @@ func (s *Store) HitsForFiles(ctx context.Context, paths []string, k int) ([]Hit,
 		}()
 	}
 	return out, nil
+}
+
+// fuseWithGraphNeighbors merges primary hits with graph-proximity hits via
+// Reciprocal Rank Fusion (k=60). The graph lane is weighted at 0.5× so
+// structural neighbors boost without drowning out direct semantic matches.
+func fuseWithGraphNeighbors(primary, graphHits []Hit, n int) []Hit {
+	const kRRF = 60
+	type hitKey struct {
+		path string
+		line int
+	}
+	scores := make(map[hitKey]float32, len(primary)+len(graphHits))
+	byKey := make(map[hitKey]Hit, len(primary)+len(graphHits))
+
+	for i, h := range primary {
+		hk := hitKey{h.Path, h.StartLine}
+		scores[hk] += 1.0 / float32(kRRF+i+1)
+		byKey[hk] = h
+	}
+	for i, h := range graphHits {
+		hk := hitKey{h.Path, h.StartLine}
+		scores[hk] += 0.5 / float32(kRRF+i+1)
+		if _, exists := byKey[hk]; !exists {
+			byKey[hk] = h
+		}
+	}
+
+	type ranked struct {
+		key   hitKey
+		score float32
+	}
+	all := make([]ranked, 0, len(scores))
+	for hk, s := range scores {
+		all = append(all, ranked{hk, s})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].score > all[j].score })
+	if len(all) > n {
+		all = all[:n]
+	}
+	out := make([]Hit, len(all))
+	for i, r := range all {
+		out[i] = byKey[r.key]
+	}
+	return out
+}
+
+// fuseSessionGraph expands the hit set with graph-adjacent files of recently
+// session-touched files, fusing at 0.5× RRF weight. Silently returns primary
+// unchanged when the session is absent, the graph is unbuilt, or any store
+// call fails — graph proximity is best-effort and must not degrade search.
+func (s *Store) fuseSessionGraph(ctx context.Context, hits []Hit, n int) []Hit {
+	ss, ok, err := s.SessionGet(ctx)
+	if err != nil || !ok || len(ss.Files) == 0 {
+		return hits
+	}
+	seeds := make([]string, 0, len(ss.Files))
+	for _, f := range ss.Files {
+		seeds = append(seeds, f.Path)
+	}
+	neighbors, err := s.GraphNeighborFiles(ctx, seeds, 15)
+	if err != nil || len(neighbors) == 0 {
+		return hits
+	}
+	graphHits, err := s.HitsForFiles(ctx, neighbors, n*2)
+	if err != nil || len(graphHits) == 0 {
+		return hits
+	}
+	return fuseWithGraphNeighbors(hits, graphHits, n)
 }

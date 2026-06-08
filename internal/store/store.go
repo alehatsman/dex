@@ -1481,12 +1481,29 @@ func rrfWeights(qt queryType) (bm25W, denseW float32) {
 // Search returns the top-k chunks ranked by hybrid scoring with optional
 // per-file diversity via Options.MaxHitsPerFile. The canonical local quality
 // rerank (noise/definition/coherence/MMR) is applied exactly once, here.
+//
+// The graph-proximity lane is applied when a session exists: graph-adjacent
+// files of recently-touched session files are fused at 0.5× RRF weight before
+// reranking, matching the lane in search_semantic.
 func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error) {
-	hits, err := s.searchRaw(ctx, queryVec, queryText, k, true)
-	if err != nil || len(hits) == 0 || s.opts.MaxHitsPerFile <= 0 {
+	// Over-fetch to give the graph-fuse and rerank stages headroom.
+	candidateK := k * 5
+	if candidateK < 30 {
+		candidateK = 30
+	}
+	hits, err := s.SearchFused(ctx, queryVec, queryText, candidateK)
+	if err != nil || len(hits) == 0 {
 		return hits, err
 	}
-	return diversify(hits, s.opts.MaxHitsPerFile), nil
+	hits = s.fuseSessionGraph(ctx, hits, candidateK)
+	hits, err = s.RerankFused(ctx, queryText, hits, k)
+	if err != nil {
+		return nil, err
+	}
+	if s.opts.MaxHitsPerFile > 0 {
+		hits = diversify(hits, s.opts.MaxHitsPerFile)
+	}
+	return hits, nil
 }
 
 // SearchFused returns RRF-fused (+ session-proximity) candidates WITHOUT the
