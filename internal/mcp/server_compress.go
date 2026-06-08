@@ -1138,6 +1138,10 @@ var (
 		`\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?`)
 	// Matches 32-64 char lowercase hex strings (commit hashes, checksums, IDs).
 	reHex = regexp.MustCompile(`\b[0-9a-f]{32,64}\b`)
+	// Matches RFC 4122 UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+	reUUID = regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`)
+	// Matches common log-level prefixes at the start of a line or after a timestamp.
+	reLogLevel = regexp.MustCompile(`\b(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL|FATAL|TRACE)\b\s*:?\s*`)
 	// Separator lines (====, ----, ***) that occupy >80% of non-space characters.
 	reSep = regexp.MustCompile(`^[\s=\-*#]{3,}$`)
 )
@@ -1147,6 +1151,20 @@ func normalizeTimestamps(s string) string { return reTS.ReplaceAllString(s, "[TS
 
 // normalizeHashes replaces 32–64 char hex strings with [HASH].
 func normalizeHashes(s string) string { return reHex.ReplaceAllString(s, "[HASH]") }
+
+// normalizeUUIDs replaces RFC 4122 UUIDs with [UUID] for dedup key computation.
+func normalizeUUIDs(s string) string { return reUUID.ReplaceAllString(s, "[UUID]") }
+
+// normalizeLineForDedup returns a key for dedup comparison: timestamps, hashes,
+// UUIDs, and log-level labels are replaced so lines that differ only in those
+// fields are treated as duplicates.
+func normalizeLineForDedup(s string) string {
+	s = normalizeTimestamps(s)
+	s = normalizeHashes(s)
+	s = normalizeUUIDs(s)
+	s = reLogLevel.ReplaceAllString(s, "")
+	return strings.TrimSpace(s)
+}
 
 // isBoilerplateLine returns true for copyright notices, license headers,
 // code-gen banners, and decorative separator lines.
@@ -1220,7 +1238,7 @@ func verbatimCompact(lines []string) []string {
 
 		display := normalizeTimestamps(l)
 		display = normalizeHashes(display)
-		norm := strings.TrimSpace(display)
+		norm := normalizeLineForDedup(l)
 
 		if norm == prevNorm && norm != "" {
 			run++
@@ -1299,7 +1317,7 @@ func dedupBlockLines(lines []string) []string {
 	for _, l := range lines {
 		display := normalizeTimestamps(l)
 		display = normalizeHashes(display)
-		norm := strings.TrimSpace(display)
+		norm := normalizeLineForDedup(l)
 		if norm == "" {
 			continue
 		}
@@ -1336,7 +1354,7 @@ func compressLogBlock(lines []string) []string {
 		if isBlockBoundary(l) {
 			boundaries++
 		}
-		norm := strings.TrimSpace(normalizeHashes(normalizeTimestamps(l)))
+		norm := normalizeLineForDedup(l)
 		if norm == prevNorm && norm != "" {
 			dupes++
 		}
