@@ -594,7 +594,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			time.Since(stats.LastIndex).Round(time.Hour), p.Root)
 	}
 
-	hits, err := st.Search(ctx, vecs[0], in.Query, candidateK)
+	hits, err := st.SearchFused(ctx, vecs[0], in.Query, candidateK)
 	if err != nil {
 		out.Status = "error"
 		out.Hint = fmt.Sprintf("search: %v", err)
@@ -635,7 +635,12 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		}
 	}
 
-	hits = rerankLocal(hits, len(idents) > 0)
+	hits, err = st.RerankFused(ctx, in.Query, hits, candidateK)
+	if err != nil {
+		out.Status = "error"
+		out.Hint = fmt.Sprintf("rerank: %v", err)
+		return nil, out, nil
+	}
 	hits = ecsRerank(hits, extractTaskKWs(sessionTask))
 	s.activityRecord(p.Root, 1)
 
@@ -832,31 +837,31 @@ func excluded(path string, exclude []string) bool {
 // Raw extensions (with or without leading dot) pass through unchanged.
 func langToExtensions(langs []string) []string {
 	aliasMap := map[string][]string{
-		"typescript":  {"ts", "tsx"},
-		"javascript":  {"js", "jsx", "mjs", "cjs"},
-		"c++":         {"cpp", "hpp", "cc", "hh"},
-		"cpp":         {"cpp", "hpp", "cc", "hh"},
-		"cc":          {"cpp", "hpp", "cc", "hh"},
-		"ruby":        {"rb"},
-		"kotlin":      {"kt", "kts"},
-		"yaml":        {"yaml", "yml"},
-		"yml":         {"yaml", "yml"},
-		"python":      {"py"},
-		"java":        {"java"},
-		"go":          {"go"},
-		"rust":        {"rs"},
-		"c":           {"c", "h"},
-		"swift":       {"swift"},
-		"scala":       {"scala"},
-		"shell":       {"sh", "bash"},
-		"bash":        {"sh", "bash"},
-		"html":        {"html", "htm"},
-		"css":         {"css"},
-		"json":        {"json"},
-		"markdown":    {"md", "mdx"},
-		"proto":       {"proto"},
-		"sql":         {"sql"},
-		"toml":        {"toml"},
+		"typescript": {"ts", "tsx"},
+		"javascript": {"js", "jsx", "mjs", "cjs"},
+		"c++":        {"cpp", "hpp", "cc", "hh"},
+		"cpp":        {"cpp", "hpp", "cc", "hh"},
+		"cc":         {"cpp", "hpp", "cc", "hh"},
+		"ruby":       {"rb"},
+		"kotlin":     {"kt", "kts"},
+		"yaml":       {"yaml", "yml"},
+		"yml":        {"yaml", "yml"},
+		"python":     {"py"},
+		"java":       {"java"},
+		"go":         {"go"},
+		"rust":       {"rs"},
+		"c":          {"c", "h"},
+		"swift":      {"swift"},
+		"scala":      {"scala"},
+		"shell":      {"sh", "bash"},
+		"bash":       {"sh", "bash"},
+		"html":       {"html", "htm"},
+		"css":        {"css"},
+		"json":       {"json"},
+		"markdown":   {"md", "mdx"},
+		"proto":      {"proto"},
+		"sql":        {"sql"},
+		"toml":       {"toml"},
 	}
 	seen := make(map[string]struct{})
 	var out []string
@@ -967,145 +972,6 @@ func filterHits(hits []store.Hit, exts []string, glob string, limit int) []store
 		}
 	}
 	return out
-}
-
-// rerankLocal applies post-RRF quality signals before returning search results.
-// Passes: (1) noise penalties + definition boost, (2) file coherence boost,
-// (3) MMR-style diversity decay. Operates on RRFScore; falls back to cosine
-// Score when RRF didn't run (semantic-only search).
-func rerankLocal(hits []store.Hit, isSymbolQuery bool) []store.Hit {
-	if len(hits) == 0 {
-		return hits
-	}
-	for i := range hits {
-		if hits[i].RRFScore == 0 {
-			hits[i].RRFScore = hits[i].Score
-		}
-	}
-
-	// Pass 1: per-hit signals.
-	for i := range hits {
-		if pen := pathPenalty(hits[i].Path); pen != 1.0 {
-			hits[i].RRFScore *= float32(pen)
-		}
-		if isSymbolQuery && isDefinitionKind(hits[i].Kind) {
-			hits[i].RRFScore *= 1.5
-		}
-	}
-
-	// Pass 2: file coherence — boost all chunks from files with ≥2 hits.
-	fileCnt := make(map[string]int, len(hits))
-	for _, h := range hits {
-		fileCnt[h.Path]++
-	}
-	for i := range hits {
-		if fileCnt[hits[i].Path] >= 2 {
-			hits[i].RRFScore *= 1.15
-		}
-	}
-	sort.Slice(hits, func(i, j int) bool { return hits[i].RRFScore > hits[j].RRFScore })
-
-	// Pass 3: MMR diversity — decay chunks beyond the 2nd from the same file.
-	seen := make(map[string]int, len(hits))
-	for i := range hits {
-		seen[hits[i].Path]++
-		for excess := seen[hits[i].Path] - 2; excess > 0; excess-- {
-			hits[i].RRFScore *= 0.7
-		}
-	}
-	sort.Slice(hits, func(i, j int) bool { return hits[i].RRFScore > hits[j].RRFScore })
-	return hits
-}
-
-// pathPenalty returns a multiplicative down-rank factor in (0,1] for paths
-// that are typically low-signal for implementation searches (CoRNStack ICLR
-// 2025 multipliers, extended with compat/legacy/barrel/stub tiers).
-// Penalties are applied multiplicatively so a test file inside a legacy dir
-// gets 0.3 × 0.3 = 0.09×.
-func pathPenalty(path string) float64 {
-	p := filepath.ToSlash(path)
-	penalty := 1.0
-	if isTestPath(p) {
-		penalty *= 0.3
-	}
-	if isCompatLegacyPath(p) {
-		penalty *= 0.3
-	}
-	if isExampleDocsPath(p) {
-		penalty *= 0.3
-	}
-	if isReexportBarrel(p) {
-		penalty *= 0.5
-	}
-	if isTypeStub(p) {
-		penalty *= 0.7
-	}
-	return penalty
-}
-
-func isCompatLegacyPath(p string) bool {
-	return hasPathSegment(p, "compat") ||
-		hasPathSegment(p, "legacy") ||
-		hasPathSegment(p, "deprecated")
-}
-
-func isExampleDocsPath(p string) bool {
-	return hasPathSegment(p, "examples") ||
-		hasPathSegment(p, "example") ||
-		hasPathSegment(p, "demo") ||
-		hasPathSegment(p, "docs_src") ||
-		hasPathSegment(p, "samples") ||
-		hasPathSegment(p, "tutorials") ||
-		hasPathSegment(p, "cookbook")
-}
-
-// hasPathSegment returns true when any /-delimited segment of p equals seg.
-func hasPathSegment(p, seg string) bool {
-	for {
-		idx := strings.Index(p, seg)
-		if idx < 0 {
-			return false
-		}
-		// Must be at start or preceded by /
-		if idx > 0 && p[idx-1] != '/' {
-			p = p[idx+len(seg):]
-			continue
-		}
-		// Must be followed by / or end of string
-		end := idx + len(seg)
-		if end == len(p) || p[end] == '/' {
-			return true
-		}
-		p = p[end:]
-	}
-}
-
-func isReexportBarrel(p string) bool {
-	b := filepath.Base(p)
-	return b == "index.ts" || b == "index.tsx" ||
-		b == "__init__.py" ||
-		b == "package-info.java" ||
-		b == "mod.rs" // Rust re-export modules
-}
-
-func isTypeStub(p string) bool {
-	lower := strings.ToLower(p)
-	return strings.HasSuffix(lower, ".d.ts") || strings.HasSuffix(lower, ".pyi")
-}
-
-// isDefinitionKind returns true for tree-sitter node types that represent
-// a declaration site (function, method, struct, class, interface, type).
-func isDefinitionKind(kind string) bool {
-	if strings.HasSuffix(kind, ":window") {
-		return false
-	}
-	return strings.Contains(kind, "function") ||
-		strings.Contains(kind, "method") ||
-		strings.Contains(kind, "class") ||
-		strings.Contains(kind, "struct") ||
-		strings.Contains(kind, "interface") ||
-		strings.Contains(kind, "type_decl") ||
-		strings.Contains(kind, "impl_item")
 }
 
 // ─── tool: search_symbol ──────────────────────────────────────────────────
@@ -1261,8 +1127,8 @@ type FindRelatedInput struct {
 }
 
 type FindRelatedOutput struct {
-	Status string      `json:"status"` // "ok" | "no-index" | "not-found" | "embedding-service-unreachable" | "error"
-	Hint   string      `json:"hint,omitempty"`
+	Status string `json:"status"` // "ok" | "no-index" | "not-found" | "embedding-service-unreachable" | "error"
+	Hint   string `json:"hint,omitempty"`
 	// Source is the resolved anchor chunk.
 	Source  *SearchHit  `json:"source,omitempty"`
 	Project string      `json:"project,omitempty"`
@@ -1328,7 +1194,7 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 		return nil, FindRelatedOutput{Status: "error", Hint: fmt.Sprintf("embed: %v", err)}, nil
 	}
 
-	hits, err := st.Search(ctx, vecs[0], src.Content, candidateK)
+	hits, err := st.SearchFused(ctx, vecs[0], src.Content, candidateK)
 	if err != nil {
 		return nil, FindRelatedOutput{Status: "error", Hint: fmt.Sprintf("search: %v", err)}, nil
 	}
@@ -1364,7 +1230,10 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 		}
 	}
 
-	hits = rerankLocal(hits, len(idents) > 0)
+	hits, err = st.RerankFused(ctx, src.Content, hits, candidateK)
+	if err != nil {
+		return nil, FindRelatedOutput{Status: "error", Hint: fmt.Sprintf("rerank: %v", err)}, nil
+	}
 
 	var sessionTask string
 	if ss, ok, err2 := st.SessionGet(ctx); err2 == nil && ok {
