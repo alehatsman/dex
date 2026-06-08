@@ -5,7 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/alehatsman/dex/internal/tokens"
 )
 
 // identRe matches identifiers: starts with a letter, 6+ total chars,
@@ -118,11 +119,12 @@ func countIdentifiers(content string) map[string]int {
 	return counts
 }
 
-// symTokens estimates BPE token count for a string using rune count / 4
-// (rounded up), minimum 1. Accurate enough for the ROI gate.
+// symTokens returns the real BPE token count for a string (default o200k_base),
+// minimum 1. BPE splits long snake_case/camelCase identifiers into several
+// tokens, so this surfaces savings the old rune/4 estimate hid — the ROI gate
+// stops skipping profitable symbols.
 func symTokens(s string) int {
-	n := utf8.RuneCountInString(s)
-	t := (n + 3) / 4
+	t := tokens.Count(s)
 	if t < 1 {
 		return 1
 	}

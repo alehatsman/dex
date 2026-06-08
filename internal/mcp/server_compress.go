@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/tokens"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -180,8 +181,10 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	return strings.Join(out, "\n"), originalLines, len(out)
 }
 
-// estimateTokens approximates token count via word count (fast, no BPE needed).
-func estimateTokens(s string) int { return len(strings.Fields(s)) }
+// estimateTokens returns a real BPE token count (default o200k_base) so the
+// over-compression guard's ratio test triggers on the tokens the model
+// actually sees rather than a whitespace-word approximation.
+func estimateTokens(s string) int { return tokens.Count(s) }
 
 // safetyNeedles are patterns that must survive truncation — errors, panics,
 // test outcomes, security events, and diagnostic markers.
