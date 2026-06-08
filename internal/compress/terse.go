@@ -2,7 +2,11 @@
 // reducing token usage in LLM contexts without semantic loss.
 package compress
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/alehatsman/dex/internal/tokens"
+)
 
 // CompressionLevel controls which terse passes run.
 type CompressionLevel int
@@ -267,5 +271,7 @@ func AbbreviateText(s string) string {
 	return strings.Join(words, " ")
 }
 
-// countTokens approximates token count via whitespace-split word count.
-func countTokens(s string) int { return len(strings.Fields(s)) }
+// countTokens returns a real BPE token count (default o200k_base) so the
+// terse pass's OriginalTokens/OutputTokens and the adaptive feedback ratio
+// reflect what the model actually sees, not a whitespace-word approximation.
+func countTokens(s string) int { return tokens.Count(s) }

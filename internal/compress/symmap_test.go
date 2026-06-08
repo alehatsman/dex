@@ -23,8 +23,10 @@ func TestBuildSymbolMap_Empty(t *testing.T) {
 }
 
 func TestBuildSymbolMap_MinSymbols(t *testing.T) {
-	// Only one high-ROI identifier — below the ≥3 threshold.
-	content := strings.Repeat("handleRequest\n", 20)
+	// A single genuinely-profitable identifier (get_user_by_id = 4 BPE tokens)
+	// repeated many times — qualifies on its own ROI but is below the ≥3
+	// distinct-identifier threshold, so no legend is emitted.
+	content := strings.Repeat("get_user_by_id\n", 20)
 	sm := BuildSymbolMap(content)
 	if !sm.Empty() {
 		t.Error("expected empty map: fewer than 3 qualifying identifiers")
@@ -32,8 +34,10 @@ func TestBuildSymbolMap_MinSymbols(t *testing.T) {
 }
 
 func TestBuildSymbolMap_ROIGate(t *testing.T) {
-	// Build content with three long identifiers each appearing many times.
-	idents := []string{"handleRequest", "parseResponse", "validateInput"}
+	// Three long snake_case identifiers (each ≥3 real BPE tokens) appearing
+	// many times. Under honest tokenization the α-ref itself costs 2 tokens,
+	// so only identifiers of ≥3 tokens clear the gate — these do.
+	idents := []string{"get_user_by_id", "parse_http_header", "validate_user_input"}
 	var sb strings.Builder
 	for i := 0; i < 10; i++ {
 		for _, id := range idents {
@@ -70,15 +74,17 @@ func TestBuildSymbolMap_ROIGate(t *testing.T) {
 }
 
 func TestBuildSymbolMap_LongestFirst(t *testing.T) {
-	// "handleRequestError" contains "handleRequest" — longer must be replaced first.
-	content := strings.Repeat("handleRequestError\nhandleRequest\n", 10)
+	// "get_user_by_id_cached" contains "get_user_by_id" — the longer ident must
+	// be replaced first. A third long ident is included to clear the ≥3 gate.
+	// All three are ≥3 real BPE tokens, so they survive honest ROI gating.
+	content := strings.Repeat("get_user_by_id_cached\nget_user_by_id\nparse_http_header\n", 10)
 	sm := BuildSymbolMap(content)
 	if sm.Empty() {
-		t.Skip("too few qualifying identifiers for this content")
+		t.Fatal("expected non-empty map for three profitable identifiers")
 	}
 	applied := sm.Apply(content)
-	// Neither original identifier should survive in the output.
-	if strings.Contains(applied, "handleRequestError") || strings.Contains(applied, "handleRequest") {
+	// Neither the long identifier nor its prefix should survive in the output.
+	if strings.Contains(applied, "get_user_by_id_cached") || strings.Contains(applied, "get_user_by_id") {
 		t.Error("identifiers not fully replaced")
 	}
 }
@@ -90,19 +96,17 @@ func TestShouldRegisterSym_ShortIdent(t *testing.T) {
 }
 
 func TestShouldRegisterSym_NoSaving(t *testing.T) {
-	// 6-char identifier: symTokens("sixchr")=(6+3)/4=2; symTokens("α1")=(2+3)/4=1
-	// savingPer=2-1=1; totalSavings=1*1=1; entryCost=2+1+2=5; 1>5 false
+	// Real BPE: symTokens("sixchr")=2, symTokens("α1")=2 → savingPer=0 ≤ 0,
+	// so the substitution can never pay for itself regardless of occurrences.
 	if shouldRegisterSym("sixchr", 1, 1) {
-		t.Error("single occurrence of short identifier should not register")
+		t.Error("identifier no larger than its ref should not register")
 	}
 }
 
 func TestShouldRegisterSym_Profitable(t *testing.T) {
-	// Long identifier with many occurrences should register.
-	// "handleRequestError" = 18 chars → symTokens = (18+3)/4 = 5
-	// α1 → symTokens = (2+3)/4 = 1; savingPer = 4; entryCost = 5+1+2=8
-	// occurrences=3: totalSavings=12 > 8 ✓
-	if !shouldRegisterSym("handleRequestError", 3, 1) {
+	// Real BPE: symTokens("get_user_by_id")=4, symTokens("α1")=2 → savingPer=2;
+	// entryCost = 4+2+2 = 8; occurrences=5 → totalSavings=10 > 8 ✓.
+	if !shouldRegisterSym("get_user_by_id", 5, 1) {
 		t.Error("profitable identifier should register")
 	}
 }
@@ -127,14 +131,18 @@ func TestApplyWithLegend_Format(t *testing.T) {
 }
 
 func TestSymTokens(t *testing.T) {
+	// Real BPE token counts (o200k_base, the default counting family). These
+	// differ from the old rune/4 heuristic — e.g. "handleRequest" is one merged
+	// camelCase pair (2 tokens), not 4, and the α-ref costs 2, not 1.
 	cases := []struct {
 		s    string
 		want int
 	}{
-		{"abcd", 1},       // 4 runes → (4+3)/4 = 1
-		{"abcdefgh", 2},   // 8 runes → (8+3)/4 = 2
-		{"handleRequest", 4}, // 13 runes → (13+3)/4 = 4
-		{"α1", 1},         // 2 runes → (2+3)/4 = 1
+		{"abcd", 1},
+		{"abcdefgh", 1},
+		{"handleRequest", 2},
+		{"get_user_by_id", 4},
+		{"α1", 2},
 	}
 	for _, c := range cases {
 		if got := symTokens(c.s); got != c.want {
