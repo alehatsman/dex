@@ -70,7 +70,7 @@ type AutoWatchConfig struct {
 
 // Server holds everything the MCP handlers need.
 type Server struct {
-	EmbedClient    *embed.Client
+	EmbedClient    embed.Embedder
 	ChatClient     *chat.Client         // optional — when nil, view_summarize is not registered
 	SummaryClient  *chat.Client         // optional — used by the auto-watcher's background drainer; falls back to ChatClient if nil
 	SummaryModels  index.SummaryModels  // optional — per-tier model overrides forwarded to the auto-watcher's indexer

@@ -22,6 +22,28 @@ import (
 // "embedding-service-unreachable" result so Claude can fall back to grep.
 var ErrUnreachable = errors.New("embedding service unreachable")
 
+// Embedder is the embedding backend contract the rest of dex depends on.
+// *Client (the OpenAI-compatible HTTP backend) is the only implementation
+// today; the interface is the seam an in-process engine (e.g. an optional
+// ONNX backend) plugs into without touching store/index/mcp. Backends signal
+// a network-layer outage by returning ErrUnreachable so callers degrade
+// gracefully — that contract is part of this interface.
+type Embedder interface {
+	// Embed returns one vector per input, in input order.
+	Embed(ctx context.Context, inputs []string) ([][]float32, error)
+	// Health is a cheap reachability probe.
+	Health(ctx context.Context) error
+	// Endpoint and ModelName are metadata for status reporting.
+	Endpoint() string
+	ModelName() string
+	// BatchSize is the per-call chunk size the indexer loops over so it can
+	// embed-and-upsert one batch at a time (crash-survival, see index.Run).
+	BatchSize() int
+}
+
+// Compile-time check that *Client satisfies Embedder.
+var _ Embedder = (*Client)(nil)
+
 type Client struct {
 	BaseURL string
 	Model   string
@@ -82,6 +104,7 @@ func NewWithConcurrency(baseURL, model string, batch, concurrency int, timeout t
 
 func (c *Client) Endpoint() string  { return c.BaseURL }
 func (c *Client) ModelName() string { return c.Model }
+func (c *Client) BatchSize() int    { return c.Batch }
 
 type embedRequest struct {
 	Model string   `json:"model"`
