@@ -95,6 +95,10 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 			return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
 		}
 	case "clear":
+		// Consolidate session knowledge before discarding the session so facts
+		// are not lost. Errors are intentionally swallowed — consolidation
+		// requires a chat model and must never block a session clear.
+		_, _, _ = s.knowledgeConsolidate(ctx, st)
 		if err := st.SessionClear(ctx); err != nil {
 			return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
 		}

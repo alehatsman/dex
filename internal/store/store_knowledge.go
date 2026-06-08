@@ -3,8 +3,14 @@ package store
 import (
 	"context"
 	"errors"
+	"math"
+	"sort"
 	"time"
 )
+
+// salinceDecayRate is the exponential decay rate per day. At this rate a fact
+// updated 30 days ago retains ~74% of its salience; 90 days ago ~41%.
+const salinceDecayRate = 0.01
 
 // KnowledgeFact is one persisted fact about the project.
 type KnowledgeFact struct {
@@ -80,16 +86,19 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 	if k > 50 {
 		k = 50
 	}
+	// Fetch the full table (bounded by knowledge cap ~200) so recency decay
+	// can re-rank facts that SQLite would otherwise bury behind stale
+	// high-confidence rows. Sorting happens in Go after decay is applied.
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
 		   FROM knowledge_facts
-		   ORDER BY confidence DESC, updated_at DESC
-		   LIMIT ?`, k)
+		   LIMIT 200`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []KnowledgeFact
+	now := time.Now()
+	var all []KnowledgeFact
 	for rows.Next() {
 		var f KnowledgeFact
 		var cNs, uNs int64
@@ -98,10 +107,18 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 		}
 		f.CreatedAt = time.Unix(0, cNs)
 		f.UpdatedAt = time.Unix(0, uNs)
-		f.Salience = f.Confidence * archetypeWeight(f.Archetype)
-		out = append(out, f)
+		days := now.Sub(f.UpdatedAt).Hours() / 24
+		f.Salience = f.Confidence * archetypeWeight(f.Archetype) * math.Exp(-salinceDecayRate*days)
+		all = append(all, f)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Salience > all[j].Salience })
+	if k < len(all) {
+		all = all[:k]
+	}
+	return all, nil
 }
 
 // KnowledgeDelete removes a fact by id.
