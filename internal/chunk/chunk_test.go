@@ -252,3 +252,230 @@ func TestLineCountsAreOneBased(t *testing.T) {
 		}
 	}
 }
+
+func TestCSharpStructural(t *testing.T) {
+	src := []byte(`using System;
+
+namespace MyApp {
+    public class MyService {
+        public string GetName() => "hello";
+        public int Compute(int x) { return x * 2; }
+    }
+
+    public interface IRunner {
+        void Run();
+    }
+
+    public enum Status { Active, Inactive }
+}
+`)
+	chunks, err := Chunks(context.Background(), "service.cs", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]bool{}
+	names := map[string]bool{}
+	for _, c := range chunks {
+		kinds[c.Kind] = true
+		if c.Name != "" {
+			names[c.Name] = true
+		}
+	}
+	if !kinds["namespace_declaration"] && !kinds["class_declaration"] {
+		t.Errorf("expected namespace_declaration or class_declaration chunks; kinds: %v", kinds)
+	}
+	for _, want := range []string{"MyService", "IRunner"} {
+		if !names[want] {
+			t.Errorf("expected chunk named %q; names: %v", want, names)
+		}
+	}
+}
+
+func TestKotlinStructural(t *testing.T) {
+	src := []byte(`package com.example
+
+class MyClass {
+    fun greet(): String = "hello"
+    fun compute(x: Int): Int = x * 2
+}
+
+fun topLevel(): Int = 42
+
+object Singleton {
+    fun getInstance() = Singleton
+}
+`)
+	chunks, err := Chunks(context.Background(), "main.kt", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, c := range chunks {
+		if c.Name != "" {
+			names[c.Name] = true
+		}
+	}
+	for _, want := range []string{"MyClass", "topLevel", "Singleton"} {
+		if !names[want] {
+			t.Errorf("expected chunk named %q; names: %v", want, names)
+		}
+	}
+}
+
+func TestSwiftStructural(t *testing.T) {
+	src := []byte(`import Foundation
+
+class MyService {
+    func process() -> String { return "ok" }
+    init() {}
+}
+
+struct Point {
+    var x: Int
+    func magnitude() -> Double { return Double(x) }
+}
+
+protocol Runnable {
+    func run()
+}
+
+func topLevelHelper() -> Int { return 0 }
+`)
+	chunks, err := Chunks(context.Background(), "service.swift", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, c := range chunks {
+		if c.Name != "" {
+			names[c.Name] = true
+		}
+	}
+	for _, want := range []string{"MyService", "topLevelHelper"} {
+		if !names[want] {
+			t.Errorf("expected chunk named %q; names: %v", want, names)
+		}
+	}
+	// Confirm structural chunking fired (not pure windows).
+	hasStructural := false
+	for _, c := range chunks {
+		if c.Kind != "window" && c.Kind != "orphan" {
+			hasStructural = true
+			break
+		}
+	}
+	if !hasStructural {
+		t.Error("expected at least one structural (non-window) chunk for Swift source")
+	}
+}
+
+func TestPHPStructural(t *testing.T) {
+	src := []byte(`<?php
+namespace App;
+
+class UserService {
+    public function getUser(int $id): string {
+        return "user_" . $id;
+    }
+
+    public static function create(): self {
+        return new self();
+    }
+}
+
+function helperFunction(string $s): string {
+    return strtoupper($s);
+}
+
+interface Repository {
+    public function findById(int $id): string;
+}
+`)
+	chunks, err := Chunks(context.Background(), "service.php", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, c := range chunks {
+		if c.Name != "" {
+			names[c.Name] = true
+		}
+	}
+	for _, want := range []string{"UserService", "helperFunction", "Repository"} {
+		if !names[want] {
+			t.Errorf("expected chunk named %q; names: %v", want, names)
+		}
+	}
+}
+
+func TestScalaStructural(t *testing.T) {
+	src := []byte(`package com.example
+
+class Calculator {
+  def add(a: Int, b: Int): Int = a + b
+  def multiply(a: Int, b: Int): Int = a * b
+}
+
+object MathUtils {
+  def square(x: Int): Int = x * x
+}
+
+trait Printable {
+  def print(): Unit
+}
+
+def standaloneFunc(x: Int): Int = x + 1
+`)
+	chunks, err := Chunks(context.Background(), "calc.scala", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, c := range chunks {
+		if c.Name != "" {
+			names[c.Name] = true
+		}
+	}
+	for _, want := range []string{"Calculator", "MathUtils", "Printable"} {
+		if !names[want] {
+			t.Errorf("expected chunk named %q; names: %v", want, names)
+		}
+	}
+}
+
+func TestElixirStructural(t *testing.T) {
+	src := []byte(`defmodule MyApp.Calculator do
+  def add(a, b) do
+    a + b
+  end
+
+  defp validate(x) when is_integer(x), do: :ok
+
+  def multiply(a, b), do: a * b
+end
+`)
+	chunks, err := Chunks(context.Background(), "calculator.ex", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, c := range chunks {
+		if c.Name != "" {
+			names[c.Name] = true
+		}
+	}
+	if !names["MyApp.Calculator"] {
+		t.Errorf("expected defmodule chunk named 'MyApp.Calculator'; names: %v", names)
+	}
+	// Should have structural chunks, not just windows.
+	hasStructural := false
+	for _, c := range chunks {
+		if c.Kind != "window" && c.Kind != "orphan" {
+			hasStructural = true
+			break
+		}
+	}
+	if !hasStructural {
+		t.Error("expected structural chunks for Elixir source")
+	}
+}

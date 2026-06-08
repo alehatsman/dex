@@ -20,13 +20,19 @@ import (
 	"github.com/smacker/go-tree-sitter/bash"
 	"github.com/smacker/go-tree-sitter/c"
 	"github.com/smacker/go-tree-sitter/cpp"
+	"github.com/smacker/go-tree-sitter/csharp"
+	"github.com/smacker/go-tree-sitter/elixir"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/java"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/kotlin"
 	"github.com/smacker/go-tree-sitter/lua"
+	"github.com/smacker/go-tree-sitter/php"
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/ruby"
 	"github.com/smacker/go-tree-sitter/rust"
+	"github.com/smacker/go-tree-sitter/scala"
+	"github.com/smacker/go-tree-sitter/swift"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
@@ -150,6 +156,28 @@ var languages = map[string]langConfig{
 	".zsh": {bash.GetLanguage(), set(
 		"function_definition",
 	)},
+	".cs": {csharp.GetLanguage(), set(
+		"namespace_declaration",
+		"class_declaration", "interface_declaration",
+		"struct_declaration", "enum_declaration",
+	)},
+	".kt":  {kotlin.GetLanguage(), kotlinKinds()},
+	".kts": {kotlin.GetLanguage(), kotlinKinds()},
+	".swift": {swift.GetLanguage(), set(
+		"class_declaration",   // covers class, struct, enum, extension
+		"function_declaration",
+		"protocol_declaration",
+	)},
+	".php": {php.GetLanguage(), set(
+		"class_declaration", "interface_declaration",
+		"function_definition",
+	)},
+	".scala": {scala.GetLanguage(), set(
+		"class_definition", "object_definition", "trait_definition",
+		"function_definition",
+	)},
+	".ex":  {elixir.GetLanguage(), set("call")},
+	".exs": {elixir.GetLanguage(), set("call")},
 }
 
 // containerMethods maps top-level container node kinds to the method-level
@@ -159,10 +187,12 @@ var languages = map[string]langConfig{
 var containerMethods = map[string]map[string]bool{
 	"class_declaration": {
 		"method_definition":  true, // JS/TS
-		"method_declaration": true, // Java
+		"method_declaration": true, // Java/PHP/C#
+		"function_declaration": true, // Kotlin/Swift
+		"init_declaration":   true, // Swift
 	},
 	"class_definition": {
-		"function_definition": true, // Python
+		"function_definition": true, // Python/Scala
 	},
 	"class_specifier": {
 		"function_definition": true, // C++
@@ -174,14 +204,41 @@ var containerMethods = map[string]map[string]bool{
 		"function_item": true, // Rust
 	},
 	"interface_declaration": {
-		"method_declaration": true, // Java / TS
+		"method_declaration": true, // Java/TS/PHP/C#
 	},
 	"enum_declaration": {
-		"method_declaration": true, // Java
+		"method_declaration": true, // Java/C#
 	},
 	"module": {
 		"method":           true, // Ruby
 		"singleton_method": true, // Ruby
+	},
+	// C# — namespace wraps type declarations
+	"namespace_declaration": {
+		"class_declaration":     true,
+		"interface_declaration": true,
+		"struct_declaration":    true,
+		"enum_declaration":      true,
+	},
+	// C# structs can contain methods
+	"struct_declaration": {
+		"method_declaration": true,
+	},
+	// Kotlin / Swift — object/singleton declarations contain methods
+	"object_declaration": {
+		"function_declaration": true, // Kotlin
+	},
+	// Scala — objects and traits contain methods
+	"object_definition": {
+		"function_definition": true, // Scala
+	},
+	"trait_definition": {
+		"function_declaration": true, // Scala abstract
+		"function_definition":  true, // Scala concrete
+	},
+	// Swift — protocol body contains method declarations
+	"protocol_declaration": {
+		"protocol_function_declaration": true, // Swift
 	},
 }
 
@@ -217,6 +274,14 @@ func cppKinds() map[string]bool {
 		"struct_specifier",
 		"class_specifier",
 		"namespace_definition",
+	)
+}
+
+func kotlinKinds() map[string]bool {
+	return set(
+		"class_declaration",    // class and interface (both use class_declaration)
+		"function_declaration", // top-level and extension functions
+		"object_declaration",   // companion object / singleton
 	)
 }
 
@@ -363,11 +428,21 @@ func buildNestedChunk(relPath string, src []byte, n *sitter.Node, parentName str
 // declarations (the overwhelming majority) name their type correctly.
 // Multi-spec declarations (`type (X struct{}; Y int)`) still get the
 // name of the first spec — better than empty.
+//
+// Kotlin's class_declaration/function_declaration/object_declaration use
+// type_identifier/simple_identifier as the first named child without a
+// "name" field. We fall back to that when the field lookup misses.
+//
+// Elixir's top-level constructs are all `call` nodes; the macro name
+// (def/defmodule/defp) sits in an `identifier` child and the declared name
+// in the first argument.
 func nodeIdentifier(n *sitter.Node, src []byte) string {
 	if nameNode := n.ChildByFieldName("name"); nameNode != nil {
 		return string(src[nameNode.StartByte():nameNode.EndByte()])
 	}
-	if n.Type() == "type_declaration" {
+	switch n.Type() {
+	case "type_declaration":
+		// Go: type_declaration → type_spec/type_alias → name field
 		for i := 0; i < int(n.NamedChildCount()); i++ {
 			c := n.NamedChild(i)
 			if c.Type() != "type_spec" && c.Type() != "type_alias" {
@@ -376,6 +451,77 @@ func nodeIdentifier(n *sitter.Node, src []byte) string {
 			if nameNode := c.ChildByFieldName("name"); nameNode != nil {
 				return string(src[nameNode.StartByte():nameNode.EndByte()])
 			}
+		}
+	case "call":
+		// Elixir: call[identifier=macro][arguments[name|call]]
+		// Structure: identifier child holds "def"/"defmodule"/"defp",
+		// first argument holds the declared name (alias or nested call).
+		return elixirCallName(n, src)
+	default:
+		// Kotlin (and similar grammars): identifier is the first named child
+		// with type type_identifier (class/object) or simple_identifier (fun).
+		if n.NamedChildCount() > 0 {
+			fc := n.NamedChild(0)
+			t := fc.Type()
+			if t == "type_identifier" || t == "simple_identifier" {
+				return string(src[fc.StartByte():fc.EndByte()])
+			}
+		}
+	}
+	return ""
+}
+
+// elixirCallName extracts the declared name from an Elixir `call` node.
+// defmodule MyModule do  → "MyModule"
+// def my_fn(x) do       → "my_fn"
+// defp helper(x), do: x → "helper"
+func elixirCallName(n *sitter.Node, src []byte) string {
+	// Find the macro identifier (first unnamed child of type "identifier").
+	var macro string
+	for i := 0; i < int(n.ChildCount()); i++ {
+		c := n.Child(i)
+		if c.Type() == "identifier" {
+			macro = string(src[c.StartByte():c.EndByte()])
+			break
+		}
+	}
+	if macro == "" {
+		return ""
+	}
+	// Find the arguments node.
+	args := n.ChildByFieldName("arguments")
+	if args == nil {
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			if n.NamedChild(i).Type() == "arguments" {
+				args = n.NamedChild(i)
+				break
+			}
+		}
+	}
+	if args == nil || args.NamedChildCount() == 0 {
+		return ""
+	}
+	first := args.NamedChild(0)
+	switch macro {
+	case "defmodule":
+		// arguments[0] is an alias node like "MyModule"
+		if first.Type() == "alias" {
+			return string(src[first.StartByte():first.EndByte()])
+		}
+	case "def", "defp", "defmacro", "defmacrop":
+		// arguments[0] is a call node: my_fn(x)
+		// The function name is the identifier child of that call.
+		if first.Type() == "call" {
+			for i := 0; i < int(first.ChildCount()); i++ {
+				c := first.Child(i)
+				if c.Type() == "identifier" {
+					return string(src[c.StartByte():c.EndByte()])
+				}
+			}
+		}
+		// arguments[0] might be a bare identifier for zero-arg functions
+		if first.Type() == "identifier" {
+			return string(src[first.StartByte():first.EndByte()])
 		}
 	}
 	return ""
