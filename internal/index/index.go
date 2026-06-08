@@ -120,13 +120,13 @@ type Options struct {
 type Indexer struct {
 	Proj     *proj.Project
 	Store    *store.Store
-	Embed    *embed.Client
+	Embed    embed.Embedder
 	Ignore   *ignore.Matcher
 	Options  Options
 	drainLog *slog.Logger // subsystem=drain logger, derived in New()
 }
 
-func New(p *proj.Project, st *store.Store, em *embed.Client, ig *ignore.Matcher, opt Options) *Indexer {
+func New(p *proj.Project, st *store.Store, em embed.Embedder, ig *ignore.Matcher, opt Options) *Indexer {
 	if opt.MaxFileSize <= 0 {
 		opt.MaxFileSize = 1 << 20 // 1 MB
 	}
@@ -713,7 +713,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		// (timeout, embedding service crash), earlier batches survive
 		// in the store and the next index run skips them via
 		// content-sha matching — no wasted GPU time on retry.
-		batchSize := ix.Embed.Batch
+		batchSize := ix.Embed.BatchSize()
 		if batchSize <= 0 {
 			batchSize = 32
 		}

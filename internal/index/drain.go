@@ -176,7 +176,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	}
 
 	if len(successful) > 0 {
-		batchSize := ix.Embed.Batch
+		batchSize := ix.Embed.BatchSize()
 		if batchSize <= 0 {
 			batchSize = 32
 		}
