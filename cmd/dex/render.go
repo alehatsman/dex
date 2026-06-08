@@ -35,7 +35,7 @@ type endpointProbe struct {
 func collectEndpoints() []endpointProbe {
 	probes := []endpointProbe{}
 
-	em := newEmbedClient()
+	em := newEmbedClient("")
 	probes = append(probes, endpointProbe{name: "embed", url: em.BaseURL, model: em.Model, health: em.Health})
 
 	cc := newChatClient()

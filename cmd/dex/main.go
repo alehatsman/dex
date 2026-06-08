@@ -448,7 +448,11 @@ func warnIfNoInclude(ig *ignore.Matcher, root string) {
 	}
 }
 
-func newEmbedClient() *embed.Client {
+// newEmbedClient constructs an embed.Client from env vars, falling back to
+// indexModel (the model recorded in the target index) when DEX_EMBED_MODEL is
+// unset. Callers that have an open *store.Store should pass st.EmbedModel();
+// callers that are building a fresh index (or have no store context) pass "".
+func newEmbedClient(indexModel string) *embed.Client {
 	url := os.Getenv("DEX_EMBED_URL")
 	model := os.Getenv("DEX_EMBED_MODEL")
 
@@ -463,6 +467,13 @@ func newEmbedClient() *embed.Client {
 		} else {
 			url = "http://127.0.0.1:8082"
 		}
+	}
+	// Prefer the index-recorded model over the probe/hard-coded default when
+	// DEX_EMBED_MODEL is not set — prevents silent dim mismatches on multi-model
+	// setups (e.g. nomic 768d index queried with qwen3 2560d).
+	if model == "" && indexModel != "" {
+		model = indexModel
+		fmt.Fprintf(os.Stderr, "dex: using index-recorded embed model %q\n", model)
 	}
 	if model == "" {
 		model = "Qwen/Qwen3-Embedding-4B"
@@ -821,7 +832,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 			opts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 4)
 			opts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 		}
-		ix := index.New(p, st, newEmbedClient(), ig, opts)
+		ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, opts)
 		if err := ix.Run(ctx); err != nil {
 			return err
 		}
@@ -973,7 +984,7 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 		return err
 	}
 	defer st.Close()
-	em := newEmbedClient()
+	em := newEmbedClient(st.EmbedModel())
 	t0 := time.Now()
 	vecs, err := em.Embed(ctx, []string{q})
 	embedDur := time.Since(t0)
@@ -1292,7 +1303,7 @@ func cmdGenerate(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		em := newEmbedClient()
+		em := newEmbedClient(st.EmbedModel())
 		vecs, err := em.Embed(ctx, []string{prompt})
 		if err != nil {
 			st.Close()
@@ -1671,7 +1682,7 @@ func cmdIndexSummarize(ctx context.Context, args []string) error {
 		return err
 	}
 	warnIfNoInclude(ig, p.Root)
-	ix := index.New(p, st, newEmbedClient(), ig, index.Options{
+	ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, index.Options{
 		Verbose:              *verbose,
 		Logger:               cliLogger(),
 		Chat:                 newSummaryClient(),
@@ -1857,6 +1868,14 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		return nil // another indexer is running; message already printed
 	}
 	defer func() { _ = lk.Release() }()
+	// Read the embed model recorded in the existing index before clearing it.
+	// Preserved as the default so a plain `dex reindex` (no DEX_EMBED_MODEL)
+	// stays consistent with the original build and won't produce a dim mismatch.
+	var priorEmbedModel string
+	if prior, err := store.Open(ctx, p.DBPath); err == nil {
+		priorEmbedModel = prior.EmbedModel()
+		prior.Close()
+	}
 	if err := clearCacheKeepLock(p); err != nil {
 		return err
 	}
@@ -1870,7 +1889,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		return err
 	}
 	warnIfNoInclude(ig, p.Root)
-	ix := index.New(p, st, newEmbedClient(), ig, index.Options{Verbose: verbose, Logger: cliLogger(), Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0)})
+	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, index.Options{Verbose: verbose, Logger: cliLogger(), Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0)})
 	if err := ix.Run(ctx); err != nil {
 		return err
 	}
@@ -2051,7 +2070,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 		ixOpts.YieldWindow = envDuration("DEX_SUMMARIZE_YIELD", 0)
 	}
-	ix := index.New(p, st, newEmbedClient(), ig, ixOpts)
+	ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, ixOpts)
 
 	// Refresh the Go static graph after each chunk-index flush. The
 	// graph layer lives in the same SQLite file, so the chunk run has
@@ -2287,7 +2306,7 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 		opts.Reranker = rerankClient
 	}
 	srv := &mcp.Server{
-		EmbedClient:    newEmbedClient(),
+		EmbedClient:    newEmbedClient(""),
 		ChatClient:     newChatClient(),
 		SummaryClient:  newSummaryClient(), // dedicated client for the auto-watcher's background drainer
 		SummaryModels:  summaryModelsFromEnv(),
