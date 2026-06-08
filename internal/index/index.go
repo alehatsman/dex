@@ -108,6 +108,12 @@ type Options struct {
 	// ReadFile, binary/secret detection, tree-sitter parse — runs on
 	// workers.
 	Concurrency int
+	// Progress, when non-nil, is called at key milestones so callers can
+	// render a progress indicator. phase is one of "walk", "embed".
+	// done/total are counts for that phase; total may be 0 when unknown.
+	// Called from the goroutine driving each phase — not thread-safe with
+	// itself, but callers that only write to a terminal are fine.
+	Progress func(phase string, done, total int)
 }
 
 // Indexer is the entry point.
@@ -430,6 +436,10 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		"mtime_fast_path", mtimeSkips.Load(),
 		"skipped", skipped.Load(),
 		logx.DurMS(time.Since(startTime)))
+	if ix.Options.Progress != nil {
+		total := len(slowFiles) + int(mtimeSkips.Load())
+		ix.Options.Progress("walk", total, total)
+	}
 
 	// Pass 2: one batch query for all slow-path files instead of N per-file
 	// queries. Also include unique package dirs so we can check package
@@ -755,6 +765,9 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				"batch_total", totalBatches,
 				"chunks", len(batch),
 				logx.DurMS(time.Since(batchStart)))
+			if ix.Options.Progress != nil {
+				ix.Options.Progress("embed", end, len(toEmbed))
+			}
 		}
 		ix.Options.Logger.Info("index: embedding done",
 			logx.DurMS(time.Since(embedStart)))
