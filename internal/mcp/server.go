@@ -659,6 +659,32 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 
+	// Multi-scale routing: for NL and Architecture queries, build the in-RAM
+	// TF-IDF index and restrict the candidate set to structurally-relevant
+	// files before reranking. Symbol queries bypass this (BM25 wins directly).
+	// Silently skips on build failure — multi-scale is best-effort.
+	qt := store.ClassifyQueryType(in.Query)
+	if qt != store.QueryTypeSymbol {
+		if idx, idxErr := st.BuildMultiScale(ctx); idxErr == nil && idx != nil {
+			queryToks := store.TokeniseQuery(in.Query)
+			var candidatePaths []string
+			switch qt {
+			case store.QueryTypeArchitecture:
+				dirs := idx.SearchMacro(queryToks, 3)
+				candidatePaths = idx.ExpandToFiles(dirs)
+				// If macro returned too few, fall back to meso.
+				if len(candidatePaths) < 5 {
+					candidatePaths = append(candidatePaths, idx.SearchMeso(queryToks, 10)...)
+				}
+			case store.QueryTypeNL:
+				candidatePaths = idx.SearchMeso(queryToks, 8)
+			}
+			if len(candidatePaths) >= 3 {
+				hits = store.FilterByPaths(hits, candidatePaths)
+			}
+		}
+	}
+
 	// Symbol leg: extract identifier tokens from the query, look them up
 	// by exact name, and RRF-fuse with the semantic results. Runs in the
 	// same request with no extra embedding round-trip — FindSymbol is a

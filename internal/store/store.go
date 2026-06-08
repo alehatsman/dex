@@ -1394,6 +1394,26 @@ const (
 	queryArchitecture           // "how does", "architecture", "data flow", …
 )
 
+// QueryTypeSymbol / QueryTypeNL / QueryTypeArchitecture are the exported
+// constants returned by ClassifyQueryType.
+const (
+	QueryTypeNL           = "nl"
+	QueryTypeSymbol       = "symbol"
+	QueryTypeArchitecture = "architecture"
+)
+
+// ClassifyQueryType is the exported variant of classifyQueryType.
+func ClassifyQueryType(q string) string {
+	switch classifyQueryType(q) {
+	case querySymbol:
+		return QueryTypeSymbol
+	case queryArchitecture:
+		return QueryTypeArchitecture
+	default:
+		return QueryTypeNL
+	}
+}
+
 // classifyQueryType returns the queryType for q using lightweight heuristics.
 // NL is the safe default when neither Symbol nor Architecture patterns fire.
 func classifyQueryType(q string) queryType {
