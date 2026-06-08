@@ -1790,6 +1790,8 @@ func cmdReindex(ctx context.Context, args []string) error {
 	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
 	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
 	pullModel := fs.Bool("pull-model", false, "pull the default ollama embedding model (nomic-embed-text) before reindexing")
+	summarize := fs.Bool("summarize", false, "generate per-file and per-chunk summaries via the chat endpoint (auto-enabled when DEX_SUMMARY_URL is set)")
+	summarizeDefer := fs.Bool("summarize-defer", true, "queue summaries into pending_summaries instead of generating them inline; `dex index summarize` (or watch idle) drains the queue later. Implies --summarize. Pass --summarize-defer=false to disable.")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -1826,7 +1828,7 @@ func cmdReindex(ctx context.Context, args []string) error {
 		var failed []string
 		for _, root := range roots {
 			fmt.Printf("→ reindexing %s\n", root)
-			if err := reindexOne(ctx, root, base, *verbose, *force, *waitLock, *breakLock); err != nil {
+			if err := reindexOne(ctx, root, base, *verbose, *force, *waitLock, *breakLock, *summarize, *summarizeDefer); err != nil {
 				fmt.Fprintf(os.Stderr, "  ✗ %v\n", err)
 				failed = append(failed, root)
 			}
@@ -1840,13 +1842,13 @@ func cmdReindex(ctx context.Context, args []string) error {
 	if len(rest) != 1 {
 		return fmt.Errorf("reindex needs exactly one path argument (or --all)")
 	}
-	return reindexOne(ctx, rest[0], base, *verbose, *force, *waitLock, *breakLock)
+	return reindexOne(ctx, rest[0], base, *verbose, *force, *waitLock, *breakLock, *summarize, *summarizeDefer)
 }
 
 // reindexOne drops the existing per-project cache dir and re-runs the
 // indexer from scratch. Used by both `reindex <path>` and the loop in
 // `reindex --all`.
-func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock, breakLock bool) error {
+func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock, breakLock, summarize, summarizeDefer bool) error {
 	p, err := proj.Resolve(root, base)
 	if err != nil {
 		return err
@@ -1889,7 +1891,16 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		return err
 	}
 	warnIfNoInclude(ig, p.Root)
-	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, index.Options{Verbose: verbose, Logger: cliLogger(), Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0)})
+	ixOpts := index.Options{Verbose: verbose, Logger: cliLogger(), Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0)}
+	if summarize || summarizeDefer || os.Getenv("DEX_SUMMARY_URL") != "" {
+		ixOpts.Summarize = true
+		ixOpts.DeferSummaries = summarizeDefer
+		ixOpts.Chat = newSummaryClient()
+		ixOpts.SummaryModels = summaryModelsFromEnv()
+		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 4)
+		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
+	}
+	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, ixOpts)
 	if err := ix.Run(ctx); err != nil {
 		return err
 	}
@@ -1907,6 +1918,9 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	}
 	fmt.Printf("✓ reindexed %s\n", p.Root)
 	fmt.Printf("  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
+	if stats.PendingSummaries > 0 {
+		fmt.Printf("  summaries queued: %d  (run `dex index summarize %s` or let watch drain)\n", stats.PendingSummaries, p.Root)
+	}
 	if gstats != nil {
 		_ = reportGraphStats(p.Root, gstats, "text")
 	}
