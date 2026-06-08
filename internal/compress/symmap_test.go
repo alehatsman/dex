@@ -34,9 +34,9 @@ func TestBuildSymbolMap_MinSymbols(t *testing.T) {
 }
 
 func TestBuildSymbolMap_ROIGate(t *testing.T) {
-	// Three long snake_case identifiers (each ≥3 real BPE tokens) appearing
-	// many times. Under honest tokenization the α-ref itself costs 2 tokens,
-	// so only identifiers of ≥3 tokens clear the gate — these do.
+	// Three long snake_case identifiers (each ≥2 real BPE tokens) appearing
+	// many times. Refs are 1-token single chars, so identifiers of ≥2 tokens
+	// clear the gate — these do.
 	idents := []string{"get_user_by_id", "parse_http_header", "validate_user_input"}
 	var sb strings.Builder
 	for i := 0; i < 10; i++ {
@@ -68,15 +68,23 @@ func TestBuildSymbolMap_ROIGate(t *testing.T) {
 			t.Errorf("identifier %q not replaced in applied output", id)
 		}
 	}
-	if !strings.Contains(applied, "α1") {
-		t.Error("expected α1 ref in applied output")
+	// At least one single-token ref must appear in the output.
+	found := false
+	for _, ref := range singleTokenRefs {
+		if strings.Contains(applied, ref) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected at least one single-token ref in applied output")
 	}
 }
 
 func TestBuildSymbolMap_LongestFirst(t *testing.T) {
 	// "get_user_by_id_cached" contains "get_user_by_id" — the longer ident must
 	// be replaced first. A third long ident is included to clear the ≥3 gate.
-	// All three are ≥3 real BPE tokens, so they survive honest ROI gating.
+	// All three are ≥2 real BPE tokens, so they survive honest ROI gating.
 	content := strings.Repeat("get_user_by_id_cached\nget_user_by_id\nparse_http_header\n", 10)
 	sm := BuildSymbolMap(content)
 	if sm.Empty() {
@@ -89,29 +97,48 @@ func TestBuildSymbolMap_LongestFirst(t *testing.T) {
 	}
 }
 
-func TestShouldRegisterSym_ShortIdent(t *testing.T) {
-	if shouldRegisterSym("short", 100, 1) {
+func TestSymROI_ShortIdent(t *testing.T) {
+	if _, ok := symROI("short", 100); ok {
 		t.Error("identifier shorter than 6 chars must not register")
 	}
 }
 
-func TestShouldRegisterSym_NoSaving(t *testing.T) {
-	// Real BPE: symTokens("sixchr")=2, symTokens("α1")=2 → savingPer=0 ≤ 0,
+func TestSymROI_NoSaving(t *testing.T) {
+	// Real BPE: symTokens("abcdefgh")=1, refToks=1 → savingPer=0 ≤ 0,
 	// so the substitution can never pay for itself regardless of occurrences.
-	if shouldRegisterSym("sixchr", 1, 1) {
-		t.Error("identifier no larger than its ref should not register")
+	if _, ok := symROI("abcdefgh", 100); ok {
+		t.Error("1-token identifier cannot save with a 1-token ref")
 	}
 }
 
-func TestShouldRegisterSym_Profitable(t *testing.T) {
-	// Real BPE: symTokens("get_user_by_id")=4, symTokens("α1")=2 → savingPer=2;
-	// entryCost = 4+2+2 = 8; occurrences=5 → totalSavings=10 > 8 ✓.
-	if !shouldRegisterSym("get_user_by_id", 5, 1) {
+func TestSymROI_Profitable(t *testing.T) {
+	// Real BPE: symTokens("get_user_by_id")=4, refToks=1 → savingPer=3;
+	// entryCost = 4+1+2 = 7; occurrences=5 → totalSavings=15, net=8 > 0 ✓.
+	if _, ok := symROI("get_user_by_id", 5); !ok {
 		t.Error("profitable identifier should register")
 	}
 }
 
+func TestSymROI_MarginalProfitable(t *testing.T) {
+	// handleRequest = 2 BPE tokens, refToks=1, savingPer=1.
+	// With 1-token refs, 2-token identifiers now qualify (they couldn't with αN=2).
+	// occurrences=6: totalSavings=6, entryCost=2+1+2=5, net=1 > 0 ✓.
+	if _, ok := symROI("handleRequest", 6); !ok {
+		t.Error("2-token identifier with enough occurrences should register under 1-token ref scheme")
+	}
+}
+
+func TestSymROI_MarginalNotProfitable(t *testing.T) {
+	// handleRequest = 2 BPE tokens, refToks=1, savingPer=1.
+	// occurrences=4: totalSavings=4, entryCost=2+1+2=5, net=-1 ≤ 0.
+	if _, ok := symROI("handleRequest", 4); ok {
+		t.Error("2-token identifier with too few occurrences must not register")
+	}
+}
+
 func TestApplyWithLegend_Format(t *testing.T) {
+	// With 1-token refs, 2-token identifiers (handleRequest, parseResponse,
+	// validateInput) now qualify — previously these were blocked by the αN=2 gate.
 	idents := []string{"handleRequest", "parseResponse", "validateInput"}
 	var sb strings.Builder
 	for i := 0; i < 10; i++ {
@@ -122,7 +149,7 @@ func TestApplyWithLegend_Format(t *testing.T) {
 	}
 	sm := BuildSymbolMap(sb.String())
 	if sm.Empty() {
-		t.Skip("no qualifying identifiers")
+		t.Fatal("2-token identifiers with ≥6 occurrences should qualify under 1-token ref scheme")
 	}
 	out := sm.ApplyWithLegend(sb.String())
 	if !strings.HasPrefix(out, "§MAP:\n") {
@@ -131,9 +158,7 @@ func TestApplyWithLegend_Format(t *testing.T) {
 }
 
 func TestSymTokens(t *testing.T) {
-	// Real BPE token counts (o200k_base, the default counting family). These
-	// differ from the old rune/4 heuristic — e.g. "handleRequest" is one merged
-	// camelCase pair (2 tokens), not 4, and the α-ref costs 2, not 1.
+	// Real BPE token counts (o200k_base, the default counting family).
 	cases := []struct {
 		s    string
 		want int
