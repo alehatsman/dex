@@ -1532,7 +1532,26 @@ func (s *Store) RerankFused(ctx context.Context, queryText string, hits []Hit, k
 		for i := range hits {
 			docs[i] = hits[i].Content
 		}
-		scores, err := s.rerankDocs(ctx, queryText, docs)
+		// In-process LRU keyed on (query, ordered docs). Interactive sessions
+		// re-issue the same query repeatedly, and the cross-encoder call is the
+		// most expensive leg — an identical (query, pool) returns the prior
+		// scores without a second network call. (The scored Store.Search path
+		// caches in s.rerank; this is the equivalent for the fused path, which
+		// regressed when Store.Search was routed through RerankFused — #191.)
+		cache := s.getRerankCache()
+		cacheKey := rerankDocsCacheKey(queryText, docs)
+		var (
+			scores []rerank.Score
+			err    error
+		)
+		if cached, ok := cache.Get(cacheKey); ok && cached.scores != nil {
+			scores = cached.scores
+		} else {
+			scores, err = s.rerankDocs(ctx, queryText, docs)
+			if err == nil {
+				cache.Put(cacheKey, rerankCached{scores: scores})
+			}
+		}
 		switch {
 		case err == nil:
 			ordered := make([]Hit, 0, len(scores))

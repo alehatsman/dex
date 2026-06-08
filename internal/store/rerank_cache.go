@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/alehatsman/dex/internal/rerank"
 )
 
 // RerankCache memoizes rerank results across calls. The key is opaque
@@ -20,12 +22,19 @@ type RerankCache interface {
 	Put(key string, val rerankCached)
 }
 
-// rerankCached holds the data store.rerank produces. Both fields are
-// shared by reference — callers must not mutate the slices/maps they
-// get back from Get.
+// rerankCached holds memoized rerank output. Entries come from two
+// producers keyed in disjoint namespaces (see rerankCacheKey vs
+// rerankDocsCacheKey):
+//   - store.rerank (scored path): scored + rerankScore.
+//   - store.RerankFused (Hit/doc path): scores — the raw cross-encoder
+//     (index, score) pairs, applied positionally onto the caller's docs.
+//
+// All fields are shared by reference — callers must not mutate the
+// slices/maps they get back from Get.
 type rerankCached struct {
 	scored      []scored
 	rerankScore map[int64]float32
+	scores      []rerank.Score
 }
 
 // rerankLRU is a fixed-capacity LRU. 256 entries is plenty for an
@@ -119,4 +128,27 @@ func rerankCacheKey(query string, ids []int64) string {
 		_, _ = h.Write(buf[:])
 	}
 	return strconv.FormatUint(h.Sum64(), 16)
+}
+
+// rerankDocsCacheKey builds a stable key from (query, ordered docs) for the
+// RerankFused path, which has no chunk ids to key on. Unlike rerankCacheKey
+// the doc order is preserved and hashed in — rerank.Score.Index maps
+// positionally onto the docs slice, so two pools that differ only in order
+// are NOT interchangeable. Each doc is length-prefixed so adjacent docs can't
+// be confused for one another ("ab","c" vs "a","bc"). Prefixed with "d:" to
+// keep this namespace disjoint from rerankCacheKey's id-based keys in the
+// shared LRU.
+func rerankDocsCacheKey(query string, docs []string) string {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(query))
+	_, _ = h.Write([]byte{0})
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], uint64(len(docs)))
+	_, _ = h.Write(buf[:])
+	for _, d := range docs {
+		binary.LittleEndian.PutUint64(buf[:], uint64(len(d)))
+		_, _ = h.Write(buf[:])
+		_, _ = h.Write([]byte(d))
+	}
+	return "d:" + strconv.FormatUint(h.Sum64(), 16)
 }
