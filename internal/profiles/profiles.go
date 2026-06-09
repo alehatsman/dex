@@ -19,11 +19,20 @@ import (
 	"sync"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/alehatsman/dex/internal/tokens"
 )
 
 // Profile holds the subset of knobs that context profiles can tune.
 // Zero values mean "use the handler's own default".
 type Profile struct {
+	// TargetModel names the LLM that will consume dex's output. It selects the
+	// BPE tokenizer family (so token counts and savings match the real model)
+	// and drives aggressiveness defaults. Accepted values: "claude", "gpt",
+	// "gemini", "llama", or any model name substring recognised by tokens.Detect.
+	// Empty = use the package default (o200k_base, conservative).
+	TargetModel string `yaml:"target_model"`
+
 	// Read is applied to file_view (summarize) calls.
 	Read struct {
 		// DefaultMode overrides the mode field when the caller omits it.
@@ -49,8 +58,31 @@ type Profile struct {
 	} `yaml:"budget"`
 }
 
+// TokenFamily returns the BPE tokenizer family implied by the profile's
+// TargetModel field. Falls back to tokens.DefaultFamily when TargetModel is
+// empty (i.e. no profile or no target_model set).
+func (p Profile) TokenFamily() tokens.Family {
+	if p.TargetModel == "" {
+		return tokens.DefaultFamily
+	}
+	return tokens.Detect(p.TargetModel)
+}
+
 // builtins holds the hard-coded profiles for the three standard task types.
 var builtins = map[string]Profile{
+	// claude is the primary consumer profile: Claude Code / Claude API.
+	// Selects cl100k_base tokenizer (~3% of Claude's real tokeniser) and
+	// enables tight compression — Claude tolerates symmap handles and
+	// aggressive entropy pruning well.
+	"claude": func() Profile {
+		var p Profile
+		p.TargetModel = "claude"
+		p.Read.DefaultMode = "full"
+		p.Compression.OutputDensity = "tight"
+		p.Budget.ContextFraction = 0.7
+		p.Budget.MaxFiles = 10
+		return p
+	}(),
 	"explore": func() Profile {
 		var p Profile
 		p.Read.DefaultMode = "full"
@@ -116,9 +148,14 @@ var (
 // projectRoot. The result is cached after the first call per process.
 // Returns a zero-value Profile when $DEX_PROFILE is unset or the named
 // profile is not found.
+//
+// Side effect: on first call, configures the package-level token counter in
+// internal/tokens to match the profile's target_model. This ensures that
+// token counts reported throughout the server match the real serving model.
 func Active(projectRoot string) Profile {
 	activeOnce.Do(func() {
 		activeProfile = Load(os.Getenv("DEX_PROFILE"), projectRoot)
+		tokens.SetDefaultFamily(activeProfile.TokenFamily())
 	})
 	return activeProfile
 }

@@ -200,18 +200,24 @@ environment. (Indexing include/ignore globs live in the same file under the
 ### Context profiles
 
 `DEX_PROFILE=<name>` activates a named context profile that adjusts defaults
-per task type — no per-call flag overrides needed. Three built-ins:
+per task type — no per-call flag overrides needed. Four built-ins:
 
-| Profile   | file_view mode | compression | max files (k) |
-| --------- | -------------- | ----------- | ------------- |
-| `explore` | full           | normal      | 12            |
-| `bugfix`  | full           | tight       | 8             |
-| `ci`      | signatures     | minimal     | 5             |
+| Profile   | target_model | file_view mode | compression | max files (k) |
+| --------- | ------------ | -------------- | ----------- | ------------- |
+| `claude`  | claude       | full           | tight       | 10            |
+| `explore` | *(default)*  | full           | normal      | 12            |
+| `bugfix`  | *(default)*  | full           | tight       | 8             |
+| `ci`      | *(default)*  | signatures     | minimal     | 5             |
+
+The `claude` profile is the recommended default for Claude Code users — it
+selects the `cl100k_base` tokenizer (within ~3% of Claude's real tokeniser) so
+every "saved N tokens" report is honest rather than a GPT-4o approximation.
 
 Custom profiles live in `.dex/profiles/<name>.yml` (project-local) or
 `~/.dex/profiles/<name>.yml` (global). Format:
 
 ```yaml
+target_model: claude          # selects tokenizer family + aggressiveness defaults
 read:
   default_mode: full          # full | signatures | map
 compression:
@@ -220,6 +226,12 @@ budget:
   max_files: 8                # cap on k for search_semantic
   context_fraction: 0.6       # fraction of context window one response may use
 ```
+
+`target_model` accepts any substring recognised by the tokenizer detector:
+`claude`/`anthropic`/`sonnet`/`opus`/`haiku` → `cl100k_base`;
+`gemini`/`google` → Gemini (o200k × 1.08);
+`llama`/`deepseek`/`qwen`/`mistral` → `cl100k_base`;
+anything else → `o200k_base` (default).
 
 ### Workspace search
 
@@ -402,7 +414,7 @@ the full raw surface; `DEX_TOOLS=ask` narrows to just the `ask` tool.
 | `DEX_INDEX_DIR`         | `~/.cache/dex`                   | Per-project index files.                                                      |
 | `DEX_CHAT_URL`          | `http://127.0.0.1:8081`          | `/v1/chat/completions` — `generate`, `file_view`, index-time summaries.     |
 | `DEX_CHAT_MODEL`        | `Qwen/Qwen2.5-Coder-7B-Instruct` | Chat model.                                                                   |
-| `DEX_PROFILE`           | *(unset)*                        | Named context profile: `explore`, `bugfix`, `ci`, or a custom `.dex/profiles/<name>.yml`. |
+| `DEX_PROFILE`           | *(unset)*                        | Named context profile: `claude`, `explore`, `bugfix`, `ci`, or a custom `.dex/profiles/<name>.yml`. |
 | `DEX_ATTENTION_LAYOUT`  | *(unset)*                        | Set `1` to sort evidence chunks by structural importance before the chat model sees them (error/panic > import > func > comments). Improves answer quality on complex questions. |
 | `DEX_NO_GIT_INDEX`      | *(unset)*                        | Set `1` to skip the git commit indexing phase (equivalent to `dex index --no-git`). |
 | `DEX_TOOLS`             | `standard`                       | MCP tool surface: `ask` (single tool), `standard` (default), or `power` (full raw surface). |

@@ -218,16 +218,31 @@ func NewFor(f Family) Counter {
 // ── package-level convenience ──
 
 var (
-	defaultOnce    sync.Once
-	defaultCounter Counter
+	defaultMu      sync.Mutex
+	defaultCounter Counter // nil = not yet initialised
 )
 
 func def() Counter {
-	defaultOnce.Do(func() { defaultCounter = New() })
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	if defaultCounter == nil {
+		defaultCounter = NewFor(DefaultFamily)
+	}
 	return defaultCounter
 }
 
-// Count returns the token count of s using the default family (o200k_base).
+// SetDefaultFamily replaces the family used by the package-level Count
+// function. Intended to be called once at server startup from the active
+// context profile before any counting work begins. Safe to call concurrently;
+// the new counter takes effect on the next Count call.
+func SetDefaultFamily(f Family) {
+	defaultMu.Lock()
+	defaultCounter = NewFor(f)
+	defaultMu.Unlock()
+}
+
+// Count returns the token count of s using the default family (o200k_base
+// unless overridden via SetDefaultFamily).
 func Count(s string) int { return def().Count(s) }
 
 // CountFor returns the token count of s for an explicit family.
