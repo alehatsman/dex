@@ -770,6 +770,27 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 		conc = 1
 	}
 	modPath := readModulePath(ix.Proj.Root)
+
+	// Prefetch package grounding for all jobs before the chat errgroup.
+	// fetchPackageGrounding runs 2 DB queries per package; doing it inside
+	// the SummaryConcurrency-bounded errgroup wastes GPU slots on DB I/O.
+	// Running a separate, higher-concurrency prefetch phase hides the latency.
+	groundings := make(map[string]pkgGrounding, len(jobs))
+	var groundingsMu sync.Mutex
+	prefetchEg, pctx := errgroup.WithContext(ctx)
+	prefetchEg.SetLimit(16) // DB-bound, not GPU-bound
+	for _, j := range jobs {
+		j := j
+		prefetchEg.Go(func() error {
+			g := ix.fetchPackageGrounding(pctx, j.dir, modPath)
+			groundingsMu.Lock()
+			groundings[j.dir] = g
+			groundingsMu.Unlock()
+			return nil
+		})
+	}
+	_ = prefetchEg.Wait() // non-fatal: workers fall back to zero-grounding on miss
+
 	var generated atomic.Int64
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.SetLimit(conc)
@@ -780,7 +801,9 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 			if err != nil || len(fileSummaries) == 0 {
 				return nil
 			}
-			grounding := ix.fetchPackageGrounding(egctx, j.dir, modPath)
+			groundingsMu.Lock()
+			grounding := groundings[j.dir]
+			groundingsMu.Unlock()
 			summary, err := summarizePackage(egctx, ix.Options.Chat, ix.Options.SummaryModels.Package, j.dir, fileSummaries, grounding)
 			if err != nil {
 				ix.drainLog.Warn("package summarize failed", "dir", j.dir, "err", err)

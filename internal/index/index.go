@@ -631,6 +631,30 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			if conc < 1 {
 				conc = 1
 			}
+
+			// Prefetch git subjects for all file summary jobs before the
+			// chat errgroup. RecentCommitSubjects spawns a git subprocess;
+			// running it inside the SummaryConcurrency-bounded errgroup
+			// wastes GPU slots on git I/O. A higher-concurrency prefetch
+			// phase hides the latency in parallel with other setup work.
+			subjects := make(map[string][]string, len(fileSummaryJobs))
+			var subjectsMu sync.Mutex
+			if len(fileSummaryJobs) > 0 {
+				prefetchEg, pctx := errgroup.WithContext(ctx)
+				prefetchEg.SetLimit(32) // git I/O, not GPU-bound
+				for _, j := range fileSummaryJobs {
+					j := j
+					prefetchEg.Go(func() error {
+						s := RecentCommitSubjects(pctx, ix.Proj.Root, j.rel, 3)
+						subjectsMu.Lock()
+						subjects[j.rel] = s
+						subjectsMu.Unlock()
+						return nil
+					})
+				}
+				_ = prefetchEg.Wait() // non-fatal: workers use empty subjects on miss
+			}
+
 			fileResults := make([]*pending, len(fileSummaryJobs))
 			chunkResults := make([]*pending, len(chunkSummaryJobs))
 			eg, egctx := errgroup.WithContext(ctx)
@@ -638,8 +662,10 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			for i := range fileSummaryJobs {
 				j := fileSummaryJobs[i]
 				eg.Go(func() error {
-					subjects := RecentCommitSubjects(egctx, ix.Proj.Root, j.rel, 3)
-					summary, err := summarizeFile(egctx, ix.Options.Chat, ix.Options.SummaryModels.File, j.rel, j.slice, subjects)
+					subjectsMu.Lock()
+					fileSubjects := subjects[j.rel]
+					subjectsMu.Unlock()
+					summary, err := summarizeFile(egctx, ix.Options.Chat, ix.Options.SummaryModels.File, j.rel, j.slice, fileSubjects)
 					if err != nil {
 						ix.Options.Logger.Warn("summarize failed", "path", j.rel, "err", err)
 						return nil
@@ -808,6 +834,28 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			if conc < 1 {
 				conc = 1
 			}
+
+			// Prefetch package grounding for all jobs before the chat errgroup.
+			// fetchPackageGrounding runs 2 DB queries per package; keeping it
+			// inside the SummaryConcurrency errgroup wastes GPU slots on DB I/O.
+			pkgGroundings := make(map[string]pkgGrounding, len(pkgJobs))
+			var pkgGroundingsMu sync.Mutex
+			{
+				prefetchEg, pctx := errgroup.WithContext(ctx)
+				prefetchEg.SetLimit(16) // DB-bound, not GPU-bound
+				for _, j := range pkgJobs {
+					j := j
+					prefetchEg.Go(func() error {
+						g := ix.fetchPackageGrounding(pctx, j.dir, modPath)
+						pkgGroundingsMu.Lock()
+						pkgGroundings[j.dir] = g
+						pkgGroundingsMu.Unlock()
+						return nil
+					})
+				}
+				_ = prefetchEg.Wait() // non-fatal: workers use zero-grounding on miss
+			}
+
 			pkgResults := make([]*pending, len(pkgJobs))
 			eg, egctx := errgroup.WithContext(ctx)
 			eg.SetLimit(conc)
@@ -818,7 +866,9 @@ func (ix *Indexer) Run(ctx context.Context) error {
 					if err != nil || len(fileSummaries) == 0 {
 						return nil
 					}
-					grounding := ix.fetchPackageGrounding(egctx, j.dir, modPath)
+					pkgGroundingsMu.Lock()
+					grounding := pkgGroundings[j.dir]
+					pkgGroundingsMu.Unlock()
 					summary, err := summarizePackage(egctx, ix.Options.Chat, ix.Options.SummaryModels.Package, j.dir, fileSummaries, grounding)
 					if err != nil {
 						ix.Options.Logger.Warn("package summarize failed", "dir", j.dir, "err", err)
