@@ -170,11 +170,11 @@ func cmdSetup(ctx context.Context, args []string) error {
 const (
 	rulesMarker    = "# dex — semantic search & context routing"
 	rulesEndMarker = "<!-- /dex -->"
-	rulesVersion   = "<!-- dex-rules-v1 -->"
+	rulesVersion   = "<!-- dex-rules-v2 -->"
 )
 
 const rulesContent = `# dex — semantic search & context routing
-<!-- dex-rules-v1 -->
+<!-- dex-rules-v2 -->
 
 ## Tool Mapping (prefer dex tools over native equivalents)
 | Instead of | Use | When |
@@ -185,6 +185,11 @@ const rulesContent = `# dex — semantic search & context routing
 | Bash (build/test output) | ` + "`ctx_shell(command)`" + ` | compressed shell output |
 | Manual cross-ref tracing | ` + "`graph_callers / graph_callees`" + ` | call-graph navigation |
 | Manual import scanning | ` + "`graph_deps(path)`" + ` | dependency edges |
+| Manual cycle hunting | ` + "`graph_cycles`" + ` | mutual recursion / SCC detection |
+| Manual path tracing A→B | ` + "`graph_path(src, dst)`" + ` | shortest call/import path |
+| Manual "what breaks if I change X" | ` + "`graph_diff([ref])`" + ` | blast-radius of a git diff |
+| "What are the major modules?" | ` + "`graph_communities`" + ` | Louvain call-graph clusters |
+| Code quality / dead-code sweep | ` + "`graph_smells`" + ` | long funcs, dead exports, god-nodes |
 
 ## Workflow
 1. **Orient:** ` + "`ask(question)`" + ` — routes intent, returns suggested_reads + next_action
