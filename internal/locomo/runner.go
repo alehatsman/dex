@@ -100,7 +100,11 @@ func Run(ctx context.Context, em embed.Embedder, d Dataset, k int) ([]QuestionRe
 
 	results := make([]QuestionResult, len(questions))
 	for i, q := range questions {
-		hits, err := st.SearchFused(ctx, qVecs[i], q.Text, k)
+		// Search applies local rerank + trims to k. SearchFused intentionally
+		// returns the full candidate pool (pool=max(k×5,30)) so callers can
+		// fuse extra legs — using it here inflates RetrievedTokens to the full
+		// transcript size and defeats the token-savings metric.
+		hits, err := st.Search(ctx, qVecs[i], q.Text, k)
 		if err != nil {
 			return nil, fmt.Errorf("locomo: search q%d: %w", i, err)
 		}
