@@ -591,6 +591,13 @@ func (ix *Indexer) processFileSummary(ctx context.Context, p store.PendingSummar
 // no longer in the chunks table, the source has been pruned (file
 // changed or removed), so we drop the row as stale.
 func (ix *Indexer) processChunkSummary(ctx context.Context, p store.PendingSummary) (*drainResult, bool, error) {
+	// Honor mode=off: the creation-side gate (index.go) stops new chunk jobs,
+	// but jobs queued under a prior mode are still in pending_summaries. Drop
+	// them on drain instead of generating, so flipping to off takes effect on
+	// the existing backlog without requiring a full reindex (dex #277).
+	if ix.Options.chunkSummariesDisabled() {
+		return nil, true, nil // mode=off; drop queued chunk job without generating
+	}
 	content, err := ix.Store.ChunkContent(ctx, p.Path, p.SourceSHA)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

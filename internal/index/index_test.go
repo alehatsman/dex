@@ -717,6 +717,97 @@ func TestDrainPendingSummariesEndToEnd(t *testing.T) {
 	}
 }
 
+// TestDrainModeOffDropsQueuedChunkJobs verifies that a chunk_summary job
+// queued under llm mode is dropped (not generated) when the drainer runs with
+// mode=off — so flipping to off clears the existing backlog without a reindex.
+// The file tier still drains normally. (dex #277)
+func TestDrainModeOffDropsQueuedChunkJobs(t *testing.T) {
+	var chatCalls int32
+	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&chatCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"role": "assistant", "content": "Stub summary."}},
+			},
+		})
+	}))
+	defer chatSrv.Close()
+
+	embedSrv := fakeEmbedServer(t)
+	defer embedSrv.Close()
+
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+	writeFile(t, filepath.Join(projDir, "short.go"),
+		"package main\n\nfunc S() string { return \"x\" }\n")
+	long := "package main\n\nfunc LongFunc() {\n"
+	for i := range chunkSummaryMinLines {
+		long += fmt.Sprintf("\t// line %d\n", i+1)
+	}
+	long += "}\n"
+	writeFile(t, filepath.Join(projDir, "long.go"), long)
+
+	ctx := context.Background()
+	p, _ := proj.Resolve(projDir, cacheDir)
+	_ = p.EnsureCacheDir()
+	st, _ := store.Open(ctx, p.DBPath)
+	defer st.Close()
+	ig, _ := ignore.New(p.Root)
+	em := embed.New(embedSrv.URL, "fake", 8, 5*time.Second)
+	cc := chat.New(chatSrv.URL, "fake", 10*time.Second)
+
+	// Phase 1: index in defer + llm mode → queues a chunk_summary for LongFunc.
+	ixLLM := New(p, st, em, ig, Options{
+		Summarize:      true,
+		DeferSummaries: true,
+		Chat:           cc,
+	})
+	if err := ixLLM.Run(ctx); err != nil {
+		t.Fatalf("Run (index defer llm): %v", err)
+	}
+	pending, _ := st.ListPendingSummaries(ctx, 0)
+	var queuedChunk int
+	for _, pr := range pending {
+		if pr.Kind == chunk.KindChunkSummary {
+			queuedChunk++
+		}
+	}
+	if queuedChunk == 0 {
+		t.Fatalf("setup: expected a chunk_summary queued under llm mode; got 0")
+	}
+
+	// Phase 2: drain with mode=off. The queued chunk job must be dropped, not
+	// generated; the file tier still drains.
+	ixOff := New(p, st, em, ig, Options{
+		Summarize:        true,
+		DeferSummaries:   true,
+		Chat:             cc,
+		ChunkSummaryMode: ChunkSummaryModeOff,
+	})
+	if _, err := ixOff.DrainPendingSummaries(ctx); err != nil {
+		t.Fatalf("DrainPendingSummaries (off): %v", err)
+	}
+
+	// No chunk_summary should exist in the store, and none should remain queued.
+	chunkSums, _ := st.AllSummariesByKind(ctx, chunk.KindChunkSummary)
+	if len(chunkSums) != 0 {
+		t.Errorf("mode=off drain must not produce chunk_summary chunks; got %d", len(chunkSums))
+	}
+	after, _ := st.ListPendingSummaries(ctx, 0)
+	for _, pr := range after {
+		if pr.Kind == chunk.KindChunkSummary {
+			t.Errorf("mode=off drain must drop queued chunk_summary jobs; still queued: %+v", pr)
+		}
+	}
+	// file_summary tier unaffected — should still have drained.
+	fileSums, _ := st.AllSummariesByKind(ctx, chunk.KindFileSummary)
+	if len(fileSums) == 0 {
+		t.Errorf("file_summary tier must still drain under mode=off; got 0")
+	}
+}
+
 // TestDrainDropsStaleFileSummary verifies that if a file's content
 // changes between enqueue and drain, the drainer drops the stale
 // pending row instead of generating an incorrectly-SHA-keyed chunk.
