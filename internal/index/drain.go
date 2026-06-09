@@ -303,6 +303,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	}
 	if generated > 0 {
 		_ = ix.Store.SetLastSummarizedAt(ctx, time.Now())
+		_ = ix.Store.IncrSummaryGenerated(ctx, generated)
 	}
 
 	// Deduplicate dirtiedDirs from set.
@@ -353,6 +354,7 @@ func (ix *Indexer) CascadePackageRepoSummaries(ctx context.Context, dirtyDirs []
 	gen, err := ix.cascadePackageAndRepo(ctx, time.Now(), dirtyDirs)
 	if err == nil && gen > 0 {
 		_ = ix.Store.SetLastSummarizedAt(ctx, time.Now())
+		_ = ix.Store.IncrSummaryGenerated(ctx, gen)
 	}
 	return gen, err
 }

@@ -613,6 +613,20 @@ func isStaleEmbed(indexModel string) bool {
 	return active != "" && indexModel != "" && active != indexModel
 }
 
+// isDrainActive reports whether the summary drain lock at lockPath is
+// currently held by another process. A missing lock file → false (no
+// drainer has ever run). Any error acquiring the lock is treated as
+// "active" so status doesn't incorrectly report idle under transient
+// filesystem conditions.
+func isDrainActive(lockPath string) bool {
+	lk, err := lock.Acquire(lockPath, lock.Holder{PID: os.Getpid(), Command: "status"})
+	if err != nil {
+		return errors.Is(err, lock.ErrLocked)
+	}
+	_ = lk.Release()
+	return false
+}
+
 // newEmbedClient constructs an embed.Client from env vars, falling back to
 // indexModel (the model recorded in the target index) when DEX_EMBED_MODEL is
 // unset. Callers that have an open *store.Store should pass st.EmbedModel();
@@ -1775,6 +1789,7 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		}
 		nodes, edges, _ := st.GraphStats(ctx)
 		stale := isStaleEmbed(stats.EmbedModel)
+		drainActive := isDrainActive(p.DrainLockPath)
 		if *format == "json" {
 			out := map[string]any{
 				"project":            p.Root,
@@ -1788,6 +1803,8 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 				"last_index":         stats.LastIndex,
 				"summarizable_files": stats.SummarizableFiles,
 				"summarized_files":   stats.SummarizedFiles,
+				"summary_generated":  stats.SummaryGenerated,
+				"drain_active":       drainActive,
 			}
 			if stats.SummarizableFiles > 0 {
 				out["summary_coverage"] = float64(stats.SummarizedFiles) / float64(stats.SummarizableFiles)
@@ -1805,17 +1822,20 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		fmt.Println()
 		fmt.Printf("  %s\n", p.Root)
 		printProjectStatLines("    ", projectStats{
-			lastIndex:         stats.LastIndex,
-			files:             stats.Files,
-			chunks:            stats.Chunks,
-			nodes:             nodes,
-			edges:             edges,
-			pendingSummaries:  stats.PendingSummaries,
-			lastSummarized:    stats.LastSummarized,
-			dim:               stats.Dim,
-			summarizableFiles: stats.SummarizableFiles,
-			summarizedFiles:   stats.SummarizedFiles,
-			stale:             stale,
+			lastIndex:                 stats.LastIndex,
+			files:                     stats.Files,
+			chunks:                    stats.Chunks,
+			nodes:                     nodes,
+			edges:                     edges,
+			pendingSummaries:          stats.PendingSummaries,
+			pendingSummariesOldestAge: stats.PendingSummariesOldestAge,
+			lastSummarized:            stats.LastSummarized,
+			summaryGenerated:          stats.SummaryGenerated,
+			drainActive:               drainActive,
+			dim:                       stats.Dim,
+			summarizableFiles:         stats.SummarizableFiles,
+			summarizedFiles:           stats.SummarizedFiles,
+			stale:                     stale,
 		})
 		// Action hints only on the per-project view — the
 		// multi-project listing keeps the per-block content uniform.
@@ -1852,20 +1872,23 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 	}
 
 	type row struct {
-		root              string
-		cacheHash         string // first 5 chars of cache dir name; used for untagged display
-		chunks            int
-		files             int
-		nodes             int64
-		edges             int64
-		last              time.Time
-		pendingSummaries  int
-		lastSummarized    time.Time
-		summarizableFiles int
-		summarizedFiles   int
-		stale             bool
-		corrupt           bool
-		empty             bool
+		root                      string
+		cacheHash                 string // first 5 chars of cache dir name; used for untagged display
+		chunks                    int
+		files                     int
+		nodes                     int64
+		edges                     int64
+		last                      time.Time
+		pendingSummaries          int
+		pendingSummariesOldestAge time.Duration
+		lastSummarized            time.Time
+		summaryGenerated          int
+		drainActive               bool
+		summarizableFiles         int
+		summarizedFiles           int
+		stale                     bool
+		corrupt                   bool
+		empty                     bool
 	}
 	results := make([]row, len(entries))
 	sem := make(chan struct{}, 8)
@@ -1903,19 +1926,23 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			if root == "" {
 				root = fmt.Sprintf("untagged (%s…)", cacheHash)
 			}
+			drainLockPath := filepath.Join(base, name, "summary.lock")
 			results[idx] = row{
-				root:              root,
-				cacheHash:         cacheHash,
-				chunks:            stats.Chunks,
-				files:             stats.Files,
-				nodes:             nodes,
-				edges:             edges,
-				last:              stats.LastIndex,
-				pendingSummaries:  stats.PendingSummaries,
-				lastSummarized:    stats.LastSummarized,
-				summarizableFiles: stats.SummarizableFiles,
-				summarizedFiles:   stats.SummarizedFiles,
-				stale:             isStaleEmbed(stats.EmbedModel),
+				root:                      root,
+				cacheHash:                 cacheHash,
+				chunks:                    stats.Chunks,
+				files:                     stats.Files,
+				nodes:                     nodes,
+				edges:                     edges,
+				last:                      stats.LastIndex,
+				pendingSummaries:          stats.PendingSummaries,
+				pendingSummariesOldestAge: stats.PendingSummariesOldestAge,
+				lastSummarized:            stats.LastSummarized,
+				summaryGenerated:          stats.SummaryGenerated,
+				drainActive:               isDrainActive(drainLockPath),
+				summarizableFiles:         stats.SummarizableFiles,
+				summarizedFiles:           stats.SummarizedFiles,
+				stale:                     isStaleEmbed(stats.EmbedModel),
 			}
 		}(i, e.Name(), dbPath)
 	}
@@ -1962,6 +1989,8 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			SummarizableFiles int       `json:"summarizable_files,omitempty"`
 			SummarizedFiles   int       `json:"summarized_files,omitempty"`
 			SummaryCoverage   *float64  `json:"summary_coverage,omitempty"`
+			SummaryGenerated  int       `json:"summary_generated,omitempty"`
+			DrainActive       bool      `json:"drain_active,omitempty"`
 			LastIndex         time.Time `json:"last_index"`
 			Corrupt           bool      `json:"corrupt,omitempty"`
 			Stale             bool      `json:"stale,omitempty"`
@@ -1977,6 +2006,8 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 				PendingSummaries:  r.pendingSummaries,
 				SummarizableFiles: r.summarizableFiles,
 				SummarizedFiles:   r.summarizedFiles,
+				SummaryGenerated:  r.summaryGenerated,
+				DrainActive:       r.drainActive,
 				LastIndex:         r.last,
 				Corrupt:           r.corrupt,
 				Stale:             r.stale,
@@ -2008,16 +2039,19 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		}
 		fmt.Printf("  %s\n", r.root)
 		printProjectStatLines("    ", projectStats{
-			lastIndex:         r.last,
-			files:             r.files,
-			chunks:            r.chunks,
-			nodes:             r.nodes,
-			edges:             r.edges,
-			pendingSummaries:  r.pendingSummaries,
-			lastSummarized:    r.lastSummarized,
-			summarizableFiles: r.summarizableFiles,
-			summarizedFiles:   r.summarizedFiles,
-			stale:             r.stale,
+			lastIndex:                 r.last,
+			files:                     r.files,
+			chunks:                    r.chunks,
+			nodes:                     r.nodes,
+			edges:                     r.edges,
+			pendingSummaries:          r.pendingSummaries,
+			pendingSummariesOldestAge: r.pendingSummariesOldestAge,
+			lastSummarized:            r.lastSummarized,
+			summaryGenerated:          r.summaryGenerated,
+			drainActive:               r.drainActive,
+			summarizableFiles:         r.summarizableFiles,
+			summarizedFiles:           r.summarizedFiles,
+			stale:                     r.stale,
 		})
 	}
 	if empties > 0 {

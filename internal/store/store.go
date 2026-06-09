@@ -47,6 +47,7 @@ const (
 	metaLastSummarizedAt = "last_summarized_at"
 	metaEmbedModel       = "embed_model"
 	metaGitLastIndexed   = "git_last_indexed_commit"
+	metaSummaryGenerated = "summary_generated"
 )
 
 // ErrEmbedModelMismatch is returned by EnsureEmbedModel when the active
@@ -732,6 +733,11 @@ type Stats struct {
 	// SummarizedFiles is the number of distinct files that already have a
 	// file_summary chunk. Coverage = SummarizedFiles / SummarizableFiles.
 	SummarizedFiles int
+	// SummaryGenerated is the cumulative count of summary chunks produced
+	// across all drain runs (chunk_summary + file_summary + package_summary
+	// + repo_summary). Zero on indexes that pre-date this counter — the
+	// field was added incrementally, not back-filled.
+	SummaryGenerated int
 }
 
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
@@ -785,6 +791,11 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	_ = s.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT path) FROM chunks WHERE kind = 'file_summary'`).
 		Scan(&st.SummarizedFiles)
+	// Cumulative generated counter — zero on pre-migration indexes.
+	var gv string
+	if row = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='`+metaSummaryGenerated+`'`); row.Scan(&gv) == nil {
+		st.SummaryGenerated, _ = strconv.Atoi(gv)
+	}
 	return st, nil
 }
 
@@ -843,6 +854,20 @@ func (s *Store) SetLastSummarizedAt(ctx context.Context, t time.Time) error {
 		`INSERT INTO meta(key,value) VALUES('`+metaLastSummarizedAt+`', ?)
 		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 		strconv.FormatInt(t.UnixNano(), 10))
+	return err
+}
+
+// IncrSummaryGenerated atomically increments the cumulative summary
+// generation counter by delta. Called by the drainer alongside
+// SetLastSummarizedAt so status can show "X generated so far".
+func (s *Store) IncrSummaryGenerated(ctx context.Context, delta int) error {
+	if delta <= 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key,value) VALUES('`+metaSummaryGenerated+`', ?)
+		 ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+? AS TEXT)`,
+		strconv.Itoa(delta), delta)
 	return err
 }
 
