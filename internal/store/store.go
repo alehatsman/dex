@@ -444,6 +444,20 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate: centrality flag: %w", err)
 		}
 	}
+	var betweennessColAdded string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='betweenness_col_added'`).Scan(&betweennessColAdded)
+	if betweennessColAdded != "1" {
+		if _, err := s.db.ExecContext(ctx,
+			`ALTER TABLE graph_nodes ADD COLUMN betweenness REAL NOT NULL DEFAULT 0`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate: add betweenness column: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('betweenness_col_added', '1')
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return fmt.Errorf("migrate: betweenness flag: %w", err)
+		}
+	}
 	var knowledgeRevColAdded string
 	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='knowledge_rev_col_added'`).Scan(&knowledgeRevColAdded)
 	if knowledgeRevColAdded != "1" {
@@ -1227,6 +1241,7 @@ type Hit struct {
 	OutDegree       int
 	CrossPkgCallers int
 	PageRank        float64
+	Betweenness     float64
 }
 
 // FormatHits renders a slice of hits as a fenced CONTEXT block for
@@ -2354,7 +2369,8 @@ func (s *Store) FindSymbol(ctx context.Context, name string, k int) ([]Hit, erro
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT c.id, c.path, c.kind, c.name, c.start_line, c.end_line, c.content,
 		        COALESCE(g.in_degree, 0), COALESCE(g.out_degree, 0),
-		        COALESCE(g.cross_pkg_callers, 0), COALESCE(g.pagerank, 0)
+		        COALESCE(g.cross_pkg_callers, 0), COALESCE(g.pagerank, 0),
+		        COALESCE(g.betweenness, 0)
 		 FROM chunks c
 		 LEFT JOIN graph_nodes g ON g.chunk_id = c.id
 		 WHERE c.name = ?
@@ -2372,7 +2388,7 @@ func (s *Store) FindSymbol(ctx context.Context, name string, k int) ([]Hit, erro
 		var id int64
 		var h Hit
 		if err := rows.Scan(&id, &h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &h.Content,
-			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank); err != nil {
+			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank, &h.Betweenness); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -2395,7 +2411,8 @@ func (s *Store) FindSymbol(ctx context.Context, name string, k int) ([]Hit, erro
 func (s *Store) findSymbolInGraph(ctx context.Context, name string, k int) ([]Hit, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT kind, name, file_path, start_line, end_line,
-		        in_degree, out_degree, cross_pkg_callers, pagerank
+		        in_degree, out_degree, cross_pkg_callers, pagerank,
+		        COALESCE(betweenness, 0)
 		 FROM graph_nodes
 		 WHERE name = ? AND file_path != '' AND start_line > 0
 		 ORDER BY pagerank DESC, in_degree DESC, file_path, start_line LIMIT ?`,
@@ -2409,7 +2426,7 @@ func (s *Store) findSymbolInGraph(ctx context.Context, name string, k int) ([]Hi
 	for rows.Next() {
 		var h Hit
 		if err := rows.Scan(&h.Kind, &h.Name, &h.Path, &h.StartLine, &h.EndLine,
-			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank); err != nil {
+			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank, &h.Betweenness); err != nil {
 			return nil, err
 		}
 		out = append(out, h)

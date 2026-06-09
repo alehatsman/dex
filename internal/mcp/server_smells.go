@@ -11,10 +11,12 @@ import (
 )
 
 type SmellsInput struct {
-	MinFuncLines   int    `json:"min_func_lines,omitempty" jsonschema:"minimum function body length to flag as long (default 80)"`
-	MinFileSymbols int    `json:"min_file_symbols,omitempty" jsonschema:"minimum symbols per file to flag as a god file (default 30)"`
-	Limit          int    `json:"limit,omitempty" jsonschema:"max results per category (default 20)"`
-	ProjectRoot    string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	MinFuncLines         int    `json:"min_func_lines,omitempty" jsonschema:"minimum function body length to flag as long (default 80)"`
+	MinFileSymbols       int    `json:"min_file_symbols,omitempty" jsonschema:"minimum symbols per file to flag as a god file (default 30)"`
+	MinGodNodeCallers    int    `json:"min_god_node_callers,omitempty" jsonschema:"min in_degree to flag a function as a god-node (default 20)"`
+	MinGodNodePkgCallers int    `json:"min_god_node_pkg_callers,omitempty" jsonschema:"min cross_pkg_callers to flag as a god-node (default 8)"`
+	Limit                int    `json:"limit,omitempty" jsonschema:"max results per category (default 20)"`
+	ProjectRoot          string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 }
 
 // SmellHit is one flagged symbol in the smells output.
@@ -40,6 +42,9 @@ type SmellsOutput struct {
 	LongFunctions []SmellHit   `json:"long_functions,omitempty"`
 	DeadExports   []SmellHit   `json:"dead_exports,omitempty"`
 	GodFiles      []GodFileHit `json:"god_files,omitempty"`
+	// GodNodes are functions/methods with very high in-degree or cross-pkg
+	// caller counts — over-coupled symbols constraining many callers.
+	GodNodes []SmellHit `json:"god_nodes,omitempty"`
 }
 
 func (s *Server) Smells(ctx context.Context, in SmellsInput) (SmellsOutput, error) {
@@ -65,6 +70,14 @@ func (s *Server) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsIn
 	if minFileSymbols <= 0 {
 		minFileSymbols = 30
 	}
+	minGodNodeCallers := in.MinGodNodeCallers
+	if minGodNodeCallers <= 0 {
+		minGodNodeCallers = 20
+	}
+	minGodNodePkgCallers := in.MinGodNodePkgCallers
+	if minGodNodePkgCallers <= 0 {
+		minGodNodePkgCallers = 8
+	}
 	limit := in.Limit
 	if limit <= 0 {
 		limit = 20
@@ -79,7 +92,7 @@ func (s *Server) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsIn
 	}
 	defer func() { _ = st.Close() }()
 
-	report, err := st.Smells(ctx, minFuncLines, minFileSymbols, limit)
+	report, err := st.Smells(ctx, minFuncLines, minFileSymbols, minGodNodeCallers, minGodNodePkgCallers, limit)
 	if err != nil {
 		return nil, SmellsOutput{Status: "error", Hint: fmt.Sprintf("smells: %v", err)}, nil
 	}
@@ -112,8 +125,17 @@ func (s *Server) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsIn
 			SymbolCount: f.SymbolCount,
 		})
 	}
+	for _, sym := range report.GodNodes {
+		out.GodNodes = append(out.GodNodes, SmellHit{
+			QualifiedName: sym.QualifiedName,
+			Kind:          sym.Kind,
+			Path:          sym.FilePath,
+			StartLine:     sym.StartLine,
+			EndLine:       sym.EndLine,
+		})
+	}
 
-	if len(out.LongFunctions) == 0 && len(out.DeadExports) == 0 && len(out.GodFiles) == 0 {
+	if len(out.LongFunctions) == 0 && len(out.DeadExports) == 0 && len(out.GodFiles) == 0 && len(out.GodNodes) == 0 {
 		out.Hint = "no graph nodes indexed — run `dex index . --graph=only` to extract the call graph first."
 		out.Status = "no-graph"
 	}

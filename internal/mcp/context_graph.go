@@ -64,6 +64,7 @@ type graphNode struct {
 	OutDegree       int
 	CrossPkgCallers int
 	PageRank        float64
+	Betweenness     float64
 	// MetadataJSON is the raw graph_nodes.metadata_json payload, kept
 	// unparsed so the hot paths pay nothing. The package-graph tool reads
 	// it to tell a Go package node (no "language" key) from a tree-sitter
@@ -138,6 +139,7 @@ func loadGraphView(ctx context.Context, st *store.Store) (*graphView, error) {
 			OutDegree:       r.OutDegree,
 			CrossPkgCallers: r.CrossPkgCallers,
 			PageRank:        r.PageRank,
+			Betweenness:     r.Betweenness,
 			MetadataJSON:    r.MetadataJSON,
 		}
 		v.nodesByID[n.ID] = n

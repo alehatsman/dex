@@ -368,3 +368,9 @@ func (rc *remoteClient) workspaceSearch(ctx context.Context, _ *sdk.CallToolRequ
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/workspace"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
+	var out CyclesOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/cycles"), in, &out)
+	return nil, out, err
+}

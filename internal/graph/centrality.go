@@ -42,6 +42,10 @@ type CentralityResult struct {
 	OutDegree       int
 	CrossPkgCallers int
 	PageRank        float64
+	// Betweenness is the normalized Brandes betweenness centrality in [0,1].
+	// High betweenness = bridge node that many shortest call-paths pass through.
+	// Zero for nodes the call graph doesn't touch (types, fields, packages).
+	Betweenness float64
 }
 
 // ComputeCentrality walks the `calls` edges (plus the markdown doc graph)
@@ -197,6 +201,17 @@ func ComputeCentrality(nodes []Node, edges []Edge) map[string]CentralityResult {
 		for id, r := range ranks {
 			rec := out[id]
 			rec.PageRank = r
+			out[id] = rec
+		}
+	}
+
+	// Betweenness centrality. Only run when the calls graph is non-empty —
+	// Brandes is O(VE) and meaningless on a graph with no calls edges.
+	if len(distinctEdge) > 0 {
+		bw := BrandesBetweenness(nodes, edges)
+		for id, b := range bw {
+			rec := out[id]
+			rec.Betweenness = b
 			out[id] = rec
 		}
 	}

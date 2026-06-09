@@ -16,6 +16,10 @@ import (
 //                              The headline tier: lots of callers, or
 //                              callers spanning real package boundaries.
 //                              The pkg suffix is omitted when 0.
+//   "bridge:<bw>%"           — betweenness ≥ 0.1 AND not already
+//                              "central". A bridge node sits on many
+//                              shortest call-paths; removing it most
+//                              disconnects the graph.
 //   "exported-unused"        — name begins with an upper-case rune
 //                              (Go's exportedness rule) AND in_degree
 //                              == 0. Useful for spotting dead public
@@ -32,8 +36,8 @@ import (
 // separates utility helpers from real domain symbols, and pkg=2 catches
 // genuine cross-package APIs without flagging every type that happens
 // to be referenced from one neighbour.
-func formatRole(name string, inDegree, outDegree, crossPkg int) string {
-	allZero := inDegree == 0 && outDegree == 0 && crossPkg == 0
+func formatRole(name string, inDegree, outDegree, crossPkg int, betweenness float64) string {
+	allZero := inDegree == 0 && outDegree == 0 && crossPkg == 0 && betweenness == 0
 	if allZero {
 		return ""
 	}
@@ -42,6 +46,9 @@ func formatRole(name string, inDegree, outDegree, crossPkg int) string {
 			return fmt.Sprintf("central:%d/%dpkg", inDegree, crossPkg)
 		}
 		return fmt.Sprintf("central:%d", inDegree)
+	}
+	if betweenness >= 0.1 {
+		return fmt.Sprintf("bridge:%d%%", int(betweenness*100))
 	}
 	if inDegree == 0 && isExported(name) {
 		return "exported-unused"

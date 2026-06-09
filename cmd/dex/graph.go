@@ -22,7 +22,7 @@ import (
 // the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -44,6 +44,8 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphBacklinks(ctx, rest)
 	case "tags":
 		return cmdGraphTags(ctx, rest)
+	case "cycles":
+		return cmdGraphCycles(ctx, rest)
 	case "export":
 		return cmdGraphExport(ctx, rest)
 	case "-h", "--help", "help":
@@ -63,6 +65,8 @@ func cmdGraph(ctx context.Context, args []string) error {
   dex graph tags      [<path>] [--tag=<t>|--doc=<d>]
                                                   tag→docs or doc→tags (MCP: graph_tags)
                                                   --k=<n>
+  dex graph cycles    [<path>]                call-graph SCCs ≥ size 2 (MCP: graph_cycles)
+                                                  --min-size=<n>  --k=<n>
   dex graph export    [<path>] [--output=<dir>]
                                                   dump nodes/edges as JSONL
   (path defaults to cwd when omitted)
@@ -72,7 +76,7 @@ note:
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, export)", sub)
 	}
 }
 
@@ -602,5 +606,68 @@ func cmdGraphExport(ctx context.Context, args []string) error {
 	fmt.Printf("✓ graph exported to %s\n", outDir)
 	fmt.Printf("  nodes: %s\n", filepath.Join(outDir, "nodes.jsonl"))
 	fmt.Printf("  edges: %s\n", filepath.Join(outDir, "edges.jsonl"))
+	return nil
+}
+
+func cmdGraphCycles(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("graph cycles", flag.ContinueOnError)
+	setHelp(fs,
+		"Find strongly connected components (call cycles / mutual recursion) in the call graph (MCP: graph_cycles).",
+		"dex graph cycles [flags] [<path>]")
+	minSize := fs.Int("min-size", 2, "minimum SCC size to include (default 2)")
+	k := fs.Int("k", 20, "max cycles to return (default 20, max 100)")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) != 0 {
+		return fmt.Errorf("graph cycles takes no extra positional args (got %v)", rest)
+	}
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve(path, base)
+	if err != nil {
+		return err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.GraphCycles(ctx, mcp.CyclesInput{
+		ProjectRoot: p.Root,
+		MinSize:     *minSize,
+		K:           *k,
+	})
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	if len(out.Cycles) == 0 {
+		fmt.Printf("no call cycles found (total=%d)\n", out.Total)
+		return nil
+	}
+	fmt.Printf("%d call cycles (total=%d):\n\n", len(out.Cycles), out.Total)
+	for i, c := range out.Cycles {
+		fmt.Printf("─── cycle #%d  (size %d)\n", i+1, c.Size)
+		for _, n := range c.Nodes {
+			loc := n.Path
+			if n.StartLine > 0 {
+				loc = fmt.Sprintf("%s:%d", n.Path, n.StartLine)
+			}
+			fmt.Printf("  %s  (%s)  %s\n", n.QualifiedName, n.Kind, loc)
+		}
+		fmt.Println()
+	}
 	return nil
 }

@@ -38,6 +38,7 @@ type GraphNodeRow struct {
 	OutDegree       int
 	CrossPkgCallers int
 	PageRank        float64
+	Betweenness     float64
 }
 
 // GraphCentralityRow is the minimal slice of GraphNodeRow needed to
@@ -49,6 +50,7 @@ type GraphCentralityRow struct {
 	OutDegree       int
 	CrossPkgCallers int
 	PageRank        float64
+	Betweenness     float64
 }
 
 // GraphEdgeRow mirrors one graph_edges row. Same rationale as
@@ -203,7 +205,7 @@ func (s *Store) GraphAllNodes(ctx context.Context) ([]GraphNodeRow, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, kind, name, qualified_name, package_path, file_path,
 		        start_line, end_line, COALESCE(chunk_id, 0), metadata_json, content_hash,
-		        in_degree, out_degree, cross_pkg_callers, pagerank
+		        in_degree, out_degree, cross_pkg_callers, pagerank, betweenness
 		   FROM graph_nodes
 		  ORDER BY id`)
 	if err != nil {
@@ -216,7 +218,7 @@ func (s *Store) GraphAllNodes(ctx context.Context) ([]GraphNodeRow, error) {
 		var md string
 		if err := rows.Scan(&r.ID, &r.Kind, &r.Name, &r.QualifiedName, &r.PackagePath, &r.FilePath,
 			&r.StartLine, &r.EndLine, &r.ChunkID, &md, &r.ContentHash,
-			&r.InDegree, &r.OutDegree, &r.CrossPkgCallers, &r.PageRank); err != nil {
+			&r.InDegree, &r.OutDegree, &r.CrossPkgCallers, &r.PageRank, &r.Betweenness); err != nil {
 			return nil, err
 		}
 		r.MetadataJSON = []byte(md)
@@ -243,7 +245,8 @@ func (s *Store) GraphSetCentrality(ctx context.Context, rows []GraphCentralityRo
 		    SET in_degree         = ?,
 		        out_degree        = ?,
 		        cross_pkg_callers = ?,
-		        pagerank          = ?
+		        pagerank          = ?,
+		        betweenness       = ?
 		  WHERE id = ?`)
 	if err != nil {
 		_ = tx.Rollback()
@@ -251,7 +254,7 @@ func (s *Store) GraphSetCentrality(ctx context.Context, rows []GraphCentralityRo
 	}
 	defer stmt.Close()
 	for _, r := range rows {
-		if _, err := stmt.ExecContext(ctx, r.InDegree, r.OutDegree, r.CrossPkgCallers, r.PageRank, r.ID); err != nil {
+		if _, err := stmt.ExecContext(ctx, r.InDegree, r.OutDegree, r.CrossPkgCallers, r.PageRank, r.Betweenness, r.ID); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("set centrality %s: %w", r.ID, err)
 		}
@@ -617,13 +620,20 @@ type SmellReport struct {
 	LongFunctions []SmellSymbol
 	DeadExports   []SmellSymbol
 	GodFiles      []SmellFile
+	// GodNodes are functions/methods with extremely high in-degree or
+	// cross-package caller counts — usually over-coupled utilities whose
+	// signatures constrain many callers at once. Thresholds: in_degree >=
+	// minGodNodeCallers OR cross_pkg_callers >= minGodNodePkgCallers.
+	GodNodes []SmellSymbol
 }
 
-// Smells queries three code-quality signals directly from graph_nodes:
+// Smells queries four code-quality signals directly from graph_nodes:
 // long functions (body >= minFuncLines), exported symbols with no indexed
-// callers (dead exports), and files with many symbols (god files,
-// >= minFileSymbols). Results are capped at limit items per category.
-func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, limit int) (SmellReport, error) {
+// callers (dead exports), files with many symbols (god files, >=
+// minFileSymbols), and god-nodes (functions/methods with in_degree >=
+// minGodNodeCallers OR cross_pkg_callers >= minGodNodePkgCallers).
+// Results are capped at limit items per category.
+func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, minGodNodeCallers, minGodNodePkgCallers, limit int) (SmellReport, error) {
 	var r SmellReport
 
 	// Long functions.
@@ -690,6 +700,29 @@ func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, limit 
 			var f SmellFile
 			_ = rows.Scan(&f.FilePath, &f.SymbolCount)
 			r.GodFiles = append(r.GodFiles, f)
+		}
+	}()
+
+	// God-nodes: functions/methods with very high in-degree or cross-package
+	// caller counts — over-coupled symbols that constrain many callers.
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT qualified_name, kind, file_path, start_line, end_line,
+		       (end_line - start_line) AS lines
+		FROM graph_nodes
+		WHERE kind IN ('function', 'method')
+		  AND file_path != ''
+		  AND (in_degree >= ? OR cross_pkg_callers >= ?)
+		ORDER BY cross_pkg_callers DESC, in_degree DESC
+		LIMIT ?`, minGodNodeCallers, minGodNodePkgCallers, limit)
+	if err != nil {
+		return r, err
+	}
+	func() {
+		defer rows.Close()
+		for rows.Next() {
+			var sym SmellSymbol
+			_ = rows.Scan(&sym.QualifiedName, &sym.Kind, &sym.FilePath, &sym.StartLine, &sym.EndLine, &sym.Lines)
+			r.GodNodes = append(r.GodNodes, sym)
 		}
 	}()
 

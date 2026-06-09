@@ -624,7 +624,7 @@ func (s *Server) runSymbolLane(ctx context.Context, st *store.Store, cand intent
 				StartLine:     h.StartLine,
 				EndLine:       h.EndLine,
 				Kind:          h.Kind,
-				Role:          formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers),
+				Role:          formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
 			})
 			paths[h.Path] = struct{}{}
 			if len(out) >= k {

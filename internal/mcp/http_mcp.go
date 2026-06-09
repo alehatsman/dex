@@ -191,6 +191,11 @@ func (p projectScoped) workspaceSearch(ctx context.Context, req *sdk.CallToolReq
 	return p.s.workspaceSearch(ctx, req, in)
 }
 
+func (p projectScoped) graphCycles(ctx context.Context, req *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphCycles(ctx, req, in)
+}
+
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at
 // /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
 // SDK permits reusing a server across sessions) and looked up by the {id} path

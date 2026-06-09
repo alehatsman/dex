@@ -40,6 +40,7 @@ type CentralityRow struct {
 	OutDegree       int
 	CrossPkgCallers int
 	PageRank        float64
+	Betweenness     float64
 }
 
 // ChunkLocation is the minimal chunk projection the chunk-linkage pass
@@ -117,6 +118,7 @@ func (a *storeAdapter) GraphSetCentrality(ctx context.Context, rows []Centrality
 			OutDegree:       r.OutDegree,
 			CrossPkgCallers: r.CrossPkgCallers,
 			PageRank:        r.PageRank,
+			Betweenness:     r.Betweenness,
 		})
 	}
 	return a.s.GraphSetCentrality(ctx, storeRows)

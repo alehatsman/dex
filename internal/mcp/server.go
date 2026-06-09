@@ -821,7 +821,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			BM25Score:   h.BM25Score,
 			RRFScore:    h.RRFScore,
 			RerankScore: h.RerankScore,
-			Role:        formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers),
+			Role:        formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
 			Content:     h.Content,
 		})
 	}
@@ -1144,7 +1144,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 			StartLine: h.StartLine,
 			EndLine:   h.EndLine,
 			Score:     1.0,
-			Role:      formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers),
+			Role:      formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
 			Content:   h.Content,
 		})
 	}
@@ -1379,7 +1379,7 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 			BM25Score:   h.BM25Score,
 			RRFScore:    h.RRFScore,
 			RerankScore: h.RerankScore,
-			Role:        formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers),
+			Role:        formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
 			Content:     h.Content,
 		})
 	}
@@ -2429,6 +2429,7 @@ type toolSurface interface {
 	graphLinks(context.Context, *sdk.CallToolRequest, DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error)
 	graphBacklinks(context.Context, *sdk.CallToolRequest, DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error)
 	graphTags(context.Context, *sdk.CallToolRequest, TagInput) (*sdk.CallToolResult, TagOutput, error)
+	graphCycles(context.Context, *sdk.CallToolRequest, CyclesInput) (*sdk.CallToolResult, CyclesOutput, error)
 	overview(context.Context, *sdk.CallToolRequest, OverviewInput) (*sdk.CallToolResult, OverviewOutput, error)
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
@@ -2637,11 +2638,23 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 			Name:        "graph_smells",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("AST-based code quality signals derived from the graph index — no LLM required. " +
-				"Returns three categories: `long_functions` (bodies >= min_func_lines, default 80), " +
-				"`dead_exports` (exported functions/methods with no indexed callers), and " +
-				"`god_files` (files with >= min_file_symbols symbols, default 30). " +
+				"Returns four categories: `long_functions` (bodies >= min_func_lines, default 80), " +
+				"`dead_exports` (exported functions/methods with no indexed callers), " +
+				"`god_files` (files with >= min_file_symbols symbols, default 30), and " +
+				"`god_nodes` (functions/methods with in_degree >= min_god_node_callers (20) OR " +
+				"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
 				"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
 		}, h.smells)
+
+		addTool(srv, &sdk.Tool{
+			Name:        "graph_cycles",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Find strongly connected components (SCCs) in the call graph — i.e. mutual recursion " +
+				"and recursive call cycles. Uses Tarjan's algorithm (O(V+E)) on the `calls` edges. " +
+				"Returns cycles sorted by size (largest first). Size 1 components (trivially acyclic nodes) " +
+				"are excluded by default (min_size=2). " +
+				"Requires a graph index with calls edges (`dex index . --graph=only`)."),
+		}, h.graphCycles)
 
 		addTool(srv, &sdk.Tool{
 			Name:        "compress_output",
