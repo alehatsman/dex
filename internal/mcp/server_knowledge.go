@@ -21,6 +21,7 @@ type KnowledgeInput struct {
 	Confidence  float64 `json:"confidence,omitempty"   jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
 	ID          int64   `json:"id,omitempty"           jsonschema:"fact id for delete action"`
 	K           int     `json:"k,omitempty"            jsonschema:"max facts to return for list (default 10)"`
+	Query       string  `json:"query,omitempty"        jsonschema:"for list: a task/question to recall the most relevant facts for (semantic). Empty = top facts by salience."`
 }
 
 type KnowledgeFactOutput struct {
@@ -72,6 +73,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		if err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 		}
+		s.embedFact(ctx, st, in.Body)
 		s.activityKnowledgeRecorded(p.Root)
 		hint := "Remembered."
 		if rev == 1 {
@@ -103,7 +105,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | export | import | consolidate", in.Action)}, nil
 	}
 
-	facts, err := st.KnowledgeQuery(ctx, in.K)
+	facts, err := s.recallFacts(ctx, st, in.Query, in.K, false)
 	if err != nil {
 		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 	}
@@ -171,9 +173,76 @@ func (s *Server) knowledgeImport(ctx context.Context, st *store.Store, body stri
 		if _, err := st.KnowledgeAdd(ctx, arch, r.Body, conf); err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("import fact %q: %v", r.Body[:min(40, len(r.Body))], err)}, nil
 		}
+		s.embedFact(ctx, st, r.Body)
 		imported++
 	}
 	return nil, KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf("imported %d facts", imported)}, nil
+}
+
+// embedFact embeds a fact body and stores its vector for semantic recall.
+// Best-effort: a nil embed client or an embed error leaves the fact without a
+// vector — recall backfills it lazily on a later query.
+func (s *Server) embedFact(ctx context.Context, st *store.Store, body string) {
+	if s.EmbedClient == nil || strings.TrimSpace(body) == "" {
+		return
+	}
+	vecs, err := s.EmbedClient.Embed(ctx, []string{body})
+	if err != nil || len(vecs) == 0 {
+		return
+	}
+	_ = st.KnowledgeUpsertVecByBody(ctx, body, vecs[0])
+}
+
+// backfillFactVecs embeds (in one batch) up to 128 facts that lack a stored
+// vector, so a store that predates semantic recall — or had facts added while
+// the embed endpoint was offline — becomes searchable over a few queries.
+func (s *Server) backfillFactVecs(ctx context.Context, st *store.Store) {
+	if s.EmbedClient == nil {
+		return
+	}
+	missing, err := st.KnowledgeFactsMissingVec(ctx, 128)
+	if err != nil || len(missing) == 0 {
+		return
+	}
+	bodies := make([]string, len(missing))
+	for i, f := range missing {
+		bodies[i] = f.Body
+	}
+	vecs, err := s.EmbedClient.Embed(ctx, bodies)
+	if err != nil || len(vecs) != len(missing) {
+		return
+	}
+	for i, f := range missing {
+		_ = st.KnowledgeUpsertVec(ctx, f.ID, vecs[i])
+	}
+}
+
+// recallFacts returns up to k facts relevant to query. With a non-empty query
+// and a live embed client it ranks by hybrid semantic+quality+recency score
+// (backfilling any missing fact vectors first); otherwise it falls back to
+// top-salience facts. When bump is true the hit_count of each returned fact is
+// incremented (used by ask/overview injection, not by plain `list`).
+func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string, k int, bump bool) ([]store.KnowledgeFact, error) {
+	var facts []store.KnowledgeFact
+	var err error
+	if strings.TrimSpace(query) != "" && s.EmbedClient != nil {
+		s.backfillFactVecs(ctx, st)
+		if vecs, eerr := s.EmbedClient.Embed(ctx, []string{query}); eerr == nil && len(vecs) > 0 {
+			facts, err = st.KnowledgeQueryVec(ctx, vecs[0], k)
+		}
+	}
+	if facts == nil && err == nil {
+		facts, err = st.KnowledgeQuery(ctx, k)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if bump {
+		for _, f := range facts {
+			_ = st.KnowledgeBump(ctx, f.ID)
+		}
+	}
+	return facts, nil
 }
 
 func (s *Server) knowledgeConsolidate(ctx context.Context, st *store.Store) (*sdk.CallToolResult, KnowledgeOutput, error) {

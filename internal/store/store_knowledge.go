@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
 	"time"
 )
 
@@ -70,25 +72,35 @@ func (s *Store) KnowledgeAdd(ctx context.Context, archetype, body string, confid
 	return rev, nil
 }
 
-// KnowledgeQuery returns the top-k facts ordered by salience
-// (confidence × archetype weight × recency decay).
-// Pass k<=0 for the default (10).
-func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, error) {
-	if k <= 0 {
-		k = 10
+// recencyFactor is a linear 90-day decay in [0,1]: a fact confirmed today
+// scores 1.0, one confirmed ≥90 days ago scores 0.0. Mirrors lean-ctx's
+// recency_decay. Uses wall-clock time — acceptable for ranking (a backward
+// clock step only nudges relative ordering, never correctness).
+func recencyFactor(updatedAt time.Time) float64 {
+	days := time.Since(updatedAt).Hours() / 24
+	if days <= 0 {
+		return 1
 	}
-	if k > 50 {
-		k = 50
+	r := 1 - days/90
+	if r < 0 {
+		return 0
 	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
-		   FROM knowledge_facts
-		   ORDER BY confidence DESC, updated_at DESC
-		   LIMIT ?`, k)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
+	return r
+}
+
+// qualityWeight is the query-independent salience signal:
+// confidence × archetype weight (max ≈ 1.5).
+func qualityWeight(f KnowledgeFact) float64 {
+	return f.Confidence * archetypeWeight(f.Archetype)
+}
+
+// scanFacts reads KnowledgeFact rows in the column order used by the queries
+// below and fills the recency-aware Salience field.
+func scanFacts(rows interface {
+	Next() bool
+	Scan(...any) error
+	Err() error
+}) ([]KnowledgeFact, error) {
 	var out []KnowledgeFact
 	for rows.Next() {
 		var f KnowledgeFact
@@ -98,10 +110,38 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 		}
 		f.CreatedAt = time.Unix(0, cNs)
 		f.UpdatedAt = time.Unix(0, uNs)
-		f.Salience = f.Confidence * archetypeWeight(f.Archetype)
+		f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// clampK normalizes a requested result count to [1,50] with a default of 10.
+func clampK(k int) int {
+	if k <= 0 {
+		return 10
+	}
+	if k > 50 {
+		return 50
+	}
+	return k
+}
+
+// KnowledgeQuery returns the top-k facts ordered by salience
+// (confidence × archetype weight × recency decay).
+// Pass k<=0 for the default (10).
+func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, error) {
+	k = clampK(k)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+		   FROM knowledge_facts
+		   ORDER BY confidence DESC, updated_at DESC
+		   LIMIT ?`, k)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanFacts(rows)
 }
 
 // KnowledgeDelete removes a fact by id.
@@ -136,4 +176,201 @@ func (s *Store) KnowledgeTopForAsk(ctx context.Context, k int) ([]KnowledgeFact,
 		_ = s.KnowledgeBump(ctx, f.ID)
 	}
 	return facts, nil
+}
+
+// ─── semantic recall (vec0-backed) ──────────────────────────────────────────
+
+// ensureFactVecTable materializes the fact_vecs vec0 virtual table at the given
+// embedding dimension and the delete-cascade trigger that drops a fact's vector
+// when the fact is removed. Idempotent. If a fact_vecs table already exists at a
+// different dimension (e.g. the embed model changed), it is dropped and
+// recreated — the embeddings are re-backfilled lazily on the next recall.
+func (s *Store) ensureFactVecTable(ctx context.Context, dim int) error {
+	if dim <= 0 {
+		return nil
+	}
+	var recorded string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='fact_vecs_dim'`).Scan(&recorded)
+	want := fmt.Sprintf("%d", dim)
+	if recorded != "" && recorded != want {
+		if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS fact_vecs`); err != nil {
+			return fmt.Errorf("ensure fact vec table: drop on dim change: %w", err)
+		}
+	}
+	stmts := []string{
+		fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS fact_vecs USING vec0(
+		   embedding FLOAT[%d] distance_metric=cosine
+		 )`, dim),
+		`CREATE TRIGGER IF NOT EXISTS knowledge_facts_vec_ad AFTER DELETE ON knowledge_facts BEGIN
+		   DELETE FROM fact_vecs WHERE rowid = old.id;
+		 END`,
+	}
+	for _, q := range stmts {
+		if _, err := s.db.ExecContext(ctx, q); err != nil {
+			return fmt.Errorf("ensure fact vec table: %w", err)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key, value) VALUES('fact_vecs_dim', ?)
+		   ON CONFLICT(key) DO UPDATE SET value=excluded.value`, want); err != nil {
+		return fmt.Errorf("ensure fact vec table: record dim: %w", err)
+	}
+	return nil
+}
+
+// KnowledgeUpsertVec stores (or replaces) the embedding for a fact id in the
+// fact_vecs table. The vec0 table is created on first use at the vector's
+// dimension. A nil/empty vec is a no-op.
+func (s *Store) KnowledgeUpsertVec(ctx context.Context, id int64, vec []float32) error {
+	if len(vec) == 0 {
+		return nil
+	}
+	if err := s.ensureFactVecTable(ctx, len(vec)); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM fact_vecs WHERE rowid=?`, id); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO fact_vecs(rowid, embedding) VALUES(?, ?)`, id, encodeVec(vec))
+	return err
+}
+
+// KnowledgeUpsertVecByBody resolves a fact id by its (unique) body and stores
+// its embedding. Used right after KnowledgeAdd, which dedups by body.
+func (s *Store) KnowledgeUpsertVecByBody(ctx context.Context, body string, vec []float32) error {
+	var id int64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT id FROM knowledge_facts WHERE body=?`, body).Scan(&id); err != nil {
+		return err
+	}
+	return s.KnowledgeUpsertVec(ctx, id, vec)
+}
+
+// KnowledgeFactsMissingVec returns up to limit facts that have no row in
+// fact_vecs (never embedded, or embedded under a now-dropped dimension). When
+// the fact_vecs table does not exist yet, every fact is considered missing.
+// Callers embed these bodies and feed them back through KnowledgeUpsertVec.
+func (s *Store) KnowledgeFactsMissingVec(ctx context.Context, limit int) ([]KnowledgeFact, error) {
+	if limit <= 0 {
+		limit = 128
+	}
+	q := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+	        FROM knowledge_facts f
+	       WHERE NOT EXISTS (SELECT 1 FROM fact_vecs v WHERE v.rowid = f.id)
+	       ORDER BY updated_at DESC
+	       LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, limit)
+	if err != nil {
+		// fact_vecs missing → treat all facts as missing.
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+			   FROM knowledge_facts ORDER BY updated_at DESC LIMIT ?`, limit)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer func() { _ = rows.Close() }()
+	return scanFacts(rows)
+}
+
+// KnowledgeQueryVec returns up to k facts ranked by a hybrid of semantic
+// similarity to queryVec, query-independent quality (confidence × archetype
+// weight), and recency. Weights mirror lean-ctx: 0.6 / 0.25 / 0.15.
+//
+// Falls back to salience-only KnowledgeQuery when queryVec is empty or no fact
+// embeddings exist yet (fresh store, or embed endpoint was offline at add time).
+func (s *Store) KnowledgeQueryVec(ctx context.Context, queryVec []float32, k int) ([]KnowledgeFact, error) {
+	k = clampK(k)
+	if len(queryVec) == 0 {
+		return s.KnowledgeQuery(ctx, k)
+	}
+	var cnt int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM fact_vecs`).Scan(&cnt); err != nil || cnt == 0 {
+		return s.KnowledgeQuery(ctx, k) // table absent or empty → salience fallback
+	}
+
+	// Pull a candidate pool by cosine distance, wider than k so the hybrid
+	// rerank can promote a slightly-less-similar but fresher/higher-quality fact.
+	pool := k * 4
+	if pool < 20 {
+		pool = 20
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT rowid, distance FROM fact_vecs
+		 WHERE embedding MATCH ? AND k = ?
+		 ORDER BY distance`, encodeVec(queryVec), pool)
+	if err != nil {
+		return s.KnowledgeQuery(ctx, k)
+	}
+	sims := make(map[int64]float64)
+	ids := make([]int64, 0, pool)
+	for rows.Next() {
+		var id int64
+		var dist float64
+		if err := rows.Scan(&id, &dist); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		sims[id] = 1 - dist // cosine distance ∈ [0,2] → similarity ∈ [-1,1]
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+	if len(ids) == 0 {
+		return s.KnowledgeQuery(ctx, k)
+	}
+
+	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count FROM knowledge_facts WHERE id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args
+	frows, err := s.db.QueryContext(ctx, factQ, int64sToAny(ids)...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = frows.Close() }()
+	facts, err := scanFacts(frows)
+	if err != nil {
+		return nil, err
+	}
+
+	const (
+		wSemantic = 0.6
+		wQuality  = 0.25
+		wRecency  = 0.15
+		maxWeight = 1.5 // max confidence(1) × max archetypeWeight(1.5)
+	)
+	type ranked struct {
+		f     KnowledgeFact
+		score float64
+	}
+	scoredFacts := make([]ranked, 0, len(facts))
+	for _, f := range facts {
+		sem := sims[f.ID]
+		if sem < 0 {
+			sem = 0
+		}
+		q := qualityWeight(f) / maxWeight
+		score := wSemantic*sem + wQuality*q + wRecency*recencyFactor(f.UpdatedAt)
+		scoredFacts = append(scoredFacts, ranked{f, score})
+	}
+	sort.SliceStable(scoredFacts, func(i, j int) bool { return scoredFacts[i].score > scoredFacts[j].score })
+	if len(scoredFacts) > k {
+		scoredFacts = scoredFacts[:k]
+	}
+	out := make([]KnowledgeFact, len(scoredFacts))
+	for i, r := range scoredFacts {
+		out[i] = r.f
+	}
+	return out, nil
+}
+
+// int64sToAny boxes an []int64 for use as variadic query args.
+func int64sToAny(xs []int64) []any {
+	out := make([]any, len(xs))
+	for i, x := range xs {
+		out[i] = x
+	}
+	return out
 }

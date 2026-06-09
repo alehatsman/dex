@@ -186,8 +186,8 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 	kind, scope := classifyTask(in.Task)
 	hint = fmt.Sprintf("[TASK:%s SCOPE:%s] %s", kind, scope, outputHint(kind))
 
-	// Wake-up knowledge briefing.
-	facts, _ := st.KnowledgeTopForAsk(ctx, 5)
+	// Wake-up knowledge briefing — recall facts relevant to the task.
+	facts, _ := s.recallFacts(ctx, st, in.Task, 5, true)
 	if len(facts) > 0 {
 		var kb strings.Builder
 		kb.WriteString("\nKNOWLEDGE:\n")

@@ -312,7 +312,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
 		out.SessionTask = ss.Task
 	}
-	if facts, err := st.KnowledgeTopForAsk(ctx, 5); err == nil && len(facts) > 0 {
+	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true); err == nil && len(facts) > 0 {
 		for _, f := range facts {
 			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+f.Body)
 		}
