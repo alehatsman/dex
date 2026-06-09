@@ -17,6 +17,7 @@
 //	graph tags <path> --tag|--doc Tag→docs or doc→tags (MCP: graph_tags).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
 //	view summarize <path> <file>  Summarize a file slice (MCP: file_view).
+//	read <file>                   Structural read (signatures/aggressive/entropy); no LLM.
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
 //	index summarize <path>        Drain the pending_summaries queue (CLI-only).
@@ -109,6 +110,8 @@ func main() {
 		err = cmdSearch(ctx, args)
 	case "view":
 		err = cmdView(ctx, args)
+	case "read":
+		err = cmdRead(ctx, args)
 	case "graph":
 		err = cmdGraph(ctx, args)
 	case "generate":
@@ -281,6 +284,10 @@ query (mirrors the MCP tool surface):
   dex view summarize [<path>] <file> summarize a file slice via the chat model
                                           (MCP: file_view). Flags: --start, --end,
                                           --focus, --temperature, --max-tokens, -v,
+                                          --format=text|json
+  dex read <file>                    structural read — no LLM call. Modes:
+                                          auto|full|signatures|aggressive|entropy.
+                                          Flags: --mode, --start, --end,
                                           --format=text|json
   dex index status [<path>]          endpoint health + project stats
                                           (MCP: status)
