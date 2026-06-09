@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/store"
+	"golang.org/x/sync/errgroup"
 )
 
 // pkgGrounding is the graph-derived ground-truth context fed to
@@ -62,17 +63,25 @@ func (ix *Indexer) fetchPackageGrounding(ctx context.Context, dir, modPath strin
 // summary order the model sees.
 func (ix *Indexer) fetchRepoGrounding(ctx context.Context, dirs []string) repoGrounding {
 	const topK = 5
-	var g repoGrounding
-	for _, dir := range dirs {
-		syms, err := ix.Store.TopCentralByDir(ctx, dir, topK, true)
-		if err != nil || len(syms) == 0 {
-			g.Packages = append(g.Packages, repoPkgGrounding{Dir: dir})
-			continue
-		}
-		g.Packages = append(g.Packages, repoPkgGrounding{
-			Dir:        dir,
-			TopSymbols: uniqueSymbolNames(syms),
+	results := make([]repoPkgGrounding, len(dirs))
+	eg, ectx := errgroup.WithContext(ctx)
+	eg.SetLimit(8)
+	for i, dir := range dirs {
+		i, dir := i, dir
+		eg.Go(func() error {
+			syms, err := ix.Store.TopCentralByDir(ectx, dir, topK, true)
+			if err != nil || len(syms) == 0 {
+				results[i] = repoPkgGrounding{Dir: dir}
+				return nil
+			}
+			results[i] = repoPkgGrounding{Dir: dir, TopSymbols: uniqueSymbolNames(syms)}
+			return nil
 		})
+	}
+	_ = eg.Wait()
+	var g repoGrounding
+	for _, r := range results {
+		g.Packages = append(g.Packages, r)
 	}
 	return g
 }
