@@ -134,7 +134,9 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   as `pending` without judgment; drift is detected via `git log <last_verified>..HEAD`
   over the spec's `covers` paths and reported in `drift_commits`.
 - WHEN `ctx_agent` is called (TierStandard), it manages a per-project multi-agent
-  coordination bus backed by `agents` and `agent_messages` SQLite tables.
+  coordination bus backed by `agents` and `agent_messages` SQLite tables, and a
+  per-agent diary backed by JSON files under `$DEX_INDEX_DIR/agents/diaries/`.
+  Bus actions (project-scoped):
   `action=announce` registers or refreshes an agent by `agent_id` and `role` (upsert).
   `action=post` appends a message with an optional `topic` and required `body`,
   bumps the poster's `last_seen_at`, and returns the new `message_id`.
@@ -142,8 +144,20 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   paginated via `since_id` (exclusive lower bound on message id); `limit` defaults to
   50 (max 200).
   `action=list` returns all registered agents ordered by `last_seen_at` descending.
+  Diary actions (agent-scoped, no project required):
+  `action=diary` appends one structured entry to the calling agent's diary; requires
+  `agent_id` and `content`; `category` defaults to `insight` when omitted; valid
+  categories are `discovery | decision | blocker | progress | insight`; the diary is
+  capped at 100 entries (oldest evicted); returns the appended entry in `diary_entries`.
+  `action=recall_diary` reads the calling agent's last entries newest-first; requires
+  `agent_id`; `limit` controls how many entries are returned (default 10); returns
+  entries in `diary_entries`; returns an empty list when no diary file exists yet.
+  `action=diaries` lists every agent that has a diary file: each row carries `agent_id`,
+  `entry_count`, and `last_updated` (RFC3339); returns rows in `diary_agents`.
   The bus is useful in orchestration scenarios where multiple concurrent agents
   query the same dex instance and need to share findings or avoid duplicate work.
+  Diaries persist across process restarts and sessions, giving an agent structured
+  context when it resumes a task after a gap.
 - WHEN `ctx_nav` is called (TierStandard), dex returns a structured tool-routing
   guide listing every tool available at the active tier — its name, tier membership
   (`all`/`standard`/`power`), one-line purpose, and a when-to-call guidance line.
@@ -230,6 +244,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `ctx_knowledge` revision tracking: `revision_count` incremented on re-add; "Confirmed (revision N)." response; `rev N` in list
 - [x] `knowledge action=consolidate`: LLM-extracts facts from session notes and stores them
 - [x] `ctx_agent` coordination bus (TierStandard): `announce`/`post`/`read`/`list` actions; topic filtering; `since_id` pagination; REST at `/v1/projects/{id}/agent`
+- [x] `ctx_agent` diary actions (TierStandard): `diary`/`recall_diary`/`diaries`; per-agent JSON files under `$DEX_INDEX_DIR/agents/diaries/`; cap 100 entries, oldest evicted; newest-first recall; no project index required
 - [x] `ctx_nav` (TierStandard): returns structured tool catalogue + markdown routing guide; zero-arg, no index/embed required; REST at `GET /v1/nav`
 - [x] `ctx_shell` (TierStandard): 3-tier output policy (passthrough/verbatim/compress); auth-flow detection; heredoc/redirect block; `raw:true`; 60 s timeout; REST at `POST /v1/shell`
 - [x] `search_grep` (TierStandard): RE2 pattern search over indexed files; index file-list when available, fs-walk fallback; `max_results` cap (default 50); `no-matches` status

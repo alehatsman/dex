@@ -2505,11 +2505,16 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name: "ctx_agent",
-			Description: td("Multi-agent coordination bus — share findings across concurrent agents that query the same dex instance. " +
-				"Actions: announce (register agent_id + role), post (publish a message with optional topic and body), " +
+			Description: td("Multi-agent coordination bus and per-agent diary. " +
+				"Bus actions (project-scoped): announce (register agent_id + role), post (publish a message with optional topic and body), " +
 				"read (poll messages; filter by topic; paginate with since_id), list (see active agents). " +
+				"Diary actions (agent-scoped, persist across sessions): " +
+				"diary (append a structured entry; category: discovery|decision|blocker|progress|insight; content required), " +
+				"recall_diary (read own last 10 entries newest-first; agent_id required), " +
+				"diaries (list all agents that have diary files with entry counts). " +
 				"Typical workflow: announce once at startup, post findings as you discover them, " +
-				"read peers' findings before duplicating work. No embedding required."),
+				"read peers' findings before duplicating work; use diary to record what you learned for future sessions. " +
+				"No embedding required."),
 		}, h.agent)
 
 		sdk.AddTool(srv, &sdk.Tool{
