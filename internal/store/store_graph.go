@@ -847,9 +847,11 @@ const defaultGraphGamma = float32(0.6)
 // fuseWithGraphNeighbors merges primary hits with graph-proximity hits via
 // Reciprocal Rank Fusion (k=60). Each graph hit is weighted by γ^hop (via
 // weightByPath, keyed on file path) so 1-hop structural neighbors boost more
-// than distant ones without drowning out direct semantic matches. Paths
-// missing from weightByPath fall back to fallbackWeight.
-func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]float32, fallbackWeight float32, n int) []Hit {
+// than distant ones without drowning out direct semantic matches. In practice
+// every graphHits path is present in weightByPath (both derive from the same
+// activated set); a path absent from the map gets a zero weight (no graph
+// contribution) rather than a panic.
+func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]float32, n int) []Hit {
 	const kRRF = 60
 	type hitKey struct {
 		path string
@@ -865,11 +867,7 @@ func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]fl
 	}
 	for i, h := range graphHits {
 		hk := hitKey{h.Path, h.StartLine}
-		w := fallbackWeight
-		if gw, ok := weightByPath[h.Path]; ok {
-			w = gw
-		}
-		scores[hk] += w / float32(kRRF+i+1)
+		scores[hk] += weightByPath[h.Path] / float32(kRRF+i+1)
 		if _, exists := byKey[hk]; !exists {
 			byKey[hk] = h
 		}
@@ -1144,6 +1142,12 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 
 	// Weight each activated file by γ^hop so 1-hop structural neighbors boost
 	// more than distant ones. γ is tunable via Options.GraphGamma.
+	//
+	// Note: spreadActivation already trimmed to its top-n by *energy*, so a
+	// 1-hop neighbor diluted by heavy fan-out can be dropped before it earns
+	// its strong γ¹ weight here — selection is by energy, weighting by hop.
+	// The n=15 pool is generous enough that this is rare; revisit if the
+	// γ-sweep shows low-hop recall loss.
 	gamma := s.opts.GraphGamma
 	if gamma <= 0 {
 		gamma = defaultGraphGamma
@@ -1163,7 +1167,7 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 	if err != nil || len(graphHits) == 0 {
 		return hits
 	}
-	return fuseWithGraphNeighbors(hits, graphHits, weightByPath, gamma, n)
+	return fuseWithGraphNeighbors(hits, graphHits, weightByPath, n)
 }
 
 // pow32 returns base^exp for a small non-negative integer exponent.

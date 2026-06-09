@@ -135,7 +135,7 @@ func TestFuseWithGraphNeighborsHopDecay(t *testing.T) {
 		"near.go": pow32(gamma, 1), // 0.60
 		"far.go":  pow32(gamma, 2), // 0.36
 	}
-	out := fuseWithGraphNeighbors(primary, graphHits, weightByPath, gamma, 3)
+	out := fuseWithGraphNeighbors(primary, graphHits, weightByPath, 3)
 
 	rank := make(map[string]int, len(out))
 	for i, h := range out {
