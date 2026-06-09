@@ -2685,11 +2685,15 @@ func cmdMCP(ctx context.Context, args []string) error {
 	remote := fs.String("remote", "", "run as a stdio->REST shim against a remote `dex serve` at this base URL (e.g. http://host:8080); the local index is not used. Bearer token from DEX_SERVE_TOKEN")
 	projectID := fs.String("project-id", "", "remote dex project id (sha256 of the canonical host root) to bind tool calls to; with --remote, required unless --project-root is given or the remote serves exactly one project")
 	projectRoot := fs.String("project-root", "", "with --remote, compute the project id locally from this path (same-host convenience; the wrong id from a container whose checkout path differs from the host root — use --project-id there)")
+	maintenance := fs.Bool("maintenance", false, "run a stub server that registers all tools but returns an immediate maintenance error on every call; agents fall back to native tools instead of hanging on timeouts")
+	reason := fs.String("reason", "", "with --maintenance, a short message explaining why dex is unavailable (e.g. 'upgrading GPU drivers')")
 	setHelp(fs,
 		"Run dex as an MCP server over stdio (canonical entrypoint for Claude Code).\n"+
 			"With --remote, run as a thin shim: speak MCP on stdio and proxy every tool\n"+
-			"call to a remote `dex serve` REST endpoint (bearer from DEX_SERVE_TOKEN).",
-		"dex mcp [--remote <url> [--project-id <sha> | --project-root <path>]]")
+			"call to a remote `dex serve` REST endpoint (bearer from DEX_SERVE_TOKEN).\n"+
+			"With --maintenance, run a stub that immediately signals agents to use native\n"+
+			"tools (Read, Bash/grep) — use this during upgrades or outages.",
+		"dex mcp [--remote <url> [--project-id <sha> | --project-root <path>]] [--maintenance [--reason <msg>]]")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -2697,6 +2701,15 @@ func cmdMCP(ctx context.Context, args []string) error {
 		return fmt.Errorf("mcp takes no arguments (got %v)", fs.Args())
 	}
 
+	if *maintenance {
+		if *remote != "" || *projectID != "" || *projectRoot != "" {
+			return fmt.Errorf("--maintenance is incompatible with --remote/--project-id/--project-root")
+		}
+		return mcp.RunStdioMaintenance(ctx, *reason)
+	}
+	if *reason != "" {
+		return fmt.Errorf("--reason is only valid with --maintenance")
+	}
 	if *remote != "" {
 		return runRemoteMCP(ctx, *remote, *projectID, *projectRoot)
 	}
