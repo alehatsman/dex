@@ -195,7 +195,7 @@ func (idx *MultiScaleIndex) searchScale(scale map[string][]kwScore, queryTokens 
 // TokeniseQuery is the exported entry point for the MCP layer.
 func TokeniseQuery(q string) []string { return tokenise(q) }
 
-// tokenise splits src into lowercase identifer tokens suitable for TF-IDF.
+// tokenise splits src into lowercase identifier tokens suitable for TF-IDF.
 // It splits on whitespace, punctuation, camelCase boundaries, and common
 // code separators.
 func tokenise(src string) []string {

@@ -314,8 +314,8 @@ func LouvainCommunities(nodes []Node, edges []Edge) CommunityResult {
 		if !okS || !okD || si == di {
 			continue
 		}
-		adj[si][di] += 1
-		adj[di][si] += 1
+		adj[si][di]++
+		adj[di][si]++
 		totalW += 2 // symmetric
 	}
 	if totalW == 0 {

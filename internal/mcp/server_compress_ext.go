@@ -472,7 +472,7 @@ func compressPrisma(cmd string, lines []string) []string {
 	case strings.Contains(cmd, "migrate"):
 		return compressPrismaMigrate(lines)
 	case strings.Contains(cmd, "db push") || strings.Contains(cmd, "db pull"):
-		return compressPrismaDbSync(lines)
+		return compressPrismaDBSync(lines)
 	case strings.Contains(cmd, "studio"):
 		return []string{"Prisma Studio started"}
 	case strings.Contains(cmd, "format"):
@@ -528,7 +528,7 @@ func compressPrismaMigrate(lines []string) []string {
 	return out
 }
 
-func compressPrismaDbSync(lines []string) []string {
+func compressPrismaDBSync(lines []string) []string {
 	var out []string
 	for _, l := range lines {
 		plain := strings.TrimSpace(rePrismaBlockChars.ReplaceAllString(l, ""))
@@ -1993,7 +1993,7 @@ func parseInt(s string) int {
 
 func parseFloat(s string) float64 {
 	var n float64
-	fmt.Sscanf(strings.TrimSpace(s), "%f", &n)
+	_, _ = fmt.Sscanf(strings.TrimSpace(s), "%f", &n) // best-effort: 0 on parse failure
 	return n
 }
 
@@ -2013,7 +2013,7 @@ func parseSizeField(s string) uint64 {
 	s = strings.TrimSpace(s)
 	if n, err := fmt.Sscanf(s, "%d", new(uint64)); n == 1 && err == nil {
 		var v uint64
-		fmt.Sscanf(s, "%d", &v)
+		_, _ = fmt.Sscanf(s, "%d", &v) // guarded by the check above
 		return v
 	}
 	if len(s) == 0 {
@@ -2022,7 +2022,7 @@ func parseSizeField(s string) uint64 {
 	last := s[len(s)-1]
 	prefix := s[:len(s)-1]
 	var base float64
-	fmt.Sscanf(prefix, "%f", &base)
+	_, _ = fmt.Sscanf(prefix, "%f", &base) // best-effort: 0 on parse failure
 	switch last {
 	case 'K', 'k':
 		return uint64(base * 1024)
@@ -2032,7 +2032,7 @@ func parseSizeField(s string) uint64 {
 		return uint64(base * 1024 * 1024 * 1024)
 	}
 	var v uint64
-	fmt.Sscanf(s, "%d", &v)
+	_, _ = fmt.Sscanf(s, "%d", &v) // best-effort: 0 on parse failure
 	return v
 }
 

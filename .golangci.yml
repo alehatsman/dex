@@ -41,6 +41,10 @@ linters:
         - G302  # file perms — config/lockfile use 0644 by design
         - G304  # path from variable — every config-reading codepath
         - G306  # bad write perms
+        - G703  # path-traversal taint — paths come from the user's own
+                # config / CLI args / project dir in a local dev tool; same
+                # threat-model dismissal as G304 (cmd/dex/locomo.go,
+                # internal/mcp/server_pack.go, internal/profiles/profiles.go)
 
     cyclop:
       max-complexity: 35
@@ -146,10 +150,23 @@ linters:
         linters: [gosec]
         text: "G(505|401)"
 
+      # sha1 is used for recent-commit fingerprinting / content hashing in
+      # the indexer's git helper, not for cryptographic security.
+      - path: internal/index/git\.go
+        linters: [gosec]
+        text: "G(505|401)"
+
       # G202: SQL string concatenation in store_graph.go — same
       # justification as store.go above: query strings are built from
       # controlled internal inputs (placeholder counts), not user data.
       - path: internal/store/store_graph\.go
+        linters: [gosec]
+        text: "G202"
+
+      # G202: SQL string concatenation in store_agent.go — same
+      # justification: the appended fragments are static ORDER BY / LIMIT
+      # clauses and placeholder runs, not user data.
+      - path: internal/store/store_agent\.go
         linters: [gosec]
         text: "G202"
 
