@@ -1052,6 +1052,22 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 				seen[f.Path] = struct{}{}
 			}
 		}
+		// Blend co-access neighbors of the session working set at 0.8×.
+		// These represent files that have historically been read alongside the
+		// current working set and are likely relevant even if not semantic hits.
+		if sessionPaths := make([]string, 0, len(ss.Files)); len(ss.Files) > 0 {
+			for _, f := range ss.Files {
+				sessionPaths = append(sessionPaths, f.Path)
+			}
+			if neighbors, err := s.CoAccessNeighbors(ctx, sessionPaths, 8); err == nil {
+				for _, p := range neighbors {
+					if _, dup := seen[p]; !dup {
+						seeds = append(seeds, SeedFile{Path: p, Weight: 0.8})
+						seen[p] = struct{}{}
+					}
+				}
+			}
+		}
 	}
 
 	// Normalize hit scores to [0,1] and add as seeds.

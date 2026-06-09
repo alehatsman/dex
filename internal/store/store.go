@@ -113,6 +113,10 @@ type Options struct {
 	// Applied after ranking, before final truncation to k. Zero = no cap.
 	MaxHitsPerFile int
 
+	// DisableCoAccess turns off Hebbian co-access edge learning and spreading.
+	// Set via DEX_COACCESS=0 or programmatically for isolated test stores.
+	DisableCoAccess bool
+
 	// DefinitionBoost is the multiplier applied in ApplyLocalRerank to
 	// declaration-kind chunks (function/method/class/struct/…) for symbol
 	// queries, lifting the definition site over window/orphan fragments that
@@ -600,6 +604,32 @@ func (s *Store) migrate(ctx context.Context) error {
 			`INSERT INTO meta(key, value) VALUES('agent_msg_category', '1')
 			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
 			return fmt.Errorf("migrate: agent_msg_category flag: %w", err)
+		}
+	}
+	var coAccessAdded string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='co_access_edges_added'`).Scan(&coAccessAdded)
+	if coAccessAdded != "1" {
+		if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS co_access_edges (
+			src_path      TEXT NOT NULL,
+			dst_path      TEXT NOT NULL,
+			weight        REAL NOT NULL DEFAULT 1.0,
+			reinforced_at INTEGER NOT NULL,
+			PRIMARY KEY (src_path, dst_path)
+		)`); err != nil {
+			return fmt.Errorf("migrate: co_access_edges: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`CREATE INDEX IF NOT EXISTS idx_coaccess_src ON co_access_edges(src_path)`); err != nil {
+			return fmt.Errorf("migrate: idx_coaccess_src: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`CREATE INDEX IF NOT EXISTS idx_coaccess_dst ON co_access_edges(dst_path)`); err != nil {
+			return fmt.Errorf("migrate: idx_coaccess_dst: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('co_access_edges_added', '1')
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return fmt.Errorf("migrate: co_access_edges flag: %w", err)
 		}
 	}
 	return nil

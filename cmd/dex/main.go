@@ -492,9 +492,10 @@ func indexDir() (string, error) {
 // path that opens a Store sees the same configuration.
 func storeOpts() store.Options {
 	opts := store.Options{
-		DisableBM25:    os.Getenv("DEX_DISABLE_BM25") == "1",
-		RerankPool:     rerankPool(),
-		MaxHitsPerFile: maxHitsPerFile(),
+		DisableBM25:     os.Getenv("DEX_DISABLE_BM25") == "1",
+		DisableCoAccess: os.Getenv("DEX_COACCESS") == "0",
+		RerankPool:      rerankPool(),
+		MaxHitsPerFile:  maxHitsPerFile(),
 	}
 	// Assign through a typed-nil check: a (*rerank.Client)(nil) stored
 	// in the Reranker interface field would still compare != nil, and

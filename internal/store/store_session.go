@@ -122,11 +122,14 @@ func (s *Store) SessionAddFile(ctx context.Context, path, op string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx,
+	if _, err = s.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO session_files(session_id, path, op, touched_at)
 		   VALUES(?,?,?,?)`,
-		id, path, op, time.Now().UnixNano())
-	return err
+		id, path, op, time.Now().UnixNano()); err != nil {
+		return err
+	}
+	_ = s.RecordCoAccess(ctx, path)
+	return nil
 }
 
 // SessionTrackFile records a file access only when a task-bearing session
@@ -138,11 +141,14 @@ func (s *Store) SessionTrackFile(ctx context.Context, path, op string) error {
 	if err != nil || task == "" {
 		return nil // no active session with a task — skip silently
 	}
-	_, err = s.db.ExecContext(ctx,
+	if _, err = s.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO session_files(session_id, path, op, touched_at)
 		   VALUES(?,?,?,?)`,
-		id, path, op, time.Now().UnixNano())
-	return err
+		id, path, op, time.Now().UnixNano()); err != nil {
+		return err
+	}
+	_ = s.RecordCoAccess(ctx, path)
+	return nil
 }
 
 // SessionClear deletes the current session (files cascade via FK).
