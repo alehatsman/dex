@@ -61,7 +61,9 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 			return nil, fmt.Errorf("eval: search q%d (%s): %w", i, q.ID, err)
 		}
 
-		ranked := uniqueFiles(hits, k, keepSummaries)
+		// For blast-radius queries the anchor file is the "given" — exclude it
+		// from the ranked list so it neither earns credit nor occupies a slot.
+		ranked := uniqueFiles(hits, k, keepSummaries, q.Anchor)
 		relevant := make(map[string]bool, len(q.RelevantFiles))
 		for _, f := range q.RelevantFiles {
 			relevant[f] = true
@@ -83,8 +85,9 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 // uniqueFiles collapses hits to the first-seen (best-ranked) occurrence of
 // each source file and returns the top limit files in rank order. git_commit
 // chunks are always dropped (commit-subject leak); summary chunks are dropped
-// unless keepSummaries is set.
-func uniqueFiles(hits []store.Hit, limit int, keepSummaries bool) []string {
+// unless keepSummaries is set; the exclude path (a blast-radius anchor, "" for
+// none) is dropped so the query's own file never counts.
+func uniqueFiles(hits []store.Hit, limit int, keepSummaries bool, exclude string) []string {
 	seen := make(map[string]bool)
 	var files []string
 	for _, h := range hits {
@@ -92,6 +95,9 @@ func uniqueFiles(hits []store.Hit, limit int, keepSummaries bool) []string {
 			continue
 		}
 		if !keepSummaries && chunk.IsSummaryKind(h.Kind) {
+			continue
+		}
+		if exclude != "" && h.Path == exclude {
 			continue
 		}
 		if seen[h.Path] {

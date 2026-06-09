@@ -13,13 +13,18 @@ import (
 	"strings"
 )
 
-// GoldenQuery is one labeled retrieval example: a natural-language query
-// (derived from a commit subject) and the set of source files that commit
-// touched, used as binary relevance ground truth.
+// GoldenQuery is one labeled retrieval example: a query and the set of source
+// files used as binary relevance ground truth. Two flavors share this shape:
+//   - git-history (golden.go): Query = a commit subject, RelevantFiles = the
+//     files that commit touched, Anchor empty.
+//   - blast-radius (blastradius.go): Query = a code excerpt from an anchor
+//     file, RelevantFiles = the OTHER files co-changed in the same commit,
+//     Anchor = the anchor's path (excluded from scoring — it's the given).
 type GoldenQuery struct {
-	ID            string   `json:"id"`             // short commit hash
-	Query         string   `json:"query"`          // NL query text (cleaned commit subject)
-	RelevantFiles []string `json:"relevant_files"` // repo-relative paths, sorted
+	ID            string   `json:"id"`               // short commit hash (+anchor for blast-radius)
+	Query         string   `json:"query"`            // query text (commit subject, or anchor code excerpt)
+	RelevantFiles []string `json:"relevant_files"`   // repo-relative paths, sorted
+	Anchor        string   `json:"anchor,omitempty"` // blast-radius: anchor file path, excluded from ranked results
 }
 
 // GoldenSet is a reproducible, committable collection of labeled queries

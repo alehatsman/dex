@@ -47,10 +47,28 @@ SWE-bench **resolve-rate** ("find every file you must edit together"), a
 different task than commit→file retrieval.
 
 **Implication:** graph-lane / structural-retrieval work needs a different
-instrument — a **co-change / blast-radius golden set** (query = one touched
-file, relevant = the *other* files co-changed in the same commit). Tracked as a
-separate eval child of the search epic. Don't claim a structural-retrieval win
-on the git-history golden set.
+instrument — the **blast-radius golden set** (`--mode blast-radius`, below).
+Don't claim a structural-retrieval win on the git-history golden set.
+
+## Blast-radius mode (`--mode blast-radius`)
+
+A second golden flavor that probes **structural / "what changes with this?"**
+relevance. For each multi-file commit, every touched code file becomes an
+**anchor**: the query is a code excerpt of that anchor's *current* content and
+the relevant set is the **other** files co-changed in the same commit. The
+anchor itself is excluded from the ranked results (it's the given). This
+rewards retrieving structurally-coupled files that are *not* direct lexical
+matches — exactly the graph lane's job.
+
+```sh
+dex bench eval . --gen --mode blast-radius      # writes benchmark/eval/blast-radius.json
+dex bench eval . --golden benchmark/eval/blast-radius.json   # score it
+```
+
+Caveat: the query excerpt includes the file's import lines, so co-changed files
+that the anchor *imports* can still surface as direct matches — the instrument
+is sensitive to the graph lane but not purely structural. Use it for *relative*
+A/B of structural-retrieval changes (#248), not as an absolute SOTA number.
 
 ## A/B-testing a change
 
