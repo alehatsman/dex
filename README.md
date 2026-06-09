@@ -531,6 +531,7 @@ secret patterns in their first 4 KB are skipped at index time.
 
 ## Documentation
 
+- [`docs/model-selection.md`](docs/model-selection.md) — embedding, chat, reranker, and summary model recommendations (MTEB benchmarks, VRAM budgets, quant guide)
 - [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) — drop-in CLAUDE.md routing block for agents
 - [`docs/observability.md`](docs/observability.md) — log field conventions and subsystem tagging
 - [`docs/how-dex-guide-works.md`](docs/how-dex-guide-works.md) — how `dex guide` generates LLM_GUIDE.md
