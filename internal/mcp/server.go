@@ -1645,6 +1645,11 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	case mode == "aggressive":
 		ext := filepath.Ext(realTarget)
 		content := compress.AggressiveCompress(string(data), ext)
+		// Semantic chunk reordering (#105): when a task is provided, reorder
+		// compressed content so the most task-relevant blocks appear first.
+		if in.Task != "" {
+			content = applySemanticChunkOrder(content, in.Task)
+		}
 		out.Status = "ok"
 		out.Etag = etag
 		out.Content = content
