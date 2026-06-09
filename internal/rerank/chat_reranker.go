@@ -54,10 +54,10 @@ type ChatReranker struct {
 	HTTP            *http.Client
 }
 
-// NewChat creates a ChatReranker. concurrency ≤ 0 → 4; timeout ≤ 0 → 30 s.
+// NewChat creates a ChatReranker. concurrency ≤ 0 → 16; timeout ≤ 0 → 30 s.
 func NewChat(baseURL, model string, concurrency int, timeout time.Duration) *ChatReranker {
 	if concurrency <= 0 {
-		concurrency = 4
+		concurrency = 16
 	}
 	if timeout <= 0 {
 		timeout = 30 * time.Second

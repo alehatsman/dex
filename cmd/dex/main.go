@@ -747,11 +747,11 @@ func newRerankClient() rerank.HealthChecker {
 	timeout := parseDuration("DEX_RERANK_TIMEOUT", envOr("DEX_RERANK_TIMEOUT", "5s"), 5*time.Second)
 	style := os.Getenv("DEX_RERANK_STYLE")
 	if style == "chat" || style == "chat-vllm" {
-		rawConc := envOr("DEX_RERANK_CONCURRENCY", "4")
+		rawConc := envOr("DEX_RERANK_CONCURRENCY", "16")
 		concurrency, cerr := strconv.Atoi(rawConc)
 		if cerr != nil || concurrency <= 0 {
-			fmt.Fprintf(os.Stderr, "warning: DEX_RERANK_CONCURRENCY=%q is not a positive integer; using 4\n", rawConc)
-			concurrency = 4
+			fmt.Fprintf(os.Stderr, "warning: DEX_RERANK_CONCURRENCY=%q is not a positive integer; using 16\n", rawConc)
+			concurrency = 16
 		}
 		c := rerank.NewChat(url, model, concurrency, timeout)
 		// chat-vllm: enable <think> assistant prefill for Qwen3-Reranker on vLLM.
