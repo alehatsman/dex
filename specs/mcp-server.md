@@ -1,7 +1,7 @@
 ---
 id: mcp-server
 status: living
-last_verified: 3a975eb
+last_verified: 75acce8
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
@@ -16,6 +16,8 @@ covers:
   - "internal/mcp/server_agent.go"
   - "internal/mcp/server_nav.go"
   - "internal/mcp/server_grep.go"
+  - "internal/mcp/server_prefetch.go"
+  - "internal/mcp/server_workspace.go"
 ---
 # MCP Server (stdio)
 
@@ -52,12 +54,14 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - WHERE tool exposure is tiered, the surface is controlled by `DEX_TOOLS`
   (`ask|standard|power`; default `standard`); `DEX_EXPOSE_RAW_TOOLS=1` is a
   backward-compatible alias for `power`. `TierAsk` exposes only `ask`.
-  `TierStandard` adds `ctx_nav`, `ctx_overview`, `ctx_session`, `ctx_knowledge`, `ctx_agent`,
-  `ctx_shell`, `file_tree`, `search_grep`, `search_context`, and (when a chat model is wired)
-  `file_view`. `TierPower` adds the full raw surface: `search_semantic`, `search_symbol`,
-  `graph_neighbors`, `graph_deps`, `graph_callers`, `graph_callees`, `graph_links`,
-  `graph_backlinks`, `graph_tags`, `graph_impact`, `graph_routes`, `graph_smells`,
-  `compress_output`, and `status`.
+  `TierStandard` adds `ctx_nav`, `ctx_overview`, `ctx_session`, `ctx_knowledge`,
+  `ctx_agent`, `ctx_feedback`, `ctx_shell`, `ctx_prefetch`, `file_tree`,
+  `search_grep`, `search_context`, `search_workspace`, and (when a chat model is
+  wired) `file_view`. `TierPower` adds the full raw surface: `search_semantic`,
+  `search_symbol`, `search_similar`, `graph_neighbors`, `graph_deps`,
+  `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`, `graph_tags`,
+  `graph_impact`, `graph_routes`, `graph_smells`, `compress_output`, `status`,
+  and `spec_check`.
 - WHERE a tool is named, it follows the **naming convention**: a category
   prefix groups related tools so an agent can guess a name from its purpose —
   `search_*` (retrieval lanes: `search_semantic`, `search_symbol`, `search_context`,
@@ -165,6 +169,29 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   `search_grep` complements `ask`/`search_semantic` for exact-match queries —
   cross-cutting symbol references, import paths, string literals — that semantic
   search misses.
+- WHEN `ctx_prefetch` is called (TierStandard), dex accepts `changed_files[]` and
+  uses spreading activation over the call/import graph to find the most
+  structurally-related neighbor files. Each neighbor is read at a fidelity
+  determined by `budget_tokens`: ≥80% remaining → full summary (LLM); ≥40% → map
+  (imports+symbols); else → signatures. Without `budget_tokens` all files use
+  signatures (fast, no LLM). Pass `task` to boost files whose paths match task
+  keywords. Returns `files[]` with content inlined — no follow-up reads needed.
+  Returns `no-index` when no graph is available; requires a graph index
+  (`dex index . --graph`).
+- WHEN `search_workspace` is called (TierStandard), dex reads `.dex/workspace.yml`
+  from the project root, embeds the query once, runs `Store.Search` per listed
+  project, and merges results with RRF (k=60). Each hit is tagged
+  `[project:label]` for attribution, where `label` defaults to the directory name
+  if not specified in the YAML. Returns `status:"no-workspace"` when no
+  `workspace.yml` is found; `status:"no-index"` when none of the listed projects
+  is indexed. Requires the embedding service and each project to be indexed
+  independently.
+- WHEN `ctx_feedback` is called (TierStandard), dex records output-ratio feedback
+  to the adaptive compression policy: the caller passes `intent`
+  (read/search/refactor/generate/test/debug/review), the ratio of output tokens to
+  context tokens, and the `file_view` mode used in the last read this turn. dex
+  uses these signals to downgrade compression modes that consistently produce thin
+  responses. Skip when no `file_view` was called this turn.
 
 ## Non-goals
 
@@ -188,8 +215,8 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `dex mcp` registers an MCP server on stdio, blocks until transport closes
 - [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
 - [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
-- [x] TierStandard: ctx_nav, ctx_overview, ctx_session, ctx_knowledge, ctx_agent, ctx_shell, file_tree, search_grep, search_context, file_view (chat required)
-- [x] TierPower: search_semantic, search_symbol, graph_*, graph_impact, graph_routes, graph_smells, compress_output, status, spec_check
+- [x] TierStandard: ctx_nav, ctx_overview, ctx_session, ctx_knowledge, ctx_agent, ctx_feedback, ctx_shell, ctx_prefetch, file_tree, search_grep, search_context, search_workspace, file_view (chat required)
+- [x] TierPower: search_semantic, search_symbol, search_similar, graph_*, graph_impact, graph_routes, graph_smells, compress_output, status, spec_check
 - [x] `file_view mode=map` returns structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
 - [x] `search_context`: single call returns top-K file signatures + best symbol body (replaces search→signatures→lines round-trip)
 - [x] Task-relevance inline: signatures/map append best-matching symbol body when session has a declared task
@@ -206,6 +233,10 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `ctx_nav` (TierStandard): returns structured tool catalogue + markdown routing guide; zero-arg, no index/embed required; REST at `GET /v1/nav`
 - [x] `ctx_shell` (TierStandard): 3-tier output policy (passthrough/verbatim/compress); auth-flow detection; heredoc/redirect block; `raw:true`; 60 s timeout; REST at `POST /v1/shell`
 - [x] `search_grep` (TierStandard): RE2 pattern search over indexed files; index file-list when available, fs-walk fallback; `max_results` cap (default 50); `no-matches` status
+- [x] `ctx_prefetch` (TierStandard): spreading-activation blast-radius over changed_files[]; fidelity auto-selected by budget_tokens; content inlined; `no-index` when no graph
+- [x] `search_workspace` (TierStandard): multi-project RRF merge from .dex/workspace.yml; embed once, search per project, tag hits [project:label]; `no-workspace`/`no-index` statuses
+- [x] `ctx_feedback` (TierStandard): output-ratio feedback to adaptive compression policy; intent + ratio + last read mode; skip when no file_view called
+- [x] `search_similar` (TierPower): hybrid pipeline over code at file:line anchor; stronger than graph_neighbors; anchor excluded; supports languages/path_glob/exclude filters
 - [x] Tool naming category-prefix convention: `search_*`, `graph_*`, `file_*`, `ctx_*`, `spec_*`; `ask`/`status`/`compress_output` are prefix-free
 - [x] Remote access for containerized agents: stdio→REST shim (`dex mcp --remote`, `remote.go`) + native HTTP-MCP at `/v1/projects/{id}/mcp` (`http_mcp.go`)
 - [x] Verified against the code by the verify workflow (flip to `living`)

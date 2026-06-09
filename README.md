@@ -122,6 +122,7 @@ The query-side CLI mirrors the MCP tool surface 1:1 — `dex ask` ↔
 # query (mirrors MCP tools)
 dex ask <path> "..."                       # primary entry point (use BEFORE grep)
                                            #   --intent --k --no-inline --format=text|json
+                                           #   --max-content-bytes, -v
 dex search semantic <path> "..."           # hybrid top-k chunks
                                            #   --k --rerank=off --explain --format=json
 dex search symbol   <path> <name>          # exact identifier lookup
@@ -137,16 +138,32 @@ dex view summarize  <path> <file>          # one-shot file/range gist via chat
 dex index status    [<path>]               # endpoint health + indexed projects
 
 # build / maintenance (CLI-only)
-dex index <path>           # build or refresh (chunks + Go graph)
-                           #   --graph=off  skip graph phase
-                           #   --graph=only refresh just the graph
+dex index <path>           # build or refresh (chunks + Go graph + git commits)
+                           #   --graph=off     skip graph phase
+                           #   --graph=only    refresh just the graph
+                           #   --dry-run       preview what would be indexed
+                           #   --no-git        skip git commit indexing phase
 dex index summarize <path> # drain pending_summaries queue
 dex generate <path> "..."  # RAG: top-k chunks → chat endpoint
+dex guide <path>           # render LLM_GUIDE.md from repo+pkg summaries
+                           #   --check exits 1 when guide is out of date
 dex watch <path>           # fsnotify-driven auto-reindex
 dex clone <src> <dst>      # seed a worktree's index from a sibling
 dex reindex <path>         # drop and re-embed from scratch
 dex nuke <path>            # delete the on-disk index
+dex compact <path>         # concatenate all indexable files to stdout
+                           #   --out FILE, --max-bytes N, --strip
 dex mcp                    # MCP server over stdio
+
+# config / setup
+dex setup                  # guided first-run wizard (check + index + MCP rules)
+                           #   --check exits 1 when setup is incomplete
+dex config init            # scaffold .dex/config.yml with commented defaults
+                           #   --force overwrite; --full include all knobs
+dex doctor                 # check setup end-to-end (endpoints, index, MCP wiring)
+dex env [--all] [--doc]    # print effective DEX_* config with sources
+dex completion bash|zsh|fish  # emit shell tab-completion script
+dex version                # print build version
 
 # Claude Code hooks (read JSON on stdin; see "Claude Code hooks" below)
 dex hook inject            # UserPromptSubmit  → inject ask context per prompt
@@ -180,33 +197,104 @@ env:                              # escape hatch: any DEX_* knob verbatim
 environment. (Indexing include/ignore globs live in the same file under the
 `index:` section — see "What gets indexed" below.)
 
+### Context profiles
+
+`DEX_PROFILE=<name>` activates a named context profile that adjusts defaults
+per task type — no per-call flag overrides needed. Three built-ins:
+
+| Profile   | file_view mode | compression | max files (k) |
+| --------- | -------------- | ----------- | ------------- |
+| `explore` | full           | normal      | 12            |
+| `bugfix`  | full           | tight       | 8             |
+| `ci`      | signatures     | minimal     | 5             |
+
+Custom profiles live in `.dex/profiles/<name>.yml` (project-local) or
+`~/.dex/profiles/<name>.yml` (global). Format:
+
+```yaml
+read:
+  default_mode: full          # full | signatures | map
+compression:
+  output_density: tight       # normal | tight | minimal
+budget:
+  max_files: 8                # cap on k for search_semantic
+  context_fraction: 0.6       # fraction of context window one response may use
+```
+
+### Workspace search
+
+`search_workspace` searches across multiple projects in one call. Declare the
+project set in `.dex/workspace.yml` at any project root:
+
+```yaml
+projects:
+  - path: /home/user/code/api-server
+    label: api                  # optional; defaults to directory name
+  - path: ../frontend           # relative paths resolved from workspace.yml dir
+```
+
+Each project must be independently indexed. `search_workspace` embeds the query
+once, runs hybrid search per project, and merges with RRF — tagging every hit
+`[project:label]` so you know which project it came from.
+
+### Session SLO monitoring
+
+dex can warn, throttle, or block when a session exceeds resource thresholds.
+Configure under `slo:` in `.dex/config.yml`:
+
+```yaml
+slo:
+  - name: context budget
+    metric: context_tokens      # context_tokens | tool_calls | shell_calls
+    threshold: 80000
+    action: warn                # warn | throttle | block
+    percent: 80                 # fire an early warning at 80% of threshold
+  - name: shell cap
+    metric: shell_calls
+    threshold: 50
+    action: throttle
+```
+
+Actions: `warn` annotates the next tool response; `throttle` downgrades
+`file_view` from `full` to `signatures`; `block` returns an error. A 30 s
+debounce window prevents annotation spam. Thresholds are per-session and reset
+on reconnect.
+
 When running as `dex mcp`, the server registers tools in three tiers controlled
 by `DEX_TOOLS=ask|standard|power` (default `standard`):
 
-| Tool               | Tier      | What it does                                                                |
-| ------------------ | --------- | --------------------------------------------------------------------------- |
-| `ask`              | ask+      | **Primary entry point.** Router + composed bundle.                          |
-| `ctx_overview`         | standard+ | Project orientation — markers, package topology, key files.                 |
-| `search_context`   | standard+ | Embed query → top-K file signatures + best symbol body in one call.         |
-| `ctx_session`          | standard+ | Declare / read a session task for task-relevance inline in file_view.       |
-| `ctx_knowledge`        | standard+ | Store / recall / consolidate cross-session facts; revision tracking on re-add. |
-| `ctx_agent`            | standard+ | Multi-agent coordination bus: `announce`/`post`/`read`/`list` — share findings across concurrent agents. Topic filtering + `since_id` pagination. |
-| `file_tree`        | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
-| `file_view`        | standard+ | Signatures / structural map / LLM gist / line slice. Pass `paths[]` (max 10) for batch. Returns `etag`; pass it back on re-reads for `status=unchanged` (session-aware). |
-| `search_semantic`  | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`.  |
-| `search_symbol`    | power     | Exact identifier lookup (SQL scan, no embedding).                           |
-| `graph_neighbors`  | power     | Vector neighbours of a known chunk at `path:start_line`.                    |
-| `graph_deps`       | power     | `imports` edges for a file or package. Sourced from the static graph.       |
-| `graph_callers`    | power     | Incoming `calls` edges (Go-only today).                                     |
-| `graph_callees`    | power     | Outgoing `calls` edges (Go-only today).                                     |
-| `graph_impact`     | power     | Transitive BFS over incoming `calls` — blast-radius analysis with PageRank. |
-| `graph_links`      | power     | Outgoing markdown `links`/`wikilinks` — docs a doc points to.               |
-| `graph_backlinks`  | power     | Incoming markdown `links`/`wikilinks` — what links to a doc (Obsidian-style).|
-| `graph_tags`       | power     | Tag graph: `tag`→documents (ranked) or `doc`→tags. Tag-based clustering.    |
-| `graph_routes`     | power     | All reachable call paths between two symbols.                               |
-| `graph_smells`      | power     | Structural code-smell report (hub files, isolated functions, …).            |
-| `status`           | power     | Endpoint health (embed / chat / rerank) + indexed projects.                 |
-| `spec_check`      | power     | Verify a spec file's checklist against the live index.                      |
+| Tool                 | Tier      | What it does                                                                |
+| -------------------- | --------- | --------------------------------------------------------------------------- |
+| `ask`                | ask+      | **Primary entry point.** Router + composed bundle.                          |
+| `ctx_overview`       | standard+ | Task-relevant project map: top-k files ranked by semantic similarity + graph centrality. |
+| `ctx_session`        | standard+ | Declare task / record notes / track files across tool calls. Surfaces as `session_task` in `ask`. |
+| `ctx_knowledge`      | standard+ | Store / recall / consolidate cross-session facts; revision tracking on re-add. |
+| `ctx_agent`          | standard+ | Multi-agent coordination bus: `announce`/`post`/`read`/`list` — share findings across concurrent agents. |
+| `ctx_nav`            | standard+ | Return the dex tool-routing guide — which tools exist, their tier, and when to call each. |
+| `ctx_feedback`       | standard+ | Report output-ratio feedback to the adaptive compression policy (intent + ratio + last read mode). |
+| `ctx_prefetch`       | standard+ | Given `changed_files[]`, walks the call/import graph via spreading activation and prefetches the most structurally-related neighbors — inlines content so no follow-up reads are needed. Requires graph index. |
+| `ctx_shell`          | standard+ | Execute a shell command and return compressed output (strips build noise, deduplicates logs). |
+| `search_context`     | standard+ | Embed query → top-K file signatures + best symbol body in one round-trip.  |
+| `search_workspace`   | standard+ | Search across all projects in `.dex/workspace.yml` — runs hybrid search per project and merges with RRF, tagging each hit `[project:label]`. |
+| `search_grep`        | standard+ | Regex search over project files (no embedding). For exact-match queries: cross-cutting references, import paths, string literals. |
+| `file_tree`          | standard+ | Filesystem subtree with file sizes and extension breakdown.                 |
+| `file_view`          | standard+ | Signatures / structural map / LLM gist / line slice. `paths[]` (max 10) for batch; `etag` for change-detection. |
+| `search_semantic`    | power     | Hybrid (cosine + BM25 + optional rerank) top-k chunks. Supports `exclude`, `languages`, `path_glob`. |
+| `search_symbol`      | power     | Exact identifier lookup (SQL scan, no embedding).                           |
+| `search_similar`     | power     | Find chunks semantically similar to code at a given `file:line` — full hybrid pipeline, stronger than `graph_neighbors`. |
+| `graph_neighbors`    | power     | Vector neighbours of a known chunk at `path:start_line`.                    |
+| `graph_deps`         | power     | `imports` edges for a file or package. Sourced from the static graph.       |
+| `graph_callers`      | power     | Incoming `calls` edges (Go-only today).                                     |
+| `graph_callees`      | power     | Outgoing `calls` edges (Go-only today).                                     |
+| `graph_impact`       | power     | Transitive blast-radius analysis over incoming `calls` with PageRank scoring. |
+| `graph_links`        | power     | Outgoing markdown `links`/`wikilinks` — docs a doc points to.               |
+| `graph_backlinks`    | power     | Incoming markdown `links`/`wikilinks` — what links to a doc (Obsidian-style).|
+| `graph_tags`         | power     | Tag graph: `tag`→documents (ranked) or `doc`→tags. Tag-based clustering.    |
+| `graph_routes`       | power     | All reachable call paths between two symbols.                               |
+| `graph_smells`       | power     | AST-based code-quality signals: long functions, dead exports, god files. No LLM required. |
+| `compress_output`    | power     | Compress raw shell output: strips spinners/noise, deduplicates, summarises go test/git/npm/cargo output. |
+| `status`             | power     | Endpoint health (embed / chat / rerank) + indexed projects.                 |
+| `spec_check`         | power     | Verify a spec file's checklist against the live index.                      |
 
 `file_view mode=map` returns a structural outline for non-code files
 (Markdown heading tree, JSON key hierarchy, YAML/TOML sections, lock-file dep
@@ -307,16 +395,22 @@ the full raw surface; `DEX_TOOLS=ask` narrows to just the `ask` tool.
 
 ## Environment
 
-| Variable          | Default                          | Meaning                                                                      |
-| ----------------- | -------------------------------- | ---------------------------------------------------------------------------- |
-| `DEX_EMBED_URL`   | `http://127.0.0.1:8082`          | OpenAI-shape `/v1/embeddings` base URL.                                       |
-| `DEX_EMBED_MODEL` | `Qwen/Qwen3-Embedding-4B`        | Embedding model name forwarded as `model`.                                    |
-| `DEX_INDEX_DIR`   | `~/.cache/dex`                   | Per-project index files.                                                      |
-| `DEX_CHAT_URL`    | `http://127.0.0.1:8081`          | `/v1/chat/completions` — `generate`, `file_view`, index-time summaries.     |
-| `DEX_CHAT_MODEL`  | `Qwen/Qwen2.5-Coder-7B-Instruct` | Chat model.                                                                   |
+| Variable                | Default                          | Meaning                                                                      |
+| ----------------------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| `DEX_EMBED_URL`         | `http://127.0.0.1:8082`          | OpenAI-shape `/v1/embeddings` base URL.                                       |
+| `DEX_EMBED_MODEL`       | `Qwen/Qwen3-Embedding-4B`        | Embedding model name forwarded as `model`.                                    |
+| `DEX_INDEX_DIR`         | `~/.cache/dex`                   | Per-project index files.                                                      |
+| `DEX_CHAT_URL`          | `http://127.0.0.1:8081`          | `/v1/chat/completions` — `generate`, `file_view`, index-time summaries.     |
+| `DEX_CHAT_MODEL`        | `Qwen/Qwen2.5-Coder-7B-Instruct` | Chat model.                                                                   |
+| `DEX_PROFILE`           | *(unset)*                        | Named context profile: `explore`, `bugfix`, `ci`, or a custom `.dex/profiles/<name>.yml`. |
+| `DEX_ATTENTION_LAYOUT`  | *(unset)*                        | Set `1` to sort evidence chunks by structural importance before the chat model sees them (error/panic > import > func > comments). Improves answer quality on complex questions. |
+| `DEX_NO_GIT_INDEX`      | *(unset)*                        | Set `1` to skip the git commit indexing phase (equivalent to `dex index --no-git`). |
+| `DEX_TOOLS`             | `standard`                       | MCP tool surface: `ask` (single tool), `standard` (default), or `power` (full raw surface). |
+| `DEX_NO_AUTO_OLLAMA`    | *(unset)*                        | Set `1` to disable best-effort auto-start of the local ollama daemon.         |
 
-Tuning knobs (rerank, compress, draft, summary, batch sizes, timeouts,
-cache toggles) — see [docs/tuning.md](docs/tuning.md).
+Run `dex env --all --doc` to see the full list of tuning knobs with inline
+descriptions (rerank, compress, draft, summary, batch sizes, timeouts, cache
+toggles).
 
 ## How it works
 
@@ -335,18 +429,30 @@ on an already-indexed repo with ollama down. When `DEX_EMBED_URL` is unset and
 ollama is installed but not running, dex best-effort starts it (`ollama serve`;
 opt out with `DEX_NO_AUTO_OLLAMA=1`).
 
-Architecture diagram: [docs/architecture.md](docs/architecture.md).
-Storage schema, RRF math, vec0 KNN, multi-worktree workflow, embedding
-contract, code-gen details: [docs/internals.md](docs/internals.md).
+`dex index` runs in three phases:
 
-`dex index` also adds a Go-specific structural layer built on
-`go/packages` + `go/types` (type-resolved, not regex). The extractor
-emits `package` / `file` / `function` / `method` / `type` / `field` /
-`import` nodes and `contains` / `imports` / `has_method` / `has_field`
-/ `embeds` / `implements` / `calls` edges. Function and method nodes
-link back to chunks via `graph_nodes.chunk_id`, so a single SQL join
-surfaces graph neighbourhood + source code for any hit. `references`
-edges land with the planned LSP integration.
+1. **Chunk + embed** — tree-sitter parses source into named structural chunks;
+   each chunk is embedded and stored in `sqlite-vec`. Incremental: only changed
+   files are re-processed (content-SHA gating).
+
+2. **Go graph** — `go/packages` + `go/types` (type-resolved, not regex) extracts
+   `package` / `file` / `function` / `method` / `type` / `field` / `import`
+   nodes and `contains` / `imports` / `has_method` / `has_field` / `embeds` /
+   `implements` / `calls` edges. Function nodes link back to chunks via
+   `graph_nodes.chunk_id`. Skip with `--graph=off`; refresh only with
+   `--graph=only`.
+
+3. **Git commits** — each commit becomes a searchable chunk
+   (`kind=git_commit`, `path=git:<hash>`) containing hash, author, date,
+   subject, body, and changed-file list. Incremental via a watermark; force-push
+   detection wipes and re-indexes. Skip with `--no-git` or `DEX_NO_GIT_INDEX=1`.
+
+At query time, the semantic pipeline has three ranking layers: vec0 cosine KNN
++ BM25 fused via RRF, an in-RAM multi-scale TF-IDF index that pre-filters
+candidates to the most structurally-relevant files/dirs before rerank, and a
+spreading-activation graph lane that follows `calls`/`imports` edges from the
+top hits to surface closely related code even without keyword overlap. An
+optional cross-encoder rerank runs over the fused pool.
 
 ## Comparison
 
@@ -413,10 +519,11 @@ secret patterns in their first 4 KB are skipped at index time.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — diagram + data flow
-- [Internals](docs/internals.md) — storage schema, RRF math, vec0 KNN, worktrees
-- [Tuning](docs/tuning.md) — rerank, summary, batch, timeout, cache knobs
-- [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) — drop-in CLAUDE.md routing block
+- [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) — drop-in CLAUDE.md routing block for agents
+- [`docs/observability.md`](docs/observability.md) — log field conventions and subsystem tagging
+- [`docs/how-dex-guide-works.md`](docs/how-dex-guide-works.md) — how `dex guide` generates LLM_GUIDE.md
+- [`specs/`](specs/) — living specs for indexing, search, graph, MCP server, storage, and more
+- `dex env --all --doc` — inline docs for every tuning knob (rerank, batch sizes, timeouts, cache)
 
 ## License
 
