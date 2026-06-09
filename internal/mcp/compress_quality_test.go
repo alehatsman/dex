@@ -70,9 +70,17 @@ func TestSelectAffordableMode_Downgrade(t *testing.T) {
 	}
 }
 
-func TestSelectAffordableMode_SignaturesFits(t *testing.T) {
-	// 1000 token file with 300 budget: signatures ≈ 200 ≤ 300.
+func TestSelectAffordableMode_SkeletonFits(t *testing.T) {
+	// 1000 token file with 300 budget: skeleton ≈ 300 ≤ 300 (fits before signatures).
 	got := selectAffordableMode("full", 1000, 300)
+	if got != "skeleton" {
+		t.Errorf("want skeleton, got %s", got)
+	}
+}
+
+func TestSelectAffordableMode_SignaturesFits(t *testing.T) {
+	// 1000 token file with 250 budget: skeleton ≈ 300 > 250; signatures ≈ 200 ≤ 250.
+	got := selectAffordableMode("full", 1000, 250)
 	if got != "signatures" {
 		t.Errorf("want signatures, got %s", got)
 	}

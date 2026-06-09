@@ -152,6 +152,13 @@ type Server struct {
 	// tgCache holds per-(root,prefix,ext) RAM-resident trigram indices used
 	// by searchGrep to narrow candidate files before reading them.
 	tgCache trigramCache
+
+	// bodyHandles stores @B<n> expansion handles issued by skeleton-mode reads.
+	// Handles are scoped per session and expire when the session ends or the
+	// server restarts. Key: "@B<n>"; value: the file location to expand.
+	bodyHandles    map[string]map[string]bodyHandle // sessionID → "@B<n>" → handle
+	bodyHandlesMu  sync.Mutex
+	bodyHandlesSeq map[string]int // sessionID → next N
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from
@@ -272,6 +279,53 @@ func (s *Server) activityNudge(project, sessionTask string) string {
 		return fmt.Sprintf("You've done significant work on %q — consider recording key findings with knowledge action=add so they survive a session reset.", sessionTask)
 	}
 	return "Significant activity detected — consider recording key findings with knowledge action=add so they survive a session reset."
+}
+
+// bodyHandle stores the file location of a skeleton-mode @B<n> expansion handle.
+type bodyHandle struct {
+	relPath   string
+	startLine int
+	endLine   int
+	etag      string // file content hash at the time the handle was issued
+}
+
+// registerBodyHandles stores a slice of BodyEntry handles in the per-session
+// map and returns the handle keys (@B1, @B2, …) so the caller can embed them
+// in the skeleton output.
+func (s *Server) registerBodyHandles(sessionID, relPath, etag string, bodies []compress.BodyEntry) {
+	if sessionID == "" || len(bodies) == 0 {
+		return
+	}
+	s.bodyHandlesMu.Lock()
+	defer s.bodyHandlesMu.Unlock()
+	if s.bodyHandles == nil {
+		s.bodyHandles = make(map[string]map[string]bodyHandle)
+		s.bodyHandlesSeq = make(map[string]int)
+	}
+	if s.bodyHandles[sessionID] == nil {
+		s.bodyHandles[sessionID] = make(map[string]bodyHandle)
+	}
+	for _, be := range bodies {
+		key := fmt.Sprintf("@B%d", be.N)
+		s.bodyHandles[sessionID][key] = bodyHandle{
+			relPath:   relPath,
+			startLine: be.StartLine,
+			endLine:   be.EndLine,
+			etag:      etag,
+		}
+	}
+}
+
+// lookupBodyHandle returns the stored body handle for key (e.g. "@B3") in
+// sessionID, and a boolean indicating whether it was found.
+func (s *Server) lookupBodyHandle(sessionID, key string) (bodyHandle, bool) {
+	s.bodyHandlesMu.Lock()
+	defer s.bodyHandlesMu.Unlock()
+	if s.bodyHandles == nil {
+		return bodyHandle{}, false
+	}
+	h, ok := s.bodyHandles[sessionID][key]
+	return h, ok
 }
 
 // readCacheCheck returns true when this session has previously received
@@ -1337,18 +1391,21 @@ type SummarizeInput struct {
 	Path         string   `json:"path,omitempty" jsonschema:"file path to summarize; relative paths are resolved against project_root; required when paths is not set"`
 	Paths        []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
 	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Mode         string   `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
+	Mode         string   `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'skeleton' (exported signatures + @B<n> body handles, no LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
 	StartLine    int      `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
 	EndLine      int      `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
 	Focus        string   `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
 	Temperature  float32  `json:"temperature,omitempty" jsonschema:"sampling temperature (0 = server default)"`
 	MaxTokens    int      `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
 	Etag         string   `json:"etag,omitempty" jsonschema:"content hash from a prior read; if the file is unchanged the server returns status=unchanged — re-use the content already in context instead of re-reading"`
-	BudgetTokens int      `json:"budget_tokens,omitempty" jsonschema:"optional remaining context budget in tokens; when set, dex auto-downgrades mode to fit (full→signatures→map→handle) — omit for no budget constraint"`
+	BudgetTokens int      `json:"budget_tokens,omitempty" jsonschema:"optional remaining context budget in tokens; when set, dex auto-downgrades mode to fit (full→skeleton→signatures→map→handle) — omit for no budget constraint"`
 	Task         string   `json:"task,omitempty" jsonschema:"optional current task description (e.g. from ctx_session); when set, dex selects the compression level automatically — Generate/Test tasks use aggressive (no LLM), others use lightweight cleanup"`
 	// CacheLayout overrides the profile's cache_layout knob for this call.
 	// Values: "stable_first" (default), "recency", "off". Empty means use profile default.
 	CacheLayout string `json:"cache_layout,omitempty" jsonschema:"batch ordering policy for prompt-cache hits: stable_first (session-seen files first), recency (caller order), off"`
+	// Expand retrieves a suppressed function/method body from a previous skeleton-mode
+	// read. Pass the handle key from the skeleton output (e.g. "@B3").
+	Expand string `json:"expand,omitempty" jsonschema:"expand a body handle issued by a previous skeleton-mode read, e.g. '@B3'; returns the full source lines for that scope"`
 }
 
 type SummarizeOutput struct {
@@ -1532,6 +1589,27 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return nil, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, nil
 	}
 
+	// Body handle expansion (#206): @B<n> handle from a prior skeleton-mode read.
+	if in.Expand != "" {
+		h, ok := s.lookupBodyHandle(sessionID, in.Expand)
+		if !ok {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("unknown handle %q — issue a skeleton-mode read first", in.Expand)}, nil
+		}
+		if h.etag != etag {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("file has changed since handle %q was issued — re-read with mode=skeleton", in.Expand)}, nil
+		}
+		slice, sliceStart, sliceEnd := sliceLines(data, h.startLine, h.endLine)
+		out.Status = "ok"
+		out.Etag = etag
+		out.StartLine = sliceStart
+		out.EndLine = sliceEnd
+		out.Bytes = len(slice)
+		out.Content = string(slice)
+		out.Hint = fmt.Sprintf("body expansion of %s (lines %d-%d)", in.Expand, sliceStart, sliceEnd)
+		s.readCacheMark(sessionID, relTarget, etag)
+		return nil, out, nil
+	}
+
 	// Bounce detection (#98): if this file was recently delivered compressed
 	// and the agent is re-requesting it, escalate to full mode.
 	bt := s.bt()
@@ -1684,6 +1762,46 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		s.sessionAutoFile(p.DBPath, relTarget)
 		return nil, out, nil
 
+	case mode == "skeleton":
+		// Skeleton mode (#206): exported type declarations in full; exported
+		// function/method bodies replaced with @B<n> handles; unexported omitted.
+		// Falls back to signatures when the index has no symbols.
+		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
+		}
+		defer st.Close()
+		syms, err := st.SymbolsByFile(ctx, relTarget)
+		if err != nil {
+			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
+		}
+		if len(syms) == 0 {
+			out.Status = "ok"
+			out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
+			return nil, out, nil
+		}
+		scopes := make([]compress.BodyScope, 0, len(syms))
+		for _, sym := range syms {
+			exported := len(sym.Name) > 0 && sym.Name[0] >= 'A' && sym.Name[0] <= 'Z'
+			scopes = append(scopes, compress.BodyScope{
+				Name:      sym.QualifiedName,
+				Kind:      sym.Kind,
+				Exported:  exported,
+				StartLine: sym.StartLine,
+				EndLine:   sym.EndLine,
+			})
+		}
+		res := compress.SkeletonPass(data, relTarget, scopes)
+		s.registerBodyHandles(sessionID, relTarget, etag, res.Bodies)
+		out.Status = "ok"
+		out.Etag = etag
+		out.Content = res.Text
+		out.Bytes = len(res.Text)
+		s.readCacheMark(sessionID, relTarget, etag)
+		bt.recordCompressed(sessionID, relTarget)
+		s.sessionAutoFile(p.DBPath, relTarget)
+		return nil, out, nil
+
 	default: // full
 		slice, sliceStart, sliceEnd := sliceLines(data, in.StartLine, in.EndLine)
 		out.StartLine = sliceStart
@@ -1695,7 +1813,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Bytes = len(slice)
 
 		if lineCount := bytes.Count(data, []byte("\n")) + 1; lineCount > 250 {
-			out.Hint = fmt.Sprintf("⚠ Large file (%d lines): pass mode=signatures or mode=map to reduce tokens.", lineCount)
+			out.Hint = fmt.Sprintf("⚠ Large file (%d lines): pass mode=skeleton, mode=signatures, or mode=map to reduce tokens.", lineCount)
 		}
 
 		system := buildSummarizeSystem(in.Focus)
@@ -2722,6 +2840,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 					"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
 					"Pass `task` (your current task from ctx_session) to get automatic compression routing: " +
 					"Generate/Test tasks use aggressive mode (strips comments, no LLM call), others apply lightweight cleanup. " +
+					"Skeleton mode (mode=skeleton): emits exported type declarations in full and function/method signatures " +
+					"with @B<n> body handles. Expand a body on demand: pass expand='@B<n>' on a subsequent call. " +
 					"On error, returns 'chat-service-unreachable' or 'error'."),
 			}, h.summarize)
 		}

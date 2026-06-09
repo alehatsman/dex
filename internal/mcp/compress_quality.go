@@ -72,7 +72,9 @@ func (bt *bounceTracker) shouldForceFull(sessionID, path string) bool {
 func viewDowngradeChain(requested string) []string {
 	switch requested {
 	case "full":
-		return []string{"full", "signatures", "map", "handle"}
+		return []string{"full", "skeleton", "signatures", "map", "handle"}
+	case "skeleton":
+		return []string{"skeleton", "signatures", "map", "handle"}
 	case "aggressive":
 		return []string{"aggressive", "signatures", "map", "handle"}
 	case "signatures":
@@ -93,6 +95,8 @@ func estimateModeTokens(fileTokens int, mode string) int {
 		return fileTokens
 	case "aggressive":
 		return fileTokens * 40 / 100
+	case "skeleton":
+		return fileTokens * 30 / 100
 	case "signatures":
 		return fileTokens * 20 / 100
 	case "map":
