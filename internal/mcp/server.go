@@ -1346,6 +1346,9 @@ type SummarizeInput struct {
 	Etag         string   `json:"etag,omitempty" jsonschema:"content hash from a prior read; if the file is unchanged the server returns status=unchanged — re-use the content already in context instead of re-reading"`
 	BudgetTokens int      `json:"budget_tokens,omitempty" jsonschema:"optional remaining context budget in tokens; when set, dex auto-downgrades mode to fit (full→signatures→map→handle) — omit for no budget constraint"`
 	Task         string   `json:"task,omitempty" jsonschema:"optional current task description (e.g. from ctx_session); when set, dex selects the compression level automatically — Generate/Test tasks use aggressive (no LLM), others use lightweight cleanup"`
+	// CacheLayout overrides the profile's cache_layout knob for this call.
+	// Values: "stable_first" (default), "recency", "off". Empty means use profile default.
+	CacheLayout string `json:"cache_layout,omitempty" jsonschema:"batch ordering policy for prompt-cache hits: stable_first (session-seen files first), recency (caller order), off"`
 }
 
 type SummarizeOutput struct {
@@ -1363,6 +1366,12 @@ type SummarizeOutput struct {
 	Content      string   `json:"content,omitempty"`
 	FinishReason string   `json:"finish_reason,omitempty"`
 	Etag         string   `json:"etag,omitempty"` // sha256[:16] of file content; pass back on re-reads
+	// StablePrefixTokens is the estimated token count of the stable-prefix
+	// section when cache_layout=stable_first reordering was applied to a batch
+	// call. Zero for single-file calls or when no stable files were found.
+	// Place the Anthropic cache_control breakpoint after this many tokens from
+	// the start of the response to maximise prompt-cache hits.
+	StablePrefixTokens int `json:"stable_prefix_tokens,omitempty"`
 }
 
 // maxSummarizeBytes caps the slice we send to the chat endpoint. Above
@@ -1752,11 +1761,16 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 		mode = "signatures"
 	}
 
+	// Stable-first layout: load session-stable file set before the per-file
+	// loop so we can annotate results as they come in.
+	stableSet := batchStableSet(ctx, in.ProjectRoot, s.IndexDir)
+
 	type fileResult struct {
 		path    string // resolved path (or "" for errors)
 		header  string // "## <path>" or "## <rawPath>\n⚠ <hint>"
 		content string // file content (empty for errors)
 		ok      bool
+		stable  bool // session-seen before this turn
 	}
 
 	results := make([]fileResult, 0, len(in.Paths))
@@ -1785,7 +1799,33 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 			header:  fmt.Sprintf("## %s", out.Path),
 			content: out.Content,
 			ok:      true,
+			stable:  stableSet[out.Path],
 		})
+	}
+
+	// cache_layout=stable_first (default): move session-stable files to the
+	// front so the Anthropic prompt cache can build a consistent prefix across
+	// turns. Preserve relative order within each tier. No-op when no session
+	// exists, only one file, or the profile opts out.
+	// Per-call override wins; fall back to profile; fall back to stable_first.
+	layout := in.CacheLayout
+	if layout == "" {
+		layout = profiles.Active(in.ProjectRoot).Read.CacheLayout
+	}
+	if layout == "" {
+		layout = "stable_first" // default
+	}
+	if layout == "stable_first" && len(results) > 1 {
+		stable := results[:0:0]
+		fresh := results[:0:0]
+		for _, r := range results {
+			if r.ok && r.stable {
+				stable = append(stable, r)
+			} else {
+				fresh = append(fresh, r)
+			}
+		}
+		results = append(stable, fresh...)
 	}
 
 	// Build codebook from successfully-read file contents.
@@ -1804,22 +1844,67 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 	}
 
 	var resolvedPaths []string
+	var stablePrefixTokens int
+	countingStable := layout == "stable_first"
 	for _, r := range results {
 		if r.ok {
 			content := cb.Apply(r.content)
-			fmt.Fprintf(&sb, "%s\n%s\n\n", r.header, content)
+			chunk := fmt.Sprintf("%s\n%s\n\n", r.header, content)
+			sb.WriteString(chunk)
 			resolvedPaths = append(resolvedPaths, r.path)
+			if countingStable && r.stable {
+				stablePrefixTokens += estimateTokens(chunk)
+			} else {
+				countingStable = false // stop counting once we hit a fresh file
+			}
 		} else {
 			fmt.Fprintf(&sb, "%s\n\n", r.header)
+			if countingStable {
+				countingStable = false
+			}
 		}
 	}
 
 	return nil, SummarizeOutput{
-		Status:  "ok",
-		Project: project,
-		Content: strings.TrimRight(sb.String(), "\n"),
-		Paths:   resolvedPaths,
+		Status:             "ok",
+		Project:            project,
+		Content:            strings.TrimRight(sb.String(), "\n"),
+		Paths:              resolvedPaths,
+		StablePrefixTokens: stablePrefixTokens,
 	}, nil
+}
+
+// batchStableSet returns the set of project-relative file paths that appear
+// in the current session — these are "session-stable" for cache layout
+// purposes. Returns an empty (non-nil) map when no session exists or on any
+// error (failures are silently swallowed; this is a best-effort optimisation).
+func batchStableSet(ctx context.Context, projectRoot, indexDir string) map[string]bool {
+	root := projectRoot
+	if root == "" {
+		var err error
+		root, err = os.Getwd()
+		if err != nil {
+			return map[string]bool{}
+		}
+	}
+	p, err := proj.Resolve(root, indexDir)
+	if err != nil {
+		return map[string]bool{}
+	}
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		return map[string]bool{}
+	}
+	defer st.Close()
+	ss, ok, err := st.SessionGet(ctx)
+	if err != nil || !ok {
+		return map[string]bool{}
+	}
+	set := make(map[string]bool, len(ss.Files))
+	for _, f := range ss.Files {
+		set[f.Path] = true
+	}
+	return set
 }
 
 // parseLinesRange parses "N-M" from a lines:N-M mode string.

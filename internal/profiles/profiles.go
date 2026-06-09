@@ -38,6 +38,13 @@ type Profile struct {
 		// DefaultMode overrides the mode field when the caller omits it.
 		// Accepted values: "full", "signatures", "map".
 		DefaultMode string `yaml:"default_mode"`
+		// CacheLayout controls how batch file_view reorders files before
+		// emission to maximise Anthropic prompt-cache hits.
+		// "stable_first" (default): session-seen files emitted before fresh
+		// ones so the stable prefix accumulates across turns.
+		// "recency": preserve caller order (local models, no prompt cache).
+		// "off": identical to recency.
+		CacheLayout string `yaml:"cache_layout"`
 	} `yaml:"read"`
 
 	// Compression tunes ctx_shell output density.
