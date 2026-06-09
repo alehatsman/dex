@@ -362,6 +362,24 @@ func (s *Store) migrate(ctx context.Context) error {
 		   posted_at INTEGER NOT NULL
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_messages_topic ON agent_messages(topic, id)`,
+		// share_cache — shared compressed-file-context cache for parallel agents.
+		// Keyed by path (one entry per file). Evicted on hash mismatch (pull).
+		`CREATE TABLE IF NOT EXISTS share_cache (
+		   id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		   path         TEXT NOT NULL,
+		   content_hash TEXT NOT NULL,
+		   content      TEXT NOT NULL,
+		   pushed_by    TEXT NOT NULL DEFAULT '',
+		   pushed_at    INTEGER NOT NULL,
+		   hit_count    INTEGER NOT NULL DEFAULT 0,
+		   UNIQUE(path)
+		 )`,
+		// ctx_packages — registry of installed context packages (.ctxpkg bundles).
+		`CREATE TABLE IF NOT EXISTS ctx_packages (
+		   name       TEXT PRIMARY KEY,
+		   created_at INTEGER NOT NULL,
+		   auto_load  INTEGER NOT NULL DEFAULT 0
+		 )`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {

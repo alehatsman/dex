@@ -333,6 +333,18 @@ func (rc *remoteClient) agent(ctx context.Context, _ *sdk.CallToolRequest, in Ag
 	return nil, out, err
 }
 
+func (rc *remoteClient) share(ctx context.Context, _ *sdk.CallToolRequest, in ShareInput) (*sdk.CallToolResult, ShareOutput, error) {
+	var out ShareOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/share"), in, &out)
+	return nil, out, err
+}
+
+func (rc *remoteClient) ctxPack(ctx context.Context, _ *sdk.CallToolRequest, in PackInput) (*sdk.CallToolResult, PackOutput, error) {
+	var out PackOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/pack"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) nav(ctx context.Context, _ *sdk.CallToolRequest, _ NavInput) (*sdk.CallToolResult, NavOutput, error) {
 	var out NavOutput
 	err := rc.do(ctx, http.MethodGet, rc.base+"/v1/nav", nil, &out)

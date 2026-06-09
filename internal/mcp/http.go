@@ -285,6 +285,8 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/knowledge", s.handleKnowledge(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/session", s.handleSession(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/agent", s.handleAgent(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/share", s.handleShare(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/pack", s.handleCtxPack(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/prefetch", s.handlePrefetch(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/workspace", s.handleWorkspaceSearch(opts.Projects))
 
@@ -641,6 +643,14 @@ func (s *Server) handleSession(projects map[string]string) http.HandlerFunc {
 
 func (s *Server) handleAgent(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *AgentInput, root string) { in.ProjectRoot = root }, s.Agent)
+}
+
+func (s *Server) handleShare(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *ShareInput, root string) { in.ProjectRoot = root }, s.Share)
+}
+
+func (s *Server) handleCtxPack(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *PackInput, root string) { in.ProjectRoot = root }, s.CtxPack)
 }
 
 func (s *Server) handlePrefetch(projects map[string]string) http.HandlerFunc {

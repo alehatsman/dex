@@ -72,6 +72,25 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 	}
 	defer func() { _ = st.Close() }()
 
+	// Auto-load any context packages marked for automatic loading.
+	// KnowledgeAdd is idempotent (UNIQUE body), so this is safe to call on every overview.
+	if pkgs, err := st.PackList(ctx); err == nil {
+		packDir := filepath.Join(p.CacheDir, "packages")
+		for _, pkg := range pkgs {
+			if !pkg.AutoLoad {
+				continue
+			}
+			pkgPath := filepath.Join(packDir, pkg.Name+".ctxpkg")
+			if loaded, loadErr := loadCtxPkg(pkgPath); loadErr == nil {
+				for _, f := range loaded.Layers.Knowledge {
+					if f.Body != "" {
+						_, _ = st.KnowledgeAdd(ctx, f.Archetype, f.Body, f.Confidence)
+					}
+				}
+			}
+		}
+	}
+
 	// Line counts for all indexed code files — also used as the cold-start check.
 	lineCounts, err := st.CodeFilePaths(ctx)
 	if err != nil {

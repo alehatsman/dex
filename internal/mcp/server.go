@@ -413,6 +413,16 @@ func (s *Server) Agent(ctx context.Context, in AgentInput) (AgentOutput, error) 
 	return out, err
 }
 
+func (s *Server) Share(ctx context.Context, in ShareInput) (ShareOutput, error) {
+	_, out, err := s.share(ctx, nil, in)
+	return out, err
+}
+
+func (s *Server) CtxPack(ctx context.Context, in PackInput) (PackOutput, error) {
+	_, out, err := s.ctxPack(ctx, nil, in)
+	return out, err
+}
+
 // ─── tool: search_semantic ────────────────────────────────────────────────
 
 type SearchInput struct {
@@ -2229,6 +2239,8 @@ type toolSurface interface {
 	compose(context.Context, *sdk.CallToolRequest, ComposeInput) (*sdk.CallToolResult, ComposeOutput, error)
 	specVerify(context.Context, *sdk.CallToolRequest, SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error)
 	agent(context.Context, *sdk.CallToolRequest, AgentInput) (*sdk.CallToolResult, AgentOutput, error)
+	share(context.Context, *sdk.CallToolRequest, ShareInput) (*sdk.CallToolResult, ShareOutput, error)
+	ctxPack(context.Context, *sdk.CallToolRequest, PackInput) (*sdk.CallToolResult, PackOutput, error)
 	nav(context.Context, *sdk.CallToolRequest, NavInput) (*sdk.CallToolResult, NavOutput, error)
 	feedback(context.Context, *sdk.CallToolRequest, FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error)
 	prefetch(context.Context, *sdk.CallToolRequest, PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error)
@@ -2499,6 +2511,31 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Typical workflow: announce once at startup, post findings as you discover them, " +
 				"read peers' findings before duplicating work. No embedding required."),
 		}, h.agent)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "ctx_share",
+			Description: td("Shared compressed-file-context cache for parallel agents. " +
+				"When agent A reads and compresses a file, it can push the result here keyed by (path, content_hash). " +
+				"Agent B can pull the cached result instead of re-reading — a cache hit returns instantly for zero cost. " +
+				"The cache is invalidated automatically when the file changes (hash mismatch). " +
+				"Actions: push (path+content_hash+content required; agent_id optional), " +
+				"pull (path+content_hash required; returns content on hit, stale on mismatch), " +
+				"list (all cached entries with hit counts), " +
+				"clear (evict all entries). No embedding required."),
+		}, h.share)
+
+		sdk.AddTool(srv, &sdk.Tool{
+			Name: "ctx_pack",
+			Description: td("Context packages — portable .ctxpkg bundles that snapshot a project's accumulated knowledge " +
+				"for bootstrapping new agent sessions. A package captures knowledge facts, session state, patterns, and gotchas. " +
+				"Actions: create (name required — snapshots current knowledge into a .ctxpkg file), " +
+				"install (name required — merges a package's knowledge into the current project), " +
+				"list (all registered packages with auto_load flag), " +
+				"info (name required — shows layer sizes and SHA-256), " +
+				"export (name required — returns file path for transfer; optional path to copy to a destination), " +
+				"import (path required — loads a .ctxpkg from an external path, verifies SHA-256, merges knowledge), " +
+				"auto_load (name required — marks a package to load automatically on ctx_overview). No embedding required."),
+		}, h.ctxPack)
 
 		sdk.AddTool(srv, &sdk.Tool{
 			Name:        "ctx_nav",

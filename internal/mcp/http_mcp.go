@@ -161,6 +161,16 @@ func (p projectScoped) agent(ctx context.Context, req *sdk.CallToolRequest, in A
 	return p.s.agent(ctx, req, in)
 }
 
+func (p projectScoped) share(ctx context.Context, req *sdk.CallToolRequest, in ShareInput) (*sdk.CallToolResult, ShareOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.share(ctx, req, in)
+}
+
+func (p projectScoped) ctxPack(ctx context.Context, req *sdk.CallToolRequest, in PackInput) (*sdk.CallToolResult, PackOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.ctxPack(ctx, req, in)
+}
+
 // nav is daemon-global (not project-scoped); bound root is ignored.
 func (p projectScoped) nav(ctx context.Context, req *sdk.CallToolRequest, in NavInput) (*sdk.CallToolResult, NavOutput, error) {
 	return p.s.nav(ctx, req, in)
