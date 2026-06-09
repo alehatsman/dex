@@ -26,6 +26,7 @@ import (
 	"github.com/alehatsman/dex/internal/heatmap"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
+	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/rerank"
 	"github.com/alehatsman/dex/internal/slo"
@@ -609,6 +610,10 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	}
 	if k > 30 {
 		k = 30
+	}
+	// Profile max_files caps k when set.
+	if prof := profiles.Active(p.Root); prof.Budget.MaxFiles > 0 && k > prof.Budget.MaxFiles {
+		k = prof.Budget.MaxFiles
 	}
 	// When language or path filters are active, over-fetch so post-filter
 	// trimming still returns k results. candidateK = clamp(k*10, 50, 500).
@@ -1362,7 +1367,15 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
 	if mode == "" {
-		mode = "full"
+		// Apply profile default_mode when no explicit mode was passed.
+		if in.ProjectRoot != "" {
+			if prof := profiles.Active(in.ProjectRoot); prof.Read.DefaultMode != "" {
+				mode = prof.Read.DefaultMode
+			}
+		}
+		if mode == "" {
+			mode = "full"
+		}
 	}
 	isFull := mode == "full"
 
