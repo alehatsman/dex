@@ -70,6 +70,31 @@ that the anchor *imports* can still surface as direct matches — the instrument
 is sensitive to the graph lane but not purely structural. Use it for *relative*
 A/B of structural-retrieval changes (#248), not as an absolute SOTA number.
 
+### What it found (the #248 graph-lane verdict)
+
+Re-running the #248 flat-0.5 vs γ^hop A/B on this instrument (596 queries,
+rerank off) came back **null again** — NDCG/Recall/MRR all within ±0.0007:
+
+| arm        | NDCG@10 | Recall@10 | MRR    |
+|------------|---------|-----------|--------|
+| flat-0.5   | 0.3423  | 0.4188    | 0.4379 |
+| γ^hop 0.4  | 0.3422  | 0.4182    | 0.4379 |
+| γ^hop 0.6  | 0.3425  | 0.4189    | 0.4377 |
+
+But a ranked-list diff shows the instrument **is** sensitive: γ0.6 reorders the
+top-10 on **41/596** queries. The null is not blindness — it's leverage. Of
+those 41, only **7** move a *relevant* file's rank, and every such move is **±1
+rank and they cancel** (e.g. `server_session` 4→3 helps, `server.go` 9→drops-out
+hurts). So the graph lane engages but barely shifts relevant files.
+
+Root cause: dense+BM25 already rank the co-changed files, and the graph lane's
+RRF contribution (k=60, per-neighbor weight ~0.5–0.6) is too small to reorder
+them by more than one slot. **The bottleneck is the graph lane's overall fusion
+weight, not the hop-decay shape (γ).** Tuning γ tunes the decay of a lane that
+barely registers. Making graph proximity measurably improve retrieval would
+require raising the lane's weight so it competes with dense+BM25 — a different
+change than #248's hop-decay tuning, which is parked on this finding.
+
 ## A/B-testing a change
 
 Run the *same* golden set under both arms, changing one variable. Disable
