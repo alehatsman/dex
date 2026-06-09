@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -2483,6 +2484,22 @@ func toolTierFromEnv() toolTier {
 	}
 }
 
+// addTool registers h on srv with a panic recovery guard. A handler panic is
+// converted to a structured tool error instead of crashing the MCP session.
+// (The go-sdk v1.6.1 dispatch loop has no recover() of its own.)
+func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In, Out]) {
+	sdk.AddTool(srv, t, func(ctx context.Context, req *sdk.CallToolRequest, in In) (res *sdk.CallToolResult, out Out, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("mcp handler panic", "tool", req.Params.Name, "panic", r, "stack", string(debug.Stack()))
+				err = fmt.Errorf("internal error: handler panic: %v", r)
+				res = &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: fmt.Sprintf("internal error: %v", r)}}}
+			}
+		}()
+		return h(ctx, req, in)
+	})
+}
+
 // registerTools wires the dex tool surface onto srv, dispatching to h.
 //
 // Tiers (DEX_TOOLS env var, default: standard):
@@ -2497,7 +2514,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 	// Power-only: raw search / graph / analysis lanes. Useful for CLI parity,
 	// A-B debugging, and power users — too noisy for everyday agents.
 	if tier >= TierPower {
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "search_semantic",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Prefer `ask` for general code-understanding questions — it composes this " +
@@ -2513,7 +2530,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"'embedding-service-unreachable' (fall back to grep), or 'ok'."),
 		}, h.search)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "search_symbol",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Prefer `ask` — it detects identifiers in your question and runs this " +
@@ -2522,7 +2539,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists."),
 		}, h.findSymbol)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_neighbors",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Prefer `ask` — it includes neighborhood expansion as part of routing. " +
@@ -2531,7 +2548,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Finds code that is semantically related even without keyword overlap."),
 		}, h.related)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "search_similar",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Find chunks semantically similar to the code at a given file:line location. " +
@@ -2543,7 +2560,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"embedder is down."),
 		}, h.findRelated)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_deps",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return the `imports` edges for a file or package — the package the file belongs to, " +
@@ -2552,7 +2569,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing."),
 		}, h.graphDeps)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_callers",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
@@ -2562,7 +2579,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"disambiguate. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphCallers)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_callees",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
@@ -2570,7 +2587,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphCallees)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_links",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return the markdown documents that the given doc LINKS TO — outgoing `links` " +
@@ -2580,7 +2597,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"hasn't been indexed yet."),
 		}, h.graphLinks)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_backlinks",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return the markdown documents that LINK TO the given doc — incoming `links`/`wikilinks` " +
@@ -2588,7 +2605,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"'what references this spec'. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet."),
 		}, h.graphBacklinks)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_impact",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Transitive blast-radius analysis. Given a symbol, follows `calls` edges " +
@@ -2598,7 +2615,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Same name resolution as graph_callers. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphImpact)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_tags",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Query the markdown tag graph. Pass `tag` (a #tag without the #) to list the documents " +
@@ -2606,7 +2623,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"document carries. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet."),
 		}, h.graphTags)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_routes",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
@@ -2616,7 +2633,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Requires a graph index (`dex index . --graph=only`)."),
 		}, h.routes)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "graph_smells",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("AST-based code quality signals derived from the graph index — no LLM required. " +
@@ -2626,7 +2643,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
 		}, h.smells)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "compress_output",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Compress raw shell command output before using it in your context. " +
@@ -2637,13 +2654,13 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"No project index required — pure text transformation."),
 		}, h.compressOutput)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "status",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
 		}, h.status)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "spec_check",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Verify a spec file against the project's code index. Reads the spec's ## Checklist " +
@@ -2662,7 +2679,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 	// Standard+ tools: orientation and persistent memory. Exposed by default so
 	// agents can accumulate project context without any configuration.
 	if tier >= TierStandard {
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "ctx_overview",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Task-relevant project map. Given a task description, ranks every indexed file by " +
@@ -2673,7 +2690,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"no inlined content. Requires the embedding service."),
 		}, h.overview)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name: "ctx_knowledge",
 			Description: td("Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
 				"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
@@ -2683,7 +2700,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"as knowledge_facts. No embedding required."),
 		}, h.knowledge)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name: "ctx_session",
 			Description: td("Manage per-project session memory across tool calls. " +
 				"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
@@ -2695,7 +2712,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"don't lose context across reconnects. No embedding required."),
 		}, h.session)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name: "ctx_feedback",
 			Description: "Report output-ratio feedback to the adaptive compression policy. " +
 				"Call once per turn after you finish responding: pass your intent (read|search|refactor|generate|test|debug|review), " +
@@ -2706,7 +2723,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Skip when no file_view was called this turn. No embedding required.",
 		}, h.feedback)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name: "ctx_agent",
 			Description: td("Multi-agent coordination bus and per-agent diary. " +
 				"Bus actions (project-scoped): announce (register agent_id + role), post (publish a message with optional topic and body), " +
@@ -2720,7 +2737,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"No embedding required."),
 		}, h.agent)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name: "ctx_share",
 			Description: td("Shared compressed-file-context cache for parallel agents. " +
 				"When agent A reads and compresses a file, it can push the result here keyed by (path, content_hash). " +
@@ -2732,7 +2749,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"clear (evict all entries). No embedding required."),
 		}, h.share)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name: "ctx_pack",
 			Description: td("Context packages — portable .ctxpkg bundles that snapshot a project's accumulated knowledge " +
 				"for bootstrapping new agent sessions. A package captures knowledge facts, session state, patterns, and gotchas. " +
@@ -2745,7 +2762,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"auto_load (name required — marks a package to load automatically on ctx_overview). No embedding required."),
 		}, h.ctxPack)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "ctx_nav",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return the dex tool-routing guide — which tools exist, their tier, and when to call each. " +
@@ -2754,7 +2771,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"No index or embedding required."),
 		}, h.nav)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name: "ctx_shell",
 			Description: td("Execute a shell command and return compressed output. " +
 				"Applies the same compression pipeline as compress_output — collapses build noise, " +
@@ -2765,7 +2782,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Timeout: 60 s."),
 		}, h.shellRun)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "file_tree",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("List indexed files under a directory path. Returns individual files within " +
@@ -2776,7 +2793,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Returns 'no-index' when the project hasn't been indexed yet."),
 		}, h.searchTree)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "search_grep",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Regex search over project files — no embedding required. " +
@@ -2789,7 +2806,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Returns 'no-matches' when nothing matches. Use ask for conceptual queries."),
 		}, h.searchGrep)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "search_context",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Single-call alternative to the search → signatures → lines chain. " +
@@ -2799,7 +2816,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Requires the embedding service. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback."),
 		}, h.compose)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "ctx_prefetch",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Compute the blast-radius of changed files and prefetch the most relevant neighbors. " +
@@ -2813,7 +2830,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Requires a graph index (dex index --graph)."),
 		}, h.prefetch)
 
-		sdk.AddTool(srv, &sdk.Tool{
+		addTool(srv, &sdk.Tool{
 			Name:        "search_workspace",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Search across all projects listed in .dex/workspace.yml. " +
@@ -2828,7 +2845,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}, h.workspaceSearch)
 
 		if chatAvailable {
-			sdk.AddTool(srv, &sdk.Tool{
+			addTool(srv, &sdk.Tool{
 				Name:        "file_view",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Prefer `ask` first — its `suggested_reads` will name the file worth " +
@@ -2847,7 +2864,7 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 		}
 	}
 
-	sdk.AddTool(srv, &sdk.Tool{
+	addTool(srv, &sdk.Tool{
 		Name:        "ask",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: td("PRIMARY ENTRY POINT for code-understanding questions — and, by default, the ONLY dex tool you " +
