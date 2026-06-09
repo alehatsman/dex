@@ -606,30 +606,34 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate: agent_msg_category flag: %w", err)
 		}
 	}
-	var coAccessAdded string
-	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='co_access_edges_added'`).Scan(&coAccessAdded)
-	if coAccessAdded != "1" {
-		if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS co_access_edges (
+	if err := s.migrateCoAccessEdges(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) migrateCoAccessEdges(ctx context.Context) error {
+	var done string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='co_access_edges_added'`).Scan(&done)
+	if done == "1" {
+		return nil
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS co_access_edges (
 			src_path      TEXT NOT NULL,
 			dst_path      TEXT NOT NULL,
 			weight        REAL NOT NULL DEFAULT 1.0,
 			reinforced_at INTEGER NOT NULL,
 			PRIMARY KEY (src_path, dst_path)
-		)`); err != nil {
-			return fmt.Errorf("migrate: co_access_edges: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx,
-			`CREATE INDEX IF NOT EXISTS idx_coaccess_src ON co_access_edges(src_path)`); err != nil {
-			return fmt.Errorf("migrate: idx_coaccess_src: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx,
-			`CREATE INDEX IF NOT EXISTS idx_coaccess_dst ON co_access_edges(dst_path)`); err != nil {
-			return fmt.Errorf("migrate: idx_coaccess_dst: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx,
-			`INSERT INTO meta(key, value) VALUES('co_access_edges_added', '1')
-			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
-			return fmt.Errorf("migrate: co_access_edges flag: %w", err)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_coaccess_src ON co_access_edges(src_path)`,
+		`CREATE INDEX IF NOT EXISTS idx_coaccess_dst ON co_access_edges(dst_path)`,
+		`INSERT INTO meta(key, value) VALUES('co_access_edges_added', '1')
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+	}
+	for _, q := range stmts {
+		if _, err := s.db.ExecContext(ctx, q); err != nil {
+			return fmt.Errorf("migrateCoAccessEdges: %w", err)
 		}
 	}
 	return nil
