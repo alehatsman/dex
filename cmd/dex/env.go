@@ -84,7 +84,7 @@ var allEnvVars = []envVar{
 	{"DEX_RERANK_POOL", "40", "Candidates fed to the reranker. Clamped to [1, 100].", "tuning", false},
 	{"DEX_RERANK_CONCURRENCY", "4", "Parallel rerank goroutines (chat style only).", "tuning", false},
 	{"DEX_SUMMARY_TIMEOUT", "120s", "HTTP timeout per index-time summary call.", "tuning", false},
-	{"DEX_SUMMARY_CONCURRENCY", "4", "Parallel chunk-summary chat calls per file during indexing.", "tuning", false},
+	{"DEX_SUMMARY_CONCURRENCY", "8", "Parallel chunk-summary chat calls per file during indexing.", "tuning", false},
 	{"DEX_CHUNK_SUMMARY_MIN_LINES", "30", "Minimum chunk size (lines) eligible for a per-chunk summary. Raise to cut summary volume.", "tuning", false},
 	{"DEX_DISABLE_RERANK", "", "Set 1 to short-circuit rerank even when URL is set.", "tuning", false},
 	{"DEX_DISABLE_BM25", "", "Set 1 to disable the BM25 leg.", "tuning", false},

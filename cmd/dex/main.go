@@ -1000,7 +1000,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 			opts.DeferSummaries = *summarizeDefer
 			opts.Chat = newSummaryClient()
 			opts.SummaryModels = summaryModelsFromEnv()
-			opts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 4)
+			opts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 			opts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 		}
 		ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, opts)
@@ -2089,7 +2089,7 @@ func cmdIndexSummarize(ctx context.Context, args []string) error {
 		Logger:               cliLogger(),
 		Chat:                 newSummaryClient(),
 		SummaryModels:        summaryModelsFromEnv(),
-		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 4),
+		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 8),
 		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
 		SummaryPace:          envDuration("DEX_SUMMARIZE_PACE", 0),
 	})
@@ -2299,7 +2299,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		ixOpts.DeferSummaries = summarizeDefer
 		ixOpts.Chat = newSummaryClient()
 		ixOpts.SummaryModels = summaryModelsFromEnv()
-		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 4)
+		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 	}
 	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, ixOpts)
@@ -2482,7 +2482,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 		ixOpts.DeferSummaries = true
 		ixOpts.Chat = newSummaryClient()
 		ixOpts.SummaryModels = summaryModelsFromEnv()
-		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 4)
+		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 		ixOpts.YieldWindow = envDuration("DEX_SUMMARIZE_YIELD", 0)
 	}
@@ -2752,7 +2752,7 @@ func autoWatchConfigFromEnv() mcp.AutoWatchConfig {
 		OnIdleAfter:          envDuration("DEX_SUMMARIZE_IDLE", 5*time.Second),
 		BatchSize:            envInt("DEX_SUMMARIZE_BATCH", 10),
 		IndexConcurrency:     envInt("DEX_INDEX_CONCURRENCY", 0),
-		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 4),
+		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 8),
 		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
 		YieldWindow:          envDuration("DEX_SUMMARIZE_YIELD", 0),
 		Logger:               cliLogger(),
