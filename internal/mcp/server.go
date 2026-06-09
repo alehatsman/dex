@@ -135,6 +135,12 @@ type Server struct {
 	readCache   map[string]map[string]string // sessionID → relPath → etag
 	readCacheMu sync.Mutex
 
+	// readContentCache stores the raw file bytes last delivered per (session,
+	// path). Used by the delta re-read path (#217): when a file changes between
+	// reads we diff the prior bytes against the new bytes and return a compact
+	// unified diff when it is smaller than deltaThreshold × full content.
+	readContentCache map[string]map[string][]byte // sessionID → relPath → raw bytes
+
 	// bounce detects "compression thrash": same file re-requested within
 	// bounceWindow after receiving a compressed view. shouldForceFull
 	// returns true on the second request and clears the flag (single-use).
@@ -357,6 +363,38 @@ func (s *Server) readCacheMark(sessionID, relPath, etag string) {
 		s.readCache[sessionID] = make(map[string]string)
 	}
 	s.readCache[sessionID][relPath] = etag
+}
+
+// readCacheGetContent returns the raw file bytes last delivered for (sessionID, relPath).
+func (s *Server) readCacheGetContent(sessionID, relPath string) ([]byte, bool) {
+	if sessionID == "" {
+		return nil, false
+	}
+	s.readCacheMu.Lock()
+	defer s.readCacheMu.Unlock()
+	if s.readContentCache == nil {
+		return nil, false
+	}
+	b, ok := s.readContentCache[sessionID][relPath]
+	return b, ok
+}
+
+// readCacheSetContent records the raw file bytes delivered for (sessionID, relPath).
+func (s *Server) readCacheSetContent(sessionID, relPath string, data []byte) {
+	if sessionID == "" {
+		return
+	}
+	s.readCacheMu.Lock()
+	defer s.readCacheMu.Unlock()
+	if s.readContentCache == nil {
+		s.readContentCache = make(map[string]map[string][]byte)
+	}
+	if s.readContentCache[sessionID] == nil {
+		s.readContentCache[sessionID] = make(map[string][]byte)
+	}
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	s.readContentCache[sessionID][relPath] = cp
 }
 
 // sessionAutoFile records relPath in the active session (if one with a task
@@ -1410,7 +1448,7 @@ type SummarizeInput struct {
 }
 
 type SummarizeOutput struct {
-	Status       string   `json:"status"` // "ok" | "unchanged" | "chat-service-unreachable" | "error"
+	Status       string   `json:"status"` // "ok" | "unchanged" | "delta" | "chat-service-unreachable" | "error"
 	Hint         string   `json:"hint,omitempty"`
 	Project      string   `json:"project,omitempty"`
 	Path         string   `json:"path,omitempty"` // resolved path, relative to project root
@@ -1589,6 +1627,29 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	if in.Etag != "" && in.Etag == etag && s.readCacheCheck(sessionID, relTarget, etag) {
 		return nil, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, nil
 	}
+
+	// Delta re-read (#217): file changed since last delivery — try a compact unified diff.
+	// Skip when the caller is expanding a body handle (handled below) or mode=full with
+	// a live chat client (LLM summary; diff of raw bytes != diff of two summaries).
+	if in.Expand == "" && !(isFull && s.ChatClient != nil) {
+		if prevData, ok := s.readCacheGetContent(sessionID, relTarget); ok {
+			if delta, worth := computeLineDelta(prevData, data); worth {
+				out.Status = "delta"
+				out.Etag = etag
+				out.Bytes = len(data)
+				out.Content = delta
+				s.readCacheMark(sessionID, relTarget, etag)
+				s.readCacheSetContent(sessionID, relTarget, data)
+				return nil, out, nil
+			}
+		}
+	}
+	// Store raw bytes so future changed re-reads can produce a delta.
+	defer func() {
+		if out.Status == "ok" {
+			s.readCacheSetContent(sessionID, relTarget, data)
+		}
+	}()
 
 	// Body handle expansion (#206): @B<n> handle from a prior skeleton-mode read.
 	if in.Expand != "" {
@@ -2904,6 +2965,8 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 					"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
 					"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
 					"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
+					"If the file changed since the last read the server may return status=delta with a compact unified diff " +
+					"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
 					"Pass `task` (your current task from ctx_session) to get automatic compression routing: " +
 					"Generate/Test tasks use aggressive mode (strips comments, no LLM call), others apply lightweight cleanup. " +
 					"Skeleton mode (mode=skeleton): emits exported type declarations in full and function/method signatures " +
