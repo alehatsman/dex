@@ -33,6 +33,10 @@ Flags:
   --max-files N    skip commits touching more than N code files (default: 5)
   --output format  json or md (default: md)
   --check path     compare against a reference report JSON; exit 1 on regression
+  --keep-summaries retain summary chunks in the ranked file list — needed when
+                   A/B-testing an index feature that produces summaries (off by
+                   default: summaries are filtered so the git-history golden set
+                   scores direct code retrieval)
 
 Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
 `
@@ -48,6 +52,7 @@ func runEval(ctx context.Context, args []string) {
 	maxFiles := fs.Int("max-files", 0, "skip commits touching more than N code files")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
+	keepSummaries := fs.Bool("keep-summaries", false, "retain summary chunks in the ranked file list (for A/B-ing index features that produce summaries)")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	var projectPath string
@@ -119,7 +124,7 @@ func runEval(ctx context.Context, args []string) {
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
-	results, err := eval.Run(ctx, em, st, gs, *k)
+	results, err := eval.Run(ctx, em, st, gs, *k, *keepSummaries)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "dex bench eval: run: %v\n", err)
 		os.Exit(1)

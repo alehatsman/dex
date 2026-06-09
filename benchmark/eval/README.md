@@ -5,6 +5,10 @@ against a **golden set** of `(query → relevant files)` pairs mined from this
 repo's own git history, reporting the standard IR metrics **NDCG@10,
 Recall@10, MRR**.
 
+> For the methodology — what this instrument does and does **not** measure
+> (its structural-neighbor blind spot), and how to A/B a change without fooling
+> yourself — see [`docs/retrieval-eval.md`](../../docs/retrieval-eval.md).
+
 ## How the golden set is built
 
 Each non-merge commit that touches between 1 and `--max-files` (default 5)
