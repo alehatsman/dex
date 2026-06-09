@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/locomo"
 )
@@ -52,30 +52,40 @@ func runLocomo(ctx context.Context, args []string) {
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference JSON to check for regression")
 
-	_ = fs.Parse(args)
-	if fs.NArg() < 1 {
+	// Pull out the project path (first non-flag arg) before fs.Parse so that
+	// flags after the path (e.g. "dex bench locomo . --output json") work.
+	var projectPath string
+	var flagArgs []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") || projectPath != "" {
+			flagArgs = append(flagArgs, a)
+		} else {
+			projectPath = a
+		}
+	}
+	if projectPath == "" {
 		fs.Usage()
 		os.Exit(1)
 	}
-	projectPath := fs.Arg(0)
+	_ = fs.Parse(flagArgs)
 
-	// Resolve dataset path — default to the bundled reference alongside the binary.
+	// Resolve dataset path. Search order:
+	// 1. --dataset flag (explicit)
+	// 2. benchmark/locomo/reference.ndjson relative to <project-path> (repo root)
+	// 3. benchmark/locomo/reference.ndjson relative to cwd
 	dsPath := *datasetPath
 	if dsPath == "" {
-		// Walk up from the binary to find benchmark/locomo/reference.ndjson.
-		// In development the binary is in cmd/dex; in install it's in ~/bin.
-		// Try the repo root relative to the source file first (dev), then fall
-		// back to a path alongside the installed binary.
-		_, srcFile, _, _ := runtime.Caller(0)
-		repoRoot := filepath.Join(filepath.Dir(srcFile), "..", "..")
-		candidate := filepath.Join(repoRoot, "benchmark", "locomo", "reference.ndjson")
-		if _, err := os.Stat(candidate); err == nil {
-			dsPath = candidate
-		} else {
-			// Installed: look next to the binary.
-			exe, _ := os.Executable()
-			dsPath = filepath.Join(filepath.Dir(exe), "..", "share", "dex", "locomo", "reference.ndjson")
+		for _, base := range []string{projectPath, "."} {
+			c := filepath.Join(base, "benchmark", "locomo", "reference.ndjson")
+			if _, err := os.Stat(c); err == nil {
+				dsPath = c
+				break
+			}
 		}
+	}
+	if dsPath == "" {
+		fmt.Fprintln(os.Stderr, "dex bench locomo: dataset not found; pass --dataset <path>")
+		os.Exit(1)
 	}
 
 	d, err := locomo.LoadFile(dsPath)

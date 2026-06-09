@@ -1,0 +1,37 @@
+{
+  "k": 5,
+  "overall": {
+    "category": "overall",
+    "n": 24,
+    "recall_at_k": 0.8333333333333334,
+    "mean_token_f1": 0.3373607573689179,
+    "exact_match_rate": 0,
+    "avg_token_savings": 0
+  },
+  "categories": [
+    {
+      "category": "multi_hop",
+      "n": 4,
+      "recall_at_k": 0.25,
+      "mean_token_f1": 0.5870082815734989,
+      "exact_match_rate": 0,
+      "avg_token_savings": 0
+    },
+    {
+      "category": "single_hop",
+      "n": 18,
+      "recall_at_k": 0.9444444444444444,
+      "mean_token_f1": 0.29301478201117004,
+      "exact_match_rate": 0,
+      "avg_token_savings": 0
+    },
+    {
+      "category": "temporal",
+      "n": 2,
+      "recall_at_k": 1,
+      "mean_token_f1": 0.2371794871794872,
+      "exact_match_rate": 0,
+      "avg_token_savings": 0
+    }
+  ]
+}
