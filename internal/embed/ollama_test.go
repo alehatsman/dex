@@ -34,6 +34,10 @@ func newOllamaStubWithLive(t *testing.T, models []string, liveModels map[string]
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(body) //nolint:errcheck
+		case "/v1/models":
+			// Health() probe — return a minimal OpenAI-compatible model list.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": []any{}}) //nolint:errcheck
 		case "/v1/embeddings":
 			if liveModels != nil {
 				var req struct {

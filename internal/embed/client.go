@@ -212,10 +212,26 @@ func (c *Client) embedBatch(ctx context.Context, inputs []string) ([][]float32, 
 	return out, nil
 }
 
-// Health does a cheap reachability check: a single 1-input embed call.
-// Returns nil if the endpoint accepted and answered, ErrUnreachable on
-// transport failure, otherwise the server error.
+// Health does a cheap reachability check via GET /v1/models — a metadata
+// endpoint every OpenAI-compatible backend (ollama, vLLM, TEI) serves
+// instantly without touching the model. Using a live embed call here would
+// send real inference through ollama, which queues behind large pinned models
+// and can take 5+ seconds — long enough to exceed the 3s status-probe timeout
+// and falsely report the endpoint as UNREACHABLE even when it is functional.
+// Whether the configured model is actually loaded surfaces on the first real
+// embed call, consistent with how chat.Client.Health() behaves.
 func (c *Client) Health(ctx context.Context) error {
-	_, err := c.embedBatch(ctx, []string{"ping"})
-	return err
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/models", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnreachable, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("embed: /v1/models returned %d", resp.StatusCode)
+	}
+	return nil
 }

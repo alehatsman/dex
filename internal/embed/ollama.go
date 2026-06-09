@@ -101,11 +101,12 @@ func detectOllamaFrom(ctx context.Context, base string) (OllamaModel, bool) {
 		return OllamaModel{}, false
 	}
 	// Verify each candidate is actually live — a model listed in /api/tags may
-	// not be loadable (removed from disk, corrupt layer, etc.). Return the first
-	// one that passes a real embed probe rather than trusting the tag list alone.
+	// not be loadable (removed from disk, corrupt layer, etc.). Use a real embed
+	// probe here (not Health) because /v1/models is server-level and wouldn't
+	// distinguish a broken model from a working one.
 	for _, name := range scan.EmbedModels {
 		c := New(base, name, 1, 2*time.Second)
-		if c.Health(ctx) == nil {
+		if _, err := c.embedBatch(ctx, []string{"ping"}); err == nil {
 			return OllamaModel{Name: name, URL: base}, true
 		}
 	}
