@@ -2430,6 +2430,8 @@ type toolSurface interface {
 	graphBacklinks(context.Context, *sdk.CallToolRequest, DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error)
 	graphTags(context.Context, *sdk.CallToolRequest, TagInput) (*sdk.CallToolResult, TagOutput, error)
 	graphCycles(context.Context, *sdk.CallToolRequest, CyclesInput) (*sdk.CallToolResult, CyclesOutput, error)
+	graphPath(context.Context, *sdk.CallToolRequest, PathInput) (*sdk.CallToolResult, PathOutput, error)
+	graphDiff(context.Context, *sdk.CallToolRequest, DiffInput) (*sdk.CallToolResult, DiffOutput, error)
 	overview(context.Context, *sdk.CallToolRequest, OverviewInput) (*sdk.CallToolResult, OverviewOutput, error)
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
@@ -2655,6 +2657,27 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"are excluded by default (min_size=2). " +
 				"Requires a graph index with calls edges (`dex index . --graph=only`)."),
 		}, h.graphCycles)
+
+		addTool(srv, &sdk.Tool{
+			Name:        "graph_path",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Find the shortest call/import path between two symbols in the graph. " +
+				"BFS over `calls` and `imports` edges from src to dst. " +
+				"Returns an ordered list of hops (symbol + edge_kind leading into it). " +
+				"Status `no-path` means no route within max_depth (default 8). " +
+				"Requires a graph index (`dex index . --graph=only`)."),
+		}, h.graphPath)
+
+		addTool(srv, &sdk.Tool{
+			Name:        "graph_diff",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Blast-radius analysis for a git diff. " +
+				"Runs `git diff --name-only <ref> HEAD` to find changed files, " +
+				"collects all function/method nodes in those files as seeds, " +
+				"then BFS over `calls` edges to find transitive callers (default depth 2, max 5). " +
+				"Returns the blast-radius node list sorted by depth and PageRank. " +
+				"Requires a graph index (`dex index . --graph=only`)."),
+		}, h.graphDiff)
 
 		addTool(srv, &sdk.Tool{
 			Name:        "compress_output",

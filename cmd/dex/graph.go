@@ -22,7 +22,7 @@ import (
 // the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | path | diff | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -46,6 +46,10 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphTags(ctx, rest)
 	case "cycles":
 		return cmdGraphCycles(ctx, rest)
+	case "path":
+		return cmdGraphPath(ctx, rest)
+	case "diff":
+		return cmdGraphDiff(ctx, rest)
 	case "export":
 		return cmdGraphExport(ctx, rest)
 	case "-h", "--help", "help":
@@ -67,6 +71,10 @@ func cmdGraph(ctx context.Context, args []string) error {
                                                   --k=<n>
   dex graph cycles    [<path>]                call-graph SCCs ≥ size 2 (MCP: graph_cycles)
                                                   --min-size=<n>  --k=<n>
+  dex graph path      [<path>] <src> <dst>    shortest call/import path (MCP: graph_path)
+                                                  --package=<pkg>  --max-depth=<n>
+  dex graph diff      [<path>]                blast-radius of current git diff (MCP: graph_diff)
+                                                  --ref=<ref>  --depth=<n>
   dex graph export    [<path>] [--output=<dir>]
                                                   dump nodes/edges as JSONL
   (path defaults to cwd when omitted)
@@ -76,7 +84,7 @@ note:
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, path, diff, export)", sub)
 	}
 }
 
@@ -668,6 +676,138 @@ func cmdGraphCycles(ctx context.Context, args []string) error {
 			fmt.Printf("  %s  (%s)  %s\n", n.QualifiedName, n.Kind, loc)
 		}
 		fmt.Println()
+	}
+	return nil
+}
+
+func cmdGraphPath(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("graph path", flag.ContinueOnError)
+	setHelp(fs,
+		"Find the shortest call/import path between two symbols (MCP: graph_path).",
+		"dex graph path [flags] [<path>] <src> <dst>")
+	pkg := fs.String("package", "", "package path filter for both src and dst")
+	maxDepth := fs.Int("max-depth", 8, "BFS depth limit (default 8, max 15)")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) != 2 {
+		return fmt.Errorf("graph path needs <src> <dst> (got %d positional arg(s))", len(rest))
+	}
+	src, dst := rest[0], rest[1]
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve(path, base)
+	if err != nil {
+		return err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.GraphPath(ctx, mcp.PathInput{
+		Src:         src,
+		Dst:         dst,
+		Package:     *pkg,
+		MaxDepth:    *maxDepth,
+		ProjectRoot: p.Root,
+	})
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	fmt.Printf("path from %q to %q (%d hops):\n\n", out.Src, out.Dst, len(out.Path))
+	for i, hop := range out.Path {
+		loc := hop.Path
+		if hop.StartLine > 0 {
+			loc = fmt.Sprintf("%s:%d", hop.Path, hop.StartLine)
+		}
+		if i == 0 {
+			fmt.Printf("  [src] %s  (%s)  %s\n", hop.QualifiedName, hop.Kind, loc)
+		} else {
+			fmt.Printf("   ─%s─▶ %s  (%s)  %s\n", hop.EdgeKind, hop.QualifiedName, hop.Kind, loc)
+		}
+	}
+	return nil
+}
+
+func cmdGraphDiff(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("graph diff", flag.ContinueOnError)
+	setHelp(fs,
+		"Blast-radius of the current git diff: changed symbols and their transitive callers (MCP: graph_diff).",
+		"dex graph diff [flags] [<path>]")
+	ref := fs.String("ref", "HEAD~1", "git ref to diff against (default HEAD~1)")
+	depth := fs.Int("depth", 2, "BFS depth for caller traversal (default 2, max 5)")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) != 0 {
+		return fmt.Errorf("graph diff takes no extra positional args (got %v)", rest)
+	}
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve(path, base)
+	if err != nil {
+		return err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.GraphDiff(ctx, mcp.DiffInput{
+		Ref:         *ref,
+		MaxDepth:    *depth,
+		ProjectRoot: p.Root,
+	})
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	fmt.Printf("blast-radius vs %s (%d changed files, depth %d):\n", out.Ref, len(out.ChangedFiles), out.MaxDepth)
+	fmt.Printf("changed: %s\n\n", strings.Join(out.ChangedFiles, ", "))
+	if len(out.Nodes) == 0 {
+		fmt.Println("(no transitive callers found)")
+		return nil
+	}
+	fmt.Printf("%d impacted callers", out.Total)
+	if out.Truncated {
+		fmt.Printf(" (truncated to %d)", len(out.Nodes))
+	}
+	fmt.Println(":")
+	prevDepth := -1
+	for _, n := range out.Nodes {
+		if n.Depth != prevDepth {
+			fmt.Printf("\n  depth %d:\n", n.Depth)
+			prevDepth = n.Depth
+		}
+		loc := n.Path
+		if n.StartLine > 0 {
+			loc = fmt.Sprintf("%s:%d", n.Path, n.StartLine)
+		}
+		fmt.Printf("    %s  (%s)  %s\n", n.QualifiedName, n.Kind, loc)
 	}
 	return nil
 }

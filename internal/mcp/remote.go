@@ -374,3 +374,15 @@ func (rc *remoteClient) graphCycles(ctx context.Context, _ *sdk.CallToolRequest,
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/cycles"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathInput) (*sdk.CallToolResult, PathOutput, error) {
+	var out PathOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/path"), in, &out)
+	return nil, out, err
+}
+
+func (rc *remoteClient) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffInput) (*sdk.CallToolResult, DiffOutput, error) {
+	var out DiffOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/diff"), in, &out)
+	return nil, out, err
+}
