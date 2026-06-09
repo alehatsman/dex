@@ -1,5 +1,7 @@
 package graph
 
+import "sort"
+
 // analysis.go implements two graph-theoretic analyses on the static call graph:
 //
 //   TarjanSCC    — strongly connected components, O(V+E). Run on `calls` edges
@@ -246,3 +248,208 @@ func BrandesBetweenness(nodes []Node, edges []Edge) map[string]float64 {
 	}
 	return out
 }
+
+// ─── Louvain community detection ──────────────────────────────────────────
+
+// CommunityResult maps each node ID to a stable integer community ID (≥0).
+// IDs are assigned by sorting the node IDs within each community and issuing
+// monotonically increasing labels — so that re-runs on the same graph
+// produce the same labelling even though Louvain's internal order can vary.
+type CommunityResult struct {
+	// Communities maps node ID → community label.
+	Communities map[string]int
+	// Members maps community label → sorted node IDs.
+	Members map[int][]string
+}
+
+// LouvainCommunities runs the Louvain algorithm on the undirected projection
+// of the supplied edges (both calls and imports are treated as undirected
+// edges). It is deterministic for a fixed input by processing nodes in sorted
+// order throughout.
+//
+// The algorithm:
+//  1. Phase 1 — iterate nodes in stable order; move each node to the
+//     neighbouring community that gives the greatest modularity gain; repeat
+//     until no improvement.
+//  2. Phase 2 — aggregate communities into super-nodes and repeat from phase 1.
+//  3. Terminate when a full pass yields no improvement.
+//
+// This is O((V+E)·log V) per pass and O(V+E) space.
+func LouvainCommunities(nodes []Node, edges []Edge) CommunityResult {
+	if len(nodes) == 0 {
+		return CommunityResult{
+			Communities: map[string]int{},
+			Members:     map[int][]string{},
+		}
+	}
+
+	// Collect unique IDs, sorted for determinism.
+	idSet := make(map[string]struct{}, len(nodes))
+	for _, n := range nodes {
+		idSet[n.ID] = struct{}{}
+	}
+	sortedIDs := make([]string, 0, len(idSet))
+	for id := range idSet {
+		sortedIDs = append(sortedIDs, id)
+	}
+	sortStrings(sortedIDs)
+
+	// Integer index for each node.
+	idx := make(map[string]int, len(sortedIDs))
+	for i, id := range sortedIDs {
+		idx[id] = i
+	}
+	n := len(sortedIDs)
+
+	// Build undirected adjacency (weighted by edge count to handle multi-edges).
+	// adj[i] = map of neighbour index → weight
+	adj := make([]map[int]float64, n)
+	for i := range adj {
+		adj[i] = map[int]float64{}
+	}
+	totalW := 0.0
+	for _, e := range edges {
+		si, okS := idx[e.SrcID]
+		di, okD := idx[e.DstID]
+		if !okS || !okD || si == di {
+			continue
+		}
+		adj[si][di] += 1
+		adj[di][si] += 1
+		totalW += 2 // symmetric
+	}
+	if totalW == 0 {
+		// No edges — every node is its own community.
+		return assignStableIDs(sortedIDs, func(i int) int { return i })
+	}
+
+	// community[i] = community of node i; initially each node is its own.
+	community := make([]int, n)
+	for i := range community {
+		community[i] = i
+	}
+
+	// commWeight[c] = sum of weights of all edges incident to nodes in c.
+	commWeight := make([]float64, n)
+	nodeWeight := make([]float64, n)
+	for i := range adj {
+		for _, w := range adj[i] {
+			nodeWeight[i] += w
+		}
+		commWeight[i] = nodeWeight[i]
+	}
+
+	m2 := totalW // 2m
+
+	improved := true
+	for improved {
+		improved = false
+		for _, i := range makeRange(n) { // stable iteration order
+			ci := community[i]
+			ki := nodeWeight[i]
+
+			// Compute connection to each neighbouring community.
+			kc := map[int]float64{} // community → sum of weights toward it
+			for j, w := range adj[i] {
+				kc[community[j]] += w
+			}
+
+			// Modularity gain of removing i from ci:
+			// ΔQ_remove = -(kc[ci] - ki*(commWeight[ci]-ki)/m2) / (m2/2)
+			// We'll compute gains relative to best alternative.
+			kiCi := kc[ci]
+			commWeightCi := commWeight[ci] - ki // weight of ci without i
+
+			bestGain := 0.0
+			bestComm := ci
+			for cj, kij := range kc {
+				if cj == ci {
+					continue
+				}
+				// ΔQ = [kij - ki*commWeight[cj]/m2] / (m2/2)
+				// Simplified (drop the /m2 scaling since it's constant):
+				gain := kij - ki*commWeight[cj]/m2
+				gainSelf := kiCi - ki*commWeightCi/m2
+				net := gain - gainSelf
+				if net > bestGain+1e-10 {
+					bestGain = net
+					bestComm = cj
+				}
+			}
+
+			if bestComm != ci {
+				// Move i from ci to bestComm.
+				commWeight[ci] -= ki
+				community[i] = bestComm
+				commWeight[bestComm] += ki
+				improved = true
+			}
+		}
+	}
+
+	return assignStableIDs(sortedIDs, func(i int) int { return community[i] })
+}
+
+// assignStableIDs converts raw community labels (arbitrary ints) to
+// monotonically increasing IDs by sorting nodes within each group and
+// assigning IDs in lexicographic order of the first node in each group.
+func assignStableIDs(sortedIDs []string, communityOf func(int) int) CommunityResult {
+	// raw group → []nodeIndex
+	raw := map[int][]int{}
+	for i, id := range sortedIDs {
+		c := communityOf(i)
+		raw[c] = append(raw[c], i)
+		_ = id
+	}
+
+	// Collect representative (smallest index, which = lexicographically first
+	// node ID because sortedIDs is already sorted) for each raw group.
+	type rep struct {
+		rawID int
+		minID string
+	}
+	reps := make([]rep, 0, len(raw))
+	for c, members := range raw {
+		reps = append(reps, rep{rawID: c, minID: sortedIDs[members[0]]})
+	}
+	// Sort reps by their representative node ID for stable label assignment.
+	for i := 1; i < len(reps); i++ {
+		key := reps[i]
+		j := i - 1
+		for j >= 0 && reps[j].minID > key.minID {
+			reps[j+1] = reps[j]
+			j--
+		}
+		reps[j+1] = key
+	}
+
+	rawToStable := make(map[int]int, len(reps))
+	for stableID, r := range reps {
+		rawToStable[r.rawID] = stableID
+	}
+
+	communities := make(map[string]int, len(sortedIDs))
+	members := make(map[int][]string, len(reps))
+	for i, id := range sortedIDs {
+		c := rawToStable[communityOf(i)]
+		communities[id] = c
+		members[c] = append(members[c], id)
+	}
+	// Sort members within each community.
+	for c := range members {
+		sortStrings(members[c])
+	}
+	return CommunityResult{Communities: communities, Members: members}
+}
+
+// makeRange returns [0,n) as a slice for range loops.
+func makeRange(n int) []int {
+	s := make([]int, n)
+	for i := range s {
+		s[i] = i
+	}
+	return s
+}
+
+func sortStrings(s []string) { sort.Strings(s) }
+

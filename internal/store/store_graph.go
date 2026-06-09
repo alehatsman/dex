@@ -39,6 +39,7 @@ type GraphNodeRow struct {
 	CrossPkgCallers int
 	PageRank        float64
 	Betweenness     float64
+	CommunityID     int
 }
 
 // GraphCentralityRow is the minimal slice of GraphNodeRow needed to
@@ -51,6 +52,7 @@ type GraphCentralityRow struct {
 	CrossPkgCallers int
 	PageRank        float64
 	Betweenness     float64
+	CommunityID     int
 }
 
 // GraphEdgeRow mirrors one graph_edges row. Same rationale as
@@ -205,7 +207,8 @@ func (s *Store) GraphAllNodes(ctx context.Context) ([]GraphNodeRow, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, kind, name, qualified_name, package_path, file_path,
 		        start_line, end_line, COALESCE(chunk_id, 0), metadata_json, content_hash,
-		        in_degree, out_degree, cross_pkg_callers, pagerank, betweenness
+		        in_degree, out_degree, cross_pkg_callers, pagerank, betweenness,
+		        COALESCE(community_id, 0)
 		   FROM graph_nodes
 		  ORDER BY id`)
 	if err != nil {
@@ -218,7 +221,7 @@ func (s *Store) GraphAllNodes(ctx context.Context) ([]GraphNodeRow, error) {
 		var md string
 		if err := rows.Scan(&r.ID, &r.Kind, &r.Name, &r.QualifiedName, &r.PackagePath, &r.FilePath,
 			&r.StartLine, &r.EndLine, &r.ChunkID, &md, &r.ContentHash,
-			&r.InDegree, &r.OutDegree, &r.CrossPkgCallers, &r.PageRank, &r.Betweenness); err != nil {
+			&r.InDegree, &r.OutDegree, &r.CrossPkgCallers, &r.PageRank, &r.Betweenness, &r.CommunityID); err != nil {
 			return nil, err
 		}
 		r.MetadataJSON = []byte(md)
@@ -246,7 +249,8 @@ func (s *Store) GraphSetCentrality(ctx context.Context, rows []GraphCentralityRo
 		        out_degree        = ?,
 		        cross_pkg_callers = ?,
 		        pagerank          = ?,
-		        betweenness       = ?
+		        betweenness       = ?,
+		        community_id      = ?
 		  WHERE id = ?`)
 	if err != nil {
 		_ = tx.Rollback()
@@ -254,7 +258,7 @@ func (s *Store) GraphSetCentrality(ctx context.Context, rows []GraphCentralityRo
 	}
 	defer stmt.Close()
 	for _, r := range rows {
-		if _, err := stmt.ExecContext(ctx, r.InDegree, r.OutDegree, r.CrossPkgCallers, r.PageRank, r.Betweenness, r.ID); err != nil {
+		if _, err := stmt.ExecContext(ctx, r.InDegree, r.OutDegree, r.CrossPkgCallers, r.PageRank, r.Betweenness, r.CommunityID, r.ID); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("set centrality %s: %w", r.ID, err)
 		}
@@ -1076,4 +1080,87 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 		return hits
 	}
 	return fuseWithGraphNeighbors(hits, graphHits, n)
+}
+
+// ─── communities ──────────────────────────────────────────────────────────
+
+// CommunityMember is one symbol inside a community.
+type CommunityMember struct {
+	ID              string
+	Kind            string
+	QualifiedName   string
+	PackagePath     string
+	FilePath        string
+	StartLine       int
+	InDegree        int
+	CrossPkgCallers int
+	PageRank        float64
+}
+
+// Community is one Louvain community.
+type Community struct {
+	ID      int
+	Members []CommunityMember
+}
+
+// GraphCommunities returns all communities with at least minMembers nodes,
+// sorted by descending community size, limited to limit communities.
+// Nodes within each community are sorted by descending PageRank.
+func (s *Store) GraphCommunities(ctx context.Context, minMembers, limit int) ([]Community, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT community_id, id, kind, qualified_name, package_path, file_path,
+		        start_line, in_degree, cross_pkg_callers, pagerank
+		   FROM graph_nodes
+		  WHERE community_id > 0
+		    AND kind IN ('function', 'method', 'type', 'interface')
+		  ORDER BY community_id, pagerank DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byID := map[int]*Community{}
+	order := []int{} // insertion order = first-seen community IDs
+	for rows.Next() {
+		var cid int
+		var m CommunityMember
+		if err := rows.Scan(&cid, &m.ID, &m.Kind, &m.QualifiedName, &m.PackagePath, &m.FilePath,
+			&m.StartLine, &m.InDegree, &m.CrossPkgCallers, &m.PageRank); err != nil {
+			return nil, err
+		}
+		if _, ok := byID[cid]; !ok {
+			byID[cid] = &Community{ID: cid}
+			order = append(order, cid)
+		}
+		byID[cid].Members = append(byID[cid].Members, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Filter by minMembers, sort by descending size.
+	var out []Community
+	for _, cid := range order {
+		c := byID[cid]
+		if len(c.Members) >= minMembers {
+			out = append(out, *c)
+		}
+	}
+	sortCommunitiesBySize(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func sortCommunitiesBySize(cs []Community) {
+	for i := 1; i < len(cs); i++ {
+		key := cs[i]
+		j := i - 1
+		for j >= 0 && len(cs[j].Members) < len(key.Members) {
+			cs[j+1] = cs[j]
+			j--
+		}
+		cs[j+1] = key
+	}
 }

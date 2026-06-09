@@ -381,6 +381,7 @@ func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
 			CrossPkgCallers: r.CrossPkgCallers,
 			PageRank:        r.PageRank,
 			Betweenness:     r.Betweenness,
+			CommunityID:     r.CommunityID,
 		})
 	}
 	if err := g.store.GraphSetCentrality(ctx, centralityRows); err != nil {

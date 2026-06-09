@@ -22,7 +22,7 @@ import (
 // the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | path | diff | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | path | diff | communities | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -50,33 +50,37 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphPath(ctx, rest)
 	case "diff":
 		return cmdGraphDiff(ctx, rest)
+	case "communities":
+		return cmdGraphCommunities(ctx, rest)
 	case "export":
 		return cmdGraphExport(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
-  dex graph neighbors [<path>] <file> <line>  vector neighbours of a chunk (MCP: graph_neighbors)
-  dex graph deps      [<path>] [flags]        imports edges (MCP: graph_deps)
-                                                  --file=<rel>  --package=<full>
-  dex graph packages  [<path>]                whole internal package import DAG
-  dex graph callers   [<path>] <name>         incoming calls edges (MCP: graph_callers)
-                                                  --package=<pkg>  --k=<n>
-  dex graph callees   [<path>] <name>         outgoing calls edges (MCP: graph_callees)
-                                                  --package=<pkg>  --k=<n>
-  dex graph links     [<path>] <doc>          docs this doc links to (MCP: graph_links)
-                                                  --k=<n>
-  dex graph backlinks [<path>] <doc>          docs that link to this doc (MCP: graph_backlinks)
-                                                  --k=<n>
-  dex graph tags      [<path>] [--tag=<t>|--doc=<d>]
-                                                  tag→docs or doc→tags (MCP: graph_tags)
-                                                  --k=<n>
-  dex graph cycles    [<path>]                call-graph SCCs ≥ size 2 (MCP: graph_cycles)
-                                                  --min-size=<n>  --k=<n>
-  dex graph path      [<path>] <src> <dst>    shortest call/import path (MCP: graph_path)
-                                                  --package=<pkg>  --max-depth=<n>
-  dex graph diff      [<path>]                blast-radius of current git diff (MCP: graph_diff)
-                                                  --ref=<ref>  --depth=<n>
-  dex graph export    [<path>] [--output=<dir>]
-                                                  dump nodes/edges as JSONL
+  dex graph neighbors   [<path>] <file> <line>  vector neighbours of a chunk (MCP: graph_neighbors)
+  dex graph deps        [<path>] [flags]        imports edges (MCP: graph_deps)
+                                                    --file=<rel>  --package=<full>
+  dex graph packages    [<path>]                whole internal package import DAG
+  dex graph callers     [<path>] <name>         incoming calls edges (MCP: graph_callers)
+                                                    --package=<pkg>  --k=<n>
+  dex graph callees     [<path>] <name>         outgoing calls edges (MCP: graph_callees)
+                                                    --package=<pkg>  --k=<n>
+  dex graph links       [<path>] <doc>          docs this doc links to (MCP: graph_links)
+                                                    --k=<n>
+  dex graph backlinks   [<path>] <doc>          docs that link to this doc (MCP: graph_backlinks)
+                                                    --k=<n>
+  dex graph tags        [<path>] [--tag=<t>|--doc=<d>]
+                                                    tag→docs or doc→tags (MCP: graph_tags)
+                                                    --k=<n>
+  dex graph cycles      [<path>]                call-graph SCCs ≥ size 2 (MCP: graph_cycles)
+                                                    --min-size=<n>  --k=<n>
+  dex graph path        [<path>] <src> <dst>    shortest call/import path (MCP: graph_path)
+                                                    --package=<pkg>  --max-depth=<n>
+  dex graph diff        [<path>]                blast-radius of current git diff (MCP: graph_diff)
+                                                    --ref=<ref>  --depth=<n>
+  dex graph communities [<path>]                Louvain communities (MCP: graph_communities)
+                                                    --min-members=<n>  --k=<n>  --top-k=<n>
+  dex graph export      [<path>] [--output=<dir>]
+                                                    dump nodes/edges as JSONL
   (path defaults to cwd when omitted)
 
 note:
@@ -84,7 +88,7 @@ note:
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, path, diff, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, path, diff, communities, export)", sub)
 	}
 }
 
@@ -808,6 +812,70 @@ func cmdGraphDiff(ctx context.Context, args []string) error {
 			loc = fmt.Sprintf("%s:%d", n.Path, n.StartLine)
 		}
 		fmt.Printf("    %s  (%s)  %s\n", n.QualifiedName, n.Kind, loc)
+	}
+	return nil
+}
+
+func cmdGraphCommunities(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("graph communities", flag.ContinueOnError)
+	setHelp(fs,
+		"List Louvain communities in the call/import graph (MCP: graph_communities).",
+		"dex graph communities [flags] [<path>]")
+	minMembers := fs.Int("min-members", 3, "min community size (default 3)")
+	k := fs.Int("k", 20, "max communities to return (default 20)")
+	topK := fs.Int("top-k", 10, "max members per community (default 10)")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) != 0 {
+		return fmt.Errorf("graph communities takes no extra positional args (got %v)", rest)
+	}
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve(path, base)
+	if err != nil {
+		return err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.GraphCommunities(ctx, mcp.CommunitiesInput{
+		MinMembers:  *minMembers,
+		K:           *k,
+		TopK:        *topK,
+		ProjectRoot: p.Root,
+	})
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	fmt.Printf("%d communities (total=%d", len(out.Communities), out.Total)
+	if out.Truncated {
+		fmt.Printf(", truncated")
+	}
+	fmt.Println("):")
+	for _, c := range out.Communities {
+		fmt.Printf("\n─── community #%d  (size %d)\n", c.ID, c.Size)
+		for _, m := range c.Members {
+			loc := m.Path
+			if m.StartLine > 0 {
+				loc = fmt.Sprintf("%s:%d", m.Path, m.StartLine)
+			}
+			fmt.Printf("  %s  (%s)  %s\n", m.QualifiedName, m.Kind, loc)
+		}
 	}
 	return nil
 }

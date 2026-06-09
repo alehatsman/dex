@@ -46,6 +46,9 @@ type CentralityResult struct {
 	// High betweenness = bridge node that many shortest call-paths pass through.
 	// Zero for nodes the call graph doesn't touch (types, fields, packages).
 	Betweenness float64
+	// CommunityID is the Louvain community label assigned during indexing.
+	// -1 means the node was not reached by community detection (no edges).
+	CommunityID int
 }
 
 // ComputeCentrality walks the `calls` edges (plus the markdown doc graph)
@@ -215,6 +218,18 @@ func ComputeCentrality(nodes []Node, edges []Edge) map[string]CentralityResult {
 			out[id] = rec
 		}
 	}
+
+	// Louvain community detection on the undirected projection of all edges.
+	// CommunityID 0-indexed; -1 (the zero-value default) = no community assigned.
+	if len(distinctEdge) > 0 {
+		cr := LouvainCommunities(nodes, edges)
+		for id, c := range cr.Communities {
+			rec := out[id]
+			rec.CommunityID = c + 1 // shift to 1-based so 0 keeps its meaning as "unassigned"
+			out[id] = rec
+		}
+	}
+
 	return out
 }
 

@@ -458,6 +458,20 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate: betweenness flag: %w", err)
 		}
 	}
+	var communityColAdded string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='community_id_col_added'`).Scan(&communityColAdded)
+	if communityColAdded != "1" {
+		if _, err := s.db.ExecContext(ctx,
+			`ALTER TABLE graph_nodes ADD COLUMN community_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate: add community_id column: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('community_id_col_added', '1')
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return fmt.Errorf("migrate: community_id flag: %w", err)
+		}
+	}
 	var knowledgeRevColAdded string
 	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='knowledge_rev_col_added'`).Scan(&knowledgeRevColAdded)
 	if knowledgeRevColAdded != "1" {

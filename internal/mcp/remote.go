@@ -386,3 +386,9 @@ func (rc *remoteClient) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, i
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/diff"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, in CommunitiesInput) (*sdk.CallToolResult, CommunitiesOutput, error) {
+	var out CommunitiesOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/communities"), in, &out)
+	return nil, out, err
+}

@@ -206,6 +206,11 @@ func (p projectScoped) graphDiff(ctx context.Context, req *sdk.CallToolRequest, 
 	return p.s.graphDiff(ctx, req, in)
 }
 
+func (p projectScoped) graphCommunities(ctx context.Context, req *sdk.CallToolRequest, in CommunitiesInput) (*sdk.CallToolResult, CommunitiesOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.graphCommunities(ctx, req, in)
+}
+
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at
 // /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
 // SDK permits reusing a server across sessions) and looked up by the {id} path

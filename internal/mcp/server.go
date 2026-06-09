@@ -2432,6 +2432,7 @@ type toolSurface interface {
 	graphCycles(context.Context, *sdk.CallToolRequest, CyclesInput) (*sdk.CallToolResult, CyclesOutput, error)
 	graphPath(context.Context, *sdk.CallToolRequest, PathInput) (*sdk.CallToolResult, PathOutput, error)
 	graphDiff(context.Context, *sdk.CallToolRequest, DiffInput) (*sdk.CallToolResult, DiffOutput, error)
+	graphCommunities(context.Context, *sdk.CallToolRequest, CommunitiesInput) (*sdk.CallToolResult, CommunitiesOutput, error)
 	overview(context.Context, *sdk.CallToolRequest, OverviewInput) (*sdk.CallToolResult, OverviewOutput, error)
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
@@ -2678,6 +2679,18 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Returns the blast-radius node list sorted by depth and PageRank. " +
 				"Requires a graph index (`dex index . --graph=only`)."),
 		}, h.graphDiff)
+
+		addTool(srv, &sdk.Tool{
+			Name:        "graph_communities",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("List Louvain communities in the call/import graph — " +
+				"clusters of tightly-interconnected symbols. " +
+				"Communities are sorted by descending size. " +
+				"Top members per community are sorted by PageRank. " +
+				"Community IDs are stable across re-runs for unchanged subgraphs. " +
+				"Requires a graph index (`dex index . --graph=only`). " +
+				"Useful for understanding module boundaries, finding hidden coupling, and planning refactors."),
+		}, h.graphCommunities)
 
 		addTool(srv, &sdk.Tool{
 			Name:        "compress_output",

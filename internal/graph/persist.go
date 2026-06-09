@@ -41,6 +41,7 @@ type CentralityRow struct {
 	CrossPkgCallers int
 	PageRank        float64
 	Betweenness     float64
+	CommunityID     int
 }
 
 // ChunkLocation is the minimal chunk projection the chunk-linkage pass
@@ -119,6 +120,7 @@ func (a *storeAdapter) GraphSetCentrality(ctx context.Context, rows []Centrality
 			CrossPkgCallers: r.CrossPkgCallers,
 			PageRank:        r.PageRank,
 			Betweenness:     r.Betweenness,
+			CommunityID:     r.CommunityID,
 		})
 	}
 	return a.s.GraphSetCentrality(ctx, storeRows)
