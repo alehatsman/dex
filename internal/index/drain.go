@@ -146,75 +146,53 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	if conc < 1 {
 		conc = 1
 	}
-	results := make([]*drainResult, len(pending))
+	batchSize := ix.Embed.BatchSize()
+	if batchSize <= 0 {
+		batchSize = 32
+	}
+
+	// Producer-consumer pipeline: chat workers send results to resultCh;
+	// the committer goroutine embeds+upserts in mini-batches as results
+	// arrive, overlapping embed with in-flight chat calls.
+	resultCh := make(chan *drainResult, batchSize*2)
+
+	// Stale row IDs collected across all workers; deleted after the
+	// committer finishes so the committer doesn't need to handle them.
 	stale := make([]int64, 0)
 	var staleMu sync.Mutex
-	addStale := func(id int64) {
-		staleMu.Lock()
-		stale = append(stale, id)
-		staleMu.Unlock()
-	}
 
-	eg, egctx := errgroup.WithContext(ctx)
-	eg.SetLimit(conc)
-	for i := range pending {
-		p := pending[i]
-		eg.Go(func() error {
-			res, isStale := ix.drainItem(egctx, ctx, p)
-			if isStale {
-				addStale(p.ID)
-			} else if res != nil {
-				results[i] = res
+	// Shared state written by the committer, read after eg.Wait().
+	var (
+		commitGenerated  int
+		dirtiedDirSet    = make(map[string]struct{})
+		commitMu         sync.Mutex // guards commitGenerated + dirtiedDirSet
+	)
+
+	// Outer errgroup wraps both the producer set and the committer so
+	// any error in either half cancels the other.
+	outerEg, outerCtx := errgroup.WithContext(ctx)
+
+	// --- Committer goroutine ---
+	outerEg.Go(func() error {
+		var batch []*drainResult
+		batchNum := 0
+
+		commitBatch := func() error {
+			if len(batch) == 0 {
+				return nil
 			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return 0, 0, nil, err
-	}
-
-	// Compact successful results, then embed + upsert in batches.
-	successful := make([]*drainResult, 0, len(results))
-	for _, r := range results {
-		if r != nil {
-			successful = append(successful, r)
-		}
-	}
-
-	// Track which directories had file_summary chunks committed so
-	// CascadePackageRepoSummaries can do an incremental (dirty-dir) scan.
-	dirtiedDirSet := make(map[string]struct{})
-
-	if len(successful) > 0 {
-		batchSize := ix.Embed.BatchSize()
-		if batchSize <= 0 {
-			batchSize = 32
-		}
-		totalBatches := (len(successful) + batchSize - 1) / batchSize
-		ix.drainLog.Info("drain: embedding summaries",
-			"chunks", len(successful),
-			"batches", totalBatches,
-			"batch_size", batchSize)
-		for start := 0; start < len(successful); start += batchSize {
-			// Honour cancellation between batches: the watcher's idle hook
-			// can interrupt long drains; without this check we'd still
-			// embed + upsert one full batch wave after ctx.Done.
-			if err := ctx.Err(); err != nil {
-				return generated, 0, nil, err
+			if err := outerCtx.Err(); err != nil {
+				return err
 			}
-			end := start + batchSize
-			if end > len(successful) {
-				end = len(successful)
-			}
-			batch := successful[start:end]
+			batchNum++
+			batchStart := time.Now()
 			texts := make([]string, len(batch))
 			for i, r := range batch {
 				texts[i] = r.chunk.EmbedText()
 			}
-			batchStart := time.Now()
-			vecs, embErr := ix.Embed.Embed(ctx, texts)
+			vecs, embErr := ix.Embed.Embed(outerCtx, texts)
 			if embErr != nil {
-				return generated, 0, nil, fmt.Errorf("embed: %w", embErr)
+				return fmt.Errorf("embed: %w", embErr)
 			}
 			rows := make([]store.PendingChunk, len(batch))
 			for i, r := range batch {
@@ -229,27 +207,77 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 					Vec:        vecs[i],
 				}
 			}
-			if upErr := ix.Store.UpsertMany(ctx, rows, startTime); upErr != nil {
-				return generated, 0, nil, fmt.Errorf("upsert: %w", upErr)
+			if upErr := ix.Store.UpsertMany(outerCtx, rows, startTime); upErr != nil {
+				return fmt.Errorf("upsert: %w", upErr)
 			}
-			// Only delete pending rows after the upsert succeeds.
+			commitMu.Lock()
 			for _, r := range batch {
-				if delErr := ix.Store.DeletePendingSummary(ctx, r.pendingID); delErr != nil {
-					return generated, 0, nil, fmt.Errorf("delete pending: %w", delErr)
-				}
-				// Collect dirtied dirs from committed file_summary chunks.
+				commitGenerated++
 				if r.chunk.Kind == chunk.KindFileSummary {
 					dirtiedDirSet[filepath.Dir(r.chunk.Path)] = struct{}{}
 				}
 			}
-			generated += len(batch)
+			commitMu.Unlock()
+			// Delete pending rows after upsert succeeds. Use the outer
+			// context so a sibling-producer cancel doesn't lose committed rows.
+			for _, r := range batch {
+				if delErr := ix.Store.DeletePendingSummary(ctx, r.pendingID); delErr != nil {
+					return fmt.Errorf("delete pending: %w", delErr)
+				}
+			}
 			ix.drainLog.Info("drain: embed batch",
-				"batch", start/batchSize+1,
-				"batch_total", totalBatches,
+				"batch", batchNum,
 				"chunks", len(batch),
 				logx.DurMS(time.Since(batchStart)))
+			batch = batch[:0]
+			return nil
 		}
+
+		for r := range resultCh {
+			batch = append(batch, r)
+			if len(batch) >= batchSize {
+				if err := commitBatch(); err != nil {
+					return err
+				}
+			}
+		}
+		// Flush remaining items after channel is closed.
+		return commitBatch()
+	})
+
+	// --- Producer goroutines ---
+	producerEg, egctx := errgroup.WithContext(outerCtx)
+	producerEg.SetLimit(conc)
+	for i := range pending {
+		p := pending[i]
+		producerEg.Go(func() error {
+			res, isStale := ix.drainItem(egctx, ctx, p)
+			if isStale {
+				staleMu.Lock()
+				stale = append(stale, p.ID)
+				staleMu.Unlock()
+			} else if res != nil {
+				select {
+				case resultCh <- res:
+				case <-egctx.Done():
+				}
+			}
+			return nil
+		})
 	}
+
+	// Wait for all producers, then close the channel to signal the committer.
+	outerEg.Go(func() error {
+		err := producerEg.Wait()
+		close(resultCh)
+		return err
+	})
+
+	if err := outerEg.Wait(); err != nil {
+		return 0, 0, nil, err
+	}
+
+	generated = commitGenerated
 
 	// Drop stale rows (source content changed since enqueue). The next
 	// index --summarize-defer run will re-enqueue with the new SHA.
