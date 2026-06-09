@@ -914,6 +914,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 	summarize := fs.Bool("summarize", false, "generate per-file and per-chunk summaries via the chat endpoint (auto-enabled when DEX_SUMMARY_URL is set)")
 	summarizeDefer := fs.Bool("summarize-defer", true, "queue summaries into pending_summaries instead of generating them inline; `dex index summarize` (or watch idle) drains the queue later. Implies --summarize. Chat endpoint not required at index time. Pass --summarize-defer=false to disable.")
 	graphMode := fs.String("graph", "on", "graph phase: on|off|only ('on' runs both phases, 'off' skips graph, 'only' skips chunk/embed and just refreshes the graph)")
+	noGit := fs.Bool("no-git", false, "skip git commit indexing (Phase 3)")
 	format := fs.String("format", "text", "output format: text|json")
 	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
 	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
@@ -1031,6 +1032,21 @@ func cmdIndex(ctx context.Context, args []string) error {
 		// piping --format=json keep parsing.
 		return reportGraphStats(p.Root, gstats, *format)
 	}
+
+	// Phase 3: git commit indexing (incremental; skipped with --no-git or
+	// DEX_NO_GIT_INDEX=1; warn-and-continue on failure like Phase 2).
+	if !*noGit && os.Getenv("DEX_NO_GIT_INDEX") != "1" {
+		_ = lk.SetPhase("git")
+		gi := &index.GitIndexer{
+			Root:  p.Root,
+			St:    st,
+			Embed: newEmbedClient(st.EmbedModel()),
+		}
+		if gerr := gi.Run(ctx); gerr != nil {
+			fmt.Fprintf(os.Stderr, "⚠ git index phase failed: %v (file index is still usable)\n", gerr)
+		}
+	}
+
 	stats, err := st.Stats(ctx)
 	if err != nil {
 		return err

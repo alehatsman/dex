@@ -55,6 +55,7 @@ const (
 	KindChunkSummary   = "chunk_summary"
 	KindPackageSummary = "package_summary"
 	KindRepoSummary    = "repo_summary"
+	KindGitCommit      = "git_commit"
 )
 
 // IsSummaryKind reports whether kind is one of the chat-synthesized

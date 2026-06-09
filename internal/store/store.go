@@ -45,6 +45,7 @@ const (
 	metaProjectRoot      = "project_root"
 	metaLastSummarizedAt = "last_summarized_at"
 	metaEmbedModel       = "embed_model"
+	metaGitLastIndexed   = "git_last_indexed_commit"
 )
 
 // ErrEmbedModelMismatch is returned by EnsureEmbedModel when the active
@@ -765,6 +766,29 @@ func (s *Store) SetProjectRoot(ctx context.Context, root string) error {
 func (s *Store) ProjectRoot(ctx context.Context) (string, error) {
 	var v string
 	row := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='`+metaProjectRoot+`'`)
+	if err := row.Scan(&v); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return v, nil
+}
+
+// SetGitLastIndexed records the full commit hash that was the HEAD when
+// the most recent git-commit index pass completed.
+func (s *Store) SetGitLastIndexed(ctx context.Context, hash string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key,value) VALUES('`+metaGitLastIndexed+`', ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, hash)
+	return err
+}
+
+// GitLastIndexed returns the commit hash stored by SetGitLastIndexed, or
+// "" if git indexing has not run before.
+func (s *Store) GitLastIndexed(ctx context.Context) (string, error) {
+	var v string
+	row := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='`+metaGitLastIndexed+`'`)
 	if err := row.Scan(&v); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
