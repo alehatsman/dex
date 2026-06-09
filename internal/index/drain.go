@@ -98,11 +98,14 @@ func (ix *Indexer) drainItem(ctx, bumpCtx context.Context, p store.PendingSummar
 // pending_summaries (file_summary + chunk_summary kinds). Pass 0 for
 // "no limit" — drain everything currently queued.
 //
-// Returns (generated, remaining, err):
+// Returns (generated, remaining, dirtiedDirs, err):
 //   - generated: summaries upserted this call (excludes stale-drops
 //     and cache hits).
 //   - remaining: queue depth observed AFTER this batch. Caller can
 //     loop while remaining > 0 to bound per-call latency.
+//   - dirtiedDirs: directories whose file_summary chunks were committed
+//     in this batch. Pass to CascadePackageRepoSummaries for an
+//     incremental cascade (only re-summarizes affected packages).
 //
 // Does NOT cascade. Callers that want package_summary / repo_summary
 // refreshed must invoke CascadePackageRepoSummaries separately —
@@ -112,13 +115,13 @@ func (ix *Indexer) drainItem(ctx, bumpCtx context.Context, p store.PendingSummar
 // rows already upserted + deleted from the queue stay committed even
 // if ctx ends mid-batch. This makes the batch a safe unit of work for
 // a watcher's idle hook to schedule and preempt.
-func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (generated, remaining int, err error) {
+func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (generated, remaining int, dirtiedDirs []string, err error) {
 	if ix.Options.Chat == nil {
-		return 0, 0, fmt.Errorf("DrainPendingSummariesBatch: chat client not configured")
+		return 0, 0, nil, fmt.Errorf("DrainPendingSummariesBatch: chat client not configured")
 	}
 	// Same embed-model gate as Run: the drainer also embeds and upserts.
 	if err := ix.Store.EnsureEmbedModel(ctx, ix.Embed.ModelName()); err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	startTime := time.Now()
 
@@ -132,10 +135,10 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	}
 	pending, err := ix.Store.ListPendingSummaries(ctx, limit)
 	if err != nil {
-		return 0, 0, fmt.Errorf("list pending: %w", err)
+		return 0, 0, nil, fmt.Errorf("list pending: %w", err)
 	}
 	if len(pending) == 0 {
-		return 0, 0, nil
+		return 0, 0, nil, nil
 	}
 	ix.drainLog.Info("drain: batch starting", "pending", len(pending), "limit", limit)
 
@@ -167,7 +170,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 
 	// Compact successful results, then embed + upsert in batches.
@@ -177,6 +180,10 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			successful = append(successful, r)
 		}
 	}
+
+	// Track which directories had file_summary chunks committed so
+	// CascadePackageRepoSummaries can do an incremental (dirty-dir) scan.
+	dirtiedDirSet := make(map[string]struct{})
 
 	if len(successful) > 0 {
 		batchSize := ix.Embed.BatchSize()
@@ -193,7 +200,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			// can interrupt long drains; without this check we'd still
 			// embed + upsert one full batch wave after ctx.Done.
 			if err := ctx.Err(); err != nil {
-				return generated, 0, err
+				return generated, 0, nil, err
 			}
 			end := start + batchSize
 			if end > len(successful) {
@@ -207,7 +214,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			batchStart := time.Now()
 			vecs, embErr := ix.Embed.Embed(ctx, texts)
 			if embErr != nil {
-				return generated, 0, fmt.Errorf("embed: %w", embErr)
+				return generated, 0, nil, fmt.Errorf("embed: %w", embErr)
 			}
 			rows := make([]store.PendingChunk, len(batch))
 			for i, r := range batch {
@@ -223,12 +230,16 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 				}
 			}
 			if upErr := ix.Store.UpsertMany(ctx, rows, startTime); upErr != nil {
-				return generated, 0, fmt.Errorf("upsert: %w", upErr)
+				return generated, 0, nil, fmt.Errorf("upsert: %w", upErr)
 			}
 			// Only delete pending rows after the upsert succeeds.
 			for _, r := range batch {
 				if delErr := ix.Store.DeletePendingSummary(ctx, r.pendingID); delErr != nil {
-					return generated, 0, fmt.Errorf("delete pending: %w", delErr)
+					return generated, 0, nil, fmt.Errorf("delete pending: %w", delErr)
+				}
+				// Collect dirtied dirs from committed file_summary chunks.
+				if r.chunk.Kind == chunk.KindFileSummary {
+					dirtiedDirSet[filepath.Dir(r.chunk.Path)] = struct{}{}
 				}
 			}
 			generated += len(batch)
@@ -244,7 +255,7 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	// index --summarize-defer run will re-enqueue with the new SHA.
 	for _, id := range stale {
 		if err := ix.Store.DeletePendingSummary(ctx, id); err != nil {
-			return generated, 0, fmt.Errorf("delete stale pending: %w", err)
+			return generated, 0, nil, fmt.Errorf("delete stale pending: %w", err)
 		}
 	}
 	if len(stale) > 0 {
@@ -256,34 +267,48 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 		// Surface the error rather than reporting remaining=0: a false
 		// "queue empty" would make DrainPendingSummaries break its loop
 		// and IdleSummaryDrainer run the cascade as if the queue drained.
-		return generated, 0, fmt.Errorf("count pending after drain: %w", err)
+		return generated, 0, nil, fmt.Errorf("count pending after drain: %w", err)
 	}
 	if generated > 0 {
 		_ = ix.Store.SetLastSummarizedAt(ctx, time.Now())
 	}
+
+	// Deduplicate dirtiedDirs from set.
+	if len(dirtiedDirSet) > 0 {
+		dirtiedDirs = make([]string, 0, len(dirtiedDirSet))
+		for d := range dirtiedDirSet {
+			dirtiedDirs = append(dirtiedDirs, d)
+		}
+	}
+
 	ix.drainLog.Info("drain: batch done",
 		"generated", generated,
 		"stale_dropped", len(stale),
 		"remaining", remaining,
 		logx.DurMS(time.Since(startTime)))
-	return generated, remaining, nil
+	return generated, remaining, dirtiedDirs, nil
 }
 
 // CascadePackageRepoSummaries regenerates any missing package_summary
 // and repo_summary chunks from the current file_summary state of the
 // chunks table. No-op when no file_summary chunks exist yet.
 //
+// dirtyDirs is an optional hint from DrainPendingSummariesBatch: when
+// non-nil, only the packages in those directories are re-evaluated
+// (incremental cascade). Pass nil for a full scan — used by
+// DrainPendingSummaries and external callers that don't have a hint.
+//
 // Exposed so external callers (e.g. the watcher's idle hook) can run
 // the cascade independently of the per-batch drainer — typically once
 // DrainPendingSummariesBatch reports remaining == 0.
-func (ix *Indexer) CascadePackageRepoSummaries(ctx context.Context) (int, error) {
+func (ix *Indexer) CascadePackageRepoSummaries(ctx context.Context, dirtyDirs []string) (int, error) {
 	if ix.Options.Chat == nil {
 		return 0, fmt.Errorf("CascadePackageRepoSummaries: chat client not configured")
 	}
 	if err := ix.Store.EnsureEmbedModel(ctx, ix.Embed.ModelName()); err != nil {
 		return 0, err
 	}
-	gen, err := ix.cascadePackageAndRepo(ctx, time.Now())
+	gen, err := ix.cascadePackageAndRepo(ctx, time.Now(), dirtyDirs)
 	if err == nil && gen > 0 {
 		_ = ix.Store.SetLastSummarizedAt(ctx, time.Now())
 	}
@@ -362,7 +387,7 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 			}
 			return false, nil
 		}
-		gen, after, err := ix.DrainPendingSummariesBatch(ctx, batchSize)
+		gen, after, dirs, err := ix.DrainPendingSummariesBatch(ctx, batchSize)
 		if err != nil {
 			return true, err
 		}
@@ -370,7 +395,7 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 			consecutiveNoProgress = 0
 			nextAttempt = time.Time{}
 			currentBackoff = 0
-			cascadeGen, err := ix.CascadePackageRepoSummaries(ctx)
+			cascadeGen, err := ix.CascadePackageRepoSummaries(ctx, dirs)
 			if err != nil {
 				return true, err
 			}
@@ -430,7 +455,7 @@ func (ix *Indexer) DrainPendingSummaries(ctx context.Context) (int, error) {
 	}
 	total := 0
 	for {
-		gen, remaining, err := ix.DrainPendingSummariesBatch(ctx, ix.batchForPace())
+		gen, remaining, _, err := ix.DrainPendingSummariesBatch(ctx, ix.batchForPace())
 		if err != nil {
 			return total, err
 		}
@@ -450,7 +475,7 @@ func (ix *Indexer) DrainPendingSummaries(ctx context.Context) (int, error) {
 		}
 	}
 	ix.drainLog.Info("drain: cascading package + repo summaries")
-	cascadeGen, err := ix.CascadePackageRepoSummaries(ctx)
+	cascadeGen, err := ix.CascadePackageRepoSummaries(ctx, nil) // nil = full scan
 	if err != nil {
 		return total, err
 	}
@@ -557,10 +582,6 @@ type drainResult struct {
 	sha       string
 }
 
-// cascadePackageAndRepo regenerates any missing package_summary and
-// repo_summary chunks based on the current file_summary / package_summary
-// state of the chunks table. Mirrors Run()'s Pass 5 and Pass 6, but
-// reads its inputs from the store instead of from in-flight pkgFiles.
 // pkgJob is one directory whose package_summary needs (re)generation.
 // Hoisted from cascadePackageAndRepo so the planner and executor can
 // pass them around as proper values.
@@ -570,7 +591,15 @@ type pkgJob struct {
 	pkgSHA    string
 }
 
-func (ix *Indexer) cascadePackageAndRepo(ctx context.Context, startTime time.Time) (int, error) {
+// cascadePackageAndRepo regenerates any missing package_summary and
+// repo_summary chunks based on the current file_summary / package_summary
+// state of the chunks table. Mirrors Run()'s Pass 5 and Pass 6, but
+// reads its inputs from the store instead of from in-flight pkgFiles.
+//
+// dirtyDirs is an optional filter: when non-nil, only those directories
+// are considered for package-summary regeneration (incremental cascade).
+// When nil, all directories are scanned (full cascade).
+func (ix *Indexer) cascadePackageAndRepo(ctx context.Context, startTime time.Time, dirtyDirs []string) (int, error) {
 	if ctx.Err() != nil {
 		return 0, ctx.Err()
 	}
@@ -582,6 +611,26 @@ func (ix *Indexer) cascadePackageAndRepo(ctx context.Context, startTime time.Tim
 		return 0, nil
 	}
 	dirs, pkgFiles := groupSummariesByDir(allSHAs)
+
+	// When a dirty-dirs hint is available, restrict pkgFiles to only
+	// those directories. This turns an O(all_packages) cascade into an
+	// O(changed_packages) cascade on every idle-drain tick.
+	if dirtyDirs != nil {
+		filtered := make(map[string][]pkgFileEntry, len(dirtyDirs))
+		for _, d := range dirtyDirs {
+			if entries, ok := pkgFiles[d]; ok {
+				filtered[d] = entries
+			}
+		}
+		pkgFiles = filtered
+		// Rebuild dirs list for the filtered set (keep "." for repo summary).
+		dirs = make([]string, 0, len(pkgFiles)+1)
+		for d := range pkgFiles {
+			dirs = append(dirs, d)
+		}
+		dirs = append(dirs, ".")
+	}
+
 	existingBatch, err := ix.Store.ExistingSHAsBatch(ctx, dirs)
 	if err != nil {
 		return 0, fmt.Errorf("existing SHAs: %w", err)

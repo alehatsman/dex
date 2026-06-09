@@ -34,7 +34,7 @@ func TestDrainDurabilityWindow(t *testing.T) {
 		}
 	}
 
-	generated, remaining, err := ix.DrainPendingSummariesBatch(ctx, 0)
+	generated, remaining, _, err := ix.DrainPendingSummariesBatch(ctx, 0)
 	if err != nil {
 		t.Fatalf("DrainPendingSummariesBatch: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestDrainDurabilityWindowExplicitMax(t *testing.T) {
 		}
 	}
 
-	_, remaining, err := ix.DrainPendingSummariesBatch(ctx, 10)
+	_, remaining, _, err := ix.DrainPendingSummariesBatch(ctx, 10)
 	if err != nil {
 		t.Fatalf("DrainPendingSummariesBatch: %v", err)
 	}

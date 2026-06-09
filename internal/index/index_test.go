@@ -850,7 +850,7 @@ func TestDrainPendingSummariesBatchRespectsMax(t *testing.T) {
 	}
 
 	// First batch: max=3 → processes 3 rows, leaves the rest.
-	gen1, remaining1, err := ix.DrainPendingSummariesBatch(ctx, 3)
+	gen1, remaining1, _, err := ix.DrainPendingSummariesBatch(ctx, 3)
 	if err != nil {
 		t.Fatalf("Batch(3): %v", err)
 	}
@@ -872,7 +872,7 @@ func TestDrainPendingSummariesBatchRespectsMax(t *testing.T) {
 	}
 
 	// Second batch: max=0 (no limit) → drains the rest.
-	gen2, remaining2, err := ix.DrainPendingSummariesBatch(ctx, 0)
+	gen2, remaining2, _, err := ix.DrainPendingSummariesBatch(ctx, 0)
 	if err != nil {
 		t.Fatalf("Batch(0): %v", err)
 	}
@@ -885,7 +885,7 @@ func TestDrainPendingSummariesBatchRespectsMax(t *testing.T) {
 
 	// Third batch on an empty queue: no-op.
 	atomic.StoreInt32(&chatCalls, 0)
-	gen3, remaining3, err := ix.DrainPendingSummariesBatch(ctx, 0)
+	gen3, remaining3, _, err := ix.DrainPendingSummariesBatch(ctx, 0)
 	if err != nil {
 		t.Fatalf("Batch(empty): %v", err)
 	}
@@ -897,7 +897,7 @@ func TestDrainPendingSummariesBatchRespectsMax(t *testing.T) {
 	}
 
 	// Now cascade — package and repo summaries should appear.
-	cascadeGen, err := ix.CascadePackageRepoSummaries(ctx)
+	cascadeGen, err := ix.CascadePackageRepoSummaries(ctx, nil)
 	if err != nil {
 		t.Fatalf("CascadePackageRepoSummaries: %v", err)
 	}
@@ -941,7 +941,7 @@ func TestCascadePackageRepoSummariesEmpty(t *testing.T) {
 	cc := chat.New(chatSrv.URL, "fake", 10*time.Second)
 
 	ix := New(p, st, em, ig, Options{Chat: cc})
-	gen, err := ix.CascadePackageRepoSummaries(ctx)
+	gen, err := ix.CascadePackageRepoSummaries(ctx, nil)
 	if err != nil {
 		t.Fatalf("CascadePackageRepoSummaries: %v", err)
 	}
