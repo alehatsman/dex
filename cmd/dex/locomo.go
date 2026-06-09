@@ -37,6 +37,8 @@ func runBench(ctx context.Context, args []string) {
 	switch sub {
 	case "locomo":
 		runLocomo(ctx, rest)
+	case "eval":
+		runEval(ctx, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "dex bench: unknown subcommand %q\n", sub)
 		os.Exit(1)

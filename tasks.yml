@@ -149,6 +149,19 @@ tasks:
     steps:
       - shell: gofmt -w .
 
+  # Kept local: offline code-retrieval eval (NDCG@10/Recall@10/MRR over a
+  # git-derived golden set). Scores the live Search path against
+  # benchmark/eval/golden.json and fails on a >0.02 drop vs the committed
+  # baseline. Requires a built dex on PATH, a live embed endpoint
+  # (DEX_EMBED_URL / ollama) and an index for this repo (`dex index .`) —
+  # so it is a local/main_pc gate, not a container-CI step. Refresh the
+  # golden set with `dex bench eval . --gen` and the baseline with
+  # `dex bench eval . --output json > benchmark/eval/baseline.json`.
+  eval:
+    desc: Offline code-retrieval eval (NDCG@10/Recall@10/MRR) vs the git-derived golden set
+    steps:
+      - shell: dex bench eval . --k 10 --check benchmark/eval/baseline.json
+
   vet: goq/vet
 
   # ── Lint + security + vulnerability scans ───────────────────────────────
