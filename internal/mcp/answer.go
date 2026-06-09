@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -147,8 +148,13 @@ func buildAnswerEvidence(out *ContextOutput) string {
 		return budget > 0
 	}
 
+	reads := out.SuggestedReads
+	if os.Getenv("DEX_ATTENTION_LAYOUT") == "1" {
+		reads = sortSuggestedReadsByAttention(reads)
+	}
+
 	// Curated reads carry the richest signal (inlined source slices).
-	for _, r := range out.SuggestedReads {
+	for _, r := range reads {
 		if strings.TrimSpace(r.Content) == "" {
 			continue
 		}
