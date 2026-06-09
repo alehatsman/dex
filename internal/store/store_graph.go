@@ -838,10 +838,18 @@ func (s *Store) HitsForFiles(ctx context.Context, paths []string, k int) ([]Hit,
 	return out, nil
 }
 
+// defaultGraphGamma is the per-hop decay for the graph-proximity lane when
+// Options.GraphGamma is unset. γ=0.6 makes a 1-hop neighbor (0.60) outweigh
+// the old flat 0.5× lane while a 3-hop neighbor (0.22) is strongly damped —
+// tuned on the retrieval eval harness (#248).
+const defaultGraphGamma = float32(0.6)
+
 // fuseWithGraphNeighbors merges primary hits with graph-proximity hits via
-// Reciprocal Rank Fusion (k=60). The graph lane is weighted at 0.5× so
-// structural neighbors boost without drowning out direct semantic matches.
-func fuseWithGraphNeighbors(primary, graphHits []Hit, n int) []Hit {
+// Reciprocal Rank Fusion (k=60). Each graph hit is weighted by γ^hop (via
+// weightByPath, keyed on file path) so 1-hop structural neighbors boost more
+// than distant ones without drowning out direct semantic matches. Paths
+// missing from weightByPath fall back to fallbackWeight.
+func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]float32, fallbackWeight float32, n int) []Hit {
 	const kRRF = 60
 	type hitKey struct {
 		path string
@@ -857,7 +865,11 @@ func fuseWithGraphNeighbors(primary, graphHits []Hit, n int) []Hit {
 	}
 	for i, h := range graphHits {
 		hk := hitKey{h.Path, h.StartLine}
-		scores[hk] += 0.5 / float32(kRRF+i+1)
+		w := fallbackWeight
+		if gw, ok := weightByPath[h.Path]; ok {
+			w = gw
+		}
+		scores[hk] += w / float32(kRRF+i+1)
 		if _, exists := byKey[hk]; !exists {
 			byKey[hk] = h
 		}
@@ -950,29 +962,69 @@ func (s *Store) fileEdgesBidirectional(ctx context.Context, files []string) ([]f
 	return out, rows.Err()
 }
 
-// SpreadActivation runs spreading activation over the file-level call graph.
+// ActivatedFile is one non-seed file surfaced by spreading activation, with
+// its accumulated energy and the hop distance at which it was first reached
+// (1-hop = direct neighbor of a seed). Hop drives the γ^hop fusion weight.
+type ActivatedFile struct {
+	Path   string
+	Energy float32
+	Hop    int
+}
+
+// defaultGraphHopCap bounds spreading-activation traversal depth.
+const defaultGraphHopCap = 4
+
+// hopCap returns the configured spreading-activation depth, defaulting to
+// defaultGraphHopCap when unset.
+func (s *Store) hopCap() int {
+	if s.opts.GraphHopCap > 0 {
+		return s.opts.GraphHopCap
+	}
+	return defaultGraphHopCap
+}
+
+// SpreadActivation runs spreading activation over the file-level call graph
+// and returns the top-n non-seed file paths by accumulated activation. It is
+// a thin wrapper over spreadActivation for callers that only need the paths.
+func (s *Store) SpreadActivation(ctx context.Context, seeds []SeedFile, n int) ([]string, error) {
+	activated, err := s.spreadActivation(ctx, seeds, n)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(activated))
+	for i, a := range activated {
+		out[i] = a.Path
+	}
+	return out, nil
+}
+
+// spreadActivation runs spreading activation over the file-level call graph.
 // Seeds carry initial activation weights (typically proportional to RRF scores).
 // Energy spreads bidirectionally along graph_edges with fan-out normalization
 // (each unit of energy distributes equally across all connected files) and
-// per-hop decay (0.7). Pulses below threshold (1e-4) are pruned. After maxHops
-// iterations the top-n non-seed files by accumulated activation are returned.
-func (s *Store) SpreadActivation(ctx context.Context, seeds []SeedFile, n int) ([]string, error) {
+// per-hop decay (0.7). Pulses below threshold (1e-4) are pruned. Traversal
+// stops after hopCap() iterations. Each file records the hop at which it was
+// first reached. The top-n non-seed files by accumulated activation are
+// returned, carrying that hop distance for γ^hop fusion weighting.
+func (s *Store) spreadActivation(ctx context.Context, seeds []SeedFile, n int) ([]ActivatedFile, error) {
 	const (
 		decay     = float32(0.7)
 		threshold = float32(1e-4)
-		maxHops   = 4
 	)
+	maxHops := s.hopCap()
 	if len(seeds) == 0 || n <= 0 {
 		return nil, nil
 	}
 	seedSet := make(map[string]struct{}, len(seeds))
 	activation := make(map[string]float32, len(seeds)*8)
+	hopOf := make(map[string]int, len(seeds)*8)
 	for _, sf := range seeds {
 		seedSet[sf.Path] = struct{}{}
 		activation[sf.Path] = sf.Weight
+		hopOf[sf.Path] = 0
 	}
 
-	for range maxHops {
+	for hop := 1; hop <= maxHops; hop++ {
 		var active []string
 		for path, energy := range activation {
 			if energy > threshold {
@@ -1000,41 +1052,39 @@ func (s *Store) SpreadActivation(ctx context.Context, seeds []SeedFile, n int) (
 				continue
 			}
 			activation[e.dstFile] += energy * decay / float32(e.outDeg)
+			// Record the first (shortest) hop at which this file lit up.
+			if _, seen := hopOf[e.dstFile]; !seen {
+				hopOf[e.dstFile] = hop
+			}
 		}
 	}
 
-	type result struct {
-		path   string
-		energy float32
-	}
-	var results []result
+	var results []ActivatedFile
 	for path, energy := range activation {
 		if _, isSeed := seedSet[path]; isSeed {
 			continue
 		}
 		if energy > threshold {
-			results = append(results, result{path, energy})
+			results = append(results, ActivatedFile{Path: path, Energy: energy, Hop: hopOf[path]})
 		}
 	}
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].energy > results[j].energy
+		return results[i].Energy > results[j].Energy
 	})
 	if len(results) > n {
 		results = results[:n]
 	}
-	out := make([]string, len(results))
-	for i, r := range results {
-		out[i] = r.path
-	}
-	return out, nil
+	return results, nil
 }
 
 // FuseSpreadingActivation expands the hit set using spreading activation seeded
 // from both the session-recent files and the top semantic hits. Energy spreads
 // along bidirectional graph edges with fan-out normalization and per-hop decay,
-// then activated files are fused at 0.5× RRF weight. Silently returns primary
-// hits unchanged on session absence, empty graph, or any store failure — graph
-// proximity is best-effort and must not degrade search.
+// then each activated file is fused into the RRF score at γ^hop weight — 1-hop
+// structural neighbors boost more than distant ones (γ tunable via
+// Options.GraphGamma, traversal depth via Options.GraphHopCap). Silently
+// returns primary hits unchanged on session absence, empty graph, or any store
+// failure — graph proximity is best-effort and must not degrade search.
 func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) []Hit {
 	if len(hits) == 0 {
 		return hits
@@ -1087,15 +1137,42 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 		}
 	}
 
-	activated, err := s.SpreadActivation(ctx, seeds, 15)
+	activated, err := s.spreadActivation(ctx, seeds, 15)
 	if err != nil || len(activated) == 0 {
 		return hits
 	}
-	graphHits, err := s.HitsForFiles(ctx, activated, n*2)
+
+	// Weight each activated file by γ^hop so 1-hop structural neighbors boost
+	// more than distant ones. γ is tunable via Options.GraphGamma.
+	gamma := s.opts.GraphGamma
+	if gamma <= 0 {
+		gamma = defaultGraphGamma
+	}
+	paths := make([]string, len(activated))
+	weightByPath := make(map[string]float32, len(activated))
+	for i, a := range activated {
+		paths[i] = a.Path
+		hop := a.Hop
+		if hop < 1 {
+			hop = 1
+		}
+		weightByPath[a.Path] = pow32(gamma, hop)
+	}
+
+	graphHits, err := s.HitsForFiles(ctx, paths, n*2)
 	if err != nil || len(graphHits) == 0 {
 		return hits
 	}
-	return fuseWithGraphNeighbors(hits, graphHits, n)
+	return fuseWithGraphNeighbors(hits, graphHits, weightByPath, gamma, n)
+}
+
+// pow32 returns base^exp for a small non-negative integer exponent.
+func pow32(base float32, exp int) float32 {
+	out := float32(1)
+	for range exp {
+		out *= base
+	}
+	return out
 }
 
 // ─── communities ──────────────────────────────────────────────────────────

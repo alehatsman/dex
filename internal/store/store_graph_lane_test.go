@@ -7,7 +7,7 @@ import (
 
 // TestSearchGraphLane verifies that Store.Search applies the graph-proximity
 // lane: chunks from graph-adjacent files of session-recent files are fused at
-// 0.5× RRF weight, so a graph neighbor appears in results even when its
+// γ^hop RRF weight, so a graph neighbor appears in results even when its
 // embedding is orthogonal to the query vector.
 func TestSearchGraphLane(t *testing.T) {
 	st, ctx := newStore(t)
@@ -79,6 +79,71 @@ func TestSearchGraphLaneNoSession(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].Path != "a.go" {
 		t.Errorf("expected [a.go], got %v", hitPaths(hits))
+	}
+}
+
+// TestSpreadActivationHopDistance verifies that spreadActivation records the
+// shortest hop distance to each activated file (1 for direct neighbors, 2 for
+// next ring), which drives the γ^hop fusion weight.
+func TestSpreadActivationHopDistance(t *testing.T) {
+	st, ctx := newStore(t)
+	now := time.Now()
+
+	// seed.go → hop1.go → hop2.go
+	if err := st.GraphUpsertNodes(ctx, []GraphNodeRow{
+		{ID: "n:seed", Kind: "file", Name: "seed.go", FilePath: "seed.go", ContentHash: "hs"},
+		{ID: "n:hop1", Kind: "file", Name: "hop1.go", FilePath: "hop1.go", ContentHash: "h1"},
+		{ID: "n:hop2", Kind: "file", Name: "hop2.go", FilePath: "hop2.go", ContentHash: "h2"},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.GraphUpsertEdges(ctx, []GraphEdgeRow{
+		{ID: "e:sh1", Kind: "calls", SrcID: "n:seed", DstID: "n:hop1", FilePath: "seed.go", ContentHash: "esh1"},
+		{ID: "e:h1h2", Kind: "calls", SrcID: "n:hop1", DstID: "n:hop2", FilePath: "hop1.go", ContentHash: "eh1h2"},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	activated, err := st.spreadActivation(ctx, []SeedFile{{Path: "seed.go", Weight: 1.0}}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hopOf := make(map[string]int, len(activated))
+	for _, a := range activated {
+		hopOf[a.Path] = a.Hop
+	}
+	if hopOf["hop1.go"] != 1 {
+		t.Errorf("hop1.go hop = %d, want 1; activated=%v", hopOf["hop1.go"], activated)
+	}
+	if hopOf["hop2.go"] != 2 {
+		t.Errorf("hop2.go hop = %d, want 2; activated=%v", hopOf["hop2.go"], activated)
+	}
+}
+
+// TestFuseWithGraphNeighborsHopDecay verifies that, with equal in-lane rank,
+// a 1-hop neighbor (γ^1) outranks a 2-hop neighbor (γ^2) after fusion.
+func TestFuseWithGraphNeighborsHopDecay(t *testing.T) {
+	const gamma = float32(0.6)
+	primary := []Hit{{Path: "match.go", StartLine: 1, Score: 1.0}}
+	// far.go is listed first (better in-lane rank); the γ^hop weight must still
+	// lift the 1-hop near.go above it.
+	graphHits := []Hit{
+		{Path: "far.go", StartLine: 1},
+		{Path: "near.go", StartLine: 1},
+	}
+	weightByPath := map[string]float32{
+		"near.go": pow32(gamma, 1), // 0.60
+		"far.go":  pow32(gamma, 2), // 0.36
+	}
+	out := fuseWithGraphNeighbors(primary, graphHits, weightByPath, gamma, 3)
+
+	rank := make(map[string]int, len(out))
+	for i, h := range out {
+		rank[h.Path] = i
+	}
+	if rank["near.go"] >= rank["far.go"] {
+		t.Errorf("1-hop near.go (rank %d) should outrank 2-hop far.go (rank %d): %v",
+			rank["near.go"], rank["far.go"], hitPaths(out))
 	}
 }
 

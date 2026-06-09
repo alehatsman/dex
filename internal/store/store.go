@@ -124,6 +124,18 @@ type Options struct {
 	// merely mention the symbol. Zero = the default (defaultDefinitionBoost).
 	// Tuned against the symbol-query eval set (see symbol_eval_test.go, #146).
 	DefinitionBoost float64
+
+	// GraphGamma is the per-hop decay applied to the graph-proximity lane
+	// during RRF fusion: a neighbor first reached at h hops contributes at
+	// γ^h weight, so 1-hop callers outrank 3-hop ones (GraphCoder-style,
+	// arXiv:2406.07003). Zero = the default (defaultGraphGamma). Set via
+	// DEX_GRAPH_GAMMA. Tuned on the retrieval eval harness (#247/#248).
+	GraphGamma float32
+
+	// GraphHopCap bounds spreading-activation traversal depth — the context
+	// blast-radius around matched symbols. Zero = the default
+	// (defaultGraphHopCap). Set via DEX_GRAPH_HOP_CAP.
+	GraphHopCap int
 }
 
 type Store struct {

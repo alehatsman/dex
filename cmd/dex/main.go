@@ -520,6 +520,8 @@ func storeOpts() store.Options {
 		DisableCoAccess: os.Getenv("DEX_COACCESS") == "0",
 		RerankPool:      rerankPool(),
 		MaxHitsPerFile:  maxHitsPerFile(),
+		GraphGamma:      graphGamma(),
+		GraphHopCap:     graphHopCap(),
 	}
 	// Assign through a typed-nil check: a (*rerank.Client)(nil) stored
 	// in the Reranker interface field would still compare != nil, and
@@ -528,6 +530,37 @@ func storeOpts() store.Options {
 		opts.Reranker = rc
 	}
 	return opts
+}
+
+// graphGamma reads DEX_GRAPH_GAMMA — the per-hop decay for the graph lane.
+// Zero (unset/invalid) lets the store apply its default (defaultGraphGamma).
+// Valid range is (0,1]; out-of-range values are ignored.
+func graphGamma() float32 {
+	raw := os.Getenv("DEX_GRAPH_GAMMA")
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.ParseFloat(raw, 32)
+	if err != nil || v <= 0 || v > 1 {
+		fmt.Fprintf(os.Stderr, "warning: DEX_GRAPH_GAMMA=%q is not in (0,1]; using default\n", raw)
+		return 0
+	}
+	return float32(v)
+}
+
+// graphHopCap reads DEX_GRAPH_HOP_CAP — the spreading-activation depth.
+// Zero (unset/invalid) lets the store apply its default (defaultGraphHopCap).
+func graphHopCap() int {
+	raw := os.Getenv("DEX_GRAPH_HOP_CAP")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		fmt.Fprintf(os.Stderr, "warning: DEX_GRAPH_HOP_CAP=%q is not a positive integer; using default\n", raw)
+		return 0
+	}
+	return n
 }
 
 func parseDuration(envVar, raw string, def time.Duration) time.Duration {
