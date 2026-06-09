@@ -761,6 +761,13 @@ func (ix *Indexer) planPackageJobs(
 //
 // Concurrent UpsertMany is safe by design: the store opens with
 // _busy_timeout and serializes first-write dim init (store.Store).
+// pkgCommitItem is a completed package summary awaiting embed + commit.
+type pkgCommitItem struct {
+	dir     string
+	pkgSHA  string
+	summary string
+}
+
 func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs []pkgJob) (int, error) {
 	if len(jobs) == 0 {
 		return 0, nil
@@ -791,12 +798,49 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 	}
 	_ = prefetchEg.Wait() // non-fatal: workers fall back to zero-grounding on miss
 
+	// Mini-batch embed: workers send completed summaries to commitCh;
+	// a committer goroutine accumulates them and calls Embed.Embed in
+	// batches instead of 1-item-at-a-time (commitPackageSummary legacy).
+	batchSize := ix.Embed.BatchSize()
+	if batchSize <= 0 {
+		batchSize = 16
+	}
+	commitCh := make(chan pkgCommitItem, conc*2)
+
 	var generated atomic.Int64
-	eg, egctx := errgroup.WithContext(ctx)
-	eg.SetLimit(conc)
+	outerEg, outerCtx := errgroup.WithContext(ctx)
+
+	// --- Committer goroutine ---
+	outerEg.Go(func() error {
+		var batch []pkgCommitItem
+		flush := func() error {
+			if len(batch) == 0 {
+				return nil
+			}
+			if err := ix.embedAndCommitPackageBatch(ctx, batch, startTime); err != nil {
+				return err
+			}
+			generated.Add(int64(len(batch)))
+			batch = batch[:0]
+			return nil
+		}
+		for item := range commitCh {
+			batch = append(batch, item)
+			if len(batch) >= batchSize {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
+		}
+		return flush()
+	})
+
+	// --- Producer goroutines ---
+	producerEg, egctx := errgroup.WithContext(outerCtx)
+	producerEg.SetLimit(conc)
 	for i := range jobs {
 		j := jobs[i]
-		eg.Go(func() error {
+		producerEg.Go(func() error {
 			fileSummaries, err := ix.Store.FileSummariesForPaths(egctx, j.filePaths)
 			if err != nil || len(fileSummaries) == 0 {
 				return nil
@@ -812,49 +856,65 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 			if strings.TrimSpace(summary) == "" {
 				return nil
 			}
-			if err := ix.commitPackageSummary(ctx, j.dir, j.pkgSHA, summary, startTime); err != nil {
-				ix.drainLog.Warn("commit package_summary failed", "dir", j.dir, "err", err)
-				return nil
+			select {
+			case commitCh <- pkgCommitItem{dir: j.dir, pkgSHA: j.pkgSHA, summary: summary}:
+			case <-egctx.Done():
 			}
-			generated.Add(1)
 			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	outerEg.Go(func() error {
+		err := producerEg.Wait()
+		close(commitCh)
+		return err
+	})
+
+	if err := outerEg.Wait(); err != nil {
 		return int(generated.Load()), err
 	}
 	return int(generated.Load()), nil
 }
 
-// commitPackageSummary embeds one package_summary, upserts it, and GCs
-// older-SHA rows for the same dir. The commit runs on a
-// cancellation-detached context (context.WithoutCancel) so neither a
-// sibling worker's failure nor an idle-context cancellation can discard a
-// summary the chat endpoint already produced — the unit of durable
-// progress is one package, not the whole cascade (dex #33). The embed +
-// upsert here are cheap relative to the chat call that produced `summary`,
-// so finishing them after a cancel costs little and buys convergence.
-func (ix *Indexer) commitPackageSummary(ctx context.Context, dir, pkgSHA, summary string, startTime time.Time) error {
+// embedAndCommitPackageBatch embeds a mini-batch of package summaries in one
+// Embed.Embed call, then commits each item individually (preserving per-package
+// durability). The commit step runs on context.WithoutCancel so a cancellation
+// cannot discard summaries the chat endpoint already produced (dex #33).
+func (ix *Indexer) embedAndCommitPackageBatch(ctx context.Context, items []pkgCommitItem, startTime time.Time) error {
 	cctx := context.WithoutCancel(ctx)
-	c := chunk.Chunk{Path: dir, Kind: chunk.KindPackageSummary, Content: summary}
-	vecs, err := ix.Embed.Embed(cctx, []string{c.EmbedText()})
+	texts := make([]string, len(items))
+	for i, item := range items {
+		c := chunk.Chunk{Path: item.dir, Kind: chunk.KindPackageSummary, Content: item.summary}
+		texts[i] = c.EmbedText()
+	}
+	vecs, err := ix.Embed.Embed(cctx, texts)
 	if err != nil {
-		return fmt.Errorf("package embed: %w", err)
+		return fmt.Errorf("package embed batch: %w", err)
 	}
-	row := store.PendingChunk{
-		Path:       dir,
-		Kind:       chunk.KindPackageSummary,
-		ContentSHA: pkgSHA,
-		Content:    summary,
-		Vec:        vecs[0],
-	}
-	if err := ix.Store.UpsertMany(cctx, []store.PendingChunk{row}, startTime); err != nil {
-		return err
-	}
-	if _, err := ix.Store.DeleteOtherSummariesForPath(cctx, dir, chunk.KindPackageSummary, pkgSHA); err != nil {
-		ix.drainLog.Warn("gc stale package_summary failed", "path", dir, "err", err)
+	for i, item := range items {
+		row := store.PendingChunk{
+			Path:       item.dir,
+			Kind:       chunk.KindPackageSummary,
+			ContentSHA: item.pkgSHA,
+			Content:    item.summary,
+			Vec:        vecs[i],
+		}
+		if err := ix.Store.UpsertMany(cctx, []store.PendingChunk{row}, startTime); err != nil {
+			return err
+		}
+		if _, err := ix.Store.DeleteOtherSummariesForPath(cctx, item.dir, chunk.KindPackageSummary, item.pkgSHA); err != nil {
+			ix.drainLog.Warn("gc stale package_summary failed", "path", item.dir, "err", err)
+		}
 	}
 	return nil
+}
+
+// commitPackageSummary embeds one package_summary, upserts it, and GCs
+// older-SHA rows for the same dir. Kept for callers outside runPackageJobs
+// that need single-item semantics. The commit runs on context.WithoutCancel
+// so neither a sibling worker's failure nor an idle-context cancellation can
+// discard a summary the chat endpoint already produced (dex #33).
+func (ix *Indexer) commitPackageSummary(ctx context.Context, dir, pkgSHA, summary string, startTime time.Time) error {
+	return ix.embedAndCommitPackageBatch(ctx, []pkgCommitItem{{dir: dir, pkgSHA: pkgSHA, summary: summary}}, startTime)
 }
 
 // repoSummaryMaxPackages caps how many package summaries feed
