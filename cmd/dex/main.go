@@ -814,11 +814,18 @@ func summaryModelsFromEnv() index.SummaryModels {
 	}
 }
 
-// chunkSummaryModeFromEnv reads DEX_CHUNK_SUMMARY_MODE. Empty (the default)
-// means the LLM chat path; "extractive" switches to the zero-GPU extractive
-// summarizer (dex #270).
+// chunkSummaryModeFromEnv reads DEX_CHUNK_SUMMARY_MODE. Unset defaults to
+// "off" — the chunk_summary tier is not generated (the raw code chunk is
+// already the primary embedded vector; chunk_summary is a redundant deduped
+// second vector). "llm" restores the per-chunk chat path; "extractive" uses
+// the zero-GPU summarizer (dex #270, #276). The off default lives here (the
+// CLI/server surface) rather than in index.Options, so programmatic callers
+// that leave ChunkSummaryMode empty keep the historical llm behaviour.
 func chunkSummaryModeFromEnv() string {
-	return os.Getenv("DEX_CHUNK_SUMMARY_MODE")
+	if v := strings.TrimSpace(os.Getenv("DEX_CHUNK_SUMMARY_MODE")); v != "" {
+		return v
+	}
+	return index.ChunkSummaryModeOff
 }
 
 // envInt reads a positive integer env var with a default.

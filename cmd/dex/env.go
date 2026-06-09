@@ -61,7 +61,7 @@ var allEnvVars = []envVar{
 	{"DEX_SUMMARY_URL", "", "Chat server for index-time summaries (falls back to DEX_CHAT_URL).", "summary", true},
 	{"DEX_SUMMARY_MODEL", "<DEX_CHAT_MODEL>", "Model for index-time summaries. Smaller is fine — outputs are 1–4 sentences.", "summary", false},
 	{"DEX_CHUNK_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for per-chunk summaries (volume tier — hundreds of calls). Smaller = faster.", "summary", true},
-	{"DEX_CHUNK_SUMMARY_MODE", "llm", "Chunk-summary generator: `llm` (chat — one call per chunk, the volume tier) or `extractive` (zero-GPU — doc comment + signature + first body line lifted from source). Affects only the chunk tier; file/package/repo summaries always use the LLM.", "summary", true},
+	{"DEX_CHUNK_SUMMARY_MODE", "off", "Chunk-summary tier: `off` (default — not generated; the raw code chunk is already embedded and a chunk_summary is a redundant, deduped second vector for the same path:line), `llm` (chat — one call per chunk, the volume tier), or `extractive` (zero-GPU — doc comment + signature + first body line lifted from source). Affects only the chunk tier; file/package/repo summaries always use the LLM.", "summary", true},
 	{"DEX_FILE_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for per-file summaries (medium volume).", "summary", true},
 	{"DEX_PACKAGE_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for per-directory summaries (low volume — quality compounds into LLM_GUIDE).", "summary", true},
 	{"DEX_REPO_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for the single repo-overview summary (one call total — use the strongest model you can fit).", "summary", true},

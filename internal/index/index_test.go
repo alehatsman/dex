@@ -1058,6 +1058,77 @@ func TestDeferSummariesEnqueuesWithoutChat(t *testing.T) {
 	}
 }
 
+// TestChunkSummaryModeOffSkipsChunkTier verifies DEX_CHUNK_SUMMARY_MODE=off:
+// the chunk_summary tier is not generated at all, while file_summary still
+// flows. Mirrors TestDeferSummariesEnqueuesWithoutChat (defer mode, no chat
+// calls) but with ChunkSummaryMode set to off — so the LongFunc chunk that
+// would otherwise produce a chunk_summary produces none, and the file tier is
+// untouched. The raw source chunks must still be indexed. (dex #276)
+func TestChunkSummaryModeOffSkipsChunkTier(t *testing.T) {
+	embedSrv := fakeEmbedServer(t)
+	defer embedSrv.Close()
+
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+
+	writeFile(t, filepath.Join(projDir, "short.go"),
+		"package main\n\nfunc S() string { return \"x\" }\n")
+
+	long := "package main\n\nfunc LongFunc() {\n"
+	for i := range chunkSummaryMinLines {
+		long += fmt.Sprintf("\t// line %d\n", i+1)
+	}
+	long += "}\n"
+	writeFile(t, filepath.Join(projDir, "long.go"), long)
+
+	ctx := context.Background()
+	p, _ := proj.Resolve(projDir, cacheDir)
+	_ = p.EnsureCacheDir()
+	st, _ := store.Open(ctx, p.DBPath)
+	defer st.Close()
+	ig, _ := ignore.New(p.Root)
+	em := embed.New(embedSrv.URL, "fake", 8, 5*time.Second)
+
+	// Defer mode + no chat client: summaries are queued, so we can inspect
+	// pending_summaries directly. mode=off must drop only the chunk tier.
+	ix := New(p, st, em, ig, Options{
+		Summarize:        true,
+		DeferSummaries:   true,
+		ChunkSummaryMode: ChunkSummaryModeOff,
+	})
+	if err := ix.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	pending, err := st.ListPendingSummaries(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fileCount, chunkCount int
+	for _, p := range pending {
+		switch p.Kind {
+		case chunk.KindFileSummary:
+			fileCount++
+		case chunk.KindChunkSummary:
+			chunkCount++
+		}
+	}
+	if chunkCount != 0 {
+		t.Errorf("mode=off must enqueue no chunk_summary rows; got %d", chunkCount)
+	}
+	if fileCount != 2 {
+		t.Errorf("file_summary tier must be unaffected by mode=off; want 2, got %d", fileCount)
+	}
+
+	// Raw source chunks must still be indexed — off drops only the
+	// redundant summary vector, not the code chunks themselves.
+	stats, _ := st.Stats(ctx)
+	if stats.Files < 2 {
+		t.Errorf("source files should still be indexed; got %d", stats.Files)
+	}
+}
+
 // TestSummarizeConcurrencyParallelizesAcrossFiles pins the perf invariant
 // from Layer 1 of the indexing-perf plan: file_summary chat calls run in a
 // single global pool across all slowFiles rather than serializing per file.

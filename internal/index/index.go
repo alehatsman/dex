@@ -50,16 +50,24 @@ const chunkSummaryMinLines = 30
 
 // Chunk-summary generation modes (Options.ChunkSummaryMode).
 //
-//   - llm (default): each eligible chunk gets a 1–2 sentence LLM-written
-//     description — the historical behaviour, one chat round-trip per chunk.
+//   - off (operational default): the chunk tier is not generated at all. The
+//     raw code chunk (window/orphan) is already the primary embedded vector
+//     and carries the full signature+docstring+body; chunk_summary is a
+//     redundant second vector for the same path:line that dedupChunkSummaries
+//     drops whenever the raw chunk already matched — so its only value is
+//     recall over raw-only, which is unproven. File/package/repo tiers are
+//     unaffected.
+//   - llm: each eligible chunk gets a 1–2 sentence LLM-written description —
+//     the historical behaviour, one chat round-trip per chunk.
 //   - extractive: a zero-GPU summary (doc comment + signature + first body
 //     line) lifted straight from the source via chunk.ExtractiveSummary.
 //     The chunk_summary kind, storage, and cache-invalidation are unchanged;
 //     only the Content text differs.
 //
-// Gated behind a flag so the retrieval delta (raw-only vs +extractive vs
-// +LLM) can be A/B'd before either becomes the default (dex #270).
+// llm/extractive stay selectable so the retrieval delta (raw-only vs
+// +extractive vs +LLM) can still be A/B'd (dex #270, #276).
 const (
+	ChunkSummaryModeOff        = "off"
 	ChunkSummaryModeLLM        = "llm"
 	ChunkSummaryModeExtractive = "extractive"
 )
@@ -68,6 +76,20 @@ const (
 // extractively (zero-GPU, from source) rather than via the chat endpoint.
 func (o Options) extractiveChunks() bool {
 	return strings.EqualFold(strings.TrimSpace(o.ChunkSummaryMode), ChunkSummaryModeExtractive)
+}
+
+// chunkSummariesDisabled reports whether the chunk_summary tier should be
+// skipped entirely (mode=off / none / disabled). The raw code chunk is still
+// indexed; only the redundant per-chunk summary vector is dropped. Empty mode
+// is NOT off — it falls through to the llm default for programmatic callers
+// that don't wire the env knob.
+func (o Options) chunkSummariesDisabled() bool {
+	switch strings.ToLower(strings.TrimSpace(o.ChunkSummaryMode)) {
+	case ChunkSummaryModeOff, "none", "disabled":
+		return true
+	default:
+		return false
+	}
 }
 
 // Options controls one index run.
@@ -625,7 +647,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		// tiny helpers, windows, and orphans aren't worth the round-trip.
 		// SHA is keyed on the chunk source text so cache invalidation is
 		// automatic when the function body changes.
-		if summarizeWanted {
+		if summarizeWanted && !ix.Options.chunkSummariesDisabled() {
 			minLines := ix.Options.ChunkSummaryMinLines
 			if minLines <= 0 {
 				minLines = chunkSummaryMinLines
