@@ -93,3 +93,24 @@ func TestCacheConsistency(t *testing.T) {
 		}
 	}
 }
+
+func TestSetDefaultFamily(t *testing.T) {
+	// Restore the original default after the test so we don't pollute other tests.
+	t.Cleanup(func() { SetDefaultFamily(DefaultFamily) })
+
+	SetDefaultFamily(Cl100k)
+	if got := def().Family(); got != Cl100k {
+		t.Errorf("after SetDefaultFamily(Cl100k): def().Family() = %v, want %v", got, Cl100k)
+	}
+
+	// Counts should still work and be non-zero after a family switch.
+	if n := Count("hello world"); n == 0 {
+		t.Error("Count returned 0 after SetDefaultFamily")
+	}
+
+	// Switch back to O200kBase via SetDefaultFamily to confirm it takes effect.
+	SetDefaultFamily(O200kBase)
+	if got := def().Family(); got != O200kBase {
+		t.Errorf("after SetDefaultFamily(O200kBase): def().Family() = %v, want %v", got, O200kBase)
+	}
+}
