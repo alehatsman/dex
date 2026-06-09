@@ -613,10 +613,7 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate: agent_msg_category flag: %w", err)
 		}
 	}
-	if err := s.migrateCoAccessEdges(ctx); err != nil {
-		return err
-	}
-	return nil
+	return s.migrateCoAccessEdges(ctx)
 }
 
 func (s *Store) migrateCoAccessEdges(ctx context.Context) error {
