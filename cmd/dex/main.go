@@ -32,6 +32,7 @@
 //	hook rewrite                  Claude Code PreToolUse(Bash) hook — rewrites rg/grep to dex.
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
+//	bench locomo <path>           LoCoMo memory-recall benchmark (recall@k / token-F1).
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
 //	setup                         Guided first-run wizard: check endpoints, index cwd, write Claude routing rules.
@@ -141,6 +142,9 @@ func main() {
 		err = cmdDoctor(ctx, args)
 	case "completion":
 		err = cmdCompletion(args)
+	case "bench":
+		runBench(ctx, args)
+		return
 	case "config":
 		err = cmdConfig(args)
 	case "version", "-V", "--version":
