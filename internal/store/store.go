@@ -507,6 +507,54 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate fts_path_enrich: flag: %w", err)
 		}
 	}
+	// ContextBus (#148): add category column to agent_messages + FTS5 index.
+	// category groups messages by semantic kind (e.g. "finding", "plan", "error").
+	var agentMsgCatAdded string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='agent_msg_category'`).Scan(&agentMsgCatAdded)
+	if agentMsgCatAdded != "1" {
+		if _, err := s.db.ExecContext(ctx,
+			`ALTER TABLE agent_messages ADD COLUMN category TEXT NOT NULL DEFAULT ''`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate: add agent_messages.category: %w", err)
+		}
+		// FTS5 external-content table for full-text search over messages.
+		if _, err := s.db.ExecContext(ctx, `CREATE VIRTUAL TABLE IF NOT EXISTS agent_messages_fts USING fts5(
+			body, topic, category,
+			content='agent_messages', content_rowid='id'
+		)`); err != nil {
+			return fmt.Errorf("migrate: agent_messages_fts create: %w", err)
+		}
+		// Triggers to keep FTS in sync.
+		for _, trig := range []string{
+			`CREATE TRIGGER IF NOT EXISTS agent_messages_ai AFTER INSERT ON agent_messages BEGIN
+			   INSERT INTO agent_messages_fts(rowid, body, topic, category)
+			   VALUES (new.id, new.body, new.topic, new.category); END`,
+			`CREATE TRIGGER IF NOT EXISTS agent_messages_ad AFTER DELETE ON agent_messages BEGIN
+			   INSERT INTO agent_messages_fts(agent_messages_fts, rowid, body, topic, category)
+			   VALUES ('delete', old.id, old.body, old.topic, old.category); END`,
+			`CREATE TRIGGER IF NOT EXISTS agent_messages_au AFTER UPDATE ON agent_messages BEGIN
+			   INSERT INTO agent_messages_fts(agent_messages_fts, rowid, body, topic, category)
+			   VALUES ('delete', old.id, old.body, old.topic, old.category);
+			   INSERT INTO agent_messages_fts(rowid, body, topic, category)
+			   VALUES (new.id, new.body, new.topic, new.category); END`,
+		} {
+			if _, err := s.db.ExecContext(ctx, trig); err != nil {
+				return fmt.Errorf("migrate: agent_messages trigger: %w", err)
+			}
+		}
+		// Backfill existing rows into FTS (no-op on fresh databases).
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO agent_messages_fts(rowid, body, topic, category)
+			 SELECT id, body, topic, COALESCE(category, '') FROM agent_messages`); err != nil &&
+			!strings.Contains(err.Error(), "UNIQUE constraint") {
+			return fmt.Errorf("migrate: agent_messages_fts backfill: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('agent_msg_category', '1')
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return fmt.Errorf("migrate: agent_msg_category flag: %w", err)
+		}
+	}
 	return nil
 }
 

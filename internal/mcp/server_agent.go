@@ -17,6 +17,8 @@ type AgentInput struct {
 	AgentID     string `json:"agent_id,omitempty"     jsonschema:"agent identifier (required for announce and post)"`
 	Role        string `json:"role,omitempty"         jsonschema:"agent role description (used with announce)"`
 	Topic       string `json:"topic,omitempty"        jsonschema:"message topic/channel — groups related findings (used with post and read)"`
+	Category    string `json:"category,omitempty"     jsonschema:"semantic kind label — e.g. finding | plan | error | note (used with post and read)"`
+	Query       string `json:"query,omitempty"        jsonschema:"full-text search query over message bodies (used with read; powered by FTS5)"`
 	Body        string `json:"body,omitempty"         jsonschema:"message body (required for post)"`
 	SinceID     int64  `json:"since_id,omitempty"     jsonschema:"return messages with id > since_id for incremental polling (used with read)"`
 	Limit       int    `json:"limit,omitempty"        jsonschema:"max messages to return (default 50, max 200; used with read)"`
@@ -36,6 +38,7 @@ type AgentMessageEntry struct {
 	AgentID  string `json:"agent_id"`
 	Role     string `json:"role,omitempty"`
 	Topic    string `json:"topic,omitempty"`
+	Category string `json:"category,omitempty"`
 	Body     string `json:"body"`
 	PostedAt string `json:"posted_at"`
 }
@@ -84,14 +87,14 @@ func (s *Server) agent(ctx context.Context, _ *sdk.CallToolRequest, in AgentInpu
 		if in.Body == "" {
 			return nil, AgentOutput{Status: "error", Hint: "body is required for post"}, nil
 		}
-		msgID, err := st.AgentPost(ctx, in.AgentID, in.Topic, in.Body)
+		msgID, err := st.AgentPost(ctx, in.AgentID, in.Topic, in.Category, in.Body)
 		if err != nil {
 			return nil, AgentOutput{Status: "error", Hint: err.Error()}, nil
 		}
 		return nil, AgentOutput{Status: "ok", MessageID: msgID}, nil
 
 	case "read":
-		msgs, err := st.AgentRead(ctx, in.Topic, in.SinceID, in.Limit)
+		msgs, err := st.AgentRead(ctx, in.Topic, in.Category, in.Query, in.SinceID, in.Limit)
 		if err != nil {
 			return nil, AgentOutput{Status: "error", Hint: err.Error()}, nil
 		}
@@ -102,6 +105,7 @@ func (s *Server) agent(ctx context.Context, _ *sdk.CallToolRequest, in AgentInpu
 				AgentID:  m.AgentID,
 				Role:     m.Role,
 				Topic:    m.Topic,
+				Category: m.Category,
 				Body:     m.Body,
 				PostedAt: m.PostedAt.Format("2006-01-02 15:04:05"),
 			})
