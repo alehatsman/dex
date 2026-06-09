@@ -88,6 +88,9 @@ type AutoWatchConfig struct {
 	SummaryConcurrency int
 	// ChunkSummaryMinLines forwards to index.Options.ChunkSummaryMinLines.
 	ChunkSummaryMinLines int
+	// ChunkSummaryMode forwards to index.Options.ChunkSummaryMode
+	// (""/"llm" = chat path, "extractive" = zero-GPU). See index #270.
+	ChunkSummaryMode string
 	// YieldWindow forwards to index.Options.YieldWindow: the idle drainer
 	// skips a tick if a foreground query ran within this window. 0 = off.
 	YieldWindow time.Duration
@@ -666,6 +669,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 		ixOpts.SummaryModels = s.SummaryModels
 		ixOpts.SummaryConcurrency = s.AutoWatch.SummaryConcurrency
 		ixOpts.ChunkSummaryMinLines = s.AutoWatch.ChunkSummaryMinLines
+		ixOpts.ChunkSummaryMode = s.AutoWatch.ChunkSummaryMode
 		ixOpts.YieldWindow = s.AutoWatch.YieldWindow
 	}
 	ix := index.New(p, st, s.EmbedClient, ig, ixOpts)

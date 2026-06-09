@@ -814,6 +814,13 @@ func summaryModelsFromEnv() index.SummaryModels {
 	}
 }
 
+// chunkSummaryModeFromEnv reads DEX_CHUNK_SUMMARY_MODE. Empty (the default)
+// means the LLM chat path; "extractive" switches to the zero-GPU extractive
+// summarizer (dex #270).
+func chunkSummaryModeFromEnv() string {
+	return os.Getenv("DEX_CHUNK_SUMMARY_MODE")
+}
+
 // envInt reads a positive integer env var with a default.
 // Non-positive or unparsable values fall back to def with a warning.
 func envInt(name string, def int) int {
@@ -1041,6 +1048,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 			opts.SummaryModels = summaryModelsFromEnv()
 			opts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 			opts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
+			opts.ChunkSummaryMode = chunkSummaryModeFromEnv()
 		}
 		ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, opts)
 		if err := ix.Run(ctx); err != nil {
@@ -2150,6 +2158,7 @@ func cmdIndexSummarize(ctx context.Context, args []string) error {
 		SummaryModels:        summaryModelsFromEnv(),
 		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 8),
 		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
+		ChunkSummaryMode:     chunkSummaryModeFromEnv(),
 		SummaryPace:          envDuration("DEX_SUMMARIZE_PACE", 0),
 	})
 
@@ -2360,6 +2369,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		ixOpts.SummaryModels = summaryModelsFromEnv()
 		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
+		ixOpts.ChunkSummaryMode = chunkSummaryModeFromEnv()
 	}
 	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, ixOpts)
 	if err := ix.Run(ctx); err != nil {
@@ -2543,6 +2553,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 		ixOpts.SummaryModels = summaryModelsFromEnv()
 		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
+		ixOpts.ChunkSummaryMode = chunkSummaryModeFromEnv()
 		ixOpts.YieldWindow = envDuration("DEX_SUMMARIZE_YIELD", 0)
 	}
 	ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, ixOpts)
@@ -2826,6 +2837,7 @@ func autoWatchConfigFromEnv() mcp.AutoWatchConfig {
 		IndexConcurrency:     envInt("DEX_INDEX_CONCURRENCY", 0),
 		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 8),
 		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
+		ChunkSummaryMode:     chunkSummaryModeFromEnv(),
 		YieldWindow:          envDuration("DEX_SUMMARIZE_YIELD", 0),
 		Logger:               cliLogger(),
 	}

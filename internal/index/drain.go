@@ -613,9 +613,16 @@ func (ix *Indexer) processChunkSummary(ctx context.Context, p store.PendingSumma
 		EndLine:   p.EndLine,
 		Content:   content,
 	}
-	summary, err := summarizeChunk(ctx, ix.Options.Chat, ix.Options.SummaryModels.Chunk, p.Path, sourceChunk)
-	if err != nil {
-		return nil, false, err
+	var summary string
+	if ix.Options.extractiveChunks() {
+		// Zero-GPU: distilled from source, no chat round-trip.
+		summary = chunk.ExtractiveSummary(ctx, sourceChunk)
+	} else {
+		s, err := summarizeChunk(ctx, ix.Options.Chat, ix.Options.SummaryModels.Chunk, p.Path, sourceChunk)
+		if err != nil {
+			return nil, false, err
+		}
+		summary = s
 	}
 	if strings.TrimSpace(summary) == "" {
 		return nil, true, nil

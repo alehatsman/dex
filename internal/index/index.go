@@ -48,6 +48,28 @@ type SummaryModels struct {
 // full source text is better context than a summary.
 const chunkSummaryMinLines = 30
 
+// Chunk-summary generation modes (Options.ChunkSummaryMode).
+//
+//   - llm (default): each eligible chunk gets a 1–2 sentence LLM-written
+//     description — the historical behaviour, one chat round-trip per chunk.
+//   - extractive: a zero-GPU summary (doc comment + signature + first body
+//     line) lifted straight from the source via chunk.ExtractiveSummary.
+//     The chunk_summary kind, storage, and cache-invalidation are unchanged;
+//     only the Content text differs.
+//
+// Gated behind a flag so the retrieval delta (raw-only vs +extractive vs
+// +LLM) can be A/B'd before either becomes the default (dex #270).
+const (
+	ChunkSummaryModeLLM        = "llm"
+	ChunkSummaryModeExtractive = "extractive"
+)
+
+// extractiveChunks reports whether chunk summaries should be produced
+// extractively (zero-GPU, from source) rather than via the chat endpoint.
+func (o Options) extractiveChunks() bool {
+	return strings.EqualFold(strings.TrimSpace(o.ChunkSummaryMode), ChunkSummaryModeExtractive)
+}
+
 // Options controls one index run.
 type Options struct {
 	MaxFileSize int64        // skip files larger than this (bytes); 0 = 1 MB default
@@ -89,6 +111,12 @@ type Options struct {
 	// (chunkSummaryMinLines). 0 = use default. Raise to cut chunk-summary
 	// volume on large repos by skipping medium-sized functions too.
 	ChunkSummaryMinLines int
+	// ChunkSummaryMode selects how a chunk_summary's text is produced:
+	// ChunkSummaryModeLLM (default; empty string also means LLM) or
+	// ChunkSummaryModeExtractive (zero-GPU, lifted from source). See the
+	// mode constants above. Only the chunk tier is affected — file,
+	// package, and repo summaries always use the LLM.
+	ChunkSummaryMode string
 	// SummaryPace, when > 0, sleeps this long between batches in the
 	// whole-queue drain (DrainPendingSummaries). Throttles a manual
 	// `dex index summarize` so it can't monopolise a shared GPU. The
@@ -777,13 +805,21 @@ func (ix *Indexer) Run(ctx context.Context) error {
 					return nil
 				})
 			}
+			extractive := ix.Options.extractiveChunks()
 			for i := range chunkSummaryJobs {
 				j := chunkSummaryJobs[i]
 				producerEg.Go(func() error {
-					summary, err := summarizeChunk(egctx, ix.Options.Chat, ix.Options.SummaryModels.Chunk, j.rel, j.c)
-					if err != nil {
-						ix.Options.Logger.Warn("chunk summarize failed", "path", j.rel, "start_line", j.c.StartLine, "err", err)
-						return nil
+					var summary string
+					if extractive {
+						// Zero-GPU: distilled from source, no chat round-trip.
+						summary = chunk.ExtractiveSummary(egctx, j.c)
+					} else {
+						s, err := summarizeChunk(egctx, ix.Options.Chat, ix.Options.SummaryModels.Chunk, j.rel, j.c)
+						if err != nil {
+							ix.Options.Logger.Warn("chunk summarize failed", "path", j.rel, "start_line", j.c.StartLine, "err", err)
+							return nil
+						}
+						summary = s
 					}
 					if strings.TrimSpace(summary) == "" {
 						return nil
