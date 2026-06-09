@@ -34,7 +34,7 @@
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	bench locomo <path>           LoCoMo memory-recall benchmark (recall@k / token-F1).
-//	knowledge add|query|rm        Store/list/delete per-project facts (MCP: ctx_knowledge).
+//	knowledge add|query|rm|gc     Store/list/delete/gc per-project facts (MCP: ctx_knowledge).
 //	compress <file|->             Compress a file or stdin through the dex engine (no LLM).
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
@@ -317,11 +317,13 @@ build / maintenance:
                                           engine — no LLM call. Writes to stdout
                                           or --out. Flags: --mode=auto|aggressive|
                                           entropy|terse|off, --ext, --format=text|json
-  dex knowledge add|query|rm         CLI access to the per-project knowledge
+  dex knowledge add|query|rm|gc      CLI access to the per-project knowledge
                                           store (MCP: ctx_knowledge). add stores
                                           a fact (--archetype, --confidence),
                                           query lists top-k by salience (--k),
-                                          rm deletes by id. Flags: --format=text|json
+                                          rm deletes by id, gc runs decay +
+                                          consolidate + evict (--max-facts).
+                                          Flags: --format=text|json
   dex nuke   <path>                  delete the on-disk index for a project
                                           (prompts on TTY; pass --yes for scripts)
   dex reindex <path>                 drop and re-embed from scratch

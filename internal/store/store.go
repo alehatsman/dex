@@ -499,6 +499,23 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate: knowledge_rev_col flag: %w", err)
 		}
 	}
+	// last_retrieved (#225): tracks when a fact was last surfaced (distinct
+	// from updated_at = last confirmed). Drives decay protection so
+	// frequently-recalled facts fade slower. Defaults to 0 (never retrieved).
+	var knowledgeLastRetrievedAdded string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='knowledge_last_retrieved_added'`).Scan(&knowledgeLastRetrievedAdded)
+	if knowledgeLastRetrievedAdded != "1" {
+		if _, err := s.db.ExecContext(ctx,
+			`ALTER TABLE knowledge_facts ADD COLUMN last_retrieved INTEGER NOT NULL DEFAULT 0`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate: add last_retrieved column: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('knowledge_last_retrieved_added', '1')
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return fmt.Errorf("migrate: knowledge_last_retrieved flag: %w", err)
+		}
+	}
 	// Path enrichment (#110): rebuild FTS triggers so that each chunk's
 	// BM25 document includes path component tokens (split on '/', '.', '_').
 	// Enables queries like "auth handler" to surface "auth_handler.go"

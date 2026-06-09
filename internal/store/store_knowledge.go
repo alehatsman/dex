@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -144,6 +146,13 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 	return scanFacts(rows)
 }
 
+// KnowledgeCount returns the number of stored facts.
+func (s *Store) KnowledgeCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_facts`).Scan(&n)
+	return n, err
+}
+
 // KnowledgeDelete removes a fact by id.
 func (s *Store) KnowledgeDelete(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM knowledge_facts WHERE id=?`, id)
@@ -156,11 +165,14 @@ func (s *Store) KnowledgeDelete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// KnowledgeBump increments the hit_count for a fact (called when a fact is
-// surfaced to an agent, so frequently-used facts stay salient).
+// KnowledgeBump increments the hit_count for a fact and records the retrieval
+// time (called when a fact is surfaced to an agent). It deliberately does NOT
+// touch updated_at — that stays the "last confirmed" timestamp, so decay
+// (KnowledgeGC) measures staleness from confirmation while protecting facts
+// that are still being retrieved.
 func (s *Store) KnowledgeBump(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE knowledge_facts SET hit_count=hit_count+1, updated_at=? WHERE id=?`,
+		`UPDATE knowledge_facts SET hit_count=hit_count+1, last_retrieved=? WHERE id=?`,
 		time.Now().UnixNano(), id)
 	return err
 }
@@ -373,4 +385,269 @@ func int64sToAny(xs []int64) []any {
 		out[i] = x
 	}
 	return out
+}
+
+// ─── lifecycle: decay, consolidation, eviction (#225) ───────────────────────
+
+// KnowledgeGCConfig tunes a knowledge-store maintenance pass. Zero values fall
+// back to the documented defaults.
+type KnowledgeGCConfig struct {
+	DecayPerDay     float64 // confidence lost per elapsed day since the last GC, before protection (default 0.01)
+	ConfidenceFloor float64 // decay never pushes confidence below this (default 0.05)
+	JaccardMerge    float64 // word-overlap ≥ this merges two facts of the same archetype (default 0.85)
+	MaxFacts        int     // evict lowest-confidence facts beyond this cap (default 1000; ≤0 keeps the default; negative disables)
+}
+
+func (c *KnowledgeGCConfig) applyDefaults() {
+	if c.DecayPerDay <= 0 {
+		c.DecayPerDay = 0.01
+	}
+	if c.ConfidenceFloor <= 0 {
+		c.ConfidenceFloor = 0.05
+	}
+	if c.JaccardMerge <= 0 {
+		c.JaccardMerge = 0.85
+	}
+	if c.MaxFacts == 0 {
+		c.MaxFacts = 1000
+	}
+}
+
+// KnowledgeGCResult reports what a maintenance pass changed.
+type KnowledgeGCResult struct {
+	Decayed   int `json:"decayed"`   // facts whose confidence was reduced
+	Merged    int `json:"merged"`    // near-duplicate facts folded into another and deleted
+	Evicted   int `json:"evicted"`   // facts dropped to satisfy the cap
+	Remaining int `json:"remaining"` // facts left after the pass
+}
+
+// KnowledgeGC runs the fact-store lifecycle: confidence decay (protected by
+// retrieval frequency/recency), consolidation of near-duplicate facts within an
+// archetype, and eviction past a cap. It is safe to call repeatedly — decay is
+// proportional to time elapsed since the previous GC (recorded in meta), so it
+// never double-counts.
+func (s *Store) KnowledgeGC(ctx context.Context, cfg KnowledgeGCConfig) (KnowledgeGCResult, error) {
+	cfg.applyDefaults()
+	var res KnowledgeGCResult
+	now := time.Now()
+
+	decayed, err := s.knowledgeDecay(ctx, cfg, now)
+	if err != nil {
+		return res, err
+	}
+	res.Decayed = decayed
+
+	merged, err := s.knowledgeConsolidateSimilar(ctx, cfg)
+	if err != nil {
+		return res, err
+	}
+	res.Merged = merged
+
+	evicted, err := s.knowledgeEvict(ctx, cfg)
+	if err != nil {
+		return res, err
+	}
+	res.Evicted = evicted
+
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_facts`).Scan(&res.Remaining); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// knowledgeDecay reduces each fact's confidence in proportion to the days
+// elapsed since the last GC, divided by a protection factor that grows with
+// hit_count, and further softened for facts retrieved within the last week.
+// On the first ever GC it just records the baseline timestamp (no decay).
+func (s *Store) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConfig, now time.Time) (int, error) {
+	var lastGCStr string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='knowledge_last_gc'`).Scan(&lastGCStr)
+	recordNow := func() error {
+		_, err := s.db.ExecContext(ctx,
+			`INSERT INTO meta(key, value) VALUES('knowledge_last_gc', ?)
+			   ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+			fmt.Sprintf("%d", now.UnixNano()))
+		return err
+	}
+	if lastGCStr == "" {
+		return 0, recordNow() // baseline only; nothing to decay against yet
+	}
+	var lastGCNs int64
+	if _, err := fmt.Sscan(lastGCStr, &lastGCNs); err != nil {
+		return 0, recordNow()
+	}
+	elapsedDays := now.Sub(time.Unix(0, lastGCNs)).Hours() / 24
+	if elapsedDays <= 0 {
+		return 0, nil // clock went backwards or no time passed; leave confidences and last_gc
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, confidence, hit_count, last_retrieved FROM knowledge_facts`)
+	if err != nil {
+		return 0, err
+	}
+	type decayRow struct {
+		id      int64
+		newConf float64
+	}
+	var updates []decayRow
+	for rows.Next() {
+		var id int64
+		var conf float64
+		var hitCount int
+		var lastRetrieved int64
+		if err := rows.Scan(&id, &conf, &hitCount, &lastRetrieved); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		protect := 1 + math.Log(1+float64(hitCount))
+		decay := cfg.DecayPerDay * elapsedDays / protect
+		if lastRetrieved > 0 && now.Sub(time.Unix(0, lastRetrieved)) < 7*24*time.Hour {
+			decay *= 0.3 // recently useful → fade slower
+		}
+		newConf := conf - decay
+		if newConf < cfg.ConfidenceFloor {
+			newConf = cfg.ConfidenceFloor
+		}
+		if newConf < conf-1e-9 {
+			updates = append(updates, decayRow{id, newConf})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, err
+	}
+	_ = rows.Close()
+
+	for _, u := range updates {
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE knowledge_facts SET confidence=? WHERE id=?`, u.newConf, u.id); err != nil {
+			return 0, err
+		}
+	}
+	return len(updates), recordNow()
+}
+
+// knowledgeConsolidateSimilar merges facts within the same archetype whose body
+// word-sets overlap at or above cfg.JaccardMerge. The higher-confidence fact
+// survives, accumulating the other's hit_count; the duplicate is deleted (its
+// fact_vecs row cascades away via trigger).
+func (s *Store) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, archetype, body, confidence, hit_count FROM knowledge_facts ORDER BY archetype, confidence DESC`)
+	if err != nil {
+		return 0, err
+	}
+	type fact struct {
+		id        int64
+		archetype string
+		body      string
+		conf      float64
+		hits      int
+		words     map[string]struct{}
+	}
+	var facts []fact
+	for rows.Next() {
+		var f fact
+		if err := rows.Scan(&f.id, &f.archetype, &f.body, &f.conf, &f.hits); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		f.words = wordSet(f.body)
+		facts = append(facts, f)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, err
+	}
+	_ = rows.Close()
+
+	merged := 0
+	deleted := make(map[int]bool)
+	for i := range facts {
+		if deleted[i] {
+			continue
+		}
+		for j := i + 1; j < len(facts); j++ {
+			if deleted[j] || facts[i].archetype != facts[j].archetype {
+				continue
+			}
+			if jaccard(facts[i].words, facts[j].words) < cfg.JaccardMerge {
+				continue
+			}
+			// facts are confidence-desc within archetype, so i is the keeper.
+			keeper, dup := &facts[i], &facts[j]
+			if dup.conf > keeper.conf {
+				keeper, dup = dup, keeper
+			}
+			if _, err := s.db.ExecContext(ctx,
+				`UPDATE knowledge_facts SET hit_count=hit_count+?, confidence=MAX(confidence, ?) WHERE id=?`,
+				dup.hits, dup.conf, keeper.id); err != nil {
+				return merged, err
+			}
+			if err := s.KnowledgeDelete(ctx, dup.id); err != nil {
+				return merged, err
+			}
+			deleted[j] = true
+			merged++
+		}
+	}
+	return merged, nil
+}
+
+// knowledgeEvict drops the lowest-confidence facts when the store exceeds the
+// configured cap. Ties break toward the least-recently-retrieved.
+func (s *Store) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
+	if cfg.MaxFacts <= 0 {
+		return 0, nil
+	}
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_facts`).Scan(&total); err != nil {
+		return 0, err
+	}
+	excess := total - cfg.MaxFacts
+	if excess <= 0 {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM knowledge_facts WHERE id IN (
+		   SELECT id FROM knowledge_facts
+		   ORDER BY confidence ASC, last_retrieved ASC, updated_at ASC
+		   LIMIT ?)`, excess)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// wordSet returns the set of lowercased alphanumeric tokens (length > 2) in s.
+func wordSet(s string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	}) {
+		if len(w) > 2 {
+			out[w] = struct{}{}
+		}
+	}
+	return out
+}
+
+// jaccard is the intersection-over-union of two word sets, in [0,1].
+func jaccard(a, b map[string]struct{}) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	inter := 0
+	for w := range a {
+		if _, ok := b[w]; ok {
+			inter++
+		}
+	}
+	union := len(a) + len(b) - inter
+	if union == 0 {
+		return 0
+	}
+	return float64(inter) / float64(union)
 }

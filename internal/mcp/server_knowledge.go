@@ -15,7 +15,7 @@ import (
 
 type KnowledgeInput struct {
 	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string  `json:"action"                 jsonschema:"add | list | delete | export | import | consolidate"`
+	Action      string  `json:"action"                 jsonschema:"add | list | delete | export | import | consolidate | gc"`
 	Archetype   string  `json:"archetype,omitempty"    jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default)"`
 	Body        string  `json:"body,omitempty"         jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
 	Confidence  float64 `json:"confidence,omitempty"   jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
@@ -74,6 +74,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 		}
 		s.embedFact(ctx, st, in.Body)
+		s.maybeEvict(ctx, st)
 		s.activityKnowledgeRecorded(p.Root)
 		hint := "Remembered."
 		if rev == 1 {
@@ -99,10 +100,18 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		return s.knowledgeImport(ctx, st, in.Body)
 	case "consolidate":
 		return s.knowledgeConsolidate(ctx, st)
+	case "gc":
+		res, err := st.KnowledgeGC(ctx, store.KnowledgeGCConfig{})
+		if err != nil {
+			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+		}
+		return nil, KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf(
+			"gc: decayed %d, merged %d, evicted %d, %d facts remain.",
+			res.Decayed, res.Merged, res.Evicted, res.Remaining)}, nil
 	case "list", "":
 		// fall through to read
 	default:
-		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | export | import | consolidate", in.Action)}, nil
+		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | export | import | consolidate | gc", in.Action)}, nil
 	}
 
 	facts, err := s.recallFacts(ctx, st, in.Query, in.K, false)
@@ -177,6 +186,22 @@ func (s *Server) knowledgeImport(ctx context.Context, st *store.Store, body stri
 		imported++
 	}
 	return nil, KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf("imported %d facts", imported)}, nil
+}
+
+// knowledgeCap is the soft ceiling on stored facts. Crossing it on add
+// triggers an opportunistic GC pass to keep the store (and injected context)
+// from growing without bound.
+const knowledgeCap = 1000
+
+// maybeEvict runs a lifecycle pass when the fact count exceeds the cap. Cheap
+// and best-effort: a no-op below the cap, errors ignored (eviction is
+// maintenance, never on the critical add path's success).
+func (s *Server) maybeEvict(ctx context.Context, st *store.Store) {
+	n, err := st.KnowledgeCount(ctx)
+	if err != nil || n <= knowledgeCap {
+		return
+	}
+	_, _ = st.KnowledgeGC(ctx, store.KnowledgeGCConfig{})
 }
 
 // embedFact embeds a fact body and stores its vector for semantic recall.

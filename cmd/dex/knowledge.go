@@ -29,15 +29,57 @@ func cmdKnowledge(ctx context.Context, args []string) error {
 		return cmdKnowledgeQuery(ctx, rest)
 	case "rm", "delete":
 		return cmdKnowledgeRm(ctx, rest)
+	case "gc":
+		return cmdKnowledgeGC(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
   dex knowledge add [<path>] --archetype A --confidence c <body...>   store a fact
   dex knowledge query [<path>] [--k N]                                top-k facts by salience
-  dex knowledge rm [<path>] <id>                                      delete a fact by id`)
+  dex knowledge rm [<path>] <id>                                      delete a fact by id
+  dex knowledge gc [<path>]                                           decay + consolidate + evict`)
 		return nil
 	default:
-		return fmt.Errorf("unknown knowledge subcommand: %s (have: add, query, rm)", sub)
+		return fmt.Errorf("unknown knowledge subcommand: %s (have: add, query, rm, gc)", sub)
 	}
+}
+
+// cmdKnowledgeGC runs the knowledge-store lifecycle pass: confidence decay,
+// consolidation of near-duplicate facts, and eviction past the cap.
+func cmdKnowledgeGC(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("knowledge gc", flag.ContinueOnError)
+	setHelp(fs,
+		"Run the knowledge-store lifecycle: decay, consolidate, evict.",
+		"dex knowledge gc [flags] [<path>]",
+		`dex knowledge gc`,
+		`dex knowledge gc --max-facts 500 --format json`,
+	)
+	maxFacts := fs.Int("max-facts", 0, "evict lowest-confidence facts beyond this cap (0 = default 1000)")
+	format := fs.String("format", "text", "output format: text|json")
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := splitProjectArg(fs.Args())
+	if len(rest) > 0 {
+		return fmt.Errorf("knowledge gc takes no positional args besides an optional <path>")
+	}
+	st, _, err := openProjectStore(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+
+	res, err := st.KnowledgeGC(ctx, store.KnowledgeGCConfig{MaxFacts: *maxFacts})
+	if err != nil {
+		return err
+	}
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(res)
+	}
+	fmt.Printf("✓ gc: decayed %d, merged %d, evicted %d — %d facts remain\n",
+		res.Decayed, res.Merged, res.Evicted, res.Remaining)
+	return nil
 }
 
 // openProjectStore resolves the project for path and opens its store, erroring
