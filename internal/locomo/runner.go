@@ -2,9 +2,8 @@ package locomo
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,14 +72,13 @@ func Run(ctx context.Context, em embed.Embedder, d Dataset, k int) ([]QuestionRe
 
 	chunks := make([]store.PendingChunk, len(allTexts))
 	for i, text := range allTexts {
-		sum := sha1.Sum([]byte(text))
 		chunks[i] = store.PendingChunk{
 			Path:       refs[i].convID,
 			Kind:       "turn",
 			Name:       fmt.Sprintf("turn_%d", refs[i].idx),
 			StartLine:  refs[i].idx + 1,
 			EndLine:    refs[i].idx + 1,
-			ContentSHA: hex.EncodeToString(sum[:]),
+			ContentSHA: fnvHex(text),
 			Content:    text,
 			Vec:        vecs[i],
 		}
@@ -139,6 +137,12 @@ func Run(ctx context.Context, em embed.Embedder, d Dataset, k int) ([]QuestionRe
 		results[i] = r
 	}
 	return results, nil
+}
+
+func fnvHex(s string) string {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(s))
+	return fmt.Sprintf("%016x", h.Sum64())
 }
 
 // approxTokens estimates token count as whitespace-token count / 0.75 (rough

@@ -1,3 +1,6 @@
+// Package locomo implements the LoCoMo memory-recall benchmark: ingest
+// conversation turns as memories, retrieve top-k per question, and score
+// recall@k / token-F1 / exact-match without any chat LLM.
 package locomo
 
 import (
