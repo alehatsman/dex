@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1352,6 +1353,42 @@ func (s *Store) FileSummarySHAs(ctx context.Context) (map[string]string, error) 
 			return nil, err
 		}
 		out[path] = sha
+	}
+	return out, rows.Err()
+}
+
+// FileSummaryDirsUnseen returns the distinct directories of file_summary
+// chunks last seen strictly before cutoff — i.e. the dirs whose
+// file_summary rows the next PruneUnseen(cutoff) will delete. Call it
+// BEFORE PruneUnseen so the rows still exist.
+//
+// Used to drive the incremental cascade after a deletion: a file removed
+// from a still-surviving package leaves a stale package_summary that the
+// dirty-dir cascade would otherwise skip (no file_summary was *committed*
+// for that dir, only deleted). Feeding these dirs into the cascade lets
+// planPackageJobs catch the pkgSHA change and regenerate (dex #234).
+func (s *Store) FileSummaryDirsUnseen(ctx context.Context, cutoff time.Time) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT path FROM chunks
+		   WHERE kind = 'file_summary' AND last_seen_at < ?`,
+		cutoff.UnixNano())
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	seen := make(map[string]struct{})
+	var out []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		dir := filepath.Dir(path)
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		out = append(out, dir)
 	}
 	return out, rows.Err()
 }

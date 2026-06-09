@@ -52,6 +52,37 @@ func testIndexer(t *testing.T, opt Options) (*Indexer, *proj.Project) {
 	return New(p, st, em, ig, opt), p
 }
 
+// TestPrunedDirsHandoff verifies the in-memory hand-off that lets the
+// deletion-aware cascade (dex #234) see dirs whose file_summary rows Run()
+// pruned: addPrunedDirs accumulates + dedupes, takePrunedDirs drains.
+func TestPrunedDirsHandoff(t *testing.T) {
+	ix, _ := testIndexer(t, Options{})
+
+	if got := ix.takePrunedDirs(); got != nil {
+		t.Fatalf("empty indexer takePrunedDirs=%v, want nil", got)
+	}
+	ix.addPrunedDirs(nil) // no-op, must not panic or allocate state
+	if got := ix.takePrunedDirs(); got != nil {
+		t.Fatalf("after addPrunedDirs(nil) takePrunedDirs=%v, want nil", got)
+	}
+
+	ix.addPrunedDirs([]string{"pkg/a", "pkg/b"})
+	ix.addPrunedDirs([]string{"pkg/b", "pkg/c"}) // pkg/b duplicate
+
+	got := ix.takePrunedDirs()
+	set := make(map[string]bool, len(got))
+	for _, d := range got {
+		set[d] = true
+	}
+	if len(got) != 3 || !set["pkg/a"] || !set["pkg/b"] || !set["pkg/c"] {
+		t.Errorf("takePrunedDirs=%v, want deduped {pkg/a,pkg/b,pkg/c}", got)
+	}
+	// Drained: a second take returns nil.
+	if got := ix.takePrunedDirs(); got != nil {
+		t.Errorf("second takePrunedDirs=%v, want nil (drained)", got)
+	}
+}
+
 func TestForegroundBusy(t *testing.T) {
 	ix, p := testIndexer(t, Options{YieldWindow: time.Minute})
 

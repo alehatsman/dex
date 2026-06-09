@@ -79,11 +79,7 @@ func (ix *Indexer) fetchRepoGrounding(ctx context.Context, dirs []string) repoGr
 		})
 	}
 	_ = eg.Wait()
-	var g repoGrounding
-	for _, r := range results {
-		g.Packages = append(g.Packages, r)
-	}
-	return g
+	return repoGrounding{Packages: results}
 }
 
 func uniqueSymbolNames(syms []store.GraphSymbol) []string {

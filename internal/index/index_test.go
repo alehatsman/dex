@@ -1186,8 +1186,8 @@ func TestCommitPackageSummaryIgnoresCancellation(t *testing.T) {
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if err := ix.commitPackageSummary(cancelled, "internal/foo", "sha-foo", "Stub package summary.", time.Now()); err != nil {
-		t.Fatalf("commitPackageSummary under cancelled ctx: %v", err)
+	if err := ix.embedAndCommitPackageBatch(cancelled, []pkgCommitItem{{dir: "internal/foo", pkgSHA: "sha-foo", summary: "Stub package summary."}}, time.Now()); err != nil {
+		t.Fatalf("embedAndCommitPackageBatch under cancelled ctx: %v", err)
 	}
 
 	rows, err := st.AllSummariesByKind(ctx, chunk.KindPackageSummary)

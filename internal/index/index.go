@@ -124,6 +124,47 @@ type Indexer struct {
 	Ignore   *ignore.Matcher
 	Options  Options
 	drainLog *slog.Logger // subsystem=drain logger, derived in New()
+
+	// prunedDirsMu guards prunedDirs: directories whose file_summary rows
+	// Run() pruned (a file was deleted from a still-surviving package).
+	// The next incremental cascade unions these into its dirty-dir set so
+	// the stale package_summary is regenerated even though no file_summary
+	// was *committed* for the dir this cycle (dex #234). The watcher shares
+	// one Indexer across Run() and the idle drainer, so this in-memory
+	// hand-off needs no store round-trip; the lock guards the rare overlap.
+	prunedDirsMu sync.Mutex
+	prunedDirs   map[string]struct{}
+}
+
+// addPrunedDirs records dirs whose file_summary rows were just pruned, for
+// the next cascade to pick up. Safe to call with an empty slice.
+func (ix *Indexer) addPrunedDirs(dirs []string) {
+	if len(dirs) == 0 {
+		return
+	}
+	ix.prunedDirsMu.Lock()
+	defer ix.prunedDirsMu.Unlock()
+	if ix.prunedDirs == nil {
+		ix.prunedDirs = make(map[string]struct{}, len(dirs))
+	}
+	for _, d := range dirs {
+		ix.prunedDirs[d] = struct{}{}
+	}
+}
+
+// takePrunedDirs returns and clears the accumulated pruned dirs.
+func (ix *Indexer) takePrunedDirs() []string {
+	ix.prunedDirsMu.Lock()
+	defer ix.prunedDirsMu.Unlock()
+	if len(ix.prunedDirs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ix.prunedDirs))
+	for d := range ix.prunedDirs {
+		out = append(out, d)
+	}
+	ix.prunedDirs = nil
+	return out
 }
 
 func New(p *proj.Project, st *store.Store, em embed.Embedder, ig *ignore.Matcher, opt Options) *Indexer {
@@ -655,13 +696,55 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				_ = prefetchEg.Wait() // non-fatal: workers use empty subjects on miss
 			}
 
-			fileResults := make([]*pending, len(fileSummaryJobs))
-			chunkResults := make([]*pending, len(chunkSummaryJobs))
-			eg, egctx := errgroup.WithContext(ctx)
-			eg.SetLimit(conc)
+			// Producer-consumer pipeline: chat workers stream finished
+			// summaries to summaryCh; a committer goroutine embeds + upserts
+			// them in batches as they arrive, overlapping summary-embed with
+			// the still-running chat calls (dex #233). Content chunks stay in
+			// toEmbed for the post-pass loop — the expensive part to overlap
+			// is the summary embed, which the chat phase otherwise idles
+			// through. Mirrors DrainPendingSummariesBatch's drain committer.
+			batchSize := ix.Embed.BatchSize()
+			if batchSize <= 0 {
+				batchSize = 32
+			}
+			summaryCh := make(chan pending, batchSize*2)
+			var summaryCount atomic.Int64
+
+			outerEg, outerCtx := errgroup.WithContext(ctx)
+
+			// --- Committer goroutine ---
+			outerEg.Go(func() error {
+				var batch []pending
+				flush := func() error {
+					if len(batch) == 0 {
+						return nil
+					}
+					if err := outerCtx.Err(); err != nil {
+						return err
+					}
+					if err := ix.embedAndUpsertBatch(outerCtx, batch, startTime); err != nil {
+						return err
+					}
+					batch = batch[:0]
+					return nil
+				}
+				for p := range summaryCh {
+					batch = append(batch, p)
+					if len(batch) >= batchSize {
+						if err := flush(); err != nil {
+							return err
+						}
+					}
+				}
+				return flush()
+			})
+
+			// --- Producer goroutines (chat) ---
+			producerEg, egctx := errgroup.WithContext(outerCtx)
+			producerEg.SetLimit(conc)
 			for i := range fileSummaryJobs {
 				j := fileSummaryJobs[i]
-				eg.Go(func() error {
+				producerEg.Go(func() error {
 					subjectsMu.Lock()
 					fileSubjects := subjects[j.rel]
 					subjectsMu.Unlock()
@@ -676,7 +759,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 					if ix.Options.Verbose && j.truncated {
 						ix.Options.Logger.Info("summarize truncated", "path", j.rel, "size", j.size)
 					}
-					fileResults[i] = &pending{
+					select {
+					case summaryCh <- pending{
 						rel: j.rel,
 						chunk: chunk.Chunk{
 							Path:      j.rel,
@@ -686,13 +770,16 @@ func (ix *Indexer) Run(ctx context.Context) error {
 							Content:   summary,
 						},
 						sha: j.fileSHA,
+					}:
+						summaryCount.Add(1)
+					case <-egctx.Done():
 					}
 					return nil
 				})
 			}
 			for i := range chunkSummaryJobs {
 				j := chunkSummaryJobs[i]
-				eg.Go(func() error {
+				producerEg.Go(func() error {
 					summary, err := summarizeChunk(egctx, ix.Options.Chat, ix.Options.SummaryModels.Chunk, j.rel, j.c)
 					if err != nil {
 						ix.Options.Logger.Warn("chunk summarize failed", "path", j.rel, "start_line", j.c.StartLine, "err", err)
@@ -701,7 +788,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 					if strings.TrimSpace(summary) == "" {
 						return nil
 					}
-					chunkResults[i] = &pending{
+					select {
+					case summaryCh <- pending{
 						rel: j.rel,
 						chunk: chunk.Chunk{
 							Path:      j.rel,
@@ -711,27 +799,28 @@ func (ix *Indexer) Run(ctx context.Context) error {
 							Content:   summary,
 						},
 						sha: j.sumSHA,
+					}:
+						summaryCount.Add(1)
+					case <-egctx.Done():
 					}
 					return nil
 				})
 			}
-			if err := eg.Wait(); err != nil {
+
+			// Wait for all chat producers, then close the channel to drain
+			// the committer.
+			outerEg.Go(func() error {
+				err := producerEg.Wait()
+				close(summaryCh)
+				return err
+			})
+
+			if err := outerEg.Wait(); err != nil {
 				return err
 			}
-			for _, p := range fileResults {
-				if p != nil {
-					toEmbed = append(toEmbed, *p)
-					seen++
-					summariesGenerated++
-				}
-			}
-			for _, p := range chunkResults {
-				if p != nil {
-					toEmbed = append(toEmbed, *p)
-					seen++
-					summariesGenerated++
-				}
-			}
+			n := int(summaryCount.Load())
+			seen += n
+			summariesGenerated += n
 		}
 	}
 
@@ -762,29 +851,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				end = len(toEmbed)
 			}
 			batch := toEmbed[start:end]
-			texts := make([]string, len(batch))
-			for i, p := range batch {
-				texts[i] = p.chunk.EmbedText()
-			}
 			batchStart := time.Now()
-			vecs, err := ix.Embed.Embed(ctx, texts)
-			if err != nil {
-				return fmt.Errorf("embed: %w", err)
-			}
-			rows := make([]store.PendingChunk, len(batch))
-			for i, p := range batch {
-				rows[i] = store.PendingChunk{
-					Path:       p.rel,
-					Kind:       p.chunk.Kind,
-					Name:       p.chunk.Name,
-					StartLine:  p.chunk.StartLine,
-					EndLine:    p.chunk.EndLine,
-					ContentSHA: p.sha,
-					Content:    p.chunk.Content,
-					Vec:        vecs[i],
-				}
-			}
-			if err := ix.Store.UpsertMany(ctx, rows, startTime); err != nil {
+			if err := ix.embedAndUpsertBatch(ctx, batch, startTime); err != nil {
 				return err
 			}
 			ix.Options.Logger.Info("index: embed batch",
@@ -977,6 +1045,17 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		}
 	}
 
+	// Capture dirs whose file_summary rows are about to be pruned (a file
+	// was deleted) BEFORE the delete, so the next incremental cascade
+	// regenerates their now-stale package_summary (dex #234). Best-effort:
+	// a query error here just means we miss the optimization, not lose data
+	// (a later full scan still catches it).
+	if prunedDirs, derr := ix.Store.FileSummaryDirsUnseen(ctx, startTime); derr == nil {
+		ix.addPrunedDirs(prunedDirs)
+	} else if ix.Options.Verbose {
+		ix.Options.Logger.Warn("index: file-summary pruned-dir probe failed", "err", derr)
+	}
+
 	pruned, err := ix.Store.PruneUnseen(ctx, startTime)
 	if err != nil {
 		return err
@@ -1003,6 +1082,35 @@ type pending struct {
 	rel   string
 	chunk chunk.Chunk
 	sha   string
+}
+
+// embedAndUpsertBatch embeds one batch of pending chunks in a single
+// Embed.Embed call and upserts them under startTime. Shared by the
+// streaming summary committer (non-defer summarize, dex #233) and the
+// post-pass batch embed loop so both have one tested embed+upsert path.
+func (ix *Indexer) embedAndUpsertBatch(ctx context.Context, batch []pending, startTime time.Time) error {
+	texts := make([]string, len(batch))
+	for i, p := range batch {
+		texts[i] = p.chunk.EmbedText()
+	}
+	vecs, err := ix.Embed.Embed(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("embed: %w", err)
+	}
+	rows := make([]store.PendingChunk, len(batch))
+	for i, p := range batch {
+		rows[i] = store.PendingChunk{
+			Path:       p.rel,
+			Kind:       p.chunk.Kind,
+			Name:       p.chunk.Name,
+			StartLine:  p.chunk.StartLine,
+			EndLine:    p.chunk.EndLine,
+			ContentSHA: p.sha,
+			Content:    p.chunk.Content,
+			Vec:        vecs[i],
+		}
+	}
+	return ix.Store.UpsertMany(ctx, rows, startTime)
 }
 
 func chunkSHA(content string) string {

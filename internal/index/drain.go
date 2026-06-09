@@ -161,11 +161,13 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	stale := make([]int64, 0)
 	var staleMu sync.Mutex
 
-	// Shared state written by the committer, read after eg.Wait().
+	// Shared state written ONLY by the single committer goroutine and read
+	// after outerEg.Wait() — Wait() establishes the happens-before, so no
+	// mutex is needed (there is exactly one writer and the read is ordered
+	// after it).
 	var (
-		commitGenerated  int
-		dirtiedDirSet    = make(map[string]struct{})
-		commitMu         sync.Mutex // guards commitGenerated + dirtiedDirSet
+		commitGenerated int
+		dirtiedDirSet   = make(map[string]struct{})
 	)
 
 	// Outer errgroup wraps both the producer set and the committer so
@@ -210,14 +212,12 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 			if upErr := ix.Store.UpsertMany(outerCtx, rows, startTime); upErr != nil {
 				return fmt.Errorf("upsert: %w", upErr)
 			}
-			commitMu.Lock()
 			for _, r := range batch {
 				commitGenerated++
 				if r.chunk.Kind == chunk.KindFileSummary {
 					dirtiedDirSet[filepath.Dir(r.chunk.Path)] = struct{}{}
 				}
 			}
-			commitMu.Unlock()
 			// Delete pending rows after upsert succeeds. Use the outer
 			// context so a sibling-producer cancel doesn't lose committed rows.
 			for _, r := range batch {
@@ -273,11 +273,15 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 		return err
 	})
 
-	if err := outerEg.Wait(); err != nil {
-		return 0, 0, nil, err
-	}
-
+	waitErr := outerEg.Wait()
+	// Read commitGenerated after Wait() (happens-before established). Report
+	// it even on error: batches the committer flushed before failing are
+	// durably upserted + deleted from the queue, so reporting 0 would
+	// understate real progress to IdleSummaryDrainer's accounting.
 	generated = commitGenerated
+	if waitErr != nil {
+		return generated, 0, nil, waitErr
+	}
 
 	// Drop stale rows (source content changed since enqueue). The next
 	// index --summarize-defer run will re-enqueue with the new SHA.
@@ -326,6 +330,12 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 // (incremental cascade). Pass nil for a full scan — used by
 // DrainPendingSummaries and external callers that don't have a hint.
 //
+// On the incremental path (dirtyDirs != nil) the dirs recorded by Run()'s
+// prune step (files deleted from surviving packages, dex #234) are unioned
+// in so their stale package_summary is regenerated. On the full-scan path
+// (dirtyDirs == nil) every dir is already covered, so we just drain the
+// pruned-dir set to keep it from leaking into a later incremental cascade.
+//
 // Exposed so external callers (e.g. the watcher's idle hook) can run
 // the cascade independently of the per-batch drainer — typically once
 // DrainPendingSummariesBatch reports remaining == 0.
@@ -335,6 +345,10 @@ func (ix *Indexer) CascadePackageRepoSummaries(ctx context.Context, dirtyDirs []
 	}
 	if err := ix.Store.EnsureEmbedModel(ctx, ix.Embed.ModelName()); err != nil {
 		return 0, err
+	}
+	pruned := ix.takePrunedDirs()
+	if dirtyDirs != nil {
+		dirtyDirs = append(dirtyDirs, pruned...)
 	}
 	gen, err := ix.cascadePackageAndRepo(ctx, time.Now(), dirtyDirs)
 	if err == nil && gen > 0 {
@@ -760,9 +774,10 @@ func (ix *Indexer) planPackageJobs(
 }
 
 // runPackageJobs fans out chat summarization across SummaryConcurrency
-// workers. Each worker commits its package_summary durably the moment it
-// is generated (see commitPackageSummary) rather than collecting all
-// results into a single all-or-nothing final batch.
+// workers. Each worker streams its package_summary to a committer that
+// embeds + upserts it in mini-batches (see embedAndCommitPackageBatch)
+// rather than collecting all results into a single all-or-nothing final
+// batch.
 //
 // This is what makes the background cascade resumable. The watcher
 // cancels the idle context on any fresh fs event (watch.markDirty), so in
@@ -815,7 +830,7 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 
 	// Mini-batch embed: workers send completed summaries to commitCh;
 	// a committer goroutine accumulates them and calls Embed.Embed in
-	// batches instead of 1-item-at-a-time (commitPackageSummary legacy).
+	// batches instead of 1-item-at-a-time.
 	batchSize := ix.Embed.BatchSize()
 	if batchSize <= 0 {
 		batchSize = 16
@@ -894,6 +909,13 @@ func (ix *Indexer) runPackageJobs(ctx context.Context, startTime time.Time, jobs
 // Embed.Embed call, then commits each item individually (preserving per-package
 // durability). The commit step runs on context.WithoutCancel so a cancellation
 // cannot discard summaries the chat endpoint already produced (dex #33).
+//
+// Failure-mode tradeoff: a single Embed.Embed error drops the whole mini-batch
+// (up to batchSize package summaries) rather than one. Convergence still holds
+// — dropped packages stay cache-misses and the next cascade regenerates them —
+// so the only cost is re-running their (already-completed) chat calls. We
+// accept this for the batch-embed throughput win; the local embed endpoint
+// rarely errors mid-run.
 func (ix *Indexer) embedAndCommitPackageBatch(ctx context.Context, items []pkgCommitItem, startTime time.Time) error {
 	cctx := context.WithoutCancel(ctx)
 	texts := make([]string, len(items))
@@ -921,15 +943,6 @@ func (ix *Indexer) embedAndCommitPackageBatch(ctx context.Context, items []pkgCo
 		}
 	}
 	return nil
-}
-
-// commitPackageSummary embeds one package_summary, upserts it, and GCs
-// older-SHA rows for the same dir. Kept for callers outside runPackageJobs
-// that need single-item semantics. The commit runs on context.WithoutCancel
-// so neither a sibling worker's failure nor an idle-context cancellation can
-// discard a summary the chat endpoint already produced (dex #33).
-func (ix *Indexer) commitPackageSummary(ctx context.Context, dir, pkgSHA, summary string, startTime time.Time) error {
-	return ix.embedAndCommitPackageBatch(ctx, []pkgCommitItem{{dir: dir, pkgSHA: pkgSHA, summary: summary}}, startTime)
 }
 
 // repoSummaryMaxPackages caps how many package summaries feed

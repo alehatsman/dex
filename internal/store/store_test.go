@@ -133,6 +133,46 @@ func TestDimMismatchRejected(t *testing.T) {
 	}
 }
 
+// TestFileSummaryDirsUnseen verifies the probe returns the distinct dirs of
+// file_summary chunks last seen before the cutoff (the rows the next
+// PruneUnseen will delete) — and nothing for surviving or non-file_summary
+// rows. This drives the deletion-aware incremental cascade (dex #234).
+func TestFileSummaryDirsUnseen(t *testing.T) {
+	st, ctx := newStore(t)
+	t0 := time.Now()
+	_ = st.UpsertMany(ctx, []PendingChunk{
+		// Two file summaries in the same dir, plus one in another dir.
+		{Path: "pkg/a.go", Kind: "file_summary", ContentSHA: "fa", Content: "a", Vec: []float32{1, 0}},
+		{Path: "pkg/b.go", Kind: "file_summary", ContentSHA: "fb", Content: "b", Vec: []float32{0, 1}},
+		{Path: "other/c.go", Kind: "file_summary", ContentSHA: "fc", Content: "c", Vec: []float32{1, 1}},
+		// A non-file_summary chunk in pkg/ that must NOT influence the result.
+		{Path: "pkg/d.go", Kind: "function_declaration", ContentSHA: "fd", Content: "d", Vec: []float32{1, 0}},
+	}, t0)
+
+	// Re-seen pkg/a.go at the cutoff (survives); pkg/b.go + other/c.go stay stale.
+	t1 := t0.Add(time.Millisecond)
+	if err := st.TouchSeen(ctx, "pkg/a.go", "fa", "", 0, 0, t1); err != nil {
+		t.Fatal(err)
+	}
+
+	dirs, err := st.FileSummaryDirsUnseen(ctx, t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		got[d] = true
+	}
+	// pkg is stale via b.go; other is stale via c.go. pkg/a.go survived but
+	// pkg still appears (b.go is stale). The function_declaration is ignored.
+	if !got["pkg"] || !got["other"] {
+		t.Errorf("dirs=%v, want both pkg and other", dirs)
+	}
+	if len(dirs) != 2 {
+		t.Errorf("dirs=%v, want exactly 2 distinct dirs", dirs)
+	}
+}
+
 func TestPruneUnseen(t *testing.T) {
 	st, ctx := newStore(t)
 	t0 := time.Now()
