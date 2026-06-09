@@ -85,20 +85,13 @@ func (s *Store) CoAccessNeighbors(ctx context.Context, seeds []string, n int) ([
 		args[i] = p
 		args[len(seeds)+i] = p
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT neighbor, MAX(weight) AS w FROM (
-		  SELECT dst_path AS neighbor, weight
-		    FROM co_access_edges
-		   WHERE src_path IN (`+inPlaceholders(len(seeds))+`) AND weight >= `+coAccessMinWeightStr+`
-		  UNION ALL
-		  SELECT src_path AS neighbor, weight
-		    FROM co_access_edges
-		   WHERE dst_path IN (`+inPlaceholders(len(seeds))+`) AND weight >= `+coAccessMinWeightStr+`
-		)
-		GROUP BY neighbor
-		ORDER BY w DESC
-		LIMIT ?`,
-		append(args, n)...)
+	ph := inPlaceholders(len(seeds))
+	q := `SELECT neighbor, MAX(weight) AS w FROM (` + //nolint:gosec
+		` SELECT dst_path AS neighbor, weight FROM co_access_edges WHERE src_path IN (` + ph + `) AND weight >= ` + coAccessMinWeightStr +
+		` UNION ALL` +
+		` SELECT src_path AS neighbor, weight FROM co_access_edges WHERE dst_path IN (` + ph + `) AND weight >= ` + coAccessMinWeightStr +
+		`) GROUP BY neighbor ORDER BY w DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, append(args, n)...)
 	if err != nil {
 		return nil, err
 	}
