@@ -379,6 +379,11 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 		consecutiveNoProgress int
 		nextAttempt           time.Time
 		currentBackoff        time.Duration
+		// accDirtyDirs accumulates file_summary dirs across consecutive
+		// drain batches so that when the queue finally hits 0 and the
+		// cascade runs, it covers ALL packages touched in this drain
+		// cycle — not just the last batch's packages.
+		accDirtyDirs = make(map[string]struct{})
 	)
 	return func(ctx context.Context) (bool, error) {
 		if !nextAttempt.IsZero() && time.Now().Before(nextAttempt) {
@@ -419,11 +424,21 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 		if err != nil {
 			return true, err
 		}
+		// Accumulate dirty dirs across batches so the final cascade covers
+		// all packages touched in this drain cycle, not just the last batch.
+		for _, d := range dirs {
+			accDirtyDirs[d] = struct{}{}
+		}
 		if after == 0 {
 			consecutiveNoProgress = 0
 			nextAttempt = time.Time{}
 			currentBackoff = 0
-			cascadeGen, err := ix.CascadePackageRepoSummaries(ctx, dirs)
+			cascadeDirs := make([]string, 0, len(accDirtyDirs))
+			for d := range accDirtyDirs {
+				cascadeDirs = append(cascadeDirs, d)
+			}
+			accDirtyDirs = make(map[string]struct{}) // reset for next drain cycle
+			cascadeGen, err := ix.CascadePackageRepoSummaries(ctx, cascadeDirs)
 			if err != nil {
 				return true, err
 			}
