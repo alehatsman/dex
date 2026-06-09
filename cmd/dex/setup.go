@@ -210,6 +210,56 @@ func claudeRulesPath() (string, error) {
 	return filepath.Join(base, "rules", "dex.md"), nil
 }
 
+// ── rules status classification ───────────────────────────────────────────
+
+type rulesStatus int
+
+const (
+	rulesInSync    rulesStatus = iota // deployed block matches canonical
+	rulesMissing                      // file does not exist
+	rulesNoMarkers                    // file exists but no dex block found
+	rulesStale                        // block present but version string outdated
+	rulesDrifted                      // current version but content differs from canonical
+)
+
+// checkRulesStatus classifies the deployed routing rules. Fails open: any
+// read or compare error returns rulesInSync so callers stay silent.
+func checkRulesStatus() (rulesStatus, string) {
+	path, err := claudeRulesPath()
+	if err != nil {
+		return rulesInSync, ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return rulesMissing, path
+		}
+		return rulesInSync, path // fail open
+	}
+	s := string(data)
+	if !strings.Contains(s, rulesMarker) {
+		return rulesNoMarkers, path
+	}
+	if !strings.Contains(s, rulesVersion) {
+		return rulesStale, path
+	}
+	if extractRulesBlock(s) != rulesContent {
+		return rulesDrifted, path
+	}
+	return rulesInSync, path
+}
+
+// extractRulesBlock returns the substring from rulesMarker through
+// rulesEndMarker (inclusive). Returns "" when either marker is absent.
+func extractRulesBlock(s string) string {
+	start := strings.Index(s, rulesMarker)
+	end := strings.Index(s, rulesEndMarker)
+	if start == -1 || end == -1 || end < start {
+		return ""
+	}
+	return s[start : end+len(rulesEndMarker)]
+}
+
 // buildRulesContent reads the existing file (if any) and returns:
 //   - action: "created", "updated", or "already up to date"
 //   - the full new file content

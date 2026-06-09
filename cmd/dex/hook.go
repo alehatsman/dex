@@ -85,7 +85,8 @@ func hookReadStdin() []byte {
 
 // hookInject handles UserPromptSubmit. It runs a dex ask query on the prompt
 // and emits {"additionalContext": "..."} so Claude sees relevant file paths
-// before processing the turn. Silent on any error.
+// before processing the turn. Also prepends a one-time-per-session nudge when
+// routing rules are stale or drifted. Silent on any error.
 func hookInject(ctx context.Context) error {
 	raw := hookReadStdin()
 	if len(raw) == 0 {
@@ -98,23 +99,26 @@ func hookInject(ctx context.Context) error {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil
 	}
+
+	nudge := rulesNudge()
+
 	// Skip very short prompts (confirmations, "yes", "ok", etc.) — not
 	// worth a round-trip to the index for sub-4-word inputs.
 	if len(strings.Fields(payload.Prompt)) < 4 {
-		return nil
+		return emitInjectContext(nudge, "")
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil
+		return emitInjectContext(nudge, "")
 	}
 	base, err := indexDir()
 	if err != nil {
-		return nil
+		return emitInjectContext(nudge, "")
 	}
 	p, err := proj.Resolve(cwd, base)
 	if err != nil {
-		return nil
+		return emitInjectContext(nudge, "")
 	}
 
 	// 10 s budget — the hook runs synchronously before Claude processes the
@@ -132,14 +136,69 @@ func hookInject(ctx context.Context) error {
 		NoInline: true,
 	})
 	if err != nil || out.Status != "ok" {
-		return nil
+		return emitInjectContext(nudge, "")
 	}
 
-	ac := buildInjectContext(out)
-	if ac == "" {
+	return emitInjectContext(nudge, buildInjectContext(out))
+}
+
+// emitInjectContext encodes additionalContext combining nudge and ac.
+// Emits nothing and returns nil when both are empty.
+func emitInjectContext(nudge, ac string) error {
+	combined := nudge
+	if ac != "" {
+		if combined != "" {
+			combined += "\n\n"
+		}
+		combined += ac
+	}
+	if combined == "" {
 		return nil
 	}
-	return json.NewEncoder(os.Stdout).Encode(map[string]string{"additionalContext": ac})
+	return json.NewEncoder(os.Stdout).Encode(map[string]string{"additionalContext": combined})
+}
+
+// rulesNudge returns a one-time-per-session warning when routing rules are
+// stale or drifted. Returns "" when rules are in sync or the nudge already
+// fired recently (debounced by a sentinel file with an 8 h TTL). Fails open.
+func rulesNudge() string {
+	st, _ := checkRulesStatus()
+	if st == rulesInSync {
+		return ""
+	}
+
+	sentinel := rulesNudgeSentinelPath()
+	if sentinel != "" {
+		if fi, err := os.Stat(sentinel); err == nil {
+			if time.Since(fi.ModTime()) < 8*time.Hour {
+				return "" // already nudged this session
+			}
+		}
+		// Touch sentinel before emitting so concurrent hook invocations don't double-fire.
+		if mkErr := os.MkdirAll(filepath.Dir(sentinel), 0o755); mkErr == nil {
+			if f, err := os.OpenFile(sentinel, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); err == nil {
+				_ = f.Close()
+			}
+		}
+	}
+
+	switch st {
+	case rulesMissing, rulesNoMarkers:
+		return "[DEX] routing rules not installed — run `dex setup`"
+	case rulesStale:
+		return "[DEX] routing rules are outdated — run `dex setup`"
+	case rulesDrifted:
+		return "[DEX] routing rules have drifted from canonical — run `dex setup` to restore"
+	}
+	return ""
+}
+
+func rulesNudgeSentinelPath() string {
+	dir := hookLogDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "rules-nudge-sentinel")
 }
 
 func buildInjectContext(out mcp.ContextOutput) string {

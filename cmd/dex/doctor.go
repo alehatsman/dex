@@ -66,6 +66,7 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	checks = append(checks, checkEndpoints(epCtx)...)
 	checks = append(checks, checkProjectConfig())
 	checks = append(checks, checkMCPWiring())
+	checks = append(checks, checkRulesWiring())
 
 	labelW := 0
 	for _, c := range checks {
@@ -311,6 +312,41 @@ func checkProjectConfig() doctorCheck {
 		}
 	}
 	return doctorCheck{name: "project cfg", status: docOK, detail: ".dex/config.yml  " + wd}
+}
+
+// ─── routing rules ────────────────────────────────────────────────────────────
+
+func checkRulesWiring() doctorCheck {
+	st, path := checkRulesStatus()
+	switch st {
+	case rulesInSync:
+		return doctorCheck{name: "rules", status: docOK, detail: "up to date  (" + path + ")"}
+	case rulesMissing:
+		return doctorCheck{
+			name: "rules", status: docWarn,
+			detail: "routing rules file not found",
+			hints:  []string{"run: dex setup"},
+		}
+	case rulesNoMarkers:
+		return doctorCheck{
+			name: "rules", status: docWarn,
+			detail: "dex block missing in " + path,
+			hints:  []string{"run: dex setup to inject routing rules"},
+		}
+	case rulesStale:
+		return doctorCheck{
+			name: "rules", status: docWarn,
+			detail: "stale version in " + path,
+			hints:  []string{"run: dex setup to update"},
+		}
+	case rulesDrifted:
+		return doctorCheck{
+			name: "rules", status: docWarn,
+			detail: "content drifted from canonical in " + path,
+			hints:  []string{"run: dex setup to restore"},
+		}
+	}
+	return doctorCheck{name: "rules", status: docOK, detail: path}
 }
 
 // ─── MCP wiring ───────────────────────────────────────────────────────────────
