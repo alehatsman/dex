@@ -71,6 +71,11 @@ and an `avoid` line you can follow verbatim.
 - `graph_neighbors` — cosine neighbours of a known chunk.
 - `graph_deps` — `imports` for a file or package.
 - `graph_callers`, `graph_callees` — precise call edges (Go-only).
+- `graph_cycles` — mutual-recursion clusters (Tarjan SCC on `calls` edges).
+- `graph_path` — shortest call/import path between two symbols (BFS).
+- `graph_diff` — blast-radius of `git diff <ref>`: changed symbols → transitive callers.
+- `graph_communities` — Louvain call-graph clusters (module boundaries / hidden coupling).
+- `graph_smells` — structural quality signals: long funcs, dead exports, god files, god-nodes.
 - `file_view` — signatures / structural map / LLM gist / line slice of a file.
 - `status` — endpoint health + indexed projects.
 ```

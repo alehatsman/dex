@@ -60,7 +60,8 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   wired) `file_view`. `TierPower` adds the full raw surface: `search_semantic`,
   `search_symbol`, `search_similar`, `graph_neighbors`, `graph_deps`,
   `graph_callers`, `graph_callees`, `graph_links`, `graph_backlinks`, `graph_tags`,
-  `graph_impact`, `graph_routes`, `graph_smells`, `compress_output`, `status`,
+  `graph_impact`, `graph_routes`, `graph_smells`, `graph_cycles`, `graph_path`,
+  `graph_diff`, `graph_communities`, `compress_output`, `status`,
   and `spec_check`.
 - WHERE a tool is named, it follows the **naming convention**: a category
   prefix groups related tools so an agent can guess a name from its purpose —
@@ -206,6 +207,36 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   context tokens, and the `file_view` mode used in the last read this turn. dex
   uses these signals to downgrade compression modes that consistently produce thin
   responses. Skip when no `file_view` was called this turn.
+- WHEN `graph_cycles` is called (TierPower), dex runs iterative Tarjan SCC on the
+  `calls` edges and returns SCCs of size ≥ `min_size` (default 2) sorted by
+  descending size; each cycle lists its member nodes with location and kind. SCCs
+  of size 1 (trivially acyclic nodes) are excluded by default so only genuine
+  mutual-recursion clusters are returned.
+- WHEN `graph_path` is called (TierPower), dex BFS-searches over `calls` and
+  `imports` edges from `src` to `dst` (resolved as for `graph_callers`) and returns
+  the shortest hop list with per-hop `edge_kind`; `status:"no-path"` when `dst` is
+  unreachable within `max_depth` (default 8, max 15). Useful for tracing
+  control-flow or dependency chains between two symbols without manual exploration.
+- WHEN `graph_diff` is called (TierPower), dex runs `git diff --name-only <ref> HEAD`
+  in the project root (default ref `HEAD~1`), collects function/method graph nodes
+  from the changed files as seeds, then BFS over `calls` edges up to `max_depth`
+  hops (default 2, max 5); returns the blast-radius node list sorted by depth and
+  PageRank. The total and truncated flag indicate whether the 300-node ceiling was
+  hit. Requires a graph index; returns `no-changes` when `ref` matches HEAD.
+- WHEN `graph_communities` is called (TierPower), dex reads the Louvain community
+  assignments computed during the last index run and returns communities (sorted by
+  descending size) with their top members sorted by PageRank. Community IDs are
+  1-based stable integers; `min_members` filters small singletons (default 3);
+  `k` caps total communities returned (default 20, max 50); `top_k` caps members
+  shown per community (default 10). Requires a graph index with calls/imports edges;
+  `community_id = 0` nodes were not reached during detection.
+- WHEN `graph_smells` is called (TierPower), dex returns four structural quality
+  signals derived from the graph index without LLM involvement: `long_functions`
+  (body lines ≥ `min_func_lines`, default 80), `dead_exports` (exported symbols
+  with zero indexed callers), `god_files` (files with ≥ `min_file_symbols` symbols,
+  default 30), and `god_nodes` (functions/methods with `in_degree ≥ 20` OR
+  `cross_pkg_callers ≥ 8`, tunable). Returns `status:"no-graph"` when the graph
+  has not been built.
 
 ## Non-goals
 
@@ -230,7 +261,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] `ask` is the sole TierAsk tool; composes lanes + synthesizes cited answer
 - [x] 3-tier tool surface: `DEX_TOOLS=ask|standard|power`; `DEX_EXPOSE_RAW_TOOLS=1` aliases power
 - [x] TierStandard: ctx_nav, ctx_overview, ctx_session, ctx_knowledge, ctx_agent, ctx_feedback, ctx_shell, ctx_prefetch, file_tree, search_grep, search_context, search_workspace, file_view (chat required)
-- [x] TierPower: search_semantic, search_symbol, search_similar, graph_*, graph_impact, graph_routes, graph_smells, compress_output, status, spec_check
+- [x] TierPower: search_semantic, search_symbol, search_similar, graph_*, graph_impact, graph_routes, graph_smells, graph_cycles, graph_path, graph_diff, graph_communities, compress_output, status, spec_check
 - [x] `file_view mode=map` returns structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
 - [x] `search_context`: single call returns top-K file signatures + best symbol body (replaces search→signatures→lines round-trip)
 - [x] Task-relevance inline: signatures/map append best-matching symbol body when session has a declared task
