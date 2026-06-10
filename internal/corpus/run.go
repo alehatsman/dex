@@ -15,6 +15,7 @@ import (
 const (
 	SetGitHistory  = "git-history"
 	SetBlastRadius = "blast-radius"
+	SetStructural  = "structural"
 )
 
 // LabeledReport is one (repo, query-set) cell of the corpus report.
@@ -30,8 +31,9 @@ type LabeledReport struct {
 //
 // It reuses internal/eval wholesale: curated query sets are loaded with
 // eval.LoadGolden; enabled gen flavors are generated from the checkout dir with
-// eval.Generate / eval.GenerateBlastRadius; each set is scored with eval.Run +
-// eval.Compute. st must be an open store for this repo's index; em must use the
+// eval.Generate / eval.GenerateBlastRadius / eval.GenerateStructural; each set
+// is scored with eval.Run + eval.Compute. st must be an open store for this
+// repo's index; em must use the
 // index-recorded embed model (see the CLI wiring). QuerySets are expected to be
 // absolute paths (the CLI resolves them against the manifest dir).
 func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoSpec, dir string, k int) ([]LabeledReport, error) {
@@ -85,6 +87,15 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 			return nil, fmt.Errorf("corpus: generate blast-radius for %s: %w", spec.Name, err)
 		}
 		if err := score(SetBlastRadius, gs, false); err != nil {
+			return nil, err
+		}
+	}
+	if spec.Gen.Structural.Enabled {
+		gs, err := eval.GenerateStructural(ctx, dir, genOpts(spec.Gen.Structural))
+		if err != nil {
+			return nil, fmt.Errorf("corpus: generate structural for %s: %w", spec.Name, err)
+		}
+		if err := score(SetStructural, gs, false); err != nil {
 			return nil, err
 		}
 	}

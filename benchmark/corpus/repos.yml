@@ -12,7 +12,9 @@
 #     the high-signal labels; add them under queries/<name>.json.
 #   - gen: auto-labels mined from the repo's OWN history at the pin (free,
 #     noisier). git_history = commit subject -> touched files; blast_radius =
-#     anchor excerpt -> co-changed files. max_commits/max_files: 0 = eval default.
+#     anchor excerpt -> co-changed files; structural = prose commit subject +
+#     multi-package co-changed files with no cross-imports (graph-lane probe,
+#     #279). max_commits/max_files: 0 = eval default.
 #
 # Commits are pinned to release tags (resolved via `git ls-remote --tags`) so
 # the corpus never drifts. Refresh a pin by bumping `commit` to a newer tag.
@@ -28,7 +30,8 @@ repos:
     languages: [python]
     query_sets: [queries/flask.json]
     gen:
-      git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
 
   - name: gin
     url: https://github.com/gin-gonic/gin
@@ -36,8 +39,9 @@ repos:
     languages: [go]
     query_sets: [queries/gin.json]
     gen:
-      git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
 
   - name: ripgrep
     url: https://github.com/BurntSushi/ripgrep
@@ -46,6 +50,7 @@ repos:
     query_sets: [queries/ripgrep.json]
     gen:
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:  { enabled: true, max_commits: 500, max_files: 5 }
 
   - name: zod
     url: https://github.com/colinhacks/zod
@@ -54,6 +59,7 @@ repos:
     query_sets: [queries/zod.json]
     gen:
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:  { enabled: true, max_commits: 500, max_files: 5 }
 
   # react — flagship, large monorepo. Cost is bounded with index_subdir to a
   # single substantive package. NB: the public `packages/react-dom` is a thin
@@ -71,3 +77,4 @@ repos:
       # gen honors index_subdir (#285): the generators scope git log to the
       # subdir and emit subdir-relative paths, so labels match the index.
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:  { enabled: true, max_commits: 500, max_files: 5 }

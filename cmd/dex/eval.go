@@ -20,22 +20,27 @@ Offline code-retrieval eval. Scores the live Search path against a golden set
 of (query → relevant files) pairs mined from the repo's own git history, and
 reports NDCG@k, Recall@k and MRR.
 
-Two golden-set flavors (--mode):
+Three golden-set flavors (--mode):
   git-history  (default) query = commit subject, relevant = files it touched.
                Measures direct code retrieval.
   blast-radius query = a code excerpt from an anchor file, relevant = the OTHER
                files co-changed in the same commit (anchor excluded from
                results). Measures structural / "what changes with this?"
-               retrieval — the probe for graph-lane work (see docs/retrieval-eval.md).
+               retrieval — co-change probe for graph-lane work.
+  structural   query = prose commit subject, relevant = co-changed files that
+               span ≥2 packages with NO import relationship between them.
+               Measures graph-lane contribution for structural coupling invisible
+               to BM25+dense — the instrument for tuning DEX_GRAPH_WEIGHT (#279).
 
 The golden set is committed (default benchmark/eval/golden.json, or
-blast-radius.json for --mode blast-radius) so the query set — and therefore the
-metrics — are stable across runs. Regenerate with --gen to refresh the labels.
+blast-radius.json / structural.json for the corresponding --mode) so the
+query set — and therefore the metrics — are stable across runs. Regenerate
+with --gen to refresh the labels.
 
 Flags:
   --gen            (re)generate the golden set from git history and write it to
                    --golden, then exit (does not score)
-  --mode flavor    golden-set flavor when generating: git-history | blast-radius
+  --mode flavor    golden-set flavor when generating: git-history | blast-radius | structural
   --golden path    golden-set JSON (default: <project>/benchmark/eval/golden.json)
   --k int          retrieval depth (default: 10)
   --max-commits N  commits to scan when generating (default: 500)
@@ -55,7 +60,7 @@ func runEval(ctx context.Context, args []string) {
 	fs.Usage = func() { fmt.Fprint(os.Stderr, evalUsage) }
 
 	gen := fs.Bool("gen", false, "regenerate golden set from git history and exit")
-	mode := fs.String("mode", "git-history", "golden-set flavor when generating: git-history | blast-radius")
+	mode := fs.String("mode", "git-history", "golden-set flavor when generating: git-history | blast-radius | structural")
 	goldenPath := fs.String("golden", "", "golden-set JSON path")
 	k := fs.Int("k", 10, "retrieval depth")
 	maxCommits := fs.Int("max-commits", 0, "commits to scan when generating")
@@ -86,16 +91,20 @@ func runEval(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	if *mode != "git-history" && *mode != "blast-radius" {
-		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --mode %q (want git-history|blast-radius)\n", *mode)
+	validModes := map[string]bool{"git-history": true, "blast-radius": true, "structural": true}
+	if !validModes[*mode] {
+		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --mode %q (want git-history|blast-radius|structural)\n", *mode)
 		os.Exit(1)
 	}
 
 	gPath := *goldenPath
 	if gPath == "" {
 		name := "golden.json"
-		if *mode == "blast-radius" {
+		switch *mode {
+		case "blast-radius":
 			name = "blast-radius.json"
+		case "structural":
+			name = "structural.json"
 		}
 		gPath = filepath.Join(p.Root, "benchmark", "eval", name)
 	}
@@ -104,9 +113,12 @@ func runEval(ctx context.Context, args []string) {
 		opts := eval.GenOpts{MaxCommits: *maxCommits, MaxFiles: *maxFiles}
 		var gs eval.GoldenSet
 		var err error
-		if *mode == "blast-radius" {
+		switch *mode {
+		case "blast-radius":
 			gs, err = eval.GenerateBlastRadius(ctx, p.Root, opts)
-		} else {
+		case "structural":
+			gs, err = eval.GenerateStructural(ctx, p.Root, opts)
+		default:
 			gs, err = eval.Generate(ctx, p.Root, opts)
 		}
 		if err != nil {

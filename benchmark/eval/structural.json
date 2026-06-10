@@ -1,0 +1,107 @@
+{
+  "repo": "dex-279-structural",
+  "head": "31b70ec346073812cd8eb3033fed75c5604fb6c0",
+  "gen_opts": {
+    "max_commits": 2000,
+    "max_files": 5
+  },
+  "queries": [
+    {
+      "id": "bdf71ada",
+      "query": "register graph knobs in `dex env` + parse tests + γ-sweep script",
+      "relevant_files": [
+        "benchmark/eval/sweep-graph-gamma.sh",
+        "cmd/dex/env.go",
+        "cmd/dex/graph_env_test.go"
+      ]
+    },
+    {
+      "id": "6f1c90b3",
+      "query": "clear golangci-lint full-gate failures (#243)",
+      "relevant_files": [
+        "internal/graph/analysis.go",
+        "internal/mcp/server_compress_ext.go",
+        "internal/store/multiscale.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "5ac0bfae",
+      "query": "document DEX_TOOLS and warn on mistyped DEX_TOOL_TIER",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "e5fcc8a6",
+      "query": "synthesize grounded answers + thin MCP surface to ask-only",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "internal/mcp/answer.go",
+        "internal/mcp/answer_test.go",
+        "internal/mcp/context.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "0e0c5a83",
+      "query": "Java tree-sitter extractor",
+      "relevant_files": [
+        "internal/graph/sitter_java.go",
+        "internal/graph/sitter_java_test.go",
+        "internal/graph/testdata/java_simple/com/example/Handler.java",
+        "internal/graph/testdata/java_simple/com/example/Main.java",
+        "internal/graph/testdata/java_simple/com/example/util/Text.java"
+      ]
+    },
+    {
+      "id": "4ae20188",
+      "query": "Rust tree-sitter extractor (fn/struct/enum/trait/impl)",
+      "relevant_files": [
+        "internal/graph/sitter_rust.go",
+        "internal/graph/sitter_rust_test.go",
+        "internal/graph/testdata/rust_simple/src/handler.rs",
+        "internal/graph/testdata/rust_simple/src/main.rs",
+        "internal/graph/testdata/rust_simple/src/text.rs"
+      ]
+    },
+    {
+      "id": "b4be5708",
+      "query": "production-focused summaries + interface-dispatch centrality",
+      "relevant_files": [
+        "internal/graph/centrality.go",
+        "internal/graph/go.go",
+        "internal/guide/render.go",
+        "internal/index/drain.go",
+        "internal/index/index.go"
+      ]
+    },
+    {
+      "id": "4e81bb28",
+      "query": "four CLI papercuts found while smoke-testing",
+      "relevant_files": [
+        "internal/chat/client.go",
+        "internal/rerank/chat_reranker.go"
+      ]
+    },
+    {
+      "id": "614c6715",
+      "query": "add implements edges using go/types checker",
+      "relevant_files": [
+        "internal/graph/go.go",
+        "internal/graph/graph.go",
+        "internal/graph/graph_test.go",
+        "internal/graph/testdata/simple/store/types.go"
+      ]
+    },
+    {
+      "id": "7da91143",
+      "query": "Phase 4 allocation micro-optimizations",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/store/store.go"
+      ]
+    }
+  ]
+}

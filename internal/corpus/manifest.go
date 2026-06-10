@@ -35,6 +35,7 @@ type GenSpec struct {
 type GenConfig struct {
 	GitHistory  GenSpec `yaml:"git_history"`
 	BlastRadius GenSpec `yaml:"blast_radius"`
+	Structural  GenSpec `yaml:"structural"`
 }
 
 // RepoSpec is one pinned repository in the corpus.
