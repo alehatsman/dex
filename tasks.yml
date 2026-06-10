@@ -180,6 +180,29 @@ tasks:
     steps:
       - shell: DEX_DISABLE_RERANK=1 dex bench corpus run --k 10 --check benchmark/corpus/baseline.json
 
+  # Kept local: offline compression benchmark — zero inference, no GPU required.
+  # Measures ratio, anchor preservation, extractive fidelity, and round-trip
+  # correctness per pass vs benchmark/compress/baseline.json.
+  # Gates Rung-B local-track work (#291/#292/#293 in the capability-ladder epic).
+  # Refresh the baseline with:
+  #   dex bench compress --output json > benchmark/compress/baseline.json
+  bench-compress:
+    desc: Offline compression benchmark (ratio/anchor%/fidelity) vs baseline
+    steps:
+      - shell: dex bench compress --check benchmark/compress/baseline.json
+
+  # Kept local: local-compute performance benchmark — zero GPU, zero network.
+  # Measures compress-pass latency, KNN scaling curves, BM25 latency, and
+  # storage footprint vs benchmark/perf/baseline.json.
+  # The KNN scaling curves identify the ANN break-even point for #216.
+  # Storage numbers justify int8 quantisation (#215) and Matryoshka dims (#249).
+  # Refresh the baseline with:
+  #   dex bench perf --output json > benchmark/perf/baseline.json
+  bench-perf:
+    desc: Local-compute pipeline performance benchmark vs baseline
+    steps:
+      - shell: dex bench perf --check benchmark/perf/baseline.json
+
   vet: goq/vet
 
   # ── Lint + security + vulnerability scans ───────────────────────────────
