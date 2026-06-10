@@ -561,13 +561,13 @@ func reportGraphStats(project string, stats *graph.Stats, format string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	default:
-		fmt.Printf("  graph: %d packages  %d nodes  %d edges  %d linked  pruned %d/%d  in %s\n",
+		fmt.Fprintf(os.Stderr, "  graph: %d packages  %d nodes  %d edges  %d linked  pruned %d/%d  in %s\n",
 			stats.Packages, stats.NodesUpserted, stats.EdgesUpserted,
 			stats.LinkedToChunks, stats.NodesPruned, stats.EdgesPruned, stats.Elapsed)
 		if len(stats.Warnings) > 0 {
-			fmt.Printf("  warnings: %d\n", len(stats.Warnings))
+			fmt.Fprintf(os.Stderr, "  warnings: %d\n", len(stats.Warnings))
 			for _, w := range stats.Warnings {
-				fmt.Printf("    %s\n", w)
+				fmt.Fprintf(os.Stderr, "    %s\n", w)
 			}
 		}
 		return nil

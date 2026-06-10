@@ -1171,8 +1171,8 @@ func cmdIndex(ctx context.Context, args []string) error {
 	if *format == "json" {
 		return reportIndexResult(p.Root, stats, gstats)
 	}
-	fmt.Printf("✓ indexed %s\n", p.Root)
-	fmt.Printf("  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
+	fmt.Fprintf(os.Stderr, "✓ indexed %s\n", p.Root)
+	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
 	if gstats != nil {
 		_ = reportGraphStats(p.Root, gstats, "text")
 	}
@@ -2454,10 +2454,10 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	if err != nil {
 		return err
 	}
-	fmt.Printf("✓ reindexed %s\n", p.Root)
-	fmt.Printf("  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
+	fmt.Fprintf(os.Stderr, "✓ reindexed %s\n", p.Root)
+	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
 	if stats.PendingSummaries > 0 {
-		fmt.Printf("  summaries queued: %d  (run `dex index summarize %s` or let watch drain)\n", stats.PendingSummaries, p.Root)
+		fmt.Fprintf(os.Stderr, "  summaries queued: %d  (run `dex index summarize %s` or let watch drain)\n", stats.PendingSummaries, p.Root)
 	}
 	if gstats != nil {
 		_ = reportGraphStats(p.Root, gstats, "text")
