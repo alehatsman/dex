@@ -169,6 +169,7 @@ Static binary on `distroless/static` (~36 MB). Add `--user "$(id -u):$(id -g)"` 
 
 ## Docs
 
+- [`docs/vision.md`](docs/vision.md) — the capability-ladder vision (Claude / local-agent / no-GPU rungs)
 - [`docs/model-selection.md`](docs/model-selection.md) — model recommendations (MTEB, VRAM, quant)
 - [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) — drop-in CLAUDE.md routing block
 - [`docs/observability.md`](docs/observability.md) — log field conventions
