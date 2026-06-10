@@ -162,6 +162,20 @@ tasks:
     steps:
       - shell: dex bench eval . --k 10 --check benchmark/eval/baseline.json
 
+  # Kept local: multi-repo retrieval eval over the pinned corpus
+  # (benchmark/corpus/repos.yml). Fetches + indexes each repo on first run
+  # (cached after) and scores per (repo, set). Requires a built dex on PATH, a
+  # live embed endpoint (DEX_EMBED_URL / ollama) and network access to clone
+  # the repos — a local/main_pc gate, not container-CI. Report mode for now;
+  # add a committed benchmark/corpus/baseline.json (and curated query sets),
+  # then append `--check benchmark/corpus/baseline.json` to turn it into a
+  # per-cell regression gate. Refresh the baseline with:
+  #   dex bench corpus run --output json > benchmark/corpus/baseline.json
+  corpus:
+    desc: Multi-repo retrieval eval (NDCG/Recall/MRR per repo) over the pinned corpus
+    steps:
+      - shell: dex bench corpus run --k 10
+
   vet: goq/vet
 
   # ── Lint + security + vulnerability scans ───────────────────────────────

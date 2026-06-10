@@ -29,7 +29,7 @@ Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexin
 
 func runBench(ctx context.Context, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: dex bench <subcommand> [flags]\n\nSubcommands:\n  locomo  LoCoMo memory-recall benchmark")
+		fmt.Fprintln(os.Stderr, "Usage: dex bench <subcommand> [flags]\n\nSubcommands:\n  locomo  LoCoMo memory-recall benchmark\n  eval    offline code-retrieval eval (this repo's git history)\n  corpus  multi-repo retrieval eval (pinned real repos)")
 		os.Exit(1)
 	}
 	sub := args[0]
@@ -39,6 +39,8 @@ func runBench(ctx context.Context, args []string) {
 		runLocomo(ctx, rest)
 	case "eval":
 		runEval(ctx, rest)
+	case "corpus":
+		runCorpus(ctx, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "dex bench: unknown subcommand %q\n", sub)
 		os.Exit(1)

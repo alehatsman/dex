@@ -95,6 +95,34 @@ barely registers. Making graph proximity measurably improve retrieval would
 require raising the lane's weight so it competes with dense+BM25 — a different
 change than #248's hop-decay tuning, which is parked on this finding.
 
+## Multi-repo corpus (`dex bench corpus`)
+
+Both golden flavors above are mined from **dex's own** git history — so every
+tuning decision is fit to a single Go codebase. A fusion-weight or chunker change
+that wins on dex's idioms can silently regress a Python/TS/Rust repo. The
+**corpus** generalizes the gate to a set of **pinned real-world repos** across
+languages (#278).
+
+`benchmark/corpus/repos.yml` lists repos pinned at a release tag's commit; the
+runner fetches each at its pin, indexes it, and scores the live `Search` path
+against every declared golden set — curated query sets (`queries/<name>.json`,
+`eval.GoldenSet` shape) and/or `gen` auto-labels (the same git-history /
+blast-radius generators, run on each repo). It reuses `internal/eval` wholesale.
+
+```sh
+dex bench corpus run                                   # whole corpus (fetch+index on first run)
+dex bench corpus run --smoke --repos flask,gin          # fast: first curated set per repo
+dex bench corpus run --check benchmark/corpus/baseline.json   # gate: fail on ANY per-cell >0.02 drop
+mooncake task corpus                                    # same, as a task
+```
+
+The gate is **per (repo, set) cell**, not the aggregate mean — a single-repo
+regression can't hide behind a steady average. Curated and generated sets are
+reported as separate rows (they measure different things; don't average across).
+Like `dex bench eval`, it needs a live embed endpoint + network and is a
+local/main_pc gate, not container-CI. See `benchmark/corpus/README.md` for
+adding a repo and authoring query sets.
+
 ## A/B-testing a change
 
 Run the *same* golden set under both arms, changing one variable. Disable
