@@ -342,11 +342,12 @@ func TestIdleSummaryDrainerNilWithoutChat(t *testing.T) {
 	}
 }
 
-// TestIdleSummaryDrainerStopsOnNoProgress simulates a misconfigured
-// chat endpoint: every drain attempt fails so the queue depth doesn't
-// move. The drainer must return done=true to break the idle cycle
-// rather than spinning until the user closes the watcher.
-func TestIdleSummaryDrainerStopsOnNoProgress(t *testing.T) {
+// TestIdleSummaryDrainerReArmsOnNoProgress simulates a failing chat
+// endpoint: every drain attempt fails so the queue depth doesn't move.
+// The drainer must return done=false (re-arm) so the idle cycle
+// self-heals when the endpoint recovers, without relying on a
+// file-system event to restart it.
+func TestIdleSummaryDrainerReArmsOnNoProgress(t *testing.T) {
 	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
@@ -380,11 +381,36 @@ func TestIdleSummaryDrainerStopsOnNoProgress(t *testing.T) {
 	}
 
 	drainer := ix.IdleSummaryDrainer(10)
+
+	// Single no-progress tick: must re-arm so the cycle survives
+	// without a file-system event.
 	done, err := drainer(ctx)
 	if err != nil {
 		t.Fatalf("drainer: %v", err)
 	}
-	if !done {
-		t.Error("drainer should signal done=true when no progress was made (avoids busy loop)")
+	if done {
+		t.Error("drainer must return done=false on no-progress so the idle cycle self-heals")
+	}
+
+	// After maxConsecutiveNoProgress failures the backoff kicks in, but
+	// the cycle must still re-arm (done=false) so it recovers once the
+	// endpoint is healthy again.
+	const maxConsecutive = 3
+	for i := 1; i < maxConsecutive; i++ {
+		done, err = drainer(ctx)
+		if err != nil {
+			t.Fatalf("drainer tick %d: %v", i+1, err)
+		}
+		if done {
+			t.Errorf("tick %d: drainer returned done=true before endpoint recovered", i+1)
+		}
+	}
+	// Now in backoff — guard check must also re-arm.
+	done, err = drainer(ctx)
+	if err != nil {
+		t.Fatalf("drainer (backoff tick): %v", err)
+	}
+	if done {
+		t.Error("drainer returned done=true during backoff; idle cycle would stall")
 	}
 }

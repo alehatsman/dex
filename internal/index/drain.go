@@ -378,8 +378,11 @@ func (ix *Indexer) CascadePackageRepoSummaries(ctx context.Context, dirtyDirs []
 //
 // Stop conditions encoded in the callback:
 //   - queue empty → cascade then signal done=true.
-//   - batch made no progress (chat endpoint dead → all rows fail) →
-//     done=true so we don't busy-loop; the next flush re-arms.
+//   - batch made no progress → done=false (re-arm); after three
+//     consecutive failures an exponential backoff is entered but the
+//     idle cycle is kept alive so recovery happens automatically once
+//     the chat endpoint is healthy again, without waiting for a
+//     file-system event to restart the cycle.
 //   - underlying batch errors → (true, err); the watcher logs and
 //     stops the cycle.
 //
@@ -414,10 +417,10 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 	)
 	return func(ctx context.Context) (bool, error) {
 		if !nextAttempt.IsZero() && time.Now().Before(nextAttempt) {
-			// Still inside the backoff window — skip without logging
-			// so we don't spam the slog. The watcher will retry on the
-			// next idle tick.
-			return true, nil
+			// Still inside the backoff window — skip work but re-arm
+			// (done=false) so the cycle survives until the backoff expires
+			// without relying on a file-system event to restart it.
+			return false, nil
 		}
 		// Foreground-yield: an agent queried recently, so leave the GPU
 		// to interactive work. Re-arm (done=false) to retry once quiet
@@ -493,7 +496,10 @@ func (ix *Indexer) IdleSummaryDrainer(batchSize int) func(context.Context) (bool
 				logger.Warn("idle drain: no progress",
 					"remaining", after, "consecutive_failures", consecutiveNoProgress)
 			}
-			return true, nil
+			// Re-arm (done=false) so the idle cycle self-heals without
+			// waiting for a file-system event. Actual work is suppressed
+			// during active backoff by the nextAttempt guard above.
+			return false, nil
 		}
 		// Progress on this batch — clear the failure counter.
 		consecutiveNoProgress = 0
