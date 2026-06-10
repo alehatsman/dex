@@ -63,17 +63,22 @@ func thresholdsFor(ext string) compressionThresholds {
 // scoring. Blank lines are always preserved. No quality gate is applied —
 // AggressiveCompress uses SafeguardRatio as the safety net.
 func dropLowEntropyLines(lines []string, threshold float64) []string {
+	lineTg := make([]map[string]struct{}, len(lines))
+	for i, line := range lines {
+		lineTg[i] = charTrigrams(line)
+	}
+
 	seen := make(map[string]struct{}, 256)
 	out := make([]string, 0, len(lines))
-	for _, line := range lines {
+	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			out = append(out, line)
 			continue
 		}
-		score := lineScore(line, seen)
+		score := lineScore(line, seen, windowTrigrams(lineTg, i))
 		if score >= threshold {
 			out = append(out, line)
-			for tg := range charTrigrams(line) {
+			for tg := range lineTg[i] {
 				seen[tg] = struct{}{}
 			}
 		}

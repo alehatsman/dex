@@ -35,18 +35,24 @@ func EntropyFilter(lines []string, threshold float64) []string {
 	stripped := stripDecorations(lines)
 	stripped = stripFiller(stripped)
 
-	// Layer 1: per-line entropy + marker - repetition scoring.
+	// Pre-compute trigrams per line for bidirectional window lookups.
+	lineTg := make([]map[string]struct{}, len(stripped))
+	for i, line := range stripped {
+		lineTg[i] = charTrigrams(line)
+	}
+
+	// Layer 1: per-line bidirectional entropy + marker - repetition scoring.
 	seenTrigrams := make(map[string]struct{}, 256)
 	out := make([]string, 0, len(stripped))
-	for _, line := range stripped {
+	for i, line := range stripped {
 		if strings.TrimSpace(line) == "" {
 			out = append(out, line)
 			continue
 		}
-		score := lineScore(line, seenTrigrams)
+		score := lineScore(line, seenTrigrams, windowTrigrams(lineTg, i))
 		if score >= threshold {
 			out = append(out, line)
-			for tg := range charTrigrams(line) {
+			for tg := range lineTg[i] {
 				seenTrigrams[tg] = struct{}{}
 			}
 		}
@@ -69,11 +75,12 @@ func EntropyFilter(lines []string, threshold float64) []string {
 
 // lineScore computes the combined information score for a line:
 //
-//	score = entropy(line) + marker(line) − 0.5×trigramOverlap(line, seen)
+//	score = bidirectionalScore(line, window) + marker(line) − 0.5×trigramOverlap(line, seen)
 //
-// clamped to ≥ 0.
-func lineScore(line string, seen map[string]struct{}) float64 {
-	ent := shannonEntropy(line)
+// clamped to ≥ 0. windowTrigrams is the union of charTrigrams for the ±3
+// surrounding lines; pass nil to fall back to plain Shannon entropy.
+func lineScore(line string, seen map[string]struct{}, windowTrigrams map[string]struct{}) float64 {
+	ent := bidirectionalScore(line, windowTrigrams)
 	mark := markerScore(line)
 	tg := charTrigrams(line)
 	rep := 0.5 * trigramOverlapRatio(tg, seen)
@@ -82,6 +89,34 @@ func lineScore(line string, seen map[string]struct{}) float64 {
 		return 0
 	}
 	return score
+}
+
+// bidirectionalScore augments the causal Shannon entropy with a window-novelty
+// bonus derived from the surrounding ±3 lines:
+//
+//	shannonEntropy(line) + 0.5×novelty(line, window)
+//
+// novelty is the fraction of the line's char-trigrams absent from the window —
+// lines that introduce new patterns score higher than lines whose patterns are
+// already established by neighbours. The ±3 window gives both preceding AND
+// following context, approximating the bidirectional signal from LLMLingua-2
+// without requiring a model. Falls back to plain Shannon entropy when
+// windowTrigrams is nil or empty.
+func bidirectionalScore(line string, windowTrigrams map[string]struct{}) float64 {
+	entScore := shannonEntropy(line)
+
+	lineTg := charTrigrams(line)
+	if len(lineTg) == 0 || len(windowTrigrams) == 0 {
+		return entScore
+	}
+	novel := 0
+	for tg := range lineTg {
+		if _, ok := windowTrigrams[tg]; !ok {
+			novel++
+		}
+	}
+	surprise := 0.5 * (float64(novel) / float64(len(lineTg)))
+	return entScore + surprise
 }
 
 // shannonEntropy computes character-level Shannon entropy (bits per char).
@@ -318,6 +353,29 @@ func extractLongIdents(lines []string) []string {
 	return out
 }
 
+// windowTrigrams returns the union of charTrigrams for the ±3 lines around
+// index i in tgs, excluding i itself.
+func windowTrigrams(tgs []map[string]struct{}, i int) map[string]struct{} {
+	out := make(map[string]struct{}, 128)
+	lo := i - 3
+	if lo < 0 {
+		lo = 0
+	}
+	hi := i + 3
+	if hi >= len(tgs) {
+		hi = len(tgs) - 1
+	}
+	for j := lo; j <= hi; j++ {
+		if j == i {
+			continue
+		}
+		for tg := range tgs[j] {
+			out[tg] = struct{}{}
+		}
+	}
+	return out
+}
+
 // qualityGate returns true when the compressed output preserves:
 //   - 100% of file paths from the original
 //   - ≥90% of long identifiers (≥6 chars) from the original
@@ -344,4 +402,3 @@ func qualityGate(original, compressed []string) bool {
 	}
 	return float64(preserved)/float64(len(origIdents)) >= 0.90
 }
-

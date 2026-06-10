@@ -26,7 +26,10 @@ func AggressiveCompress(content, ext string) string {
 	compressed = SafeguardRatio(content, compressed)
 	// Symbol map: replace high-ROI identifiers with αN refs when profitable.
 	sm := BuildSymbolMap(compressed)
-	return sm.ApplyWithLegend(compressed)
+	compressed = sm.ApplyWithLegend(compressed)
+	// N-gram codebook: replace recurring bi/trigrams with ©N refs.
+	ncb := BuildNgramCodebook(compressed)
+	return ncb.ApplyWithLegend(compressed)
 }
 
 // LightweightCleanup applies conservative cleanup safe for any file content:

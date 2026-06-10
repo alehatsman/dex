@@ -6,6 +6,53 @@ import (
 	"testing"
 )
 
+func TestBidirectionalScore(t *testing.T) {
+	line := "func handleRequestError(ctx context.Context) error {"
+	baseScore := shannonEntropy(line)
+
+	// Nil window → falls back to plain Shannon entropy.
+	score := bidirectionalScore(line, nil)
+	if math.Abs(score-baseScore) > 0.001 {
+		t.Errorf("nil window should equal shannonEntropy: got %f want %f", score, baseScore)
+	}
+
+	// Empty window → same as nil (no trigrams to compare against).
+	emptyWindow := map[string]struct{}{}
+	scoreEmpty := bidirectionalScore(line, emptyWindow)
+	if scoreEmpty != score {
+		t.Errorf("empty window should behave like nil window: got %f vs %f", scoreEmpty, score)
+	}
+
+	// Window sharing all trigrams → 0 novel → 0 surprise → score == base.
+	highOverlapWindow := charTrigrams(line)
+	scoreHigh := bidirectionalScore(line, highOverlapWindow)
+	if math.Abs(scoreHigh-baseScore) > 0.001 {
+		t.Errorf("full-overlap window should equal base: got %f want %f", scoreHigh, baseScore)
+	}
+
+	// Window sharing no trigrams → all novel → surprise = +0.5.
+	zeroOverlapWindow := charTrigrams("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
+	scoreNovel := bidirectionalScore(line, zeroOverlapWindow)
+	diff := scoreNovel - baseScore
+	if math.Abs(diff-0.5) > 0.01 {
+		t.Errorf("zero-overlap window should add exactly 0.5 surprise: diff=%f", diff)
+	}
+}
+
+func TestLineScoreWindowBoost(t *testing.T) {
+	// A line with a novel pattern relative to its window scores higher than
+	// one that is repetitive in context.
+	seen := map[string]struct{}{}
+	novelWindow := charTrigrams("completely different content xyz abc def")
+	repeatWindow := charTrigrams("func handleRequest ctx context error {")
+	line := "func handleRequest(ctx context.Context) error {"
+	scoreNovel := lineScore(line, seen, novelWindow)
+	scoreRepeat := lineScore(line, seen, repeatWindow)
+	if scoreNovel <= scoreRepeat {
+		t.Errorf("novel window should score higher: novel=%f repeat=%f", scoreNovel, scoreRepeat)
+	}
+}
+
 func TestShannonEntropy(t *testing.T) {
 	// All same char → entropy 0.
 	if got := shannonEntropy("aaaaaaa"); got != 0 {
