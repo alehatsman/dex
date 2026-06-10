@@ -135,7 +135,7 @@ func TestFuseWithGraphNeighborsHopDecay(t *testing.T) {
 		"near.go": pow32(gamma, 1), // 0.60
 		"far.go":  pow32(gamma, 2), // 0.36
 	}
-	out := fuseWithGraphNeighbors(primary, graphHits, weightByPath, 3)
+	out := fuseWithGraphNeighbors(primary, graphHits, weightByPath, 1.0, 3)
 
 	rank := make(map[string]int, len(out))
 	for i, h := range out {
@@ -144,6 +144,38 @@ func TestFuseWithGraphNeighborsHopDecay(t *testing.T) {
 	if rank["near.go"] >= rank["far.go"] {
 		t.Errorf("1-hop near.go (rank %d) should outrank 2-hop far.go (rank %d): %v",
 			rank["near.go"], rank["far.go"], hitPaths(out))
+	}
+}
+
+// TestFuseWithGraphNeighborsLaneWeight verifies that a higher laneWeight
+// amplifies graph hits enough to outrank primary hits at the same range.
+func TestFuseWithGraphNeighborsLaneWeight(t *testing.T) {
+	// primary has one hit; graph has a neighbor ranked equally in its lane.
+	// With laneWeight=1 the graph neighbor (γ^1=0.6) scores below the primary.
+	// With laneWeight=4 the graph neighbor (4×0.6=2.4) scores above the primary.
+	const gamma = float32(0.6)
+	primary := []Hit{{Path: "match.go", StartLine: 1, Score: 1.0}}
+	graphHits := []Hit{{Path: "neighbor.go", StartLine: 1}}
+	weightByPath := map[string]float32{"neighbor.go": pow32(gamma, 1)} // 0.60
+
+	// laneWeight=1: primary wins.
+	out1 := fuseWithGraphNeighbors(primary, graphHits, weightByPath, 1.0, 2)
+	rank1 := make(map[string]int, len(out1))
+	for i, h := range out1 {
+		rank1[h.Path] = i
+	}
+	if rank1["match.go"] != 0 {
+		t.Errorf("laneWeight=1: primary match.go should rank first, got rank %d", rank1["match.go"])
+	}
+
+	// laneWeight=4: graph neighbor wins (4×0.6 = 2.4 > 1.0).
+	out4 := fuseWithGraphNeighbors(primary, graphHits, weightByPath, 4.0, 2)
+	rank4 := make(map[string]int, len(out4))
+	for i, h := range out4 {
+		rank4[h.Path] = i
+	}
+	if rank4["neighbor.go"] != 0 {
+		t.Errorf("laneWeight=4: graph neighbor.go should rank first, got rank %d; full: %v", rank4["neighbor.go"], hitPaths(out4))
 	}
 }
 

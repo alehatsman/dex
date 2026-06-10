@@ -93,6 +93,7 @@ var allEnvVars = []envVar{
 	{"DEX_MAX_HITS_PER_FILE", "", "Cap hits per file in search results (0 = no cap).", "tuning", false},
 	{"DEX_GRAPH_GAMMA", "0.6", "Per-hop decay for the graph-proximity lane: a structural neighbor reached at h hops is fused at γ^h weight, so 1-hop callers outrank 3-hop. Range (0,1]; out-of-range ignored.", "tuning", false},
 	{"DEX_GRAPH_HOP_CAP", "4", "Spreading-activation traversal depth (graph blast-radius around matched symbols). Also bounds `prefetch` neighbor discovery, which shares the same traversal.", "tuning", false},
+	{"DEX_GRAPH_WEIGHT", "1.0", "Flat multiplier on the graph-proximity RRF lane, applied on top of the per-hop γ decay. 1.0 = neutral; raise to 2–4 to make the graph lane compete with dense+BM25 (tune with `dex bench eval --mode blast-radius`). Must be > 0; out-of-range ignored.", "tuning", false},
 	{"DEX_ALLOW_PATHS", "", "Colon-separated path prefixes accepted outside git work trees.", "tuning", false},
 	{"DEX_TOOLS", "standard", "MCP tool surface tier: ask (ask only) | standard (default, ask + overview/session/knowledge/file_tree/search_context/file_view) | power (everything). DEX_EXPOSE_RAW_TOOLS=1 is an alias for power.", "tuning", false},
 	{"DEX_EXPOSE_RAW_TOOLS", "", "Set 1|on to also register the raw MCP lanes (search_*, graph_*, file_view, status) alongside `ask`. Alias for DEX_TOOLS=power. Default off: agents see `ask` only.", "tuning", true},

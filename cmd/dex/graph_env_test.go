@@ -55,3 +55,26 @@ func TestGraphHopCapFallbackOnInvalid(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphLaneWeightUnsetIsZero(t *testing.T) {
+	t.Setenv("DEX_GRAPH_WEIGHT", "")
+	if got := graphLaneWeight(); got != 0 {
+		t.Errorf("graphLaneWeight() = %v, want 0 (unset → store default)", got)
+	}
+}
+
+func TestGraphLaneWeightHonoredWhenPositive(t *testing.T) {
+	t.Setenv("DEX_GRAPH_WEIGHT", "2.5")
+	if got := graphLaneWeight(); got != 2.5 {
+		t.Errorf("graphLaneWeight() = %v, want 2.5", got)
+	}
+}
+
+func TestGraphLaneWeightFallbackOnInvalid(t *testing.T) {
+	for _, raw := range []string{"0", "-1", "not-a-float"} {
+		t.Setenv("DEX_GRAPH_WEIGHT", raw)
+		if got := graphLaneWeight(); got != 0 {
+			t.Errorf("graphLaneWeight() = %v for %q, want 0 (fallback)", got, raw)
+		}
+	}
+}

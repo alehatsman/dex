@@ -40,8 +40,11 @@ path; building the index and the on-disk engine are sibling specs'.
   so fusion has headroom to surface lexical-only or semantic-only hits.
 - WHEN the call graph is indexed, dex adds a third graph-proximity RRF lane:
   files that are graph-neighbors of already-scoring files are retrieved and
-  fused at 0.5× weight, so callers/callees of a hit can surface without the
-  agent explicitly querying the graph.
+  fused at `DEX_GRAPH_WEIGHT × γ^hop` weight (default 1.0 × 0.6 = 0.6× for a
+  1-hop neighbor), so callers/callees of a hit can surface without the agent
+  explicitly querying the graph. Raise `DEX_GRAPH_WEIGHT` (e.g. to 2–4) to make
+  the lane compete more strongly with dense+BM25; tune with
+  `dex bench eval --mode blast-radius`.
 - WHERE BM25 is weighted, the path column is scored at 2× the body column
   (`bm25(chunks_fts, 1.0, 2.0, 0.5)`) so path-bearing queries surface the
   right file before its contents.
@@ -99,7 +102,7 @@ path; building the index and the on-disk engine are sibling specs'.
 - [x] Embed query → vector KNN → top-k hits with path/kind/line/snippet/cosine
 - [x] Hybrid: FTS5/BM25 leg fused with semantic via RRF (k=60) when query non-empty
 - [x] Wider per-leg candidate pool than final k for fusion headroom
-- [x] Graph-proximity 3rd RRF lane (0.5× weight) when call graph is indexed
+- [x] Graph-proximity 3rd RRF lane (`DEX_GRAPH_WEIGHT`×γ^hop, default 0.6× at 1-hop) when call graph is indexed
 - [x] BM25 path-column weighted 2× (`bm25(chunks_fts, 1.0, 2.0, 0.5)`)
 - [x] Post-RRF local rerank: noise penalty 0.3×, definition boost 1.5×, coherence boost 1.15×, MMR decay 0.7×
 - [x] Repeated identical search (≥4 in 5 min) → hint to use knowledge instead

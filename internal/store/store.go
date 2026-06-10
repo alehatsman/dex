@@ -136,6 +136,14 @@ type Options struct {
 	// blast-radius around matched symbols. Zero = the default
 	// (defaultGraphHopCap). Set via DEX_GRAPH_HOP_CAP.
 	GraphHopCap int
+
+	// GraphLaneWeight is a flat multiplier on the graph-proximity RRF lane.
+	// It scales the whole lane's contribution independently of the per-hop
+	// γ decay, so raising it lets the graph lane compete with dense+BM25.
+	// Zero = the default (defaultGraphLaneWeight = 1.0). Set via
+	// DEX_GRAPH_WEIGHT. Useful range: 1–4; at 2× a 1-hop neighbor (γ=0.6)
+	// contributes 1.2× the RRF score of a primary hit at the same rank.
+	GraphLaneWeight float32
 }
 
 type Store struct {

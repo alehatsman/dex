@@ -844,14 +844,20 @@ func (s *Store) HitsForFiles(ctx context.Context, paths []string, k int) ([]Hit,
 // tuned on the retrieval eval harness (#248).
 const defaultGraphGamma = float32(0.6)
 
+// defaultGraphLaneWeight is the flat multiplier on the graph-proximity lane
+// when Options.GraphLaneWeight is unset. 1.0 = neutral (lane contribution
+// equals γ^hop, ≤0.6 of a primary hit at the same rank). Raise to make
+// the graph lane compete more strongly with dense+BM25 — see DEX_GRAPH_WEIGHT.
+const defaultGraphLaneWeight = float32(1.0)
+
 // fuseWithGraphNeighbors merges primary hits with graph-proximity hits via
-// Reciprocal Rank Fusion (k=60). Each graph hit is weighted by γ^hop (via
-// weightByPath, keyed on file path) so 1-hop structural neighbors boost more
-// than distant ones without drowning out direct semantic matches. In practice
-// every graphHits path is present in weightByPath (both derive from the same
-// activated set); a path absent from the map gets a zero weight (no graph
-// contribution) rather than a panic.
-func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]float32, n int) []Hit {
+// Reciprocal Rank Fusion (k=60). Each graph hit is weighted by
+// laneWeight×γ^hop (via weightByPath, keyed on file path) so 1-hop structural
+// neighbors boost more than distant ones. laneWeight scales the whole lane
+// independently of hop decay — raise it to make the graph lane compete with
+// dense+BM25. A path absent from weightByPath gets zero contribution rather
+// than a panic.
+func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]float32, laneWeight float32, n int) []Hit {
 	const kRRF = 60
 	type hitKey struct {
 		path string
@@ -867,7 +873,7 @@ func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]fl
 	}
 	for i, h := range graphHits {
 		hk := hitKey{h.Path, h.StartLine}
-		scores[hk] += weightByPath[h.Path] / float32(kRRF+i+1)
+		scores[hk] += laneWeight * weightByPath[h.Path] / float32(kRRF+i+1)
 		if _, exists := byKey[hk]; !exists {
 			byKey[hk] = h
 		}
@@ -1152,6 +1158,10 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 	if gamma <= 0 {
 		gamma = defaultGraphGamma
 	}
+	laneWeight := s.opts.GraphLaneWeight
+	if laneWeight <= 0 {
+		laneWeight = defaultGraphLaneWeight
+	}
 	paths := make([]string, len(activated))
 	weightByPath := make(map[string]float32, len(activated))
 	for i, a := range activated {
@@ -1167,7 +1177,7 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 	if err != nil || len(graphHits) == 0 {
 		return hits
 	}
-	return fuseWithGraphNeighbors(hits, graphHits, weightByPath, n)
+	return fuseWithGraphNeighbors(hits, graphHits, weightByPath, laneWeight, n)
 }
 
 // pow32 returns base^exp for a small non-negative integer exponent.
