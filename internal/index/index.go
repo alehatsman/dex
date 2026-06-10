@@ -1274,9 +1274,14 @@ func summarizeChunk(ctx context.Context, cc *chat.Client, model, rel string, c c
 // they'd collide visually with the renderer's sections and a reader
 // couldn't tell which was authoritative. Prose-only solves that.
 //
-// MaxTokens was raised from 400 → 1200 to match summarizeRepo: smaller
-// models on large packages truncated mid-paragraph, and the truncation
-// guard above turned every such run into a dropped summary.
+// packageSummaryMaxTokens caps the output of summarizePackage. History:
+// 400 → 1200 (small models on single-file packages truncated mid-word)
+// → 2048 (large packages with many file-summary inputs hit 1200;
+// package summaries legitimately aggregate more content than file-level
+// summaries and need room proportional to the number of files).
+const packageSummaryMaxTokens = 2048
+
+// MaxTokens history: see packageSummaryMaxTokens above.
 //
 // The prompt explicitly forbids two failure modes seen in earlier runs:
 //
@@ -1306,12 +1311,12 @@ func summarizePackage(ctx context.Context, cc *chat.Client, model, dir string, f
 	resp, err := cc.Generate(ctx, []chat.Message{
 		{Role: "system", Content: summarizePackageSystem},
 		{Role: "user", Content: user},
-	}, chat.Options{Model: model, MaxTokens: 1200, Temperature: 0.1})
+	}, chat.Options{Model: model, MaxTokens: packageSummaryMaxTokens, Temperature: 0.1})
 	if err != nil {
 		return "", err
 	}
 	if resp.FinishReason == "length" {
-		return "", fmt.Errorf("package summary truncated at 1200 tokens (finish_reason=length); raise MaxTokens or shorten input")
+		return "", fmt.Errorf("package summary truncated at %d tokens (finish_reason=length); raise packageSummaryMaxTokens or shorten input", packageSummaryMaxTokens)
 	}
 	return strings.TrimSpace(resp.Content), nil
 }
