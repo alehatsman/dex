@@ -244,6 +244,25 @@ tasks:
   # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
   ci: goq/ci
 
+  # ── ONNX build-tag matrix gate (issue #180). The in-process ONNX embedder
+  # is opt-in behind `-tags onnx`; the default ci/ci-fast gates stay
+  # sqlite_fts5-only and never compile it. This task is the compile guard for
+  # the onnx lane so the tagged build can't silently bit-rot. It does NOT run
+  # ONNX inference — that needs the onnxruntime .so (DEX_ONNXRUNTIME_LIB) and a
+  # model (DEX_ONNX_MODEL) in the runner image; the inference path is covered by
+  # the skip-gated golden test (internal/embed/onnx_engine_test.go), which runs
+  # only when those env vars point at real artifacts. Keep this lane's tags in
+  # sync with GO_TAGS + onnx.
+  ci-onnx:
+    desc: Compile + vet the `-tags onnx` build matrix (onnx lane is otherwise opt-in)
+    steps:
+      - shell: go mod download
+      - name: build onnx-tagged
+        shell: go build -tags '{{ GO_TAGS }} onnx' {{ PKG }}
+      - name: vet onnx-tagged
+        shell: go vet -tags '{{ GO_TAGS }} onnx' {{ PKG }}
+      - log: "✓ onnx build-tag matrix compiles + vets"
+
   # ── CI image. dex-ci:latest is the container mgitci.yml runs the quality
   # gate in: moongit-ci-dev (Go + Node + mooncake + static-analysis tools)
   # plus the cgo C toolchain the sqlite_fts5 build needs (ci/Dockerfile).

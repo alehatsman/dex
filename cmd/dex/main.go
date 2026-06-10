@@ -711,6 +711,16 @@ func isDrainActive(lockPath string) bool {
 // If DEX_EMBED_DIM is set, the returned embedder truncates vectors to that
 // many dimensions and re-normalises (Matryoshka truncation).
 func newEmbedClient(indexModel string) embed.Embedder {
+	// Engine selection is explicit and static per index (no hot swap):
+	// ONNX vectors live in a different space than ollama/http vectors, so an
+	// index must be built and queried with the same engine. DEX_EMBED_ENGINE
+	// defaults to "http" (the OpenAI-compatible backend). "onnx" selects the
+	// in-process engine, which is only linked in -tags onnx builds (otherwise
+	// embed.NewONNX returns a clear "rebuild with -tags onnx" error).
+	if eng := strings.ToLower(os.Getenv("DEX_EMBED_ENGINE")); eng == "onnx" {
+		return newONNXEmbedder()
+	}
+
 	url := os.Getenv("DEX_EMBED_URL")
 	model := os.Getenv("DEX_EMBED_MODEL")
 
@@ -754,6 +764,34 @@ func newEmbedClient(indexModel string) embed.Embedder {
 	timeout := parseDuration("DEX_EMBED_TIMEOUT", envOr("DEX_EMBED_TIMEOUT", "60s"), 60*time.Second)
 	c := embed.NewWithConcurrency(url, model, batch, conc, timeout)
 	return embed.WithDimCap(c, envInt("DEX_EMBED_DIM", 0))
+}
+
+// newONNXEmbedder builds the in-process ONNX embedder from operator-provided
+// env vars. The engine is opt-in behind -tags onnx; in a default build
+// embed.NewONNX returns ErrONNXNotBuilt and we exit with a clear message
+// rather than silently degrading (the operator explicitly asked for onnx).
+func newONNXEmbedder() embed.Embedder {
+	cfg := embed.ONNXConfig{
+		ModelPath:       os.Getenv("DEX_ONNX_MODEL"),
+		TokenizerPath:   os.Getenv("DEX_ONNX_TOKENIZER"),
+		LibPath:         os.Getenv("DEX_ONNXRUNTIME_LIB"),
+		ModelID:         envOr("DEX_ONNX_MODEL_ID", "model"),
+		Dim:             envInt("DEX_ONNX_DIM", 0),
+		MaxSeqLen:       envInt("DEX_ONNX_MAX_SEQ", 512),
+		Batch:           envInt("DEX_EMBED_BATCH", 32),
+		InputIDsName:    os.Getenv("DEX_ONNX_INPUT_IDS"),
+		AttentionName:   os.Getenv("DEX_ONNX_ATTENTION"),
+		TokenTypeName:   os.Getenv("DEX_ONNX_TOKEN_TYPE"),
+		OutputName:      os.Getenv("DEX_ONNX_OUTPUT"),
+		NeedsTokenTypes: envBool("DEX_ONNX_TOKEN_TYPES", true),
+	}
+	em, err := embed.NewONNX(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "dex: onnx embed engine: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "dex: onnx embed engine %q (dim %d) from %s\n", em.ModelName(), cfg.Dim, cfg.ModelPath)
+	return em
 }
 
 func newChatClient() *chat.Client {
