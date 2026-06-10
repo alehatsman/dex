@@ -244,6 +244,9 @@ func genLabel(spec corpus.RepoSpec) string {
 	if spec.Gen.BlastRadius.Enabled {
 		on = append(on, "blast-radius")
 	}
+	if spec.Gen.Structural.Enabled {
+		on = append(on, "structural")
+	}
 	if len(on) == 0 {
 		return ""
 	}
