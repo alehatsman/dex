@@ -41,6 +41,46 @@ Everything below hangs off this table.
 
 ---
 
+## Two cross-cutting forces
+
+Before the rungs, two things shape *all* of them.
+
+### The prioritization lens: GPU scarcity
+
+The fleet is GPU-starved — boxes struggle even to reindex or answer agent
+questions. That is not just an operational footnote; it **re-ranks the
+backlog**. Deterministic, zero-GPU work weights *up*, because it reduces
+dependence on the scarce resource. Concretely:
+
+- The proxy's history pruning is deterministic / zero-LLM — it serves Rung A
+  *and* Rung C and costs no inference, so it leads.
+- The lean rung (C) is the literal no-GPU path and is **prioritized ahead of
+  the local-agent rung (B)** — a local agent still needs a GPU to run its
+  model; a lean deployment needs none.
+- Heavy model upgrades (a 30B chat, a 14B summary) are **deferred** — they
+  would worsen the exact contention we're hitting. Only the cheap reranker swap
+  (~3 GB, ~2× on code retrieval) lands now.
+
+### Measurement — the ruler for every rung
+
+You cannot tune a rung you cannot measure, and the wrong instrument hides real
+effects (the graph γ-sweep came back a null result because the retrieval eval
+can't probe what graph expansion is *for*). dex extends one measurement family
+— `dex bench {eval | compress | perf}`, all deterministic and zero-inference
+by default so they run on a starved box — across the ladder:
+
+- **eval** (NDCG/Recall/MRR over a golden set) → gates retrieval quality, all
+  rungs. *Landed.*
+- **compress** (ratio × fidelity × anchor-preservation, per target_model) →
+  gates Rung A token-economy and Rung B weak-model hardening.
+- **perf** (local-compute latency + memory, GPU-bound paths report-only) →
+  gates Rung C and justifies the vector-layer work (int8, ANN).
+
+GPU-dependent metrics (embedding-fidelity, LLM task-success) are opt-in tiers,
+deferred until there is GPU headroom. Build the ruler before tuning the rung.
+
+---
+
 ## Rung A — maximize usefulness for Claude
 
 Claude is not reasoning-bound. It is **token-economy-bound** over a long
@@ -176,17 +216,28 @@ about the rung it's running on. Check telemetry first: is anyone running
 
 ## Recommended sequencing
 
-The critical path is short and the dependencies are real:
+The execution backlog and live ordering are tracked in the capability-ladder
+epic (#294); this is the frame behind it. **Already landed** (the brainstorm
+pre-dated these): the retrieval ruler #247, graph k-hop #248, embedder +
+Matryoshka #249, Contextual Retrieval #250, the `target_model` profile #204,
+cache-layout #205, progressive disclosure #206, and the multi-repo corpus #278.
+The ruler and the top retrieval gains are done — the critical path moved.
 
-1. **#247 eval harness** (+ #278 corpus) — gates all of #246, and is the only
-   way to measure each rung. Build the ruler first.
-2. **#204 `target_model` profile** — the enabler for Rung B *and* the honest
-   basis for resolving #283.
-3. **#232 proxy spike (#235)** — measure tokens-saved on a real session before
-   investing past the spike. Serves Rungs A and C at once.
-4. **#256 Qwen3 reranker** — cheap, highest-ROI quality bump; helps A and B.
-5. Then **graph k-hop expansion** and a **"lean profile" epic** (#180 ONNX +
-   Matryoshka + lean docs) in parallel.
+What remains, in order:
+
+1. **Extend the ruler (#295)** — `dex bench compress` (#296) + `dex bench perf`
+   (#297). Deterministic, zero-inference, runs on a starved box. Each is a
+   just-in-time gate: #297 before the vector-layer work, #296 before the local
+   track.
+2. **The proxy (#232)** — the largest open Claude token win and the one lever
+   the engine can't otherwise pull. Spike (#235) and measure first; the history
+   pruning (#237) is deterministic and zero-GPU.
+3. **Lean / zero-infra Rung C (#290)** — prioritized ahead of Rung B under the
+   GPU-scarcity lens; builds on the ONNX embedder (#180).
+4. **Activate the local track Rung B (#158)** — anchor-verbatim safety (#291),
+   tokenizer-gated rules (#292), symmap efficacy (#293); gated by #296.
+5. **Cheap and independent, pull early:** the Qwen3 reranker (#256) and the
+   tool-profile collapse (#283). Heavy model bumps (#298) stay deferred.
 
 ---
 
@@ -195,11 +246,16 @@ The critical path is short and the dependencies are real:
 1. **Proxy posture (#232).** The proxy is middleware in the request path — it
    sees API keys and must fail open. Do we want dex to go there, or stay a pure
    MCP tool and accept that old `tool_results` remain uncompressed? This is the
-   one compression lever the engine cannot otherwise pull.
-2. **Lean / zero-infra epic.** It does not exist yet. Is "dex you `go install`
-   and it Just Works with no GPU" the thread to pull (the lean instinct), or is
-   the token-economy work for Claude the priority?
+   one compression lever the engine cannot otherwise pull. *(Still open — the
+   one decision that gates Phase 1.)*
 
-_Source: tool-vision brainstorm, 2026-06-11 (issue #288). Cross-references the
-SOTA retrieval epic (#246), the compress tracks (#157 CLAUDE / #158 LOCAL), the
-proxy epic (#232), and the degradation/ONNX epic (#174)._
+_Resolved since the first draft:_ the lean / zero-infra epic now exists (#290),
+and the GPU-scarcity lens settled the priority question — proxy first (largest
+Claude win, partly deterministic), then the lean Rung C ahead of the local Rung
+B. See "Two cross-cutting forces" above and the #294 epic.
+
+_Source: tool-vision brainstorm, 2026-06-11 (issue #288), refreshed the same day
+(#299) to track the filed plan. Cross-references the capability-ladder epic
+(#294), the measurement layer (#295), the SOTA retrieval epic (#246), the
+compress tracks (#157 CLAUDE / #158 LOCAL), the proxy epic (#232), and the
+degradation/ONNX epic (#174)._
