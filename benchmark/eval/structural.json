@@ -1,11 +1,81 @@
 {
-  "repo": "dex-279-structural",
-  "head": "31b70ec346073812cd8eb3033fed75c5604fb6c0",
+  "repo": "dex-287",
+  "head": "7e4c22bc0c08ef8505f503c93344fac6f9de93c2",
   "gen_opts": {
-    "max_commits": 2000,
-    "max_files": 5
+    "max_commits": 500,
+    "max_files": 10
   },
   "queries": [
+    {
+      "id": "7e4c22bc",
+      "query": "structural-coupling golden set for graph-lane eval (#279)",
+      "relevant_files": [
+        "cmd/dex/eval.go",
+        "internal/corpus/manifest.go",
+        "internal/corpus/run.go",
+        "internal/eval/structural.go",
+        "internal/eval/structural_test.go"
+      ]
+    },
+    {
+      "id": "e24471d8",
+      "query": "idle drainer re-arms on no-progress instead of stopping cycle",
+      "relevant_files": [
+        "cmd/dex/main_test.go",
+        "internal/index/drain.go"
+      ]
+    },
+    {
+      "id": "bc804deb",
+      "query": "Contextual Retrieval — situating sentence per chunk (DEX_CHUNK_CONTEXT_MODE)",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/chunk/chunk.go",
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "8161f58c",
+      "query": "Matryoshka dim truncation (DEX_EMBED_DIM) + A/B sweep results",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "cmd/dex/render.go",
+        "internal/embed/dimcap.go",
+        "internal/embed/dimcap_test.go",
+        "scripts/sweep-embed-ab.sh"
+      ]
+    },
+    {
+      "id": "b42e30cd",
+      "query": "multi-repo retrieval benchmark corpus (dex bench corpus)",
+      "relevant_files": [
+        "cmd/dex/corpus.go",
+        "cmd/dex/locomo.go",
+        "internal/corpus/fetch.go",
+        "internal/corpus/fetch_test.go",
+        "internal/corpus/manifest.go",
+        "internal/corpus/manifest_test.go",
+        "internal/corpus/report.go",
+        "internal/corpus/report_test.go",
+        "internal/corpus/run.go"
+      ]
+    },
+    {
+      "id": "6c15ccaa",
+      "query": "DEX_GRAPH_WEIGHT — tunable lane weight for graph-proximity RRF",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/graph_env_test.go",
+        "cmd/dex/main.go",
+        "internal/store/store.go",
+        "internal/store/store_graph.go",
+        "internal/store/store_graph_lane_test.go"
+      ]
+    },
     {
       "id": "bdf71ada",
       "query": "register graph knobs in `dex env` + parse tests + γ-sweep script",
@@ -13,6 +83,105 @@
         "benchmark/eval/sweep-graph-gamma.sh",
         "cmd/dex/env.go",
         "cmd/dex/graph_env_test.go"
+      ]
+    },
+    {
+      "id": "cd06cef1",
+      "query": "hop-decay (γ^hop) weighting for the graph-proximity lane",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/store/store.go",
+        "internal/store/store_graph.go",
+        "internal/store/store_graph_lane_test.go"
+      ]
+    },
+    {
+      "id": "689fc486",
+      "query": "add chunk_summary mode=off, make it the default",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/index/index.go",
+        "internal/index/index_test.go"
+      ]
+    },
+    {
+      "id": "c21a98c4",
+      "query": "add extractive chunk_summary mode (zero-GPU) behind a flag",
+      "relevant_files": [
+        "cmd/dex/config_file.go",
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/chunk/chunk.go",
+        "internal/chunk/extractive_test.go",
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "611855c6",
+      "query": "offline code-retrieval eval harness (NDCG@k/Recall@k/MRR)",
+      "relevant_files": [
+        "cmd/dex/eval.go",
+        "cmd/dex/locomo.go",
+        "internal/eval/golden.go",
+        "internal/eval/metrics.go",
+        "internal/eval/metrics_test.go",
+        "internal/eval/report.go",
+        "internal/eval/report_test.go",
+        "internal/eval/runner.go"
+      ]
+    },
+    {
+      "id": "a696eef6",
+      "query": "maintenance mode stub — dex mcp --maintenance",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/mcp/maintenance.go",
+        "internal/mcp/maintenance_test.go"
+      ]
+    },
+    {
+      "id": "848668ca",
+      "query": "bump rerank conc to 16",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/rerank/chat_reranker.go"
+      ]
+    },
+    {
+      "id": "b51d1597",
+      "query": "fact decay + consolidation + eviction lifecycle",
+      "relevant_files": [
+        "cmd/dex/knowledge.go",
+        "cmd/dex/main.go",
+        "internal/mcp/server_knowledge.go",
+        "internal/store/store.go",
+        "internal/store/store_gc_test.go",
+        "internal/store/store_knowledge.go"
+      ]
+    },
+    {
+      "id": "fb2989db",
+      "query": "query-relevant semantic recall of facts",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/server_knowledge.go",
+        "internal/mcp/server_knowledge_recall_test.go",
+        "internal/mcp/server_overview.go",
+        "internal/store/store_knowledge.go",
+        "internal/store/store_knowledge_test.go"
+      ]
+    },
+    {
+      "id": "8a0822b0",
+      "query": "richer summary progress reporting in dex index status",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "cmd/dex/render.go",
+        "internal/index/drain.go",
+        "internal/store/store.go"
       ]
     },
     {
@@ -26,11 +195,780 @@
       ]
     },
     {
+      "id": "1fac7e7a",
+      "query": "Hebbian co-access edges for session-based recall boosting",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/store/store.go",
+        "internal/store/store_coaccess.go",
+        "internal/store/store_coaccess_test.go",
+        "internal/store/store_graph.go",
+        "internal/store/store_session.go"
+      ]
+    },
+    {
+      "id": "c717f95e",
+      "query": "pipeline Pass 3b embed + deletion-aware cascade + cleanup",
+      "relevant_files": [
+        "internal/index/drain.go",
+        "internal/index/grounding.go",
+        "internal/index/index.go",
+        "internal/index/index_test.go",
+        "internal/index/pacing_test.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "fe9ecb06",
+      "query": "graph_path (shortest-path BFS) + graph_diff (blast-radius) (#212)",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_graph.go"
+      ]
+    },
+    {
+      "id": "fb690694",
+      "query": "LoCoMo memory-recall benchmark harness (#210)",
+      "relevant_files": [
+        "cmd/dex/locomo.go",
+        "cmd/dex/main.go",
+        "internal/locomo/dataset.go",
+        "internal/locomo/locomo_test.go",
+        "internal/locomo/report.go",
+        "internal/locomo/runner.go",
+        "internal/locomo/scorer.go"
+      ]
+    },
+    {
+      "id": "b992bc3e",
+      "query": "skeleton-first reads with on-demand body expansion (#206)",
+      "relevant_files": [
+        "internal/compress/skeleton.go",
+        "internal/compress/skeleton_test.go",
+        "internal/mcp/compress_quality.go",
+        "internal/mcp/compress_quality_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "69c987c9",
+      "query": "prompt-cache-aware context layout for batch file_view (#205)",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_cache_layout_test.go",
+        "internal/profiles/profiles.go"
+      ]
+    },
+    {
+      "id": "0c6e4f5c",
+      "query": "target_model profile dimension (#204)",
+      "relevant_files": [
+        "internal/profiles/profiles.go",
+        "internal/profiles/profiles_test.go",
+        "internal/tokens/tokens.go"
+      ]
+    },
+    {
+      "id": "9aef4033",
+      "query": "ctx_share + ctx_pack (#154, #155)",
+      "relevant_files": [
+        "internal/mcp/http.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_overview.go",
+        "internal/mcp/server_pack.go",
+        "internal/mcp/server_share.go",
+        "internal/store/store.go",
+        "internal/store/store_pack.go",
+        "internal/store/store_share.go"
+      ]
+    },
+    {
+      "id": "9ebed6c4",
+      "query": "ContextBus — category field + FTS5 on agent_messages (#148)",
+      "relevant_files": [
+        "internal/mcp/server_agent.go",
+        "internal/store/store.go",
+        "internal/store/store_agent.go",
+        "internal/store/store_agent_test.go"
+      ]
+    },
+    {
+      "id": "75acce89",
+      "query": "context profiles (DEX_PROFILE)",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/profiles/profiles.go"
+      ]
+    },
+    {
+      "id": "66219ce2",
+      "query": "index git commits as searchable chunks (phase 3)",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/chunk/chunk.go",
+        "internal/index/git.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "afee5ca1",
+      "query": "workspace search — multi-project RRF merge (#132)",
+      "relevant_files": [
+        "internal/mcp/http.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_nav.go",
+        "internal/mcp/server_workspace.go",
+        "internal/workspace/workspace.go"
+      ]
+    },
+    {
+      "id": "7f0aafca",
+      "query": "multi-scale TF-IDF index with query-type routing (#104)",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/store/multiscale.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "0dcb2ad0",
+      "query": "add qwen3-embedding to priority list, verify liveness in DetectOllama",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/embed/ollama.go",
+        "internal/embed/ollama_test.go"
+      ]
+    },
+    {
+      "id": "8288aa1d",
+      "query": "session SLO monitoring — warn/throttle/block on token/tool thresholds",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/slo/slo.go",
+        "internal/slo/slo_test.go"
+      ]
+    },
+    {
+      "id": "a2b7e756",
+      "query": "errcheck prior.Close + remove unused fuseWithGraphNeighbors",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "884d066c",
+      "query": "add MCP server instructions + dex setup command",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "cmd/dex/setup.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "8d0db824",
+      "query": "spreading activation for graph-neighborhood relevance (#92)",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/store/store.go",
+        "internal/store/store_graph.go",
+        "internal/store/store_graph_lane_test.go"
+      ]
+    },
+    {
+      "id": "cfd71f32",
+      "query": "extract pluggable Embedder interface from concrete embed.Client",
+      "relevant_files": [
+        "internal/embed/client.go",
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "8fa99440",
+      "query": "emit incremental progress during dex index",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/index/index.go"
+      ]
+    },
+    {
+      "id": "bb99fe18",
+      "query": "summary coverage %, --json stale flag, embed mismatch detection",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "cmd/dex/render.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "8680ab51",
+      "query": "lock serve/search-time degradation when embed backend is down",
+      "relevant_files": [
+        "internal/mcp/server_degrade_test.go",
+        "internal/store/store_degrade_test.go"
+      ]
+    },
+    {
+      "id": "9bf92189",
+      "query": "replace word/byte token heuristic with a real BPE tokenizer (#152)",
+      "relevant_files": [
+        "cmd/dex/guide.go",
+        "internal/compress/symmap.go",
+        "internal/compress/symmap_test.go",
+        "internal/compress/terse.go",
+        "internal/mcp/server_compress.go",
+        "internal/tokens/tokens.go",
+        "internal/tokens/tokens_test.go"
+      ]
+    },
+    {
+      "id": "8c2cd2a4",
+      "query": "unify the two post-RRF rerankers into one canonical path (#144)",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go",
+        "internal/store/search_quality.go",
+        "internal/store/search_quality_test.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "5dda9d6b",
+      "query": "per-session file access heatmap — hot/cold file tracking",
+      "relevant_files": [
+        "internal/heatmap/heatmap.go",
+        "internal/heatmap/heatmap_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_session.go"
+      ]
+    },
+    {
+      "id": "b924177e",
+      "query": "adaptive mode learning from LLM output ratio feedback",
+      "relevant_files": [
+        "internal/compress/adaptive.go",
+        "internal/compress/adaptive_test.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_session.go"
+      ]
+    },
+    {
+      "id": "3612661c",
+      "query": "MCP tool description compression — DEX_DESCRIPTION_MODE=terse|lazy|full",
+      "relevant_files": [
+        "internal/compress/terse.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/tool_desc.go",
+        "internal/mcp/tool_desc_test.go"
+      ]
+    },
+    {
+      "id": "a9f0e5c7",
+      "query": "cross-file TF-IDF codebook for multi-file file_view",
+      "relevant_files": [
+        "internal/compress/codebook.go",
+        "internal/compress/codebook_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "c657f372",
+      "query": "resolve golangci-lint failures blocking CI",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_compress.go",
+        "internal/mcp/server_grep.go",
+        "internal/mcp/trigram_cache.go",
+        "internal/store/bm25_quality.go",
+        "internal/store/bm25_quality_test.go",
+        "internal/store/search_quality.go"
+      ]
+    },
+    {
+      "id": "66891000",
+      "query": "context window ledger — budget action for ctx_session (#136)",
+      "relevant_files": [
+        "internal/ctx/ledger.go",
+        "internal/ctx/ledger_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_session.go"
+      ]
+    },
+    {
+      "id": "6d2ce2b5",
+      "query": "RAM-resident trigram index for search_grep candidate narrowing",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_grep.go",
+        "internal/mcp/trigram_cache.go",
+        "internal/trigram/trigram.go",
+        "internal/trigram/trigram_test.go"
+      ]
+    },
+    {
+      "id": "b5e2a749",
+      "query": "information bottleneck compression — binary-search entropy threshold (#115)",
+      "relevant_files": [
+        "internal/compress/ib.go",
+        "internal/compress/ib_test.go",
+        "internal/mcp/server_compress.go"
+      ]
+    },
+    {
+      "id": "6fabb006",
+      "query": "handle missing root — delete index by hash when dir is gone (#138)",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/proj/proj.go",
+        "internal/proj/proj_test.go"
+      ]
+    },
+    {
+      "id": "1d484d54",
+      "query": "search_similar — find related chunks via full hybrid search (#134)",
+      "relevant_files": [
+        "internal/mcp/http.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "6d7ad465",
+      "query": "Shannon entropy + quality gate for terse pipeline (#89)",
+      "relevant_files": [
+        "internal/compress/entropy.go",
+        "internal/compress/entropy_test.go",
+        "internal/mcp/server_compress.go"
+      ]
+    },
+    {
+      "id": "3477ce00",
+      "query": "task_aware_compress — intent routing for file_view (#130)",
+      "relevant_files": [
+        "internal/compress/code.go",
+        "internal/compress/code_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "30e928c6",
+      "query": "AggressiveCompress + LightweightCleanup for file_view (#128)",
+      "relevant_files": [
+        "internal/compress/code.go",
+        "internal/compress/code_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "7a10d289",
+      "query": "terse engine Layer 1-3 — function-word stripping, abbreviations, zero-unique dedup (#116)",
+      "relevant_files": [
+        "internal/compress/terse.go",
+        "internal/compress/terse_test.go",
+        "internal/mcp/server_compress.go"
+      ]
+    },
+    {
+      "id": "f3976954",
+      "query": "subsystem tags at construction + observability doc",
+      "relevant_files": [
+        "internal/graph/graph.go",
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/mcp/http.go",
+        "internal/watch/watch.go"
+      ]
+    },
+    {
+      "id": "c7f0611c",
+      "query": "index include/ignore moves to .dex/config.yml — drop TOML (#75)",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "cmd/dex/main_test.go",
+        "internal/graph/graph_test.go",
+        "internal/ignore/config.go",
+        "internal/ignore/ignore.go",
+        "internal/ignore/ignore_test.go",
+        "internal/index/index_test.go",
+        "internal/mcp/server_test.go",
+        "internal/watch/watch_test.go"
+      ]
+    },
+    {
+      "id": "fcd4397b",
+      "query": "graceful startup without ollama — degrade, auto-start, clear errors (#67)",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "cmd/dex/ollama_autostart.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
       "id": "5ac0bfae",
       "query": "document DEX_TOOLS and warn on mistyped DEX_TOOL_TIER",
       "relevant_files": [
         "cmd/dex/env.go",
         "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "19b05f25",
+      "query": "standardize timing log fields to duration_ms",
+      "relevant_files": [
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/logx/logx.go",
+        "internal/mcp/http.go",
+        "internal/watch/watch.go"
+      ]
+    },
+    {
+      "id": "3aafa97e",
+      "query": "Claude Code hook + plugin support (dex hook inject/redirect/observe)",
+      "relevant_files": [
+        "cmd/dex/hook.go",
+        "cmd/dex/main.go",
+        "scripts/setup-hooks.sh"
+      ]
+    },
+    {
+      "id": "da2e7f38",
+      "query": "resolve 16 golangci-lint issues blocking CI",
+      "relevant_files": [
+        "internal/embed/ollama.go",
+        "internal/mcp/context.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_compress.go",
+        "internal/store/store_agent.go",
+        "internal/store/store_knowledge.go",
+        "internal/store/store_session.go"
+      ]
+    },
+    {
+      "id": "e9afeae4",
+      "query": "G10 streaming — ask/file_view stream tokens via MCP Log notifications",
+      "relevant_files": [
+        "internal/chat/client.go",
+        "internal/chat/client_test.go",
+        "internal/mcp/answer.go",
+        "internal/mcp/answer_test.go",
+        "internal/mcp/context.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "25a7e361",
+      "query": "fix exported-field marker + session auto-tracking on file_view",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/store/store_session.go"
+      ]
+    },
+    {
+      "id": "e3efa070",
+      "query": "agent coordination bus — N20",
+      "relevant_files": [
+        "internal/mcp/http.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_agent.go",
+        "internal/store/store.go",
+        "internal/store/store_agent.go"
+      ]
+    },
+    {
+      "id": "73e652ee",
+      "query": "knowledge revision tracking — increment revision_count on re-add, surface in list",
+      "relevant_files": [
+        "internal/mcp/server_knowledge.go",
+        "internal/store/store.go",
+        "internal/store/store_knowledge.go"
+      ]
+    },
+    {
+      "id": "6377aa89",
+      "query": "rename MCP tools for consistency",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/mcp/http.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_compose.go",
+        "internal/mcp/server_overview.go",
+        "internal/mcp/server_session.go"
+      ]
+    },
+    {
+      "id": "944cbb8c",
+      "query": "adopt lean-ctx N8-N13 features",
+      "relevant_files": [
+        "internal/mcp/answer.go",
+        "internal/mcp/server.go",
+        "internal/store/store.go",
+        "internal/store/store_knowledge.go"
+      ]
+    },
+    {
+      "id": "bc6d9d85",
+      "query": "adopt 7 lean-ctx features into dex",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_compress.go",
+        "internal/mcp/server_knowledge.go",
+        "internal/mcp/server_session.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "b404bcd1",
+      "query": "tool tiers, session context in ask, compress-stdin CLI",
+      "relevant_files": [
+        "cmd/dex/compress.go",
+        "cmd/dex/main.go",
+        "internal/mcp/answer.go",
+        "internal/mcp/answer_test.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_compress.go"
+      ]
+    },
+    {
+      "id": "49f04dcf",
+      "query": "skip \u003cthink\u003e assistant prefill for plain chat / ollama",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/rerank/chat_reranker.go"
+      ]
+    },
+    {
+      "id": "9274cebd",
+      "query": "G11+G12 ollama model auto-pull and VRAM-aware batch sizing",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "cmd/dex/render.go",
+        "internal/embed/ollama.go",
+        "internal/embed/vram.go"
+      ]
+    },
+    {
+      "id": "353b05a7",
+      "query": "auto-detect ollama chat model; surface both embed+chat in index_status (G9)",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/embed/ollama.go",
+        "internal/embed/ollama_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "30435ddd",
+      "query": "knowledge base — persistent project facts with salience ranking (G3)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_knowledge.go",
+        "internal/store/store.go",
+        "internal/store/store_knowledge.go"
+      ]
+    },
+    {
+      "id": "a376ad26",
+      "query": "session memory — task, notes, file tracking per project (G2)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_session.go",
+        "internal/store/store.go",
+        "internal/store/store_session.go"
+      ]
+    },
+    {
+      "id": "3a99a495",
+      "query": "add search_tree tool — indexed file listing with depth grouping (G6)",
+      "relevant_files": [
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_tree.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "49586456",
+      "query": "surface ollama discovery in index_status (G8)",
+      "relevant_files": [
+        "internal/embed/ollama.go",
+        "internal/embed/ollama_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "d59ad471",
+      "query": "auto-detect ollama for local embedding",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/embed/ollama.go",
+        "internal/embed/ollama_test.go"
+      ]
+    },
+    {
+      "id": "85fc2822",
+      "query": "tiered read fidelity for view_summarize",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "e6817788",
+      "query": "remote stdio shim — dex mcp --remote proxies to dex serve (#48)",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/remote_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "e030ee3d",
+      "query": "expose is_main on package-graph nodes",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "internal/mcp/server_graph.go",
+        "internal/mcp/server_graph_packages_test.go"
+      ]
+    },
+    {
+      "id": "f7ce40ec",
+      "query": "monotonic prune cutoff immune to backward clock steps",
+      "relevant_files": [
+        "internal/graph/graph.go",
+        "internal/graph/persist.go",
+        "internal/index/index.go",
+        "internal/store/seentime_test.go",
+        "internal/store/store.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "e989938d",
+      "query": "graph_tags doc-graph tag query (#16, slice C)",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "cmd/dex/main.go",
+        "internal/mcp/http.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_graph.go",
+        "internal/mcp/server_graph_doc_test.go"
+      ]
+    },
+    {
+      "id": "90a0e911",
+      "query": "doc-graph PageRank/centrality (#16, slice C)",
+      "relevant_files": [
+        "internal/graph/centrality.go",
+        "internal/graph/centrality_test.go",
+        "internal/mcp/server_graph.go"
+      ]
+    },
+    {
+      "id": "f5a994c4",
+      "query": "markdown heading anchors + section deep-links (#16, slice B part 2)",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "internal/graph/graph.go",
+        "internal/graph/markdown.go",
+        "internal/graph/markdown_test.go",
+        "internal/mcp/server_graph.go",
+        "internal/mcp/server_graph_doc_test.go"
+      ]
+    },
+    {
+      "id": "4af44d37",
+      "query": "markdown embeds + tags (#16, slice B part 1)",
+      "relevant_files": [
+        "internal/graph/graph.go",
+        "internal/graph/markdown.go",
+        "internal/graph/markdown_test.go",
+        "internal/mcp/server_graph.go"
+      ]
+    },
+    {
+      "id": "268630f5",
+      "query": "graph_links / graph_backlinks doc-graph tools (#16, slice A)",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "cmd/dex/main.go",
+        "internal/mcp/context_graph.go",
+        "internal/mcp/http.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_graph.go",
+        "internal/mcp/server_graph_doc_test.go"
+      ]
+    },
+    {
+      "id": "82066e47",
+      "query": "eager-watch the --project registry at boot",
+      "relevant_files": [
+        "cmd/dex/serve.go",
+        "internal/mcp/http.go",
+        "internal/mcp/server_test.go"
+      ]
+    },
+    {
+      "id": "01d16f39",
+      "query": "GET /graph/packages — whole package import DAG + centrality (#23)",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "internal/graph/centrality.go",
+        "internal/mcp/http.go",
+        "internal/mcp/server_graph.go",
+        "internal/mcp/server_graph_packages_test.go"
+      ]
+    },
+    {
+      "id": "5026f3ed",
+      "query": "pace background summary draining (drain lock + foreground yield + manual pace)",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/index/pacing_test.go",
+        "internal/mcp/server.go",
+        "internal/proj/proj.go"
       ]
     },
     {
@@ -42,6 +980,26 @@
         "internal/mcp/answer_test.go",
         "internal/mcp/context.go",
         "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "003e1adc",
+      "query": "enumerate-by-kind summaries endpoint",
+      "relevant_files": [
+        "internal/mcp/http.go",
+        "internal/mcp/server_summaries.go",
+        "internal/store/store.go",
+        "internal/store/summaries_test.go"
+      ]
+    },
+    {
+      "id": "d240b5a5",
+      "query": "HTTP transport for the same MCP primitives",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "cmd/dex/serve.go",
+        "internal/mcp/http.go",
+        "internal/mcp/http_test.go"
       ]
     },
     {
@@ -67,6 +1025,66 @@
       ]
     },
     {
+      "id": "7cd40e74",
+      "query": "JavaScript tree-sitter extractor (.js + .jsx)",
+      "relevant_files": [
+        "internal/graph/sitter_javascript.go",
+        "internal/graph/sitter_javascript_test.go",
+        "internal/graph/testdata/js_simple/src/handler.js",
+        "internal/graph/testdata/js_simple/src/main.js",
+        "internal/graph/testdata/js_simple/src/text.js",
+        "internal/graph/testdata/js_simple/src/utils/index.js"
+      ]
+    },
+    {
+      "id": "fa41add4",
+      "query": "TypeScript tree-sitter extractor (.ts + .tsx)",
+      "relevant_files": [
+        "internal/graph/sitter_ts.go",
+        "internal/graph/sitter_ts_test.go",
+        "internal/graph/testdata/ts_simple/src/handler.ts",
+        "internal/graph/testdata/ts_simple/src/main.ts",
+        "internal/graph/testdata/ts_simple/src/text.ts",
+        "internal/graph/testdata/ts_simple/src/utils/index.ts"
+      ]
+    },
+    {
+      "id": "521f64ac",
+      "query": "Python tree-sitter extractor with cross-file calls",
+      "relevant_files": [
+        "internal/graph/graph.go",
+        "internal/graph/sitter_python.go",
+        "internal/graph/sitter_python_test.go",
+        "internal/graph/sitter_test.go",
+        "internal/graph/testdata/python_simple/app/__init__.py",
+        "internal/graph/testdata/python_simple/app/handler.py",
+        "internal/graph/testdata/python_simple/app/main.py",
+        "internal/graph/testdata/python_simple/utils/__init__.py",
+        "internal/graph/testdata/python_simple/utils/text.py"
+      ]
+    },
+    {
+      "id": "71b17868",
+      "query": "rename .dex-ignore → .dexignore + add benchmark/results to project ignore",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/graph/yaml.go",
+        "internal/ignore/ignore.go",
+        "internal/ignore/ignore_test.go",
+        "internal/index/index_test.go"
+      ]
+    },
+    {
+      "id": "04a872c4",
+      "query": "GC stale package_summary/repo_summary rows on upsert",
+      "relevant_files": [
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
       "id": "b4be5708",
       "query": "production-focused summaries + interface-dispatch centrality",
       "relevant_files": [
@@ -78,11 +1096,288 @@
       ]
     },
     {
+      "id": "dfa7a21e",
+      "query": "clear all pre-existing golangci-lint findings",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "cmd/dex/render.go",
+        "internal/embed/client.go",
+        "internal/graph/yaml.go",
+        "internal/index/drain.go",
+        "internal/lock/lock.go",
+        "internal/mcp/context.go",
+        "internal/mcp/context_graph.go",
+        "internal/mcp/server_graph.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "5093549f",
+      "query": "clean up new-code lint findings",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_test.go",
+        "internal/mcp/path_tags.go",
+        "internal/store/rerank_cache.go"
+      ]
+    },
+    {
+      "id": "dcaeaf31",
+      "query": "pending-summaries backpressure + visible queue health",
+      "relevant_files": [
+        "internal/index/drain.go",
+        "internal/mcp/server.go",
+        "internal/store/store.go",
+        "internal/store/store_pending.go",
+        "internal/store/store_pending_test.go"
+      ]
+    },
+    {
+      "id": "20fd900c",
+      "query": "per-call timeout, circuit breaker, in-process LRU",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/mcp/server.go",
+        "internal/rerank/breaker.go",
+        "internal/rerank/breaker_test.go",
+        "internal/store/rerank_cache.go",
+        "internal/store/store.go",
+        "internal/store/store_rerank_test.go"
+      ]
+    },
+    {
+      "id": "2cdda956",
+      "query": "record embed model in meta, refuse silent swap",
+      "relevant_files": [
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/mcp/server.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "67da601f",
+      "query": "order modules by PageRank, not alphabetically",
+      "relevant_files": [
+        "internal/guide/render.go",
+        "internal/guide/render_test.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "0b053821",
+      "query": "--module renders one section to stdout",
+      "relevant_files": [
+        "cmd/dex/guide.go",
+        "internal/guide/render.go",
+        "internal/guide/render_test.go"
+      ]
+    },
+    {
+      "id": "46b2ce09",
+      "query": "detect already-stored truncated summaries",
+      "relevant_files": [
+        "cmd/dex/guide.go",
+        "internal/guide/render.go",
+        "internal/guide/render_test.go"
+      ]
+    },
+    {
+      "id": "e6382801",
+      "query": "default output to LLM_GUIDE.md (was .txt)",
+      "relevant_files": [
+        "cmd/dex/guide.go",
+        "cmd/dex/main.go",
+        "internal/guide/config.go",
+        "internal/index/index.go",
+        "scripts/pre-commit-guide.sh"
+      ]
+    },
+    {
+      "id": "94ef345c",
+      "query": "per-tier summary model overrides",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "internal/index/drain.go",
+        "internal/index/index.go",
+        "internal/index/summarize_model_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "ccd1fd3f",
+      "query": "polish — portability, hallucination guards, tests, docs",
+      "relevant_files": [
+        "internal/guide/config.go",
+        "internal/guide/render.go",
+        "internal/guide/render_test.go",
+        "internal/index/index.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "edb86764",
+      "query": "ground module sections in graph + centrality data",
+      "relevant_files": [
+        "internal/guide/render.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "9a485d76",
+      "query": "render LLM_GUIDE.txt from existing summaries",
+      "relevant_files": [
+        "cmd/dex/guide.go",
+        "cmd/dex/main.go",
+        "internal/guide/config.go",
+        "internal/guide/manifest.go",
+        "internal/guide/render.go",
+        "internal/ignore/ignore.go",
+        "internal/store/store.go",
+        "scripts/pre-commit-guide.sh"
+      ]
+    },
+    {
+      "id": "63c3b6de",
+      "query": "lazy per-project auto-watcher inside the MCP server",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "cmd/dex/main.go",
+        "cmd/dex/main_test.go",
+        "internal/index/drain.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go"
+      ]
+    },
+    {
+      "id": "3a12fd54",
+      "query": "surface pending_summaries + last_summarized in status",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/index/drain.go",
+        "internal/index/index_test.go",
+        "internal/mcp/server.go",
+        "internal/store/store.go",
+        "internal/store/store_pending_test.go"
+      ]
+    },
+    {
+      "id": "2f8b2c5e",
+      "query": "cross-process lock prevents concurrent indexers on same project",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/lock/lock.go",
+        "internal/lock/lock_test.go",
+        "internal/proj/proj.go",
+        "internal/proj/proj_test.go"
+      ]
+    },
+    {
+      "id": "cccef62f",
+      "query": "defer summaries by default, log phases, ground prompts",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/index/drain.go",
+        "internal/index/index.go"
+      ]
+    },
+    {
+      "id": "f94c9025",
+      "query": "finish rename mcsearch → dex (.mcsearch-ignore → .dex-ignore)",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "internal/graph/yaml.go",
+        "internal/ignore/ignore.go",
+        "internal/ignore/ignore_test.go",
+        "internal/index/index_test.go",
+        "internal/proj/guard_test.go"
+      ]
+    },
+    {
+      "id": "cb8442d5",
+      "query": "mirror MCP tool surface as subcommand groups",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/mcp/context.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_graph.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "4d057c18",
+      "query": "rename tool surface; add graph_deps/graph_callers/graph_callees",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_graph.go",
+        "internal/mcp/context_test.go",
+        "internal/mcp/enrich.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_graph.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "ac6faeb2",
+      "query": "drainer + `mcsearch summarize` subcommand (Layer 3 phase 3)",
+      "relevant_files": [
+        "internal/index/drain.go",
+        "internal/index/index_test.go",
+        "internal/store/store_pending.go"
+      ]
+    },
+    {
+      "id": "d55a3525",
+      "query": "keep mtime fast-path under --summarize",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/index/index_test.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "35142c97",
+      "query": "TouchSeen refreshes start_line/end_line on position drift",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "037480f8",
+      "query": "six tuning fixes for mcsearch_context router",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_test.go",
+        "internal/mcp/enrich.go",
+        "internal/mcp/enrich_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
       "id": "4e81bb28",
       "query": "four CLI papercuts found while smoke-testing",
       "relevant_files": [
         "internal/chat/client.go",
         "internal/rerank/chat_reranker.go"
+      ]
+    },
+    {
+      "id": "656811b3",
+      "query": "fold graph into index; surface stored summaries",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/index/index.go",
+        "internal/mcp/context.go",
+        "internal/mcp/context_test.go",
+        "internal/store/store.go",
+        "internal/watch/watch.go"
       ]
     },
     {
@@ -96,11 +1391,223 @@
       ]
     },
     {
+      "id": "c443a428",
+      "query": "add repo summary + drill-down guidance to complete issue #1",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/index/index.go",
+        "internal/mcp/context.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "d71aa6ca",
+      "query": "add hierarchical summary index with package summaries",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/index/index.go",
+        "internal/mcp/context.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "765af69c",
+      "query": "Go static graph extractor (Issue #4 Phase 1)",
+      "relevant_files": [
+        "internal/graph/export.go",
+        "internal/graph/go.go",
+        "internal/graph/graph.go",
+        "internal/graph/graph_test.go",
+        "internal/graph/persist.go",
+        "internal/graph/testdata/simple/main.go",
+        "internal/graph/testdata/simple/store/store.go",
+        "internal/graph/testdata/simple/store/types.go",
+        "internal/store/store.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "c6f15d7b",
+      "query": "batch ExistingSHAs queries — N per-file queries → 1 round-trip",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
       "id": "7da91143",
       "query": "Phase 4 allocation micro-optimizations",
       "relevant_files": [
         "internal/chunk/chunk.go",
         "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "c6725e72",
+      "query": "concurrency, race fix, ctx threading",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/store/store.go",
+        "internal/watch/watch.go"
+      ]
+    },
+    {
+      "id": "2878a229",
+      "query": "consolidate logic, add abstractions",
+      "relevant_files": [
+        "internal/chat/client.go",
+        "internal/chunk/chunk.go",
+        "internal/embed/client.go",
+        "internal/index/index.go",
+        "internal/mcp/server.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "333d4cda",
+      "query": "backfill name column in TouchSeen so re-index populates names",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "6decf293",
+      "query": "fix all golangci-lint issues surfaced by new .golangci.yml",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go",
+        "internal/store/store.go",
+        "internal/watch/watch.go"
+      ]
+    },
+    {
+      "id": "e2b37960",
+      "query": "find_symbol + related_chunks MCP tools; parent context; path diversity; exclude filter",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/index/index.go",
+        "internal/mcp/server.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "e28f6a12",
+      "query": "fix six code-review issues across store, mcp, rerank",
+      "relevant_files": [
+        "internal/index/index_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go",
+        "internal/rerank/chat_reranker.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "61bea5d7",
+      "query": "decoder-style ChatReranker for Qwen3-Reranker-4B via vLLM",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_test.go",
+        "internal/rerank/chat_reranker.go",
+        "internal/rerank/chat_reranker_test.go",
+        "internal/rerank/client.go"
+      ]
+    },
+    {
+      "id": "93f8494e",
+      "query": "ask_codebase prompt + ignore package doc — surface full filter chain",
+      "relevant_files": [
+        "internal/ignore/ignore.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "959824e1",
+      "query": "rerank spec, summarize",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "e87ca07d",
+      "query": "generate_code — RAG-grounded code generation via /v1/chat/completions",
+      "relevant_files": [
+        "internal/chat/client.go",
+        "internal/chat/client_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "d55990de",
+      "query": "hybrid search — BM25 + semantic via Reciprocal Rank Fusion",
+      "relevant_files": [
+        "internal/index/index_test.go",
+        "internal/mcp/server.go",
+        "internal/store/bench_test.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "0efc83ed",
+      "query": "MCSEARCH_DISABLE_VEC_CACHE escape hatch + honest perf in README",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/store/bench_test.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "9cf6adaa",
+      "query": "don't skip test files that contain literal secret patterns",
+      "relevant_files": [
+        "internal/ignore/ignore.go",
+        "internal/ignore/ignore_test.go",
+        "internal/index/index.go"
+      ]
+    },
+    {
+      "id": "08d288cc",
+      "query": "drop hand-rolled gitignore for sabhiram/go-gitignore; MCP tests",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/chunk/chunk_test.go",
+        "internal/ignore/ignore.go",
+        "internal/ignore/ignore_test.go",
+        "internal/index/index_test.go",
+        "internal/mcp/server_test.go",
+        "internal/watch/watch_test.go"
+      ]
+    },
+    {
+      "id": "99fc8e13",
+      "query": "tests, slog logger injection, dead-code removal",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/chunk/chunk_test.go",
+        "internal/embed/client_test.go",
+        "internal/ignore/ignore.go",
+        "internal/ignore/ignore_test.go",
+        "internal/index/index.go",
+        "internal/proj/proj_test.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go",
+        "internal/watch/watch.go"
+      ]
+    },
+    {
+      "id": "7ea1cb98",
+      "query": "low-severity fixes from QA pass",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/ignore/ignore.go",
+        "internal/index/index.go",
+        "internal/index/index_test.go",
+        "internal/store/store.go",
+        "internal/watch/watch.go"
       ]
     }
   ]

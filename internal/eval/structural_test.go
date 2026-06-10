@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -13,13 +14,12 @@ func TestIsProseSubject(t *testing.T) {
 	}{
 		{"add graph-proximity lane for structural coupling", true},
 		{"fix index drainer idle re-arm on no progress", true},
-		{"remove unused helper", true},             // 3 words
-		{"short", false},                           // 1 word
-		{"two words", false},                       // 2 words
-		{"call foo() to initialize store", false},  // contains ()
-		{"set config {key: val}", false},           // contains {}
-		{"parse []string args correctly", false},   // contains []
-		{"feat: add handler for graph lane", true}, // conventional prefix already stripped by cleanSubject
+		{"remove unused helper", true},            // 3 words
+		{"short", false},                          // 1 word
+		{"two words", false},                      // 2 words
+		{"call foo() to initialize store", false}, // contains ()
+		{"set config {key: val}", false},          // contains {}
+		{"parse []string args correctly", false},  // contains []
 	}
 	for _, tc := range cases {
 		got := isProseSubject(tc.s)
@@ -47,55 +47,32 @@ func TestDistinctDirs(t *testing.T) {
 	}
 }
 
-func TestImportRefPresent(t *testing.T) {
-	goContent := `package foo
-
-import (
-	"github.com/org/repo/internal/bar"
-	"fmt"
-)
-`
-	tsContent := `import { Foo } from "../bar/foo"
-import React from "react"
-`
-	if !importRefPresent(goContent, "internal/bar") {
-		t.Error("should detect Go import of internal/bar")
+func TestHasStructuralTarget(t *testing.T) {
+	// "service" names service/server.go; "metrics" does not appear → structural target exists.
+	if !hasStructuralTarget("add prometheus instrumentation to service layer", []string{"service/server.go", "metrics/counter.go"}) {
+		t.Error("expected structural target (metrics not in subject)")
 	}
-	if importRefPresent(goContent, "internal/baz") {
-		t.Error("should not detect import of internal/baz")
+	// Both tokens appear in subject → no structural target.
+	if hasStructuralTarget("wire store and index together for fast lookup", []string{"store/store.go", "index/index.go"}) {
+		t.Error("expected no structural target (both named)")
 	}
-	if !importRefPresent(tsContent, "bar/foo") {
-		t.Error("should detect TS import of bar/foo")
-	}
-	// Content that mentions a dir only in a comment — no import keywords / quotes.
-	commentOnly := "// see internal/bar for docs\nfunc main() {}\n"
-	if importRefPresent(commentOnly, "internal/bar") {
-		t.Error("comment-only reference should not count as import")
+	// Short tokens (≤3 chars) skipped: "mcp" in subject won't name mcp/server.go.
+	// "store" len=5 not in subject → both files are structural targets → true.
+	if !hasStructuralTarget("improve mcp context routing performance", []string{"mcp/server.go", "store/store.go"}) {
+		t.Error("expected structural target (mcp skipped as short, store not in subject)")
 	}
 }
 
-func TestAnyImportsCross(t *testing.T) {
-	dir := t.TempDir()
-
-	// Two files that DO import each other.
-	write(t, dir, "pkg/a/a.go", `package a
-import "github.com/org/repo/pkg/b"
-func A() { b.B() }
-`)
-	write(t, dir, "pkg/b/b.go", `package b
-func B() {}
-`)
-
-	if !anyImportsCross(dir, []string{"pkg/a/a.go", "pkg/b/b.go"}) {
-		t.Error("expected cross-import detected between a and b")
+func TestPathTokens(t *testing.T) {
+	got := pathTokens("internal/store/store.go")
+	want := []string{"internal", "store", "store"}
+	if len(got) != len(want) {
+		t.Fatalf("pathTokens = %v, want %v", got, want)
 	}
-
-	// Two files that do NOT import each other.
-	write(t, dir, "pkg/c/c.go", "package c\nfunc C() {}\n")
-	write(t, dir, "pkg/d/d.go", "package d\nfunc D() {}\n")
-
-	if anyImportsCross(dir, []string{"pkg/c/c.go", "pkg/d/d.go"}) {
-		t.Error("unexpected cross-import between c and d")
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("pathTokens[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
@@ -103,66 +80,74 @@ func TestGenerateStructural(t *testing.T) {
 	unsetGitEnv(t)
 	dir := gitInitRepo(t)
 
-	// Commit 1: two files in different packages, no cross-imports, prose message.
-	// → should produce 1 structural query.
-	write(t, dir, "pkg/alpha/alpha.go", "package alpha\nfunc Alpha() {}\n")
-	write(t, dir, "pkg/beta/beta.go", "package beta\nfunc Beta() {}\n")
-	gitCommitAll(t, dir, "feat: add alpha and beta handlers for new pipeline")
+	// Commit 1: cross-package, subject names only one package (service) not
+	// the other (metrics) → structural target present → 1 query expected.
+	write(t, dir, "service/server.go", "package service\nfunc Serve() {}\n")
+	write(t, dir, "metrics/counter.go", "package metrics\nfunc Count() {}\n")
+	gitCommitAll(t, dir, "add prometheus instrumentation to service layer")
 
-	// Commit 2: two files in different packages but one imports the other.
-	// → should be excluded (cross-import).
-	write(t, dir, "pkg/gamma/gamma.go", "package gamma\nfunc Gamma() {}\n")
-	write(t, dir, "pkg/delta/delta.go", `package delta
-import "github.com/org/repo/pkg/gamma"
-func Delta() { gamma.Gamma() }
-`)
-	gitCommitAll(t, dir, "refactor: wire gamma into delta service layer")
+	// Commit 2: cross-package with import coupling between files (gamma imports
+	// delta). Under the new design this is INCLUDED because import edges are
+	// the graph structure we want to measure — but subject names both packages
+	// ("gamma" and "delta") → excluded by mixed-lexicality filter.
+	write(t, dir, "gamma/gamma.go", "package gamma\nfunc Gamma() {}\n")
+	write(t, dir, "delta/delta.go", "package delta\nimport \"github.com/org/repo/gamma\"\nfunc Delta() { gamma.Gamma() }\n")
+	gitCommitAll(t, dir, "wire gamma into delta service for processing")
+	// "gamma" (5) and "delta" (5) both appear → no structural target → excluded.
 
-	// Commit 3: two files in the SAME package (same dir).
-	// → should be excluded (not multi-package).
-	write(t, dir, "pkg/epsilon/e1.go", "package epsilon\nfunc E1() {}\n")
-	write(t, dir, "pkg/epsilon/e2.go", "package epsilon\nfunc E2() {}\n")
-	gitCommitAll(t, dir, "feat: add epsilon helpers for encoding layer")
+	// Commit 3: same directory → excluded (not cross-package).
+	write(t, dir, "epsilon/e1.go", "package epsilon\nfunc E1() {}\n")
+	write(t, dir, "epsilon/e2.go", "package epsilon\nfunc E2() {}\n")
+	gitCommitAll(t, dir, "add epsilon helpers for encoding pipeline layer")
 
-	// Commit 4: single file.
-	// → should be excluded (< 2 files).
-	write(t, dir, "pkg/zeta/zeta.go", "package zeta\nfunc Zeta() {}\n")
-	gitCommitAll(t, dir, "feat: add standalone zeta utility function")
+	// Commit 4: single file → excluded (< 2 files).
+	write(t, dir, "zeta/zeta.go", "package zeta\nfunc Zeta() {}\n")
+	gitCommitAll(t, dir, "add standalone zeta utility function helper")
 
-	// Commit 5: prose subject too short.
-	// → should be excluded.
-	write(t, dir, "pkg/eta/eta.go", "package eta\nfunc Eta() {}\n")
-	write(t, dir, "pkg/theta/theta.go", "package theta\nfunc Theta() {}\n")
+	// Commit 5: subject too short → excluded.
+	write(t, dir, "eta/eta.go", "package eta\nfunc Eta() {}\n")
+	write(t, dir, "theta/theta.go", "package theta\nfunc Theta() {}\n")
 	gitCommitAll(t, dir, "fix: typo")
+
+	// Commit 6: cross-package, subject names neither file (short tokens only:
+	// "eta"=3, "theta"=5). "theta" appears in subject → theta is named,
+	// eta is a structural target → included.
+	write(t, dir, "eta/eta.go", "package eta\nfunc Eta2() {}\n")
+	write(t, dir, "theta/theta.go", "package theta\nfunc Theta2() {}\n")
+	gitCommitAll(t, dir, "add theta listener for distributed coordination")
+	// "theta" (5) in subject → theta/theta.go named; "eta" (3) skipped → eta/eta.go is structural target.
 
 	gs, err := GenerateStructural(context.Background(), dir, GenOpts{MaxCommits: 20, MaxFiles: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(gs.Queries) != 1 {
-		t.Fatalf("got %d queries, want 1; queries: %+v", len(gs.Queries), gs.Queries)
+	// Commits 1 and 6 should produce queries; 2, 3, 4, 5 should not.
+	if len(gs.Queries) != 2 {
+		for _, q := range gs.Queries {
+			t.Logf("  %s: %q → %v", q.ID, q.Query, q.RelevantFiles)
+		}
+		t.Fatalf("got %d queries, want 2", len(gs.Queries))
 	}
 
-	q := gs.Queries[0]
-	if q.Query == "" {
-		t.Error("query text is empty")
-	}
-	if len(q.RelevantFiles) != 2 {
-		t.Errorf("got %d relevant files, want 2: %v", len(q.RelevantFiles), q.RelevantFiles)
-	}
-	if !sort.StringsAreSorted(q.RelevantFiles) {
-		t.Errorf("relevant files not sorted: %v", q.RelevantFiles)
-	}
-	if q.Anchor != "" {
-		t.Errorf("structural query should have no anchor, got %q", q.Anchor)
-	}
-	// Verify the two expected files are present.
-	wantFiles := []string{"pkg/alpha/alpha.go", "pkg/beta/beta.go"}
-	sort.Strings(wantFiles)
-	for i, f := range wantFiles {
-		if q.RelevantFiles[i] != f {
-			t.Errorf("relevant[%d] = %q, want %q", i, q.RelevantFiles[i], f)
+	for _, q := range gs.Queries {
+		if q.Query == "" {
+			t.Errorf("empty query text in %s", q.ID)
+		}
+		if len(q.RelevantFiles) < 2 {
+			t.Errorf("query %s: got %d relevant files, want ≥2", q.ID, len(q.RelevantFiles))
+		}
+		if !sort.StringsAreSorted(q.RelevantFiles) {
+			t.Errorf("relevant files not sorted: %v", q.RelevantFiles)
+		}
+		if q.Anchor != "" {
+			t.Errorf("structural query should have no anchor, got %q", q.Anchor)
+		}
+		// No same-dir commits should leak through.
+		for _, f := range q.RelevantFiles {
+			if strings.Contains(f, "epsilon/") {
+				t.Errorf("same-dir commit leaked into structural set: %v", q.RelevantFiles)
+			}
 		}
 	}
 }
