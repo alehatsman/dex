@@ -53,6 +53,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -845,12 +846,30 @@ func newDraftClient() *chat.Client {
 // users typically point this at a smaller, faster model than the main
 // chat leg used by generate / ask_codebase. Falls back to the main
 // chat client when DEX_SUMMARY_URL is unset.
+//
+// DEX_SUMMARY_TIMEOUT controls the per-call deadline independently of
+// DEX_CHAT_TIMEOUT. In flood mode a single ollama request can queue for
+// 90+ seconds; raising this env var lets drain proceed without also
+// increasing the interactive ask/compress deadline. Defaults to
+// DEX_CHAT_TIMEOUT when unset.
 func newSummaryClient() *chat.Client {
-	if os.Getenv("DEX_SUMMARY_URL") == "" {
-		return newChatClient()
+	// Resolve DEX_CHAT_TIMEOUT once; it is the fallback for DEX_SUMMARY_TIMEOUT.
+	chatTimeout := parseDuration("DEX_CHAT_TIMEOUT", envOr("DEX_CHAT_TIMEOUT", "120s"), 120*time.Second)
+
+	if os.Getenv("DEX_SUMMARY_URL") != "" {
+		return chatClientFromEnv("DEX_SUMMARY_URL", "DEX_SUMMARY_MODEL", "DEX_SUMMARY_TIMEOUT",
+			envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"), chatTimeout)
 	}
-	return chatClientFromEnv("DEX_SUMMARY_URL", "DEX_SUMMARY_MODEL", "DEX_SUMMARY_TIMEOUT",
-		envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"), 120*time.Second)
+
+	// No dedicated summary URL: share the main chat endpoint but honour
+	// DEX_SUMMARY_TIMEOUT so a longer drain deadline doesn't bleed into
+	// interactive queries.
+	c := newChatClient()
+	if raw := os.Getenv("DEX_SUMMARY_TIMEOUT"); raw != "" {
+		timeout := parseDuration("DEX_SUMMARY_TIMEOUT", raw, chatTimeout)
+		c.HTTP = &http.Client{Timeout: timeout}
+	}
+	return c
 }
 
 // summaryModelsFromEnv reads the per-tier model overrides. Empty
