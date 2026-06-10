@@ -36,7 +36,7 @@ func collectEndpoints() []endpointProbe {
 	probes := []endpointProbe{}
 
 	em := newEmbedClient("")
-	probes = append(probes, endpointProbe{name: "embed", url: em.BaseURL, model: em.Model, health: em.Health})
+	probes = append(probes, endpointProbe{name: "embed", url: em.Endpoint(), model: em.ModelName(), health: em.Health})
 
 	cc := newChatClient()
 	probes = append(probes, endpointProbe{name: "chat", url: cc.BaseURL, model: cc.Model, health: cc.Health})

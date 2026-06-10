@@ -701,11 +701,13 @@ func isDrainActive(lockPath string) bool {
 	return false
 }
 
-// newEmbedClient constructs an embed.Client from env vars, falling back to
+// newEmbedClient constructs an embed.Embedder from env vars, falling back to
 // indexModel (the model recorded in the target index) when DEX_EMBED_MODEL is
 // unset. Callers that have an open *store.Store should pass st.EmbedModel();
 // callers that are building a fresh index (or have no store context) pass "".
-func newEmbedClient(indexModel string) *embed.Client {
+// If DEX_EMBED_DIM is set, the returned embedder truncates vectors to that
+// many dimensions and re-normalises (Matryoshka truncation).
+func newEmbedClient(indexModel string) embed.Embedder {
 	url := os.Getenv("DEX_EMBED_URL")
 	model := os.Getenv("DEX_EMBED_MODEL")
 
@@ -747,7 +749,8 @@ func newEmbedClient(indexModel string) *embed.Client {
 	}
 	conc := envInt("DEX_EMBED_CONCURRENCY", 4)
 	timeout := parseDuration("DEX_EMBED_TIMEOUT", envOr("DEX_EMBED_TIMEOUT", "60s"), 60*time.Second)
-	return embed.NewWithConcurrency(url, model, batch, conc, timeout)
+	c := embed.NewWithConcurrency(url, model, batch, conc, timeout)
+	return embed.WithDimCap(c, envInt("DEX_EMBED_DIM", 0))
 }
 
 func newChatClient() *chat.Client {
