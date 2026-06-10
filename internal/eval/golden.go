@@ -155,6 +155,16 @@ func collectCommits(ctx context.Context, root string, max int) ([]commitRec, err
 		"--no-merges",
 		"--format=%H%x00%s",
 		"--name-only",
+		// --relative makes git both (a) restrict output to files under the cwd
+		// subtree and (b) emit pathnames relative to it. When root is the repo
+		// root this is a no-op (relative to root == repo-root-relative, whole
+		// tree); when root is an index_subdir (e.g. packages/react-dom-bindings)
+		// it filters to that package AND rebases paths to subdir-relative, so the
+		// generated relevant_files match how the index records paths and the
+		// downstream os.Stat(root/f) existence check resolves. Without it, a
+		// subdir root yields repo-root-relative paths that fail that check,
+		// silently dropping every file and producing an empty golden set (#285).
+		"--relative",
 		fmt.Sprintf("--max-count=%d", max),
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)

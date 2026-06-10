@@ -85,10 +85,9 @@ you want to query — e.g. React's public `packages/react-dom` is a thin
 entry-point shell; the real DOM/event implementation lives in
 `packages/react-dom-bindings`, which is what the corpus indexes.
 
-> **`gen` is incompatible with `index_subdir`.** The auto-label generators run
-> `git log` in the subdir but git emits repo-root-relative paths, which then fail
-> the gen "file exists on disk" check (resolved against the subdir) — so the cell
-> comes back empty. Subdir-scoped repos must rely on a curated `query_sets`.
+Both `gen` flavors and curated `query_sets` honor `index_subdir` (#285): the
+generators scope `git log` to the subdir (via git's `--relative`) and emit
+subdir-relative paths, so auto-labels line up with how the index records paths.
 
 ## Files
 

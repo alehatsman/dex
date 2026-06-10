@@ -67,9 +67,7 @@ repos:
     languages: [js]
     index_subdir: packages/react-dom-bindings
     query_sets: [queries/react.json]
-    # No gen here: git-history/blast-radius auto-labels are incompatible with
-    # index_subdir — `git log` emits repo-root-relative paths
-    # (packages/react-dom-bindings/src/…) but the gen path-exists check resolves
-    # them against the indexed subdir, so every file is filtered out and the cell
-    # comes back empty. The curated set is this flagship's signal. (Fixing gen to
-    # honor a subdir is tracked separately.)
+    gen:
+      # gen honors index_subdir (#285): the generators scope git log to the
+      # subdir and emit subdir-relative paths, so labels match the index.
+      git_history: { enabled: true, max_commits: 500, max_files: 5 }
