@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +67,7 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	checks = append(checks, checkIndexDir())
 	checks = append(checks, checkEndpoints(epCtx)...)
 	checks = append(checks, checkProjectConfig())
+	checks = append(checks, checkProxy(epCtx))
 	checks = append(checks, checkMCPWiring())
 	checks = append(checks, checkRulesWiring())
 
@@ -312,6 +315,72 @@ func checkProjectConfig() doctorCheck {
 		}
 	}
 	return doctorCheck{name: "project cfg", status: docOK, detail: ".dex/config.yml  " + wd}
+}
+
+// ─── proxy (ANTHROPIC_BASE_URL seam) ────────────────────────────────────────
+
+// checkProxy reports the health of the dex proxy seam (epic #232). The proxy
+// is opt-in — a session routes through it only when ANTHROPIC_BASE_URL is
+// exported — and dex keeps no proxy-port config (the proxy is launched with
+// `dex proxy --addr`). So the honest, port-agnostic signal is the consumer
+// side: is ANTHROPIC_BASE_URL set, and if so, is something listening there.
+//
+// Liveness is a plain TCP dial of the host:port, never an HTTP request, so the
+// probe doesn't forward anything upstream just to check reachability.
+func checkProxy(ctx context.Context) doctorCheck {
+	base := strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL"))
+	if base == "" {
+		return doctorCheck{
+			name:   "proxy",
+			status: docSkip,
+			detail: "ANTHROPIC_BASE_URL not set (opt-in)",
+			hints: []string{
+				"start the proxy: dex proxy",
+				"then route Claude through it: export ANTHROPIC_BASE_URL=http://127.0.0.1:<port>",
+			},
+		}
+	}
+
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
+		return doctorCheck{
+			name:   "proxy",
+			status: docWarn,
+			detail: "ANTHROPIC_BASE_URL is set but not a valid URL: " + base,
+			hints:  []string{"set it to e.g. http://127.0.0.1:8788, or unset it to talk to the API directly"},
+		}
+	}
+
+	addr := u.Host
+	if u.Port() == "" {
+		if u.Scheme == "https" {
+			addr = net.JoinHostPort(u.Hostname(), "443")
+		} else {
+			addr = net.JoinHostPort(u.Hostname(), "80")
+		}
+	}
+	conn, derr := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	if derr != nil {
+		return doctorCheck{
+			name:   "proxy",
+			status: docWarn,
+			detail: fmt.Sprintf("ANTHROPIC_BASE_URL=%s UNREACHABLE — Claude requests will fail", base),
+			hints: []string{
+				"start the proxy: dex proxy --addr " + u.Host,
+				"or unset ANTHROPIC_BASE_URL to talk to the API directly",
+			},
+		}
+	}
+	_ = conn.Close()
+
+	var hints []string
+	// A non-first-party base URL disables MCP tool search unless
+	// ENABLE_TOOL_SEARCH=true — needed when the proxy forwards tool_reference
+	// blocks. Only nudge when routed somewhere other than the real API.
+	if !strings.Contains(u.Hostname(), "api.anthropic.com") && !envBool("ENABLE_TOOL_SEARCH", false) {
+		hints = append(hints, "export ENABLE_TOOL_SEARCH=true (a non-first-party base URL disables MCP tool search otherwise)")
+	}
+	return doctorCheck{name: "proxy", status: docOK, detail: base + "  (reachable)", hints: hints}
 }
 
 // ─── routing rules ────────────────────────────────────────────────────────────
