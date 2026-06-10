@@ -75,6 +75,7 @@ var allEnvVars = []envVar{
 
 	// tuning — hidden unless --all. Most installs leave these alone.
 	{"DEX_EMBED_DIM", "0", "Truncate embedding vectors to this many dimensions and re-normalise (Matryoshka truncation). 0 = use full model output. Requires `dex reindex` after changing.", "tuning", false},
+	{"DEX_CHUNK_CONTEXT_MODE", "off", "Contextual Retrieval (Anthropic 2024): prepend a one-sentence situating summary to each chunk before embedding and FTS5 indexing. on = enable (requires DeferSummaries / background drainer with chat access); off = disabled (default).", "tuning", true},
 	{"DEX_EMBED_BATCH", "auto", "Max chunks per /v1/embeddings call. Unset = VRAM-aware auto (8/64/256 for <4 GB/4-16 GB/>16 GB); explicit value overrides.", "tuning", false},
 	{"DEX_EMBED_CONCURRENCY", "4", "Parallel /v1/embeddings calls in flight (1 = sequential, the historical default).", "tuning", false},
 	{"DEX_EMBED_TIMEOUT", "60s", "HTTP timeout per embed call.", "tuning", false},

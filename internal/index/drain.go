@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/lock"
@@ -87,6 +88,16 @@ func (ix *Indexer) drainItem(ctx, bumpCtx context.Context, p store.PendingSummar
 			return nil, false
 		}
 		return res, stale
+	case chunk.KindChunkContext:
+		stale, err := ix.processChunkContext(ctx, p)
+		if err != nil {
+			ix.drainLog.Warn("chunk context drain failed", "id", p.ID, "path", p.Path, "start_line", p.StartLine, "err", err)
+			_ = ix.Store.BumpPendingAttempts(bumpCtx, p.ID, err.Error())
+			return nil, false
+		}
+		// processChunkContext commits directly via UpsertChunkContext; no
+		// drainResult to return — signal "done" by returning nil, stale.
+		return nil, stale
 	default:
 		ix.drainLog.Warn("unknown pending kind", "id", p.ID, "kind", p.Kind)
 		_ = ix.Store.BumpPendingAttempts(bumpCtx, p.ID, "unknown kind")
@@ -1079,4 +1090,73 @@ func (ix *Indexer) cascadeRepoSummary(ctx context.Context, startTime time.Time, 
 		ix.drainLog.Warn("gc stale repo_summary failed", "err", err)
 	}
 	return 1, nil
+}
+
+// processChunkContext handles one pending chunk_context row.
+// It generates a one-sentence situating description for the chunk via the
+// chat endpoint, re-embeds the chunk with that context prepended, and
+// writes both back to the store (Contextual Retrieval — dense + BM25 lanes).
+// The pending row is deleted on success; the function returns (stale=true)
+// when the source chunk has been pruned since enqueueing.
+func (ix *Indexer) processChunkContext(ctx context.Context, p store.PendingSummary) (stale bool, err error) {
+	content, err := ix.Store.ChunkContent(ctx, p.Path, p.SourceSHA)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil // source chunk gone; drop as stale
+		}
+		return false, err
+	}
+	// Verify the queued SHA still matches the stored content.
+	expectedSHA := chunkSHA(chunk.KindChunkContext + ":" + content)
+	if expectedSHA != p.ContentSHA {
+		return true, nil // content changed since enqueue; stale
+	}
+	sourceChunk := chunk.Chunk{
+		Path:      p.Path,
+		Kind:      p.ChunkKind,
+		Name:      p.ChunkName,
+		StartLine: p.StartLine,
+		EndLine:   p.EndLine,
+		Content:   content,
+	}
+	ctxSentence, err := contextForChunk(ctx, ix.Options.Chat, ix.Options.SummaryModels.Chunk, p.Path, sourceChunk)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(ctxSentence) == "" {
+		return true, nil // nothing useful; drop
+	}
+	embedText := sourceChunk.EmbedTextWithContext(ctxSentence)
+	vecs, err := ix.Embed.Embed(ctx, []string{embedText})
+	if err != nil {
+		return false, fmt.Errorf("embed context: %w", err)
+	}
+	if err := ix.Store.UpsertChunkContext(ctx, p.Path, p.SourceSHA, ctxSentence, vecs[0]); err != nil {
+		return false, err
+	}
+	if err := ix.Store.DeletePendingSummary(ctx, p.ID); err != nil {
+		return false, fmt.Errorf("delete chunk_context pending: %w", err)
+	}
+	return false, nil
+}
+
+// contextForChunk calls the chat endpoint to produce a one-sentence
+// situating description: what role this chunk plays in the file/codebase.
+// Kept short (≤80 tokens) so it adds dense signal without diluting the
+// original chunk content in the embedding.
+func contextForChunk(ctx context.Context, cc *chat.Client, model, rel string, c chunk.Chunk) (string, error) {
+	const system = "You are a code indexer. Given a single function, method, or class, " +
+		"write exactly ONE sentence (≤80 tokens) that situates it in its file and codebase. " +
+		"State: what it does, which subsystem it belongs to, and how callers use it. " +
+		"Do not restate the function name alone. No code blocks, no lists. Plain prose only."
+	user := fmt.Sprintf("FILE: %s (lines %d–%d, kind: %s)\n\n```\n%s\n```",
+		rel, c.StartLine, c.EndLine, c.Kind, c.Content)
+	resp, err := cc.Generate(ctx, []chat.Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}, chat.Options{Model: model, MaxTokens: 100, Temperature: 0.0})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(resp.Content), nil
 }

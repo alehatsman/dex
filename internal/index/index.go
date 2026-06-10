@@ -164,6 +164,18 @@ type Options struct {
 	// Called from the goroutine driving each phase — not thread-safe with
 	// itself, but callers that only write to a terminal are fine.
 	Progress func(phase string, done, total int)
+	// ChunkContextMode enables Contextual Retrieval (Anthropic 2024):
+	// a one-sentence situating summary is generated per chunk and stored
+	// in chunks.context_text. The drain pipeline then re-embeds each
+	// chunk with EmbedTextWithContext and updates FTS5 so both the dense
+	// and BM25 lanes benefit from the richer representation.
+	// Valid values: "" / "off" = disabled (default); "on" = enabled.
+	ChunkContextMode string
+}
+
+// chunkContextEnabled reports whether the chunk_context drain tier is active.
+func (o Options) chunkContextEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(o.ChunkContextMode), "on")
 }
 
 // Indexer is the entry point.
@@ -266,11 +278,18 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		return err
 	}
 
+	type chunkContextJob struct {
+		rel       string
+		c         chunk.Chunk
+		sourceSHA string
+		ctxSHA    string
+	}
 	var (
 		toEmbed            []pending
 		seen               int
 		summariesGenerated int
 		summariesQueued    int
+		chunkContextJobs   []chunkContextJob
 	)
 
 	// summarizeWanted gates every plan-phase code path that decides what
@@ -667,6 +686,23 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				chunkSummaryJobs = append(chunkSummaryJobs, chunkSummaryJob{rel: sf.rel, c: c, sumSHA: sumSHA})
 			}
 		}
+		// Chunk-context jobs: structural chunks eligible for deferred re-embedding
+		// with a situating context sentence (Contextual Retrieval, Anthropic 2024).
+		if ix.Options.chunkContextEnabled() {
+			for _, c := range sf.chunks {
+				if !isStructural(c.Kind) {
+					continue
+				}
+				sourceSHA := chunkSHA(c.Content)
+				ctxSHA := chunkSHA(chunk.KindChunkContext + ":" + c.Content)
+				chunkContextJobs = append(chunkContextJobs, chunkContextJob{
+					rel:       sf.rel,
+					c:         c,
+					sourceSHA: sourceSHA,
+					ctxSHA:    ctxSHA,
+				})
+			}
+		}
 		// Old rows for this file whose SHA disappeared get pruned at the
 		// end via PruneUnseen — they never had last_seen_at bumped on this
 		// run.
@@ -687,7 +723,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	// pending_summaries (idempotent on (path,kind,content_sha1) so a
 	// re-run doesn't multiply rows). Index returns fast; the drainer
 	// processes the queue later.
-	if len(fileSummaryJobs) > 0 || len(chunkSummaryJobs) > 0 {
+	if len(fileSummaryJobs) > 0 || len(chunkSummaryJobs) > 0 || len(chunkContextJobs) > 0 {
 		if ix.Options.DeferSummaries {
 			for _, j := range fileSummaryJobs {
 				if err := ix.Store.EnqueuePendingSummary(ctx, store.PendingSummary{
@@ -714,6 +750,21 @@ func (ix *Indexer) Run(ctx context.Context) error {
 					SourceSHA:  sourceSHA,
 				}, startTime); err != nil {
 					return fmt.Errorf("enqueue chunk summary: %w", err)
+				}
+				summariesQueued++
+			}
+			for _, j := range chunkContextJobs {
+				if err := ix.Store.EnqueuePendingSummary(ctx, store.PendingSummary{
+					Path:       j.rel,
+					Kind:       chunk.KindChunkContext,
+					ContentSHA: j.ctxSHA,
+					StartLine:  j.c.StartLine,
+					EndLine:    j.c.EndLine,
+					ChunkKind:  j.c.Kind,
+					ChunkName:  j.c.Name,
+					SourceSHA:  j.sourceSHA,
+				}, startTime); err != nil {
+					return fmt.Errorf("enqueue chunk context: %w", err)
 				}
 				summariesQueued++
 			}

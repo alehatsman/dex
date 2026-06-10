@@ -678,6 +678,75 @@ func (s *Store) migrateCoAccessEdges(ctx context.Context) error {
 			return fmt.Errorf("migrateCoAccessEdges: %w", err)
 		}
 	}
+	return s.migrateChunkContext(ctx)
+}
+
+// migrateChunkContext adds context_text to chunks and updates the FTS5
+// triggers to index context_text || content (Contextual BM25).
+func (s *Store) migrateChunkContext(ctx context.Context) error {
+	var done string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='chunk_context_added'`).Scan(&done)
+	if done == "1" {
+		return nil
+	}
+	// Add context_text column (no-op on duplicate).
+	if _, err := s.db.ExecContext(ctx,
+		`ALTER TABLE chunks ADD COLUMN context_text TEXT`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("migrateChunkContext: add context_text: %w", err)
+	}
+	// Recreate FTS5 triggers so they index context_text || content.
+	// DROP first because CREATE TRIGGER IF NOT EXISTS won't replace them.
+	for _, drop := range []string{
+		`DROP TRIGGER IF EXISTS chunks_ai`,
+		`DROP TRIGGER IF EXISTS chunks_ad`,
+		`DROP TRIGGER IF EXISTS chunks_au`,
+	} {
+		if _, err := s.db.ExecContext(ctx, drop); err != nil {
+			return fmt.Errorf("migrateChunkContext: drop trigger: %w", err)
+		}
+	}
+	for _, trig := range []string{
+		`CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+		   INSERT INTO chunks_fts(rowid, content, path, kind)
+		   VALUES (new.id,
+		           CASE WHEN new.context_text IS NOT NULL AND new.context_text != ''
+		                THEN new.context_text || CHAR(10) || new.content
+		                ELSE new.content END,
+		           new.path, new.kind);
+		 END`,
+		`CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+		   INSERT INTO chunks_fts(chunks_fts, rowid, content, path, kind)
+		   VALUES ('delete', old.id,
+		           CASE WHEN old.context_text IS NOT NULL AND old.context_text != ''
+		                THEN old.context_text || CHAR(10) || old.content
+		                ELSE old.content END,
+		           old.path, old.kind);
+		 END`,
+		`CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+		   INSERT INTO chunks_fts(chunks_fts, rowid, content, path, kind)
+		   VALUES ('delete', old.id,
+		           CASE WHEN old.context_text IS NOT NULL AND old.context_text != ''
+		                THEN old.context_text || CHAR(10) || old.content
+		                ELSE old.content END,
+		           old.path, old.kind);
+		   INSERT INTO chunks_fts(rowid, content, path, kind)
+		   VALUES (new.id,
+		           CASE WHEN new.context_text IS NOT NULL AND new.context_text != ''
+		                THEN new.context_text || CHAR(10) || new.content
+		                ELSE new.content END,
+		           new.path, new.kind);
+		 END`,
+	} {
+		if _, err := s.db.ExecContext(ctx, trig); err != nil {
+			return fmt.Errorf("migrateChunkContext: create trigger: %w", err)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key, value) VALUES('chunk_context_added', '1')
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+		return fmt.Errorf("migrateChunkContext: flag: %w", err)
+	}
 	return nil
 }
 
@@ -1153,6 +1222,25 @@ func (s *Store) UpsertMany(ctx context.Context, rows []PendingChunk, now time.Ti
 // When startLine > 0, also refreshes start_line/end_line. Required for
 // the chunker fast-path: a chunk's content can stay byte-identical
 // (same SHA) while its position in the file shifts because some earlier
+// UpsertChunkContext stores a Contextual Retrieval situating sentence and
+// the newly re-embedded vector for an existing chunk identified by
+// (path, content_sha1). The UPDATE fires the chunks_au trigger, which
+// re-indexes the chunk in FTS5 with context_text || content — that is
+// the Contextual BM25 gain. The new vector provides the dense embedding
+// gain (chunk re-embedded with EmbedTextWithContext).
+//
+// No-op when no row matches (chunk was pruned since the job was queued).
+func (s *Store) UpsertChunkContext(ctx context.Context, path, contentSHA, contextText string, newVec []float32) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE chunks SET context_text = ?, vec = ?
+		 WHERE path = ? AND content_sha1 = ?`,
+		contextText, encodeVec(newVec), path, contentSHA)
+	if err != nil {
+		return fmt.Errorf("UpsertChunkContext: %w", err)
+	}
+	return nil
+}
+
 // chunk in the same file grew or shrank. Without this update, search_symbol
 // returns the chunk's ORIGINAL line range even after the file was edited
 // above it. Callers that don't have line info (file/package/repo summary

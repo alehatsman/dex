@@ -881,6 +881,11 @@ func chunkSummaryModeFromEnv() string {
 	return index.ChunkSummaryModeOff
 }
 
+// chunkContextModeFromEnv reads DEX_CHUNK_CONTEXT_MODE. Default is off.
+func chunkContextModeFromEnv() string {
+	return strings.TrimSpace(os.Getenv("DEX_CHUNK_CONTEXT_MODE"))
+}
+
 // envInt reads a positive integer env var with a default.
 // Non-positive or unparsable values fall back to def with a warning.
 func envInt(name string, def int) int {
@@ -1109,6 +1114,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 			opts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 			opts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 			opts.ChunkSummaryMode = chunkSummaryModeFromEnv()
+			opts.ChunkContextMode = chunkContextModeFromEnv()
 		}
 		ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, opts)
 		if err := ix.Run(ctx); err != nil {
@@ -2430,6 +2436,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 		ixOpts.ChunkSummaryMode = chunkSummaryModeFromEnv()
+		ixOpts.ChunkContextMode = chunkContextModeFromEnv()
 	}
 	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, ixOpts)
 	if err := ix.Run(ctx); err != nil {
@@ -2614,6 +2621,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
 		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
 		ixOpts.ChunkSummaryMode = chunkSummaryModeFromEnv()
+		ixOpts.ChunkContextMode = chunkContextModeFromEnv()
 		ixOpts.YieldWindow = envDuration("DEX_SUMMARIZE_YIELD", 0)
 	}
 	ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, ixOpts)
