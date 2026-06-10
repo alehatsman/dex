@@ -45,8 +45,8 @@ var allEnvVars = []envVar{
 
 	// rerank — optional, off by default.
 	{"DEX_RERANK_URL", "", "Rerank server base URL.", "rerank", true},
-	{"DEX_RERANK_STYLE", "cohere", "Backend shape: cohere | chat | chat-vllm. chat = ollama/standard chat endpoint; chat-vllm = vLLM + Qwen3-Reranker (adds <think> prefill).", "rerank", false},
-	{"DEX_RERANK_MODEL", "BAAI/bge-reranker-v2-m3", "Model for the rerank leg.", "rerank", false},
+	{"DEX_RERANK_STYLE", "chat-vllm", "Backend shape: cohere | chat | chat-vllm. chat = ollama/standard chat endpoint; chat-vllm = vLLM + Qwen3-Reranker (adds <think> prefill).", "rerank", false},
+	{"DEX_RERANK_MODEL", "Qwen/Qwen3-Reranker-4B", "Model for the rerank leg.", "rerank", false},
 
 	// compress — optional context-compression server.
 	{"DEX_COMPRESS_URL", "", "Context-compression /v1/chat/completions server.", "compress", true},

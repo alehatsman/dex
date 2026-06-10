@@ -53,7 +53,7 @@ func TestNewRerankClientReturnsClientWhenURLSet(t *testing.T) {
 	t.Setenv("DEX_RERANK_URL", "http://127.0.0.1:9999")
 	t.Setenv("DEX_RERANK_MODEL", "custom-reranker")
 	t.Setenv("DEX_DISABLE_RERANK", "")
-	t.Setenv("DEX_RERANK_STYLE", "") // ensure Cohere-style client
+	t.Setenv("DEX_RERANK_STYLE", "cohere")
 
 	c := newRerankClient()
 	if c == nil {
@@ -85,6 +85,24 @@ func TestNewRerankClientChatStyleWhenRequested(t *testing.T) {
 	}
 }
 
+func TestNewRerankClientDefaultsToQwen3ChatVLLM(t *testing.T) {
+	t.Setenv("DEX_RERANK_URL", "http://127.0.0.1:9999")
+	t.Setenv("DEX_RERANK_STYLE", "")
+	t.Setenv("DEX_RERANK_MODEL", "")
+	t.Setenv("DEX_DISABLE_RERANK", "")
+
+	c := newRerankClient()
+	if c == nil {
+		t.Fatal("newRerankClient() = nil, want non-nil when URL is set")
+	}
+	if _, ok := c.(*rerank.ChatReranker); !ok {
+		t.Errorf("expected *rerank.ChatReranker (chat-vllm default), got %T", c)
+	}
+	if c.ModelName() != "Qwen/Qwen3-Reranker-4B" {
+		t.Errorf("ModelName() = %q, want Qwen/Qwen3-Reranker-4B", c.ModelName())
+	}
+}
+
 func TestNewRerankClientNilWhenDisableSet(t *testing.T) {
 	// URL is set, but the kill switch is on. nil should still be returned.
 	t.Setenv("DEX_RERANK_URL", "http://127.0.0.1:9999")
@@ -99,7 +117,7 @@ func TestNewRerankClientDefaultTimeout(t *testing.T) {
 	t.Setenv("DEX_RERANK_URL", "http://127.0.0.1:9999")
 	t.Setenv("DEX_RERANK_TIMEOUT", "")
 	t.Setenv("DEX_DISABLE_RERANK", "")
-	t.Setenv("DEX_RERANK_STYLE", "") // Cohere-style; access concrete type
+	t.Setenv("DEX_RERANK_STYLE", "cohere") // access concrete *rerank.Client type
 
 	c := newRerankClient()
 	if c == nil {

@@ -825,10 +825,10 @@ func newChatClient() *chat.Client {
 //
 // DEX_RERANK_STYLE selects the backend:
 //
-//	"cohere" (default) — Cohere-compatible /rerank endpoint (TEI, Infinity,
-//	                     vLLM with a cross-encoder model like bge-reranker-v2-m3)
-//	"chat"             — chat-completions + logprobs (vLLM serving a decoder-style
-//	                     reranker like Qwen3-Reranker-4B)
+//	"chat-vllm" (default) — vLLM + Qwen3-Reranker with <think> assistant prefill
+//	"chat"               — chat-completions + logprobs (ollama / standard chat servers)
+//	"cohere"             — Cohere-compatible /rerank endpoint (TEI, Infinity, vLLM
+//	                       with a cross-encoder model like bge-reranker-v2-m3)
 func newRerankClient() rerank.HealthChecker {
 	url := os.Getenv("DEX_RERANK_URL")
 	if url == "" {
@@ -837,9 +837,9 @@ func newRerankClient() rerank.HealthChecker {
 	if os.Getenv("DEX_DISABLE_RERANK") == "1" {
 		return nil
 	}
-	model := envOr("DEX_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+	model := envOr("DEX_RERANK_MODEL", "Qwen/Qwen3-Reranker-4B")
 	timeout := parseDuration("DEX_RERANK_TIMEOUT", envOr("DEX_RERANK_TIMEOUT", "5s"), 5*time.Second)
-	style := os.Getenv("DEX_RERANK_STYLE")
+	style := envOr("DEX_RERANK_STYLE", "chat-vllm")
 	if style == "chat" || style == "chat-vllm" {
 		rawConc := envOr("DEX_RERANK_CONCURRENCY", "16")
 		concurrency, cerr := strconv.Atoi(rawConc)

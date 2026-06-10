@@ -133,7 +133,7 @@ func buildConfigYAML(full bool) string {
 	writeln("# endpoints:")
 	writeln("#   rerank: http://127.0.0.1:8084   # DEX_RERANK_URL")
 	writeln("# models:")
-	writeln("#   rerank: BAAI/bge-reranker-v2-m3  # DEX_RERANK_MODEL")
+	writeln("#   rerank: Qwen/Qwen3-Reranker-4B   # DEX_RERANK_MODEL")
 	writeln("")
 
 	// tools section
@@ -164,7 +164,7 @@ func buildConfigYAML(full bool) string {
 		writeln("#   DEX_EMBED_TIMEOUT:        60s   # HTTP timeout per embed call")
 		writeln("#   DEX_INDEX_CONCURRENCY:     0    # parallel file readers (0=GOMAXPROCS)")
 		writeln("#   DEX_RERANK_POOL:          40    # candidates fed to the reranker")
-		writeln("#   DEX_RERANK_STYLE:        cohere # cohere | chat | chat-vllm")
+		writeln("#   DEX_RERANK_STYLE:     chat-vllm # cohere | chat | chat-vllm")
 		writeln("#   DEX_MAX_HITS_PER_FILE:     0    # cap hits per file (0=no cap)")
 		writeln("#   DEX_SUMMARIZE_IDLE:       5s    # idle window before summary drainer fires")
 		writeln("#   DEX_SUMMARIZE_BATCH:      10    # rows per idle batch")
