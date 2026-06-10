@@ -130,6 +130,8 @@ func main() {
 		err = cmdMCP(ctx, args)
 	case "serve":
 		err = cmdServe(ctx, args)
+	case "proxy":
+		err = cmdProxy(ctx, args)
 	case "watch":
 		err = cmdWatch(ctx, args)
 	case "clone":
