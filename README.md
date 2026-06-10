@@ -2,7 +2,8 @@
 
 Local semantic code intel for AI agents. Indexes a repo over MCP: tree-sitter
 chunks → self-hosted embeddings → SQLite (vectors + BM25 FTS) with hybrid RRF
-retrieval, optional cross-encoder rerank, and a type-resolved Go call graph.
+retrieval, optional cross-encoder rerank, and a call graph (type-resolved for Go;
+AST-based for TypeScript, JavaScript, Python, Java, Rust).
 Source never leaves your machine.
 
 ```console
@@ -49,8 +50,8 @@ dex search semantic <path> "..."           # hybrid top-k chunks
 dex search symbol   <path> <name>          # exact identifier lookup
 dex graph neighbors <path> <file> <line>   # vector neighbours of a chunk
 dex graph deps      <path> [--file|--package]
-dex graph callers   <path> <name>          # incoming calls (Go)
-dex graph callees   <path> <name>          # outgoing calls (Go)
+dex graph callers   <path> <name>          # incoming calls
+dex graph callees   <path> <name>          # outgoing calls
 dex graph links     <path> <doc>
 dex graph backlinks <path> <doc>
 dex graph tags      <path> --tag=<t>|--doc=<d>
@@ -105,11 +106,11 @@ Key env vars:
 
 | Variable            | Default                          | Meaning                                    |
 | ------------------- | -------------------------------- | ------------------------------------------ |
-| `DEX_EMBED_URL`     | `http://127.0.0.1:8082`          | OpenAI-shape `/v1/embeddings` base URL     |
-| `DEX_EMBED_MODEL`   | `Qwen/Qwen3-Embedding-4B`        | Embedding model                            |
+| `DEX_EMBED_URL`     | `auto`                           | OpenAI-shape `/v1/embeddings` base URL; probes ollama at localhost:11434, falls back to `http://127.0.0.1:8082` |
+| `DEX_EMBED_MODEL`   | `auto`                           | Embedding model; auto-detects from ollama, falls back to `Qwen/Qwen3-Embedding-4B` |
 | `DEX_INDEX_DIR`     | `~/.cache/dex`                   | Per-project index files                    |
-| `DEX_CHAT_URL`      | `http://127.0.0.1:8081`          | Chat completions endpoint                  |
-| `DEX_CHAT_MODEL`    | `Qwen/Qwen2.5-Coder-7B-Instruct` | Chat model                                 |
+| `DEX_CHAT_URL`      | `auto`                           | Chat completions endpoint; probes ollama, falls back to `http://127.0.0.1:8081` |
+| `DEX_CHAT_MODEL`    | `auto`                           | Chat model; auto-detects from ollama, falls back to `Qwen/Qwen2.5-Coder-7B-Instruct` |
 | `DEX_PROFILE`       | *(unset)*                        | Context profile: `claude`, `explore`, `bugfix`, `ci` |
 | `DEX_TOOLS`         | `standard`                       | MCP surface: `ask`, `standard`, `power`    |
 | `DEX_SERVE_TOKEN`   | *(unset)*                        | Bearer token for `dex serve` (env only)    |
@@ -122,7 +123,7 @@ Run `dex env --all --doc` for the full list of tuning knobs.
 
 - **ask** — `ask` only
 - **standard** — `ask`, `ctx_*`, `search_context`, `search_workspace`, `search_grep`, `file_tree`, `file_view`
-- **power** — adds `search_semantic`, `search_symbol`, `graph_*`, `compress_output`, `status`, `spec_check`
+- **power** — adds `search_semantic`, `search_symbol`, `search_similar`, `graph_*`, `compress_output`, `status`, `spec_check`
 
 `DEX_PROFILE=claude` is the recommended default for Claude Code — selects
 `cl100k_base` tokenizer so token-budget reports are accurate.
@@ -145,14 +146,14 @@ Wiring lives in `.claude/settings.json` (committed).
 
 ```bash
 # host
-dex serve --addr 127.0.0.1:7920 --project /path/to/repo
+dex serve --addr :8080 --project /path/to/repo
 
 # HTTP-MCP (preferred)
-# .mcp.json: { "dex": { "type": "http", "url": "http://host:7920/v1/projects/<sha>/mcp",
+# .mcp.json: { "dex": { "type": "http", "url": "http://host:8080/v1/projects/<sha>/mcp",
 #               "headers": { "Authorization": "Bearer <DEX_SERVE_TOKEN>" } } }
 
 # stdio shim
-DEX_SERVE_TOKEN=… dex mcp --remote http://host:7920 --project-id <sha>
+DEX_SERVE_TOKEN=… dex mcp --remote http://host:8080 --project-id <sha>
 ```
 
 ## Docker
