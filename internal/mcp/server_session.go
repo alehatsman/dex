@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	dexctx "github.com/alehatsman/dex/internal/ctx"
 	"github.com/alehatsman/dex/internal/compress"
+	dexctx "github.com/alehatsman/dex/internal/ctx"
 	"github.com/alehatsman/dex/internal/heatmap"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -46,11 +46,11 @@ type SessionOutput struct {
 	FileCount int                 `json:"file_count,omitempty"`
 	Files     []SessionFileOutput `json:"files,omitempty"`
 	// Budget fields (action=budget only)
-	WindowSize     int     `json:"window_size,omitempty"`
-	UsedTokens     int     `json:"used_tokens,omitempty"`
-	RemainingTokens int    `json:"remaining_tokens,omitempty"`
-	Utilization    float64 `json:"utilization,omitempty"`
-	Recommendation string  `json:"recommendation,omitempty"`
+	WindowSize      int     `json:"window_size,omitempty"`
+	UsedTokens      int     `json:"used_tokens,omitempty"`
+	RemainingTokens int     `json:"remaining_tokens,omitempty"`
+	Utilization     float64 `json:"utilization,omitempty"`
+	Recommendation  string  `json:"recommendation,omitempty"`
 }
 
 func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in SessionInput) (*sdk.CallToolResult, SessionOutput, error) {
@@ -282,13 +282,19 @@ type FeedbackInput struct {
 
 // FeedbackOutput is the result of ctx_feedback.
 type FeedbackOutput struct {
-	Status string `json:"status"`          // "ok" | "error"
+	Status string `json:"status"` // "ok" | "error"
 	Hint   string `json:"hint,omitempty"`
 }
 
 // feedback handles the ctx_feedback MCP tool. It records an output-ratio
 // observation into the per-project adaptive policy so future file_view
 // mode selections can avoid modes that consistently produce thin output.
+// Feedback is the public HTTP-callable wrapper for the ctx_feedback tool.
+func (s *Server) Feedback(ctx context.Context, in FeedbackInput) (FeedbackOutput, error) {
+	_, out, err := s.feedback(ctx, nil, in)
+	return out, err
+}
+
 func (s *Server) feedback(_ context.Context, _ *sdk.CallToolRequest, in FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error) {
 	p, hint := s.resolveProject(in.ProjectRoot)
 	if hint != "" {

@@ -30,12 +30,17 @@ package mcp
 //	POST /projects/{id}/search/context     — body: ComposeInput
 //	POST /projects/{id}/graph/impact       — body: ImpactInput
 //	POST /projects/{id}/graph/routes       — body: RoutesInput
-//	POST /projects/{id}/code/smells        — body: SmellsInput
-//	POST /projects/{id}/spec/verify        — body: SpecVerifyInput
+//	POST /projects/{id}/graph/smells       — body: SmellsInput
+//	POST /projects/{id}/graph/cycles       — body: CyclesInput
+//	POST /projects/{id}/graph/path         — body: PathInput
+//	POST /projects/{id}/graph/diff         — body: DiffInput
+//	POST /projects/{id}/graph/communities  — body: CommunitiesInput
+//	POST /projects/{id}/spec/check         — body: SpecVerifyInput
 //	POST /projects/{id}/view/overview      — body: OverviewInput
 //	POST /projects/{id}/knowledge          — body: KnowledgeInput
 //	POST /projects/{id}/session            — body: SessionInput
-//	POST /projects/{id}/agent             — body: AgentInput
+//	POST /projects/{id}/agent              — body: AgentInput
+//	POST /projects/{id}/feedback           — body: FeedbackInput
 //	*    /projects/{id}/mcp                 — native streamable-HTTP MCP
 //	                                          transport (http_mcp.go), not REST
 //
@@ -279,8 +284,12 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/search/context", s.handleCompose(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/impact", s.handleGraphImpact(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/graph/routes", s.handleGraphRoutes(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/code/smells", s.handleCodeSmells(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/spec/verify", s.handleSpecVerify(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/smells", s.handleGraphSmells(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/cycles", s.handleGraphCycles(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/path", s.handleGraphPath(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/diff", s.handleGraphDiff(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/graph/communities", s.handleGraphCommunities(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/spec/check", s.handleSpecCheck(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/view/overview", s.handleOverview(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/knowledge", s.handleKnowledge(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/session", s.handleSession(opts.Projects))
@@ -289,6 +298,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/pack", s.handleCtxPack(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/prefetch", s.handlePrefetch(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/search/workspace", s.handleWorkspaceSearch(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/feedback", s.handleFeedback(opts.Projects))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
@@ -621,12 +631,32 @@ func (s *Server) handleGraphRoutes(projects map[string]string) http.HandlerFunc 
 	return jsonHandler(projects, func(in *RoutesInput, root string) { in.ProjectRoot = root }, s.Routes)
 }
 
-func (s *Server) handleCodeSmells(projects map[string]string) http.HandlerFunc {
+func (s *Server) handleGraphSmells(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SmellsInput, root string) { in.ProjectRoot = root }, s.Smells)
 }
 
-func (s *Server) handleSpecVerify(projects map[string]string) http.HandlerFunc {
+func (s *Server) handleGraphCycles(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *CyclesInput, root string) { in.ProjectRoot = root }, s.GraphCycles)
+}
+
+func (s *Server) handleGraphPath(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *PathInput, root string) { in.ProjectRoot = root }, s.GraphPath)
+}
+
+func (s *Server) handleGraphDiff(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *DiffInput, root string) { in.ProjectRoot = root }, s.GraphDiff)
+}
+
+func (s *Server) handleGraphCommunities(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *CommunitiesInput, root string) { in.ProjectRoot = root }, s.GraphCommunities)
+}
+
+func (s *Server) handleSpecCheck(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SpecVerifyInput, root string) { in.ProjectRoot = root }, s.SpecVerify)
+}
+
+func (s *Server) handleFeedback(projects map[string]string) http.HandlerFunc {
+	return jsonHandler(projects, func(in *FeedbackInput, root string) { in.ProjectRoot = root }, s.Feedback)
 }
 
 func (s *Server) handleOverview(projects map[string]string) http.HandlerFunc {

@@ -297,7 +297,7 @@ func (rc *remoteClient) overview(ctx context.Context, _ *sdk.CallToolRequest, in
 
 func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	var out SmellsOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/code/smells"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/smells"), in, &out)
 	return nil, out, err
 }
 
@@ -323,7 +323,7 @@ func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ St
 
 func (rc *remoteClient) specVerify(ctx context.Context, _ *sdk.CallToolRequest, in SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error) {
 	var out SpecVerifyOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/spec/verify"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/spec/check"), in, &out)
 	return nil, out, err
 }
 

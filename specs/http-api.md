@@ -50,10 +50,10 @@ tool interface for Claude is the mcp-server spec's.
   stats (chunk/file counts, last-indexed, pending summaries).
 - WHEN a client queries a project, the per-project routes mirror the dex tools:
   `POST .../ask`, `POST .../search/{semantic,symbol,context,grep}`,
-  `POST .../graph/{neighbors,deps,callers,callees,links,backlinks,tags,impact,routes}`,
+  `POST .../graph/{neighbors,deps,callers,callees,links,backlinks,tags,impact,routes,smells,cycles,path,diff,communities}`,
   `GET .../graph/packages`, `GET .../summaries`, `POST .../file/{view,tree}`,
-  `POST .../code/smells`, `POST .../spec/verify`, `POST .../view/overview`,
-  `POST .../knowledge`, `POST .../session`, and `POST .../shell`.
+  `POST .../spec/check`, `POST .../view/overview`,
+  `POST .../knowledge`, `POST .../session`, `POST .../feedback`, and `POST .../shell`.
   `GET /v1/nav` is a global (non-project-scoped) route that returns the dex
   tool-routing guide for the active server configuration.
 - WHEN a handler returns a tool result, the same structured `status` the stdio
@@ -98,7 +98,7 @@ tool interface for Claude is the mcp-server spec's.
 - [x] Bearer auth (`DEX_SERVE_TOKEN`), constant-time; 401 on missing/bad token
 - [x] No-token + non-loopback bind refused at startup
 - [x] Unauthenticated `healthz`/`version`/`GET /v1/nav`; authed projects/status/per-project tool routes
-- [x] Per-project routes mirror all MCP tools (ask/search/{semantic,symbol,context,grep}/graph/*/file/*/code/smells/spec/verify/view/overview/knowledge/session/shell); structured status in body
+- [x] Per-project routes mirror all MCP tools (ask/search/{semantic,symbol,context,grep}/graph/{neighbors,deps,callers,callees,links,backlinks,tags,impact,routes,smells,cycles,path,diff,communities}/file/{view,tree}/spec/check/view/overview/knowledge/session/feedback/shell); structured status in body
 - [x] `GET /v1/nav` global route — tool-routing guide for the active tier; no project scoping; unauthenticated
 - [x] Body size cap, access log, panic→500, bounded graceful shutdown
 - [x] Eager per-project watcher at startup (idempotent with lazy path)
