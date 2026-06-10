@@ -2,6 +2,7 @@ package chunk
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -477,5 +478,159 @@ end
 	}
 	if !hasStructural {
 		t.Error("expected structural chunks for Elixir source")
+	}
+}
+
+// TestASTSiblingMergeOrphans verifies that orphan chunks produced for a
+// known-language file use cAST sibling-merge: each orphan chunk covers
+// complete AST nodes rather than arbitrary line boundaries.
+func TestASTSiblingMergeOrphans(t *testing.T) {
+	// A Go file with several top-level non-function declarations followed
+	// by a function. The pre-function content (package + imports + consts
+	// + vars) must end up as orphan chunks that each span complete AST
+	// nodes — not as sliding-window fragments with overlap.
+	src := []byte(`package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+const Alpha = "a"
+const Beta  = "b"
+
+var GlobalX = 1
+var GlobalY = 2
+
+func Run() {
+	fmt.Println(strings.Join(os.Args, " "))
+}
+`)
+	chunks, err := Chunks(context.Background(), "x.go", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var orphans []Chunk
+	var sawFunc bool
+	for _, c := range chunks {
+		if c.Kind == KindOrphan {
+			orphans = append(orphans, c)
+		}
+		if c.Kind == "function_declaration" {
+			sawFunc = true
+		}
+	}
+	if !sawFunc {
+		t.Fatal("expected function_declaration chunk for Run")
+	}
+	if len(orphans) == 0 {
+		t.Fatal("expected at least one orphan chunk for imports/consts/vars")
+	}
+
+	// No orphan chunk may contain partial overlap (WindowOverlap lines
+	// repeated). Verify by checking that the union of orphan line ranges
+	// has no duplicate line numbers — sibling-merge packs without overlap.
+	linesSeen := map[int]string{}
+	for _, o := range orphans {
+		for ln := o.StartLine; ln <= o.EndLine; ln++ {
+			if prev, dup := linesSeen[ln]; dup {
+				t.Errorf("line %d appears in both orphan %q and %q — sliding-window overlap detected",
+					ln, prev, o.Content[:min(40, len(o.Content))])
+			}
+			linesSeen[ln] = o.Content[:min(40, len(o.Content))]
+		}
+	}
+
+	// Each orphan chunk must contain at least one non-blank line.
+	for i, o := range orphans {
+		if strings.TrimSpace(o.Content) == "" {
+			t.Errorf("orphan chunk %d is blank", i)
+		}
+	}
+
+	// The import block should be self-contained in one orphan chunk.
+	var importChunk *Chunk
+	for i := range orphans {
+		if strings.Contains(orphans[i].Content, `"fmt"`) {
+			importChunk = &orphans[i]
+			break
+		}
+	}
+	if importChunk == nil {
+		t.Error("expected an orphan chunk containing the import block")
+	} else if !strings.Contains(importChunk.Content, `"os"`) || !strings.Contains(importChunk.Content, `"strings"`) {
+		// The whole import declaration should be in one chunk.
+		t.Errorf("import block split across chunks; got: %q", importChunk.Content)
+	}
+}
+
+// TestASTSiblingMergeNoOverlap confirms that sibling-merge orphan chunks
+// never duplicate lines (the old sliding-window produced overlap).
+func TestASTSiblingMergeNoOverlap(t *testing.T) {
+	// Build a Go file whose header section is large enough that the old
+	// WindowLines=40 sliding-window would have produced overlapping windows.
+	var sb strings.Builder
+	sb.WriteString("package big\n\n")
+	for i := range 60 {
+		fmt.Fprintf(&sb, "const C%d = %d\n", i, i)
+	}
+	sb.WriteString("\nfunc Sentinel() {}\n")
+	src := []byte(sb.String())
+
+	chunks, err := Chunks(context.Background(), "big.go", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Collect all orphan line ranges and verify no line is repeated.
+	seen := map[int]bool{}
+	for _, c := range chunks {
+		if c.Kind != KindOrphan {
+			continue
+		}
+		for ln := c.StartLine; ln <= c.EndLine; ln++ {
+			if seen[ln] {
+				t.Errorf("line %d appears in more than one orphan chunk (sliding-window overlap)", ln)
+			}
+			seen[ln] = true
+		}
+	}
+}
+
+// TestASTSiblingMergeWholeFileNoStructural verifies that a Go file
+// containing only imports and constants (no functions) is packed via
+// AST sibling-merge rather than falling through to line windows.
+func TestASTSiblingMergeWholeFileNoStructural(t *testing.T) {
+	src := []byte(`package cfg
+
+import "os"
+
+const Host = "localhost"
+const Port = 8080
+const Debug = false
+`)
+	chunks, err := Chunks(context.Background(), "cfg.go", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected chunks for const-only Go file")
+	}
+	for _, c := range chunks {
+		if c.Kind == KindWindow {
+			t.Errorf("const-only Go file produced a window chunk — expected orphan from AST merge: %q", c.Content)
+		}
+	}
+	// Must cover the const declarations.
+	all := ""
+	for _, c := range chunks {
+		all += c.Content
+	}
+	for _, want := range []string{"Host", "Port", "Debug"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("const %q not found in any chunk", want)
+		}
 	}
 }

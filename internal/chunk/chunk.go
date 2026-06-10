@@ -1,9 +1,12 @@
 // Package chunk splits a source file into retrieval-sized chunks.
 //
 // For languages with a tree-sitter grammar we extract top-level
-// declarations (functions, methods, classes, types). For unknown
-// languages (or when tree-sitter fails to parse), we fall back to a
-// fixed-line sliding window with overlap.
+// declarations (functions, methods, classes, types). Gaps between
+// structural chunks are packed using cAST-style greedy sibling-merge:
+// consecutive root-level AST siblings are merged into MaxBytes-bounded
+// units rather than arbitrary line windows, producing semantically
+// coherent orphan chunks. For unknown languages (or when tree-sitter
+// fails to parse), we fall back to a fixed-line sliding window.
 //
 // Chunks are capped at MaxBytes. Anything larger is split into
 // MaxBytes-bounded line slices.
@@ -295,34 +298,46 @@ func kotlinKinds() map[string]bool {
 // pick the language by extension and is stamped into each Chunk.
 //
 // For tree-sitter-supported languages we emit one chunk per recognized
-// structural declaration AND additional "orphan" window chunks covering
-// any byte range not claimed by a structural chunk — top-level
-// constants, vars, imports, file headers, trailing comments. Without
-// this hybrid pass, a file like `package foo; const X = 1; func F(){}`
-// would only index F and silently drop X.
+// structural declaration AND additional "orphan" chunks covering byte
+// ranges not claimed by a structural chunk. Orphan regions are packed
+// with cAST-style greedy sibling-merge: consecutive root-level AST
+// siblings are merged into MaxBytes-bounded units, producing
+// semantically coherent chunks (e.g. a whole import block or const
+// group) rather than arbitrary line windows. Without the hybrid pass,
+// a file like `package foo; const X = 1; func F(){}` would only index
+// F and silently drop X.
 func Chunks(ctx context.Context, relPath string, src []byte) ([]Chunk, error) {
 	ext := strings.ToLower(filepath.Ext(relPath))
 	if cfg, ok := languages[ext]; ok {
-		out, err := treeChunks(ctx, relPath, src, cfg)
-		if err == nil && len(out) > 0 {
-			out = append(out, orphanWindows(relPath, src, out)...)
-			return out, nil
+		parser := sitter.NewParser()
+		defer parser.Close()
+		parser.SetLanguage(cfg.lang)
+		tree, err := parser.ParseCtx(ctx, nil, src)
+		if err == nil {
+			defer tree.Close()
+			root := tree.RootNode()
+			structural := extractStructural(relPath, src, cfg, root)
+			if len(structural) > 0 {
+				orphans := orphanWindowsAST(relPath, src, root, structural)
+				return append(structural, orphans...), nil
+			}
+			// No structural chunks (e.g. file is only imports/consts) —
+			// try AST sibling-merge over the whole file before giving up.
+			if packed := astSiblingMerge(relPath, src, root, 0, len(src)); len(packed) > 0 {
+				return packed, nil
+			}
 		}
-		// tree-sitter empty or errored — fall through to line windows.
+		// tree-sitter errored or produced nothing usable — fall through.
 	}
 	return windowChunks(relPath, src), nil
 }
 
-func treeChunks(ctx context.Context, relPath string, src []byte, cfg langConfig) ([]Chunk, error) {
-	parser := sitter.NewParser()
-	defer parser.Close()
-	parser.SetLanguage(cfg.lang)
-	tree, err := parser.ParseCtx(ctx, nil, src)
-	if err != nil {
-		return nil, err
-	}
-	defer tree.Close()
-	root := tree.RootNode()
+// extractStructural returns one chunk per recognized structural
+// declaration (functions, methods, types, classes) found in root's
+// direct children. It is the former body of treeChunks, now split out
+// so Chunks can parse the AST once and reuse the root node for both
+// structural extraction and orphan packing.
+func extractStructural(relPath string, src []byte, cfg langConfig, root *sitter.Node) []Chunk {
 	var out []Chunk
 	for i := range int(root.NamedChildCount()) {
 		n := root.NamedChild(i)
@@ -368,7 +383,7 @@ func treeChunks(ctx context.Context, relPath string, src []byte, cfg langConfig)
 			out = append(out, nestedChunks(relPath, src, n, methodKinds, name)...)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // nestedChunks walks one node looking for method-level children and
@@ -533,15 +548,15 @@ func elixirCallName(n *sitter.Node, src []byte) string {
 	return ""
 }
 
-// orphanWindows emits window chunks over the parts of src that aren't
-// covered by any structural chunk. It's the safety net that catches
-// top-level non-function content (Go const/var, Rust statics, top-level
-// Python statements outside def/class, etc.).
-func orphanWindows(relPath string, src []byte, structural []Chunk) []Chunk {
+// orphanWindowsAST emits chunks over the parts of src not covered by any
+// structural chunk, using cAST-style greedy sibling-merge packing:
+// consecutive root-level AST siblings are merged into MaxBytes-bounded
+// units rather than arbitrary line windows, producing semantically
+// coherent orphan chunks (e.g. a whole import block or const group).
+func orphanWindowsAST(relPath string, src []byte, root *sitter.Node, structural []Chunk) []Chunk {
 	if len(structural) == 0 {
 		return nil
 	}
-	// Sort the covered intervals by start byte.
 	type iv struct{ s, e int }
 	intervals := make([]iv, 0, len(structural))
 	for _, c := range structural {
@@ -553,7 +568,6 @@ func orphanWindows(relPath string, src []byte, structural []Chunk) []Chunk {
 	if len(intervals) == 0 {
 		return nil
 	}
-	// Sort by start; merge overlapping ranges.
 	sort.Slice(intervals, func(i, j int) bool { return intervals[i].s < intervals[j].s })
 	merged := intervals[:1]
 	for _, x := range intervals[1:] {
@@ -571,13 +585,108 @@ func orphanWindows(relPath string, src []byte, structural []Chunk) []Chunk {
 	cursor := 0
 	for _, m := range merged {
 		if m.s > cursor {
-			out = append(out, orphanRange(relPath, src, cursor, m.s)...)
+			out = append(out, astSiblingMerge(relPath, src, root, cursor, m.s)...)
 		}
 		cursor = m.e
 	}
 	if cursor < len(src) {
-		out = append(out, orphanRange(relPath, src, cursor, len(src))...)
+		out = append(out, astSiblingMerge(relPath, src, root, cursor, len(src))...)
 	}
+	return out
+}
+
+// astSiblingMerge greedily packs root-level AST siblings within
+// src[start:end] into MaxBytes-bounded orphan chunks (cAST sibling-
+// merge). Consecutive sibling nodes are accumulated until adding the
+// next one would overflow MaxBytes; each group is emitted as a single
+// KindOrphan chunk whose content spans from the first to last node's
+// bytes (including any whitespace between them). Leading and trailing
+// bytes that lie outside any AST node are absorbed into the adjacent
+// group. Falls back to line-window chunking when no AST nodes are
+// found in the range.
+func astSiblingMerge(relPath string, src []byte, root *sitter.Node, start, end int) []Chunk {
+	if start >= end {
+		return nil
+	}
+	if strings.TrimSpace(string(src[start:end])) == "" {
+		return nil
+	}
+
+	// Collect root-level named children fully contained in [start, end).
+	var nodes []*sitter.Node
+	for i := range int(root.NamedChildCount()) {
+		n := root.NamedChild(i)
+		ns, ne := int(n.StartByte()), int(n.EndByte())
+		if ns >= start && ne <= end {
+			nodes = append(nodes, n)
+		}
+	}
+
+	// No AST nodes in this range — fall back to line-window chunking.
+	if len(nodes) == 0 {
+		return orphanRange(relPath, src, start, end)
+	}
+
+	var out []Chunk
+	// groupStart tracks where the current group begins in src.
+	// We start at `start` (not at the first node's startByte) so that
+	// any leading bytes (comments, blank lines before the first node)
+	// are absorbed into the first group.
+	groupStart := start
+	groupEnd := start
+
+	flushGroup := func(upTo int) {
+		if upTo <= groupStart {
+			return
+		}
+		content := string(src[groupStart:upTo])
+		if strings.TrimSpace(content) == "" {
+			groupStart = upTo
+			groupEnd = upTo
+			return
+		}
+		out = append(out, Chunk{
+			Path:      relPath,
+			Kind:      KindOrphan,
+			StartLine: lineOf(src, groupStart),
+			EndLine:   lineOf(src, upTo-1),
+			Content:   content,
+			startByte: groupStart,
+			endByte:   upTo,
+		})
+		groupStart = upTo
+		groupEnd = upTo
+	}
+
+	for _, n := range nodes {
+		ns, ne := int(n.StartByte()), int(n.EndByte())
+		nodeSize := ne - ns
+
+		if nodeSize >= MaxBytes {
+			// Single oversized node: flush what we have up to this node,
+			// window-chunk the node itself, then continue from its end.
+			flushGroup(ns)
+			out = append(out, orphanRange(relPath, src, ns, ne)...)
+			groupStart = ne
+			groupEnd = ne
+			continue
+		}
+
+		// Would extending the current group to include this node overflow?
+		// We measure the projected span from groupStart to ne, which
+		// naturally includes any whitespace gap between groupEnd and ns.
+		if ne-groupStart > MaxBytes && groupEnd > groupStart {
+			flushGroup(groupEnd)
+			// groupStart is now groupEnd; fall through to absorb the node.
+		}
+
+		groupEnd = ne
+	}
+
+	// Absorb trailing bytes (from last node's end to `end`) into the
+	// final group, then flush.
+	flushGroup(end)
+
 	return out
 }
 
