@@ -55,11 +55,21 @@ repos:
     gen:
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
 
-  # react — flagship, large monorepo. Add in pass 2; bound cost with index_subdir
-  # (curated query-set paths must then be relative to that subtree).
-  # - name: react
-  #   url: https://github.com/facebook/react
-  #   commit: 6117d7cca4906492c51fe6a03381e35adfd86e7d   # tag v19.2.7
-  #   languages: [ts, js]
-  #   index_subdir: packages/react-dom
-  #   query_sets: [queries/react.json]
+  # react — flagship, large monorepo. Cost is bounded with index_subdir to a
+  # single substantive package. NB: the public `packages/react-dom` is a thin
+  # entry-point/re-export shell; the real DOM logic (synthetic events, event
+  # plugins, DOM property/attribute diffing, controlled inputs, hydration, the
+  # fiber host config) lives in `packages/react-dom-bindings` — so that is the
+  # indexed subtree and curated paths are relative to it (src/events/…, etc.).
+  - name: react
+    url: https://github.com/facebook/react
+    commit: 6117d7cca4906492c51fe6a03381e35adfd86e7d   # lightweight tag v19.2.7 (points straight at the commit)
+    languages: [js]
+    index_subdir: packages/react-dom-bindings
+    query_sets: [queries/react.json]
+    # No gen here: git-history/blast-radius auto-labels are incompatible with
+    # index_subdir — `git log` emits repo-root-relative paths
+    # (packages/react-dom-bindings/src/…) but the gen path-exists check resolves
+    # them against the indexed subdir, so every file is filtered out and the cell
+    # comes back empty. The curated set is this flagship's signal. (Fixing gen to
+    # honor a subdir is tracked separately.)

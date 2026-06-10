@@ -74,6 +74,22 @@ Re-enable rerank for ad-hoc full-path A/Bs; keep the committed baseline rerank-o
 
 No Go change is needed to add a repo.
 
+### Large monorepos — `index_subdir`
+
+For a flagship monorepo, bound the index cost by pointing `index_subdir` at one
+substantive package. The indexed root then becomes `<checkout>/<index_subdir>`,
+so **curated `relevant_files` paths must be relative to that subdir** (e.g. with
+`index_subdir: packages/react-dom-bindings`, label `src/events/SyntheticEvent.js`,
+not the full `packages/...` path). Pick the package that actually holds the logic
+you want to query — e.g. React's public `packages/react-dom` is a thin
+entry-point shell; the real DOM/event implementation lives in
+`packages/react-dom-bindings`, which is what the corpus indexes.
+
+> **`gen` is incompatible with `index_subdir`.** The auto-label generators run
+> `git log` in the subdir but git emits repo-root-relative paths, which then fail
+> the gen "file exists on disk" check (resolved against the subdir) — so the cell
+> comes back empty. Subdir-scoped repos must rely on a curated `query_sets`.
+
 ## Files
 
 - `repos.yml` — pinned corpus manifest.
