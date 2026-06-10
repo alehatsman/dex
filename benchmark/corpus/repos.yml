@@ -26,7 +26,7 @@ repos:
     url: https://github.com/pallets/flask
     commit: ab8149664182b662453a563161aa89013c806dc9   # tag 3.1.0
     languages: [python]
-    # query_sets: [queries/flask.json]                 # add curated NL queries here
+    query_sets: [queries/flask.json]
     gen:
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
 
@@ -34,6 +34,7 @@ repos:
     url: https://github.com/gin-gonic/gin
     commit: 4ea0e648e38a63d6caff14100f5eab5c50912bcd   # tag v1.9.1
     languages: [go]
+    query_sets: [queries/gin.json]
     gen:
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
@@ -42,6 +43,7 @@ repos:
     url: https://github.com/BurntSushi/ripgrep
     commit: 4649aa9700619f94cf9c66876e9549d83420e16c   # tag 14.1.1
     languages: [rust]
+    query_sets: [queries/ripgrep.json]
     gen:
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
 
@@ -49,6 +51,7 @@ repos:
     url: https://github.com/colinhacks/zod
     commit: 1fb56a5c18c27102dbc92260a4007c7732a0ccca   # tag v4.4.3
     languages: [ts]
+    query_sets: [queries/zod.json]
     gen:
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
 

@@ -42,16 +42,23 @@ dex bench corpus run
 dex bench corpus run --smoke --repos flask,gin
 
 # regression gate: fail if ANY (repo, set) cell drops >0.02 vs the baseline
-dex bench corpus run --check benchmark/corpus/baseline.json
-mooncake task corpus            # same, wrapped as a task
+mooncake task corpus            # = DEX_DISABLE_RERANK=1 dex bench corpus run --k 10 --check ...
 
-# refresh the committed baseline after an intentional improvement
-dex bench corpus run --output json > benchmark/corpus/baseline.json
+# refresh the committed baseline after an intentional improvement (same config
+# as the gate: rerank-off; strip per-query detail to keep the file small)
+DEX_DISABLE_RERANK=1 dex bench corpus run --output json \
+  | jq 'del(.cells[].report.queries)' > benchmark/corpus/baseline.json
 ```
 
 Requires a built `dex` on PATH, a live embed endpoint (`DEX_EMBED_URL` / ollama),
 and network access to clone the repos on first run. Like `dex bench eval`, this
 is a **local / main_pc gate, not a container-CI step**.
+
+**Why rerank-off (`DEX_DISABLE_RERANK=1`):** the gate isolates the fusion layer.
+It is deterministic and immune to the shared-GPU rerank-endpoint contention that
+flakes long runs on main_pc (a transient `context canceled` mid-scoring). The
+baseline is generated under the same flag so the comparison is apples-to-apples.
+Re-enable rerank for ad-hoc full-path A/Bs; keep the committed baseline rerank-off.
 
 ## Adding a repo
 

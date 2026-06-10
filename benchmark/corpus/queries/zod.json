@@ -1,0 +1,23 @@
+{
+  "repo": "zod",
+  "head": "1fb56a5c18c27102dbc92260a4007c7732a0ccca",
+  "gen_opts": { "max_commits": 0, "max_files": 0 },
+  "queries": [
+    { "id": "zod-q01", "query": "How are string schemas validated with format checks and what validation rules are applied?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/core/checks.ts"] },
+    { "id": "zod-q02", "query": "Where is the safeParse method implemented and what distinguishes it from regular parse?", "relevant_files": ["packages/zod/src/v4/core/parse.ts"] },
+    { "id": "zod-q03", "query": "How are validation error messages constructed and what issue metadata is captured?", "relevant_files": ["packages/zod/src/v4/classic/errors.ts", "packages/zod/src/v4/core/errors.ts", "packages/zod/src/v4/core/util.ts"] },
+    { "id": "zod-q04", "query": "Where does the schema execute custom refinement checks during validation?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/core/checks.ts"] },
+    { "id": "zod-q05", "query": "How does union type validation select correct branches and optimize discriminated unions?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts"] },
+    { "id": "zod-q06", "query": "Where is asynchronous parsing handled and when is it activated during validation?", "relevant_files": ["packages/zod/src/v4/core/parse.ts", "packages/zod/src/v4/core/schemas.ts"] },
+    { "id": "zod-q07", "query": "What function creates number and boolean coercion with string-to-primitive conversion?", "relevant_files": ["packages/zod/src/v4/core/api.ts"] },
+    { "id": "zod-q08", "query": "How are object shapes validated with nested field checks and key filtering?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts"] },
+    { "id": "zod-q09", "query": "What creates enum validators that restrict values to a predefined set?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts"] },
+    { "id": "zod-q10", "query": "Where is the catch handler that provides fallback values when validation fails?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts"] },
+    { "id": "zod-q11", "query": "How do the parse factory functions create parsers with custom error classes?", "relevant_files": ["packages/zod/src/v4/core/parse.ts"] },
+    { "id": "zod-q12", "query": "Where is template literal type parsing implemented using regular expression patterns?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/core/regexes.ts"] },
+    { "id": "zod-q13", "query": "If I change the numeric range check logic, what schema type implementations also need updates?", "relevant_files": ["packages/zod/src/v4/core/checks.ts", "packages/zod/src/v4/core/schemas.ts"] },
+    { "id": "zod-q14", "query": "How does modifying the transform handler chain affect codec direction handling and type safety?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/core/parse.ts"] },
+    { "id": "zod-q15", "query": "What cascading changes occur if the intersection merge logic is refactored for union handling?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/core/core.ts"] },
+    { "id": "zod-q16", "query": "How are string format validators defined and registered in relation to error message customization?", "relevant_files": ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/core/errors.ts", "packages/zod/src/v4/core/checks.ts"] }
+  ]
+}

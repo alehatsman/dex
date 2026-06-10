@@ -164,17 +164,21 @@ tasks:
 
   # Kept local: multi-repo retrieval eval over the pinned corpus
   # (benchmark/corpus/repos.yml). Fetches + indexes each repo on first run
-  # (cached after) and scores per (repo, set). Requires a built dex on PATH, a
+  # (cached after), scores per (repo, set), and fails on a >0.02 drop in ANY
+  # cell vs benchmark/corpus/baseline.json. Requires a built dex on PATH, a
   # live embed endpoint (DEX_EMBED_URL / ollama) and network access to clone
-  # the repos — a local/main_pc gate, not container-CI. Report mode for now;
-  # add a committed benchmark/corpus/baseline.json (and curated query sets),
-  # then append `--check benchmark/corpus/baseline.json` to turn it into a
-  # per-cell regression gate. Refresh the baseline with:
-  #   dex bench corpus run --output json > benchmark/corpus/baseline.json
+  # the repos — a local/main_pc gate, not container-CI.
+  #
+  # DEX_DISABLE_RERANK=1: the gate isolates the fusion layer (matches the
+  # baseline, which was generated rerank-off) — deterministic and immune to the
+  # shared-GPU rerank-endpoint contention that flakes long runs on main_pc. See
+  # docs/retrieval-eval.md. Refresh the baseline (same config) with:
+  #   DEX_DISABLE_RERANK=1 dex bench corpus run --output json \
+  #     | jq 'del(.cells[].report.queries)' > benchmark/corpus/baseline.json
   corpus:
-    desc: Multi-repo retrieval eval (NDCG/Recall/MRR per repo) over the pinned corpus
+    desc: Multi-repo retrieval eval (NDCG/Recall/MRR per repo) vs the pinned corpus baseline
     steps:
-      - shell: dex bench corpus run --k 10
+      - shell: DEX_DISABLE_RERANK=1 dex bench corpus run --k 10 --check benchmark/corpus/baseline.json
 
   vet: goq/vet
 
