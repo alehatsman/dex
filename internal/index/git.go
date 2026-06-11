@@ -1,7 +1,6 @@
 package index
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha1"
 	"fmt"
@@ -80,15 +79,6 @@ func (g *GitIndexer) Run(ctx context.Context) error {
 		}
 		batch := commits[start:end]
 
-		texts := make([]string, len(batch))
-		for i, c := range batch {
-			texts[i] = c.content
-		}
-		vecs, err := g.Embed.Embed(ctx, texts)
-		if err != nil {
-			return fmt.Errorf("git index: embed batch %d: %w", start/gitIndexBatchSize+1, err)
-		}
-
 		rows := make([]store.PendingChunk, len(batch))
 		for i, c := range batch {
 			rows[i] = store.PendingChunk{
@@ -99,7 +89,23 @@ func (g *GitIndexer) Run(ctx context.Context) error {
 				EndLine:    0,
 				ContentSHA: sha1Hex(c.content),
 				Content:    c.content,
-				Vec:        vecs[i],
+			}
+		}
+
+		// Lean / BM25-only mode (DEX_EMBED_ENGINE=none) wires no embedder:
+		// upsert commit chunks with nil vectors so they stay FTS-searchable
+		// without corrupting a vector index (mirrors the file indexer).
+		if g.Embed != nil {
+			texts := make([]string, len(batch))
+			for i, c := range batch {
+				texts[i] = c.content
+			}
+			vecs, err := g.Embed.Embed(ctx, texts)
+			if err != nil {
+				return fmt.Errorf("git index: embed batch %d: %w", start/gitIndexBatchSize+1, err)
+			}
+			for i := range rows {
+				rows[i].Vec = vecs[i]
 			}
 		}
 		if err := g.St.UpsertMany(ctx, rows, now); err != nil {
@@ -125,13 +131,19 @@ type gitCommit struct {
 // If last is non-empty, only commits not reachable from last are returned
 // (i.e. commits added since last). Otherwise returns up to max commits.
 func (g *GitIndexer) collectCommits(ctx context.Context, last string, max int) ([]gitCommit, error) {
-	// NUL-delimited fields per commit:  hash NUL authorName NUL date NUL subject NUL body
-	// After each record we print a sentinel line so we can split records.
-	const sentinel = "---DEX-GIT-SEP---"
-	format := "%H%x00%an%x00%ad%x00%s%x00%b%x00" + sentinel
+	// Machine-readable layout, robust to multi-line bodies and odd paths:
+	//   - RS (0x1e) starts each commit record (split commits on it).
+	//   - US (0x1f) separates the five fixed fields; body is last so any
+	//     newlines it contains stay inside one field.
+	//   - -z + --name-only makes the changed-file list NUL-separated and
+	//     trail the body field, so paths with spaces/newlines survive.
+	// Only a literal RS/US byte inside a commit message could fool this,
+	// which effectively never happens.
+	format := "%x1e%H%x1f%an%x1f%ad%x1f%s%x1f%b%x1f"
 
 	args := []string{
 		"log",
+		"-z",
 		"--format=" + format,
 		"--date=short",
 		"--name-only",
@@ -152,42 +164,38 @@ func (g *GitIndexer) collectCommits(ctx context.Context, last string, max int) (
 		return nil, err
 	}
 
-	return parseGitLog(out, sentinel), nil
+	return parseGitLog(out), nil
 }
 
-func parseGitLog(data []byte, sentinel string) []gitCommit {
-	// Each record ends with "\n---DEX-GIT-SEP---\n"
-	records := bytes.Split(data, []byte("\n"+sentinel+"\n"))
-	var commits []gitCommit
-	for _, rec := range records {
-		rec = bytes.TrimSpace(rec)
-		if len(rec) == 0 {
-			continue
-		}
-		// The record is: hash NUL author NUL date NUL subject NUL body NUL
-		// followed by a blank line then file list.
-		parts := bytes.SplitN(rec, []byte{0}, 6)
-		if len(parts) < 5 {
-			continue
-		}
-		hash := strings.TrimSpace(string(parts[0]))
-		author := strings.TrimSpace(string(parts[1]))
-		date := strings.TrimSpace(string(parts[2]))
-		subject := strings.TrimSpace(string(parts[3]))
-		rest := string(parts[4])
-		if len(parts) > 5 {
-			rest = string(parts[5])
-		}
+const (
+	gitRecordSep = "\x1e" // RS — starts each commit record
+	gitFieldSep  = "\x1f" // US — separates the fixed fields
+)
 
-		// rest = body NUL (then possibly blank line + file list)
-		// The body and file list are separated by the trailing NUL from format.
-		bodyAndFiles := strings.SplitN(rest, "\x00", 2)
-		body := strings.TrimSpace(bodyAndFiles[0])
+// parseGitLog parses the RS/US/-z layout emitted by collectCommits into
+// gitCommit records. Each record holds five US-separated fields (hash,
+// author, date, subject, body) followed by the NUL-separated changed-file
+// list. Records with no hash or subject are skipped.
+func parseGitLog(data []byte) []gitCommit {
+	var commits []gitCommit
+	for _, rec := range strings.Split(string(data), gitRecordSep) {
+		if strings.TrimSpace(rec) == "" {
+			continue
+		}
+		fields := strings.SplitN(rec, gitFieldSep, 6)
+		if len(fields) < 5 {
+			continue
+		}
+		hash := strings.TrimSpace(fields[0])
+		author := strings.TrimSpace(fields[1])
+		date := strings.TrimSpace(fields[2])
+		subject := strings.TrimSpace(fields[3])
+		body := strings.TrimSpace(fields[4])
+
 		var files []string
-		if len(bodyAndFiles) > 1 {
-			for _, f := range strings.Split(strings.TrimSpace(bodyAndFiles[1]), "\n") {
-				f = strings.TrimSpace(f)
-				if f != "" {
+		if len(fields) == 6 {
+			for _, f := range strings.Split(fields[5], "\x00") {
+				if f = strings.TrimSpace(f); f != "" {
 					files = append(files, f)
 				}
 			}
@@ -196,12 +204,14 @@ func parseGitLog(data []byte, sentinel string) []gitCommit {
 		if hash == "" || subject == "" {
 			continue
 		}
-
-		content := buildCommitContent(hash, author, date, subject, body, files)
+		short := hash
+		if len(short) > 8 {
+			short = short[:8]
+		}
 		commits = append(commits, gitCommit{
-			shortHash: hash[:8],
+			shortHash: short,
 			subject:   subject,
-			content:   content,
+			content:   buildCommitContent(hash, author, date, subject, body, files),
 		})
 	}
 	return commits

@@ -1395,6 +1395,13 @@ func (s *Store) TouchPath(ctx context.Context, path string, now time.Time) (int6
 // summaries every time the watcher fires, and the next `dex guide` run
 // would error with "no summaries".
 //
+// git_commit chunks (path "git:<hash>") are excluded for the same reason:
+// the file walk never bumps their last_seen_at, so without the carve-out a
+// no-change re-index would wipe the entire commit-search corpus and the
+// incremental git indexer (seeing no new commits) would never rebuild it.
+// The git indexer owns their lifecycle — incremental add, and a full wipe
+// + rebuild on force-push.
+//
 // But that kind-exclusion also stranded summaries for *deleted*
 // directories: once a dir's files are gone, its package_summary can
 // never be reached by the staleness delete and the drainer never
@@ -1416,7 +1423,7 @@ func (s *Store) PruneUnseen(ctx context.Context, cutoff time.Time) (int64, error
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM chunks
 		   WHERE last_seen_at < ?
-		     AND kind NOT IN ('package_summary','repo_summary')`,
+		     AND kind NOT IN ('package_summary','repo_summary','git_commit')`,
 		cutoff.UnixNano())
 	if err != nil {
 		return 0, err
