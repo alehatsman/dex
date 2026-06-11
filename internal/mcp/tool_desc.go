@@ -14,7 +14,7 @@ type DescriptionMode int
 const (
 	DescModeFull  DescriptionMode = iota // unchanged
 	DescModeTerse                        // abbreviate + truncate to 3 sentences (~60% savings)
-	DescModeLazy                         // first sentence only + ctx_nav hint (~85% savings)
+	DescModeLazy                         // first sentence only + ask hint (~85% savings)
 )
 
 // descriptionModeFromEnv reads DEX_DESCRIPTION_MODE (full|terse|lazy). Default: full.
@@ -49,7 +49,7 @@ func tersifyDesc(desc string) string {
 	return truncateSentences(desc, 3)
 }
 
-// lazyDesc keeps the first sentence (≤80 chars) and appends a ctx_nav hint.
+// lazyDesc keeps the first sentence (≤80 chars) and appends an ask hint.
 func lazyDesc(desc string) string {
 	first := truncateSentences(desc, 1)
 	if len(first) > 80 {
@@ -62,7 +62,7 @@ func lazyDesc(desc string) string {
 		}
 	}
 	first = strings.TrimRight(first, ". ")
-	return first + ". (use ctx_nav for full docs)"
+	return first + ". (use use ask for full context)"
 }
 
 // stripMetaLines removes lines whose content starts with "Example", "Note:",

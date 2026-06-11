@@ -198,7 +198,7 @@ func (s *Server) compose(ctx context.Context, _ *sdk.CallToolRequest, in Compose
 		out.Hint = "no files matched the query — broaden the query or check the index is current"
 	}
 
-	ldLevel, ldHint := s.ld().Check("search_context", argsKey(in.Query), true)
+	ldLevel, ldHint := s.ld().Check("find", argsKey(in.Query), true)
 	if ldLevel == ThrottleBlock {
 		return nil, ComposeOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
 	}

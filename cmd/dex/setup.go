@@ -179,23 +179,22 @@ const rulesContent = `# dex — semantic search & context routing
 ## Tool Mapping (prefer dex tools over native equivalents)
 | Instead of | Use | When |
 |------------|-----|------|
-| Grep / rg (concept search) | ` + "`search_semantic(q, path)`" + ` | intent / keyword searches |
-| Grep / rg (exact name) | ` + "`search_symbol(name, path)`" + ` | exact identifier lookup |
-| Read (large files >400 lines) | ` + "`file_view(file)`" + ` | signatures + summaries view |
-| Bash (build/test output) | ` + "`ctx_shell(command)`" + ` | compressed shell output |
-| Manual cross-ref tracing | ` + "`graph_callers / graph_callees`" + ` | call-graph navigation |
-| Manual import scanning | ` + "`graph_deps(path)`" + ` | dependency edges |
-| Manual cycle hunting | ` + "`graph_cycles`" + ` | mutual recursion / SCC detection |
-| Manual path tracing A→B | ` + "`graph_path(src, dst)`" + ` | shortest call/import path |
-| Manual "what breaks if I change X" | ` + "`graph_diff([ref])`" + ` | blast-radius of a git diff |
-| "What are the major modules?" | ` + "`graph_communities`" + ` | Louvain call-graph clusters |
-| Code quality / dead-code sweep | ` + "`graph_smells`" + ` | long funcs, dead exports, god-nodes |
+| Grep / rg (concept search) | ` + "`find(q, path)`" + ` | intent / keyword searches |
+| Grep / rg (exact name) | ` + "`lookup(name, path)`" + ` | exact identifier lookup |
+| Read (large files >400 lines) | ` + "`read(file)`" + ` | signatures + summaries view |
+| Bash (build/test output) | ` + "`shell(command)`" + ` | compressed shell output |
+| Manual cross-ref tracing | ` + "`callers / callees`" + ` | call-graph navigation |
+| Manual import scanning | ` + "`deps(path)`" + ` | dependency edges |
+| Manual path tracing A→B | ` + "`path(src, dst)`" + ` | shortest call/import path |
+| Manual "what breaks if I change X" | ` + "`diff([ref])`" + ` | blast-radius of a git diff |
+| "What are the major modules?" | ` + "`clusters`" + ` | Louvain call-graph clusters |
+| Code quality / dead-code sweep | ` + "`smells`" + ` | long funcs, dead exports, god-nodes |
 
 ## Workflow
 1. **Orient:** ` + "`ask(question)`" + ` — routes intent, returns suggested_reads + next_action
-2. **Locate:** ` + "`search_semantic`" + ` for concepts; ` + "`search_symbol`" + ` for exact names
-3. **Read:** ` + "`file_view`" + ` for large files; native Read for small ones (<400 lines)
-4. **Shell:** ` + "`ctx_shell(command)`" + ` for build/test/grep output
+2. **Locate:** ` + "`find`" + ` for concepts; ` + "`lookup`" + ` for exact names
+3. **Read:** ` + "`read`" + ` for large files; native Read for small ones (<400 lines)
+4. **Shell:** ` + "`shell(command)`" + ` for build/test/grep output
 
 ## Proactive (call without being asked)
 - ` + "`ask(task)`" + ` at the start of every session to orient on the codebase

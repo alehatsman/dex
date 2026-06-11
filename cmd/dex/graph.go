@@ -58,12 +58,12 @@ func cmdGraph(ctx context.Context, args []string) error {
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
   dex graph neighbors   [<path>] <file> <line>  vector neighbours of a chunk (MCP: graph_neighbors)
-  dex graph deps        [<path>] [flags]        imports edges (MCP: graph_deps)
+  dex graph deps        [<path>] [flags]        imports edges (MCP: deps)
                                                     --file=<rel>  --package=<full>
   dex graph packages    [<path>]                whole internal package import DAG
-  dex graph callers     [<path>] <name>         incoming calls edges (MCP: graph_callers)
+  dex graph callers     [<path>] <name>         incoming calls edges (MCP: callers)
                                                     --package=<pkg>  --k=<n>
-  dex graph callees     [<path>] <name>         outgoing calls edges (MCP: graph_callees)
+  dex graph callees     [<path>] <name>         outgoing calls edges (MCP: callees)
                                                     --package=<pkg>  --k=<n>
   dex graph links       [<path>] <doc>          docs this doc links to (MCP: graph_links)
                                                     --k=<n>
@@ -74,11 +74,11 @@ func cmdGraph(ctx context.Context, args []string) error {
                                                     --k=<n>
   dex graph cycles      [<path>]                call-graph SCCs ≥ size 2 (MCP: graph_cycles)
                                                     --min-size=<n>  --k=<n>
-  dex graph path        [<path>] <src> <dst>    shortest call/import path (MCP: graph_path)
+  dex graph path        [<path>] <src> <dst>    shortest call/import path (MCP: path)
                                                     --package=<pkg>  --max-depth=<n>
-  dex graph diff        [<path>]                blast-radius of current git diff (MCP: graph_diff)
+  dex graph diff        [<path>]                blast-radius of current git diff (MCP: diff)
                                                     --ref=<ref>  --depth=<n>
-  dex graph communities [<path>]                Louvain communities (MCP: graph_communities)
+  dex graph communities [<path>]                Louvain communities (MCP: clusters)
                                                     --min-members=<n>  --k=<n>  --top-k=<n>
   dex graph export      [<path>] [--output=<dir>]
                                                     dump nodes/edges as JSONL
@@ -144,7 +144,7 @@ func cmdGraphNeighbors(ctx context.Context, args []string) error {
 func cmdGraphDeps(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph deps", flag.ContinueOnError)
 	setHelp(fs,
-		"Return `imports` edges for a file or package (MCP: graph_deps).",
+		"Return `imports` edges for a file or package (MCP: deps).",
 		"dex graph deps [flags] [<path>]")
 	file := fs.String("file", "", "relative file path inside the project (resolved to its package)")
 	pkg := fs.String("package", "", "full package path (e.g. 'github.com/foo/bar/internal/baz'); takes precedence over --file")
@@ -259,11 +259,11 @@ func cmdGraphCallees(ctx context.Context, args []string) error {
 func runGraphCallEdges(ctx context.Context, args []string, callers bool) error {
 	name := "graph callees"
 	rel := "callees"
-	helpOneLiner := "Outgoing `calls` edges (MCP: graph_callees). Go-only today."
+	helpOneLiner := "Outgoing `calls` edges (MCP: callees). Go-only today."
 	if callers {
 		name = "graph callers"
 		rel = "callers"
-		helpOneLiner = "Incoming `calls` edges (MCP: graph_callers). Go-only today."
+		helpOneLiner = "Incoming `calls` edges (MCP: callers). Go-only today."
 	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	setHelp(fs, helpOneLiner, "dex "+name+" [flags] [<path>] <name>")
@@ -720,7 +720,7 @@ func cmdGraphCycles(ctx context.Context, args []string) error {
 func cmdGraphPath(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph path", flag.ContinueOnError)
 	setHelp(fs,
-		"Find the shortest call/import path between two symbols (MCP: graph_path).",
+		"Find the shortest call/import path between two symbols (MCP: path).",
 		"dex graph path [flags] [<path>] <src> <dst>")
 	pkg := fs.String("package", "", "package path filter for both src and dst")
 	maxDepth := fs.Int("max-depth", 8, "BFS depth limit (default 8, max 15)")
@@ -782,7 +782,7 @@ func cmdGraphPath(ctx context.Context, args []string) error {
 func cmdGraphDiff(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph diff", flag.ContinueOnError)
 	setHelp(fs,
-		"Blast-radius of the current git diff: changed symbols and their transitive callers (MCP: graph_diff).",
+		"Blast-radius of the current git diff: changed symbols and their transitive callers (MCP: diff).",
 		"dex graph diff [flags] [<path>]")
 	ref := fs.String("ref", "HEAD~1", "git ref to diff against (default HEAD~1)")
 	depth := fs.Int("depth", 2, "BFS depth for caller traversal (default 2, max 5)")
@@ -852,7 +852,7 @@ func cmdGraphDiff(ctx context.Context, args []string) error {
 func cmdGraphCommunities(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph communities", flag.ContinueOnError)
 	setHelp(fs,
-		"List Louvain communities in the call/import graph (MCP: graph_communities).",
+		"List Louvain communities in the call/import graph (MCP: clusters).",
 		"dex graph communities [flags] [<path>]")
 	minMembers := fs.Int("min-members", 3, "min community size (default 3)")
 	k := fs.Int("k", 20, "max communities to return (default 20)")

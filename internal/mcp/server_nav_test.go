@@ -23,13 +23,13 @@ func TestNavHandlerReturnsGuide(t *testing.T) {
 	}
 	var found bool
 	for _, e := range out.Tools {
-		if e.Name == "ctx_nav" {
+		if e.Name == "ask" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("ctx_nav not in tools list")
+		t.Error("ask not in tools list")
 	}
 }
 
@@ -39,14 +39,14 @@ func TestNavTextContainsTools(t *testing.T) {
 		Guide:  "guide text",
 		Tools: []NavEntry{
 			{Name: "ask", Purpose: "p1", When: "w1"},
-			{Name: "file_tree", Purpose: "p2", When: "w2"},
+			{Name: "ls", Purpose: "p2", When: "w2"},
 		},
 	}
 	text := navText(out)
 	if !strings.Contains(text, "### ask") {
 		t.Error("text missing '### ask'")
 	}
-	if !strings.Contains(text, "### file_tree") {
-		t.Error("text missing '### file_tree'")
+	if !strings.Contains(text, "### ls") {
+		t.Error("text missing '### ls'")
 	}
 }

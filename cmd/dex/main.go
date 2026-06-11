@@ -4,19 +4,19 @@
 // (subcommand-group form). The build/maintenance commands are CLI-only.
 //
 //	ask <path> <q...>             Primary entry point (MCP: ask).
-//	search semantic <path> <q...> Hybrid top-k chunks (MCP: search_semantic).
-//	search symbol <path> <name>   Exact identifier lookup (MCP: search_symbol).
+//	search semantic <path> <q...> Hybrid top-k chunks (MCP: find).
+//	search symbol <path> <name>   Exact identifier lookup (MCP: lookup).
 //	graph neighbors <path> <file> <line>
-//	                              Vector neighbours of a chunk (MCP: graph_neighbors).
+//	                              Vector neighbours of a chunk (CLI-only).
 //	graph deps <path> [--file|--package]
-//	                              `imports` edges for a file/package (MCP: graph_deps).
-//	graph callers <path> <name>   Incoming `calls` edges (MCP: graph_callers).
-//	graph callees <path> <name>   Outgoing `calls` edges (MCP: graph_callees).
-//	graph links <path> <doc>      Docs this markdown doc links to (MCP: graph_links).
-//	graph backlinks <path> <doc>  Docs that link to this markdown doc (MCP: graph_backlinks).
-//	graph tags <path> --tag|--doc Tag→docs or doc→tags (MCP: graph_tags).
+//	                              `imports` edges for a file/package (MCP: deps).
+//	graph callers <path> <name>   Incoming `calls` edges (MCP: callers).
+//	graph callees <path> <name>   Outgoing `calls` edges (MCP: callees).
+//	graph links <path> <doc>      Docs this markdown doc links to (CLI-only).
+//	graph backlinks <path> <doc>  Docs that link to this markdown doc (CLI-only).
+//	graph tags <path> --tag|--doc Tag→docs or doc→tags (CLI-only).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
-//	view summarize <path> <file>  Summarize a file slice (MCP: file_view).
+//	view summarize <path> <file>  Summarize a file slice (MCP: read).
 //	read <file>                   Structural read (signatures/aggressive/entropy); no LLM.
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
@@ -34,7 +34,7 @@
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	bench locomo <path>           LoCoMo memory-recall benchmark (recall@k / token-F1).
-//	knowledge add|query|rm|gc     Store/list/delete/gc per-project facts (MCP: ctx_knowledge).
+//	knowledge add|query|rm|gc     Store/list/delete/gc per-project facts (MCP: notes).
 //	compress <file|->             Compress a file or stdin through the dex engine (no LLM).
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
@@ -266,31 +266,31 @@ query (mirrors the MCP tool surface):
                                           suggested_reads and a prose next_action.
                                           Flags: --intent, --k, --format=text|json,
                                           --no-inline, --max-content-bytes, -v
-  dex search semantic [<path>] <q...> hybrid top-k chunks (MCP: search_semantic)
+  dex search semantic [<path>] <q...> hybrid top-k chunks (MCP: find)
                                           Flags: --k, --rerank=off, --explain,
                                           --format=text|json, --max-content-bytes, -v
-  dex search symbol [<path>] <name>  exact identifier lookup (MCP: search_symbol)
+  dex search symbol [<path>] <name>  exact identifier lookup (MCP: lookup)
                                           Flags: --k, --format=text|json,
                                           --max-content-bytes, -v
   dex graph neighbors [<path>] <file> <line>
-                                          vector neighbours of a chunk (MCP: graph_neighbors)
-  dex graph deps [<path>] [flags]    package imports (MCP: graph_deps)
+                                          vector neighbours of a chunk (CLI-only)
+  dex graph deps [<path>] [flags]    package imports (MCP: deps)
                                           Flags: --file=<rel>, --package=<full path>
-  dex graph callers [<path>] <name>  incoming calls edges (MCP: graph_callers)
+  dex graph callers [<path>] <name>  incoming calls edges (MCP: callers)
                                           Flags: --package=<pkg>, --k
-  dex graph callees [<path>] <name>  outgoing calls edges (MCP: graph_callees)
+  dex graph callees [<path>] <name>  outgoing calls edges (MCP: callees)
                                           Flags: --package=<pkg>, --k
-  dex graph links [<path>] <doc>     markdown docs this doc links to (MCP: graph_links)
+  dex graph links [<path>] <doc>     markdown docs this doc links to (CLI-only)
                                           Flags: --k
-  dex graph backlinks [<path>] <doc> markdown docs that link to this doc (MCP: graph_backlinks)
+  dex graph backlinks [<path>] <doc> markdown docs that link to this doc (CLI-only)
                                           Flags: --k
   dex graph tags [<path>] --tag=<t>|--doc=<d>
-                                          tag→docs or doc→tags (MCP: graph_tags)
+                                          tag→docs or doc→tags (CLI-only)
                                           Flags: --k
   dex graph export [<path>]          dump graph_nodes/graph_edges as JSONL
                                           Flags: --output=<dir>
   dex view summarize [<path>] <file> summarize a file slice via the chat model
-                                          (MCP: file_view). Flags: --start, --end,
+                                          (MCP: read). Flags: --start, --end,
                                           --focus, --temperature, --max-tokens, -v,
                                           --format=text|json
   dex read <file>                    structural read — no LLM call. Modes:
@@ -323,7 +323,7 @@ build / maintenance:
                                           or --out. Flags: --mode=auto|aggressive|
                                           entropy|terse|off, --ext, --format=text|json
   dex knowledge add|query|rm|gc      CLI access to the per-project knowledge
-                                          store (MCP: ctx_knowledge). add stores
+                                          store (MCP: notes). add stores
                                           a fact (--archetype, --confidence),
                                           query lists top-k by salience (--k),
                                           rm deletes by id, gc runs decay +
@@ -1488,8 +1488,8 @@ func cmdSearch(ctx context.Context, args []string) error {
 		return cmdSearchSymbol(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
-  dex search semantic <path> <query...>   hybrid top-k chunks (MCP: search_semantic)
-  dex search symbol   <path> <name>       exact identifier lookup (MCP: search_symbol)`)
+  dex search semantic <path> <query...>   hybrid top-k chunks (MCP: find)
+  dex search symbol   <path> <name>       exact identifier lookup (MCP: lookup)`)
 		return nil
 	default:
 		return fmt.Errorf("unknown search subcommand: %s (have: semantic, symbol)", sub)
@@ -1499,7 +1499,7 @@ func cmdSearch(ctx context.Context, args []string) error {
 func cmdSearchSemantic(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("search semantic", flag.ContinueOnError)
 	setHelp(fs,
-		"Hybrid top-k chunks for a query (MCP: search_semantic).",
+		"Hybrid top-k chunks for a query (MCP: find).",
 		"dex search semantic [flags] [<path>] <query...>",
 		`dex search semantic . "retry logic"`,
 		`dex search semantic . --k=16 --explain "rate limiter"`,
@@ -1625,7 +1625,7 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 func cmdSearchSymbol(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("search symbol", flag.ContinueOnError)
 	setHelp(fs,
-		"Exact identifier lookup (MCP: search_symbol).",
+		"Exact identifier lookup (MCP: lookup).",
 		"dex search symbol [flags] [<path>] <name>",
 		`dex search symbol . "RateLimiter"`,
 		`dex search symbol . --k=20 "func.*Handler"`,
@@ -1760,7 +1760,7 @@ func cmdView(ctx context.Context, args []string) error {
 		return cmdViewSummarize(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
-  dex view summarize <path> <file>   summarize a file slice (MCP: file_view)`)
+  dex view summarize <path> <file>   summarize a file slice (MCP: read)`)
 		return nil
 	default:
 		return fmt.Errorf("unknown view subcommand: %s (have: summarize)", sub)
@@ -1770,7 +1770,7 @@ func cmdView(ctx context.Context, args []string) error {
 func cmdViewSummarize(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("view summarize", flag.ContinueOnError)
 	setHelp(fs,
-		"Summarize a file slice via the chat model (MCP: file_view).",
+		"Summarize a file slice via the chat model (MCP: read).",
 		"dex view summarize [flags] [<path>] <file>")
 	start := fs.Int("start", 0, "first line to summarize (1-indexed; 0 = beginning of file)")
 	end := fs.Int("end", 0, "last line to summarize (1-indexed, inclusive; 0 = end of file)")

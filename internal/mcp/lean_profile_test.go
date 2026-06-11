@@ -12,20 +12,15 @@ import (
 // (DEX_EMBED_ENGINE=none → nil EmbedClient) they must NOT be advertised — the
 // capability-derived exposure contract of #283/#290.
 var embedBackedTools = []string{
-	"search_semantic",
-	"search_similar",
-	"ctx_overview",
-	"search_context",
-	"search_workspace",
+	"find",
 }
 
 // zeroInferenceTools work with no embedder at all (BM25, exact-symbol, the
 // pre-computed graph, and the ask router which degrades to those lanes). They
 // must always be advertised, lean or not.
 var zeroInferenceTools = []string{
-	"search_grep",
-	"search_symbol",
-	"graph_neighbors",
+	"grep",
+	"lookup",
 	"ask",
 }
 

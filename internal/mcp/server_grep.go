@@ -150,7 +150,7 @@ outer:
 		}
 	}
 
-	ldLevel, ldHint := s.ld().Check("search_grep", argsKey(in.Pattern), true)
+	ldLevel, ldHint := s.ld().Check("grep", argsKey(in.Pattern), true)
 	if ldLevel == ThrottleBlock {
 		return nil, SearchGrepOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
 	}

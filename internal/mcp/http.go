@@ -7,42 +7,31 @@ package mcp
 // a different wire protocol.
 //
 // Endpoint layout, all under /v1:
-//
-//	GET  /healthz                         — liveness; never authenticated
-//	GET  /version                         — build version; never authenticated
-//	GET  /projects                        — list registered (id, root, db_path)
-//	GET  /status                          — global endpoint health + indexed projects
-//	POST /projects/{id}/ask                — body: ContextInput
-//	POST /projects/{id}/search/semantic    — body: SearchInput
-//	POST /projects/{id}/search/symbol      — body: FindSymbolInput
-//	POST /projects/{id}/search/similar     — body: FindRelatedInput
-//	POST /projects/{id}/graph/neighbors    — body: RelatedInput
-//	POST /projects/{id}/graph/deps         — body: GraphDepsInput
-//	POST /projects/{id}/graph/callers      — body: CallEdgeInput
-//	POST /projects/{id}/graph/callees      — body: CallEdgeInput
-//	POST /projects/{id}/graph/links        — body: DocLinkInput
-//	POST /projects/{id}/graph/backlinks    — body: DocLinkInput
-//	POST /projects/{id}/graph/tags         — body: TagInput
-//	GET  /projects/{id}/graph/packages     — whole package import DAG
-//	POST /projects/{id}/file/view          — body: SummarizeInput
-//	POST /projects/{id}/file/tree          — body: SearchTreeInput
-//	POST /projects/{id}/search/grep        — body: SearchGrepInput
-//	POST /projects/{id}/search/context     — body: ComposeInput
-//	POST /projects/{id}/graph/impact       — body: ImpactInput
-//	POST /projects/{id}/graph/routes       — body: RoutesInput
-//	POST /projects/{id}/graph/smells       — body: SmellsInput
-//	POST /projects/{id}/graph/cycles       — body: CyclesInput
-//	POST /projects/{id}/graph/path         — body: PathInput
-//	POST /projects/{id}/graph/diff         — body: DiffInput
-//	POST /projects/{id}/graph/communities  — body: CommunitiesInput
-//	POST /projects/{id}/spec/check         — body: SpecVerifyInput
-//	POST /projects/{id}/view/overview      — body: OverviewInput
-//	POST /projects/{id}/knowledge          — body: KnowledgeInput
-//	POST /projects/{id}/session            — body: SessionInput
-//	POST /projects/{id}/agent              — body: AgentInput
-//	POST /projects/{id}/feedback           — body: FeedbackInput
-//	*    /projects/{id}/mcp                 — native streamable-HTTP MCP
-//	                                          transport (http_mcp.go), not REST
+// GET  /healthz                    — liveness; never authenticated
+// GET  /version                    — build version; never authenticated
+// GET  /projects                   — list registered (id, root, db_path)
+// GET  /status                     — global health + indexed projects
+// POST /shell                      — body: ShellInput
+// POST /projects/{id}/ask          — body: ContextInput
+// POST /projects/{id}/find         — body: SearchInput
+// POST /projects/{id}/lookup       — body: FindSymbolInput
+// POST /projects/{id}/grep         — body: SearchGrepInput
+// POST /projects/{id}/read         — body: SummarizeInput
+// POST /projects/{id}/ls           — body: SearchTreeInput
+// GET  /projects/{id}/graph/packages — whole pkg import DAG
+// POST /projects/{id}/deps         — body: GraphDepsInput
+// POST /projects/{id}/callers      — body: CallEdgeInput
+// POST /projects/{id}/callees      — body: CallEdgeInput
+// POST /projects/{id}/impact       — body: ImpactInput
+// POST /projects/{id}/routes       — body: RoutesInput
+// POST /projects/{id}/smells       — body: SmellsInput
+// POST /projects/{id}/path         — body: PathInput
+// POST /projects/{id}/diff         — body: DiffInput
+// POST /projects/{id}/clusters     — body: CommunitiesInput
+// POST /projects/{id}/notes        — body: KnowledgeInput
+// POST /projects/{id}/session      — body: SessionInput
+// *    /projects/{id}/mcp          — native streamable-HTTP MCP
+//                                    transport (http_mcp.go), not REST
 //
 // The URL's {id} resolves to a project root via the operator-provided
 // registry (RunHTTPOptions.Projects). The corresponding Input struct's
@@ -262,43 +251,26 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed := http.NewServeMux()
 	authed.HandleFunc("GET /v1/projects", s.handleListProjects(opts.Projects))
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
-	authed.HandleFunc("GET /v1/nav", s.handleNav)
-	authed.HandleFunc("POST /v1/compress", s.handleCompress())
 	authed.HandleFunc("POST /v1/shell", s.handleShell())
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/search/semantic", s.handleSearch(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/search/symbol", s.handleFindSymbol(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/search/similar", s.handleFindRelated(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/find", s.handleSearch(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/lookup", s.handleFindSymbol(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/grep", s.handleSearchGrep(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/read", s.handleSummarize(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/ls", s.handleFileTree(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/summaries", s.handleSummaries(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/neighbors", s.handleRelated(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/deps", s.handleGraphDeps(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/callers", s.handleGraphCallers(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/callees", s.handleGraphCallees(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/links", s.handleGraphLinks(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/backlinks", s.handleGraphBacklinks(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/tags", s.handleGraphTags(opts.Projects))
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/file/view", s.handleSummarize(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/file/tree", s.handleFileTree(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/search/grep", s.handleSearchGrep(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/search/context", s.handleCompose(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/impact", s.handleGraphImpact(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/routes", s.handleGraphRoutes(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/smells", s.handleGraphSmells(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/cycles", s.handleGraphCycles(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/path", s.handleGraphPath(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/diff", s.handleGraphDiff(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/graph/communities", s.handleGraphCommunities(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/spec/check", s.handleSpecCheck(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/view/overview", s.handleOverview(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/knowledge", s.handleKnowledge(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/deps", s.handleGraphDeps(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/callers", s.handleGraphCallers(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/callees", s.handleGraphCallees(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/impact", s.handleGraphImpact(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/routes", s.handleGraphRoutes(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/smells", s.handleGraphSmells(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/path", s.handleGraphPath(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/diff", s.handleGraphDiff(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/clusters", s.handleGraphCommunities(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/notes", s.handleKnowledge(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/session", s.handleSession(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/agent", s.handleAgent(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/share", s.handleShare(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/pack", s.handleCtxPack(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/prefetch", s.handlePrefetch(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/search/workspace", s.handleWorkspaceSearch(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/feedback", s.handleFeedback(opts.Projects))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
@@ -312,8 +284,6 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	mux.Handle("/v1/projects", wrapped)
 	mux.Handle("/v1/projects/", wrapped)
 	mux.Handle("/v1/status", wrapped)
-	mux.Handle("/v1/compress", wrapped)
-	mux.Handle("/v1/nav", wrapped)
 
 	return recoverMiddleware(logger, logMiddleware(logger, mux))
 }

@@ -184,8 +184,8 @@ dex is configured via .dex/config.yml in each indexed project.
 The embed endpoint defaults to http://localhost:11434 (ollama-compatible).
 `,
 		Anchors: []string{
-			"search_semantic",
-			"search_symbol",
+			"find",
+			"lookup",
 			"graph_*",
 			"sqlite-vec",
 			"BM25",

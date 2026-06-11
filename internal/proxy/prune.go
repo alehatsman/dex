@@ -302,7 +302,7 @@ const (
 // fileReadTools is the set of tool-name substrings that indicate a file-read.
 // Matching is case-insensitive substring, same heuristic as lean-ctx tool_kind.rs.
 var fileReadKeywords = []string{
-	"read", "view", "file_view", "cat", "open",
+	"read", "view", "cat", "open",
 }
 
 // commandKeywords identifies shell/log/search tools.

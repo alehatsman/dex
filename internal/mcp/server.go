@@ -835,7 +835,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	hits = filterHits(hits, exts, in.PathGlob, k)
 
 	// Loop detection: block/reduce/hint before building the response.
-	ldLevel, ldHint := s.ld().Check("search_semantic", argsKey(in.Query), true)
+	ldLevel, ldHint := s.ld().Check("find", argsKey(in.Query), true)
 	if ldLevel == ThrottleBlock {
 		return nil, SearchOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
 	}
@@ -1154,7 +1154,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
 	defer st.Close()
-	ldLevel, ldHint := s.ld().Check("search_symbol", argsKey(in.Name), true)
+	ldLevel, ldHint := s.ld().Check("lookup", argsKey(in.Name), true)
 	if ldLevel == ThrottleBlock {
 		return nil, FindSymbolOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
 	}
@@ -2561,7 +2561,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	if !weakModel {
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
-				Name:        "search_semantic",
+				Name:        "find",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Prefer `ask` for general code-understanding questions — it composes this " +
 					"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
@@ -2578,7 +2578,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}
 
 		addTool(srv, &sdk.Tool{
-			Name:        "search_symbol",
+			Name:        "lookup",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Prefer `ask` — it detects identifiers in your question and runs this " +
 				"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
@@ -2587,30 +2587,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.findSymbol)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_neighbors",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Prefer `ask` — it includes neighborhood expansion as part of routing. " +
-				"Use graph_neighbors directly only when you already have the exact (path, start_line) of a chunk " +
-				"and want its cosine neighbors. " +
-				"Finds code that is semantically related even without keyword overlap."),
-		}, h.related)
-
-		if embedAvailable {
-			addTool(srv, &sdk.Tool{
-				Name:        "search_similar",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Find chunks semantically similar to the code at a given file:line location. " +
-					"Looks up the indexed chunk that contains the anchor line, embeds its content, and runs the full " +
-					"hybrid search + reranking pipeline — stronger than graph_neighbors, which uses only pre-computed " +
-					"cosine edges. The anchor chunk itself is excluded from results. " +
-					"Supports the same 'languages', 'path_glob', and 'exclude' filters as search_semantic. " +
-					"Returns 'not-found' when the location isn't indexed; 'embedding-service-unreachable' when the " +
-					"embedder is down."),
-			}, h.findRelated)
-		}
-
-		addTool(srv, &sdk.Tool{
-			Name:        "graph_deps",
+			Name:        "deps",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return the `imports` edges for a file or package — the package the file belongs to, " +
 				"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
@@ -2619,7 +2596,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.graphDeps)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_callers",
+			Name:        "callers",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
 				"Go-only for now (Python/JS/Rust callers fall back to ripgrep via `ask`). " +
@@ -2629,7 +2606,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.graphCallers)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_callees",
+			Name:        "callees",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
 				"Go-only for now. Same name resolution as graph_callers. " +
@@ -2637,25 +2614,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.graphCallees)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_links",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Return the markdown documents that the given doc LINKS TO — outgoing `links` " +
-				"(inline `[text](other.md)`) and `wikilinks` (`[[Note]]`) edges from the doc graph. " +
-				"Pass `doc` as a path relative to the project root (e.g. 'docs/spec.md'); a unique basename works too. " +
-				"The reverse direction is graph_backlinks. Returns 'no-graph' when the markdown doc graph " +
-				"hasn't been indexed yet."),
-		}, h.graphLinks)
-
-		addTool(srv, &sdk.Tool{
-			Name:        "graph_backlinks",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Return the markdown documents that LINK TO the given doc — incoming `links`/`wikilinks` " +
-				"edges (Obsidian-style backlinks). Same `doc` resolution as graph_links. Useful for " +
-				"'what references this spec'. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet."),
-		}, h.graphBacklinks)
-
-		addTool(srv, &sdk.Tool{
-			Name:        "graph_impact",
+			Name:        "impact",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Transitive blast-radius analysis. Given a symbol, follows `calls` edges " +
 				"in the callers direction up to max_depth (default 3) and returns every reachable function " +
@@ -2665,15 +2624,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.graphImpact)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_tags",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Query the markdown tag graph. Pass `tag` (a #tag without the #) to list the documents " +
-				"carrying it, ranked by doc importance — tag-based clustering. Or pass `doc` to list the tags that " +
-				"document carries. Returns 'no-graph' when the markdown doc graph hasn't been indexed yet."),
-		}, h.graphTags)
-
-		addTool(srv, &sdk.Tool{
-			Name:        "graph_routes",
+			Name:        "routes",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
 				"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
@@ -2683,7 +2634,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.routes)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_smells",
+			Name:        "smells",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("AST-based code quality signals derived from the graph index — no LLM required. " +
 				"Returns four categories: `long_functions` (bodies >= min_func_lines, default 80), " +
@@ -2695,17 +2646,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.smells)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_cycles",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Find strongly connected components (SCCs) in the call graph — i.e. mutual recursion " +
-				"and recursive call cycles. Uses Tarjan's algorithm (O(V+E)) on the `calls` edges. " +
-				"Returns cycles sorted by size (largest first). Size 1 components (trivially acyclic nodes) " +
-				"are excluded by default (min_size=2). " +
-				"Requires a graph index with calls edges (`dex index . --graph=only`)."),
-		}, h.graphCycles)
-
-		addTool(srv, &sdk.Tool{
-			Name:        "graph_path",
+			Name:        "path",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Find the shortest call/import path between two symbols in the graph. " +
 				"BFS over `calls` and `imports` edges from src to dst. " +
@@ -2715,7 +2656,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.graphPath)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_diff",
+			Name:        "diff",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Blast-radius analysis for a git diff. " +
 				"Runs `git diff --name-only <ref> HEAD` to find changed files, " +
@@ -2726,7 +2667,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.graphDiff)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "graph_communities",
+			Name:        "clusters",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("List Louvain communities in the call/import graph — " +
 				"clusters of tightly-interconnected symbols. " +
@@ -2738,53 +2679,13 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.graphCommunities)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "compress_output",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Compress raw shell command output before using it in your context. " +
-				"Pass the full output and a command hint (e.g. 'go test', 'git log', 'npm install', 'cargo build', 'docker build'). " +
-				"Strips progress spinners, download noise, and consecutive duplicates; for go test keeps only failures " +
-				"and summaries; for git diffs >80 lines strips unchanged context lines. " +
-				"Returns compressed text, original/output line counts, and saved_pct. " +
-				"No project index required — pure text transformation."),
-		}, h.compressOutput)
-
-		addTool(srv, &sdk.Tool{
 			Name:        "status",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
 		}, h.status)
 
 		addTool(srv, &sdk.Tool{
-			Name:        "spec_check",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Verify a spec file against the project's code index. Reads the spec's ## Checklist " +
-				"items (or ## Behavior clauses as fallback), embeds each clause, retrieves the top-5 matching " +
-				"code chunks, and — when a chat model is configured — asks the model to judge whether the code " +
-				"implements the clause (pass/fail/unknown). Returns per-item verdicts with code citations " +
-				"(path:line), pass/fail/unknown counts, and a drift flag if commits have landed on covered paths " +
-				"since the spec's last_verified commit. " +
-				"Pass no_judge:true to skip the LLM pass and get raw citations only. " +
-				"Returns 'no-index' when the project hasn't been indexed yet. " +
-				"Response shape: {status, results: [{item, checked, status, reason, cites}], pass_count, fail_count, unknown_count, pending_count}. " +
-				"Note: the per-item array is keyed 'results' (not 'items')."),
-		}, h.specVerify)
-		if embedAvailable {
-			addTool(srv, &sdk.Tool{
-				Name:        "ctx_overview",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Task-relevant project map. Given a task description, ranks every indexed file by " +
-					"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
-					"`context` (top-k most relevant files with line counts and suggested file_view mode) and " +
-					"`distant_count` (total background files). The full distant file list is omitted by default " +
-					"to keep the response compact — pass `include_distant: true` to get it (use only when you need " +
-					"to enumerate background files; the list can be large and expensive in long sessions). " +
-					"Use this as the first call in an unfamiliar codebase to decide what to read before touching code. " +
-					"Cheaper than ask — returns file paths only, no inlined content. Requires the embedding service."),
-			}, h.overview)
-		}
-
-		addTool(srv, &sdk.Tool{
-			Name: "ctx_knowledge",
+			Name: "notes",
 			Description: td("Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
 				"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
 				"list (retrieve top-k facts ordered by salience), delete (remove a fact by id). " +
@@ -2794,7 +2695,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.knowledge)
 
 		addTool(srv, &sdk.Tool{
-			Name: "ctx_session",
+			Name: "session",
 			Description: td("Manage per-project session memory across tool calls. " +
 				"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
 				"add_file (track a file you read/wrote), get (retrieve the current session state), " +
@@ -2805,110 +2706,9 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"don't lose context across reconnects. No embedding required."),
 		}, h.session)
 
-		addTool(srv, &sdk.Tool{
-			Name: "ctx_feedback",
-			Description: "Report output-ratio feedback to the adaptive compression policy. " +
-				"Call once per turn after you finish responding: pass your intent (read|search|refactor|generate|test|debug|review), " +
-				"the ratio of your output tokens to context tokens (output_tokens / context_tokens), " +
-				"and the file_view mode used on the last file read this turn (ctx_read_last_mode). " +
-				"Dex uses this to learn which compression modes cause thin responses and automatically " +
-				"downgrades them for future turns with the same intent. " +
-				"Skip when no file_view was called this turn. No embedding required.",
-		}, h.feedback)
-
-		addTool(srv, &sdk.Tool{
-			Name: "ctx_agent",
-			Description: td("Multi-agent coordination bus and per-agent diary. " +
-				"Bus actions (project-scoped): announce (register agent_id + role), post (publish a message with optional topic and body), " +
-				"read (poll messages; filter by topic; paginate with since_id), list (see active agents). " +
-				"Diary actions (agent-scoped, persist across sessions): " +
-				"diary (append a structured entry; category: discovery|decision|blocker|progress|insight; content required), " +
-				"recall_diary (read own last 10 entries newest-first; agent_id required), " +
-				"diaries (list all agents that have diary files with entry counts). " +
-				"Typical workflow: announce once at startup, post findings as you discover them, " +
-				"read peers' findings before duplicating work; use diary to record what you learned for future sessions. " +
-				"No embedding required."),
-		}, h.agent)
-
-		addTool(srv, &sdk.Tool{
-			Name: "ctx_share",
-			Description: td("Shared compressed-file-context cache for parallel agents. " +
-				"When agent A reads and compresses a file, it can push the result here keyed by (path, content_hash). " +
-				"Agent B can pull the cached result instead of re-reading — a cache hit returns instantly for zero cost. " +
-				"The cache is invalidated automatically when the file changes (hash mismatch). " +
-				"Actions: push (path+content_hash+content required; agent_id optional), " +
-				"pull (path+content_hash required; returns content on hit, stale on mismatch), " +
-				"list (all cached entries with hit counts), " +
-				"clear (evict all entries). No embedding required."),
-		}, h.share)
-
-		addTool(srv, &sdk.Tool{
-			Name: "ctx_pack",
-			Description: td("Context packages — portable .ctxpkg bundles that snapshot a project's accumulated knowledge " +
-				"for bootstrapping new agent sessions. A package captures knowledge facts, session state, patterns, and gotchas. " +
-				"Actions: create (name required — snapshots current knowledge into a .ctxpkg file), " +
-				"install (name required — merges a package's knowledge into the current project), " +
-				"list (all registered packages with auto_load flag), " +
-				"info (name required — shows layer sizes and SHA-256), " +
-				"export (name required — returns file path for transfer; optional path to copy to a destination), " +
-				"import (path required — loads a .ctxpkg from an external path, verifies SHA-256, merges knowledge), " +
-				"auto_load (name required — marks a package to load automatically on ctx_overview). No embedding required."),
-		}, h.ctxPack)
-
-		addTool(srv, &sdk.Tool{
-			Name:        "ctx_nav",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Return the dex tool-routing guide — which tools exist, their tier, and when to call each. " +
-				"Call this once at session start in an unfamiliar project to orient yourself before asking questions. " +
-				"Returns a `guide` field (markdown routing guide) and a `tools` list (structured per-tool entries). " +
-				"No index or embedding required."),
-		}, h.nav)
-
-		if embedAvailable {
-			addTool(srv, &sdk.Tool{
-				Name:        "search_context",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Single-call alternative to the search → signatures → lines chain. " +
-					"Embeds the query, finds the top-k most relevant files, returns their symbol signatures " +
-					"and the body of the best-matching symbol — all in one round trip. " +
-					"Use at task-start to orient quickly without 2–3 follow-up calls. " +
-					"Requires the embedding service. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback."),
-			}, h.compose)
-		}
-
-		addTool(srv, &sdk.Tool{
-			Name:        "ctx_prefetch",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Compute the blast-radius of changed files and prefetch the most relevant neighbors. " +
-				"Given a list of files you've edited (or plan to edit), walks the import/call graph via spreading " +
-				"activation to find which other files are structurally related, then reads each at the appropriate " +
-				"fidelity. Pass budget_tokens to auto-select mode per file: " +
-				"≥80% budget remaining → full summary (LLM), ≥40% → map (imports+symbols), else → signatures. " +
-				"Without budget_tokens all files are read in signatures mode (fast, no LLM). " +
-				"Pass task to boost files whose paths match task keywords. " +
-				"Returns files[] with content inlined — no follow-up reads needed. " +
-				"Requires a graph index (dex index --graph)."),
-		}, h.prefetch)
-
-		if embedAvailable {
-			addTool(srv, &sdk.Tool{
-				Name:        "search_workspace",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Search across all projects listed in .dex/workspace.yml. " +
-					"Runs hybrid search independently per project and merges results with RRF, " +
-					"tagging each hit with [project:name] so you know which project it came from. " +
-					"Create .dex/workspace.yml to enable:\n" +
-					"  projects:\n" +
-					"    - path: /absolute/or/relative/path\n" +
-					"      label: my-service   # optional\n" +
-					"Returns 'no-workspace' when no workspace.yml is found. " +
-					"Requires the embedding service and each project to be indexed."),
-			}, h.workspaceSearch)
-		}
-
 		if chatAvailable {
 			addTool(srv, &sdk.Tool{
-				Name:        "file_view",
+				Name:        "read",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Prefer `ask` first — its `suggested_reads` will name the file worth " +
 					"summarizing. Use file_view directly only when you already know which file you need digested. " +
@@ -2929,7 +2729,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	}
 
 	addTool(srv, &sdk.Tool{
-		Name: "ctx_shell",
+		Name: "shell",
 		Description: td("Execute a shell command and return compressed output. " +
 			"Applies the same compression pipeline as compress_output — collapses build noise, " +
 			"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
@@ -2940,7 +2740,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	}, h.shellRun)
 
 	addTool(srv, &sdk.Tool{
-		Name:        "file_tree",
+		Name:        "ls",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: td("List indexed files under a directory path. Returns individual files within " +
 			"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
@@ -2951,7 +2751,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	}, h.searchTree)
 
 	addTool(srv, &sdk.Tool{
-		Name:        "search_grep",
+		Name:        "grep",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: td("Regex search over project files — no embedding required. " +
 			"Complements ask/search_semantic for exact-match queries: cross-cutting symbol references, " +

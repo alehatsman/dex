@@ -35,9 +35,9 @@ func TestCompressToolDescLazy(t *testing.T) {
 		"Applies the same compression pipeline as compress_output. " +
 		"Deduplicates log lines and strips ANSI."
 	got := compressToolDesc(desc, DescModeLazy)
-	// Should end with ctx_nav hint
-	if !strings.Contains(got, "ctx_nav") {
-		t.Errorf("lazy: expected ctx_nav hint in %q", got)
+	// Should end with ask hint
+	if !strings.Contains(got, "ask") {
+		t.Errorf("lazy: expected ask hint in %q", got)
 	}
 	// Should be only one original sentence (before the hint)
 	// The hint itself counts, so we check the structure
@@ -51,7 +51,7 @@ func TestLazyDescCap80(t *testing.T) {
 	long := strings.Repeat("word ", 20) + "end."
 	got := lazyDesc(long)
 	// The non-hint part should be ≤80 chars
-	hint := ". (use ctx_nav for full docs)"
+	hint := ". (use use ask for full context)"
 	body := strings.TrimSuffix(got, hint)
 	if len(body) > 80 {
 		t.Errorf("lazy: body exceeds 80 chars (%d): %q", len(body), body)
