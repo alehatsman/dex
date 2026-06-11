@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,7 +30,7 @@ func newTestProxy(t *testing.T, upstream http.Handler) (*httptest.Server, *bytes
 	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	front := httptest.NewServer(newProxyHandler(upURL, logger))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}))
 	t.Cleanup(front.Close)
 	return front, &logs
 }
@@ -174,11 +175,11 @@ func TestTokenBaselineLogged(t *testing.T) {
 	resp.Body.Close()
 
 	out := logs.String()
-	if !strings.Contains(out, "dex proxy request") || !strings.Contains(out, "input_tokens=") {
-		t.Errorf("expected input-token baseline log, got:\n%s", out)
+	if !strings.Contains(out, "dex proxy request") || !strings.Contains(out, "tokens_before=") {
+		t.Errorf("expected per-request metrics log, got:\n%s", out)
 	}
-	if !strings.Contains(out, "tokenizer=cl100k_base") {
-		t.Errorf("claude model should select cl100k tokenizer, got:\n%s", out)
+	if !strings.Contains(out, "tokens_after=") {
+		t.Errorf("expected tokens_after in log, got:\n%s", out)
 	}
 }
 
@@ -205,19 +206,28 @@ func TestFailOpenMalformedBody(t *testing.T) {
 	if gotBody != body {
 		t.Errorf("malformed body not forwarded verbatim: got %q", gotBody)
 	}
-	if !strings.Contains(logs.String(), "raw_body_fallback") {
-		t.Errorf("expected raw_body_fallback baseline log, got:\n%s", logs.String())
+	// Malformed body still gets a per-request metrics log; pass=passthrough
+	// since prune/compress both fail-open on non-JSON.
+	if !strings.Contains(logs.String(), "dex proxy request") {
+		t.Errorf("expected per-request metrics log even for malformed body, got:\n%s", logs.String())
 	}
 }
 
 // TestFailOpenUpstreamDown asserts that when the upstream is unreachable the
 // proxy returns a 502 (never a panic / hang) — the ErrorHandler path.
 func TestFailOpenUpstreamDown(t *testing.T) {
-	// Point at a closed port so the dial fails immediately.
-	upURL, _ := url.Parse("http://127.0.0.1:1")
+	// Bind then close to obtain a port nothing is listening on.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+
+	upURL, _ := url.Parse("http://" + addr)
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	front := httptest.NewServer(newProxyHandler(upURL, logger))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}))
 	defer front.Close()
 
 	resp, err := http.Post(front.URL+"/v1/messages", "application/json", strings.NewReader(`{"model":"claude"}`))
@@ -308,9 +318,13 @@ func TestPruneIntegration(t *testing.T) {
 	if strings.Contains(upstreamBody, "line content here") {
 		t.Errorf("original file content leaked to upstream; should have been pruned")
 	}
-	// Log must contain saved_bytes.
-	if !strings.Contains(logs.String(), "saved_bytes") {
-		t.Errorf("expected saved_bytes log; got:\n%s", logs.String())
+	// Log must show the prune pass fired and tokens were saved.
+	logOut := logs.String()
+	if !strings.Contains(logOut, `pass=prune`) {
+		t.Errorf("expected pass=prune in log; got:\n%s", logOut)
+	}
+	if !strings.Contains(logOut, "tokens_saved=") {
+		t.Errorf("expected tokens_saved in log; got:\n%s", logOut)
 	}
 }
 
@@ -322,5 +336,83 @@ func TestExtractTextToolResult(t *testing.T) {
 	extractText(&b, raw)
 	if !strings.Contains(b.String(), "line1") || !strings.Contains(b.String(), "line2") {
 		t.Errorf("tool_result text not extracted: %q", b.String())
+	}
+}
+
+// TestStatsEndpoint verifies GET /stats returns a valid JSON Snapshot and that
+// counters reflect the requests processed by the proxy.
+func TestStatsEndpoint(t *testing.T) {
+	up := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	})
+	front, _ := newTestProxy(t, up)
+
+	// Send two /v1/messages requests.
+	body := `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hello"}]}`
+	for range 2 {
+		resp, err := http.Post(front.URL+"/v1/messages", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		resp.Body.Close()
+	}
+
+	// Fetch stats.
+	resp, err := http.Get(front.URL + "/stats")
+	if err != nil {
+		t.Fatalf("GET /stats: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/stats returned %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+
+	var snap Snapshot
+	if err := json.NewDecoder(resp.Body).Decode(&snap); err != nil {
+		t.Fatalf("decode /stats: %v", err)
+	}
+	if snap.RequestsTotal != 2 {
+		t.Errorf("requests_total = %d, want 2", snap.RequestsTotal)
+	}
+	if snap.TokensBefore == 0 {
+		t.Errorf("tokens_before = 0, expected positive")
+	}
+	if snap.TokensAfter == 0 {
+		t.Errorf("tokens_after = 0, expected positive")
+	}
+	if snap.TokensSaved < 0 {
+		t.Errorf("tokens_saved = %d, expected >= 0", snap.TokensSaved)
+	}
+}
+
+// TestStatsCounters verifies Stats.record and Snapshot arithmetic.
+func TestStatsCounters(t *testing.T) {
+	s := &Stats{}
+	s.record(100, 80)
+	s.record(200, 200) // no compression
+
+	snap := s.Snapshot()
+	if snap.RequestsTotal != 2 {
+		t.Errorf("requests_total = %d, want 2", snap.RequestsTotal)
+	}
+	if snap.RequestsCompressed != 1 {
+		t.Errorf("requests_compressed = %d, want 1", snap.RequestsCompressed)
+	}
+	if snap.TokensBefore != 300 {
+		t.Errorf("tokens_before = %d, want 300", snap.TokensBefore)
+	}
+	if snap.TokensAfter != 280 {
+		t.Errorf("tokens_after = %d, want 280", snap.TokensAfter)
+	}
+	if snap.TokensSaved != 20 {
+		t.Errorf("tokens_saved = %d, want 20", snap.TokensSaved)
+	}
+	wantRatio := 20.0 / 300.0
+	if snap.CompressionRatio < wantRatio-0.001 || snap.CompressionRatio > wantRatio+0.001 {
+		t.Errorf("compression_ratio = %f, want ~%f", snap.CompressionRatio, wantRatio)
 	}
 }

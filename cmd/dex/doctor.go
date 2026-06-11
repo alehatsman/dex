@@ -21,6 +21,7 @@ import (
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/mcp"
+	"github.com/alehatsman/dex/internal/proxy"
 )
 
 // doctorStatus classifies the outcome of one check.
@@ -380,7 +381,19 @@ func checkProxy(ctx context.Context) doctorCheck {
 	if !strings.Contains(u.Hostname(), "api.anthropic.com") && !envBool("ENABLE_TOOL_SEARCH", false) {
 		hints = append(hints, "export ENABLE_TOOL_SEARCH=true (a non-first-party base URL disables MCP tool search otherwise)")
 	}
-	return doctorCheck{name: "proxy", status: docOK, detail: base + "  (reachable)", hints: hints}
+
+	// Best-effort: fetch token-savings stats. If the proxy is not a dex proxy
+	// (e.g. a third-party or plain nginx) /stats will 404 and we just skip it.
+	detail := base + "  (reachable)"
+	statsCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if snap, err := proxy.FetchStats(statsCtx, addr); err == nil && snap.RequestsTotal > 0 {
+		pct := snap.CompressionRatio * 100
+		detail = fmt.Sprintf("%s  (reachable, %d req, %d tokens saved, %.1f%%)",
+			base, snap.RequestsTotal, snap.TokensSaved, pct)
+	}
+
+	return doctorCheck{name: "proxy", status: docOK, detail: detail, hints: hints}
 }
 
 // ─── routing rules ────────────────────────────────────────────────────────────

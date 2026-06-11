@@ -1,20 +1,21 @@
-// Package proxy is the spike for the conversation-history compression seam
-// (epic #232): a loopback-only HTTP server that sits between Claude Code and
-// the Anthropic API at ANTHROPIC_BASE_URL and forwards /v1/messages verbatim.
+// Package proxy is the loopback Anthropic API pass-through (epic #232).
 //
-// This cut does NO compression. It proves the seam works end-to-end —
-// transparent request/response forwarding including SSE streaming passthrough,
-// fail-open on any of the proxy's own errors — and logs a per-request
-// input-token baseline so the follow-up tickets (#237 history pruning, #238
-// tool_result compression) can show a before/after delta against real traffic.
+// It sits between Claude Code and the Anthropic API at ANTHROPIC_BASE_URL,
+// running each /v1/messages request through two deterministic passes:
+//  1. PruneRequestBody — rewrites old tool_result blocks outside keep_recent.
+//  2. CompressRequestBody — entropy + terse compression on all tool_results.
+//
+// Token counts are measured before and after, accumulated in Stats, and
+// exposed via GET /stats (JSON Snapshot). Run dex proxy --stats to fetch it.
 //
 // Posture mirrors `dex serve`: loopback bind only (the proxy sees the agent's
-// API key, so it must never be network-exposed), and request bodies are never
-// logged. Ported in spirit from lean-ctx rust/src/proxy/{mod,forward}.rs.
+// API key, so it must never be exposed on the network), and request bodies are
+// never logged. Ported in spirit from lean-ctx rust/src/proxy/{mod,forward,metrics}.rs.
 package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,10 @@ type Options struct {
 	Upstream string
 	// Logger receives structured per-request logs. Nil = discard.
 	Logger *slog.Logger
+	// Stats accumulates per-session token counters. Nil = allocate fresh.
+	// The same pointer is used by the /stats endpoint so callers can observe
+	// it after Run returns.
+	Stats *Stats
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -53,6 +58,9 @@ func Run(ctx context.Context, opts Options) error {
 	if strings.TrimSpace(opts.Upstream) == "" {
 		opts.Upstream = DefaultUpstream
 	}
+	if opts.Stats == nil {
+		opts.Stats = &Stats{}
+	}
 	if err := validateLoopback(opts.Addr); err != nil {
 		return err
 	}
@@ -64,7 +72,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -96,11 +104,31 @@ func Run(ctx context.Context, opts Options) error {
 	}
 }
 
-// newProxyHandler builds the reverse proxy that forwards everything to
-// upstream verbatim. SSE responses stream through unbuffered (FlushInterval
-// = -1 flushes each write immediately); request bodies are tee'd for a
-// best-effort token-count baseline that never blocks forwarding.
-func newProxyHandler(upstream *url.URL, logger *slog.Logger) http.Handler {
+// FetchStats fetches a Snapshot from a running proxy at addr (host:port).
+func FetchStats(ctx context.Context, addr string) (Snapshot, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/stats", nil)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Snapshot{}, fmt.Errorf("proxy /stats returned %d", resp.StatusCode)
+	}
+	var snap Snapshot
+	if err := json.NewDecoder(resp.Body).Decode(&snap); err != nil {
+		return Snapshot{}, fmt.Errorf("decode /stats: %w", err)
+	}
+	return snap, nil
+}
+
+// newProxyHandler builds the mux:
+//   - GET /stats → JSON Snapshot (no PII, no bodies)
+//   - everything else → compress + forward to upstream
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -108,15 +136,12 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger) http.Handler {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(upstream)
 			pr.Out.Host = upstream.Host
-			// Drop X-Forwarded-* — this is a transparent loopback hop, not an
-			// edge proxy, and leaking 127.0.0.1 upstream is noise at best.
+			// Drop X-Forwarded-* — transparent loopback hop, not an edge proxy.
 			pr.Out.Header.Del("X-Forwarded-For")
 			pr.Out.Header.Del("X-Forwarded-Host")
 			pr.Out.Header.Del("X-Forwarded-Proto")
 		},
-		// Fail open: an upstream/transport error must never surface as a
-		// proxy-authored crash. Log it and return a bare 502 — there is no
-		// upstream response to "pass through" when the hop itself failed.
+		// Fail open: upstream errors must not crash the proxy.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, e error) {
 			logger.Warn("dex proxy forward error", "method", r.Method, "path", r.URL.Path, "err", e)
 			w.WriteHeader(http.StatusBadGateway)
@@ -124,8 +149,15 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// On /v1/messages: read body, prune old tool_result history (fail-open),
-		// log input-token baseline on the pruned body, then forward.
+		// GET /stats — JSON snapshot of cumulative token counters (no PII).
+		if r.Method == http.MethodGet && r.URL.Path == "/stats" {
+			snap := stats.Snapshot()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(snap)
+			return
+		}
+
+		// POST /v1/messages — prune + compress, then forward.
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/messages") {
 			body, err := io.ReadAll(r.Body)
 			_ = r.Body.Close()
@@ -135,26 +167,39 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger) http.Handler {
 				rp.ServeHTTP(w, r)
 				return
 			}
-			pruned, prunedBytes := PruneRequestBody(body, DefaultKeepRecent)
+
+			before := countBodyTokens(body)
+			current := body
+			var paths []string
+
+			pruned, prunedBytes := PruneRequestBody(current, DefaultKeepRecent)
 			if prunedBytes > 0 {
-				logger.Info("dex proxy prune", "saved_bytes", prunedBytes)
+				current = pruned
+				paths = append(paths, "prune")
 			}
-			compressed, compressedBytes := CompressRequestBody(pruned)
+
+			compressed, compressedBytes := CompressRequestBody(current)
 			if compressedBytes > 0 {
-				logger.Info("dex proxy compress", "saved_bytes", compressedBytes)
+				current = compressed
+				paths = append(paths, "compress")
 			}
-			r.Body = io.NopCloser(strings.NewReader(string(compressed)))
-			r.ContentLength = int64(len(compressed))
-			logInputBaseline(logger, r, compressed)
+
+			after := countBodyTokens(current)
+			stats.record(before, after)
+			logRequestMetrics(logger, r, current, before, after, paths)
+
+			r.Body = io.NopCloser(strings.NewReader(string(current)))
+			r.ContentLength = int64(len(current))
 		}
+
+		// Everything else — forward verbatim.
 		rp.ServeHTTP(w, r)
 	})
 }
 
 // validateLoopback rejects any bind that isn't explicitly loopback. The proxy
 // forwards the agent's API key upstream, so it must never listen on a routable
-// interface. Conservative by design — same posture as `dex serve` without a
-// token, with no token escape hatch since there is nothing to authenticate.
+// interface.
 func validateLoopback(addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -166,7 +211,6 @@ func validateLoopback(addr string) error {
 	case "":
 		return fmt.Errorf("addr %q binds to all interfaces; use 127.0.0.1:<port> (the proxy is loopback-only)", addr)
 	}
-	// A literal loopback IP in 127.0.0.0/8 is fine; anything else is rejected.
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return nil
 	}

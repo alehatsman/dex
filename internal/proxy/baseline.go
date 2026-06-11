@@ -23,53 +23,69 @@ type anthropicRequest struct {
 	} `json:"messages"`
 }
 
-// logInputBaseline parses the request body's messages array and logs a
-// per-request input-token count so later tickets can measure a before/after
-// delta. It is best-effort: a parse failure logs a coarse fallback (token
-// count over the whole body) and never affects forwarding. Bodies are never
-// logged — only counts and shape, per the no-body-logging posture.
-func logInputBaseline(logger *slog.Logger, r *http.Request, body []byte) {
-	defer func() {
-		// Token counting walks untrusted JSON; a panic here must never take
-		// the request down. Fail open.
-		if rec := recover(); rec != nil {
-			logger.Warn("dex proxy: token baseline panicked; forwarding unaffected", "recover", rec)
-		}
-	}()
-
+// countBodyTokens parses a /v1/messages body and returns the estimated
+// input-token count. Best-effort: falls back to a raw-byte count on parse
+// failure. Returns 0 on empty input.
+func countBodyTokens(body []byte) int64 {
+	if len(body) == 0 {
+		return 0
+	}
 	var req anthropicRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		// Couldn't parse the Anthropic shape — still emit an honest coarse
-		// count so the baseline isn't a silent gap.
-		fam := tokens.Cl100k
-		logger.Info("dex proxy request",
-			"path", r.URL.Path,
-			"input_tokens", tokens.CountFor(string(body), fam),
-			"counted", "raw_body_fallback",
-			"parse_err", err.Error())
-		return
+		return int64(tokens.CountFor(string(body), tokens.Cl100k))
 	}
-
-	fam := tokens.Detect(req.Model) // Claude → cl100k; honest per-family count
+	fam := tokens.Detect(req.Model)
 	var b strings.Builder
 	extractText(&b, req.System)
 	for _, m := range req.Messages {
 		extractText(&b, m.Content)
 	}
-	msgTokens := tokens.CountFor(b.String(), fam)
-
-	var toolTokens int
+	n := tokens.CountFor(b.String(), fam)
 	if len(req.Tools) > 0 {
-		toolTokens = tokens.CountFor(string(req.Tools), fam)
+		n += tokens.CountFor(string(req.Tools), fam)
+	}
+	return int64(n)
+}
+
+// logRequestMetrics emits a single structured log line with token before/after
+// counts and which compression paths fired. Bodies are never logged — only
+// counts and path labels, per the no-body-logging posture.
+func logRequestMetrics(logger *slog.Logger, r *http.Request, finalBody []byte, before, after int64, paths []string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			logger.Warn("dex proxy: metrics log panicked; forwarding unaffected", "recover", rec)
+		}
+	}()
+
+	saved := before - after
+	if saved < 0 {
+		saved = 0
 	}
 
-	logger.Info("dex proxy request",
-		"model", req.Model,
-		"messages", len(req.Messages),
-		"input_tokens", msgTokens+toolTokens,
-		"message_tokens", msgTokens,
-		"tool_tokens", toolTokens,
-		"tokenizer", fam.String())
+	var model string
+	var msgCount int
+	var req anthropicRequest
+	if err := json.Unmarshal(finalBody, &req); err == nil {
+		model = req.Model
+		msgCount = len(req.Messages)
+	}
+
+	pass := strings.Join(paths, "+")
+	if pass == "" {
+		pass = "passthrough"
+	}
+
+	attrs := []any{
+		"path", r.URL.Path,
+		"tokens_before", before,
+		"tokens_after", after,
+		"tokens_saved", saved,
+		"pass", pass,
+	}
+	if model != "" {
+		attrs = append(attrs, "model", model, "messages", msgCount)
+	}
+	logger.Info("dex proxy request", attrs...)
 }
 
 // extractText flattens an Anthropic "string OR array of content blocks" field
