@@ -526,6 +526,7 @@ func storeOpts() store.Options {
 		GraphGamma:      graphGamma(),
 		GraphHopCap:     graphHopCap(),
 		GraphLaneWeight: graphLaneWeight(),
+		VectorQuant:     vectorQuant(),
 	}
 	// Assign through a typed-nil check: a (*rerank.Client)(nil) stored
 	// in the Reranker interface field would still compare != nil, and
@@ -534,6 +535,21 @@ func storeOpts() store.Options {
 		opts.Reranker = rc
 	}
 	return opts
+}
+
+// vectorQuant reads DEX_VECTOR_QUANT — the chunk_vecs KNN encoding.
+// "int8" selects scalar quantization (~4× smaller, faster integer cosine);
+// anything else (incl. unset) keeps full-precision float32. Flipping it on
+// an existing index rebuilds chunk_vecs from chunks.vec on the next Open.
+func vectorQuant() string {
+	raw := strings.TrimSpace(os.Getenv("DEX_VECTOR_QUANT"))
+	switch strings.ToLower(raw) {
+	case "", "none", "float32", "f32", "int8":
+		return raw
+	default:
+		fmt.Fprintf(os.Stderr, "warning: DEX_VECTOR_QUANT=%q unrecognized; using float32\n", raw)
+		return ""
+	}
 }
 
 // graphGamma reads DEX_GRAPH_GAMMA — the per-hop decay for the graph lane.

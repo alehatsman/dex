@@ -48,6 +48,7 @@ const (
 	metaEmbedModel       = "embed_model"
 	metaGitLastIndexed   = "git_last_indexed_commit"
 	metaSummaryGenerated = "summary_generated"
+	metaVecQuant         = "vec_quant"
 )
 
 // ErrEmbedModelMismatch is returned by EnsureEmbedModel when the active
@@ -144,6 +145,18 @@ type Options struct {
 	// DEX_GRAPH_WEIGHT. Useful range: 1–4; at 2× a 1-hop neighbor (γ=0.6)
 	// contributes 1.2× the RRF score of a primary hit at the same rank.
 	GraphLaneWeight float32
+
+	// VectorQuant selects the on-disk encoding of the chunk_vecs KNN index.
+	// "" / "none" / "float32" = full-precision float32 (today's behavior);
+	// "int8" = scalar-quantized int8 vectors (sqlite-vec `int8[dim]`, unit
+	// range), ~4× smaller on disk and faster integer cosine, at a small
+	// recall cost measured by `dex bench perf` / the retrieval eval (#215).
+	// The full-precision vectors always stay in chunks.vec, so BM25-only
+	// hits (scoreSemanticForIDs) and re-quantization keep full precision —
+	// only the KNN MATCH leg is quantized. Set via DEX_VECTOR_QUANT.
+	// Flipping the mode on an existing index rebuilds chunk_vecs from
+	// chunks.vec on the next Open.
+	VectorQuant string
 }
 
 type Store struct {
@@ -750,10 +763,51 @@ func (s *Store) migrateChunkContext(ctx context.Context) error {
 	return nil
 }
 
+// quantMode returns the canonical chunk_vecs encoding for this store:
+// "int8" when DEX_VECTOR_QUANT selects scalar quantization, "float32"
+// otherwise. This canonical string is recorded in meta.vec_quant and
+// compared on Open to detect a mode flip that needs a rebuild.
+func (s *Store) quantMode() string {
+	if strings.EqualFold(strings.TrimSpace(s.opts.VectorQuant), "int8") {
+		return "int8"
+	}
+	return "float32"
+}
+
+// vecColumnType is the vec0 column declaration for the active quant mode.
+func vecColumnType(mode string, dim int64) string {
+	if mode == "int8" {
+		return fmt.Sprintf("int8[%d]", dim)
+	}
+	return fmt.Sprintf("FLOAT[%d]", dim)
+}
+
+// vecStoreExpr wraps a float32 vec-BLOB SQL expression (`col`) for storage
+// into chunk_vecs under the active mode. int8 quantizes with sqlite-vec's
+// unit range ([-1,1]→int8), which fits the L2-normalized embeddings dex
+// stores; float32 passes the BLOB through unchanged.
+func vecStoreExpr(mode, col string) string {
+	if mode == "int8" {
+		return fmt.Sprintf("vec_quantize_int8(%s, 'unit')", col)
+	}
+	return col
+}
+
+// vecMatchExpr wraps the bound query-vector placeholder for a KNN MATCH
+// under the active mode, so the query vector is quantized identically to
+// the stored doc vectors (cosine is then computed int8-vs-int8 in-engine).
+func (s *Store) vecMatchExpr() string {
+	return vecStoreExpr(s.quantMode(), "?")
+}
+
 // ensureVecTable materializes the sqlite-vec vec0 virtual table and the
 // triggers that keep it in sync with `chunks`. The dim is fixed at CREATE
 // time, so this is a no-op until s.dim is known (either recovered from
 // meta.dim on Open or set on the first UpsertMany).
+//
+// The chunk_vecs element type (FLOAT vs int8) follows the active quant
+// mode. chunks.vec always holds full-precision float32 — the int8 lane is
+// purely a smaller/faster KNN copy derived from it.
 //
 // On first creation against a pre-vec0 index (chunks already populated),
 // it backfills chunk_vecs from chunks.vec in one INSERT...SELECT. Cheap
@@ -763,26 +817,57 @@ func (s *Store) ensureVecTable(ctx context.Context, dim int64) error {
 	if dim <= 0 {
 		return nil
 	}
+	mode := s.quantMode()
+
+	// A mode flip (operator toggled DEX_VECTOR_QUANT) leaves chunk_vecs
+	// declared with the wrong element type. vec0 fixes the type at CREATE,
+	// so the only fix is to drop the table + its triggers and rebuild from
+	// the full-precision chunks.vec source of truth. A legacy index has no
+	// vec_quant meta key — it predates quantization, so it is float32.
+	var stored string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM meta WHERE key='`+metaVecQuant+`'`).Scan(&stored); err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("ensure vec table: read vec_quant: %w", err)
+	}
+	if stored == "" {
+		stored = "float32"
+	}
+	if stored != mode {
+		for _, q := range []string{
+			`DROP TRIGGER IF EXISTS chunks_vec_ai`,
+			`DROP TRIGGER IF EXISTS chunks_vec_ad`,
+			`DROP TRIGGER IF EXISTS chunks_vec_au`,
+			`DROP TABLE IF EXISTS chunk_vecs`,
+		} {
+			if _, err := s.db.ExecContext(ctx, q); err != nil {
+				return fmt.Errorf("ensure vec table: drop for requant: %w (%s)", err, q)
+			}
+		}
+	}
+
+	storeExpr := vecStoreExpr(mode, "new.vec")
 	stmts := []string{
 		// vec0 keeps the embedding in its own storage; cosine distance
 		// lets the rest of the search code keep treating "larger score =
-		// better" (we return 1 - distance for callers).
+		// better" (we return 1 - distance for callers). The element type
+		// (FLOAT vs int8) is the quant knob; cosine over int8 is native.
 		fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vecs USING vec0(
-		   embedding FLOAT[%d] distance_metric=cosine
-		 )`, dim),
+		   embedding %s distance_metric=cosine
+		 )`, vecColumnType(mode, dim)),
 		// Mirror chunks.vec into chunk_vecs.embedding. We piggyback on
 		// chunks.id (== rowid) as the join key, matching the FTS5 pattern
-		// already in use for chunks_fts.
-		`CREATE TRIGGER IF NOT EXISTS chunks_vec_ai AFTER INSERT ON chunks BEGIN
-		   INSERT INTO chunk_vecs(rowid, embedding) VALUES (new.id, new.vec);
-		 END`,
+		// already in use for chunks_fts. Under int8, the stored f32 BLOB is
+		// quantized on the way in; chunks.vec itself stays full precision.
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS chunks_vec_ai AFTER INSERT ON chunks BEGIN
+		   INSERT INTO chunk_vecs(rowid, embedding) VALUES (new.id, %s);
+		 END`, storeExpr),
 		`CREATE TRIGGER IF NOT EXISTS chunks_vec_ad AFTER DELETE ON chunks BEGIN
 		   DELETE FROM chunk_vecs WHERE rowid = old.id;
 		 END`,
-		`CREATE TRIGGER IF NOT EXISTS chunks_vec_au AFTER UPDATE OF vec ON chunks BEGIN
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS chunks_vec_au AFTER UPDATE OF vec ON chunks BEGIN
 		   DELETE FROM chunk_vecs WHERE rowid = new.id;
-		   INSERT INTO chunk_vecs(rowid, embedding) VALUES (new.id, new.vec);
-		 END`,
+		   INSERT INTO chunk_vecs(rowid, embedding) VALUES (new.id, %s);
+		 END`, storeExpr),
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
@@ -802,9 +887,18 @@ func (s *Store) ensureVecTable(ctx context.Context, dim int64) error {
 	}
 	if vecRows == 0 && chunkRows > 0 {
 		if _, err := s.db.ExecContext(ctx,
-			`INSERT INTO chunk_vecs(rowid, embedding) SELECT id, vec FROM chunks`); err != nil {
+			fmt.Sprintf(`INSERT INTO chunk_vecs(rowid, embedding) SELECT id, %s FROM chunks`,
+				vecStoreExpr(mode, "vec"))); err != nil {
 			return fmt.Errorf("ensure vec table: backfill: %w", err)
 		}
+	}
+	// Record the active encoding so the next Open can detect a mode flip
+	// and rebuild chunk_vecs from chunks.vec.
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key, value) VALUES(?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		metaVecQuant, mode); err != nil {
+		return fmt.Errorf("ensure vec table: record vec_quant: %w", err)
 	}
 	return nil
 }
@@ -2300,9 +2394,9 @@ func (s *Store) scoreSemantic(ctx context.Context, queryVec []float32, limit int
 	}
 	qBlob := encodeVec(queryVec)
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT rowid, distance FROM chunk_vecs
-		 WHERE embedding MATCH ? AND k = ?
-		 ORDER BY distance`,
+		fmt.Sprintf(`SELECT rowid, distance FROM chunk_vecs
+		 WHERE embedding MATCH %s AND k = ?
+		 ORDER BY distance`, s.vecMatchExpr()),
 		qBlob, limit)
 	if err != nil {
 		return nil, err
@@ -2736,9 +2830,9 @@ func (s *Store) RelatedChunks(ctx context.Context, path string, startLine int, k
 		return nil, fmt.Errorf("vec blob length %d not divisible by 4", len(blob))
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT rowid, distance FROM chunk_vecs
-		 WHERE embedding MATCH ? AND k = ?
-		 ORDER BY distance`,
+		fmt.Sprintf(`SELECT rowid, distance FROM chunk_vecs
+		 WHERE embedding MATCH %s AND k = ?
+		 ORDER BY distance`, s.vecMatchExpr()),
 		blob, k+1)
 	if err != nil {
 		return nil, err
