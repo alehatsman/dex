@@ -735,6 +735,9 @@ func newEmbedClient(indexModel string) embed.Embedder {
 	// defaults to "http" (the OpenAI-compatible backend). "onnx" selects the
 	// in-process engine, which is only linked in -tags onnx builds (otherwise
 	// embed.NewONNX returns a clear "rebuild with -tags onnx" error).
+	if indexModel == "bm25-only" {
+		return nil
+	}
 	switch strings.ToLower(os.Getenv("DEX_EMBED_ENGINE")) {
 	case "onnx":
 		return newONNXEmbedder()

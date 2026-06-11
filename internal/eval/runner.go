@@ -43,9 +43,13 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 	for i, q := range gs.Queries {
 		texts[i] = q.Query
 	}
-	vecs, err := em.Embed(ctx, texts)
-	if err != nil {
-		return nil, fmt.Errorf("eval: embed queries: %w", err)
+	vecs := make([][]float32, len(texts)) // nil slices → BM25-only lane when em == nil
+	if em != nil {
+		var err error
+		vecs, err = em.Embed(ctx, texts)
+		if err != nil {
+			return nil, fmt.Errorf("eval: embed queries: %w", err)
+		}
 	}
 
 	results := make([]QueryResult, len(gs.Queries))

@@ -74,6 +74,7 @@ func runEval(ctx context.Context, args []string) {
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
 	keepSummaries := fs.Bool("keep-summaries", false, "retain summary chunks in the ranked file list (for A/B-ing index features that produce summaries)")
+	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+symbol+graph, zero-inference) | onnx (in-process ONNX, requires env vars)")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	var projectPath string
@@ -174,6 +175,24 @@ func runEval(ctx context.Context, args []string) {
 	// indexed chunk vectors (dimension + semantics).
 	stats, _ := st.Stats(ctx)
 	em := newEmbedClient(stats.EmbedModel)
+
+	switch strings.ToLower(*lane) {
+	case "bm25":
+		em = nil
+		fmt.Fprintln(os.Stderr, "dex bench eval: --lane bm25 — BM25+symbol+graph only (zero-inference)")
+	case "onnx":
+		if os.Getenv("DEX_ONNX_MODEL") == "" || os.Getenv("DEX_ONNXRUNTIME_LIB") == "" {
+			fmt.Fprintln(os.Stderr, "dex bench eval: --lane onnx skipped — DEX_ONNX_MODEL/DEX_ONNXRUNTIME_LIB not set")
+			os.Exit(0)
+		}
+		_ = os.Setenv("DEX_EMBED_ENGINE", "onnx")
+		em = newEmbedClient("")
+	case "full", "":
+		// existing behaviour — em already set from newEmbedClient
+	default:
+		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --lane %q (want full|bm25|onnx)\n", *lane)
+		os.Exit(1)
+	}
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 

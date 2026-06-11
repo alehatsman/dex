@@ -99,17 +99,40 @@ the [perf bench](perf-bench.md) and [measurement layer](vision.md) follow.
 - **No semantic ranking in BM25-only form.** Conceptual / intent queries
   ("where do we handle retries?") are weaker than full semantic search. Use
   Form 1 (CPU-ONNX) if you need the semantic lane with no GPU.
-- **Building a fresh index still needs an embedder today.** `dex index` under
-  `DEX_EMBED_ENGINE=none` fails fast with a directive error — build the index
-  with an embedder (the CPU-only `-tags onnx` engine needs no GPU), then serve
-  it lean. Pure no-embedder indexing (a BM25/symbol/graph-only index with zero
-  vectors) is tracked in **#306**.
 - **`file_view` summaries and `ask` synthesis need a chat model.** Without one
   they degrade to the signatures view and raw evidence respectively.
 
-## How good is the lean rung?
+## Retrieval quality (#305)
 
-Quantifying the retrieval quality of each lane — BM25-only vs CPU-ONNX-semantic
-vs the full GPU stack, on the #247 eval harness over the #278 multi-repo corpus
-— is tracked in **#305**. The BM25-only lane is deterministic and gateable; the
-ONNX and full-stack lanes are opt-in (run where the artifacts / GPU exist).
+Measured on the dex project — 304 golden queries, k=10, using the
+`dex bench eval` harness (#247). The BM25-only lane is deterministic and runs
+in CI with zero inference. ONNX and full-stack numbers require runtime
+artifacts and are tracked separately.
+
+| Lane | NDCG@10 | Recall@10 | MRR | Inference |
+|------|---------|-----------|-----|-----------|
+| **BM25-only** (`DEX_EMBED_ENGINE=none`) | **0.539** | **0.582** | **0.685** | none |
+| Full stack (semantic+BM25 fused, GPU) | 0.572 | 0.622 | 0.718 | GPU embedder |
+| CPU-ONNX | — | — | — | opt-in, see below |
+
+BM25-only captures ~94% of full-stack NDCG at zero inference cost. The gap is
+primarily on conceptual / intent queries where embedding similarity helps.
+Exact-symbol and call-graph queries are unaffected.
+
+**CI gate** — the BM25-only lane is gated in regression checks:
+
+```sh
+dex bench eval . --lane bm25 --check benchmark/eval/bm25-baseline.json
+```
+
+The baseline is stored at `benchmark/eval/bm25-baseline.json`. A 2% tolerance
+is applied; failures indicate either index corruption or a retrieval regression.
+
+**ONNX lane** — run where `DEX_ONNX_MODEL` and `DEX_ONNXRUNTIME_LIB` are set:
+
+```sh
+dex bench eval . --lane onnx --check benchmark/eval/onnx-baseline.json
+```
+
+Skips silently when the env vars are absent. Record your numbers in
+`benchmark/eval/onnx-baseline.json` after a first run.
