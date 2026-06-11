@@ -9,33 +9,67 @@ import (
 // Report is the aggregated eval output: mean NDCG@k, Recall@k and MRR over
 // all golden queries.
 type Report struct {
-	K          int     `json:"k"`
-	N          int     `json:"n"`
-	MeanNDCG   float64 `json:"mean_ndcg"`
-	MeanRecall float64 `json:"mean_recall"`
-	MRR        float64 `json:"mrr"`
+	K              int     `json:"k"`
+	N              int     `json:"n"`
+	MeanNDCG       float64 `json:"mean_ndcg"`
+	MeanRecall     float64 `json:"mean_recall"`
+	MeanRecallPool float64 `json:"mean_recall_pool"` // mean recall@candidateK — pool-recall ceiling
+	MRR            float64 `json:"mrr"`
+
+	// ByType breaks the aggregate down by store.ClassifyQueryType bucket
+	// (nl|symbol|architecture). The calibration uses this to see which lane
+	// weighting helps which query class — the RRF weights are query-type
+	// adaptive, so an aggregate win can hide a per-bucket regression. Bucket
+	// sub-reports carry no Queries detail and are not themselves bucketed.
+	ByType map[string]Report `json:"by_type,omitempty"`
 
 	// Queries is the per-query detail, included in JSON output for
 	// debugging but omitted from the Markdown summary.
 	Queries []QueryResult `json:"queries,omitempty"`
 }
 
-// Compute aggregates per-query results into a Report.
-func Compute(results []QueryResult, k int) Report {
-	rep := Report{K: k, N: len(results), Queries: results}
+// aggregate fills the scalar means of a Report from results. It does NOT
+// build the per-type breakdown, so it is safe to call on a single bucket.
+func aggregate(results []QueryResult, k int) Report {
+	rep := Report{K: k, N: len(results)}
 	if len(results) == 0 {
 		return rep
 	}
-	var ndcg, recall, rr float64
+	var ndcg, recall, recallPool, rr float64
 	for _, r := range results {
 		ndcg += r.NDCG
 		recall += r.Recall
+		recallPool += r.RecallPool
 		rr += r.RR
 	}
 	n := float64(len(results))
 	rep.MeanNDCG = ndcg / n
 	rep.MeanRecall = recall / n
+	rep.MeanRecallPool = recallPool / n
 	rep.MRR = rr / n
+	return rep
+}
+
+// Compute aggregates per-query results into a Report, including the
+// per-query-type breakdown.
+func Compute(results []QueryResult, k int) Report {
+	rep := aggregate(results, k)
+	rep.Queries = results
+	if len(results) == 0 {
+		return rep
+	}
+	buckets := make(map[string][]QueryResult)
+	for _, r := range results {
+		t := r.Type
+		if t == "" {
+			t = "unknown"
+		}
+		buckets[t] = append(buckets[t], r)
+	}
+	rep.ByType = make(map[string]Report, len(buckets))
+	for t, rs := range buckets {
+		rep.ByType[t] = aggregate(rs, k) // no Queries, no nested ByType
+	}
 	return rep
 }
 
@@ -60,6 +94,7 @@ func (rep Report) Regressions(ref Report, tol float64) []Regression {
 	}{
 		{"NDCG@k", ref.MeanNDCG, rep.MeanNDCG},
 		{"Recall@k", ref.MeanRecall, rep.MeanRecall},
+		{"RecallPool@candidateK", ref.MeanRecallPool, rep.MeanRecallPool},
 		{"MRR", ref.MRR, rep.MRR},
 	} {
 		if m.was-m.now > tol {
@@ -82,6 +117,21 @@ func (rep Report) Markdown() string {
 	b.WriteString("|--------|-------|\n")
 	fmt.Fprintf(&b, "| NDCG@%d   | %.3f |\n", rep.K, rep.MeanNDCG)
 	fmt.Fprintf(&b, "| Recall@%d | %.3f |\n", rep.K, rep.MeanRecall)
+	fmt.Fprintf(&b, "| RecallPool@cK | %.3f |\n", rep.MeanRecallPool)
 	fmt.Fprintf(&b, "| MRR      | %.3f |\n", rep.MRR)
+	if len(rep.ByType) > 0 {
+		b.WriteString("\n### By query type\n\n")
+		b.WriteString("| Type | n | NDCG@k | Recall@k | RecallPool | MRR |\n")
+		b.WriteString("|------|---|--------|----------|------------|-----|\n")
+		// Stable order so diffs across runs are readable.
+		for _, t := range []string{"nl", "symbol", "architecture", "unknown"} {
+			sub, ok := rep.ByType[t]
+			if !ok {
+				continue
+			}
+			fmt.Fprintf(&b, "| %s | %d | %.3f | %.3f | %.3f | %.3f |\n",
+				t, sub.N, sub.MeanNDCG, sub.MeanRecall, sub.MeanRecallPool, sub.MRR)
+		}
+	}
 	return b.String()
 }

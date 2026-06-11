@@ -18,7 +18,9 @@ type QueryResult struct {
 	RankedFiles []string `json:"ranked_files"` // top unique files in rank order
 	NDCG        float64  `json:"ndcg"`
 	Recall      float64  `json:"recall"`
-	RR          float64  `json:"rr"` // reciprocal rank
+	RecallPool  float64  `json:"recall_pool"` // recall@candidateK — pool-recall ceiling (see below)
+	RR          float64  `json:"rr"`          // reciprocal rank
+	Type        string   `json:"type"`        // store.ClassifyQueryType bucket: nl|symbol|architecture
 }
 
 // Run scores the live Search path against the golden set using an already
@@ -68,6 +70,13 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 		// For blast-radius queries the anchor file is the "given" — exclude it
 		// from the ranked list so it neither earns credit nor occupies a slot.
 		ranked := uniqueFiles(hits, k, keepSummaries, q.Anchor)
+		// recall@candidateK: collapse the SAME hits at the full pool depth. This
+		// is the pool-recall ceiling — the fraction of relevant files present
+		// anywhere in the candidate pool the fusion/rerank stage sees. Top-k
+		// Recall can never exceed it, so the gap (RecallPool − Recall) isolates
+		// a ranking failure (doc was in the pool, fusion buried it) from a
+		// retrieval failure (doc never made the pool). No extra search.
+		rankedPool := uniqueFiles(hits, pool, keepSummaries, q.Anchor)
 		relevant := make(map[string]bool, len(q.RelevantFiles))
 		for _, f := range q.RelevantFiles {
 			relevant[f] = true
@@ -80,7 +89,9 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 			RankedFiles: ranked,
 			NDCG:        NDCG(ranked, relevant, k),
 			Recall:      RecallAtK(ranked, relevant, k),
+			RecallPool:  RecallAtK(rankedPool, relevant, pool),
 			RR:          MRR(ranked, relevant),
+			Type:        store.ClassifyQueryType(q.Query),
 		}
 	}
 	return results, nil

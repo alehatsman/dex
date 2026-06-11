@@ -16,6 +16,31 @@ func TestCompute(t *testing.T) {
 	}
 }
 
+func TestComputeRecallPoolAndByType(t *testing.T) {
+	results := []QueryResult{
+		{Type: "symbol", NDCG: 1.0, Recall: 1.0, RecallPool: 1.0, RR: 1.0},
+		{Type: "symbol", NDCG: 0.0, Recall: 0.0, RecallPool: 1.0, RR: 0.0},
+		{Type: "nl", NDCG: 0.5, Recall: 0.5, RecallPool: 0.5, RR: 0.5},
+	}
+	rep := Compute(results, 10)
+
+	// Pool recall averages independently of top-k recall.
+	if !approxEq(rep.MeanRecallPool, (1.0+1.0+0.5)/3) {
+		t.Errorf("MeanRecallPool: got %v", rep.MeanRecallPool)
+	}
+	// Buckets split by query type; sub-reports carry no nested detail.
+	if len(rep.ByType) != 2 {
+		t.Fatalf("ByType buckets: got %d, want 2", len(rep.ByType))
+	}
+	sym := rep.ByType["symbol"]
+	if sym.N != 2 || !approxEq(sym.MeanRecallPool, 1.0) || !approxEq(sym.MeanNDCG, 0.5) {
+		t.Errorf("symbol bucket: %+v", sym)
+	}
+	if sym.ByType != nil || sym.Queries != nil {
+		t.Error("bucket sub-report must not carry ByType or Queries")
+	}
+}
+
 func TestRegressions(t *testing.T) {
 	ref := Report{MeanNDCG: 0.60, MeanRecall: 0.64, MRR: 0.75}
 

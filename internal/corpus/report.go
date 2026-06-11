@@ -21,9 +21,9 @@ func Compute(cells []LabeledReport, k int) CorpusReport {
 }
 
 type meanRow struct {
-	label             string
-	n                 int // number of cells averaged
-	ndcg, recall, mrr float64
+	label                         string
+	n                             int // number of cells averaged
+	ndcg, recall, recallPool, mrr float64
 }
 
 func mean(cells []LabeledReport) meanRow {
@@ -34,12 +34,14 @@ func mean(cells []LabeledReport) meanRow {
 	for _, c := range cells {
 		r.ndcg += c.Report.MeanNDCG
 		r.recall += c.Report.MeanRecall
+		r.recallPool += c.Report.MeanRecallPool
 		r.mrr += c.Report.MRR
 	}
 	n := float64(len(cells))
 	r.n = len(cells)
 	r.ndcg /= n
 	r.recall /= n
+	r.recallPool /= n
 	r.mrr /= n
 	return r
 }
@@ -68,8 +70,8 @@ func (r CorpusReport) Markdown() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Corpus Retrieval Eval — k=%d, %d cells\n\n", r.K, len(r.Cells))
 
-	b.WriteString("| repo | lang | set | n | NDCG | Recall | MRR |\n")
-	b.WriteString("|------|------|-----|---|------|--------|-----|\n")
+	b.WriteString("| repo | lang | set | n | NDCG | Recall | Pool | MRR |\n")
+	b.WriteString("|------|------|-----|---|------|--------|------|-----|\n")
 	cells := append([]LabeledReport(nil), r.Cells...)
 	sort.Slice(cells, func(i, j int) bool {
 		if cells[i].Repo != cells[j].Repo {
@@ -78,22 +80,22 @@ func (r CorpusReport) Markdown() string {
 		return cells[i].Set < cells[j].Set
 	})
 	for _, c := range cells {
-		fmt.Fprintf(&b, "| %s | %s | %s | %d | %.3f | %.3f | %.3f |\n",
-			c.Repo, c.Lang, c.Set, c.Report.N, c.Report.MeanNDCG, c.Report.MeanRecall, c.Report.MRR)
+		fmt.Fprintf(&b, "| %s | %s | %s | %d | %.3f | %.3f | %.3f | %.3f |\n",
+			c.Repo, c.Lang, c.Set, c.Report.N, c.Report.MeanNDCG, c.Report.MeanRecall, c.Report.MeanRecallPool, c.Report.MRR)
 	}
 
 	b.WriteString("\n### Per-language (unweighted mean of cells)\n\n")
-	b.WriteString("| lang | cells | NDCG | Recall | MRR |\n")
-	b.WriteString("|------|-------|------|--------|-----|\n")
+	b.WriteString("| lang | cells | NDCG | Recall | Pool | MRR |\n")
+	b.WriteString("|------|-------|------|--------|------|-----|\n")
 	for _, m := range r.byLanguage() {
-		fmt.Fprintf(&b, "| %s | %d | %.3f | %.3f | %.3f |\n", m.label, m.n, m.ndcg, m.recall, m.mrr)
+		fmt.Fprintf(&b, "| %s | %d | %.3f | %.3f | %.3f | %.3f |\n", m.label, m.n, m.ndcg, m.recall, m.recallPool, m.mrr)
 	}
 
 	g := mean(r.Cells)
 	b.WriteString("\n### Grand mean\n\n")
-	b.WriteString("| cells | NDCG | Recall | MRR |\n")
-	b.WriteString("|-------|------|--------|-----|\n")
-	fmt.Fprintf(&b, "| %d | %.3f | %.3f | %.3f |\n", g.n, g.ndcg, g.recall, g.mrr)
+	b.WriteString("| cells | NDCG | Recall | Pool | MRR |\n")
+	b.WriteString("|-------|------|--------|------|-----|\n")
+	fmt.Fprintf(&b, "| %d | %.3f | %.3f | %.3f | %.3f |\n", g.n, g.ndcg, g.recall, g.recallPool, g.mrr)
 	return b.String()
 }
 
@@ -138,6 +140,7 @@ func (r CorpusReport) Regressions(ref CorpusReport, tol float64) []Regression {
 		}{
 			{"NDCG", rc.Report.MeanNDCG, cc.Report.MeanNDCG},
 			{"Recall", rc.Report.MeanRecall, cc.Report.MeanRecall},
+			{"RecallPool", rc.Report.MeanRecallPool, cc.Report.MeanRecallPool},
 			{"MRR", rc.Report.MRR, cc.Report.MRR},
 		} {
 			if m.was-m.now > tol {
