@@ -17,9 +17,10 @@ import (
 )
 
 type OverviewInput struct {
-	Task        string `json:"task" jsonschema:"task description used to rank files by relevance"`
-	K           int    `json:"k,omitempty" jsonschema:"number of context files to surface (default 8, max 20)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	Task           string `json:"task" jsonschema:"task description used to rank files by relevance"`
+	K              int    `json:"k,omitempty" jsonschema:"number of context files to surface (default 8, max 20)"`
+	ProjectRoot    string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	IncludeDistant bool   `json:"include_distant,omitempty" jsonschema:"include the full distant file list in the response (default false — only distant_count is returned). Enable only when you need to enumerate background files; the list can be large and expensive in long sessions."`
 }
 
 // OverviewFile is one file in the context set, ranked by relevance to the task.
@@ -177,9 +178,12 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 	sort.Strings(distant)
 
 	const maxDistant = 100
-	truncated := distant
-	if len(truncated) > maxDistant {
-		truncated = truncated[:maxDistant]
+	var truncated []string
+	if in.IncludeDistant {
+		truncated = distant
+		if len(truncated) > maxDistant {
+			truncated = truncated[:maxDistant]
+		}
 	}
 
 	// Task classification hint.

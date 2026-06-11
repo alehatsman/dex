@@ -2820,9 +2820,11 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable,
 				Description: td("Task-relevant project map. Given a task description, ranks every indexed file by " +
 					"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
 					"`context` (top-k most relevant files with line counts and suggested file_view mode) and " +
-					"`distant` (all other indexed files). Use this as the first call in an unfamiliar codebase " +
-					"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
-					"no inlined content. Requires the embedding service."),
+					"`distant_count` (total background files). The full distant file list is omitted by default " +
+					"to keep the response compact — pass `include_distant: true` to get it (use only when you need " +
+					"to enumerate background files; the list can be large and expensive in long sessions). " +
+					"Use this as the first call in an unfamiliar codebase to decide what to read before touching code. " +
+					"Cheaper than ask — returns file paths only, no inlined content. Requires the embedding service."),
 			}, h.overview)
 		}
 

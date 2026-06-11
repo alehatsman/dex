@@ -85,7 +85,7 @@ type ContextInput struct {
 	Question string `json:"question" jsonschema:"free-text question about the codebase (e.g. 'where is filesystem event debouncing handled?', 'how does indexing work?', 'callers of (*Store).Search')"`
 	Intent   string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context (default: auto)"`
 	K        int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
-	NoInline bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open."`
+	NoInline bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
 }
 
 // SemHit is a semantic-search result reduced to the wire shape the
@@ -258,6 +258,11 @@ type ContextOutput struct {
 	// KnowledgeFacts are the top project facts ordered by salience,
 	// injected from the knowledge base so agents see accumulated context.
 	KnowledgeFacts []string `json:"knowledge_facts,omitempty"`
+	// ContentBytesInlined is the total bytes of file content inlined into
+	// suggested_reads and semantic_hits. Zero when no_inline=true or when
+	// no content was inlined. Use this to gauge context-window cost and
+	// decide whether to pass no_inline=true on follow-up calls.
+	ContentBytesInlined int `json:"content_bytes_inlined,omitempty"`
 }
 
 // ContextRouter is the exported entry point used by the CLI
@@ -396,6 +401,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	out.SuggestedReads = pickSuggestedReads(intent, out.SemanticHits, out.Symbols, symbolPaths, graphView)
 	if !in.NoInline {
 		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits)
+		out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
 	}
 	enrich(ctx, p.Root, intent, k, &out)
 	topSem := maxSemanticScore(out.SemanticHits)
@@ -1115,6 +1121,21 @@ func buildAvoid(intent string, semHits []SemHit, symbols []SymbolHit, graphIndex
 }
 
 // ─── inline file contents into suggested_reads ────────────────────────────
+
+// countInlinedBytes sums len(Content) / len(Body) across the three output lanes.
+func countInlinedBytes(reads []SuggestedRead, syms []SymbolHit, sem []SemHit) int {
+	n := 0
+	for i := range reads {
+		n += len(reads[i].Content)
+	}
+	for i := range syms {
+		n += len(syms[i].Body)
+	}
+	for i := range sem {
+		n += len(sem[i].Content)
+	}
+	return n
+}
 
 // inlineCaps are the per-intent budgets for inlineSuggestedReads.
 // Exploration intents (architecture, package_topology) get a denser
