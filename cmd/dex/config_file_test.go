@@ -27,7 +27,6 @@ models:
   embed: mxbai-embed-large
   chunk: qwen2.5-coder:3b
 tools:
-  tier: power
   embed_batch: 8
   disable_rerank: true
 env:
@@ -43,7 +42,6 @@ env:
 		"DEX_CHAT_URL":            "http://chat:11434",
 		"DEX_EMBED_MODEL":         "mxbai-embed-large",
 		"DEX_CHUNK_SUMMARY_MODEL": "qwen2.5-coder:3b",
-		"DEX_TOOLS":               "power",
 		"DEX_EMBED_BATCH":         "8",
 		"DEX_DISABLE_RERANK":      "1", // bool true -> "1"
 		"DEX_EMBED_CONCURRENCY":   "16",
