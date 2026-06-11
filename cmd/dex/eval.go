@@ -20,7 +20,7 @@ Offline code-retrieval eval. Scores the live Search path against a golden set
 of (query → relevant files) pairs mined from the repo's own git history, and
 reports NDCG@k, Recall@k and MRR.
 
-Three golden-set flavors (--mode):
+Four golden-set flavors (--mode):
   git-history  (default) query = commit subject, relevant = files it touched.
                Measures direct code retrieval.
   blast-radius query = a code excerpt from an anchor file, relevant = the OTHER
@@ -31,6 +31,10 @@ Three golden-set flavors (--mode):
                span ≥2 packages with NO import relationship between them.
                Measures graph-lane contribution for structural coupling invisible
                to BM25+dense — the instrument for tuning DEX_GRAPH_WEIGHT (#279).
+  orphan       query = natural-language phrase derived from a package-level
+               import, const, or var declaration. Relevant = the file
+               containing that declaration. Targets the "orphan" chunks
+               that commit-history probes miss.
 
 The golden set is committed (default benchmark/eval/golden.json, or
 blast-radius.json / structural.json for the corresponding --mode) so the
@@ -40,11 +44,12 @@ with --gen to refresh the labels.
 Flags:
   --gen            (re)generate the golden set from git history and write it to
                    --golden, then exit (does not score)
-  --mode flavor    golden-set flavor when generating: git-history | blast-radius | structural
+  --mode flavor    golden-set flavor when generating: git-history | blast-radius | structural | orphan
   --golden path    golden-set JSON (default: <project>/benchmark/eval/golden.json)
   --k int          retrieval depth (default: 10)
   --max-commits N  commits to scan when generating (default: 500)
   --max-files N    skip commits touching more than N code files (default: 5)
+  --max-per-kind N orphan mode: max queries per declaration kind (default: 50)
   --output format  json or md (default: md)
   --check path     compare against a reference report JSON; exit 1 on regression
   --keep-summaries retain summary chunks in the ranked file list — needed when
@@ -60,11 +65,12 @@ func runEval(ctx context.Context, args []string) {
 	fs.Usage = func() { fmt.Fprint(os.Stderr, evalUsage) }
 
 	gen := fs.Bool("gen", false, "regenerate golden set from git history and exit")
-	mode := fs.String("mode", "git-history", "golden-set flavor when generating: git-history | blast-radius | structural")
+	mode := fs.String("mode", "git-history", "golden-set flavor when generating: git-history | blast-radius | structural | orphan")
 	goldenPath := fs.String("golden", "", "golden-set JSON path")
 	k := fs.Int("k", 10, "retrieval depth")
 	maxCommits := fs.Int("max-commits", 0, "commits to scan when generating")
 	maxFiles := fs.Int("max-files", 0, "skip commits touching more than N code files")
+	maxPerKind := fs.Int("max-per-kind", 0, "orphan mode: max queries per declaration kind (default: 50)")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
 	keepSummaries := fs.Bool("keep-summaries", false, "retain summary chunks in the ranked file list (for A/B-ing index features that produce summaries)")
@@ -91,9 +97,9 @@ func runEval(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	validModes := map[string]bool{"git-history": true, "blast-radius": true, "structural": true}
+	validModes := map[string]bool{"git-history": true, "blast-radius": true, "structural": true, "orphan": true}
 	if !validModes[*mode] {
-		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --mode %q (want git-history|blast-radius|structural)\n", *mode)
+		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --mode %q (want git-history|blast-radius|structural|orphan)\n", *mode)
 		os.Exit(1)
 	}
 
@@ -105,6 +111,8 @@ func runEval(ctx context.Context, args []string) {
 			name = "blast-radius.json"
 		case "structural":
 			name = "structural.json"
+		case "orphan":
+			name = "orphan.json"
 		}
 		gPath = filepath.Join(p.Root, "benchmark", "eval", name)
 	}
@@ -118,6 +126,13 @@ func runEval(ctx context.Context, args []string) {
 			gs, err = eval.GenerateBlastRadius(ctx, p.Root, opts)
 		case "structural":
 			gs, err = eval.GenerateStructural(ctx, p.Root, opts)
+		case "orphan":
+			var ocounts eval.OrphanGenCounts
+			gs, ocounts, err = eval.GenerateOrphan(ctx, p.Root, eval.OrphanOpts{MaxFiles: *maxFiles, MaxPerKind: *maxPerKind})
+			if err == nil {
+				fmt.Fprintf(os.Stderr, "dex bench eval: orphan gen: imports=%d consts=%d vars=%d\n",
+					ocounts.Imports, ocounts.Consts, ocounts.Vars)
+			}
 		default:
 			gs, err = eval.Generate(ctx, p.Root, opts)
 		}

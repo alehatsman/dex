@@ -1,0 +1,913 @@
+{
+  "repo": "dex-300-orphan-golden",
+  "head": "c01a4d6d52626f25ebd7baca38efbdbb1ec5bb24",
+  "gen_opts": {
+    "max_commits": 0,
+    "max_files": 0
+  },
+  "queries": [
+    {
+      "id": "cmd/dex/bench_compress.go:3",
+      "query": "benchcompress package import",
+      "relevant_files": [
+        "cmd/dex/bench_compress.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/bench_compress.go:14:benchCompressUsage",
+      "query": "bench compress usage constant",
+      "relevant_files": [
+        "cmd/dex/bench_compress.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/bench_perf.go:3",
+      "query": "benchperf package import",
+      "relevant_files": [
+        "cmd/dex/bench_perf.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/bench_perf.go:13:benchPerfUsage",
+      "query": "bench perf usage constant",
+      "relevant_files": [
+        "cmd/dex/bench_perf.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/compact.go:10",
+      "query": "ignore package import",
+      "relevant_files": [
+        "cmd/dex/compact.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/completion.go:46:bashCompletionScript",
+      "query": "bash completion script constant",
+      "relevant_files": [
+        "cmd/dex/completion.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/completion.go:102:zshCompletionScript",
+      "query": "zsh completion script constant",
+      "relevant_files": [
+        "cmd/dex/completion.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/completion.go:311:fishCompletionScript",
+      "query": "fish completion script constant",
+      "relevant_files": [
+        "cmd/dex/completion.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/compress.go:3",
+      "query": "compress package import",
+      "relevant_files": [
+        "cmd/dex/compress.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/compress.go:187:shellHookScript",
+      "query": "shell hook script constant",
+      "relevant_files": [
+        "cmd/dex/compress.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/config_file.go:24",
+      "query": "yaml.v3 package import",
+      "relevant_files": [
+        "cmd/dex/config_file.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/config_file.go:43:sectionKeyMap",
+      "query": "section key map variable",
+      "relevant_files": [
+        "cmd/dex/config_file.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/config_file.go:71:secretVars",
+      "query": "secret vars variable",
+      "relevant_files": [
+        "cmd/dex/config_file.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/config_file.go:75:fileSourcedKeys",
+      "query": "file sourced keys variable",
+      "relevant_files": [
+        "cmd/dex/config_file.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/corpus.go:3",
+      "query": "corpus package import",
+      "relevant_files": [
+        "cmd/dex/corpus.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/corpus.go:16:corpusUsage",
+      "query": "corpus usage constant",
+      "relevant_files": [
+        "cmd/dex/corpus.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/doctor.go:30:docOK",
+      "query": "doc ok constant",
+      "relevant_files": [
+        "cmd/dex/doctor.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/doctor.go:30:docWarn",
+      "query": "doc warn constant",
+      "relevant_files": [
+        "cmd/dex/doctor.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/doctor.go:30:docFail",
+      "query": "doc fail constant",
+      "relevant_files": [
+        "cmd/dex/doctor.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/doctor.go:30:docSkip",
+      "query": "doc skip constant",
+      "relevant_files": [
+        "cmd/dex/doctor.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/env.go:35:allEnvVars",
+      "query": "all env vars variable",
+      "relevant_files": [
+        "cmd/dex/env.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/eval.go:3",
+      "query": "store package import",
+      "relevant_files": [
+        "cmd/dex/eval.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/eval.go:17:evalUsage",
+      "query": "eval usage constant",
+      "relevant_files": [
+        "cmd/dex/eval.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/graph.go:3",
+      "query": "graph package import",
+      "relevant_files": [
+        "cmd/dex/graph.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/guide.go:3",
+      "query": "tokens package import",
+      "relevant_files": [
+        "cmd/dex/guide.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/hook.go:33",
+      "query": "proj package import",
+      "relevant_files": [
+        "cmd/dex/hook.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/hook.go:67:hookAllow",
+      "query": "hook allow constant",
+      "relevant_files": [
+        "cmd/dex/hook.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/hook.go:424:redirectLineThreshold",
+      "query": "redirect line threshold constant",
+      "relevant_files": [
+        "cmd/dex/hook.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/locomo.go:3",
+      "query": "locomo package import",
+      "relevant_files": [
+        "cmd/dex/locomo.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/locomo.go:15:locomoUsage",
+      "query": "locomo usage constant",
+      "relevant_files": [
+        "cmd/dex/locomo.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/ollama_autostart.go:3",
+      "query": "embed package import",
+      "relevant_files": [
+        "cmd/dex/ollama_autostart.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/ollama_autostart.go:15:ensureOllamaOnce",
+      "query": "ensure ollama once variable",
+      "relevant_files": [
+        "cmd/dex/ollama_autostart.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/proxy.go:27",
+      "query": "proxy package import",
+      "relevant_files": [
+        "cmd/dex/proxy.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/serve.go:9",
+      "query": "mcp package import",
+      "relevant_files": [
+        "cmd/dex/serve.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:170:rulesMarker",
+      "query": "rules marker constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:170:rulesEndMarker",
+      "query": "rules end marker constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:170:rulesVersion",
+      "query": "rules version constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:176:rulesContent",
+      "query": "rules content constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:222:rulesInSync",
+      "query": "rules in sync constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:222:rulesMissing",
+      "query": "rules missing constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:222:rulesNoMarkers",
+      "query": "rules no markers constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:222:rulesStale",
+      "query": "rules stale constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:222:rulesDrifted",
+      "query": "rules drifted constant",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "internal/benchcompress/corpus.go:21:BuiltinCorpus",
+      "query": "builtin corpus variable",
+      "relevant_files": [
+        "internal/benchcompress/corpus.go"
+      ]
+    },
+    {
+      "id": "internal/benchperf/run.go:96:compressSample",
+      "query": "compress sample variable",
+      "relevant_files": [
+        "internal/benchperf/run.go"
+      ]
+    },
+    {
+      "id": "internal/chat/client.go:24:ErrUnreachable",
+      "query": "unreachable error sentinel",
+      "relevant_files": [
+        "internal/chat/client.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:15",
+      "query": "go-tree-sitter package import",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:45:MaxBytes",
+      "query": "max bytes constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:48:WindowLines",
+      "query": "window lines constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:51:WindowOverlap",
+      "query": "window overlap constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:54:KindWindow",
+      "query": "kind window constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:54:KindOrphan",
+      "query": "kind orphan constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:54:KindFileSummary",
+      "query": "kind file summary constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:54:KindChunkSummary",
+      "query": "kind chunk summary constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:54:KindPackageSummary",
+      "query": "kind package summary constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:54:KindRepoSummary",
+      "query": "kind repo summary constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:54:KindGitCommit",
+      "query": "kind git commit constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:67:KindChunkContext",
+      "query": "kind chunk context constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:125:languages",
+      "query": "languages variable",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:196:containerMethods",
+      "query": "container methods variable",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/chunk/chunk.go:916:extractiveSigLines",
+      "query": "extractive sig lines constant",
+      "relevant_files": [
+        "internal/chunk/chunk.go"
+      ]
+    },
+    {
+      "id": "internal/compress/adaptive.go:11:badnessThreshold",
+      "query": "badness threshold constant",
+      "relevant_files": [
+        "internal/compress/adaptive.go"
+      ]
+    },
+    {
+      "id": "internal/compress/adaptive.go:11:penaltyThreshold",
+      "query": "penalty threshold constant",
+      "relevant_files": [
+        "internal/compress/adaptive.go"
+      ]
+    },
+    {
+      "id": "internal/compress/adaptive.go:11:emaDecay",
+      "query": "ema decay constant",
+      "relevant_files": [
+        "internal/compress/adaptive.go"
+      ]
+    },
+    {
+      "id": "internal/compress/adaptive.go:11:policyFile",
+      "query": "policy file constant",
+      "relevant_files": [
+        "internal/compress/adaptive.go"
+      ]
+    },
+    {
+      "id": "internal/compress/adaptive.go:30:modeFallbacks",
+      "query": "mode fallbacks variable",
+      "relevant_files": [
+        "internal/compress/adaptive.go"
+      ]
+    },
+    {
+      "id": "internal/compress/anchors.go:26:reAnchorPath",
+      "query": "re anchor path variable",
+      "relevant_files": [
+        "internal/compress/anchors.go"
+      ]
+    },
+    {
+      "id": "internal/compress/anchors.go:26:reAnchorQualified",
+      "query": "re anchor qualified variable",
+      "relevant_files": [
+        "internal/compress/anchors.go"
+      ]
+    },
+    {
+      "id": "internal/compress/anchors.go:26:reAnchorType",
+      "query": "re anchor type variable",
+      "relevant_files": [
+        "internal/compress/anchors.go"
+      ]
+    },
+    {
+      "id": "internal/compress/code.go:288:generateKWs",
+      "query": "generate kws variable",
+      "relevant_files": [
+        "internal/compress/code.go"
+      ]
+    },
+    {
+      "id": "internal/compress/code.go:294:testKWs",
+      "query": "test kws variable",
+      "relevant_files": [
+        "internal/compress/code.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:11:EntropyThresholdLite",
+      "query": "entropy threshold lite constant",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:11:EntropyThresholdStandard",
+      "query": "entropy threshold standard constant",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:11:EntropyThresholdMax",
+      "query": "entropy threshold max constant",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:156:rePathExt",
+      "query": "re path ext variable",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:158:errorWarningKWs",
+      "query": "error warning kws variable",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:219:decorChars",
+      "query": "decor chars variable",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:291:fillerPatterns",
+      "query": "filler patterns variable",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/entropy.go:330:reQualityPath",
+      "query": "re quality path variable",
+      "relevant_files": [
+        "internal/compress/entropy.go"
+      ]
+    },
+    {
+      "id": "internal/compress/ngram_codebook.go:27:ngramRefMax",
+      "query": "ngram ref max constant",
+      "relevant_files": [
+        "internal/compress/ngram_codebook.go"
+      ]
+    },
+    {
+      "id": "internal/compress/symmap.go:13:identRe",
+      "query": "ident re variable",
+      "relevant_files": [
+        "internal/compress/symmap.go"
+      ]
+    },
+    {
+      "id": "internal/compress/symmap.go:21:singleTokenRefs",
+      "query": "single token refs variable",
+      "relevant_files": [
+        "internal/compress/symmap.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:14:Level1",
+      "query": "level1 constant",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:14:Level2",
+      "query": "level2 constant",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:14:Level3",
+      "query": "level3 constant",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:31:minQualitySavings",
+      "query": "min quality savings constant",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:35:maxInputBytes",
+      "query": "max input bytes constant",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:39:longLineTokens",
+      "query": "long line tokens constant",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:43:functionWords",
+      "query": "function words variable",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:60:abbreviations",
+      "query": "abbreviations variable",
+      "relevant_files": [
+        "internal/compress/terse.go"
+      ]
+    },
+    {
+      "id": "internal/compress/thresholds.go:34:langThresholds",
+      "query": "lang thresholds variable",
+      "relevant_files": [
+        "internal/compress/thresholds.go"
+      ]
+    },
+    {
+      "id": "internal/compress/thresholds.go:50:defaultThresholds",
+      "query": "default thresholds variable",
+      "relevant_files": [
+        "internal/compress/thresholds.go"
+      ]
+    },
+    {
+      "id": "internal/compress/token_reduce.go:10:globalTokenRules",
+      "query": "global token rules variable",
+      "relevant_files": [
+        "internal/compress/token_reduce.go"
+      ]
+    },
+    {
+      "id": "internal/compress/token_reduce.go:17:rustTokenRules",
+      "query": "rust token rules variable",
+      "relevant_files": [
+        "internal/compress/token_reduce.go"
+      ]
+    },
+    {
+      "id": "internal/compress/token_reduce.go:29:jstsTokenRules",
+      "query": "jsts token rules variable",
+      "relevant_files": [
+        "internal/compress/token_reduce.go"
+      ]
+    },
+    {
+      "id": "internal/corpus/manifest.go:68:commitRe",
+      "query": "commit re variable",
+      "relevant_files": [
+        "internal/corpus/manifest.go"
+      ]
+    },
+    {
+      "id": "internal/corpus/manifest.go:68:nameRe",
+      "query": "name re variable",
+      "relevant_files": [
+        "internal/corpus/manifest.go"
+      ]
+    },
+    {
+      "id": "internal/embed/client.go:6",
+      "query": "errgroup package import",
+      "relevant_files": [
+        "internal/embed/client.go"
+      ]
+    },
+    {
+      "id": "internal/embed/ollama.go:21:preferredEmbedModels",
+      "query": "preferred embed models variable",
+      "relevant_files": [
+        "internal/embed/ollama.go"
+      ]
+    },
+    {
+      "id": "internal/embed/ollama.go:35:preferredChatModels",
+      "query": "preferred chat models variable",
+      "relevant_files": [
+        "internal/embed/ollama.go"
+      ]
+    },
+    {
+      "id": "internal/embed/onnx_engine.go:12",
+      "query": "onnxruntime_go package import",
+      "relevant_files": [
+        "internal/embed/onnx_engine.go"
+      ]
+    },
+    {
+      "id": "internal/embed/onnx_engine.go:24:ortInitOnce",
+      "query": "ort init once variable",
+      "relevant_files": [
+        "internal/embed/onnx_engine.go"
+      ]
+    },
+    {
+      "id": "internal/embed/onnx_engine.go:24:ortInitErr",
+      "query": "ort init err variable",
+      "relevant_files": [
+        "internal/embed/onnx_engine.go"
+      ]
+    },
+    {
+      "id": "internal/embed/onnx_stub.go:12:ErrONNXNotBuilt",
+      "query": "onnxnot built error sentinel",
+      "relevant_files": [
+        "internal/embed/onnx_stub.go"
+      ]
+    },
+    {
+      "id": "internal/eval/golden.go:55:codeExts",
+      "query": "code exts variable",
+      "relevant_files": [
+        "internal/eval/golden.go"
+      ]
+    },
+    {
+      "id": "internal/eval/golden.go:65:convPrefix",
+      "query": "conv prefix variable",
+      "relevant_files": [
+        "internal/eval/golden.go"
+      ]
+    },
+    {
+      "id": "internal/eval/runner.go:3",
+      "query": "chunk package import",
+      "relevant_files": [
+        "internal/eval/runner.go"
+      ]
+    },
+    {
+      "id": "internal/graph/go.go:3",
+      "query": "packages package import",
+      "relevant_files": [
+        "internal/graph/go.go"
+      ]
+    },
+    {
+      "id": "internal/graph/markdown.go:25:markdownExts",
+      "query": "markdown exts variable",
+      "relevant_files": [
+        "internal/graph/markdown.go"
+      ]
+    },
+    {
+      "id": "internal/graph/markdown.go:31:mdInlineLink",
+      "query": "md inline link variable",
+      "relevant_files": [
+        "internal/graph/markdown.go"
+      ]
+    },
+    {
+      "id": "internal/graph/markdown.go:37:mdWikiLink",
+      "query": "md wiki link variable",
+      "relevant_files": [
+        "internal/graph/markdown.go"
+      ]
+    },
+    {
+      "id": "internal/graph/markdown.go:45:mdTag",
+      "query": "md tag variable",
+      "relevant_files": [
+        "internal/graph/markdown.go"
+      ]
+    },
+    {
+      "id": "internal/graph/markdown.go:49:mdFence",
+      "query": "md fence variable",
+      "relevant_files": [
+        "internal/graph/markdown.go"
+      ]
+    },
+    {
+      "id": "internal/graph/markdown.go:55:mdHeadingRe",
+      "query": "md heading re variable",
+      "relevant_files": [
+        "internal/graph/markdown.go"
+      ]
+    },
+    {
+      "id": "internal/graph/sitter.go:149:DefaultRegistry",
+      "query": "default registry variable",
+      "relevant_files": [
+        "internal/graph/sitter.go"
+      ]
+    },
+    {
+      "id": "internal/graph/yaml.go:25:mooncakeRefKeys",
+      "query": "mooncake ref keys variable",
+      "relevant_files": [
+        "internal/graph/yaml.go"
+      ]
+    },
+    {
+      "id": "internal/graph/yaml.go:40:yamlRefLine",
+      "query": "yaml ref line variable",
+      "relevant_files": [
+        "internal/graph/yaml.go"
+      ]
+    },
+    {
+      "id": "internal/ignore/ignore.go:48",
+      "query": "go-gitignore package import",
+      "relevant_files": [
+        "internal/ignore/ignore.go"
+      ]
+    },
+    {
+      "id": "internal/ignore/ignore.go:62:DefaultPatterns",
+      "query": "default patterns variable",
+      "relevant_files": [
+        "internal/ignore/ignore.go"
+      ]
+    },
+    {
+      "id": "internal/ignore/ignore.go:144:IndexableExtensions",
+      "query": "indexable extensions variable",
+      "relevant_files": [
+        "internal/ignore/ignore.go"
+      ]
+    },
+    {
+      "id": "internal/mcp/answer.go:15",
+      "query": "chat package import",
+      "relevant_files": [
+        "internal/mcp/answer.go"
+      ]
+    },
+    {
+      "id": "internal/mcp/http.go:58",
+      "query": "logx package import",
+      "relevant_files": [
+        "internal/mcp/http.go"
+      ]
+    },
+    {
+      "id": "internal/mcp/http_mcp.go:16",
+      "query": "profiles package import",
+      "relevant_files": [
+        "internal/mcp/http_mcp.go"
+      ]
+    },
+    {
+      "id": "internal/mcp/server_workspace.go:10",
+      "query": "workspace package import",
+      "relevant_files": [
+        "internal/mcp/server_workspace.go"
+      ]
+    },
+    {
+      "id": "internal/mcp/trigram_cache.go:3",
+      "query": "trigram package import",
+      "relevant_files": [
+        "internal/mcp/trigram_cache.go"
+      ]
+    },
+    {
+      "id": "internal/store/rerank_cache.go:3",
+      "query": "rerank package import",
+      "relevant_files": [
+        "internal/store/rerank_cache.go"
+      ]
+    },
+    {
+      "id": "internal/store/store.go:16",
+      "query": "go-sqlite3 package import",
+      "relevant_files": [
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "internal/tokens/tokens.go:13",
+      "query": "tiktoken-go-loader package import",
+      "relevant_files": [
+        "internal/tokens/tokens.go"
+      ]
+    },
+    {
+      "id": "internal/watch/watch.go:12",
+      "query": "fsnotify package import",
+      "relevant_files": [
+        "internal/watch/watch.go"
+      ]
+    }
+  ]
+}
