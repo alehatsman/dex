@@ -481,15 +481,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
-	out, err := s.Nav(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, out)
-}
-
 func (s *Server) handleAsk(projects map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		root := resolveProjectFromURL(w, r, projects)
@@ -549,14 +540,6 @@ func (s *Server) handleFindSymbol(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *FindSymbolInput, root string) { in.ProjectRoot = root }, s.FindSymbol)
 }
 
-func (s *Server) handleRelated(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *RelatedInput, root string) { in.ProjectRoot = root }, s.Related)
-}
-
-func (s *Server) handleFindRelated(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *FindRelatedInput, root string) { in.ProjectRoot = root }, s.FindRelated)
-}
-
 func (s *Server) handleGraphDeps(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *GraphDepsInput, root string) { in.ProjectRoot = root }, s.GraphDeps)
 }
@@ -573,24 +556,8 @@ func (s *Server) handleGraphCallees(projects map[string]string) http.HandlerFunc
 	return jsonHandler(projects, func(in *CallEdgeInput, root string) { in.ProjectRoot = root }, s.GraphCallees)
 }
 
-func (s *Server) handleGraphLinks(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *DocLinkInput, root string) { in.ProjectRoot = root }, s.GraphLinks)
-}
-
-func (s *Server) handleGraphBacklinks(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *DocLinkInput, root string) { in.ProjectRoot = root }, s.GraphBacklinks)
-}
-
-func (s *Server) handleGraphTags(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *TagInput, root string) { in.ProjectRoot = root }, s.GraphTags)
-}
-
 func (s *Server) handleSummarize(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SummarizeInput, root string) { in.ProjectRoot = root }, s.Summarize)
-}
-
-func (s *Server) handleCompose(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *ComposeInput, root string) { in.ProjectRoot = root }, s.Compose)
 }
 
 func (s *Server) handleGraphImpact(projects map[string]string) http.HandlerFunc {
@@ -605,10 +572,6 @@ func (s *Server) handleGraphSmells(projects map[string]string) http.HandlerFunc 
 	return jsonHandler(projects, func(in *SmellsInput, root string) { in.ProjectRoot = root }, s.Smells)
 }
 
-func (s *Server) handleGraphCycles(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *CyclesInput, root string) { in.ProjectRoot = root }, s.GraphCycles)
-}
-
 func (s *Server) handleGraphPath(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *PathInput, root string) { in.ProjectRoot = root }, s.GraphPath)
 }
@@ -621,18 +584,6 @@ func (s *Server) handleGraphCommunities(projects map[string]string) http.Handler
 	return jsonHandler(projects, func(in *CommunitiesInput, root string) { in.ProjectRoot = root }, s.GraphCommunities)
 }
 
-func (s *Server) handleSpecCheck(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *SpecVerifyInput, root string) { in.ProjectRoot = root }, s.SpecVerify)
-}
-
-func (s *Server) handleFeedback(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *FeedbackInput, root string) { in.ProjectRoot = root }, s.Feedback)
-}
-
-func (s *Server) handleOverview(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *OverviewInput, root string) { in.ProjectRoot = root }, s.Overview)
-}
-
 func (s *Server) handleKnowledge(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *KnowledgeInput, root string) { in.ProjectRoot = root }, s.Knowledge)
 }
@@ -641,48 +592,12 @@ func (s *Server) handleSession(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SessionInput, root string) { in.ProjectRoot = root }, s.Session)
 }
 
-func (s *Server) handleAgent(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *AgentInput, root string) { in.ProjectRoot = root }, s.Agent)
-}
-
-func (s *Server) handleShare(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *ShareInput, root string) { in.ProjectRoot = root }, s.Share)
-}
-
-func (s *Server) handleCtxPack(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *PackInput, root string) { in.ProjectRoot = root }, s.CtxPack)
-}
-
-func (s *Server) handlePrefetch(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *PrefetchInput, root string) { in.ProjectRoot = root }, s.Prefetch)
-}
-
-func (s *Server) handleWorkspaceSearch(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *WorkspaceSearchInput, root string) { in.ProjectRoot = root }, s.WorkspaceSearch)
-}
-
 func (s *Server) handleFileTree(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SearchTreeInput, root string) { in.ProjectRoot = root }, s.SearchTree)
 }
 
 func (s *Server) handleSearchGrep(projects map[string]string) http.HandlerFunc {
 	return jsonHandler(projects, func(in *SearchGrepInput, root string) { in.ProjectRoot = root }, s.SearchGrep)
-}
-
-func (s *Server) handleCompress() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var in CompressInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		out, err := s.CompressOutput(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
 }
 
 func (s *Server) handleShell() http.HandlerFunc {
