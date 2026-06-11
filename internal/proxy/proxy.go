@@ -8,9 +8,12 @@
 // Token counts are measured before and after, accumulated in Stats, and
 // exposed via GET /stats (JSON Snapshot). Run dex proxy --stats to fetch it.
 //
-// Posture mirrors `dex serve`: loopback bind only (the proxy sees the agent's
-// API key, so it must never be exposed on the network), and request bodies are
-// never logged. Ported in spirit from lean-ctx rust/src/proxy/{mod,forward,metrics}.rs.
+// Posture mirrors `dex serve` (see security.go): loopback bind only by default
+// — the proxy sees the agent's API key, so it is never exposed on the network
+// unless DEX_PROXY_TOKEN is set, which then gates incoming requests via the
+// X-Dex-Proxy-Token header. Request/response bodies are never logged and the
+// upstream credential is forwarded untouched, never persisted. Ported in spirit
+// from lean-ctx rust/src/proxy/{mod,forward,metrics}.rs.
 package proxy
 
 import (
@@ -46,6 +49,10 @@ type Options struct {
 	// The same pointer is used by the /stats endpoint so callers can observe
 	// it after Run returns.
 	Stats *Stats
+	// Token, when non-empty, gates incoming requests via the X-Dex-Proxy-Token
+	// header and permits a non-loopback bind. Empty = loopback-only, no gate
+	// (same posture as DEX_SERVE_TOKEN on `dex serve`).
+	Token string
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -61,7 +68,7 @@ func Run(ctx context.Context, opts Options) error {
 	if opts.Stats == nil {
 		opts.Stats = &Stats{}
 	}
-	if err := validateLoopback(opts.Addr); err != nil {
+	if err := validateBind(opts.Addr, opts.Token); err != nil {
 		return err
 	}
 	upstreamURL, err := url.Parse(opts.Upstream)
@@ -72,7 +79,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -104,11 +111,16 @@ func Run(ctx context.Context, opts Options) error {
 	}
 }
 
-// FetchStats fetches a Snapshot from a running proxy at addr (host:port).
-func FetchStats(ctx context.Context, addr string) (Snapshot, error) {
+// FetchStats fetches a Snapshot from a running proxy at addr (host:port). When
+// token is non-empty it is sent in the X-Dex-Proxy-Token header so --stats can
+// reach a token-gated proxy.
+func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/stats", nil)
 	if err != nil {
 		return Snapshot{}, err
+	}
+	if token != "" {
+		req.Header.Set(ProxyTokenHeader, token)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -128,7 +140,7 @@ func FetchStats(ctx context.Context, addr string) (Snapshot, error) {
 // newProxyHandler builds the mux:
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -140,6 +152,10 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats) http.
 			pr.Out.Header.Del("X-Forwarded-For")
 			pr.Out.Header.Del("X-Forwarded-Host")
 			pr.Out.Header.Del("X-Forwarded-Proto")
+			// The proxy's own auth token is for the loopback hop only; never
+			// leak it upstream. The upstream Authorization / x-api-key is left
+			// untouched.
+			pr.Out.Header.Del(ProxyTokenHeader)
 		},
 		// Fail open: upstream errors must not crash the proxy.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, e error) {
@@ -148,7 +164,7 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats) http.
 		},
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	core := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// GET /stats — JSON snapshot of cumulative token counters (no PII).
 		if r.Method == http.MethodGet && r.URL.Path == "/stats" {
 			snap := stats.Snapshot()
@@ -195,24 +211,7 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats) http.
 		// Everything else — forward verbatim.
 		rp.ServeHTTP(w, r)
 	})
-}
 
-// validateLoopback rejects any bind that isn't explicitly loopback. The proxy
-// forwards the agent's API key upstream, so it must never listen on a routable
-// interface.
-func validateLoopback(addr string) error {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return fmt.Errorf("addr %q must be host:port (e.g. 127.0.0.1:8788): %w", addr, err)
-	}
-	switch host {
-	case "127.0.0.1", "::1", "localhost":
-		return nil
-	case "":
-		return fmt.Errorf("addr %q binds to all interfaces; use 127.0.0.1:<port> (the proxy is loopback-only)", addr)
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		return nil
-	}
-	return fmt.Errorf("addr %q binds to %s (non-loopback); the proxy is loopback-only, use 127.0.0.1:<port>", addr, host)
+	// Gate every route (including /stats) behind the proxy token when set.
+	return authGate(token, core)
 }

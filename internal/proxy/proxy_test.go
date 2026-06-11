@@ -30,7 +30,7 @@ func newTestProxy(t *testing.T, upstream http.Handler) (*httptest.Server, *bytes
 	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, ""))
 	t.Cleanup(front.Close)
 	return front, &logs
 }
@@ -227,7 +227,7 @@ func TestFailOpenUpstreamDown(t *testing.T) {
 	upURL, _ := url.Parse("http://" + addr)
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, ""))
 	defer front.Close()
 
 	resp, err := http.Post(front.URL+"/v1/messages", "application/json", strings.NewReader(`{"model":"claude"}`))
@@ -240,25 +240,147 @@ func TestFailOpenUpstreamDown(t *testing.T) {
 	}
 }
 
-func TestValidateLoopback(t *testing.T) {
+func TestValidateBind(t *testing.T) {
 	cases := []struct {
 		addr    string
+		token   string
 		wantErr bool
 	}{
-		{"127.0.0.1:8788", false},
-		{"localhost:8788", false},
-		{"[::1]:8788", false},
-		{"127.0.0.2:8788", false}, // 127.0.0.0/8 is all loopback
-		{":8788", true},           // all interfaces
-		{"0.0.0.0:8788", true},
-		{"192.168.1.10:8788", true},
-		{"example.com:8788", true},
-		{"127.0.0.1", true}, // missing port
+		// Loopback always allowed, token or not.
+		{"127.0.0.1:8788", "", false},
+		{"localhost:8788", "", false},
+		{"[::1]:8788", "", false},
+		{"127.0.0.2:8788", "", false}, // 127.0.0.0/8 is all loopback
+		// Non-loopback refused without a token...
+		{":8788", "", true}, // all interfaces
+		{"0.0.0.0:8788", "", true},
+		{"192.168.1.10:8788", "", true},
+		{"example.com:8788", "", true},
+		// ...but allowed once DEX_PROXY_TOKEN is set (conscious opt-in).
+		{"0.0.0.0:8788", "tok", false},
+		{"192.168.1.10:8788", "tok", false},
+		// Malformed addr fails regardless of token.
+		{"127.0.0.1", "", true}, // missing port
+		{"127.0.0.1", "tok", true},
 	}
 	for _, c := range cases {
-		err := validateLoopback(c.addr)
+		err := validateBind(c.addr, c.token)
 		if (err != nil) != c.wantErr {
-			t.Errorf("validateLoopback(%q) err=%v, wantErr=%v", c.addr, err, c.wantErr)
+			t.Errorf("validateBind(%q, token=%q) err=%v, wantErr=%v", c.addr, c.token, err, c.wantErr)
+		}
+	}
+}
+
+// TestAuthGate verifies that when a token is set, incoming requests must carry
+// it in X-Dex-Proxy-Token; the gate header is stripped before forwarding; and
+// the upstream credential (x-api-key) is passed through untouched.
+func TestAuthGate(t *testing.T) {
+	const token = "proxytok-secret"
+	var gotProxyTok, gotAPIKey string
+	var reached bool
+	up := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		gotProxyTok = r.Header.Get(ProxyTokenHeader)
+		gotAPIKey = r.Header.Get("x-api-key")
+		w.WriteHeader(http.StatusOK)
+	})
+	upSrv := httptest.NewServer(up)
+	defer upSrv.Close()
+	upURL, _ := url.Parse(upSrv.URL)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, token))
+	defer front.Close()
+
+	body := `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`
+
+	// 1. No token → 401, upstream never reached.
+	resp, err := http.Post(front.URL+"/v1/messages", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("missing token: status = %d, want 401", resp.StatusCode)
+	}
+	if reached {
+		t.Errorf("upstream reached despite missing proxy token")
+	}
+
+	// 2. Wrong token → 401.
+	reached = false
+	req, _ := http.NewRequest(http.MethodPost, front.URL+"/v1/messages", strings.NewReader(body))
+	req.Header.Set(ProxyTokenHeader, "wrong")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("wrong token: status = %d, want 401", resp.StatusCode)
+	}
+	if reached {
+		t.Errorf("upstream reached despite wrong proxy token")
+	}
+
+	// 3. Correct token → forwarded; gate header stripped; x-api-key intact.
+	reached = false
+	req, _ = http.NewRequest(http.MethodPost, front.URL+"/v1/messages", strings.NewReader(body))
+	req.Header.Set(ProxyTokenHeader, token)
+	req.Header.Set("x-api-key", "sk-upstream-secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("correct token: status = %d, want 200", resp.StatusCode)
+	}
+	if !reached {
+		t.Errorf("upstream not reached with correct proxy token")
+	}
+	if gotProxyTok != "" {
+		t.Errorf("proxy token leaked upstream: %q (must be stripped)", gotProxyTok)
+	}
+	if gotAPIKey != "sk-upstream-secret" {
+		t.Errorf("upstream credential not passed through: %q", gotAPIKey)
+	}
+
+	// 4. /stats is gated too.
+	resp, err = http.Get(front.URL + "/stats")
+	if err != nil {
+		t.Fatalf("GET /stats: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("/stats without token: status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// TestNoSecretsInLogs is the #240 acceptance check: after a request carrying an
+// API key and conversation content, the proxy logs must contain no occurrence
+// of the key, a Bearer token, or message content — only counts/ratios/paths.
+func TestNoSecretsInLogs(t *testing.T) {
+	up := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	})
+	front, logs := newTestProxy(t, up)
+
+	const secretSentence = "SUPERSECRETCONVERSATIONCONTENT"
+	body := `{"model":"claude-sonnet-4-6","system":"You are helpful.","messages":[{"role":"user","content":[{"type":"text","text":"` + secretSentence + `"}]}]}`
+	req, _ := http.NewRequest(http.MethodPost, front.URL+"/v1/messages", strings.NewReader(body))
+	req.Header.Set("x-api-key", "sk-ant-verysecretkey123")
+	req.Header.Set("Authorization", "Bearer sk-ant-bearersecret456")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+
+	out := logs.String()
+	for _, leak := range []string{"sk-ant-", "Bearer", secretSentence, "verysecretkey", "bearersecret"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("log leaked %q:\n%s", leak, out)
 		}
 	}
 }

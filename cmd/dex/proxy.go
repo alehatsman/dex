@@ -17,6 +17,12 @@ package main
 //
 // Note: a non-first-party base URL disables MCP tool search unless
 // ENABLE_TOOL_SEARCH=true is also exported.
+//
+// Security posture (#240): the proxy handles the agent's Anthropic API key, so
+// it binds loopback-only by default and refuses a non-loopback --addr unless
+// DEX_PROXY_TOKEN is set. When set, incoming requests must carry the token in
+// the X-Dex-Proxy-Token header; the upstream credential is forwarded untouched
+// and never persisted, and request/response bodies are never logged.
 
 import (
 	"context"
@@ -24,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/proxy"
 )
@@ -39,7 +46,7 @@ func cmdProxy(ctx context.Context, args []string) error {
 		`ANTHROPIC_BASE_URL=http://127.0.0.1:8788 ENABLE_TOOL_SEARCH=true claude`,
 	)
 	addr := fs.String("addr", "127.0.0.1:8788",
-		"Loopback listen address. Non-loopback binds are rejected.")
+		"Listen address. Loopback-only unless DEX_PROXY_TOKEN is set.")
 	upstream := fs.String("upstream", proxy.DefaultUpstream,
 		"Upstream API base URL requests are forwarded to.")
 	statsFlag := fs.Bool("stats", false,
@@ -51,26 +58,34 @@ func cmdProxy(ctx context.Context, args []string) error {
 		return fmt.Errorf("proxy takes no positional args (got %v)", fs.Args())
 	}
 
+	// DEX_PROXY_TOKEN gates incoming requests and unlocks a non-loopback bind.
+	// It is a secret: read only from the environment, never from config.yml.
+	token := strings.TrimSpace(os.Getenv("DEX_PROXY_TOKEN"))
+
 	if *statsFlag {
-		return printProxyStats(ctx, *addr)
+		return printProxyStats(ctx, *addr, token)
 	}
 
 	fmt.Printf("dex proxy\n")
-	fmt.Printf("  addr=%s  upstream=%s\n", *addr, *upstream)
+	fmt.Printf("  addr=%s  upstream=%s  auth=%v\n", *addr, *upstream, token != "")
 	fmt.Printf("  wire it up: export ANTHROPIC_BASE_URL=http://%s\n", *addr)
 	fmt.Printf("  (also export ENABLE_TOOL_SEARCH=true when forwarding tool_reference blocks)\n")
+	if token != "" {
+		fmt.Printf("  auth: clients must send header %s: <DEX_PROXY_TOKEN>\n", proxy.ProxyTokenHeader)
+	}
 	fmt.Printf("  stats: dex proxy --stats\n")
 
 	return proxy.Run(ctx, proxy.Options{
 		Addr:     *addr,
 		Upstream: *upstream,
 		Logger:   cliLogger(),
+		Token:    token,
 	})
 }
 
 // printProxyStats fetches the /stats snapshot from a running proxy and prints it.
-func printProxyStats(ctx context.Context, addr string) error {
-	snap, err := proxy.FetchStats(ctx, addr)
+func printProxyStats(ctx context.Context, addr, token string) error {
+	snap, err := proxy.FetchStats(ctx, addr, token)
 	if err != nil {
 		return fmt.Errorf("could not reach proxy at %s: %w\n  (start with: dex proxy --addr %s)", addr, err, addr)
 	}

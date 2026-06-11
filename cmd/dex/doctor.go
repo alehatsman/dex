@@ -387,7 +387,8 @@ func checkProxy(ctx context.Context) doctorCheck {
 	detail := base + "  (reachable)"
 	statsCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if snap, err := proxy.FetchStats(statsCtx, addr); err == nil && snap.RequestsTotal > 0 {
+	proxyTok := strings.TrimSpace(os.Getenv("DEX_PROXY_TOKEN"))
+	if snap, err := proxy.FetchStats(statsCtx, addr, proxyTok); err == nil && snap.RequestsTotal > 0 {
 		pct := snap.CompressionRatio * 100
 		detail = fmt.Sprintf("%s  (reachable, %d req, %d tokens saved, %.1f%%)",
 			base, snap.RequestsTotal, snap.TokensSaved, pct)

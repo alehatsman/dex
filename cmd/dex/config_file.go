@@ -68,7 +68,7 @@ var sectionKeyMap = map[string]string{
 
 // secretVars are never populated from the config file — they must come from
 // the environment so tokens don't get checked into a repo.
-var secretVars = map[string]bool{"DEX_SERVE_TOKEN": true}
+var secretVars = map[string]bool{"DEX_SERVE_TOKEN": true, "DEX_PROXY_TOKEN": true}
 
 // fileSourcedKeys records which DEX_* vars were populated from .dex/config.yml
 // rather than the real environment. `dex env` reads it to label the source.
