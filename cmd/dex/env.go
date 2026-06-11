@@ -97,8 +97,6 @@ var allEnvVars = []envVar{
 	{"DEX_GRAPH_HOP_CAP", "4", "Spreading-activation traversal depth (graph blast-radius around matched symbols). Also bounds `prefetch` neighbor discovery, which shares the same traversal.", "tuning", false},
 	{"DEX_GRAPH_WEIGHT", "1.0", "Flat multiplier on the graph-proximity RRF lane, applied on top of the per-hop γ decay. 1.0 = neutral; raise to 2–4 to make the graph lane compete with dense+BM25 (tune with `dex bench eval --mode blast-radius`). Must be > 0; out-of-range ignored.", "tuning", false},
 	{"DEX_ALLOW_PATHS", "", "Colon-separated path prefixes accepted outside git work trees.", "tuning", false},
-	{"DEX_TOOLS", "standard", "MCP tool surface tier: ask (ask only) | standard (default, ask + session/notes/ls/grep/find/lookup/read) | power (everything). DEX_EXPOSE_RAW_TOOLS=1 is an alias for power.", "tuning", false},
-	{"DEX_EXPOSE_RAW_TOOLS", "", "Set 1|on to also register the full MCP surface (find, lookup, grep, read, ls, graph tools, status) alongside `ask`. Alias for DEX_TOOLS=power. Default off: agents see `ask` only.", "tuning", true},
 }
 
 // effVar is one resolved row for output: name, current value, where

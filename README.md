@@ -93,8 +93,6 @@ endpoints:
 models:
   embed: mxbai-embed-large        # DEX_EMBED_MODEL
   chat:  qwen2.5-coder:14b        # DEX_CHAT_MODEL
-tools:
-  tier: power                     # DEX_TOOLS: ask | standard | power
 index:
   include: ["cmd/", "internal/", "*.md"]  # gitignore grammar; required — no include = empty index
   ignore:  ["testdata/"]
@@ -112,18 +110,9 @@ Key env vars:
 | `DEX_CHAT_URL`      | `auto`                           | Chat completions endpoint; probes ollama, falls back to `http://127.0.0.1:8081` |
 | `DEX_CHAT_MODEL`    | `auto`                           | Chat model; auto-detects from ollama, falls back to `Qwen/Qwen2.5-Coder-7B-Instruct` |
 | `DEX_PROFILE`       | *(unset)*                        | Context profile: `claude`, `explore`, `bugfix`, `ci` |
-| `DEX_TOOLS`         | `standard`                       | MCP surface: `ask`, `standard`, `power`    |
 | `DEX_SERVE_TOKEN`   | *(unset)*                        | Bearer token for `dex serve` (env only)    |
 
 Run `dex env --all --doc` for the full list of tuning knobs.
-
-## MCP tool tiers
-
-`DEX_TOOLS=ask|standard|power` (default `standard`):
-
-- **ask** — `ask` only
-- **standard** — `ask`, `ctx_*`, `search_context`, `search_workspace`, `search_grep`, `file_tree`, `file_view`
-- **power** — adds `search_semantic`, `search_symbol`, `search_similar`, `graph_*`, `compress_output`, `status`, `spec_check`
 
 `DEX_PROFILE=claude` is the recommended default for Claude Code — selects
 `cl100k_base` tokenizer so token-budget reports are accurate.
