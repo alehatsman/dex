@@ -1,28 +1,18 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/alehatsman/dex/internal/chat"
-	"github.com/alehatsman/dex/internal/chunk"
-	"github.com/alehatsman/dex/internal/embed"
-	"github.com/alehatsman/dex/internal/ignore"
-	"github.com/alehatsman/dex/internal/index"
-	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/rerank"
-	"github.com/alehatsman/dex/internal/store"
 )
 
 // writeIndexAll opts the temp project into indexing everything. Indexing
@@ -171,34 +161,6 @@ func TestRerankPoolFallbackOnNonPositive(t *testing.T) {
 	}
 }
 
-// ─── auto-summarize wiring (idle drainer) ─────────────────────────────────
-
-func TestAutoSummarizeEnabledDefaults(t *testing.T) {
-	t.Setenv("DEX_AUTO_SUMMARIZE", "")
-	t.Setenv("DEX_POWER_SAVE", "")
-	t.Setenv("DEX_SUMMARY_URL", "")
-	t.Setenv("DEX_CHAT_URL", "")
-	if autoSummarizeEnabled() {
-		t.Error("auto-summarize should be off with no chat endpoint configured")
-	}
-
-	t.Setenv("DEX_SUMMARY_URL", "http://x")
-	if !autoSummarizeEnabled() {
-		t.Error("auto-summarize should be on once DEX_SUMMARY_URL is set")
-	}
-
-	t.Setenv("DEX_AUTO_SUMMARIZE", "off")
-	if autoSummarizeEnabled() {
-		t.Error("DEX_AUTO_SUMMARIZE=off must win over the auto-on default")
-	}
-
-	t.Setenv("DEX_AUTO_SUMMARIZE", "on")
-	t.Setenv("DEX_POWER_SAVE", "1")
-	if autoSummarizeEnabled() {
-		t.Error("DEX_POWER_SAVE=1 must override explicit on")
-	}
-}
-
 func TestEnvBool(t *testing.T) {
 	cases := []struct {
 		raw  string
@@ -261,174 +223,6 @@ func hashVec(s string, dim int) []float32 {
 
 // TestIdleSummaryDrainerEndToEnd queues a few rows via a defer-mode
 // index, then drives newIdleSummaryDrainer's callback until it
-// signals done. Verifies the queue empties and the cascade produces
-// package + repo summaries — i.e. `dex watch`'s idle hook is
-// behaviourally equivalent to `dex index summarize`.
-func TestIdleSummaryDrainerEndToEnd(t *testing.T) {
-	var chatCalls int32
-	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&chatCalls, 1)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []map[string]any{
-				{"message": map[string]any{"role": "assistant", "content": "Stub."}},
-			},
-		})
-	}))
-	defer chatSrv.Close()
-	embedSrv := fakeEmbedServer(t)
-	defer embedSrv.Close()
-
-	projDir := t.TempDir()
-	cacheDir := t.TempDir()
-	writeIndexAll(t, projDir)
-	// Two source files = at least two file_summary rows.
-	for i := range 2 {
-		_ = os.WriteFile(filepath.Join(projDir, fmt.Sprintf("f%d.go", i)),
-			fmt.Appendf(nil, "package main\nfunc F%d() {}\n", i), 0o644)
-	}
-
-	ctx := context.Background()
-	p, _ := proj.Resolve(projDir, cacheDir)
-	_ = p.EnsureCacheDir()
-	st, _ := store.Open(ctx, p.DBPath)
-	defer st.Close()
-	ig, _ := ignore.New(p.Root)
-	em := embed.New(embedSrv.URL, "fake", 8, 5*time.Second)
-	cc := chat.New(chatSrv.URL, "fake", 10*time.Second)
-
-	ix := index.New(p, st, em, ig, index.Options{
-		Summarize:      true,
-		DeferSummaries: true,
-		Chat:           cc,
-	})
-	if err := ix.Run(ctx); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	startQueue, _ := st.CountPendingSummaries(ctx)
-	if startQueue == 0 {
-		t.Fatalf("expected queue non-empty after defer index")
-	}
-
-	drainer := ix.IdleSummaryDrainer(1 /* batch */)
-	if drainer == nil {
-		t.Fatal("IdleSummaryDrainer returned nil despite chat being configured")
-	}
-
-	// Drive the drainer like the watcher would, batch by batch.
-	for i := 0; i < startQueue+5; i++ {
-		done, err := drainer(ctx)
-		if err != nil {
-			t.Fatalf("drainer(%d): %v", i, err)
-		}
-		if done {
-			break
-		}
-	}
-
-	if remaining, _ := st.CountPendingSummaries(ctx); remaining != 0 {
-		t.Errorf("queue not drained: %d remaining", remaining)
-	}
-	pkgs, _ := st.AllSummariesByKind(ctx, chunk.KindPackageSummary)
-	if len(pkgs) == 0 {
-		t.Error("expected package_summary after cascade")
-	}
-	repos, _ := st.AllSummariesByKind(ctx, chunk.KindRepoSummary)
-	if len(repos) == 0 {
-		t.Error("expected repo_summary after cascade")
-	}
-}
-
-func TestIdleSummaryDrainerNilWithoutChat(t *testing.T) {
-	embedSrv := fakeEmbedServer(t)
-	defer embedSrv.Close()
-	projDir := t.TempDir()
-	cacheDir := t.TempDir()
-	writeIndexAll(t, projDir)
-
-	ctx := context.Background()
-	p, _ := proj.Resolve(projDir, cacheDir)
-	_ = p.EnsureCacheDir()
-	st, _ := store.Open(ctx, p.DBPath)
-	defer st.Close()
-	ig, _ := ignore.New(p.Root)
-	em := embed.New(embedSrv.URL, "fake", 8, 5*time.Second)
-
-	ix := index.New(p, st, em, ig, index.Options{}) // no Chat
-	if d := ix.IdleSummaryDrainer(10); d != nil {
-		t.Error("expected nil drainer when chat is not configured")
-	}
-}
 
 // TestIdleSummaryDrainerReArmsOnNoProgress simulates a failing chat
 // endpoint: every drain attempt fails so the queue depth doesn't move.
-// The drainer must return done=false (re-arm) so the idle cycle
-// self-heals when the endpoint recovers, without relying on a
-// file-system event to restart it.
-func TestIdleSummaryDrainerReArmsOnNoProgress(t *testing.T) {
-	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "boom", http.StatusInternalServerError)
-	}))
-	defer chatSrv.Close()
-	embedSrv := fakeEmbedServer(t)
-	defer embedSrv.Close()
-
-	projDir := t.TempDir()
-	cacheDir := t.TempDir()
-	writeIndexAll(t, projDir)
-	_ = os.WriteFile(filepath.Join(projDir, "f.go"),
-		[]byte("package main\nfunc F() {}\n"), 0o644)
-
-	ctx := context.Background()
-	p, _ := proj.Resolve(projDir, cacheDir)
-	_ = p.EnsureCacheDir()
-	st, _ := store.Open(ctx, p.DBPath)
-	defer st.Close()
-	ig, _ := ignore.New(p.Root)
-	em := embed.New(embedSrv.URL, "fake", 8, 5*time.Second)
-	cc := chat.New(chatSrv.URL, "fake", 2*time.Second)
-
-	ix := index.New(p, st, em, ig, index.Options{
-		Summarize: true, DeferSummaries: true, Chat: cc,
-	})
-	if err := ix.Run(ctx); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if n, _ := st.CountPendingSummaries(ctx); n == 0 {
-		t.Fatal("expected pending rows")
-	}
-
-	drainer := ix.IdleSummaryDrainer(10)
-
-	// Single no-progress tick: must re-arm so the cycle survives
-	// without a file-system event.
-	done, err := drainer(ctx)
-	if err != nil {
-		t.Fatalf("drainer: %v", err)
-	}
-	if done {
-		t.Error("drainer must return done=false on no-progress so the idle cycle self-heals")
-	}
-
-	// After maxConsecutiveNoProgress failures the backoff kicks in, but
-	// the cycle must still re-arm (done=false) so it recovers once the
-	// endpoint is healthy again.
-	const maxConsecutive = 3
-	for i := 1; i < maxConsecutive; i++ {
-		done, err = drainer(ctx)
-		if err != nil {
-			t.Fatalf("drainer tick %d: %v", i+1, err)
-		}
-		if done {
-			t.Errorf("tick %d: drainer returned done=true before endpoint recovered", i+1)
-		}
-	}
-	// Now in backoff — guard check must also re-arm.
-	done, err = drainer(ctx)
-	if err != nil {
-		t.Fatalf("drainer (backoff tick): %v", err)
-	}
-	if done {
-		t.Error("drainer returned done=true during backoff; idle cycle would stall")
-	}
-}

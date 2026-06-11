@@ -67,33 +67,13 @@ type AutoWatchConfig struct {
 	// Enabled toggles the per-project watcher. When true, the first
 	// MCP request that resolves a project also spawns a `watch.Watcher`
 	// goroutine that lives for the server's lifetime — keeping the
-	// chunk index fresh as files change and (when Summarize is set)
-	// filling pending summaries in the background.
+	// chunk index fresh as files change.
 	Enabled bool
 	// Debounce is the quiet window between fs events before re-indexing
 	// (default 500ms).
 	Debounce time.Duration
-	// Summarize, when true and the parent Server's ChatClient is
-	// configured, enables per-flush summary queueing + the idle drainer.
-	// When false the watcher only keeps the chunk index fresh.
-	Summarize bool
-	// OnIdleAfter is the quiet window after a flush before the summary
-	// drainer fires (default 5s). Ignored when Summarize is false.
-	OnIdleAfter time.Duration
-	// BatchSize bounds rows per idle drain (default 10).
-	BatchSize int
 	// IndexConcurrency caps Pass 1 worker count (default 0 = GOMAXPROCS).
 	IndexConcurrency int
-	// SummaryConcurrency caps in-flight chat calls during the drain.
-	SummaryConcurrency int
-	// ChunkSummaryMinLines forwards to index.Options.ChunkSummaryMinLines.
-	ChunkSummaryMinLines int
-	// ChunkSummaryMode forwards to index.Options.ChunkSummaryMode
-	// (""/"llm" = chat path, "extractive" = zero-GPU). See index #270.
-	ChunkSummaryMode string
-	// YieldWindow forwards to index.Options.YieldWindow: the idle drainer
-	// skips a tick if a foreground query ran within this window. 0 = off.
-	YieldWindow time.Duration
 	// Logger receives spawn/teardown messages; nil = io.Discard.
 	Logger *slog.Logger
 }
@@ -102,8 +82,6 @@ type AutoWatchConfig struct {
 type Server struct {
 	EmbedClient    embed.Embedder
 	ChatClient     *chat.Client         // optional — when nil, view_summarize is not registered
-	SummaryClient  *chat.Client         // optional — used by the auto-watcher's background drainer; falls back to ChatClient if nil
-	SummaryModels  index.SummaryModels  // optional — per-tier model overrides forwarded to the auto-watcher's indexer
 	RerankClient   rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through StoreOpts.Reranker
 	CompressClient *chat.Client         // optional — health reported by status
 	DraftClient    *chat.Client         // optional — health reported by status
@@ -654,23 +632,9 @@ func (s *Server) runWatcher(p *proj.Project) {
 		return
 	}
 
-	summaryChat := s.SummaryClient
-	if summaryChat == nil {
-		summaryChat = s.ChatClient
-	}
 	ixOpts := index.Options{
 		Logger:      logger,
 		Concurrency: s.AutoWatch.IndexConcurrency,
-	}
-	if s.AutoWatch.Summarize && summaryChat != nil {
-		ixOpts.Summarize = true
-		ixOpts.DeferSummaries = true
-		ixOpts.Chat = summaryChat
-		ixOpts.SummaryModels = s.SummaryModels
-		ixOpts.SummaryConcurrency = s.AutoWatch.SummaryConcurrency
-		ixOpts.ChunkSummaryMinLines = s.AutoWatch.ChunkSummaryMinLines
-		ixOpts.ChunkSummaryMode = s.AutoWatch.ChunkSummaryMode
-		ixOpts.YieldWindow = s.AutoWatch.YieldWindow
 	}
 	ix := index.New(p, st, s.EmbedClient, ig, ixOpts)
 
@@ -678,12 +642,8 @@ func (s *Server) runWatcher(p *proj.Project) {
 		Debounce: s.AutoWatch.Debounce,
 		Logger:   logger,
 	}
-	if ixOpts.Summarize {
-		wOpts.OnIdle = ix.IdleSummaryDrainer(s.AutoWatch.BatchSize)
-		wOpts.OnIdleAfter = s.AutoWatch.OnIdleAfter
-	}
 	w := watch.New(ix, ig, p.Root, wOpts)
-	logger.Info("mcp watch: starting", "root", p.Root, "summarize", ixOpts.Summarize)
+	logger.Info("mcp watch: starting", "root", p.Root)
 	if err := w.Run(s.runCtx); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Warn("mcp watch: exited with error", "root", p.Root, "err", err)
 	}

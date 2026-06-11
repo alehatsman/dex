@@ -59,15 +59,6 @@ func collectEndpoints() []endpointProbe {
 		probes = append(probes, endpointProbe{name: "draft", status: "not configured"})
 	}
 
-	// summary inherits chat unless DEX_SUMMARY_URL is set explicitly;
-	// we report it as its own row so users can see which leg indexing uses.
-	if os.Getenv("DEX_SUMMARY_URL") == "" {
-		probes = append(probes, endpointProbe{name: "summary", status: "inherits chat"})
-	} else {
-		sc := newSummaryClient()
-		probes = append(probes, endpointProbe{name: "summary", url: sc.BaseURL, model: sc.Model, health: sc.Health})
-	}
-
 	return probes
 }
 

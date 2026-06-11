@@ -50,10 +50,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/alehatsman/dex/internal/chat"
 	"io"
 	"io/fs"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -64,7 +64,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/graph"
@@ -949,65 +948,6 @@ func newDraftClient() *chat.Client {
 // summaries are short (≤ 400 tokens) and dominated by call count, so
 // users typically point this at a smaller, faster model than the main
 // chat leg used by generate / ask_codebase. Falls back to the main
-// chat client when DEX_SUMMARY_URL is unset.
-//
-// DEX_SUMMARY_TIMEOUT controls the per-call deadline independently of
-// DEX_CHAT_TIMEOUT. In flood mode a single ollama request can queue for
-// 90+ seconds; raising this env var lets drain proceed without also
-// increasing the interactive ask/compress deadline. Defaults to
-// DEX_CHAT_TIMEOUT when unset.
-func newSummaryClient() *chat.Client {
-	// Resolve DEX_CHAT_TIMEOUT once; it is the fallback for DEX_SUMMARY_TIMEOUT.
-	chatTimeout := parseDuration("DEX_CHAT_TIMEOUT", envOr("DEX_CHAT_TIMEOUT", "120s"), 120*time.Second)
-
-	if os.Getenv("DEX_SUMMARY_URL") != "" {
-		return chatClientFromEnv("DEX_SUMMARY_URL", "DEX_SUMMARY_MODEL", "DEX_SUMMARY_TIMEOUT",
-			envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"), chatTimeout)
-	}
-
-	// No dedicated summary URL: share the main chat endpoint but honour
-	// DEX_SUMMARY_TIMEOUT so a longer drain deadline doesn't bleed into
-	// interactive queries.
-	c := newChatClient()
-	if raw := os.Getenv("DEX_SUMMARY_TIMEOUT"); raw != "" {
-		timeout := parseDuration("DEX_SUMMARY_TIMEOUT", raw, chatTimeout)
-		c.HTTP = &http.Client{Timeout: timeout}
-	}
-	return c
-}
-
-// summaryModelsFromEnv reads the per-tier model overrides. Empty
-// string at any tier means "use the chat client's default model"
-// (i.e. DEX_SUMMARY_MODEL). Lets the operator route the dozen
-// package summaries and the one repo summary through a heavier
-// model than the hundreds of chunk summaries.
-func summaryModelsFromEnv() index.SummaryModels {
-	return index.SummaryModels{
-		Chunk:   os.Getenv("DEX_CHUNK_SUMMARY_MODEL"),
-		File:    os.Getenv("DEX_FILE_SUMMARY_MODEL"),
-		Package: os.Getenv("DEX_PACKAGE_SUMMARY_MODEL"),
-		Repo:    os.Getenv("DEX_REPO_SUMMARY_MODEL"),
-	}
-}
-
-// chunkSummaryModeFromEnv reads DEX_CHUNK_SUMMARY_MODE. Unset defaults to
-// "off" — the chunk_summary tier is not generated (the raw code chunk is
-// already the primary embedded vector; chunk_summary is a redundant deduped
-// second vector). "llm" restores the per-chunk chat path; "extractive" uses
-// the zero-GPU summarizer (dex #270, #276). The off default lives here (the
-// CLI/server surface) rather than in index.Options, so programmatic callers
-// that leave ChunkSummaryMode empty keep the historical llm behaviour.
-func chunkSummaryModeFromEnv() string {
-	if v := strings.TrimSpace(os.Getenv("DEX_CHUNK_SUMMARY_MODE")); v != "" {
-		return v
-	}
-	return index.ChunkSummaryModeOff
-}
-
-// chunkContextModeFromEnv reads DEX_CHUNK_CONTEXT_MODE. Default is off.
-func chunkContextModeFromEnv() string {
-	return strings.TrimSpace(os.Getenv("DEX_CHUNK_CONTEXT_MODE"))
-}
 
 // envInt reads a positive integer env var with a default.
 // Non-positive or unparsable values fall back to def with a warning.
@@ -1134,8 +1074,6 @@ func cmdIndexDispatch(ctx context.Context, args []string) error {
 		switch args[0] {
 		case "status":
 			return cmdIndexStatus(ctx, args[1:])
-		case "summarize":
-			return cmdIndexSummarize(ctx, args[1:])
 		}
 	}
 	return cmdIndex(ctx, args)
@@ -1149,8 +1087,6 @@ func cmdIndex(ctx context.Context, args []string) error {
 	verbose := fs.Bool("v", false, "verbose")
 	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")
 	dryRun := fs.Bool("dry-run", false, "walk the file tree and show what would be indexed, without writing to the index")
-	summarize := fs.Bool("summarize", false, "generate per-file and per-chunk summaries via the chat endpoint (auto-enabled when DEX_SUMMARY_URL is set)")
-	summarizeDefer := fs.Bool("summarize-defer", true, "queue summaries into pending_summaries instead of generating them inline; `dex index summarize` (or watch idle) drains the queue later. Implies --summarize. Chat endpoint not required at index time. Pass --summarize-defer=false to disable.")
 	graphMode := fs.String("graph", "on", "graph phase: on|off|only ('on' runs both phases, 'off' skips graph, 'only' skips chunk/embed and just refreshes the graph)")
 	noGit := fs.Bool("no-git", false, "skip git commit indexing (Phase 3)")
 	format := fs.String("format", "text", "output format: text|json")
@@ -1217,27 +1153,6 @@ func cmdIndex(ctx context.Context, args []string) error {
 			Logger:      cliLogger(),
 			Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0),
 			Progress:    indexProgressPrinter(*format),
-		}
-		// Auto-enable summarize when a dedicated summary endpoint is
-		// configured. DEX_CHAT_URL is NOT a trigger — users often
-		// set it for generate/ask_codebase without wanting per-chunk
-		// chat calls on every index. Set --summarize, --summarize-defer,
-		// or DEX_SUMMARY_URL explicitly to opt in.
-		//
-		// --summarize-defer implies --summarize and routes job dispatch
-		// through pending_summaries instead of inline chat calls; the
-		// chat client is unused at index time but we still wire it so
-		// the future `dex index summarize` drainer can reuse the same
-		// Options shape.
-		if *summarize || *summarizeDefer || os.Getenv("DEX_SUMMARY_URL") != "" {
-			opts.Summarize = true
-			opts.DeferSummaries = *summarizeDefer
-			opts.Chat = newSummaryClient()
-			opts.SummaryModels = summaryModelsFromEnv()
-			opts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
-			opts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
-			opts.ChunkSummaryMode = chunkSummaryModeFromEnv()
-			opts.ChunkContextMode = chunkContextModeFromEnv()
 		}
 		ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, opts)
 		if err := ix.Run(ctx); err != nil {
@@ -2301,84 +2216,6 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 // ─── index summarize ───────────────────────────────────────────────────────
 
 // cmdIndexSummarize drains the pending_summaries queue: generates
-// summaries that `dex index --summarize-defer` enqueued, embeds
-// them, and upserts them as summary chunks. After draining file_summary
-// and chunk_summary jobs, cascades to generate any missing
-// package_summary and repo_summary chunks.
-func cmdIndexSummarize(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("index summarize", flag.ContinueOnError)
-	setHelp(fs,
-		"Drain pending_summaries: generate summaries queued by `dex index --summarize-defer`, then cascade to package + repo summaries.",
-		"dex index summarize [flags] <path>")
-	verbose := fs.Bool("v", false, "verbose")
-	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")
-	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
-	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
-		return err
-	}
-	rest := fs.Args()
-	if len(rest) != 1 {
-		return fmt.Errorf("index summarize needs exactly one path argument")
-	}
-	base, err := indexDir()
-	if err != nil {
-		return err
-	}
-	p, err := proj.Resolve(rest[0], base)
-	if err != nil {
-		return err
-	}
-	if err := proj.CheckIndexable(p, *force); err != nil {
-		return err
-	}
-	if err := p.EnsureCacheDir(); err != nil {
-		return err
-	}
-	lk, err := acquireProjectLock(ctx, p, "summarize", "summarize", *waitLock, *breakLock)
-	if err != nil {
-		return err
-	}
-	if lk == nil {
-		return nil // another indexer is running; message already printed
-	}
-	defer func() { _ = lk.Release() }()
-	st, err := openStore(ctx, p.DBPath)
-	if err != nil {
-		return err
-	}
-	defer st.Close()
-	ig, err := ignore.New(p.Root)
-	if err != nil {
-		return err
-	}
-	warnIfNoInclude(ig, p.Root)
-	ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, index.Options{
-		Verbose:              *verbose,
-		Logger:               cliLogger(),
-		Chat:                 newSummaryClient(),
-		SummaryModels:        summaryModelsFromEnv(),
-		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 8),
-		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
-		ChunkSummaryMode:     chunkSummaryModeFromEnv(),
-		SummaryPace:          envDuration("DEX_SUMMARIZE_PACE", 0),
-	})
-
-	startCount, _ := st.CountPendingSummaries(ctx)
-	generated, err := ix.DrainPendingSummaries(ctx)
-	if err != nil {
-		return err
-	}
-	endCount, _ := st.CountPendingSummaries(ctx)
-
-	fmt.Printf("✓ summarize %s\n", p.Root)
-	fmt.Printf("  generated:    %d\n", generated)
-	fmt.Printf("  queue:        %d → %d\n", startCount, endCount)
-	if endCount > 0 {
-		fmt.Printf("  (remaining rows have attempt failures; check with `dex index status`)\n")
-	}
-	return nil
-}
 
 // ─── nuke ──────────────────────────────────────────────────────────────────
 
@@ -2462,8 +2299,6 @@ func cmdReindex(ctx context.Context, args []string) error {
 	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
 	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
 	pullModel := fs.Bool("pull-model", false, "pull the default ollama embedding model (qwen3-embedding:4b) before reindexing")
-	summarize := fs.Bool("summarize", false, "generate per-file and per-chunk summaries via the chat endpoint (auto-enabled when DEX_SUMMARY_URL is set)")
-	summarizeDefer := fs.Bool("summarize-defer", true, "queue summaries into pending_summaries instead of generating them inline; `dex index summarize` (or watch idle) drains the queue later. Implies --summarize. Pass --summarize-defer=false to disable.")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -2500,7 +2335,7 @@ func cmdReindex(ctx context.Context, args []string) error {
 		var failed []string
 		for _, root := range roots {
 			fmt.Printf("→ reindexing %s\n", root)
-			if err := reindexOne(ctx, root, base, *verbose, *force, *waitLock, *breakLock, *summarize, *summarizeDefer); err != nil {
+			if err := reindexOne(ctx, root, base, *verbose, *force, *waitLock, *breakLock); err != nil {
 				fmt.Fprintf(os.Stderr, "  ✗ %v\n", err)
 				failed = append(failed, root)
 			}
@@ -2514,13 +2349,13 @@ func cmdReindex(ctx context.Context, args []string) error {
 	if len(rest) != 1 {
 		return fmt.Errorf("reindex needs exactly one path argument (or --all)")
 	}
-	return reindexOne(ctx, rest[0], base, *verbose, *force, *waitLock, *breakLock, *summarize, *summarizeDefer)
+	return reindexOne(ctx, rest[0], base, *verbose, *force, *waitLock, *breakLock)
 }
 
 // reindexOne drops the existing per-project cache dir and re-runs the
 // indexer from scratch. Used by both `reindex <path>` and the loop in
 // `reindex --all`.
-func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock, breakLock, summarize, summarizeDefer bool) error {
+func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock, breakLock bool) error {
 	p, err := proj.Resolve(root, base)
 	if err != nil {
 		return err
@@ -2564,16 +2399,6 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	}
 	warnIfNoInclude(ig, p.Root)
 	ixOpts := index.Options{Verbose: verbose, Logger: cliLogger(), Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0)}
-	if summarize || summarizeDefer || os.Getenv("DEX_SUMMARY_URL") != "" {
-		ixOpts.Summarize = true
-		ixOpts.DeferSummaries = summarizeDefer
-		ixOpts.Chat = newSummaryClient()
-		ixOpts.SummaryModels = summaryModelsFromEnv()
-		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
-		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
-		ixOpts.ChunkSummaryMode = chunkSummaryModeFromEnv()
-		ixOpts.ChunkContextMode = chunkContextModeFromEnv()
-	}
 	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, ixOpts)
 	if err := ix.Run(ctx); err != nil {
 		return err
@@ -2650,21 +2475,6 @@ func knownProjectRoots(ctx context.Context, base string) ([]string, error) {
 }
 
 // ─── watch ─────────────────────────────────────────────────────────────────
-
-// autoSummarizeEnabled reports whether the watcher should drain
-// pending summaries in the background. Defaults on when a chat or
-// summary endpoint is configured; DEX_AUTO_SUMMARIZE=off|0 disables.
-// DEX_POWER_SAVE=1|on overrides to off (laptop-battery mode).
-func autoSummarizeEnabled() bool {
-	if envBool("DEX_POWER_SAVE", false) {
-		return false
-	}
-	if v := os.Getenv("DEX_AUTO_SUMMARIZE"); v != "" {
-		return envBool("DEX_AUTO_SUMMARIZE", true)
-	}
-	// Default: on iff we have somewhere to send chat calls.
-	return os.Getenv("DEX_SUMMARY_URL") != "" || os.Getenv("DEX_CHAT_URL") != ""
-}
 
 // envBool parses an env var as a boolean. Truthy: 1, on, true, yes
 // (case-insensitive). Falsy: 0, off, false, no. Anything else (or
@@ -2746,26 +2556,10 @@ func cmdWatch(ctx context.Context, args []string) error {
 	warnIfNoInclude(ig, p.Root)
 	logger := cliLogger()
 
-	autoSum := autoSummarizeEnabled()
 	ixOpts := index.Options{
 		Verbose:     *verbose,
 		Logger:      logger,
 		Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0),
-	}
-	if autoSum {
-		// Mirror cmdIndex: queue summaries during each flush so the
-		// idle drainer has something to consume. Defer is mandatory
-		// here — running chat calls inline would extend the flush
-		// past the next save's debounce.
-		ixOpts.Summarize = true
-		ixOpts.DeferSummaries = true
-		ixOpts.Chat = newSummaryClient()
-		ixOpts.SummaryModels = summaryModelsFromEnv()
-		ixOpts.SummaryConcurrency = envInt("DEX_SUMMARY_CONCURRENCY", 8)
-		ixOpts.ChunkSummaryMinLines = envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0)
-		ixOpts.ChunkSummaryMode = chunkSummaryModeFromEnv()
-		ixOpts.ChunkContextMode = chunkContextModeFromEnv()
-		ixOpts.YieldWindow = envDuration("DEX_SUMMARIZE_YIELD", 0)
 	}
 	ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, ixOpts)
 
@@ -2789,17 +2583,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 		Logger:     logger,
 		AfterIndex: afterIndex,
 	}
-	if autoSum {
-		wOpts.OnIdle = ix.IdleSummaryDrainer(envInt("DEX_SUMMARIZE_BATCH", 10))
-		wOpts.OnIdleAfter = envDuration("DEX_SUMMARIZE_IDLE", 5*time.Second)
-	}
 	w := watch.New(ix, ig, p.Root, wOpts)
-	if autoSum {
-		fmt.Fprintf(os.Stderr, "dex watching %s (debounce=%s, auto-summarize idle=%s batch=%d)\n",
-			p.Root, *debounce, wOpts.OnIdleAfter, envInt("DEX_SUMMARIZE_BATCH", 10))
-	} else {
-		fmt.Fprintf(os.Stderr, "dex watching %s (debounce=%s)\n", p.Root, *debounce)
-	}
 	return w.Run(ctx)
 }
 
@@ -3025,8 +2809,6 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 	srv := &mcp.Server{
 		EmbedClient:    newEmbedClient(""),
 		ChatClient:     newChatClient(),
-		SummaryClient:  newSummaryClient(), // dedicated client for the auto-watcher's background drainer
-		SummaryModels:  summaryModelsFromEnv(),
 		RerankClient:   rerankClient,
 		CompressClient: newCompressClient(),
 		DraftClient:    newDraftClient(),
@@ -3047,16 +2829,8 @@ func autoWatchConfigFromEnv() mcp.AutoWatchConfig {
 		return mcp.AutoWatchConfig{} // zero value disables
 	}
 	return mcp.AutoWatchConfig{
-		Enabled:              true,
-		Debounce:             envDuration("DEX_WATCH_DEBOUNCE", 500*time.Millisecond),
-		Summarize:            autoSummarizeEnabled(),
-		OnIdleAfter:          envDuration("DEX_SUMMARIZE_IDLE", 5*time.Second),
-		BatchSize:            envInt("DEX_SUMMARIZE_BATCH", 10),
-		IndexConcurrency:     envInt("DEX_INDEX_CONCURRENCY", 0),
-		SummaryConcurrency:   envInt("DEX_SUMMARY_CONCURRENCY", 8),
-		ChunkSummaryMinLines: envInt("DEX_CHUNK_SUMMARY_MIN_LINES", 0),
-		ChunkSummaryMode:     chunkSummaryModeFromEnv(),
-		YieldWindow:          envDuration("DEX_SUMMARIZE_YIELD", 0),
-		Logger:               cliLogger(),
+		Enabled:  true,
+		Debounce: envDuration("DEX_WATCH_DEBOUNCE", 500*time.Millisecond),
+		Logger:   cliLogger(),
 	}
 }
