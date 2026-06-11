@@ -1,0 +1,401 @@
+// Package graph extracts a Go-specific static code graph (packages,
+// files, functions, methods, types, fields, imports + the structural
+// edges between them) and persists it next to the chunk/vector index.
+//
+// Where the chunk index answers "what code is *about* X", the graph
+// answers structural questions like "what methods belong to (*Store)",
+// "what does package P import", "where does this type embed", "who
+// calls this function". Edges emitted today: contains, imports,
+// has_method, has_field, embeds, implements, calls (Go-only via
+// go/types). `references` lands with the LSP-as-consumer work.
+package graph
+
+import (
+	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"time"
+
+	"github.com/alehatsman/dex/internal/proj"
+)
+
+// NodeKind enumerates the kinds of structural symbols the extractor
+// emits. Stored as a TEXT column so adding new kinds in later layers
+// (e.g. constant, variable) is a no-op migration.
+type NodeKind string
+
+const (
+	NodePackage   NodeKind = "package"
+	NodeFile      NodeKind = "file"
+	NodeFunction  NodeKind = "function"
+	NodeMethod    NodeKind = "method"
+	NodeType      NodeKind = "type"
+	NodeInterface NodeKind = "interface"
+	NodeStruct    NodeKind = "struct"
+	NodeField     NodeKind = "field"
+	NodeImport    NodeKind = "import"
+	// NodeClass is the dynamic-language equivalent of Go's struct +
+	// interface kinds combined. Used by the tree-sitter extractors
+	// (Python today, JS/TS/Ruby next) where the language doesn't make
+	// Go's struct-vs-interface distinction. Schema is TEXT so this is
+	// a no-op migration.
+	NodeClass NodeKind = "class"
+	// NodeDocument is one markdown document (a .md/.markdown file),
+	// emitted by ExtractMarkdown. The doc-graph layer treats each file
+	// as a node so links/wikilinks between docs become navigable edges,
+	// Obsidian-style. Schema is TEXT so this is a no-op migration.
+	NodeDocument NodeKind = "document"
+	// NodeTag is one `#tag` mined from markdown bodies by ExtractMarkdown.
+	// One node per distinct tag (namespaced under the markdown sentinel
+	// package); documents point at it via EdgeTagged for tag-based
+	// clustering. Schema is TEXT so this is a no-op migration.
+	NodeTag NodeKind = "tag"
+	// NodeHeading is one ATX heading within a markdown document, emitted
+	// by ExtractMarkdown for section-level deep links. QualifiedName is
+	// `relpath#slug`; the owning document points at it via EdgeContains,
+	// and anchored links/wikilinks resolve to it. Schema is TEXT so this
+	// is a no-op migration.
+	NodeHeading NodeKind = "heading"
+)
+
+// EdgeKind enumerates the structural relationships emitted by the
+// extractor. `references`, `returns`, and `parameter` are reserved
+// for follow-up work but not emitted yet.
+type EdgeKind string
+
+const (
+	EdgeContains   EdgeKind = "contains"
+	EdgeImports    EdgeKind = "imports"
+	EdgeHasMethod  EdgeKind = "has_method"
+	EdgeHasField   EdgeKind = "has_field"
+	EdgeEmbeds     EdgeKind = "embeds"
+	EdgeImplements EdgeKind = "implements"
+	// EdgeCalls is emitted per *ast.CallExpr in extractCalls. Src is
+	// the enclosing function/method node; dst is the resolved callee
+	// (function, method, or interface method). Cross-package edges
+	// are emitted only when both endpoints are in the loaded set —
+	// std lib and unindexed dependencies are skipped to keep the
+	// graph navigable.
+	EdgeCalls EdgeKind = "calls"
+	// EdgeLinks is an inline markdown link `[text](./other.md)` from one
+	// document to another, emitted by ExtractMarkdown. Src is the source
+	// document node; dst is the resolved target document. The reverse
+	// direction is the backlink ("what links to this doc").
+	EdgeLinks EdgeKind = "links"
+	// EdgeWikilinks is an Obsidian-style `[[Note]]` reference resolved by
+	// basename against the doc set. Same src/dst semantics as EdgeLinks;
+	// kept distinct so consumers can tell vault-style refs from explicit
+	// relative links.
+	EdgeWikilinks EdgeKind = "wikilinks"
+	// EdgeTransclude is a markdown transclusion/embed — `![[Note]]` or
+	// `![alt](other.md)` — from one document to another. Named distinctly
+	// from EdgeEmbeds (which is Go struct embedding) to avoid conflating
+	// the two under one kind string. A doc-to-doc edge, so it surfaces via
+	// graph_links/graph_backlinks alongside links/wikilinks.
+	EdgeTransclude EdgeKind = "transcludes"
+	// EdgeTagged links a document to a NodeTag it mentions (`#tag`).
+	// Document → tag direction; the reverse groups every doc carrying a
+	// tag, for tag-based clustering.
+	EdgeTagged EdgeKind = "tagged"
+)
+
+// Node is a structural symbol persisted in graph_nodes.
+//
+// ID is stable across runs: <module>::<pkg>::<kind>::<qualified-name>.
+// Two runs that emit the "same" symbol therefore produce the same row
+// (upsert), and renaming a symbol naturally drops the old row via the
+// prune-by-last-seen-at pass.
+type Node struct {
+	ID            string
+	Kind          NodeKind
+	Name          string
+	QualifiedName string
+	PackagePath   string
+	FilePath      string // relative to project root; "" for package-level nodes
+	StartLine     int
+	EndLine       int
+	ChunkID       int64 // 0 = unlinked
+	Metadata      map[string]any
+
+	// Centrality fields — populated by ComputeCentrality from the
+	// `calls` edges, persisted via GraphStore.GraphSetCentrality.
+	// Zero on freshly-extracted Nodes; only the centrality pass writes
+	// them, so ContentHash deliberately ignores them (a changed
+	// in_degree must not look like a node-payload change to the prune
+	// pass).
+	InDegree        int
+	OutDegree       int
+	CrossPkgCallers int
+	PageRank        float64
+}
+
+// Edge is a directed relationship persisted in graph_edges.
+type Edge struct {
+	ID        string
+	Kind      EdgeKind
+	SrcID     string
+	DstID     string
+	FilePath  string
+	StartLine int
+	EndLine   int
+	Metadata  map[string]any
+}
+
+// NodeID is the canonical PK for a graph node. Anything that can be
+// referenced from another node or edge goes through here.
+func NodeID(modulePath, pkgPath string, kind NodeKind, qualifiedName string) string {
+	return modulePath + "::" + pkgPath + "::" + string(kind) + "::" + qualifiedName
+}
+
+// EdgeID derives the edge's primary key from its endpoints + location.
+// Same edge re-emitted from re-extracting the same file collides on PK
+// and upserts in place; an edge moving to a different line counts as
+// a different edge (the prune pass cleans up the old row).
+func EdgeID(srcID string, kind EdgeKind, dstID, filePath string, startLine int) string {
+	h := sha1.New()
+	h.Write([]byte(srcID))
+	h.Write([]byte{0})
+	h.Write([]byte(kind))
+	h.Write([]byte{0})
+	h.Write([]byte(dstID))
+	h.Write([]byte{0})
+	h.Write([]byte(filePath))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(startLine)))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// ContentHash returns a SHA-1 of the mutable fields. The upsert path
+// uses it to skip touching rows whose payload is unchanged (only
+// last_seen_at advances).
+func (n Node) ContentHash() string {
+	h := sha1.New()
+	h.Write([]byte(n.Kind))
+	h.Write([]byte{0})
+	h.Write([]byte(n.QualifiedName))
+	h.Write([]byte{0})
+	h.Write([]byte(n.PackagePath))
+	h.Write([]byte{0})
+	h.Write([]byte(n.FilePath))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(n.StartLine)))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(n.EndLine)))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.FormatInt(n.ChunkID, 10)))
+	h.Write([]byte{0})
+	h.Write(marshalMetadata(n.Metadata))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (e Edge) ContentHash() string {
+	h := sha1.New()
+	h.Write([]byte(e.Kind))
+	h.Write([]byte{0})
+	h.Write([]byte(e.SrcID))
+	h.Write([]byte{0})
+	h.Write([]byte(e.DstID))
+	h.Write([]byte{0})
+	h.Write([]byte(e.FilePath))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(e.StartLine)))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(e.EndLine)))
+	h.Write([]byte{0})
+	h.Write(marshalMetadata(e.Metadata))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// marshalMetadata returns a deterministic JSON encoding of m. Empty
+// map and nil both encode to "{}" so they hash identically.
+func marshalMetadata(m map[string]any) []byte {
+	if len(m) == 0 {
+		return []byte("{}")
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		// Metadata values originate inside this package; an encode
+		// failure is a programming error, not user input. Surface a
+		// stable placeholder so the hash remains computable.
+		return []byte(`{"error":"marshal"}`)
+	}
+	return b
+}
+
+// MarshalMetadata exports the deterministic JSON encoding used for
+// persistence (so persist.go and export.go agree byte-for-byte).
+func MarshalMetadata(m map[string]any) []byte { return marshalMetadata(m) }
+
+// unmarshalMetadata is the inverse of marshalMetadata. Returns nil for
+// empty objects so round-tripping an unset Metadata stays comparable.
+func unmarshalMetadata(b []byte) map[string]any {
+	if len(b) == 0 {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
+}
+
+// nilLogger returns a discarding logger when Options.Logger is unset.
+func nilLogger() *slog.Logger { return slog.New(slog.NewTextHandler(discardWriter{}, nil)) }
+
+type discardWriter struct{}
+
+func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+// Options influence the runtime behaviour of an Indexer.
+type Options struct {
+	// Verbose toggles per-package extraction logs.
+	Verbose bool
+	// Logger receives structured logs. Nil = discard.
+	Logger *slog.Logger
+}
+
+// Stats summarises one Indexer.Run.
+type Stats struct {
+	Packages       int
+	NodesUpserted  int64
+	EdgesUpserted  int64
+	NodesPruned    int64
+	EdgesPruned    int64
+	Warnings       []string
+	Elapsed        time.Duration
+	LinkedToChunks int // count of nodes whose ChunkID resolved
+}
+
+// Indexer orchestrates extraction → chunk-linkage → persist → prune.
+type Indexer struct {
+	project *proj.Project
+	store   GraphStore
+	opts    Options
+	log     *slog.Logger
+}
+
+// New wires an Indexer. Caller retains ownership of the store.
+func New(p *proj.Project, s GraphStore, opts Options) *Indexer {
+	log := opts.Logger
+	if log == nil {
+		log = nilLogger()
+	}
+	log = log.With("subsystem", "graph")
+	return &Indexer{project: p, store: s, opts: opts, log: log}
+}
+
+// Run extracts the Go graph for the project's source tree, persists it,
+// and prunes rows from files that no longer exist. Safe to invoke
+// repeatedly; idempotent on unchanged sources.
+func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
+	// Monotonic stamp/cutoff: strictly exceeds every previously stored
+	// last_seen_at, so a backward wall-clock step between runs can't make
+	// this run's prune cutoff smaller than a prior run's stamps and leave
+	// deleted nodes/edges un-pruned (dex #32). Read before upserting.
+	t0, err := g.store.GraphSeenTime(ctx, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("seen time: %w", err)
+	}
+	result, err := ExtractGo(ctx, g.project.Root)
+	if err != nil {
+		return nil, fmt.Errorf("extract: %w", err)
+	}
+	yamlRes, err := ExtractYAML(ctx, g.project.Root)
+	if err != nil {
+		return nil, fmt.Errorf("extract yaml: %w", err)
+	}
+	result.Nodes = append(result.Nodes, yamlRes.Nodes...)
+	result.Edges = append(result.Edges, yamlRes.Edges...)
+	result.Warnings = append(result.Warnings, yamlRes.Warnings...)
+
+	// Markdown doc graph: document nodes + links/wikilinks edges, so a
+	// spec/docs tree is navigable like code (backlinks come free as the
+	// reverse edge direction).
+	mdRes, err := ExtractMarkdown(ctx, g.project.Root)
+	if err != nil {
+		return nil, fmt.Errorf("extract markdown: %w", err)
+	}
+	result.Nodes = append(result.Nodes, mdRes.Nodes...)
+	result.Edges = append(result.Edges, mdRes.Edges...)
+	result.Warnings = append(result.Warnings, mdRes.Warnings...)
+
+	// Multi-language tree-sitter graph. No-op when no per-language
+	// extractors are registered (default state until per-language
+	// files land in follow-up PRs).
+	sitterRes, err := ExtractSitter(ctx, g.project.Root)
+	if err != nil {
+		return nil, fmt.Errorf("extract sitter: %w", err)
+	}
+	result.Nodes = append(result.Nodes, sitterRes.Nodes...)
+	result.Edges = append(result.Edges, sitterRes.Edges...)
+	result.Warnings = append(result.Warnings, sitterRes.Warnings...)
+	if g.opts.Verbose {
+		g.log.Info("graph extracted",
+			"packages", result.Packages,
+			"nodes", len(result.Nodes),
+			"edges", len(result.Edges),
+			"warnings", len(result.Warnings))
+	}
+
+	linked, err := linkChunks(ctx, g.store, result.Nodes)
+	if err != nil {
+		return nil, fmt.Errorf("link chunks: %w", err)
+	}
+
+	if err := g.store.GraphUpsertNodes(ctx, result.Nodes, t0); err != nil {
+		return nil, fmt.Errorf("upsert nodes: %w", err)
+	}
+	if err := g.store.GraphUpsertEdges(ctx, result.Edges, t0); err != nil {
+		return nil, fmt.Errorf("upsert edges: %w", err)
+	}
+	prunedNodes, prunedEdges, err := g.store.GraphPruneUnseen(ctx, t0)
+	if err != nil {
+		return nil, fmt.Errorf("prune: %w", err)
+	}
+
+	// Centrality pass — must run after prune so deleted nodes don't
+	// linger with stale ranks. Cheap on the current scale (<10k
+	// nodes); a single SQLite transaction even at full repo size.
+	centrality := ComputeCentrality(result.Nodes, result.Edges)
+	// Emit a row for EVERY surviving node, not just those that picked up
+	// centrality this run. ComputeCentrality returns no entry for a node
+	// with no `calls` edges (and nothing at all when the graph has zero
+	// `calls` edges), while GraphSetCentrality only UPDATEs the ids we
+	// hand it. Filling absent nodes with explicit zeros resets ranks that
+	// would otherwise linger when a project's call graph shrinks or
+	// disappears entirely.
+	centralityRows := make([]CentralityRow, 0, len(result.Nodes))
+	for _, n := range result.Nodes {
+		r := centrality[n.ID] // zero value when absent
+		centralityRows = append(centralityRows, CentralityRow{
+			ID:              n.ID,
+			InDegree:        r.InDegree,
+			OutDegree:       r.OutDegree,
+			CrossPkgCallers: r.CrossPkgCallers,
+			PageRank:        r.PageRank,
+			Betweenness:     r.Betweenness,
+			CommunityID:     r.CommunityID,
+		})
+	}
+	if err := g.store.GraphSetCentrality(ctx, centralityRows); err != nil {
+		return nil, fmt.Errorf("set centrality: %w", err)
+	}
+
+	return &Stats{
+		Packages:       result.Packages,
+		NodesUpserted:  int64(len(result.Nodes)),
+		EdgesUpserted:  int64(len(result.Edges)),
+		NodesPruned:    prunedNodes,
+		EdgesPruned:    prunedEdges,
+		Warnings:       result.Warnings,
+		Elapsed:        time.Since(t0),
+		LinkedToChunks: linked,
+	}, nil
+}

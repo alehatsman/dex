@@ -1,0 +1,194 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  # Enable bug-catching linters; disable style-pedantry ones.
+  enable:
+    - gosec
+    - errcheck
+    - staticcheck
+    - govet
+    - ineffassign
+    - unused
+    - misspell
+    - unconvert
+    - bodyclose
+    - revive
+    - cyclop
+  disable:
+    - errname
+    - exhaustive
+    - wrapcheck
+    - goconst
+    - gocyclo     # superseded by cyclop; arch-snapshot uses gocyclo standalone for the soft-cap ratchet
+    - gocritic    # mostly style; review process handles ifElseChain / typeSwitchVar etc.
+    - unparam     # flags interface contracts that always return nil err as "problems"
+    - dupl        # over-eager; task dupl gives a better targeted report
+    - prealloc    # micro-optimisation noise; profile-driven not lint-driven
+
+  settings:
+    gosec:
+      severity: "medium"
+      confidence: "medium"
+      excludes:
+        - G104  # errors unhandled
+        - G115  # integer overflow conversion
+        - G204  # subprocess launched with variable
+        - G301  # bad dir perms
+        - G302  # file perms — config/lockfile use 0644 by design
+        - G304  # path from variable — every config-reading codepath
+        - G306  # bad write perms
+        - G703  # path-traversal taint — paths come from the user's own
+                # config / CLI args / project dir in a local dev tool; same
+                # threat-model dismissal as G304 (cmd/dex/locomo.go,
+                # internal/mcp/server_pack.go, internal/profiles/profiles.go)
+
+    cyclop:
+      max-complexity: 35
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+
+    staticcheck:
+      # Keep SA* (real-bug checks); drop QF/ST/S style suggestions.
+      checks: ["all", "-QF*", "-ST1005", "-ST1020", "-S1008", "-S1017", "-S1034"]
+
+  exclusions:
+    rules:
+      # defer resp.Body.Close() — standard HTTP client pattern; error is
+      # unactionable at the point of deferred close.
+      - linters: [errcheck]
+        text: "Error return value of `resp\\.Body\\.Close` is not checked"
+
+      # defer rows/stmt/db.Close() and deferred store handle closes — idiomatic
+      # SQL and SQLite patterns; errors in deferred cleanup are unactionable.
+      - path: internal/store/(store|store_graph)\.go
+        linters: [errcheck]
+        text: "Error return value of `(rows|stmt|db)\\.Close` is not checked"
+
+      - path: internal/store/store\.go
+        linters: [errcheck]
+        text: "Error return value of `fmt\\.Sscanf` is not checked"
+
+      # defer st.Close() — mcp server and cmd store handles; best-effort
+      # close in hot path and error paths; original error is what matters.
+      - path: internal/mcp/server\.go
+        linters: [errcheck]
+        text: "Error return value of `st\\.Close` is not checked"
+
+      - path: cmd/dex/(main|graph)\.go
+        linters: [errcheck]
+        text: "Error return value of `(st|in|out)\\.Close` is not checked"
+
+      # defer f.Close() for JSONL writers — best-effort close after a
+      # successful w.Flush(); flush errors are surfaced.
+      - path: internal/graph/export\.go
+        linters: [errcheck]
+        text: "Error return value of `f\\.Close` is not checked"
+
+      # defer fw.Close() / f.Close() — fsnotify watcher, file handles, and
+      # hook.go log writer; idiomatic best-effort cleanup in deferred position.
+      - path: internal/(watch/watch|ignore/ignore)\.go
+        linters: [errcheck]
+        text: "Error return value of `(fw|f)\\.Close` is not checked"
+
+      - path: cmd/dex/hook\.go
+        linters: [errcheck]
+        text: "Error return value of `f\\.Close` is not checked"
+
+      # fmt.Fprintf/Fprintln/Fprint to stdout/stderr in cmd/ — best-effort
+      # writes to terminal output; ignoring the error is idiomatic Go CLI code.
+      - path: cmd/
+        linters: [errcheck]
+        text: "Error return value of `fmt\\.F"
+
+      # G202: SQL string concatenation in store.go — query strings are built
+      # from controlled internal inputs (column names, operators), not user data.
+      - path: internal/store/store\.go
+        linters: [gosec]
+        text: "G202"
+
+      # sha1 is used for content fingerprinting (chunk dedup), not for
+      # cryptographic security. G505/G401 are false positives here.
+      - path: internal/index/index\.go
+        linters: [gosec]
+        text: "G(505|401)"
+
+      # sha1 is used for stable graph-node/edge IDs and content
+      # fingerprinting (graph_nodes.content_hash). Not cryptographic.
+      - path: internal/graph/graph\.go
+        linters: [gosec]
+        text: "G(505|401)"
+
+      # sha1 is used for recent-commit fingerprinting / content hashing in
+      # the indexer's git helper, not for cryptographic security.
+      - path: internal/index/git\.go
+        linters: [gosec]
+        text: "G(505|401)"
+
+      # G202: SQL string concatenation in store_graph.go — same
+      # justification as store.go above: query strings are built from
+      # controlled internal inputs (placeholder counts), not user data.
+      - path: internal/store/store_graph\.go
+        linters: [gosec]
+        text: "G202"
+
+      # G202: SQL string concatenation in store_agent.go — same
+      # justification: the appended fragments are static ORDER BY / LIMIT
+      # clauses and placeholder runs, not user data.
+      - path: internal/store/store_agent\.go
+        linters: [gosec]
+        text: "G202"
+
+      # G122: os.ReadFile path in WalkDir callback — the root is the user's
+      # own project directory; symlink TOCTOU is not a threat model here.
+      - path: internal/index/index\.go
+        linters: [gosec]
+        text: "G122"
+
+      - path: internal/graph/sitter\.go
+        linters: [gosec]
+        text: "G122"
+
+      # cyclop: index.Run and main.go dispatch are intentionally complex; each
+      # branch handles a distinct subcommand or index state — extraction would
+      # add indirection without reducing real complexity.
+      - path: internal/index/index\.go
+        linters: [cyclop]
+
+      - path: cmd/dex/main\.go
+        linters: [cyclop]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

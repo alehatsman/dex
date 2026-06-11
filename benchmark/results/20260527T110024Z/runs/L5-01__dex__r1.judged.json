@@ -1,0 +1,4 @@
+{
+  "score": 1,
+  "reason": "The answer correctly identifies 6 of the 7 required files but omits `internal/index/index_test.go`, which directly calls `(*Store).Search` and must also change."
+}

@@ -1,0 +1,80 @@
+# Multi-repo retrieval benchmark corpus (#278, epic #246).
+#
+# Each entry is a popular OSS repo pinned at a release tag's commit. The corpus
+# runner (`dex bench corpus run`) fetches each at its pin, indexes it, and scores
+# the live Search path against every declared golden set — reporting
+# NDCG/Recall/MRR per (repo, set) so retrieval tuning is validated across
+# languages, not just dex's own Go codebase.
+#
+# Query sources per repo (at least one required):
+#   - query_sets: paths (relative to THIS file's directory) to committed,
+#     hand-curated eval.GoldenSet JSON — NL question -> relevant files. These are
+#     the high-signal labels; add them under queries/<name>.json.
+#   - gen: auto-labels mined from the repo's OWN history at the pin (free,
+#     noisier). git_history = commit subject -> touched files; blast_radius =
+#     anchor excerpt -> co-changed files; structural = prose commit subject +
+#     multi-package co-changed files with no cross-imports (graph-lane probe,
+#     #279). max_commits/max_files: 0 = eval default.
+#
+# Commits are pinned to release tags (resolved via `git ls-remote --tags`) so
+# the corpus never drifts. Refresh a pin by bumping `commit` to a newer tag.
+#
+# Start small: flask + gin + ripgrep + zod (fast; py/go/rust/ts). react is the
+# large flagship — add it in a second pass (see the commented block) and bound
+# its index cost with index_subdir.
+
+repos:
+  - name: flask
+    url: https://github.com/pallets/flask
+    commit: ab8149664182b662453a563161aa89013c806dc9   # tag 3.1.0
+    languages: [python]
+    query_sets: [queries/flask.json]
+    gen:
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
+
+  - name: gin
+    url: https://github.com/gin-gonic/gin
+    commit: 4ea0e648e38a63d6caff14100f5eab5c50912bcd   # tag v1.9.1
+    languages: [go]
+    query_sets: [queries/gin.json]
+    gen:
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
+
+  - name: ripgrep
+    url: https://github.com/BurntSushi/ripgrep
+    commit: 4649aa9700619f94cf9c66876e9549d83420e16c   # tag 14.1.1
+    languages: [rust]
+    query_sets: [queries/ripgrep.json]
+    gen:
+      git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:  { enabled: true, max_commits: 500, max_files: 5 }
+
+  - name: zod
+    url: https://github.com/colinhacks/zod
+    commit: 1fb56a5c18c27102dbc92260a4007c7732a0ccca   # tag v4.4.3
+    languages: [ts]
+    query_sets: [queries/zod.json]
+    gen:
+      git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:  { enabled: true, max_commits: 500, max_files: 5 }
+
+  # react — flagship, large monorepo. Cost is bounded with index_subdir to a
+  # single substantive package. NB: the public `packages/react-dom` is a thin
+  # entry-point/re-export shell; the real DOM logic (synthetic events, event
+  # plugins, DOM property/attribute diffing, controlled inputs, hydration, the
+  # fiber host config) lives in `packages/react-dom-bindings` — so that is the
+  # indexed subtree and curated paths are relative to it (src/events/…, etc.).
+  - name: react
+    url: https://github.com/facebook/react
+    commit: 6117d7cca4906492c51fe6a03381e35adfd86e7d   # lightweight tag v19.2.7 (points straight at the commit)
+    languages: [js]
+    index_subdir: packages/react-dom-bindings
+    query_sets: [queries/react.json]
+    gen:
+      # gen honors index_subdir (#285): the generators scope git log to the
+      # subdir and emit subdir-relative paths, so labels match the index.
+      git_history: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:  { enabled: true, max_commits: 500, max_files: 5 }

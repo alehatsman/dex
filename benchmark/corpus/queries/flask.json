@@ -1,0 +1,23 @@
+{
+  "repo": "flask",
+  "head": "ab8149664182b662453a563161aa89013c806dc9",
+  "gen_opts": { "max_commits": 0, "max_files": 0 },
+  "queries": [
+    { "id": "flask-q01", "query": "How does the framework handle incoming HTTP requests at the application level?", "relevant_files": ["src/flask/app.py", "src/flask/ctx.py"] },
+    { "id": "flask-q02", "query": "Where does configuration get loaded from Python modules or files?", "relevant_files": ["src/flask/config.py"] },
+    { "id": "flask-q03", "query": "How are session cookies encrypted, signed, and validated?", "relevant_files": ["src/flask/sessions.py"] },
+    { "id": "flask-q04", "query": "What mechanism allows code to execute at specific points in the request and app lifecycle?", "relevant_files": ["src/flask/signals.py", "src/flask/ctx.py"] },
+    { "id": "flask-q05", "query": "How does the framework determine which view function should handle a specific URL?", "relevant_files": ["src/flask/sansio/scaffold.py", "src/flask/app.py"] },
+    { "id": "flask-q06", "query": "How are Jinja2 templates discovered and loaded from multiple template folders?", "relevant_files": ["src/flask/templating.py", "src/flask/sansio/scaffold.py"] },
+    { "id": "flask-q07", "query": "Which decorator registers a function to execute before each request is processed?", "relevant_files": ["src/flask/sansio/scaffold.py"] },
+    { "id": "flask-q08", "query": "How does the framework convert a class-based view into a routable view function?", "relevant_files": ["src/flask/views.py"] },
+    { "id": "flask-q09", "query": "What decorator associates a view function with a URL route and HTTP methods?", "relevant_files": ["src/flask/sansio/scaffold.py"] },
+    { "id": "flask-q10", "query": "How are exception handlers registered and matched against raised exceptions?", "relevant_files": ["src/flask/app.py", "src/flask/sansio/scaffold.py"] },
+    { "id": "flask-q11", "query": "If I change how requests are matched to endpoints, what other components need updates?", "relevant_files": ["src/flask/app.py", "src/flask/ctx.py", "src/flask/sansio/scaffold.py"] },
+    { "id": "flask-q12", "query": "If I add support for a new response serialization format, what modules interact?", "relevant_files": ["src/flask/wrappers.py", "src/flask/json/__init__.py", "src/flask/helpers.py"] },
+    { "id": "flask-q13", "query": "How do blueprint routes and error handlers get integrated into the main app?", "relevant_files": ["src/flask/blueprints.py", "src/flask/sansio/blueprints.py", "src/flask/app.py"] },
+    { "id": "flask-q14", "query": "Where is the Flask CLI entry point and how does it locate the application instance?", "relevant_files": ["src/flask/cli.py"] },
+    { "id": "flask-q15", "query": "How does template rendering automatically include request and session in the context?", "relevant_files": ["src/flask/templating.py", "src/flask/ctx.py"] },
+    { "id": "flask-q16", "query": "What mechanism converts endpoint names and arguments into complete URLs?", "relevant_files": ["src/flask/helpers.py", "src/flask/sansio/scaffold.py"] }
+  ]
+}

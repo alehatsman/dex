@@ -1,0 +1,27 @@
+{
+  "repo": "react",
+  "head": "6117d7cca4906492c51fe6a03381e35adfd86e7d",
+  "gen_opts": { "max_commits": 0, "max_files": 0 },
+  "queries": [
+    { "id": "react-q01", "query": "How are synthetic event objects created and normalized from the underlying native browser events?", "relevant_files": ["src/events/SyntheticEvent.js"] },
+    { "id": "react-q02", "query": "Where does React attach delegated listeners on the root container and run captured events through the plugin dispatch pipeline?", "relevant_files": ["src/events/DOMPluginEventSystem.js"] },
+    { "id": "react-q03", "query": "How does React decide event priority and trampoline a native DOM event into the reconciler?", "relevant_files": ["src/events/ReactDOMEventListener.js"] },
+    { "id": "react-q04", "query": "How are discrete events queued and replayed when they fire on an element before hydration has completed?", "relevant_files": ["src/events/ReactDOMEventReplaying.js"] },
+    { "id": "react-q05", "query": "How is the onChange event normalized across checkboxes, radios, text fields, and other input types?", "relevant_files": ["src/events/plugins/ChangeEventPlugin.js"] },
+    { "id": "react-q06", "query": "How does React produce the onSelect event when the text selection inside a field changes?", "relevant_files": ["src/events/plugins/SelectEventPlugin.js"] },
+    { "id": "react-q07", "query": "How are mouseenter and mouseleave events synthesized from the native mouseover and mouseout events?", "relevant_files": ["src/events/plugins/EnterLeaveEventPlugin.js"] },
+    { "id": "react-q08", "query": "How does React support beforeinput and IME composition events with a fallback across browsers?", "relevant_files": ["src/events/plugins/BeforeInputEventPlugin.js", "src/events/FallbackCompositionState.js"] },
+    { "id": "react-q09", "query": "Where is the mapping from native DOM event names like click to React handler prop names like onClick defined and registered?", "relevant_files": ["src/events/DOMEventProperties.js", "src/events/EventRegistry.js"] },
+    { "id": "react-q10", "query": "How is the user's event handler prop resolved off a fiber for a given registration name?", "relevant_files": ["src/events/getListener.js"] },
+    { "id": "react-q11", "query": "How does React set, update, and remove attributes and properties on a DOM element when its props change?", "relevant_files": ["src/client/DOMPropertyOperations.js", "src/client/ReactDOMComponent.js"] },
+    { "id": "react-q12", "query": "How are inline style objects applied to a node, including hyphenating camelCase names and appending px to unitless numbers?", "relevant_files": ["src/client/CSSPropertyOperations.js", "src/shared/hyphenateStyleName.js", "src/shared/isUnitlessNumber.js"] },
+    { "id": "react-q13", "query": "Which file is the reconciler host configuration for the DOM that creates instances, appends children, and commits updates?", "relevant_files": ["src/client/ReactFiberConfigDOM.js"] },
+    { "id": "react-q14", "query": "How does React associate a DOM node with its internal fiber so the event system can find the owning component?", "relevant_files": ["src/client/ReactDOMComponentTree.js"] },
+    { "id": "react-q15", "query": "How does React track the current value of a controlled input by intercepting the native value setter to detect user edits?", "relevant_files": ["src/client/inputValueTracking.js"] },
+    { "id": "react-q16", "query": "If a controlled input's change event fires, which modules detect the value change and restore the controlled state afterward?", "relevant_files": ["src/events/plugins/ChangeEventPlugin.js", "src/client/inputValueTracking.js", "src/events/ReactDOMControlledComponent.js"] },
+    { "id": "react-q17", "query": "How does React warn when HTML elements are nested illegally, such as a paragraph containing a div?", "relevant_files": ["src/client/validateDOMNesting.js"] },
+    { "id": "react-q18", "query": "How does React block javascript: URLs to prevent script injection through href and src attributes?", "relevant_files": ["src/shared/sanitizeURL.js"] },
+    { "id": "react-q19", "query": "How is text and attribute content escaped into HTML entities for safe server-side rendering output?", "relevant_files": ["src/server/escapeTextForBrowser.js"] },
+    { "id": "react-q20", "query": "Where is the streaming server host config that writes opening tags, attributes, and styles for server-rendered HTML?", "relevant_files": ["src/server/ReactFizzConfigDOM.js"] }
+  ]
+}

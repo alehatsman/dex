@@ -1,0 +1,32 @@
+/dex
+/dist/
+*.exe
+*.so
+*.dylib
+*.dll
+
+# test artifacts
+*.out
+coverage.txt
+/scratch/
+/tmp/
+
+# editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# arch-snapshot output (local read-only, regenerated on demand)
+/docs-working/
+.claude/*
+!.claude/settings.json
+# Ignore the dex cache (index.db etc.) but track the committed
+# opt-in config so a fresh checkout/reindex doesn't zero its index.
+.dex/*
+!.dex/config.yml
+
+data/

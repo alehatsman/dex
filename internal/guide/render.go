@@ -1,0 +1,722 @@
+package guide
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/alehatsman/dex/internal/chunk"
+	"github.com/alehatsman/dex/internal/store"
+)
+
+// Result reports what a render pass did so the CLI can print a clean
+// one-line status (and so --check can decide its exit code).
+type Result struct {
+	Wrote            bool
+	Dirty            bool
+	OutputPath       string
+	ModuleCount      int
+	MaxSummarySeenAt int64
+	// Body holds the rendered markdown when the renderer actually built
+	// it (Stdout mode, or dirty + non-check). Populated whenever a build
+	// happens so callers can print it (--stdout) or measure it
+	// (--dry-run size). Empty on clean no-op renders.
+	Body string
+	// Warnings lists summaries that look malformed (truncated mid-bullet,
+	// unbalanced backticks, etc.). Populated by Render so callers can
+	// surface them and so `--check` can fail when the index still
+	// contains pre-existing truncations from older runs.
+	Warnings []string
+}
+
+// Options drives a single render.
+type Options struct {
+	// Force re-renders even when the manifest says nothing's dirty.
+	Force bool
+	// DryRun reports what would happen without writing files.
+	DryRun bool
+	// Stdout returns the rendered body in Result.Body and skips both the
+	// file write and the manifest bump. The caller prints it. Implies
+	// "always build" — there is no "up to date" early return.
+	Stdout bool
+	// Module, if non-empty, renders only that one package's section
+	// (header + LLM prose + graph subsections). Output goes to
+	// Result.Body — no Overview, no TOC, no outer title, no file write.
+	// The path is matched exactly against package_summary paths (use
+	// "." for the root package).
+	Module string
+}
+
+// topCentralLimit caps the "Key entry points" list per module. Five is
+// enough to surface architectural anchors without burying the section
+// in noise; users can chase further via `dex graph callers`.
+const topCentralLimit = 5
+
+// topExportedLimit caps the "Exported API" list per module. Without
+// this, a large package like internal/store dumps 50+ flat bullets and
+// the actually-important symbols get buried. Ten is enough to convey
+// "what this package offers" — readers chase the rest via `dex search
+// symbol`.
+const topExportedLimit = 10
+
+// Render reads the existing repo_summary + package_summary chunks from
+// the store, augments each module with ground-truth graph data
+// (exported symbols, top-centrality entry points, imports, used-by),
+// formats markdown, and writes <root>/<cfg.Output>.
+//
+// No LLM calls happen here. The LLM-generated package_summary text is
+// kept for narrative flavor; the graph sections are mechanical and
+// hallucination-proof.
+func Render(ctx context.Context, st *store.Store, root string, cfg Config, opts Options) (*Result, error) {
+	res := &Result{OutputPath: filepath.Join(root, cfg.Output)}
+
+	pkgRows, err := st.SummariesByKindWithMeta(ctx, chunk.KindPackageSummary)
+	if err != nil {
+		return res, fmt.Errorf("load package summaries: %w", err)
+	}
+	pkgRows = filterFixtureDirs(pkgRows)
+	centrality, err := st.PackageCentrality(ctx)
+	if err != nil {
+		return res, fmt.Errorf("load package centrality: %w", err)
+	}
+	sortPackagesByCentrality(pkgRows, centrality)
+	repoRows, err := st.SummariesByKindWithMeta(ctx, chunk.KindRepoSummary)
+	if err != nil {
+		return res, fmt.Errorf("load repo summary: %w", err)
+	}
+
+	res.ModuleCount = len(pkgRows)
+	res.MaxSummarySeenAt = maxSeen(pkgRows, repoRows)
+	res.Warnings = scanForTruncation(repoRows, pkgRows)
+
+	if len(pkgRows) == 0 && len(repoRows) == 0 {
+		return res, fmt.Errorf("no summaries in index — run `dex index <path> --summarize` first")
+	}
+
+	// Module mode: render only the requested package's section. Skips
+	// the manifest read entirely — partial renders don't write the file
+	// and don't bump the watermark, so the manifest state is irrelevant.
+	if opts.Module != "" {
+		pkg, ok := findModule(pkgRows, opts.Module)
+		if !ok {
+			return res, fmt.Errorf("no module %q in index (have %d modules — run `dex guide --stdout` to list)", opts.Module, len(pkgRows))
+		}
+		body, err := buildModuleMarkdown(ctx, st, root, pkg)
+		if err != nil {
+			return res, fmt.Errorf("build module markdown: %w", err)
+		}
+		res.Body = body
+		return res, nil
+	}
+
+	mf, err := ReadManifest(root)
+	if err != nil {
+		return res, fmt.Errorf("read manifest: %w", err)
+	}
+
+	guideExists := fileExists(res.OutputPath)
+	res.Dirty = opts.Force || !guideExists || res.MaxSummarySeenAt > mf.LastSummarySeenAt
+
+	// Stdout mode always builds (the caller wants the bytes); dirty
+	// builds for normal write or dry-run size reporting; clean no-op
+	// renders skip the build entirely.
+	shouldBuild := res.Dirty || opts.Stdout
+	if !shouldBuild {
+		return res, nil
+	}
+
+	body, err := buildMarkdown(ctx, st, root, repoRows, pkgRows)
+	if err != nil {
+		return res, fmt.Errorf("build markdown: %w", err)
+	}
+	res.Body = body
+
+	if opts.DryRun || opts.Stdout {
+		return res, nil
+	}
+
+	if err := os.WriteFile(res.OutputPath, []byte(body), 0o644); err != nil {
+		return res, fmt.Errorf("write %s: %w", res.OutputPath, err)
+	}
+	res.Wrote = true
+
+	mf.LastSummarySeenAt = res.MaxSummarySeenAt
+	mf.RenderedAt = time.Now().UnixNano()
+	if err := WriteManifest(root, mf); err != nil {
+		return res, fmt.Errorf("write manifest: %w", err)
+	}
+	return res, nil
+}
+
+func buildMarkdown(ctx context.Context, st *store.Store, root string, repo, pkgs []store.SummaryRow) (string, error) {
+	modPath := readModulePath(root)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Project Guide\n\n")
+	// Header carries a staleness signal: timestamp is always present,
+	// commit SHA appears when the project is a git checkout. Without
+	// these a reader can't tell whether the guide was built five
+	// minutes or five months ago, and on a guide that contains LLM
+	// prose that's the difference between trusting the summaries and
+	// re-checking each one.
+	fmt.Fprintf(&b, "_Generated by dex from %s at %s%s. Do not edit — re-run `dex guide`._\n\n",
+		filepath.Base(root),
+		time.Now().UTC().Format(time.RFC3339),
+		formatCommitSuffix(ctx, root))
+
+	if len(repo) > 0 {
+		b.WriteString("## Overview\n\n")
+		b.WriteString(strings.TrimSpace(repo[0].Content))
+		b.WriteString("\n\n")
+	}
+
+	haveOverview := len(repo) > 0
+
+	// Table of contents grouped by leading path segment so a reader
+	// scanning 100+ modules sees families (cmd/, internal/, scripts/)
+	// instead of one flat alphabetized blob. Within each family entries
+	// keep their input order, which sortPackagesByCentrality has
+	// already arranged by descending centrality.
+	tocGroups := groupTOC(tocFromPackages(pkgs, haveOverview))
+	if len(tocGroups) > 0 {
+		b.WriteString("## Contents\n\n")
+		// One-family case skips the group header (it'd be redundant
+		// when the entire TOC sits under a single name).
+		showHeaders := len(tocGroups) > 1
+		for _, g := range tocGroups {
+			if showHeaders {
+				fmt.Fprintf(&b, "**%s/**\n\n", g.name)
+			}
+			for _, e := range g.entries {
+				fmt.Fprintf(&b, "- [%s](#%s)\n", e.label, e.anchor)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	for _, p := range pkgs {
+		// The root package_summary is redundant with the Overview
+		// (same content, same scope). Skip it so the guide has one
+		// root-level prose section instead of two. If the repo_summary
+		// is missing (truncated/never run), fall back to surfacing the
+		// root package_summary as the module section.
+		if (p.Path == "." || p.Path == "") && haveOverview {
+			continue
+		}
+		label := p.Path
+		if label == "." || label == "" {
+			label = "(root)"
+		}
+		fmt.Fprintf(&b, "## Module: %s\n\n", label)
+		b.WriteString(strings.TrimSpace(p.Content))
+		b.WriteString("\n\n")
+
+		if err := appendGraphSections(ctx, &b, st, p.Path, modPath); err != nil {
+			return "", err
+		}
+	}
+	return b.String(), nil
+}
+
+// buildModuleMarkdown renders a single module's section: header, LLM
+// prose, and graph subsections. No outer title, no Overview, no TOC.
+// Intended for `dex guide --module <path>` so the output is a
+// composable chunk a reader can paste into a wider doc or stream
+// directly to another tool.
+func buildModuleMarkdown(ctx context.Context, st *store.Store, root string, pkg store.SummaryRow) (string, error) {
+	modPath := readModulePath(root)
+
+	label := pkg.Path
+	if label == "." || label == "" {
+		label = "(root)"
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "## Module: %s\n\n", label)
+	b.WriteString(strings.TrimSpace(pkg.Content))
+	b.WriteString("\n\n")
+
+	if err := appendGraphSections(ctx, &b, st, pkg.Path, modPath); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// findModule looks up a package_summary row by path. Accepts the
+// stored form ("internal/foo", ".") and a few user-friendly variants:
+// leading "./" and trailing "/" are stripped, and the empty string is
+// treated as ".". Exact match after normalization.
+func findModule(pkgs []store.SummaryRow, want string) (store.SummaryRow, bool) {
+	want = strings.TrimPrefix(want, "./")
+	want = strings.TrimSuffix(want, "/")
+	if want == "" {
+		want = "."
+	}
+	for _, p := range pkgs {
+		stored := p.Path
+		if stored == "" {
+			stored = "."
+		}
+		if stored == want {
+			return p, true
+		}
+	}
+	return store.SummaryRow{}, false
+}
+
+// appendGraphSections augments a module section with ground-truth data
+// pulled from graph_nodes / graph_edges. Each subsection is rendered
+// only if non-empty so non-Go directories (testdata, scripts, docs)
+// degrade cleanly to the LLM-generated summary alone.
+func appendGraphSections(ctx context.Context, b *strings.Builder, st *store.Store, dir, modPath string) error {
+	if dir == "" || dir == "." {
+		return nil
+	}
+
+	exported, err := st.ExportedSymbolsByDir(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("exported symbols for %s: %w", dir, err)
+	}
+	central, err := st.TopCentralByDir(ctx, dir, topCentralLimit, true)
+	if err != nil {
+		return fmt.Errorf("top central for %s: %w", dir, err)
+	}
+	// Fallback: tiny packages with no exported high-centrality nodes
+	// fall back to internal hot spots. Tagged visibly so an LLM reader
+	// doesn't mistake them for the public surface.
+	centralIsInternal := false
+	if len(central) == 0 {
+		central, err = st.TopCentralByDir(ctx, dir, topCentralLimit, false)
+		if err != nil {
+			return fmt.Errorf("top central (internal) for %s: %w", dir, err)
+		}
+		centralIsInternal = true
+	}
+	imports, err := st.ImportsForDir(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("imports for %s: %w", dir, err)
+	}
+	usedByPkgs, err := st.UsedByPackages(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("used-by for %s: %w", dir, err)
+	}
+	usedBy := trimModulePrefix(usedByPkgs, modPath)
+
+	// Renderer-emitted sections use ### so they're visually distinct
+	// from the LLM-generated prose above, which often uses **bold**
+	// prefixes that would otherwise blend in.
+	if len(exported) > 0 {
+		shown, total := selectTopExported(exported, topExportedLimit)
+		if total > topExportedLimit {
+			fmt.Fprintf(b, "### Exported API (top %d of %d by PageRank)\n\n", len(shown), total)
+		} else {
+			fmt.Fprintf(b, "### Exported API (%d)\n\n", total)
+		}
+		for _, s := range shown {
+			fmt.Fprintf(b, "- `%s` %s — %s:%d\n",
+				s.Kind, displayName(s), s.FilePath, s.StartLine)
+		}
+		if total > topExportedLimit {
+			fmt.Fprintf(b, "- _…and %d more — `dex search symbol <name>` for the rest._\n", total-topExportedLimit)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(central) > 0 {
+		heading := "Key entry points"
+		if centralIsInternal {
+			heading = "Key internal hot spots"
+		}
+		fmt.Fprintf(b, "### %s (top %d by PageRank)\n\n", heading, len(central))
+		for _, s := range central {
+			fmt.Fprintf(b, "- `%s` — %s:%d — in-degree %d\n",
+				displayName(s), s.FilePath, s.StartLine, s.InDegree)
+		}
+		b.WriteString("\n")
+	}
+
+	if proj, ext := splitImports(imports, modPath); len(proj)+len(ext) > 0 {
+		b.WriteString("### Depends on\n\n")
+		if len(proj) > 0 {
+			fmt.Fprintf(b, "- project: %s\n", strings.Join(proj, ", "))
+		}
+		if len(ext) > 0 {
+			fmt.Fprintf(b, "- external: %s\n", strings.Join(ext, ", "))
+		}
+		b.WriteString("\n")
+	}
+
+	if len(usedBy) > 0 {
+		fmt.Fprintf(b, "### Used by\n\n- %s\n\n", strings.Join(usedBy, ", "))
+	}
+	return nil
+}
+
+// displayName picks the most informative identifier for a symbol.
+// Methods get QualifiedName ("Store.Search"); plain functions and
+// types fall back to Name.
+func displayName(s store.GraphSymbol) string {
+	if s.Kind == "method" && s.QualifiedName != "" {
+		// QualifiedName from go/types tends to read as
+		// "pkg/path.Type.Method" — trim everything up to the last
+		// "/" then drop the package segment up to the first ".".
+		q := s.QualifiedName
+		if i := strings.LastIndex(q, "/"); i >= 0 {
+			q = q[i+1:]
+		}
+		if i := strings.Index(q, "."); i >= 0 {
+			q = q[i+1:]
+		}
+		if q != "" {
+			return q
+		}
+	}
+	return s.Name
+}
+
+// trimModulePrefix strips "<modPath>/" from every entry. If modPath
+// is empty, returns the slice unchanged. Used to convert raw Go
+// package paths into directory-relative names for display.
+func trimModulePrefix(pkgs []string, modPath string) []string {
+	if modPath == "" {
+		return pkgs
+	}
+	prefix := modPath + "/"
+	out := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		out = append(out, strings.TrimPrefix(p, prefix))
+	}
+	return out
+}
+
+// splitImports partitions raw imports into project-internal (those
+// rooted at modPath) and external (stdlib + third-party). modPath is
+// read from go.mod; for non-Go projects it is empty and all imports
+// fall into "external".
+//
+// Project imports are trimmed to drop the module prefix so the guide
+// shows "internal/store" rather than the full module path.
+func splitImports(imports []string, modPath string) (project, external []string) {
+	prefix := ""
+	if modPath != "" {
+		prefix = modPath + "/"
+	}
+	for _, imp := range imports {
+		if prefix != "" && strings.HasPrefix(imp, prefix) {
+			project = append(project, strings.TrimPrefix(imp, prefix))
+			continue
+		}
+		external = append(external, imp)
+	}
+	sort.Strings(project)
+	sort.Strings(external)
+	return project, external
+}
+
+// readModulePath parses go.mod at root and returns the declared module
+// path, or "" if go.mod is missing or unparseable. Reading manually
+// avoids pulling in golang.org/x/mod just for a one-line extraction.
+func readModulePath(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "module "); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// scanForTruncation walks every summary row and returns one warning
+// per row that looks malformed. Callers (CLI / --check) treat a
+// non-empty slice as "the index still holds truncations from an older
+// run — re-summarize before trusting the guide."
+//
+// Newer indexes can't produce truncations: the indexer treats
+// FinishReason=length as an error and rejects the partial summary.
+// This scan exists to catch summaries written before that guard
+// landed, or by an out-of-tree binary.
+func scanForTruncation(repo, pkgs []store.SummaryRow) []string {
+	var out []string
+	for _, r := range repo {
+		if reason := summaryLooksTruncated(r.Content); reason != "" {
+			out = append(out, fmt.Sprintf("repo_summary: %s", reason))
+		}
+	}
+	for _, p := range pkgs {
+		if reason := summaryLooksTruncated(p.Content); reason != "" {
+			label := p.Path
+			if label == "" {
+				label = "."
+			}
+			out = append(out, fmt.Sprintf("package_summary[%s]: %s", label, reason))
+		}
+	}
+	return out
+}
+
+// summaryLooksTruncated returns a short reason string when content
+// appears cut off mid-token. Empty string means "looks complete".
+//
+// Heuristics — order matters, most diagnostic first:
+//   - odd number of backticks → an inline code span never closed
+//   - odd number of `**` pairs → a bold run never closed
+//   - trailing `- **` (or similar) at end of input → a bullet started
+//     a bold span on the last token and the model stopped mid-emit
+func summaryLooksTruncated(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return ""
+	}
+	// Trailing bullet stub: "- **" with nothing after — the LLM
+	// started a new bullet's bold span and stopped.
+	if strings.HasSuffix(trimmed, "- **") || strings.HasSuffix(trimmed, "- *") {
+		return "ends with an unclosed bullet marker"
+	}
+	// Unbalanced backticks. Count single backticks; markdown fences
+	// `` ``` `` always come in matched triples so an overall odd count
+	// is the symptom of an unterminated inline span.
+	if strings.Count(trimmed, "`")%2 != 0 {
+		return "unbalanced backticks (unterminated code span)"
+	}
+	// Unbalanced bold markers. Count `**` occurrences — should be even.
+	if strings.Count(trimmed, "**")%2 != 0 {
+		return "unbalanced **bold** markers"
+	}
+	return ""
+}
+
+// tocEntry pairs a display label with its GitHub-flavored anchor slug.
+type tocEntry struct {
+	label  string
+	anchor string
+}
+
+// tocGroup is a family of TOC entries sharing a leading path segment
+// (e.g. all entries under `internal/`). Surfaced in the Contents
+// section as a labeled sub-list.
+type tocGroup struct {
+	name    string
+	entries []tocEntry
+}
+
+// groupTOC partitions a flat TOC into families by leading path segment.
+// Family order is determined by first appearance in the input — so
+// upstream centrality sorting (highest-ranked package first) decides
+// which family heads the list. Within a family, entry order is
+// preserved verbatim.
+//
+// The "(root)" entry (when shown) is grouped under its own family so
+// it never gets pulled under whichever family happens to alphabetize
+// first.
+func groupTOC(entries []tocEntry) []tocGroup {
+	idx := make(map[string]int, len(entries))
+	var groups []tocGroup
+	for _, e := range entries {
+		name := firstPathSegment(e.label)
+		i, ok := idx[name]
+		if !ok {
+			i = len(groups)
+			idx[name] = i
+			groups = append(groups, tocGroup{name: name})
+		}
+		groups[i].entries = append(groups[i].entries, e)
+	}
+	return groups
+}
+
+// firstPathSegment returns the part of a TOC label before the first
+// "/". For the placeholder "(root)" it returns the label unchanged so
+// the root sits in its own group.
+func firstPathSegment(label string) string {
+	if label == "(root)" {
+		return label
+	}
+	if i := strings.Index(label, "/"); i >= 0 {
+		return label[:i]
+	}
+	return label
+}
+
+// formatCommitSuffix returns ", commit <short-sha>" when root is a git
+// checkout, or "" otherwise. Failure modes (not a repo, no git binary,
+// detached state with no HEAD) all collapse to empty — the timestamp
+// already provides a minimum staleness signal, and a missing commit
+// is information, not an error.
+func formatCommitSuffix(ctx context.Context, root string) string {
+	sha := gitShortSHA(ctx, root)
+	if sha == "" {
+		return ""
+	}
+	return ", commit " + sha
+}
+
+// gitShortSHA runs `git rev-parse --short HEAD` in root and returns
+// the trimmed output, or "" on any failure. Bounded to two seconds so
+// a hung git command can't stall the render.
+func gitShortSHA(ctx context.Context, root string) string {
+	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "git", "rev-parse", "--short", "HEAD")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// tocFromPackages builds the Contents list. When haveOverview is true,
+// the root package_summary is skipped (Overview already covers root) —
+// matching the suppression rule in the module loop, so TOC entries and
+// rendered sections stay in sync.
+func tocFromPackages(pkgs []store.SummaryRow, haveOverview bool) []tocEntry {
+	out := make([]tocEntry, 0, len(pkgs))
+	for _, p := range pkgs {
+		if (p.Path == "." || p.Path == "") && haveOverview {
+			continue
+		}
+		label := p.Path
+		if label == "." || label == "" {
+			label = "(root)"
+		}
+		out = append(out, tocEntry{label: label, anchor: moduleAnchor(label)})
+	}
+	return out
+}
+
+// moduleAnchor returns the GitHub-flavored anchor slug for a
+// "## Module: <label>" heading. GitHub's slugger lowercases the
+// heading text, replaces spaces with "-", and strips characters that
+// aren't [a-z0-9_-]. Slashes vanish; parentheses vanish.
+//
+// For "## Module: internal/watch" → "module-internalwatch".
+// For "## Module: (root)"          → "module-root".
+func moduleAnchor(label string) string {
+	return slugifyHeading("Module: " + label)
+}
+
+// slugifyHeading converts a markdown heading text to a GitHub anchor
+// slug. Approximates github-slugger: lowercase; spaces → "-"; drop
+// anything outside [a-z0-9-_]; collapse runs of "-".
+func slugifyHeading(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	lastDash := false
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+			lastDash = false
+		case r == ' ', r == '-':
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		default:
+			// drop punctuation (`/`, `:`, `(`, `)`, …)
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// selectTopExported sorts symbols by PageRank DESC, InDegree DESC, Name
+// ASC and returns the top n (or all if len(in) <= n). The total count
+// is returned alongside so callers can render a "N of M" header.
+//
+// Ordering by centrality makes a truncated list meaningful — the
+// retained symbols are the most architecturally significant ones,
+// not just the alphabetically-earliest.
+func selectTopExported(in []store.GraphSymbol, n int) (shown []store.GraphSymbol, total int) {
+	total = len(in)
+	out := make([]store.GraphSymbol, len(in))
+	copy(out, in)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PageRank != out[j].PageRank {
+			return out[i].PageRank > out[j].PageRank
+		}
+		if out[i].InDegree != out[j].InDegree {
+			return out[i].InDegree > out[j].InDegree
+		}
+		return out[i].Name < out[j].Name
+	})
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out, total
+}
+
+// sortPackagesByCentrality reorders pkgs in place by descending
+// PackageCentrality score, with path ascending as tie-break so the
+// output stays deterministic for packages outside the graph (non-Go
+// dirs all score 0 and fall back to alphabetical, matching the prior
+// default).
+//
+// Mutates the slice — caller owns it. The root entry (".") sorts by
+// its centrality just like any other; the existing buildMarkdown rule
+// (skip "." when haveOverview) still applies after sorting.
+func sortPackagesByCentrality(pkgs []store.SummaryRow, centrality map[string]float64) {
+	score := func(p string) float64 {
+		if p == "" {
+			p = "."
+		}
+		return centrality[p]
+	}
+	sort.SliceStable(pkgs, func(i, j int) bool {
+		si, sj := score(pkgs[i].Path), score(pkgs[j].Path)
+		if si != sj {
+			return si > sj
+		}
+		return pkgs[i].Path < pkgs[j].Path
+	})
+}
+
+// filterFixtureDirs drops package_summary rows whose path lives inside
+// a `testdata/` segment. Those are fixtures consumed by tests, not part
+// of the project's shipped surface — surfacing them as "modules" in
+// LLM_GUIDE inflates the table of contents with noise.
+func filterFixtureDirs(rows []store.SummaryRow) []store.SummaryRow {
+	out := rows[:0]
+	for _, r := range rows {
+		if isFixtureDir(r.Path) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// isFixtureDir reports whether p contains a `testdata/` path segment.
+// Anchored to segment boundaries so a directory literally named
+// `mytestdata` doesn't get caught.
+func isFixtureDir(p string) bool {
+	if p == "testdata" || strings.HasPrefix(p, "testdata/") {
+		return true
+	}
+	return strings.Contains(p, "/testdata/") || strings.HasSuffix(p, "/testdata")
+}
+
+func maxSeen(lists ...[]store.SummaryRow) int64 {
+	var m int64
+	for _, l := range lists {
+		for _, r := range l {
+			if r.LastSeenAt > m {
+				m = r.LastSeenAt
+			}
+		}
+	}
+	return m
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}

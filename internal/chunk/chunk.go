@@ -1,0 +1,1117 @@
+// Package chunk splits a source file into retrieval-sized chunks.
+//
+// For languages with a tree-sitter grammar we extract top-level
+// declarations (functions, methods, classes, types). Gaps between
+// structural chunks are packed using cAST-style greedy sibling-merge:
+// consecutive root-level AST siblings are merged into MaxBytes-bounded
+// units rather than arbitrary line windows, producing semantically
+// coherent orphan chunks. For unknown languages (or when tree-sitter
+// fails to parse), we fall back to a fixed-line sliding window.
+//
+// Chunks are capped at MaxBytes. Anything larger is split into
+// MaxBytes-bounded line slices.
+package chunk
+
+import (
+	"bytes"
+	"context"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/bash"
+	"github.com/smacker/go-tree-sitter/c"
+	"github.com/smacker/go-tree-sitter/cpp"
+	"github.com/smacker/go-tree-sitter/csharp"
+	"github.com/smacker/go-tree-sitter/elixir"
+	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/java"
+	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/kotlin"
+	"github.com/smacker/go-tree-sitter/lua"
+	"github.com/smacker/go-tree-sitter/php"
+	"github.com/smacker/go-tree-sitter/python"
+	"github.com/smacker/go-tree-sitter/ruby"
+	"github.com/smacker/go-tree-sitter/rust"
+	"github.com/smacker/go-tree-sitter/scala"
+	"github.com/smacker/go-tree-sitter/swift"
+	"github.com/smacker/go-tree-sitter/typescript/typescript"
+)
+
+// MaxBytes is the upper bound on a single chunk's content (excluding
+// the path/kind prefix added at embed time). Roughly 1024 tokens
+// assuming the typical 4 chars/token ratio.
+const MaxBytes = 4096
+
+// WindowLines is the line-window fallback size.
+const WindowLines = 40
+
+// WindowOverlap lines repeat between consecutive line windows.
+const WindowOverlap = 10
+
+// Kind values for Chunk.Kind.
+const (
+	KindWindow         = "window"
+	KindOrphan         = "orphan"
+	KindFileSummary    = "file_summary"
+	KindChunkSummary   = "chunk_summary"
+	KindPackageSummary = "package_summary"
+	KindRepoSummary    = "repo_summary"
+	KindGitCommit      = "git_commit"
+)
+
+// KindChunkContext is the pending_summaries kind for contextual-retrieval
+// jobs. It is NOT a chunk.Kind — context sentences are stored back into
+// the source chunk's context_text column, not as a new chunk row.
+const KindChunkContext = "chunk_context"
+
+// IsSummaryKind reports whether kind is one of the chat-synthesized
+// summary kinds. The chunk row's Content for these holds prose, not a
+// file slice — readers should surface it directly instead of re-reading
+// the underlying file by line range.
+func IsSummaryKind(kind string) bool {
+	switch kind {
+	case KindFileSummary, KindChunkSummary, KindPackageSummary, KindRepoSummary:
+		return true
+	}
+	return false
+}
+
+// LineCount returns the number of lines in data. A trailing newline is
+// treated as a line terminator, not the start of an empty line, so a
+// typical POSIX file ending in '\n' reports the same count as an editor
+// would show.
+func LineCount(data []byte) int {
+	if len(data) == 0 {
+		return 0
+	}
+	n := 1
+	for _, b := range data {
+		if b == '\n' {
+			n++
+		}
+	}
+	if data[len(data)-1] == '\n' {
+		n--
+	}
+	return n
+}
+
+// Chunk is one retrievable slice of one file.
+type Chunk struct {
+	Path      string // relative to project root
+	Kind      string // tree-sitter node kind or "window"
+	Name      string // primary identifier (function/method/type name); empty for windows/orphans
+	Parent    string // enclosing class/struct/impl name; empty for top-level chunks
+	StartLine int    // 1-based, inclusive
+	EndLine   int    // 1-based, inclusive
+	Content   string
+
+	// startByte/endByte mark the byte range this chunk covers in the
+	// original source. Used internally to compute orphan windows (the
+	// gaps between structural chunks); not persisted to the store.
+	startByte int
+	endByte   int
+}
+
+// langConfig pairs a tree-sitter language with the node kinds we want
+// to surface as chunk roots.
+type langConfig struct {
+	lang  *sitter.Language
+	kinds map[string]bool
+}
+
+var languages = map[string]langConfig{
+	".go": {golang.GetLanguage(), set(
+		"function_declaration", "method_declaration", "type_declaration",
+	)},
+	".py": {python.GetLanguage(), set(
+		"function_definition", "class_definition", "decorated_definition",
+	)},
+	".js":  {javascript.GetLanguage(), jsKinds()},
+	".jsx": {javascript.GetLanguage(), jsKinds()},
+	".ts":  {typescript.GetLanguage(), tsKinds()},
+	".tsx": {typescript.GetLanguage(), tsKinds()},
+	".rs": {rust.GetLanguage(), set(
+		"function_item", "struct_item", "enum_item", "impl_item",
+		"trait_item", "mod_item",
+	)},
+	".java": {java.GetLanguage(), set(
+		"method_declaration", "class_declaration", "interface_declaration",
+		"enum_declaration",
+	)},
+	".c": {c.GetLanguage(), set(
+		"function_definition", "struct_specifier",
+	)},
+	".h": {c.GetLanguage(), set(
+		"function_definition", "struct_specifier", "declaration",
+	)},
+	".cc":  {cpp.GetLanguage(), cppKinds()},
+	".cpp": {cpp.GetLanguage(), cppKinds()},
+	".hpp": {cpp.GetLanguage(), cppKinds()},
+	".rb": {ruby.GetLanguage(), set(
+		"method", "class", "module", "singleton_method",
+	)},
+	".lua": {lua.GetLanguage(), set(
+		"function_declaration_statement", "local_function_declaration_statement",
+	)},
+	".sh": {bash.GetLanguage(), set(
+		"function_definition",
+	)},
+	".bash": {bash.GetLanguage(), set(
+		"function_definition",
+	)},
+	".zsh": {bash.GetLanguage(), set(
+		"function_definition",
+	)},
+	".cs": {csharp.GetLanguage(), set(
+		"namespace_declaration",
+		"class_declaration", "interface_declaration",
+		"struct_declaration", "enum_declaration",
+	)},
+	".kt":  {kotlin.GetLanguage(), kotlinKinds()},
+	".kts": {kotlin.GetLanguage(), kotlinKinds()},
+	".swift": {swift.GetLanguage(), set(
+		"class_declaration", // covers class, struct, enum, extension
+		"function_declaration",
+		"protocol_declaration",
+	)},
+	".php": {php.GetLanguage(), set(
+		"class_declaration", "interface_declaration",
+		"function_definition",
+	)},
+	".scala": {scala.GetLanguage(), set(
+		"class_definition", "object_definition", "trait_definition",
+		"function_definition",
+	)},
+	".ex":  {elixir.GetLanguage(), set("call")},
+	".exs": {elixir.GetLanguage(), set("call")},
+}
+
+// containerMethods maps top-level container node kinds to the method-level
+// node kinds found inside them. We walk one level of body/block wrappers
+// to reach the actual method nodes (e.g. Python's `block`, Java's
+// `class_body`, JS's `class_body`).
+var containerMethods = map[string]map[string]bool{
+	"class_declaration": {
+		"method_definition":    true, // JS/TS
+		"method_declaration":   true, // Java/PHP/C#
+		"function_declaration": true, // Kotlin/Swift
+		"init_declaration":     true, // Swift
+	},
+	"class_definition": {
+		"function_definition": true, // Python/Scala
+	},
+	"class_specifier": {
+		"function_definition": true, // C++
+	},
+	"impl_item": {
+		"function_item": true, // Rust
+	},
+	"trait_item": {
+		"function_item": true, // Rust
+	},
+	"interface_declaration": {
+		"method_declaration": true, // Java/TS/PHP/C#
+	},
+	"enum_declaration": {
+		"method_declaration": true, // Java/C#
+	},
+	"module": {
+		"method":           true, // Ruby
+		"singleton_method": true, // Ruby
+	},
+	// C# — namespace wraps type declarations
+	"namespace_declaration": {
+		"class_declaration":     true,
+		"interface_declaration": true,
+		"struct_declaration":    true,
+		"enum_declaration":      true,
+	},
+	// C# structs can contain methods
+	"struct_declaration": {
+		"method_declaration": true,
+	},
+	// Kotlin / Swift — object/singleton declarations contain methods
+	"object_declaration": {
+		"function_declaration": true, // Kotlin
+	},
+	// Scala — objects and traits contain methods
+	"object_definition": {
+		"function_definition": true, // Scala
+	},
+	"trait_definition": {
+		"function_declaration": true, // Scala abstract
+		"function_definition":  true, // Scala concrete
+	},
+	// Swift — protocol body contains method declarations
+	"protocol_declaration": {
+		"protocol_function_declaration": true, // Swift
+	},
+}
+
+func set(items ...string) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, k := range items {
+		m[k] = true
+	}
+	return m
+}
+
+func jsKinds() map[string]bool {
+	return set(
+		"function_declaration",
+		"class_declaration",
+		"method_definition",
+		"lexical_declaration", // top-level const/let with arrow-fn rhs
+		"export_statement",
+	)
+}
+
+func tsKinds() map[string]bool {
+	k := jsKinds()
+	k["interface_declaration"] = true
+	k["type_alias_declaration"] = true
+	k["enum_declaration"] = true
+	return k
+}
+
+func cppKinds() map[string]bool {
+	return set(
+		"function_definition",
+		"struct_specifier",
+		"class_specifier",
+		"namespace_definition",
+	)
+}
+
+func kotlinKinds() map[string]bool {
+	return set(
+		"class_declaration",    // class and interface (both use class_declaration)
+		"function_declaration", // top-level and extension functions
+		"object_declaration",   // companion object / singleton
+	)
+}
+
+// Chunks splits the given source into chunks. relPath is used only to
+// pick the language by extension and is stamped into each Chunk.
+//
+// For tree-sitter-supported languages we emit one chunk per recognized
+// structural declaration AND additional "orphan" chunks covering byte
+// ranges not claimed by a structural chunk. Orphan regions are packed
+// with cAST-style greedy sibling-merge: consecutive root-level AST
+// siblings are merged into MaxBytes-bounded units, producing
+// semantically coherent chunks (e.g. a whole import block or const
+// group) rather than arbitrary line windows. Without the hybrid pass,
+// a file like `package foo; const X = 1; func F(){}` would only index
+// F and silently drop X.
+func Chunks(ctx context.Context, relPath string, src []byte) ([]Chunk, error) {
+	ext := strings.ToLower(filepath.Ext(relPath))
+	if cfg, ok := languages[ext]; ok {
+		parser := sitter.NewParser()
+		defer parser.Close()
+		parser.SetLanguage(cfg.lang)
+		tree, err := parser.ParseCtx(ctx, nil, src)
+		if err == nil {
+			defer tree.Close()
+			root := tree.RootNode()
+			structural := extractStructural(relPath, src, cfg, root)
+			if len(structural) > 0 {
+				orphans := orphanWindowsAST(relPath, src, root, structural)
+				return append(structural, orphans...), nil
+			}
+			// No structural chunks (e.g. file is only imports/consts) —
+			// try AST sibling-merge over the whole file before giving up.
+			if packed := astSiblingMerge(relPath, src, root, 0, len(src)); len(packed) > 0 {
+				return packed, nil
+			}
+		}
+		// tree-sitter errored or produced nothing usable — fall through.
+	}
+	return windowChunks(relPath, src), nil
+}
+
+// extractStructural returns one chunk per recognized structural
+// declaration (functions, methods, types, classes) found in root's
+// direct children. It is the former body of treeChunks, now split out
+// so Chunks can parse the AST once and reuse the root node for both
+// structural extraction and orphan packing.
+func extractStructural(relPath string, src []byte, cfg langConfig, root *sitter.Node) []Chunk {
+	var out []Chunk
+	for i := range int(root.NamedChildCount()) {
+		n := root.NamedChild(i)
+		if n == nil {
+			continue
+		}
+		kind := n.Type()
+		if !cfg.kinds[kind] {
+			continue
+		}
+		startByte := int(n.StartByte())
+		endByte := int(n.EndByte())
+		// Walk back to include leading line comments / docstrings.
+		startByte = backfillComments(src, startByte)
+		body := string(src[startByte:endByte])
+		startLine := lineOf(src, startByte)
+		endLine := max(lineOf(src, endByte-1), startLine)
+		name := nodeIdentifier(n, src)
+		if len(body) <= MaxBytes {
+			out = append(out, Chunk{
+				Path: relPath, Kind: kind, Name: name,
+				StartLine: startLine, EndLine: endLine,
+				Content:   body,
+				startByte: startByte,
+				endByte:   endByte,
+			})
+		} else {
+			// Oversized declaration → fall back to line windows over its body.
+			bodyLines := strings.Split(body, "\n")
+			for _, w := range windowOver(bodyLines, startLine) {
+				w.Path = relPath
+				w.Kind = kind + ":window"
+				w.Name = name
+				w.startByte = startByte
+				w.endByte = endByte
+				out = append(out, w)
+			}
+		}
+		// For container kinds (class, impl, trait, module), also extract
+		// nested method chunks so each method gets its own index entry with
+		// the parent name stamped in EmbedText for richer retrieval.
+		if methodKinds, ok := containerMethods[kind]; ok {
+			out = append(out, nestedChunks(relPath, src, n, methodKinds, name)...)
+		}
+	}
+	return out
+}
+
+// nestedChunks walks one node looking for method-level children and
+// returns a Chunk per match. It descends one level of wrapper nodes
+// (body, class_body, block) to reach the actual method nodes.
+func nestedChunks(relPath string, src []byte, container *sitter.Node, methodKinds map[string]bool, parentName string) []Chunk {
+	var out []Chunk
+	collectMethods(relPath, src, container, methodKinds, parentName, 2, &out)
+	return out
+}
+
+func collectMethods(relPath string, src []byte, n *sitter.Node, methodKinds map[string]bool, parentName string, depth int, out *[]Chunk) {
+	if depth <= 0 {
+		return
+	}
+	for i := range int(n.NamedChildCount()) {
+		child := n.NamedChild(i)
+		if child == nil {
+			continue
+		}
+		if methodKinds[child.Type()] {
+			if c, ok := buildNestedChunk(relPath, src, child, parentName); ok {
+				*out = append(*out, c)
+			}
+		} else {
+			collectMethods(relPath, src, child, methodKinds, parentName, depth-1, out)
+		}
+	}
+}
+
+func buildNestedChunk(relPath string, src []byte, n *sitter.Node, parentName string) (Chunk, bool) {
+	startByte := int(n.StartByte())
+	endByte := int(n.EndByte())
+	startByte = backfillComments(src, startByte)
+	body := string(src[startByte:endByte])
+	if strings.TrimSpace(body) == "" {
+		return Chunk{}, false
+	}
+	startLine := lineOf(src, startByte)
+	endLine := max(lineOf(src, endByte-1), startLine)
+	name := nodeIdentifier(n, src)
+	if len(body) > MaxBytes {
+		body = body[:MaxBytes]
+	}
+	return Chunk{
+		Path: relPath, Kind: n.Type(), Name: name, Parent: parentName,
+		StartLine: startLine, EndLine: endLine,
+		Content:   body,
+		startByte: startByte,
+		endByte:   endByte,
+	}, true
+}
+
+// nodeIdentifier extracts the primary identifier of a tree-sitter node by
+// looking up its "name" field — the standard field name for the declared
+// identifier in every tree-sitter grammar we target (Go functions, Python
+// defs, JS/TS classes, Rust items, Java methods, etc.). Returns "" when the
+// node has no such field (e.g. impl_item, lexical_declaration).
+//
+// Go's `type_declaration` is a wrapper: `type X struct{}` parses as
+// type_declaration → type_spec → name:identifier. The wrapper itself
+// has no name field. Walk to the first type_spec child so single-spec
+// declarations (the overwhelming majority) name their type correctly.
+// Multi-spec declarations (`type (X struct{}; Y int)`) still get the
+// name of the first spec — better than empty.
+//
+// Kotlin's class_declaration/function_declaration/object_declaration use
+// type_identifier/simple_identifier as the first named child without a
+// "name" field. We fall back to that when the field lookup misses.
+//
+// Elixir's top-level constructs are all `call` nodes; the macro name
+// (def/defmodule/defp) sits in an `identifier` child and the declared name
+// in the first argument.
+func nodeIdentifier(n *sitter.Node, src []byte) string {
+	if nameNode := n.ChildByFieldName("name"); nameNode != nil {
+		return string(src[nameNode.StartByte():nameNode.EndByte()])
+	}
+	switch n.Type() {
+	case "type_declaration":
+		// Go: type_declaration → type_spec/type_alias → name field
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			c := n.NamedChild(i)
+			if c.Type() != "type_spec" && c.Type() != "type_alias" {
+				continue
+			}
+			if nameNode := c.ChildByFieldName("name"); nameNode != nil {
+				return string(src[nameNode.StartByte():nameNode.EndByte()])
+			}
+		}
+	case "call":
+		// Elixir: call[identifier=macro][arguments[name|call]]
+		// Structure: identifier child holds "def"/"defmodule"/"defp",
+		// first argument holds the declared name (alias or nested call).
+		return elixirCallName(n, src)
+	default:
+		// Kotlin (and similar grammars): identifier is the first named child
+		// with type type_identifier (class/object) or simple_identifier (fun).
+		if n.NamedChildCount() > 0 {
+			fc := n.NamedChild(0)
+			t := fc.Type()
+			if t == "type_identifier" || t == "simple_identifier" {
+				return string(src[fc.StartByte():fc.EndByte()])
+			}
+		}
+	}
+	return ""
+}
+
+// elixirCallName extracts the declared name from an Elixir `call` node.
+// defmodule MyModule do  → "MyModule"
+// def my_fn(x) do       → "my_fn"
+// defp helper(x), do: x → "helper"
+func elixirCallName(n *sitter.Node, src []byte) string {
+	// Find the macro identifier (first unnamed child of type "identifier").
+	var macro string
+	for i := 0; i < int(n.ChildCount()); i++ {
+		c := n.Child(i)
+		if c.Type() == "identifier" {
+			macro = string(src[c.StartByte():c.EndByte()])
+			break
+		}
+	}
+	if macro == "" {
+		return ""
+	}
+	// Find the arguments node.
+	args := n.ChildByFieldName("arguments")
+	if args == nil {
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			if n.NamedChild(i).Type() == "arguments" {
+				args = n.NamedChild(i)
+				break
+			}
+		}
+	}
+	if args == nil || args.NamedChildCount() == 0 {
+		return ""
+	}
+	first := args.NamedChild(0)
+	switch macro {
+	case "defmodule":
+		// arguments[0] is an alias node like "MyModule"
+		if first.Type() == "alias" {
+			return string(src[first.StartByte():first.EndByte()])
+		}
+	case "def", "defp", "defmacro", "defmacrop":
+		// arguments[0] is a call node: my_fn(x)
+		// The function name is the identifier child of that call.
+		if first.Type() == "call" {
+			for i := 0; i < int(first.ChildCount()); i++ {
+				c := first.Child(i)
+				if c.Type() == "identifier" {
+					return string(src[c.StartByte():c.EndByte()])
+				}
+			}
+		}
+		// arguments[0] might be a bare identifier for zero-arg functions
+		if first.Type() == "identifier" {
+			return string(src[first.StartByte():first.EndByte()])
+		}
+	}
+	return ""
+}
+
+// orphanWindowsAST emits chunks over the parts of src not covered by any
+// structural chunk, using cAST-style greedy sibling-merge packing:
+// consecutive root-level AST siblings are merged into MaxBytes-bounded
+// units rather than arbitrary line windows, producing semantically
+// coherent orphan chunks (e.g. a whole import block or const group).
+func orphanWindowsAST(relPath string, src []byte, root *sitter.Node, structural []Chunk) []Chunk {
+	if len(structural) == 0 {
+		return nil
+	}
+	type iv struct{ s, e int }
+	intervals := make([]iv, 0, len(structural))
+	for _, c := range structural {
+		if c.startByte == 0 && c.endByte == 0 {
+			continue
+		}
+		intervals = append(intervals, iv{c.startByte, c.endByte})
+	}
+	if len(intervals) == 0 {
+		return nil
+	}
+	sort.Slice(intervals, func(i, j int) bool { return intervals[i].s < intervals[j].s })
+	merged := intervals[:1]
+	for _, x := range intervals[1:] {
+		last := &merged[len(merged)-1]
+		if x.s <= last.e {
+			if x.e > last.e {
+				last.e = x.e
+			}
+			continue
+		}
+		merged = append(merged, x)
+	}
+
+	var out []Chunk
+	cursor := 0
+	for _, m := range merged {
+		if m.s > cursor {
+			out = append(out, astSiblingMerge(relPath, src, root, cursor, m.s)...)
+		}
+		cursor = m.e
+	}
+	if cursor < len(src) {
+		out = append(out, astSiblingMerge(relPath, src, root, cursor, len(src))...)
+	}
+	return out
+}
+
+// astSiblingMerge greedily packs root-level AST siblings within
+// src[start:end] into MaxBytes-bounded orphan chunks (cAST sibling-
+// merge). Consecutive sibling nodes are accumulated until adding the
+// next one would overflow MaxBytes; each group is emitted as a single
+// KindOrphan chunk whose content spans from the first to last node's
+// bytes (including any whitespace between them). Leading and trailing
+// bytes that lie outside any AST node are absorbed into the adjacent
+// group. Falls back to line-window chunking when no AST nodes are
+// found in the range.
+func astSiblingMerge(relPath string, src []byte, root *sitter.Node, start, end int) []Chunk {
+	if start >= end {
+		return nil
+	}
+	if strings.TrimSpace(string(src[start:end])) == "" {
+		return nil
+	}
+
+	// Collect root-level named children fully contained in [start, end).
+	var nodes []*sitter.Node
+	for i := range int(root.NamedChildCount()) {
+		n := root.NamedChild(i)
+		ns, ne := int(n.StartByte()), int(n.EndByte())
+		if ns >= start && ne <= end {
+			nodes = append(nodes, n)
+		}
+	}
+
+	// No AST nodes in this range — fall back to line-window chunking.
+	if len(nodes) == 0 {
+		return orphanRange(relPath, src, start, end)
+	}
+
+	var out []Chunk
+	// groupStart tracks where the current group begins in src.
+	// We start at `start` (not at the first node's startByte) so that
+	// any leading bytes (comments, blank lines before the first node)
+	// are absorbed into the first group.
+	groupStart := start
+	groupEnd := start
+
+	flushGroup := func(upTo int) {
+		if upTo <= groupStart {
+			return
+		}
+		content := string(src[groupStart:upTo])
+		if strings.TrimSpace(content) == "" {
+			groupStart = upTo
+			groupEnd = upTo
+			return
+		}
+		out = append(out, Chunk{
+			Path:      relPath,
+			Kind:      KindOrphan,
+			StartLine: lineOf(src, groupStart),
+			EndLine:   lineOf(src, upTo-1),
+			Content:   content,
+			startByte: groupStart,
+			endByte:   upTo,
+		})
+		groupStart = upTo
+		groupEnd = upTo
+	}
+
+	for _, n := range nodes {
+		ns, ne := int(n.StartByte()), int(n.EndByte())
+		nodeSize := ne - ns
+
+		if nodeSize >= MaxBytes {
+			// Single oversized node: flush what we have up to this node,
+			// window-chunk the node itself, then continue from its end.
+			flushGroup(ns)
+			out = append(out, orphanRange(relPath, src, ns, ne)...)
+			groupStart = ne
+			groupEnd = ne
+			continue
+		}
+
+		// Would extending the current group to include this node overflow?
+		// We measure the projected span from groupStart to ne, which
+		// naturally includes any whitespace gap between groupEnd and ns.
+		if ne-groupStart > MaxBytes && groupEnd > groupStart {
+			flushGroup(groupEnd)
+			// groupStart is now groupEnd; fall through to absorb the node.
+		}
+
+		groupEnd = ne
+	}
+
+	// Absorb trailing bytes (from last node's end to `end`) into the
+	// final group, then flush.
+	flushGroup(end)
+
+	return out
+}
+
+// orphanRange window-chunks src[start:end], stamping chunks with the
+// caller's path and kind="orphan". Empty/whitespace-only ranges yield
+// no chunks. The line numbers are absolute (1-based) within src.
+func orphanRange(relPath string, src []byte, start, end int) []Chunk {
+	if start >= end {
+		return nil
+	}
+	slice := string(src[start:end])
+	if strings.TrimSpace(slice) == "" {
+		return nil
+	}
+	firstLine := lineOf(src, start)
+	lines := strings.Split(slice, "\n")
+	wins := windowOver(lines, firstLine)
+	for i := range wins {
+		wins[i].Path = relPath
+		wins[i].Kind = KindOrphan
+	}
+	return wins
+}
+
+func hasCommentPrefix(b []byte) bool {
+	if len(b) == 0 {
+		return false
+	}
+	switch b[0] {
+	case '/':
+		return len(b) >= 2 && (b[1] == '/' || b[1] == '*')
+	case '#', '*':
+		return true
+	case '-':
+		return len(b) >= 2 && b[1] == '-'
+	}
+	return false
+}
+
+// backfillComments walks backward from start to absorb a contiguous
+// block of leading line comments (`//`, `#`, `--`) or block-comment
+// remnants (`/*`, `*`) immediately above the declaration. Limited to
+// 50 lines to avoid pulling in unrelated file headers.
+//
+// `start` must be at the beginning of a line — that is, `src[start-1]`
+// is either '\n' or out of range. The function returns a new offset
+// that's still at the start of a line.
+func backfillComments(src []byte, start int) int {
+	pos := start
+	lines := 0
+	for pos > 0 && lines < 50 {
+		// pos points to the start of a line. The previous line ends at
+		// pos-1 (a newline, when pos>0) and starts at lineStart where
+		// src[lineStart-1] is '\n' or lineStart==0.
+		if src[pos-1] != '\n' {
+			break
+		}
+		lineStart := pos - 1 // index of the trailing newline
+		// Walk lineStart back to the first byte of the previous line.
+		for lineStart > 0 && src[lineStart-1] != '\n' {
+			lineStart--
+		}
+		// src[lineStart:pos-1] is the previous line's content (no newline).
+		trimmed := bytes.TrimLeft(src[lineStart:pos-1], " \t")
+		if hasCommentPrefix(trimmed) {
+			pos = lineStart
+			lines++
+			continue
+		}
+		break
+	}
+	return pos
+}
+
+func lineOf(src []byte, byteOffset int) int {
+	if byteOffset < 0 {
+		byteOffset = 0
+	}
+	if byteOffset > len(src) {
+		byteOffset = len(src)
+	}
+	return 1 + bytes.Count(src[:byteOffset], []byte{'\n'})
+}
+
+func windowChunks(relPath string, src []byte) []Chunk {
+	lines := strings.Split(string(src), "\n")
+	wins := windowOver(lines, 1)
+	for i := range wins {
+		wins[i].Path = relPath
+		wins[i].Kind = KindWindow
+	}
+	return wins
+}
+
+// windowOver slices `lines` into WindowLines-sized windows with
+// WindowOverlap rows of repeat. firstLineNumber is the 1-based line
+// number of lines[0]. Chunks larger than MaxBytes are further split by
+// halving the window size until they fit.
+func windowOver(lines []string, firstLineNumber int) []Chunk {
+	var out []Chunk
+	step := WindowLines - WindowOverlap
+	if step <= 0 {
+		step = WindowLines
+	}
+	for i := 0; i < len(lines); i += step {
+		j := min(i+WindowLines, len(lines))
+		content := strings.Join(lines[i:j], "\n")
+		if len(content) > MaxBytes {
+			// Halve and re-split this slice.
+			out = append(out, halveAndChunk(lines[i:j], firstLineNumber+i)...)
+		} else if strings.TrimSpace(content) != "" {
+			out = append(out, Chunk{
+				StartLine: firstLineNumber + i,
+				EndLine:   firstLineNumber + j - 1,
+				Content:   content,
+			})
+		}
+		if j == len(lines) {
+			break
+		}
+	}
+	return out
+}
+
+func halveAndChunk(lines []string, firstLineNumber int) []Chunk {
+	if len(lines) == 0 {
+		return nil
+	}
+	if len(lines) == 1 {
+		// A single oversized line (typical: minified JS bundle, generated
+		// parser, single-line JSON config) cannot be split further on a
+		// newline boundary. Fall back to byte-window slicing so we don't
+		// silently lose the content from the index.
+		return byteWindows(lines[0], firstLineNumber)
+	}
+	mid := len(lines) / 2
+	first := lines[:mid]
+	second := lines[mid:]
+	var out []Chunk
+	if c := strings.Join(first, "\n"); len(c) <= MaxBytes && strings.TrimSpace(c) != "" {
+		out = append(out, Chunk{
+			StartLine: firstLineNumber,
+			EndLine:   firstLineNumber + len(first) - 1,
+			Content:   c,
+		})
+	} else {
+		out = append(out, halveAndChunk(first, firstLineNumber)...)
+	}
+	if c := strings.Join(second, "\n"); len(c) <= MaxBytes && strings.TrimSpace(c) != "" {
+		out = append(out, Chunk{
+			StartLine: firstLineNumber + len(first),
+			EndLine:   firstLineNumber + len(lines) - 1,
+			Content:   c,
+		})
+	} else {
+		out = append(out, halveAndChunk(second, firstLineNumber+len(first))...)
+	}
+	return out
+}
+
+// byteWindows splits a single long line into MaxBytes-sized chunks. All
+// chunks share the same start_line/end_line since they came from the
+// same source line. Empty inputs yield no chunks. Cut points are
+// snapped forward to UTF-8 boundaries so a multi-byte rune is never
+// split.
+func byteWindows(line string, lineNumber int) []Chunk {
+	if strings.TrimSpace(line) == "" {
+		return nil
+	}
+	var out []Chunk
+	for i := 0; i < len(line); {
+		j := min(i+MaxBytes, len(line))
+		for j < len(line) && (line[j]&0xC0) == 0x80 {
+			j++
+		}
+		out = append(out, Chunk{
+			StartLine: lineNumber,
+			EndLine:   lineNumber,
+			Content:   line[i:j],
+		})
+		i = j
+	}
+	return out
+}
+
+// EmbedText is what's actually sent to the embedding endpoint. Stamping
+// path + kind + name + parent into the embedded text improves retrieval
+// for both top-level and nested declarations.
+func (c Chunk) EmbedText() string {
+	var b strings.Builder
+	b.WriteString("// path: ")
+	b.WriteString(c.Path)
+	b.WriteByte('\n')
+	if c.Kind != "" && c.Kind != KindWindow {
+		b.WriteString("// kind: ")
+		b.WriteString(c.Kind)
+		b.WriteByte('\n')
+	}
+	if c.Parent != "" {
+		b.WriteString("// parent: ")
+		b.WriteString(c.Parent)
+		b.WriteByte('\n')
+	}
+	if c.Name != "" {
+		b.WriteString("// name: ")
+		b.WriteString(c.Name)
+		b.WriteByte('\n')
+	}
+	b.WriteString(c.Content)
+	return b.String()
+}
+
+// EmbedTextWithContext prepends a one-sentence situating summary to the
+// standard EmbedText output. The sentence is generated by the drain
+// pipeline (chunk_context kind) and stored in chunks.context_text.
+// When contextSentence is empty, EmbedText() is returned unchanged.
+func (c Chunk) EmbedTextWithContext(contextSentence string) string {
+	if contextSentence == "" {
+		return c.EmbedText()
+	}
+	return "// context: " + contextSentence + "\n" + c.EmbedText()
+}
+
+// extractiveSigLines caps how many leading lines a multi-line signature
+// (wrapped parameter lists, generic bounds) may span before we give up
+// and treat the accumulated lines as the signature.
+const extractiveSigLines = 8
+
+// ExtractiveSummary distills a structural chunk down to the three parts
+// that carry the identifiers a retrieval query matches on, at zero GPU
+// cost: the leading doc comment, the declaration signature, and the first
+// line of the body.
+//
+// It re-parses the chunk's own source with tree-sitter (selected by the
+// path extension) to locate the declaration's `body` field — the standard
+// field name every grammar we target exposes — so the signature boundary
+// and first statement are exact rather than brace-counted. The original
+// per-file parse can't be reused here: the deferred drain path rebuilds a
+// chunk from stored text with no live node, and re-parsing a small fragment
+// is microseconds of CPU versus the second-long GPU chat call it replaces.
+//
+// Fragments that don't re-parse into a body-bearing declaration (a bare
+// nested method lifted out of its class, an unsupported extension, a
+// bodyless `type`/`interface` decl) fall back to textExtractive, a textual
+// heuristic over the content's line layout.
+func ExtractiveSummary(ctx context.Context, c Chunk) string {
+	if s, ok := treeExtractive(ctx, c); ok {
+		return s
+	}
+	return textExtractive(c)
+}
+
+// treeExtractive does the tree-sitter-backed extraction. It returns ok=false
+// (signalling a textual fallback) when the chunk's language is unsupported,
+// the fragment fails to parse, or the declaration has no `body` field.
+func treeExtractive(ctx context.Context, c Chunk) (string, bool) {
+	cfg, ok := languages[strings.ToLower(filepath.Ext(c.Path))]
+	if !ok {
+		return "", false
+	}
+	src := []byte(c.Content)
+	parser := sitter.NewParser()
+	defer parser.Close()
+	parser.SetLanguage(cfg.lang)
+	tree, err := parser.ParseCtx(ctx, nil, src)
+	if err != nil {
+		return "", false
+	}
+	defer tree.Close()
+
+	decl := firstDecl(tree.RootNode())
+	if decl == nil {
+		return "", false
+	}
+	body := decl.ChildByFieldName("body")
+	if body == nil {
+		return "", false
+	}
+
+	var parts []string
+	// Doc: everything before the declaration is the backfilled leading
+	// comment block (the decl node itself starts after the comments).
+	if doc := strings.TrimRight(strings.TrimLeft(string(src[:decl.StartByte()]), "\n"), " \t\n"); doc != "" {
+		parts = append(parts, doc)
+	}
+	// Signature: declaration start up to the body's opening — exact, so a
+	// string literal containing a brace or a wrapped generic bound can't
+	// throw it off.
+	if sig := strings.TrimSpace(string(src[decl.StartByte():body.StartByte()])); sig != "" {
+		parts = append(parts, sig)
+	}
+	// First body statement, first line only. Skip leading comment nodes so
+	// we surface real code (or a docstring) rather than an inner comment.
+	if first := firstBodyLine(body, src); first != "" {
+		parts = append(parts, first)
+	}
+	if len(parts) == 0 {
+		return "", false
+	}
+	return strings.Join(parts, "\n"), true
+}
+
+// firstDecl returns the first non-comment named child of root — the
+// declaration the chunk represents — or nil if there is none.
+func firstDecl(root *sitter.Node) *sitter.Node {
+	for i := range int(root.NamedChildCount()) {
+		n := root.NamedChild(i)
+		if n == nil || strings.Contains(n.Type(), "comment") {
+			continue
+		}
+		return n
+	}
+	return nil
+}
+
+// firstBodyLine returns the first line of the body's first non-comment
+// statement, right-trimmed. Empty when the body has no statements.
+func firstBodyLine(body *sitter.Node, src []byte) string {
+	for i := range int(body.NamedChildCount()) {
+		n := body.NamedChild(i)
+		if n == nil || strings.Contains(n.Type(), "comment") {
+			continue
+		}
+		stmt := string(src[n.StartByte():n.EndByte()])
+		line, _, _ := strings.Cut(stmt, "\n")
+		return strings.TrimRight(line, " \t")
+	}
+	return ""
+}
+
+// textExtractive is the fallback for chunks treeExtractive can't handle. It
+// reconstructs doc + signature + first body line from the content's line
+// layout:
+//
+//	// leading doc comment        ← doc block (contiguous comment lines)
+//	// (more comment)
+//	func F(a int) (int, error) {  ← signature (up to the body opener)
+//	    first := real()           ← first body line
+//	    ...
+//	}
+//
+// The signature run extends across wrapped lines until parenthesis/bracket
+// nesting closes (so multi-line parameter lists survive); decorator lines
+// (`@…`) are absorbed without terminating it. Languages without a brace or
+// `:` opener (Ruby, Lua) simply yield a one-line signature, which is
+// correct for them. The result is joined with newlines and never exceeds
+// the original content.
+func textExtractive(c Chunk) string {
+	lines := strings.Split(c.Content, "\n")
+	var out []string
+	i := 0
+
+	// 1. Leading doc comment: the contiguous run of comment lines that
+	//    backfillComments pulled in above the declaration.
+	for i < len(lines) && hasCommentPrefix([]byte(strings.TrimSpace(lines[i]))) {
+		out = append(out, strings.TrimRight(lines[i], " \t"))
+		i++
+	}
+	// Skip any blank lines between the doc block and the declaration.
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+
+	// 2. Signature: declaration lines up to and including the one that
+	//    opens the body. Parenthesis/bracket depth tracks wrapped
+	//    parameter lists; a decorator line keeps the run going.
+	depth := 0
+	start := i
+	for i < len(lines) && i-start < extractiveSigLines {
+		line := lines[i]
+		out = append(out, strings.TrimRight(line, " \t"))
+		i++
+		depth += parenDelta(line)
+		if strings.HasPrefix(strings.TrimSpace(line), "@") {
+			continue // decorator/annotation — signature continues below
+		}
+		if depth <= 0 {
+			break // params closed → end of signature
+		}
+	}
+
+	// 3. First body line: the first line after the signature with real
+	//    content (skip blanks, lone punctuation like `{`, and comments).
+	for i < len(lines) {
+		t := strings.TrimSpace(lines[i])
+		if t == "" || isPunctOnly(t) || hasCommentPrefix([]byte(t)) {
+			i++
+			continue
+		}
+		out = append(out, strings.TrimRight(lines[i], " \t"))
+		break
+	}
+
+	return strings.Join(out, "\n")
+}
+
+// parenDelta returns the net change in (…) and […] nesting across line,
+// ignoring braces — `{` opens a body, not a parameter list, so it must
+// not keep the signature run alive.
+func parenDelta(line string) int {
+	d := 0
+	for _, r := range line {
+		switch r {
+		case '(', '[':
+			d++
+		case ')', ']':
+			d--
+		}
+	}
+	return d
+}
+
+// isPunctOnly reports whether s consists solely of structural punctuation
+// (braces, parens, semicolons, commas) — e.g. a lone `{` on its own line
+// in Allman brace style, which carries no identifier worth keeping.
+func isPunctOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch r {
+		case '{', '}', '(', ')', ';', ',':
+		default:
+			return false
+		}
+	}
+	return true
+}

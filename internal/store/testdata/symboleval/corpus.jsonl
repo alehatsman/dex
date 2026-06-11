@@ -1,0 +1,49 @@
+{"path":"auth/service.go","kind":"function_declaration","name":"AuthService","content":"package auth\ntype AuthService struct{ provider Provider }","tags":["authservice","auth"]}
+{"path":"docs/auth.md","kind":"window","name":"","content":"AuthService AuthService AuthService AuthService AuthService AuthService configure the AuthService and call the AuthService entry point. The AuthService wraps a provider.","tags":["authservice","auth"]}
+{"path":"api/login.go","kind":"function_declaration","name":"Login","content":"func Login(w http.ResponseWriter, r *http.Request) { s := NewAuthService(prov); s.Check(r) }","tags":["auth","login"]}
+{"path":"auth/wire.go","kind":"orphan","name":"","content":"var sharedAuthService = NewAuthService(defaultProvider)","tags":["authservice","auth"]}
+
+{"path":"config/parse.go","kind":"function_declaration","name":"parseConfig","content":"func parseConfig(b []byte) (*Config, error) { var c Config; return &c, nil }","tags":["parseconfig","config"]}
+{"path":"docs/config.md","kind":"window","name":"","content":"parseConfig parseConfig parseConfig parseConfig parseConfig parseConfig reads the YAML file and parseConfig returns a Config. Always parseConfig before serving.","tags":["parseconfig","config"]}
+{"path":"cmd/run.go","kind":"function_declaration","name":"run","content":"func run() error { c, err := parseConfig(data); if err != nil { return err }; return serve(c) }","tags":["config","cli"]}
+
+{"path":"retry/policy.go","kind":"type_declaration","name":"RetryPolicy","content":"type RetryPolicy struct { Max int; Backoff time.Duration }","tags":["retrypolicy","retry"]}
+{"path":"docs/retry.md","kind":"window","name":"","content":"RetryPolicy RetryPolicy RetryPolicy RetryPolicy RetryPolicy RetryPolicy controls retry behavior and a zero RetryPolicy disables retries. RetryPolicy is immutable.","tags":["retrypolicy","retry"]}
+{"path":"client/do.go","kind":"function_declaration","name":"Do","content":"func Do(p RetryPolicy, fn func() error) error { for i := 0; i < p.Max; i++ { if fn() == nil { return nil } } ; return errExhausted }","tags":["retry","client"]}
+
+{"path":"cache/lru.go","kind":"function_declaration","name":"NewLRUCache","content":"func NewLRUCache(capacity int) *LRUCache { return &LRUCache{cap: capacity} }","tags":["newlrucache","cache"]}
+{"path":"docs/cache.md","kind":"window","name":"","content":"NewLRUCache NewLRUCache NewLRUCache NewLRUCache NewLRUCache NewLRUCache builds a bounded cache and NewLRUCache evicts least-recently-used entries. Prefer NewLRUCache.","tags":["newlrucache","cache"]}
+
+{"path":"webhook/handler.go","kind":"method_declaration","name":"HandleWebhook","content":"func (s *Server) HandleWebhook(w http.ResponseWriter, r *http.Request) { ev := decode(r); s.dispatch(ev) }","tags":["handlewebhook","webhook"]}
+{"path":"docs/webhook.md","kind":"window","name":"","content":"HandleWebhook HandleWebhook HandleWebhook HandleWebhook HandleWebhook HandleWebhook receives provider events and HandleWebhook verifies the signature. Register HandleWebhook.","tags":["handlewebhook","webhook"]}
+
+{"path":"ratelimit/bucket.go","kind":"struct_item","name":"TokenBucket","content":"struct TokenBucket { tokens float64; rate float64 }","tags":["tokenbucket","ratelimit"]}
+{"path":"docs/ratelimit.md","kind":"window","name":"","content":"TokenBucket TokenBucket TokenBucket TokenBucket TokenBucket TokenBucket limits request rate and the TokenBucket refills at a fixed rate. A full TokenBucket allows a burst.","tags":["tokenbucket","ratelimit"]}
+{"path":"middleware/rl.go","kind":"function_declaration","name":"Limit","content":"func Limit(b *TokenBucket) Middleware { return func(next Handler) Handler { return guard(b, next) } }","tags":["ratelimit","middleware"]}
+
+{"path":"config/limits.go","kind":"orphan","name":"","content":"const MAX_RETRIES = 5","tags":["max_retries","limits"]}
+{"path":"legacy/retry_old.go","kind":"function_declaration","name":"retryLoop","content":"func retryLoop(fn func() error) error { for i := 0; i < MAX_RETRIES; i++ { if fn() == nil { return nil } } ; return errGaveUp }","tags":["max_retries","limits"]}
+
+{"path":"db/version.go","kind":"orphan","name":"","content":"const SCHEMA_VERSION = 7","tags":["schema_version","db"]}
+{"path":"db/migrate.go","kind":"function_declaration","name":"migrate","content":"func migrate(db *DB) error { if db.rev < SCHEMA_VERSION { return db.applyAll(pending) }; return nil }","tags":["schema_version","db"]}
+
+{"path":"net/defaults.go","kind":"orphan","name":"","content":"var DEFAULT_TIMEOUT = 30 * time.Second","tags":["default_timeout","net"]}
+{"path":"net/dial.go","kind":"function_declaration","name":"dial","content":"func dial(addr string) (net.Conn, error) { return net.DialTimeout(\"tcp\", addr, DEFAULT_TIMEOUT) }","tags":["default_timeout","net"]}
+
+{"path":"log/logger.go","kind":"function_declaration","name":"NewLogger","content":"func NewLogger(level Level) *Logger { return &Logger{level: level} }","tags":["logger","logging"]}
+{"path":"metrics/counter.go","kind":"function_declaration","name":"Counter","content":"func Counter(name string) *Metric { return register(name, counterType) }","tags":["metrics","counter"]}
+{"path":"json/encode.go","kind":"function_declaration","name":"Marshal","content":"func Marshal(v any) ([]byte, error) { return defaultEncoder.encode(v) }","tags":["json","encode"]}
+{"path":"http/server.go","kind":"function_declaration","name":"ListenAndServe","content":"func ListenAndServe(addr string, h Handler) error { return (&Server{addr: addr, h: h}).run() }","tags":["http","server"]}
+{"path":"queue/worker.go","kind":"function_declaration","name":"StartWorker","content":"func StartWorker(q *Queue) { go q.loop() }","tags":["queue","worker"]}
+{"path":"crypto/hash.go","kind":"function_declaration","name":"HashBytes","content":"func HashBytes(b []byte) [32]byte { return sha256.Sum256(b) }","tags":["crypto","hash"]}
+{"path":"store/open.go","kind":"function_declaration","name":"OpenStore","content":"func OpenStore(path string) (*Store, error) { return &Store{path: path}, nil }","tags":["store","open"]}
+{"path":"router/mux.go","kind":"function_declaration","name":"NewRouter","content":"func NewRouter() *Mux { return &Mux{routes: map[string]Handler{}} }","tags":["router","mux"]}
+
+{"path":"bigsvc/handler.go","kind":"function_declaration","name":"DispatchEvent","content":"func DispatchEvent(ctx context, ev payload) { logger record begin span trace ; validate normalize enrich ; route partition shard assign ; persist commit flush ack ; retry backoff jitter ; metrics counter gauge histogram ; cleanup defer recover finalize complete }","tags":["dispatchevent","events"]}
+{"path":"events/notes.md","kind":"window","name":"","content":"DispatchEvent","tags":["dispatchevent","events"]}
+
+{"path":"ser/all.go","kind":"function_declaration","name":"SerializeAll","content":"func SerializeAll(items list) bytes { allocate buffer reserve ; iterate visit walk traverse ; encode marshal pack frame ; checksum verify validate ; compress deflate gzip ; append concat join merge ; finalize close flush return result }","tags":["serializeall","serial"]}
+{"path":"ser/readme.md","kind":"window","name":"","content":"SerializeAll","tags":["serializeall","serial"]}
+
+{"path":"authz/validate.go","kind":"function_declaration","name":"ValidateToken","content":"func ValidateToken(tok string) claims { parse decode split segment ; verify signature algorithm key ; check expiry issuer audience nonce ; lookup revoke blacklist cache ; map scope role permission grant ; return principal subject identity context }","tags":["validatetoken","authz"]}
+{"path":"authz/notes.md","kind":"window","name":"","content":"ValidateToken","tags":["validatetoken","authz"]}

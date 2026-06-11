@@ -1,0 +1,287 @@
+version: '1'
+
+# Mooncake task runner for dex — the canonical entry point for developer
+# workflows in this repo. Run with: `mooncake task <name>`.
+# Bare `mooncake task` lists every task with its description.
+#
+# The quality gate (build/test/vet/lint/vuln/scan/ai-lint/arch-snapshot/
+# budget-status/dupl/ci-fast/ci) is provided by the shared **go-quality**
+# module (alehatsman/go-quality), so it stays in lockstep with mooncake +
+# moongit. Each task is a thin wrapper over a `goq/*` component; the only
+# dex-specific knobs are the vars below.
+#
+# PREREQ: go-quality is hosted on the local moongit over plain http, so the
+# module fetch needs the host trusted once per shell:
+#   export MOONCAKE_MODULE_INSECURE=host.docker.internal:8080
+# (the first run clones to ~/.cache/mooncake/modules/...; later runs hit cache.)
+#
+# The source below uses host.docker.internal (not 127.0.0.1) so the SAME
+# tasks.yml resolves from both the host — where host.docker.internal maps to
+# this box — and a moongit CI container, where 127.0.0.1 would mean the
+# container itself. mgitci.yml sets the matching MOONCAKE_MODULE_INSECURE.
+#
+# Kept local (not quality gates, or no module equivalent): install-tools,
+# check-tools, install, clean, test-race, fmt (writer), setup-hooks.
+#
+# dex's project-specific golangci excludes stay in ./.golangci.yml — the
+# module ships only the shared linter core; goq/lint runs golangci-lint in this
+# repo's cwd so the local config is honored.
+
+vars:
+  PKG: ./...
+  BIN: dex
+  # mattn/go-sqlite3 ships FTS5 only with this tag enabled; the project's
+  # chunks_fts virtual table and hybrid BM25 leg require it. Threaded into
+  # every goq/* component as the go_tags prop — a tag-less build wipes the
+  # index on reindex.
+  GO_TAGS: sqlite_fts5
+
+modules:
+  # Default props are applied to every `use: goq/*`, filtered to the params
+  # each export declares (mooncake #52/#57): go_tags reaches build/test/vet/
+  # lint/vuln/scan/arch-snapshot/ci/ci-fast; pkg reaches the test/vet/lint/
+  # vuln/scan/ci exports. Exports that declare neither (budget-status, dupl,
+  # ai-lint, fmt, tools, sync-config) silently ignore them. This is exactly
+  # the set each prop used to be passed to by hand.
+  goq:
+    source: "host.docker.internal:8080/alehatsman/go-quality@v0.1.1"
+    props:
+      go_tags: "{{ GO_TAGS }}"
+      pkg: "{{ PKG }}"
+
+tasks:
+
+  # ── Tool installation. Idempotent: re-running picks up newer versions. ──
+  # Kept local: dex installs gosec via golangci-lint (not standalone) and the
+  # set is verified inline; not worth a module round-trip.
+  install-tools:
+    desc: Install every static-analysis tool the project depends on
+    steps:
+      - log: "→ Installing golangci-lint..."
+      - shell: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+      - log: "→ Installing govulncheck..."
+      - shell: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - log: "→ Installing gocyclo..."
+      - shell: go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+      - log: "→ Installing goda..."
+      - shell: go install github.com/loov/goda@latest
+      - log: "→ Installing dupl..."
+      - shell: go install github.com/mibk/dupl@latest
+      - log: "✓ Tools installed. Verify with 'mooncake task check-tools'."
+
+  check-tools:
+    desc: Report which static-analysis tools are installed
+    steps:
+      - name: verify each tool
+        shell: |
+          missing=0
+          for tool in golangci-lint govulncheck gocyclo goda dupl; do
+            if command -v "$tool" >/dev/null 2>&1 || [ -x "$(go env GOPATH)/bin/$tool" ]; then
+              printf "  ✓ %s\n" "$tool"
+            else
+              printf "  ✗ %s — MISSING\n" "$tool"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo ""
+            echo "$missing tool(s) missing. Run: mooncake task install-tools"
+            exit 1
+          fi
+
+  # ── Build / install / clean ─────────────────────────────────────────────
+  build:
+    desc: Build the dex binary
+    steps:
+      - shell: go mod download
+      - name: build
+        use: goq/build
+        props:
+          cmd_path: ./cmd/dex
+          bin: '{{ BIN }}'
+          trimpath: true
+          ldflags: "-s -w"
+
+  # Kept local: dex-specific deploy (copy to ~/.local/bin + restart instances).
+  install:
+    desc: Build, install dex to ~/.local/bin, and restart any running instances
+    steps:
+      - shell: go mod download
+      - shell: |
+          # sqlite-vec and go-tree-sitter/lua emit macOS-only deprecation/null-char warnings from C code we don't control
+          [ "$(uname -s)" = "Darwin" ] && export CGO_CFLAGS="-Wno-deprecated-declarations -Wno-null-character"
+          go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
+      - name: copy binary and restart running instances
+        shell: |
+          INSTALL_PATH="${INSTALL_PATH:-$HOME/bin}"
+          mkdir -p "$INSTALL_PATH"
+          cp {{ BIN }} "$INSTALL_PATH/{{ BIN }}.new"
+          mv -f "$INSTALL_PATH/{{ BIN }}.new" "$INSTALL_PATH/{{ BIN }}"
+          echo "✓ Installed $INSTALL_PATH/{{ BIN }}"
+          count=$(pgrep -x dex | wc -l | tr -d ' ')
+          if [ "$count" -gt 0 ]; then
+            pkill -x dex || true
+            echo "✓ Restarted $count dex process(es) — MCP clients will reconnect automatically"
+          fi
+
+  clean:
+    desc: Remove the built binary
+    steps:
+      - shell: rm -f {{ BIN }}
+      - log: "✓ Cleaned"
+
+  # ── Test / format / vet ─────────────────────────────────────────────────
+  # Pure wrappers below collapse to the one-line `use:` shorthand; go_tags/pkg
+  # come from the goq binding's default props and `mooncake task` shows each
+  # component's own description.
+  test: goq/test
+
+  # Kept local: go-quality has no race component (race is a dex-local variant).
+  test-race:
+    desc: Run go test -race ./...
+    steps:
+      - shell: go test -race -tags '{{ GO_TAGS }}' {{ PKG }}
+
+  # Kept local: this is the formatter (gofmt -w); goq/fmt is the check used
+  # inside the ci-fast gate.
+  fmt:
+    desc: Format all Go files with gofmt
+    steps:
+      - shell: gofmt -w .
+
+  # Kept local: offline code-retrieval eval (NDCG@10/Recall@10/MRR over a
+  # git-derived golden set). Scores the live Search path against
+  # benchmark/eval/golden.json and fails on a >0.02 drop vs the committed
+  # baseline. Requires a built dex on PATH, a live embed endpoint
+  # (DEX_EMBED_URL / ollama) and an index for this repo (`dex index .`) —
+  # so it is a local/main_pc gate, not a container-CI step. Refresh the
+  # golden set with `dex bench eval . --gen` and the baseline with
+  # `dex bench eval . --output json > benchmark/eval/baseline.json`.
+  eval:
+    desc: Offline code-retrieval eval (NDCG@10/Recall@10/MRR) vs the git-derived golden set
+    steps:
+      - shell: dex bench eval . --k 10 --check benchmark/eval/baseline.json
+
+  # Kept local: multi-repo retrieval eval over the pinned corpus
+  # (benchmark/corpus/repos.yml). Fetches + indexes each repo on first run
+  # (cached after), scores per (repo, set), and fails on a >0.02 drop in ANY
+  # cell vs benchmark/corpus/baseline.json. Requires a built dex on PATH, a
+  # live embed endpoint (DEX_EMBED_URL / ollama) and network access to clone
+  # the repos — a local/main_pc gate, not container-CI.
+  #
+  # DEX_DISABLE_RERANK=1: the gate isolates the fusion layer (matches the
+  # baseline, which was generated rerank-off) — deterministic and immune to the
+  # shared-GPU rerank-endpoint contention that flakes long runs on main_pc. See
+  # docs/retrieval-eval.md. Refresh the baseline (same config) with:
+  #   DEX_DISABLE_RERANK=1 dex bench corpus run --output json \
+  #     | jq 'del(.cells[].report.queries)' > benchmark/corpus/baseline.json
+  corpus:
+    desc: Multi-repo retrieval eval (NDCG/Recall/MRR per repo) vs the pinned corpus baseline
+    steps:
+      - shell: DEX_DISABLE_RERANK=1 dex bench corpus run --k 10 --check benchmark/corpus/baseline.json
+
+  # Kept local: offline compression benchmark — zero inference, no GPU required.
+  # Measures ratio, anchor preservation, extractive fidelity, and round-trip
+  # correctness per pass vs benchmark/compress/baseline.json.
+  # Gates Rung-B local-track work (#291/#292/#293 in the capability-ladder epic).
+  # Refresh the baseline with:
+  #   dex bench compress --output json > benchmark/compress/baseline.json
+  bench-compress:
+    desc: Offline compression benchmark (ratio/anchor%/fidelity) vs baseline
+    steps:
+      - shell: dex bench compress --check benchmark/compress/baseline.json
+
+  # Kept local: local-compute performance benchmark — zero GPU, zero network.
+  # Measures compress-pass latency, KNN scaling curves, BM25 latency, and
+  # storage footprint vs benchmark/perf/baseline.json.
+  # The KNN scaling curves identify the ANN break-even point for #216.
+  # Storage numbers justify int8 quantisation (#215) and Matryoshka dims (#249).
+  # Refresh the baseline with:
+  #   dex bench perf --output json > benchmark/perf/baseline.json
+  bench-perf:
+    desc: Local-compute pipeline performance benchmark vs baseline
+    steps:
+      - shell: dex bench perf --check benchmark/perf/baseline.json
+
+  vet: goq/vet
+
+  # ── Lint + security + vulnerability scans ───────────────────────────────
+  lint: goq/lint
+
+  vuln: goq/vuln
+
+  scan: goq/scan
+
+  # ── Architecture / analysis reports ─────────────────────────────────────
+  # arch-snapshot declares go_tags but not pkg, so the binding default applies
+  # go_tags here and skips pkg — matching the old hand-written props.
+  arch-snapshot: goq/arch-snapshot
+
+  budget-status: goq/budget-status
+
+  dupl: goq/dupl
+
+  # ── Setup ───────────────────────────────────────────────────────────────
+  setup-hooks:
+    desc: Install pre-commit and pre-push git hooks (mooncake task ci-fast / mooncake task ci)
+    steps:
+      - shell: bash ./scripts/setup-hooks.sh
+
+  # ── AI-smell sweep ──────────────────────────────────────────────────────
+  ai-lint: goq/ai-lint
+
+  # Keeps the full form: a non-default prop (args) means it can't be a one-liner.
+  ai-lint-all:
+    desc: AI-smell sweep on every tracked Go file
+    steps:
+      - use: goq/ai-lint
+        props:
+          args: "--all"
+
+  # ── Fast gate — pre-commit. Cheap checks only (<5s on warm cache). ─────
+  ci-fast: goq/ci-fast
+
+  # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
+  ci: goq/ci
+
+  # ── ONNX build-tag matrix gate (issue #180). The in-process ONNX embedder
+  # is opt-in behind `-tags onnx`; the default ci/ci-fast gates stay
+  # sqlite_fts5-only and never compile it. This task is the compile guard for
+  # the onnx lane so the tagged build can't silently bit-rot. It does NOT run
+  # ONNX inference — that needs the onnxruntime .so (DEX_ONNXRUNTIME_LIB) and a
+  # model (DEX_ONNX_MODEL) in the runner image; the inference path is covered by
+  # the skip-gated golden test (internal/embed/onnx_engine_test.go), which runs
+  # only when those env vars point at real artifacts. Keep this lane's tags in
+  # sync with GO_TAGS + onnx.
+  ci-onnx:
+    desc: Compile + vet the `-tags onnx` build matrix (onnx lane is otherwise opt-in)
+    steps:
+      - shell: go mod download
+      - name: build onnx-tagged
+        shell: go build -tags '{{ GO_TAGS }} onnx' {{ PKG }}
+      - name: vet onnx-tagged
+        shell: go vet -tags '{{ GO_TAGS }} onnx' {{ PKG }}
+      - log: "✓ onnx build-tag matrix compiles + vets"
+
+  # ── CI image. dex-ci:latest is the container mgitci.yml runs the quality
+  # gate in: moongit-ci-dev (Go + Node + mooncake + static-analysis tools)
+  # plus the cgo C toolchain the sqlite_fts5 build needs (ci/Dockerfile).
+  # It derives FROM moongit-ci-dev:latest, so build that first in the moongit
+  # repo (`mooncake task ci-images`); this task bakes the cgo layer on top and
+  # tags dex-ci:latest. Run on a fresh box and whenever the base image or
+  # ci/Dockerfile changes, so the runner never has to pull (pulls trip the host
+  # docker credential helper — see dotfiles#8).
+  ci-image:
+    desc: Build the dex CI container image (dex-ci:latest) the runner needs
+    steps:
+      - shell:
+          cmd: |
+            set -eu
+            docker image inspect moongit-ci-dev:latest >/dev/null 2>&1 || {
+              echo "moongit-ci-dev:latest missing — build it first in the moongit repo: 'mooncake task ci-images'" >&2
+              exit 1
+            }
+      - cmd:
+          argv: ["docker", "build", "-t", "dex-ci:latest", "ci/"]
+      - log:
+          msg: "built dex-ci:latest"
