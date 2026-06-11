@@ -1477,20 +1477,23 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	}
 	defer st.Close()
 	em := newEmbedClient(st.EmbedModel())
-	t0 := time.Now()
-	vecs, err := em.Embed(ctx, []string{q})
-	embedDur := time.Since(t0)
 	var queryVec []float32
-	if err != nil {
-		if !errors.Is(err, embed.ErrUnreachable) {
-			return err
+	var embedDur time.Duration
+	if em != nil {
+		t0 := time.Now()
+		vecs, err := em.Embed(ctx, []string{q})
+		embedDur = time.Since(t0)
+		if err != nil {
+			if !errors.Is(err, embed.ErrUnreachable) {
+				return err
+			}
+			// Degrade, don't crash: drop the semantic leg and run BM25-only.
+			fmt.Fprintf(os.Stderr,
+				"dex: embedding service offline at %s — degraded to BM25-only (start ollama, or set DEX_EMBED_URL)\n",
+				em.Endpoint())
+		} else {
+			queryVec = vecs[0]
 		}
-		// Degrade, don't crash: drop the semantic leg and run BM25-only.
-		fmt.Fprintf(os.Stderr,
-			"dex: embedding service offline at %s — degraded to BM25-only (start ollama, or set DEX_EMBED_URL)\n",
-			em.Endpoint())
-	} else {
-		queryVec = vecs[0]
 	}
 	t1 := time.Now()
 	hits, err := st.Search(ctx, queryVec, q, *k)
@@ -1812,6 +1815,10 @@ func cmdGenerate(ctx context.Context, args []string) error {
 			return err
 		}
 		em := newEmbedClient(st.EmbedModel())
+		if em == nil {
+			st.Close()
+			return fmt.Errorf("RAG requires an embedding model; re-run with --no-rag or configure DEX_EMBED_URL")
+		}
 		vecs, err := em.Embed(ctx, []string{prompt})
 		if err != nil {
 			st.Close()
