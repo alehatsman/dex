@@ -898,6 +898,11 @@ func collectSymbolHits(ctx context.Context, st *store.Store, idents []string, po
 // BM25Score / RRFScore from the store; symbol-only hits get Score=1.0
 // (exact-match signal). The new RRFScore field reflects the cross-lane
 // fused rank for all returned hits.
+//
+// Like the graph lane, both legs are scored from rank position only — the
+// incoming Hit.Score magnitude is discarded — so this stage is fusion-mode
+// independent (FusionRRF vs FusionLinear changes only the semantic ORDER, not
+// the symbol lane's relative weight).
 func fuseWithSymbols(semantic, symbol []store.Hit, n int) []store.Hit {
 	const kRRF = 60
 	type hitKey struct {

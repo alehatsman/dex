@@ -858,6 +858,15 @@ const defaultGraphLaneWeight = float32(1.0)
 // independently of hop decay — raise it to make the graph lane compete with
 // dense+BM25. A path absent from weightByPath gets zero contribution rather
 // than a panic.
+//
+// Both legs are scored purely from rank position (1/(kRRF+i+1)); the incoming
+// Hit.Score magnitude is discarded. This makes the lane fusion FUSION-MODE
+// INDEPENDENT: whether the primary hits arrived from FusionRRF (~1/60 scores)
+// or FusionLinear ([0,1] scores), only their ORDER feeds this stage, so the
+// graph lane is never "under-weighted" in linear mode and laneWeight needs no
+// per-mode rescaling. Do not add an Hit.Score-magnitude term here without
+// renormalizing per mode — TestFuseWithGraphNeighborsRankBasedModeInvariant
+// locks this property.
 func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]float32, laneWeight float32, n int) []Hit {
 	const kRRF = 60
 	type hitKey struct {

@@ -179,6 +179,41 @@ func TestFuseWithGraphNeighborsLaneWeight(t *testing.T) {
 	}
 }
 
+// TestFuseWithGraphNeighborsRankBasedModeInvariant locks the property that the
+// graph lane fuses on RANK POSITION only and ignores Hit.Score magnitude — so
+// the stage is identical whether primary hits arrived from FusionRRF (~1/60
+// scores) or FusionLinear ([0,1] scores). This is why the graph lane is NOT
+// under-weighted in linear mode and GraphLaneWeight needs no per-mode rescaling.
+func TestFuseWithGraphNeighborsRankBasedModeInvariant(t *testing.T) {
+	// Same order, two wildly different score-magnitude regimes:
+	// linearLike (~[0,1]) vs rrfLike (~1/60). Order is identical.
+	linearLike := []Hit{
+		{Path: "p0.go", StartLine: 1, Score: 0.90},
+		{Path: "p1.go", StartLine: 1, Score: 0.80},
+		{Path: "p2.go", StartLine: 1, Score: 0.70},
+	}
+	rrfLike := []Hit{
+		{Path: "p0.go", StartLine: 1, Score: 0.0166},
+		{Path: "p1.go", StartLine: 1, Score: 0.0163},
+		{Path: "p2.go", StartLine: 1, Score: 0.0161},
+	}
+	graphHits := []Hit{{Path: "g.go", StartLine: 1}}
+	weightByPath := map[string]float32{"g.go": pow32(0.6, 1)}
+
+	outLinear := fuseWithGraphNeighbors(linearLike, graphHits, weightByPath, 2.0, 4)
+	outRRF := fuseWithGraphNeighbors(rrfLike, graphHits, weightByPath, 2.0, 4)
+
+	if len(outLinear) != len(outRRF) {
+		t.Fatalf("length mismatch: linear=%d rrf=%d", len(outLinear), len(outRRF))
+	}
+	for i := range outLinear {
+		if outLinear[i].Path != outRRF[i].Path {
+			t.Errorf("rank %d differs by score regime: linear=%q rrf=%q — graph fusion read Hit.Score magnitude (mode-dependent)",
+				i, outLinear[i].Path, outRRF[i].Path)
+		}
+	}
+}
+
 func hitPaths(hits []Hit) []string {
 	out := make([]string, len(hits))
 	for i, h := range hits {
