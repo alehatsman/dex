@@ -269,6 +269,62 @@ func TestAlignMessageBreakpointOnStablePrefix(t *testing.T) {
 	}
 }
 
+// TestAlignSkipsDeferredTools: tools with defer_loading:true must not receive
+// cache_control — the Anthropic API rejects the combination.
+func TestAlignSkipsDeferredTools(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{
+		"model":  "claude-sonnet-4-6",
+		"system": bigText(2000),
+		"tools": []any{
+			map[string]any{"name": "Loaded", "description": bigText(2000)},
+			map[string]any{"name": "Deferred", "description": bigText(2000), "defer_loading": true},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	})
+	out, stats := AlignCacheBreakpoints(body, DefaultKeepRecent)
+	if !stats.Applied {
+		t.Fatalf("expected breakpoints applied; stats=%+v", stats)
+	}
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(out, &raw)
+	var tools []map[string]json.RawMessage
+	_ = json.Unmarshal(raw["tools"], &tools)
+	if _, ok := tools[1]["cache_control"]; ok {
+		t.Error("deferred tool must not have cache_control")
+	}
+	if _, ok := tools[0]["cache_control"]; !ok {
+		t.Error("non-deferred tool should carry the cache_control breakpoint")
+	}
+}
+
+// TestAlignAllDeferredTools: when all tools are deferred, no tool breakpoint
+// should be placed.
+func TestAlignAllDeferredTools(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{
+		"model":  "claude-sonnet-4-6",
+		"system": bigText(2000),
+		"tools": []any{
+			map[string]any{"name": "DeferredA", "description": bigText(2000), "defer_loading": true},
+			map[string]any{"name": "DeferredB", "description": bigText(2000), "defer_loading": true},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	})
+	out, _ := AlignCacheBreakpoints(body, DefaultKeepRecent)
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(out, &raw)
+	var tools []map[string]json.RawMessage
+	_ = json.Unmarshal(raw["tools"], &tools)
+	for i, tool := range tools {
+		if _, ok := tool["cache_control"]; ok {
+			t.Errorf("tool[%d] is deferred and must not have cache_control", i)
+		}
+	}
+}
+
 func TestMinCacheableTokens(t *testing.T) {
 	cases := map[string]int{
 		"claude-opus-4-8":            4096,

@@ -277,16 +277,24 @@ func applyBreakpoints(raw map[string]json.RawMessage, messages []json.RawMessage
 var ephemeral = json.RawMessage(`{"type":"ephemeral"}`)
 
 // markLastArrayElement adds cache_control to the last element of a JSON array
-// of objects (used for the tools array).
+// of objects (used for the tools array). Tools with defer_loading:true are
+// skipped — the Anthropic API rejects the combination of both flags.
 func markLastArrayElement(arrRaw json.RawMessage) (json.RawMessage, error) {
 	var arr []map[string]json.RawMessage
 	if err := json.Unmarshal(arrRaw, &arr); err != nil {
 		return nil, err
 	}
-	if len(arr) == 0 {
+	idx := -1
+	for i := len(arr) - 1; i >= 0; i-- {
+		if raw, ok := arr[i]["defer_loading"]; !ok || string(raw) != "true" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
 		return arrRaw, nil
 	}
-	arr[len(arr)-1]["cache_control"] = ephemeral
+	arr[idx]["cache_control"] = ephemeral
 	return json.Marshal(arr)
 }
 
