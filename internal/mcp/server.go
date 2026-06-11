@@ -43,19 +43,19 @@ func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
 Tool mapping (use these instead):
-- ask(question)                instead of free-form reasoning about code structure
-- search_semantic(q, path)     instead of Grep/rg for concept/intent searches
-- search_symbol(name, path)    instead of Grep for exact identifier lookup
-- ctx_shell(command)           instead of Bash for shell commands (compressed output)
-- file_view(file)              instead of Read for large files (>400 lines)
-- graph_callers / graph_callees  instead of manual cross-ref tracing
-- graph_deps(path)             instead of manual import scanning
+- ask(question)          instead of free-form reasoning about code structure
+- find(query, path)      instead of Grep/rg for concept/intent searches
+- lookup(name, path)     instead of Grep for exact identifier lookup
+- shell(command)         instead of Bash for shell commands (compressed output)
+- read(file)             instead of Read for large files (signatures + summaries)
+- callers / callees      instead of manual cross-ref tracing
+- deps(path)             instead of manual import scanning
 
 Workflow:
 1. Orient: ask(question) — routes intent, returns suggested_reads + next_action
-2. Locate: search_semantic or search_symbol
-3. Read: file_view for large files; native Read for small ones
-4. Shell: ctx_shell(command) for build/test output
+2. Locate: find for concepts; lookup for exact names
+3. Read: read for large files; native Read for small ones
+4. Shell: shell(command) for build/test output
 
 Start every session by calling ask() with the task description.`
 }

@@ -66,17 +66,19 @@ and an `avoid` line you can follow verbatim.
 - You're editing — use `Edit`.
 
 **Sister tools** (call directly only when you already know the leg you want):
-- `search_semantic`, `search_symbol` — raw retrieval legs.
-- `search_context` — top-K file signatures + best symbol body in one call.
-- `graph_neighbors` — cosine neighbours of a known chunk.
-- `graph_deps` — `imports` for a file or package.
-- `graph_callers`, `graph_callees` — precise call edges (Go-only).
-- `graph_cycles` — mutual-recursion clusters (Tarjan SCC on `calls` edges).
-- `graph_path` — shortest call/import path between two symbols (BFS).
-- `graph_diff` — blast-radius of `git diff <ref>`: changed symbols → transitive callers.
-- `graph_communities` — Louvain call-graph clusters (module boundaries / hidden coupling).
-- `graph_smells` — structural quality signals: long funcs, dead exports, god files, god-nodes.
-- `file_view` — signatures / structural map / LLM gist / line slice of a file.
+- `find`, `lookup` — raw retrieval legs (concept search; exact identifier).
+- `deps` — `imports` for a file or package.
+- `callers`, `callees` — precise call edges (Go-only).
+- `path` — shortest call/import path between two symbols (BFS).
+- `diff` — blast-radius of `git diff <ref>`: changed symbols → transitive callers.
+- `impact` — what breaks if a symbol changes.
+- `clusters` — Louvain call-graph clusters (module boundaries / hidden coupling).
+- `smells` — structural quality signals: long funcs, dead exports, god files, god-nodes.
+- `routes` — HTTP/RPC route map.
+- `read` — signatures / structural map / line slice of a file.
+- `grep`, `ls` — exact-match search; directory listing.
+- `notes`, `session` — agent memory / session state.
+- `shell` — run a shell command with compressed output.
 - `status` — endpoint health + indexed projects.
 ```
 
@@ -122,11 +124,8 @@ APIs. Three reinforcing layers:
 
 1. **Tool descriptions**: `ask` is labeled "PRIMARY ENTRY POINT" and
    "Call this BEFORE Grep/Glob/Read fan-out." Each leg
-   (`search_semantic`, `search_symbol`, `graph_neighbors`,
-   `graph_deps`, `graph_callers`, `graph_callees`, `view_summarize`)
-   begins with "Prefer `ask` …; use this directly only when …". The
-   raw tool descriptions use the new names: `file_view`, `status`,
-   `search_context`, `file_tree`, `graph_routes`, `graph_smells`.
+   (`find`, `lookup`, `deps`, `callers`, `callees`, `read`)
+   begins with "Prefer `ask` …; use this directly only when …".
 2. **CLAUDE.md** (this snippet): codifies the rule in the
    project's instruction file Claude actually reads.
 3. **Prose `next_action` / `avoid`**: every router response carries
