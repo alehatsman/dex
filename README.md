@@ -169,10 +169,13 @@ Static binary on `distroless/static` (~36 MB). Add `--user "$(id -u):$(id -g)"` 
 
 ## Docs
 
+- [`docs/READING_ORDER.md`](docs/READING_ORDER.md) — where to start (four reading paths by goal)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — workflow, build commands, conventions
 - [`docs/vision.md`](docs/vision.md) — the capability-ladder vision (Claude / local-agent / no-GPU rungs)
 - [`docs/model-selection.md`](docs/model-selection.md) — model recommendations (MTEB, VRAM, quant)
 - [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) — drop-in CLAUDE.md routing block
 - [`docs/observability.md`](docs/observability.md) — log field conventions
+- [`docs/lean-profile.md`](docs/lean-profile.md) — no-GPU / BM25-only deployment
 - [`docs/how-dex-guide-works.md`](docs/how-dex-guide-works.md) — how `dex guide` works
 - [`specs/`](specs/) — living specs for indexing, search, graph, MCP, storage
 
