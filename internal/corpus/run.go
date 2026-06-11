@@ -36,7 +36,11 @@ type LabeledReport struct {
 // repo's index; em must use the
 // index-recorded embed model (see the CLI wiring). QuerySets are expected to be
 // absolute paths (the CLI resolves them against the manifest dir).
-func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoSpec, dir string, k int) ([]LabeledReport, error) {
+// cacheDir, when non-empty, memoizes the git-mined golden sets so a sweep that
+// re-scores the same repos under many fusion settings doesn't regenerate them
+// every run (see cachedGoldenSet). Curated sets are already on disk and aren't
+// cached.
+func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoSpec, dir string, k int, cacheDir string) ([]LabeledReport, error) {
 	lang := ""
 	if len(spec.Languages) > 0 {
 		lang = spec.Languages[0]
@@ -73,7 +77,9 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 
 	// Auto-generated golden sets mined from the repo's own history at its pin.
 	if spec.Gen.GitHistory.Enabled {
-		gs, err := eval.Generate(ctx, dir, genOpts(spec.Gen.GitHistory))
+		o := genOpts(spec.Gen.GitHistory)
+		gs, err := cachedGoldenSet(cacheDir, spec.Name, spec.Commit, SetGitHistory, o,
+			func() (eval.GoldenSet, error) { return eval.Generate(ctx, dir, o) })
 		if err != nil {
 			return nil, fmt.Errorf("corpus: generate git-history for %s: %w", spec.Name, err)
 		}
@@ -82,7 +88,9 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 		}
 	}
 	if spec.Gen.BlastRadius.Enabled {
-		gs, err := eval.GenerateBlastRadius(ctx, dir, genOpts(spec.Gen.BlastRadius))
+		o := genOpts(spec.Gen.BlastRadius)
+		gs, err := cachedGoldenSet(cacheDir, spec.Name, spec.Commit, SetBlastRadius, o,
+			func() (eval.GoldenSet, error) { return eval.GenerateBlastRadius(ctx, dir, o) })
 		if err != nil {
 			return nil, fmt.Errorf("corpus: generate blast-radius for %s: %w", spec.Name, err)
 		}
@@ -91,7 +99,9 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 		}
 	}
 	if spec.Gen.Structural.Enabled {
-		gs, err := eval.GenerateStructural(ctx, dir, genOpts(spec.Gen.Structural))
+		o := genOpts(spec.Gen.Structural)
+		gs, err := cachedGoldenSet(cacheDir, spec.Name, spec.Commit, SetStructural, o,
+			func() (eval.GoldenSet, error) { return eval.GenerateStructural(ctx, dir, o) })
 		if err != nil {
 			return nil, fmt.Errorf("corpus: generate structural for %s: %w", spec.Name, err)
 		}

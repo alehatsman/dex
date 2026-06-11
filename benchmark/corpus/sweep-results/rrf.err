@@ -1,0 +1,5 @@
+dex bench corpus: scoring flask (1 query set(s) + gen:git-history,structural)
+dex bench corpus: scoring gin (1 query set(s) + gen:git-history,blast-radius,structural)
+dex bench corpus: scoring ripgrep (1 query set(s) + gen:git-history,structural)
+dex bench corpus: scoring zod (1 query set(s) + gen:git-history,structural)
+dex bench corpus: corpus: score zod/structural: eval: search q44 (cbf77bb1): context canceled

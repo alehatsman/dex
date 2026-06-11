@@ -183,7 +183,10 @@ func runCorpusRepo(ctx context.Context, base, cacheRoot, manifestDir string, spe
 	}
 	fmt.Fprintf(os.Stderr, "dex bench corpus: scoring %s (%d query set(s)%s)\n",
 		spec.Name, len(runSpec.QuerySets), genLabel(runSpec))
-	return corpus.RunRepo(ctx, em, st, runSpec, indexPath, k)
+	// Cache git-mined golden sets under the corpus cache root so a sweep that
+	// re-scores these repos under many fusion settings mines git only once.
+	genCacheDir := filepath.Join(cacheRoot, ".gensets")
+	return corpus.RunRepo(ctx, em, st, runSpec, indexPath, k, genCacheDir)
 }
 
 // ensureCorpusIndexConfig writes a minimal .dex/config.yml under root if none
