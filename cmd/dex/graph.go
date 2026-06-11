@@ -13,6 +13,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphrefresh"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
@@ -534,11 +535,7 @@ type graphIndexResult struct {
 // runGraphPhase extracts the Go static graph for p and upserts into st.
 // Shared by `index` (Phase 2) and `index --graph=only`.
 func runGraphPhase(ctx context.Context, p *proj.Project, st *store.Store, verbose bool) (*graph.Stats, error) {
-	gx := graph.New(p, graph.NewStoreAdapter(st), graph.Options{
-		Verbose: verbose,
-		Logger:  cliLogger(),
-	})
-	return gx.Run(ctx)
+	return graphrefresh.RunPhase(ctx, p, st, verbose, cliLogger())
 }
 
 // reportGraphStats prints either a text summary or a JSON blob matching
@@ -578,33 +575,7 @@ func reportGraphStats(project string, stats *graph.Stats, format string) error {
 // embedGraphNodes embeds all graph_nodes whose vec_hash differs from
 // content_hash (un-embedded or stale). Returns the number of nodes embedded.
 func embedGraphNodes(ctx context.Context, st *store.Store, em embed.Embedder, verbose bool) (int, error) {
-	const batchSize = 256
-	total := 0
-	for {
-		rows, err := st.NodesNeedingEmbed(ctx, batchSize)
-		if err != nil {
-			return total, fmt.Errorf("embedGraphNodes: fetch: %w", err)
-		}
-		if len(rows) == 0 {
-			break
-		}
-		texts := make([]string, len(rows))
-		for i, r := range rows {
-			texts[i] = r.EmbedText
-		}
-		vecs, err := em.Embed(ctx, texts)
-		if err != nil {
-			return total, fmt.Errorf("embedGraphNodes: embed: %w", err)
-		}
-		if err := st.SetNodeVecs(ctx, rows, vecs); err != nil {
-			return total, fmt.Errorf("embedGraphNodes: set: %w", err)
-		}
-		total += len(rows)
-		if verbose {
-			fmt.Printf("  [graph-embed] embedded %d nodes (total %d)\n", len(rows), total)
-		}
-	}
-	return total, nil
+	return graphrefresh.EmbedNodes(ctx, st, em, verbose)
 }
 
 func cmdGraphExport(ctx context.Context, args []string) error {

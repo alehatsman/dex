@@ -24,6 +24,7 @@ import (
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/compress"
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/graphrefresh"
 	"github.com/alehatsman/dex/internal/heatmap"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
@@ -641,6 +642,22 @@ func (s *Server) runWatcher(p *proj.Project) {
 	wOpts := watch.Options{
 		Debounce: s.AutoWatch.Debounce,
 		Logger:   logger,
+		// Refresh the graph lane after each chunk reindex so call-graph
+		// queries (callers/callees/impact/path) stay as fresh as semantic
+		// search. Without this the MCP watcher updated chunks but left the
+		// graph stale until the next full `dex index` (#327). Mirrors the
+		// CLI `dex watch` afterIndex hook.
+		AfterIndex: func(c context.Context) error {
+			if _, err := graphrefresh.RunPhase(c, p, st, false, logger); err != nil {
+				return err
+			}
+			if s.EmbedClient != nil {
+				if _, err := graphrefresh.EmbedNodes(c, st, s.EmbedClient, false); err != nil {
+					logger.Warn("mcp watch: graph-embed failed", "root", p.Root, "err", err)
+				}
+			}
+			return nil
+		},
 	}
 	w := watch.New(ix, ig, p.Root, wOpts)
 	logger.Info("mcp watch: starting", "root", p.Root)

@@ -2757,10 +2757,10 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 	return srv, rerankClient
 }
 
-// autoWatchConfigFromEnv reads DEX_MCP_AUTOWATCH and the existing
-// auto-summarize knobs to build a config for the MCP server's lazy
-// per-project watchers. Default: enabled, with summaries on when a
-// chat/summary endpoint is configured (and DEX_POWER_SAVE is unset).
+// autoWatchConfigFromEnv reads DEX_MCP_AUTOWATCH to build a config for the
+// MCP server's lazy per-project watchers. Default: enabled. Each watcher
+// refreshes the chunk and graph lanes on change (see runWatcher's
+// AfterIndex hook); the debounce window is DEX_WATCH_DEBOUNCE.
 func autoWatchConfigFromEnv() mcp.AutoWatchConfig {
 	enabled := envBool("DEX_MCP_AUTOWATCH", true)
 	if !enabled {

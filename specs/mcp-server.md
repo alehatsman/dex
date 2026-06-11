@@ -96,8 +96,9 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   read arbitrary files.
 - WHILE the stdio session is live and auto-watch is enabled, the first request
   that resolves a project lazily spawns one per-project file watcher (at most once
-  per project per session) that keeps the index fresh and drains pending summaries
-  in the background; the watcher shares the session context and drains on shutdown.
+  per project per session) that keeps both the chunk and graph lanes fresh on change
+  (its `AfterIndex` hook re-runs the graph phase and embeds new nodes); the watcher
+  shares the session context and stops on shutdown.
 - WHEN `file_view mode=map` is called on a non-code file (Markdown, JSON,
   YAML, TOML, lock files), dex returns a structural outline — heading tree,
   JSON key hierarchy (depth ≤ 3), YAML section hierarchy, TOML sections, or
@@ -249,8 +250,8 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   **storage**. Here only the tool surface, scoping, and status contract.
 - **Building the index.** Walking, chunking, and embedding a repo are **indexing**;
   this server only reads an already-built index (and triggers re-index via watch).
-- **The watch daemon internals.** Debounce, idle drain, and summary queueing are
-  **watch**; here only that a session lazily spawns one and drains it on shutdown.
+- **The watch daemon internals.** Debounce and the `AfterIndex` graph refresh are
+  **watch**; here only that a session lazily spawns one and stops it on shutdown.
 - **Remote MCP access.** Reaching the hot host index from a container is tracked
   separately (dex #6: stdio→REST shim now, native HTTP-MCP transport later); this
   spec is the local stdio server only.
@@ -270,7 +271,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
 - [x] Per-project scoping: `project_root` → canonical index (cwd default)
 - [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
 - [x] Path traversal rejected in `file_view` (must resolve inside project root)
-- [x] Lazy per-project auto-watcher spawned per session, drains on shutdown
+- [x] Lazy per-project auto-watcher spawned per session, refreshes chunk + graph lanes, stops on shutdown
 - [x] `file_view paths[]` batch: max 10 files, same mode, concatenated `## path` output; path-traversal check per entry
 - [x] `ctx_knowledge` revision tracking: `revision_count` incremented on re-add; "Confirmed (revision N)." response; `rev N` in list
 - [x] `knowledge action=consolidate`: LLM-extracts facts from session notes and stores them
