@@ -76,7 +76,7 @@ func GenerateOrphan(ctx context.Context, root string, opts OrphanOpts) (GoldenSe
 				if kindCounts["import"] >= opts.MaxPerKind {
 					continue
 				}
-				q := importQuery(f, gd, pkgName)
+				q := importQuery(relPath, gd, pkgName)
 				if q == "" || seen[q] {
 					continue
 				}
@@ -155,11 +155,11 @@ func GenerateOrphan(ctx context.Context, root string, opts OrphanOpts) (GoldenSe
 	}, counts, nil
 }
 
-// importQuery builds a query that describes the import block of f.
-// It picks the most distinctive (non-stdlib, non-test) import and
-// uses its package name in a natural phrase. Returns "" when no
-// suitable import is found.
-func importQuery(f *ast.File, gd *ast.GenDecl, pkgName string) string {
+// importQuery builds a query for the import block of the file at relPath.
+// It prefixes the source file stem so that "eval store import" targets the
+// eval.go importer rather than the store package files themselves. Returns ""
+// when no suitable non-stdlib import is found.
+func importQuery(relPath string, gd *ast.GenDecl, pkgName string) string {
 	var distinctive []string
 	for _, spec := range gd.Specs {
 		is, ok := spec.(*ast.ImportSpec)
@@ -195,7 +195,24 @@ func importQuery(f *ast.File, gd *ast.GenDecl, pkgName string) string {
 			best = d
 		}
 	}
-	return strings.ToLower(best) + " package import"
+	// Prefix the source file stem so the query targets the importer, not
+	// the imported package (e.g. "eval store import" vs "store import").
+	stem := strings.TrimSuffix(filepath.Base(relPath), ".go")
+	if stem == strings.ToLower(best) {
+		// Stem equals import leaf — pick next best to avoid redundant "X X import".
+		var next string
+		for _, d := range distinctive {
+			if d != best {
+				next = d
+				break
+			}
+		}
+		if next == "" {
+			return ""
+		}
+		best = next
+	}
+	return stem + " " + strings.ToLower(best) + " import"
 }
 
 // constQuery produces a query for an exported or lowercase constant.
@@ -248,7 +265,7 @@ func splitIdent(s string) []string {
 		}
 		words = append(words, strings.ToLower(string(runes[start:])))
 	}
-	// Filter very short or numeric tokens.
+	// Filter single-char or all-digit tokens.
 	var out []string
 	for _, w := range words {
 		if len(w) >= 2 && !isAllDigits(w) {

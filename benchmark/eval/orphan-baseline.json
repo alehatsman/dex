@@ -1,7 +1,7 @@
 {
   "k": 10,
-  "n": 129,
-  "mean_ndcg": 0.600,
-  "mean_recall": 0.822,
-  "mrr": 0.531
+  "n": 150,
+  "mean_ndcg": 0.684,
+  "mean_recall": 0.893,
+  "mrr": 0.617
 }

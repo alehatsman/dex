@@ -1,6 +1,6 @@
 {
   "repo": "dex-300-orphan-golden",
-  "head": "c01a4d6d52626f25ebd7baca38efbdbb1ec5bb24",
+  "head": "8289986fab60ba3034cdf5a04d078b31d3493b0e",
   "gen_opts": {
     "max_commits": 0,
     "max_files": 0
@@ -8,7 +8,7 @@
   "queries": [
     {
       "id": "cmd/dex/bench_compress.go:3",
-      "query": "benchcompress package import",
+      "query": "bench_compress benchcompress import",
       "relevant_files": [
         "cmd/dex/bench_compress.go"
       ]
@@ -22,7 +22,7 @@
     },
     {
       "id": "cmd/dex/bench_perf.go:3",
-      "query": "benchperf package import",
+      "query": "bench_perf benchperf import",
       "relevant_files": [
         "cmd/dex/bench_perf.go"
       ]
@@ -36,7 +36,7 @@
     },
     {
       "id": "cmd/dex/compact.go:10",
-      "query": "ignore package import",
+      "query": "compact ignore import",
       "relevant_files": [
         "cmd/dex/compact.go"
       ]
@@ -64,7 +64,7 @@
     },
     {
       "id": "cmd/dex/compress.go:3",
-      "query": "compress package import",
+      "query": "compress mcp import",
       "relevant_files": [
         "cmd/dex/compress.go"
       ]
@@ -78,7 +78,7 @@
     },
     {
       "id": "cmd/dex/config_file.go:24",
-      "query": "yaml.v3 package import",
+      "query": "config_file yaml.v3 import",
       "relevant_files": [
         "cmd/dex/config_file.go"
       ]
@@ -106,7 +106,7 @@
     },
     {
       "id": "cmd/dex/corpus.go:3",
-      "query": "corpus package import",
+      "query": "corpus proj import",
       "relevant_files": [
         "cmd/dex/corpus.go"
       ]
@@ -116,6 +116,13 @@
       "query": "corpus usage constant",
       "relevant_files": [
         "cmd/dex/corpus.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/doctor.go:9",
+      "query": "doctor ignore import",
+      "relevant_files": [
+        "cmd/dex/doctor.go"
       ]
     },
     {
@@ -155,7 +162,7 @@
     },
     {
       "id": "cmd/dex/eval.go:3",
-      "query": "store package import",
+      "query": "eval store import",
       "relevant_files": [
         "cmd/dex/eval.go"
       ]
@@ -169,21 +176,21 @@
     },
     {
       "id": "cmd/dex/graph.go:3",
-      "query": "graph package import",
+      "query": "graph mcp import",
       "relevant_files": [
         "cmd/dex/graph.go"
       ]
     },
     {
       "id": "cmd/dex/guide.go:3",
-      "query": "tokens package import",
+      "query": "guide tokens import",
       "relevant_files": [
         "cmd/dex/guide.go"
       ]
     },
     {
       "id": "cmd/dex/hook.go:33",
-      "query": "proj package import",
+      "query": "hook proj import",
       "relevant_files": [
         "cmd/dex/hook.go"
       ]
@@ -203,10 +210,10 @@
       ]
     },
     {
-      "id": "cmd/dex/locomo.go:3",
-      "query": "locomo package import",
+      "id": "cmd/dex/knowledge.go:3",
+      "query": "knowledge store import",
       "relevant_files": [
-        "cmd/dex/locomo.go"
+        "cmd/dex/knowledge.go"
       ]
     },
     {
@@ -217,8 +224,15 @@
       ]
     },
     {
+      "id": "cmd/dex/main.go:46",
+      "query": "main ignore import",
+      "relevant_files": [
+        "cmd/dex/main.go"
+      ]
+    },
+    {
       "id": "cmd/dex/ollama_autostart.go:3",
-      "query": "embed package import",
+      "query": "ollama_autostart embed import",
       "relevant_files": [
         "cmd/dex/ollama_autostart.go"
       ]
@@ -231,17 +245,31 @@
       ]
     },
     {
-      "id": "cmd/dex/proxy.go:27",
-      "query": "proxy package import",
+      "id": "cmd/dex/read.go:3",
+      "query": "read compress import",
       "relevant_files": [
-        "cmd/dex/proxy.go"
+        "cmd/dex/read.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/render.go:6",
+      "query": "render embed import",
+      "relevant_files": [
+        "cmd/dex/render.go"
       ]
     },
     {
       "id": "cmd/dex/serve.go:9",
-      "query": "mcp package import",
+      "query": "serve mcp import",
       "relevant_files": [
         "cmd/dex/serve.go"
+      ]
+    },
+    {
+      "id": "cmd/dex/setup.go:12",
+      "query": "setup proj import",
+      "relevant_files": [
+        "cmd/dex/setup.go"
       ]
     },
     {
@@ -315,6 +343,13 @@
       ]
     },
     {
+      "id": "internal/benchcompress/run.go:3",
+      "query": "run compress import",
+      "relevant_files": [
+        "internal/benchcompress/run.go"
+      ]
+    },
+    {
       "id": "internal/benchperf/run.go:96:compressSample",
       "query": "compress sample variable",
       "relevant_files": [
@@ -330,7 +365,7 @@
     },
     {
       "id": "internal/chunk/chunk.go:15",
-      "query": "go-tree-sitter package import",
+      "query": "chunk go-tree-sitter import",
       "relevant_files": [
         "internal/chunk/chunk.go"
       ]
@@ -567,6 +602,13 @@
       ]
     },
     {
+      "id": "internal/compress/symmap.go:3",
+      "query": "symmap tokens import",
+      "relevant_files": [
+        "internal/compress/symmap.go"
+      ]
+    },
+    {
       "id": "internal/compress/symmap.go:13:identRe",
       "query": "ident re variable",
       "relevant_files": [
@@ -578,6 +620,13 @@
       "query": "single token refs variable",
       "relevant_files": [
         "internal/compress/symmap.go"
+      ]
+    },
+    {
+      "id": "internal/compress/terse.go:5",
+      "query": "terse tokens import",
+      "relevant_files": [
+        "internal/compress/terse.go"
       ]
     },
     {
@@ -672,6 +721,13 @@
       ]
     },
     {
+      "id": "internal/corpus/manifest.go:17",
+      "query": "manifest yaml.v3 import",
+      "relevant_files": [
+        "internal/corpus/manifest.go"
+      ]
+    },
+    {
       "id": "internal/corpus/manifest.go:68:commitRe",
       "query": "commit re variable",
       "relevant_files": [
@@ -686,8 +742,15 @@
       ]
     },
     {
+      "id": "internal/corpus/run.go:3",
+      "query": "run embed import",
+      "relevant_files": [
+        "internal/corpus/run.go"
+      ]
+    },
+    {
       "id": "internal/embed/client.go:6",
-      "query": "errgroup package import",
+      "query": "client errgroup import",
       "relevant_files": [
         "internal/embed/client.go"
       ]
@@ -708,7 +771,7 @@
     },
     {
       "id": "internal/embed/onnx_engine.go:12",
-      "query": "onnxruntime_go package import",
+      "query": "onnx_engine onnxruntime_go import",
       "relevant_files": [
         "internal/embed/onnx_engine.go"
       ]
@@ -750,16 +813,30 @@
     },
     {
       "id": "internal/eval/runner.go:3",
-      "query": "chunk package import",
+      "query": "runner chunk import",
       "relevant_files": [
         "internal/eval/runner.go"
       ]
     },
     {
       "id": "internal/graph/go.go:3",
-      "query": "packages package import",
+      "query": "go packages import",
       "relevant_files": [
         "internal/graph/go.go"
+      ]
+    },
+    {
+      "id": "internal/graph/graph.go:13",
+      "query": "graph proj import",
+      "relevant_files": [
+        "internal/graph/graph.go"
+      ]
+    },
+    {
+      "id": "internal/graph/markdown.go:3",
+      "query": "markdown ignore import",
+      "relevant_files": [
+        "internal/graph/markdown.go"
       ]
     },
     {
@@ -805,10 +882,66 @@
       ]
     },
     {
+      "id": "internal/graph/persist.go:3",
+      "query": "persist store import",
+      "relevant_files": [
+        "internal/graph/persist.go"
+      ]
+    },
+    {
+      "id": "internal/graph/sitter.go:26",
+      "query": "sitter go-tree-sitter import",
+      "relevant_files": [
+        "internal/graph/sitter.go"
+      ]
+    },
+    {
       "id": "internal/graph/sitter.go:149:DefaultRegistry",
       "query": "default registry variable",
       "relevant_files": [
         "internal/graph/sitter.go"
+      ]
+    },
+    {
+      "id": "internal/graph/sitter_java.go:27",
+      "query": "sitter_java go-tree-sitter import",
+      "relevant_files": [
+        "internal/graph/sitter_java.go"
+      ]
+    },
+    {
+      "id": "internal/graph/sitter_javascript.go:19",
+      "query": "sitter_javascript go-tree-sitter import",
+      "relevant_files": [
+        "internal/graph/sitter_javascript.go"
+      ]
+    },
+    {
+      "id": "internal/graph/sitter_python.go:21",
+      "query": "sitter_python go-tree-sitter import",
+      "relevant_files": [
+        "internal/graph/sitter_python.go"
+      ]
+    },
+    {
+      "id": "internal/graph/sitter_rust.go:39",
+      "query": "sitter_rust go-tree-sitter import",
+      "relevant_files": [
+        "internal/graph/sitter_rust.go"
+      ]
+    },
+    {
+      "id": "internal/graph/sitter_ts.go:31",
+      "query": "sitter_ts go-tree-sitter import",
+      "relevant_files": [
+        "internal/graph/sitter_ts.go"
+      ]
+    },
+    {
+      "id": "internal/graph/yaml.go:3",
+      "query": "yaml ignore import",
+      "relevant_files": [
+        "internal/graph/yaml.go"
       ]
     },
     {
@@ -826,8 +959,22 @@
       ]
     },
     {
+      "id": "internal/guide/render.go:3",
+      "query": "render chunk import",
+      "relevant_files": [
+        "internal/guide/render.go"
+      ]
+    },
+    {
+      "id": "internal/ignore/config.go:3",
+      "query": "config yaml.v3 import",
+      "relevant_files": [
+        "internal/ignore/config.go"
+      ]
+    },
+    {
       "id": "internal/ignore/ignore.go:48",
-      "query": "go-gitignore package import",
+      "query": "ignore go-gitignore import",
       "relevant_files": [
         "internal/ignore/ignore.go"
       ]
@@ -847,66 +994,66 @@
       ]
     },
     {
+      "id": "internal/index/drain.go:3",
+      "query": "drain errgroup import",
+      "relevant_files": [
+        "internal/index/drain.go"
+      ]
+    },
+    {
+      "id": "internal/index/git.go:3",
+      "query": "git chunk import",
+      "relevant_files": [
+        "internal/index/git.go"
+      ]
+    },
+    {
+      "id": "internal/index/grounding.go:3",
+      "query": "grounding errgroup import",
+      "relevant_files": [
+        "internal/index/grounding.go"
+      ]
+    },
+    {
+      "id": "internal/index/index.go:4",
+      "query": "index errgroup import",
+      "relevant_files": [
+        "internal/index/index.go"
+      ]
+    },
+    {
+      "id": "internal/locomo/runner.go:3",
+      "query": "runner embed import",
+      "relevant_files": [
+        "internal/locomo/runner.go"
+      ]
+    },
+    {
       "id": "internal/mcp/answer.go:15",
-      "query": "chat package import",
+      "query": "answer chat import",
       "relevant_files": [
         "internal/mcp/answer.go"
       ]
     },
     {
+      "id": "internal/mcp/context.go:17",
+      "query": "context chunk import",
+      "relevant_files": [
+        "internal/mcp/context.go"
+      ]
+    },
+    {
+      "id": "internal/mcp/context_graph.go:28",
+      "query": "context_graph graph import",
+      "relevant_files": [
+        "internal/mcp/context_graph.go"
+      ]
+    },
+    {
       "id": "internal/mcp/http.go:58",
-      "query": "logx package import",
+      "query": "http logx import",
       "relevant_files": [
         "internal/mcp/http.go"
-      ]
-    },
-    {
-      "id": "internal/mcp/http_mcp.go:16",
-      "query": "profiles package import",
-      "relevant_files": [
-        "internal/mcp/http_mcp.go"
-      ]
-    },
-    {
-      "id": "internal/mcp/server_workspace.go:10",
-      "query": "workspace package import",
-      "relevant_files": [
-        "internal/mcp/server_workspace.go"
-      ]
-    },
-    {
-      "id": "internal/mcp/trigram_cache.go:3",
-      "query": "trigram package import",
-      "relevant_files": [
-        "internal/mcp/trigram_cache.go"
-      ]
-    },
-    {
-      "id": "internal/store/rerank_cache.go:3",
-      "query": "rerank package import",
-      "relevant_files": [
-        "internal/store/rerank_cache.go"
-      ]
-    },
-    {
-      "id": "internal/store/store.go:16",
-      "query": "go-sqlite3 package import",
-      "relevant_files": [
-        "internal/store/store.go"
-      ]
-    },
-    {
-      "id": "internal/tokens/tokens.go:13",
-      "query": "tiktoken-go-loader package import",
-      "relevant_files": [
-        "internal/tokens/tokens.go"
-      ]
-    },
-    {
-      "id": "internal/watch/watch.go:12",
-      "query": "fsnotify package import",
-      "relevant_files": [
-        "internal/watch/watch.go"
       ]
     }
   ]
