@@ -58,6 +58,18 @@ const (
 // the index (`dex reindex <path>`) before continuing.
 var ErrEmbedModelMismatch = errors.New("embedding model mismatch")
 
+// FusionMode controls how the dense and BM25 retrieval lanes are combined.
+type FusionMode int
+
+const (
+	// FusionRRF fuses via Reciprocal Rank Fusion (default).
+	FusionRRF FusionMode = iota
+	// FusionLinear fuses via a convex combination on min-max normalised scores:
+	//   α*dense_norm + (1-α)*bm25_norm
+	// Tune α with DEX_FUSION_ALPHA; default 0.5. Set mode via DEX_FUSION_MODE=linear.
+	FusionLinear
+)
+
 // FTSMode controls how buildFTSQuery joins tokens in the MATCH
 // expression: AND for precision, OR for recall, Auto picks per-query.
 type FTSMode int
@@ -157,6 +169,15 @@ type Options struct {
 	// Flipping the mode on an existing index rebuilds chunk_vecs from
 	// chunks.vec on the next Open.
 	VectorQuant string
+
+	// FusionMode selects the score-fusion strategy for the dense+BM25 lanes.
+	// FusionRRF (default) uses Reciprocal Rank Fusion. FusionLinear uses a
+	// convex combination on min-max normalised scores. Set via DEX_FUSION_MODE.
+	FusionMode FusionMode
+
+	// FusionAlpha is the dense-lane weight in FusionLinear mode (0 = pure
+	// BM25, 1 = pure dense). Zero defaults to 0.5. Set via DEX_FUSION_ALPHA.
+	FusionAlpha float32
 }
 
 type Store struct {
@@ -2009,6 +2030,50 @@ func isIdentRune(r rune) bool {
 		r == '(' || r == ')' || r == '*' || r == '&'
 }
 
+// fuseLinear combines dense and BM25 scores via a min-max normalised convex
+// combination:  alpha*dense_norm + (1-alpha)*bm25_norm.
+// Both maps use the convention "higher = better" (BM25 scores are already
+// negated before reaching here via scoreBM25).
+// Items absent from a lane receive 0 after normalisation (bottom of that
+// lane's range), which is conservative and avoids rewarding absent signals.
+func fuseLinear(semCosine, bm25Score map[int64]float32, alpha float32) map[int64]float32 {
+	if alpha <= 0 {
+		alpha = 0.5
+	}
+	dMin, dMax := mapMinMax(semCosine)
+	bMin, bMax := mapMinMax(bm25Score)
+
+	out := make(map[int64]float32, len(semCosine)+len(bm25Score))
+	for id, v := range semCosine {
+		out[id] += alpha * minMaxNorm(v, dMin, dMax)
+	}
+	for id, v := range bm25Score {
+		out[id] += (1 - alpha) * minMaxNorm(v, bMin, bMax)
+	}
+	return out
+}
+
+func mapMinMax(m map[int64]float32) (lo, hi float32) {
+	first := true
+	for _, v := range m {
+		if first || v < lo {
+			lo = v
+		}
+		if first || v > hi {
+			hi = v
+		}
+		first = false
+	}
+	return
+}
+
+func minMaxNorm(v, lo, hi float32) float32 {
+	if hi == lo {
+		return 0
+	}
+	return (v - lo) / (hi - lo)
+}
+
 // rrfWeights returns the BM25 and dense RRF multiplicative weights for qt.
 func rrfWeights(qt queryType) (bm25W, denseW float32) {
 	switch qt {
@@ -2233,17 +2298,25 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 		}
 	}
 
-	// Fuse via weighted RRF. Weights are query-type-adaptive (SACL EMNLP 2025):
-	// symbol queries favour lexical, architecture queries favour dense,
-	// NL queries use equal weights. Scale-free property is preserved —
-	// the constant multipliers cancel in relative ranking.
-	bm25W, denseW := rrfWeights(classifyQueryType(queryText))
-	rrf := make(map[int64]float32, len(semRank)+len(bm25Rank))
-	for id, r := range semRank {
-		rrf[id] += denseW / float32(rrfK+r)
-	}
-	for id, r := range bm25Rank {
-		rrf[id] += bm25W / float32(rrfK+r)
+	// Fuse dense and BM25 lanes.
+	var rrf map[int64]float32
+	if s.opts.FusionMode == FusionLinear {
+		// Convex combination on min-max normalised scores.
+		// alpha (DEX_FUSION_ALPHA) is the dense weight; 0 defaults to 0.5.
+		rrf = fuseLinear(semCosine, bm25Score, s.opts.FusionAlpha)
+	} else {
+		// Weighted RRF. Weights are query-type-adaptive (SACL EMNLP 2025):
+		// symbol queries favour lexical, architecture queries favour dense,
+		// NL queries use equal weights. Scale-free property is preserved —
+		// the constant multipliers cancel in relative ranking.
+		bm25W, denseW := rrfWeights(classifyQueryType(queryText))
+		rrf = make(map[int64]float32, len(semRank)+len(bm25Rank))
+		for id, r := range semRank {
+			rrf[id] += denseW / float32(rrfK+r)
+		}
+		for id, r := range bm25Rank {
+			rrf[id] += bm25W / float32(rrfK+r)
+		}
 	}
 
 	// Batch-fetch paths for the full fused pool — used by noise penalties,

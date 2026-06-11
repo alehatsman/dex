@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/eval"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
@@ -56,8 +57,12 @@ Flags:
                    A/B-testing an index feature that produces summaries (off by
                    default: summaries are filtered so the git-history golden set
                    scores direct code retrieval)
+  --alpha-sweep   sweep FusionLinear α from 0.1 to 1.0 in 0.1 steps, printing
+                   a table with the RRF baseline. Use to tune DEX_FUSION_ALPHA.
 
 Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
+             DEX_FUSION_MODE=linear  select convex-combination score fusion.
+             DEX_FUSION_ALPHA=0.5    dense weight for FusionLinear (0 < α ≤ 1).
 `
 
 func runEval(ctx context.Context, args []string) {
@@ -75,6 +80,7 @@ func runEval(ctx context.Context, args []string) {
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
 	keepSummaries := fs.Bool("keep-summaries", false, "retain summary chunks in the ranked file list (for A/B-ing index features that produce summaries)")
 	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+symbol+graph, zero-inference) | onnx (in-process ONNX, requires env vars)")
+	alphaSweep := fs.Bool("alpha-sweep", false, "sweep FusionLinear α from 0.1 to 1.0 and print a comparison table with RRF as baseline")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	var projectPath string
@@ -196,6 +202,14 @@ func runEval(ctx context.Context, args []string) {
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
+	if *alphaSweep {
+		if err := runAlphaSweep(ctx, p, em, gs, *k, *keepSummaries); err != nil {
+			fmt.Fprintf(os.Stderr, "dex bench eval: alpha sweep: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	results, err := eval.Run(ctx, em, st, gs, *k, *keepSummaries)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "dex bench eval: run: %v\n", err)
@@ -261,4 +275,61 @@ func shortHash(h string) string {
 		return h[:8]
 	}
 	return h
+}
+
+// runAlphaSweep opens the store once per configuration (RRF baseline + FusionLinear
+// at α = 0.1, 0.2, …, 1.0) and prints a comparison table so the operator can pick
+// the best FusionAlpha value before setting DEX_FUSION_MODE=linear in production.
+func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs eval.GoldenSet, k int, keepSummaries bool) error {
+	type row struct {
+		label string
+		rep   eval.Report
+	}
+
+	run := func(label string, opts store.Options) (row, error) {
+		st, err := store.OpenWith(ctx, p.DBPath, opts)
+		if err != nil {
+			return row{}, fmt.Errorf("%s: %w", label, err)
+		}
+		defer st.Close()
+		results, err := eval.Run(ctx, em, st, gs, k, keepSummaries)
+		if err != nil {
+			return row{}, fmt.Errorf("%s: %w", label, err)
+		}
+		return row{label: label, rep: eval.Compute(results, k)}, nil
+	}
+
+	base := storeOpts()
+	base.FusionMode = store.FusionRRF
+
+	rows := make([]row, 0, 12)
+	r, err := run("rrf (baseline)", base)
+	if err != nil {
+		return err
+	}
+	rows = append(rows, r)
+
+	fmt.Fprintf(os.Stderr, "alpha sweep: rrf done; running linear α 0.1…1.0\n")
+	for i := 1; i <= 10; i++ {
+		alpha := float32(i) / 10.0
+		opts := storeOpts()
+		opts.FusionMode = store.FusionLinear
+		opts.FusionAlpha = alpha
+		label := fmt.Sprintf("linear α=%.1f", alpha)
+		r, err := run(label, opts)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, r)
+		fmt.Fprintf(os.Stderr, "alpha sweep: %s done\n", label)
+	}
+
+	// Print comparison table.
+	fmt.Printf("\n%-20s  %8s  %8s  %8s\n", "mode", "NDCG@k", "Recall@k", "MRR")
+	fmt.Printf("%-20s  %8s  %8s  %8s\n", "--------------------", "--------", "--------", "--------")
+	for _, row := range rows {
+		fmt.Printf("%-20s  %8.4f  %8.4f  %8.4f\n",
+			row.label, row.rep.MeanNDCG, row.rep.MeanRecall, row.rep.MRR)
+	}
+	return nil
 }
