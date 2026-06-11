@@ -201,7 +201,7 @@ func TestSearchEmbeddingUnreachable(t *testing.T) {
 	writeFile(t, filepath.Join(projDir, "x.go"), "package main\n")
 
 	s := &Server{
-		EmbedClient: embed.New("http://127.0.0.1:1", "fake", 16, 200*time.Millisecond),
+		EmbedClient: embed.New(closedURL(t), "fake", 16, 200*time.Millisecond),
 		IndexDir:    cacheDir,
 	}
 	_, out, _ := s.search(context.Background(), nil, SearchInput{
@@ -271,7 +271,7 @@ func TestStatusReachable(t *testing.T) {
 
 func TestStatusUnreachable(t *testing.T) {
 	s := &Server{
-		EmbedClient: embed.New("http://127.0.0.1:1", "fake", 16, 200*time.Millisecond),
+		EmbedClient: embed.New(closedURL(t), "fake", 16, 200*time.Millisecond),
 		IndexDir:    t.TempDir(),
 	}
 	_, out, _ := s.status(context.Background(), nil, StatusInput{})

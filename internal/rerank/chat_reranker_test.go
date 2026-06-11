@@ -123,7 +123,7 @@ func TestChatRerankerEmptyDocs(t *testing.T) {
 }
 
 func TestChatRerankerUnreachable(t *testing.T) {
-	c := NewChat("http://127.0.0.1:1", "test", 2, 200*time.Millisecond)
+	c := NewChat(closedURL(t), "test", 2, 200*time.Millisecond)
 	_, err := c.Rerank(context.Background(), "q", []string{"a"})
 	if err == nil {
 		t.Fatal("expected error for unreachable server")

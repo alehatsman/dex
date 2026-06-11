@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,20 @@ import (
 	"testing"
 	"time"
 )
+
+// closedURL returns an http:// URL pointing at a port guaranteed to refuse
+// connections (listen on :0, record addr, close, return URL). More reliable
+// than a hardcoded :1 which may be occupied on some environments (e.g. WSL2).
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("closedURL: listen: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return "http://" + addr
+}
 
 type req struct {
 	Model string   `json:"model"`
@@ -77,7 +92,7 @@ func TestEmbedBatchingHonored(t *testing.T) {
 }
 
 func TestEmbedUnreachable(t *testing.T) {
-	c := New("http://127.0.0.1:1", "fake", 4, 200*time.Millisecond)
+	c := New(closedURL(t), "fake", 4, 200*time.Millisecond)
 	_, err := c.Embed(context.Background(), []string{"x"})
 	if !errors.Is(err, ErrUnreachable) {
 		t.Errorf("expected ErrUnreachable, got %v", err)

@@ -71,7 +71,7 @@ func TestSynthesizeAnswerNoEvidence(t *testing.T) {
 func TestSynthesizeAnswerUnreachableDegrades(t *testing.T) {
 	resetAnswerCache(t)
 	// Point at a closed port so Generate returns ErrUnreachable.
-	s := &Server{ChatClient: chat.New("http://127.0.0.1:1", "fake", 200*time.Millisecond)}
+	s := &Server{ChatClient: chat.New(closedURL(t), "fake", 200*time.Millisecond)}
 	out := &ContextOutput{
 		Status:         "ok",
 		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "func A(){}"}},

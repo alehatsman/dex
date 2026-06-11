@@ -4,12 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+// closedURL returns an http:// URL pointing at a port guaranteed to refuse
+// connections (listen :0, record, close). Avoids hardcoded :1 which may be
+// occupied on some environments (e.g. WSL2).
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("closedURL: listen: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return "http://" + addr
+}
 
 func TestRerankHappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +111,7 @@ func TestRerankEmptyDocs(t *testing.T) {
 func TestRerankUnreachable(t *testing.T) {
 	// Pointing at a port nothing should be listening on. Short timeout
 	// so the test exits quickly even on the unlikely race.
-	c := New("http://127.0.0.1:1", "test", 200*time.Millisecond)
+	c := New(closedURL(t), "test", 200*time.Millisecond)
 	_, err := c.Rerank(context.Background(), "q", []string{"a"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -193,7 +208,7 @@ func TestHealthSucceedsOnReachable(t *testing.T) {
 }
 
 func TestHealthReportsUnreachable(t *testing.T) {
-	c := New("http://127.0.0.1:1", "test", 200*time.Millisecond)
+	c := New(closedURL(t), "test", 200*time.Millisecond)
 	err := c.Health(context.Background())
 	if err == nil {
 		t.Fatal("expected error")

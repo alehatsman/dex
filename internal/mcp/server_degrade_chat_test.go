@@ -71,7 +71,7 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 	t.Run("unreachable chat client", func(t *testing.T) {
 		resetAnswerCache(t)
 		// Closed port → chat.ErrUnreachable from Generate.
-		s := chatDownServer(t, cacheDir, chat.New("http://127.0.0.1:1", "fake", 200*time.Millisecond))
+		s := chatDownServer(t, cacheDir, chat.New(closedURL(t), "fake", 200*time.Millisecond))
 		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, Project: projRoot})
 		if err != nil {
 			t.Fatalf("ask returned hard error with unreachable chat: %v", err)
@@ -129,7 +129,7 @@ func TestFileViewFullDegradesWhenChatDown(t *testing.T) {
 	})
 
 	t.Run("unreachable chat shows raw content", func(t *testing.T) {
-		s := chatDownServer(t, cacheDir, chat.New("http://127.0.0.1:1", "fake", 200*time.Millisecond))
+		s := chatDownServer(t, cacheDir, chat.New(closedURL(t), "fake", 200*time.Millisecond))
 		_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "auth.go", Mode: "full", ProjectRoot: projRoot})
 		if err != nil {
 			t.Fatalf("file_view full returned hard error with unreachable chat: %v", err)

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -9,6 +10,20 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
+
+// closedURL returns an http:// URL pointing at a port guaranteed to refuse
+// connections (listen :0, record addr, close). Safer than hardcoded :1 which
+// may be occupied on some environments (e.g. WSL2).
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("closedURL: listen: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return "http://" + addr
+}
 
 // degradedServer indexes projDir with a working embed backend, then returns a
 // Server whose EmbedClient points at a closed port so every query-time Embed
@@ -21,8 +36,7 @@ func degradedServer(t *testing.T, projDir, cacheDir string) (*Server, string) {
 	embedSrv.Close() // backend goes away after indexing
 
 	s := &Server{
-		// 127.0.0.1:1 is a closed port → connection refused → ErrUnreachable.
-		EmbedClient: embed.New("http://127.0.0.1:1", "fake", 16, 200*time.Millisecond),
+		EmbedClient: embed.New(closedURL(t), "fake", 16, 200*time.Millisecond),
 		IndexDir:    cacheDir,
 	}
 	return s, root

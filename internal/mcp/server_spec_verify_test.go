@@ -199,7 +199,7 @@ func TestSpecVerifyEmbedUnreachable(t *testing.T) {
 
 	// Point at a dead embedder for the actual query.
 	s := &Server{
-		EmbedClient: embed.New("http://127.0.0.1:1", "fake", 16, 200*time.Millisecond),
+		EmbedClient: embed.New(closedURL(t), "fake", 16, 200*time.Millisecond),
 		IndexDir:    cacheDir,
 	}
 	_, out, err := s.specVerify(context.Background(), nil, SpecVerifyInput{

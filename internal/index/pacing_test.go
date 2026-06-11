@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -15,6 +16,19 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
+
+// closedURL returns an http:// URL pointing at a port guaranteed to refuse
+// connections (listen :0, record addr, close). Safer than hardcoded :1.
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("closedURL: listen: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return "http://" + addr
+}
 
 // countingChat is a fake chat endpoint that records how many requests
 // it served — used to prove the drainer did NOT generate when it should
@@ -48,7 +62,7 @@ func testIndexer(t *testing.T, opt Options) (*Indexer, *proj.Project) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	ig, _ := ignore.New(p.Root)
-	em := embed.New("http://127.0.0.1:1", "fake", 8, time.Second)
+	em := embed.New(closedURL(t), "fake", 8, time.Second)
 	return New(p, st, em, ig, opt), p
 }
 

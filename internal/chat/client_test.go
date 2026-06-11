@@ -4,12 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+// closedURL returns an http:// URL pointing at a port that is guaranteed to
+// refuse connections: bind a random port, record its address, close it, return
+// the URL. This is more reliable than a hardcoded port like :1, which may have
+// a process listening on some environments (e.g. WSL2).
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("closedURL: listen: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return "http://" + addr
+}
 
 func okHandler(reply string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +70,7 @@ func TestGenerateRoundTrip(t *testing.T) {
 }
 
 func TestGenerateUnreachable(t *testing.T) {
-	c := New("http://127.0.0.1:1", "fake", 200*time.Millisecond)
+	c := New(closedURL(t), "fake", 200*time.Millisecond)
 	_, err := c.Generate(context.Background(), []Message{{Role: "user", Content: "x"}}, Options{})
 	if !errors.Is(err, ErrUnreachable) {
 		t.Errorf("expected ErrUnreachable, got %v", err)

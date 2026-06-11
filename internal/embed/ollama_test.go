@@ -131,7 +131,7 @@ func TestDetectOllamaFrom_SkipsUnhealthyModel(t *testing.T) {
 
 func TestDetectOllamaFrom_Unreachable(t *testing.T) {
 	// Port 1 is reserved; connect will be refused immediately.
-	_, ok := detectOllamaFrom(context.Background(), "http://127.0.0.1:1")
+	_, ok := detectOllamaFrom(context.Background(), closedURL(t))
 	if ok {
 		t.Fatal("expected false for unreachable server")
 	}
@@ -233,7 +233,7 @@ func TestScanOllamaFrom_ReturnsAllEmbedModelsPriorityOrdered(t *testing.T) {
 }
 
 func TestScanOllamaFrom_Unreachable(t *testing.T) {
-	_, ok := scanOllamaFrom(context.Background(), "http://127.0.0.1:1")
+	_, ok := scanOllamaFrom(context.Background(), closedURL(t))
 	if ok {
 		t.Fatal("expected false for unreachable server")
 	}
