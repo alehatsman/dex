@@ -142,41 +142,6 @@ func TestAnswerCacheKeyDistinguishesFields(t *testing.T) {
 	}
 }
 
-func TestExposeRawTools(t *testing.T) {
-	cases := map[string]bool{"": false, "0": false, "off": false, "1": true, "true": true, "ON": true, "yes": true}
-	for val, want := range cases {
-		t.Setenv("DEX_EXPOSE_RAW_TOOLS", val)
-		if got := exposeRawTools(); got != want {
-			t.Errorf("exposeRawTools(%q) = %v, want %v", val, got, want)
-		}
-	}
-}
-
-func TestToolTierFromEnv(t *testing.T) {
-	cases := []struct {
-		dexTools string
-		rawTools string
-		wantTier toolTier
-	}{
-		{"", "", TierStandard}, // default
-		{"standard", "", TierStandard},
-		{"ask", "", TierAsk},
-		{"power", "", TierPower},
-		{"POWER", "", TierPower},      // case-insensitive
-		{"unknown", "", TierStandard}, // unrecognised → default
-		{"", "1", TierPower},          // legacy DEX_EXPOSE_RAW_TOOLS=1
-		{"ask", "1", TierPower},       // legacy takes precedence
-	}
-	for _, tc := range cases {
-		t.Setenv("DEX_TOOLS", tc.dexTools)
-		t.Setenv("DEX_EXPOSE_RAW_TOOLS", tc.rawTools)
-		if got := toolTierFromEnv(); got != tc.wantTier {
-			t.Errorf("DEX_TOOLS=%q DEX_EXPOSE_RAW_TOOLS=%q → tier %d, want %d",
-				tc.dexTools, tc.rawTools, got, tc.wantTier)
-		}
-	}
-}
-
 func TestBuildAnswerEvidenceSessionContext(t *testing.T) {
 	out := &ContextOutput{
 		SessionTask:    "refactor the watcher",

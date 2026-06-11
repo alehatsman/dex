@@ -138,7 +138,6 @@ func buildConfigYAML(full bool) string {
 
 	// tools section
 	writeln("# tools:")
-	writeln("#   tier: standard  # MCP tool surface: ask | standard | power  (DEX_TOOLS)")
 	writeln("")
 
 	if full {

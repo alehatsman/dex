@@ -2478,7 +2478,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		Instructions: ServerInstructions(),
 	})
 
-	registerTools(srv, s, toolTierFromEnv(), s.ChatClient != nil, s.EmbedClient != nil, descriptionModeFromEnv())
+	registerTools(srv, s, s.ChatClient != nil, s.EmbedClient != nil, profiles.Active("").StrictAnchors(), descriptionModeFromEnv())
 
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
@@ -2529,39 +2529,6 @@ type toolSurface interface {
 	workspaceSearch(context.Context, *sdk.CallToolRequest, WorkspaceSearchInput) (*sdk.CallToolResult, WorkspaceSearchOutput, error)
 }
 
-// toolTier controls how many tools are exposed to MCP clients.
-//
-//   - TierAsk      — ask only (minimal, escape-hatch)
-//   - TierStandard — ask + orientation + memory tools (default)
-//   - TierPower    — everything (old DEX_EXPOSE_RAW_TOOLS=1)
-type toolTier int
-
-const (
-	TierAsk      toolTier = iota // ask only
-	TierStandard                 // ask + ctx_overview + ctx_session + ctx_knowledge + file_tree + search_context + file_view
-	TierPower                    // full raw surface: search_*, graph_*, graph_smells, graph_routes, compress_output, status
-)
-
-// toolTierFromEnv reads DEX_TOOLS (ask|standard|power). DEX_EXPOSE_RAW_TOOLS=1
-// is honoured as a backward-compatible alias for power. Default: standard.
-func toolTierFromEnv() toolTier {
-	if os.Getenv("DEX_TOOL_TIER") != "" && os.Getenv("DEX_TOOLS") == "" {
-		fmt.Fprintf(os.Stderr, "dex: warning: DEX_TOOL_TIER is not a recognised variable — did you mean DEX_TOOLS=%s?\n",
-			os.Getenv("DEX_TOOL_TIER"))
-	}
-	if exposeRawTools() {
-		return TierPower
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_TOOLS"))) {
-	case "power":
-		return TierPower
-	case "ask":
-		return TierAsk
-	default:
-		return TierStandard
-	}
-}
-
 // addTool registers h on srv with a panic recovery guard. A handler panic is
 // converted to a structured tool error instead of crashing the MCP session.
 // (The go-sdk v1.6.1 dispatch loop has no recover() of its own.)
@@ -2579,26 +2546,19 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 }
 
 // registerTools wires the dex tool surface onto srv, dispatching to h.
-//
-// Tiers (DEX_TOOLS env var, default: standard):
-//   - TierAsk      → ask only
-//   - TierStandard → ask + ctx_overview + ctx_session + ctx_knowledge + file_tree + search_context + file_view (if chat)
-//   - TierPower    → everything above plus the raw search/graph/analysis tools
-//
-// DEX_EXPOSE_RAW_TOOLS=1 is honoured as a backward-compatible alias for power.
-// The `dex` CLI subcommands are unaffected by tier.
-// registerTools advertises the MCP tool surface. Exposure is capability-derived
-// (#283/#290): tools that need a query-time embedder (search_semantic,
-// search_similar, search_context, ctx_overview, search_workspace) are only
-// registered when embedAvailable is true. With no embedder wired (the lean
-// profile, DEX_EMBED_ENGINE=none), those are omitted entirely and the surface
-// degrades to BM25 (search_grep) + symbol + graph + file lanes; `ask` stays and
-// routes to the non-semantic lanes. chatAvailable gates file_view the same way.
-func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable, embedAvailable bool, descMode DescriptionMode) {
+// Exposure is capability-derived (#283/#290): tools that need a query-time
+// embedder (search_semantic, search_similar, search_context, ctx_overview,
+// search_workspace) are only registered when embedAvailable is true. With no
+// embedder wired (the lean profile, DEX_EMBED_ENGINE=none), those are omitted
+// entirely and the surface degrades to BM25 (search_grep) + symbol + graph +
+// file lanes; `ask` stays and routes to the non-semantic lanes. chatAvailable
+// gates file_view the same way. When weakModel is true the full tool surface is
+// hidden and only ask, search_grep, file_tree, and ctx_shell are exposed.
+func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 	// Power-only: raw search / graph / analysis lanes. Useful for CLI parity,
 	// A-B debugging, and power users — too noisy for everyday agents.
-	if tier >= TierPower {
+	if !weakModel {
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
 				Name:        "search_semantic",
@@ -2808,11 +2768,6 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable,
 				"Response shape: {status, results: [{item, checked, status, reason, cites}], pass_count, fail_count, unknown_count, pending_count}. " +
 				"Note: the per-item array is keyed 'results' (not 'items')."),
 		}, h.specVerify)
-	}
-
-	// Standard+ tools: orientation and persistent memory. Exposed by default so
-	// agents can accumulate project context without any configuration.
-	if tier >= TierStandard {
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
 				Name:        "ctx_overview",
@@ -2909,41 +2864,6 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable,
 				"No index or embedding required."),
 		}, h.nav)
 
-		addTool(srv, &sdk.Tool{
-			Name: "ctx_shell",
-			Description: td("Execute a shell command and return compressed output. " +
-				"Applies the same compression pipeline as compress_output — collapses build noise, " +
-				"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
-				"so raw command output never hits your context budget. " +
-				"Use raw:true to skip compression. " +
-				"File-write redirects (> >>) and tee are blocked; use the Write tool instead. " +
-				"Timeout: 60 s."),
-		}, h.shellRun)
-
-		addTool(srv, &sdk.Tool{
-			Name:        "file_tree",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("List indexed files under a directory path. Returns individual files within " +
-				"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
-				"(dirs shown with trailing / and a summed chunk count). " +
-				"No embedding required — reads directly from the index. " +
-				"Use for orientation in an unfamiliar codebase before calling ask or file_view. " +
-				"Returns 'no-index' when the project hasn't been indexed yet."),
-		}, h.searchTree)
-
-		addTool(srv, &sdk.Tool{
-			Name:        "search_grep",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Regex search over project files — no embedding required. " +
-				"Complements ask/search_semantic for exact-match queries: cross-cutting symbol references, " +
-				"import paths, string literals, or patterns that semantic search misses. " +
-				"Searches the indexed file list when available (respects .gitignore via the index); " +
-				"falls back to walking the project directory and skipping .git/vendor/node_modules. " +
-				"Accepts an RE2 regex pattern, optional relative path prefix, and optional extension filter. " +
-				"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
-				"Returns 'no-matches' when nothing matches. Use ask for conceptual queries."),
-		}, h.searchGrep)
-
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
 				Name:        "search_context",
@@ -3009,6 +2929,41 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable,
 	}
 
 	addTool(srv, &sdk.Tool{
+		Name: "ctx_shell",
+		Description: td("Execute a shell command and return compressed output. " +
+			"Applies the same compression pipeline as compress_output — collapses build noise, " +
+			"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
+			"so raw command output never hits your context budget. " +
+			"Use raw:true to skip compression. " +
+			"File-write redirects (> >>) and tee are blocked; use the Write tool instead. " +
+			"Timeout: 60 s."),
+	}, h.shellRun)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "file_tree",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("List indexed files under a directory path. Returns individual files within " +
+			"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
+			"(dirs shown with trailing / and a summed chunk count). " +
+			"No embedding required — reads directly from the index. " +
+			"Use for orientation in an unfamiliar codebase before calling ask or file_view. " +
+			"Returns 'no-index' when the project hasn't been indexed yet."),
+	}, h.searchTree)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "search_grep",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Regex search over project files — no embedding required. " +
+			"Complements ask/search_semantic for exact-match queries: cross-cutting symbol references, " +
+			"import paths, string literals, or patterns that semantic search misses. " +
+			"Searches the indexed file list when available (respects .gitignore via the index); " +
+			"falls back to walking the project directory and skipping .git/vendor/node_modules. " +
+			"Accepts an RE2 regex pattern, optional relative path prefix, and optional extension filter. " +
+			"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
+			"Returns 'no-matches' when nothing matches. Use ask for conceptual queries."),
+	}, h.searchGrep)
+
+	addTool(srv, &sdk.Tool{
 		Name:        "ask",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: td("PRIMARY ENTRY POINT for code-understanding questions — and, by default, the ONLY dex tool you " +
@@ -3037,17 +2992,6 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable,
 			"only to override. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep."),
 	}, h.contextRouter)
 
-}
-
-// exposeRawTools is kept for backward compatibility — DEX_EXPOSE_RAW_TOOLS=1
-// (or true/on/yes) maps to TierPower in toolTierFromEnv.
-func exposeRawTools() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_EXPOSE_RAW_TOOLS"))) {
-	case "1", "true", "on", "yes":
-		return true
-	default:
-		return false
-	}
 }
 
 // Version is set at build time via -ldflags.

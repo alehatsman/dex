@@ -39,10 +39,10 @@ func RunStdioMaintenance(ctx context.Context, reason string) error {
 		Instructions: maintenanceInstructions(reason),
 	})
 	mc := &maintenanceClient{reason: reason}
-	// Register the full power tier so every tool the agent might call is
-	// present and returns an immediate error — TierPower ensures no tool is
-	// silently absent (which would cause the SDK to return "unknown tool").
-	registerTools(srv, mc, TierPower, true, true, DescModeFull)
+	// Register the full tool surface so every tool the agent might call is
+	// present and returns an immediate error — ensures no tool is silently
+	// absent (which would cause the SDK to return "unknown tool").
+	registerTools(srv, mc, true, true, false, DescModeFull)
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
 

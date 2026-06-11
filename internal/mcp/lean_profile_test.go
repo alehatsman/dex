@@ -48,10 +48,8 @@ func listToolNames(t *testing.T, srv *Server) map[string]bool {
 
 // TestLeanProfileOmitsSemanticTools proves the lean profile: with no embedder
 // wired, the embedding-backed tools disappear from the advertised surface while
-// the zero-inference lanes (and the degrading `ask` router) remain. DEX_TOOLS
-// is forced to power so the capability gate is the only thing hiding tools.
+// the zero-inference lanes (and the degrading `ask` router) remain.
 func TestLeanProfileOmitsSemanticTools(t *testing.T) {
-	t.Setenv("DEX_TOOLS", "power")
 	srv := stubServer(t) // stubServer wires no EmbedClient → lean profile
 	if srv.EmbedClient != nil {
 		t.Fatal("stubServer unexpectedly has an EmbedClient; test assumes lean (nil)")
@@ -71,9 +69,8 @@ func TestLeanProfileOmitsSemanticTools(t *testing.T) {
 }
 
 // TestEmbedderAvailableExposesSemanticTools is the positive control: with an
-// embedder wired, the same power tier advertises the embedding-backed tools.
+// embedder wired, the embedding-backed tools are advertised.
 func TestEmbedderAvailableExposesSemanticTools(t *testing.T) {
-	t.Setenv("DEX_TOOLS", "power")
 	srv := stubServer(t)
 	// A non-nil embedder is all the gate checks; the endpoint is never dialed
 	// during ListTools, so an unused address is fine.

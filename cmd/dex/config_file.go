@@ -13,9 +13,10 @@
 //	  embed: mxbai-embed-large        # -> DEX_EMBED_MODEL
 //	  chat:  qwen2.5-coder:14b        # -> DEX_CHAT_MODEL
 //	tools:
-//	  tier: power                     # -> DEX_TOOLS
-//	env:                              # escape hatch: any DEX_* knob verbatim
-//	  DEX_EMBED_CONCURRENCY: 8
+//
+// env:                              # escape hatch: any DEX_* knob verbatim
+//
+//	DEX_EMBED_CONCURRENCY: 8
 //
 // DEX_SERVE_TOKEN is a secret and is deliberately NOT readable from the file.
 package main
@@ -56,7 +57,6 @@ var sectionKeyMap = map[string]string{
 	"models.repo":              "DEX_REPO_SUMMARY_MODEL",
 	"models.compress":          "DEX_COMPRESS_MODEL",
 	"models.draft":             "DEX_DRAFT_MODEL",
-	"tools.tier":               "DEX_TOOLS",
 	"tools.auto_summarize":     "DEX_AUTO_SUMMARIZE",
 	"tools.disable_rerank":     "DEX_DISABLE_RERANK",
 	"tools.disable_bm25":       "DEX_DISABLE_BM25",

@@ -17,6 +17,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/alehatsman/dex/internal/profiles"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -221,14 +222,13 @@ func (s *Server) newMCPHandler(projects map[string]string) http.Handler {
 		return nil
 	}
 
-	tier := toolTierFromEnv()
 	chatAvailable := s.ChatClient != nil
 	embedAvailable := s.EmbedClient != nil
 
 	servers := make(map[string]*sdk.Server, len(projects))
 	for id, root := range projects {
 		srv := sdk.NewServer(&sdk.Implementation{Name: "dex", Version: Version}, nil)
-		registerTools(srv, projectScoped{s: s, root: root}, tier, chatAvailable, embedAvailable, descriptionModeFromEnv())
+		registerTools(srv, projectScoped{s: s, root: root}, chatAvailable, embedAvailable, profiles.Active(root).StrictAnchors(), descriptionModeFromEnv())
 		servers[id] = srv
 	}
 

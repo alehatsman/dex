@@ -39,7 +39,7 @@
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
 //	setup                         Guided first-run wizard: check endpoints, index cwd, write Claude routing rules.
-//	mcp                           Run as an MCP server over stdio (DEX_TOOLS=ask|standard|power).
+//	mcp                           Run as an MCP server over stdio. Tool surface is capability-derived.
 //	version                       Print the build version.
 package main
 
