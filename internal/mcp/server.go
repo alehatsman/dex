@@ -2224,17 +2224,13 @@ type BreakerStatus struct {
 }
 
 type ProjectStatus struct {
-	ID                            string `json:"id"`
-	Root                          string `json:"root,omitempty"`
-	Chunks                        int    `json:"chunks"`
-	Files                         int    `json:"files"`
-	Dim                           int    `json:"dim"`
-	EmbedModel                    string `json:"embed_model,omitempty"`
-	LastIndexed                   string `json:"last_indexed,omitempty"`
-	PendingSummaries              int    `json:"pending_summaries,omitempty"`
-	PendingSummariesOldestAgeSecs int    `json:"pending_summaries_oldest_age_s,omitempty"`
-	QueueHint                     string `json:"queue_hint,omitempty"`
-	LastSummarized                string `json:"last_summarized,omitempty"`
+	ID          string `json:"id"`
+	Root        string `json:"root,omitempty"`
+	Chunks      int    `json:"chunks"`
+	Files       int    `json:"files"`
+	Dim         int    `json:"dim"`
+	EmbedModel  string `json:"embed_model,omitempty"`
+	LastIndexed string `json:"last_indexed,omitempty"`
 }
 
 type StatusOutput struct {
@@ -2386,28 +2382,15 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 				root, _ := st.ProjectRoot(ctx)
 				st.Close()
 				ps := ProjectStatus{
-					ID:               id,
-					Root:             root,
-					Chunks:           stats.Chunks,
-					Files:            stats.Files,
-					Dim:              stats.Dim,
-					EmbedModel:       stats.EmbedModel,
-					PendingSummaries: stats.PendingSummaries,
-				}
-				if stats.PendingSummariesOldestAge > 0 {
-					ps.PendingSummariesOldestAgeSecs = int(stats.PendingSummariesOldestAge / time.Second)
-				}
-				// One-line hint when the queue looks stuck. Threshold tracks
-				// the doc note: > 100 rows, or oldest > 1h, both suggest the
-				// drainer isn't keeping up.
-				if stats.PendingSummaries > 100 || stats.PendingSummariesOldestAge > time.Hour {
-					ps.QueueHint = "summarization queue is behind; run `dex index summarize <path>`"
+					ID:         id,
+					Root:       root,
+					Chunks:     stats.Chunks,
+					Files:      stats.Files,
+					Dim:        stats.Dim,
+					EmbedModel: stats.EmbedModel,
 				}
 				if !stats.LastIndex.IsZero() {
 					ps.LastIndexed = stats.LastIndex.Format(time.RFC3339)
-				}
-				if !stats.LastSummarized.IsZero() {
-					ps.LastSummarized = stats.LastSummarized.Format(time.RFC3339)
 				}
 				results[idx] = result{ps: ps, ok: true}
 			}(i, e.Name(), dbPath)

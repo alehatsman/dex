@@ -41,14 +41,12 @@ func init() {
 }
 
 const (
-	metaDim              = "dim"
-	metaLastIndexedAt    = "last_indexed_at"
-	metaProjectRoot      = "project_root"
-	metaLastSummarizedAt = "last_summarized_at"
-	metaEmbedModel       = "embed_model"
-	metaGitLastIndexed   = "git_last_indexed_commit"
-	metaSummaryGenerated = "summary_generated"
-	metaVecQuant         = "vec_quant"
+	metaDim            = "dim"
+	metaLastIndexedAt  = "last_indexed_at"
+	metaProjectRoot    = "project_root"
+	metaEmbedModel     = "embed_model"
+	metaGitLastIndexed = "git_last_indexed_commit"
+	metaVecQuant       = "vec_quant"
 )
 
 // ErrEmbedModelMismatch is returned by EnsureEmbedModel when the active
@@ -1002,35 +1000,11 @@ type Stats struct {
 	Files     int
 	Dim       int
 	LastIndex time.Time
-	// PendingSummaries is the current depth of the pending_summaries
-	// queue. Non-zero on a fresh `dex index --summarize-defer` run;
-	// drained by `dex index summarize` or by `dex watch`'s idle hook.
-	PendingSummaries int
-	// PendingSummariesOldestAge is the age of the oldest queued
-	// summarization row. Zero when PendingSummaries == 0. A deep queue
-	// with old rows means the drainer has stalled; a deep queue with
-	// fresh rows just means indexing recently finished.
-	PendingSummariesOldestAge time.Duration
-	// LastSummarized is the wall-clock time of the most recent
-	// successful summary generation (per-chunk, file, package, or
-	// repo). Zero when no summaries have ever been produced.
-	LastSummarized time.Time
 	// EmbedModel is the embedding model identity recorded for this
 	// index. Empty for pre-migration indexes that pre-date the
 	// embed_model meta key — those adopt the next caller's model on
 	// the first EnsureEmbedModel call.
 	EmbedModel string
-	// SummarizableFiles is the number of distinct source files (non-summary
-	// chunks) that are candidates for file_summary generation.
-	SummarizableFiles int
-	// SummarizedFiles is the number of distinct files that already have a
-	// file_summary chunk. Coverage = SummarizedFiles / SummarizableFiles.
-	SummarizedFiles int
-	// SummaryGenerated is the cumulative count of summary chunks produced
-	// across all drain runs (chunk_summary + file_summary + package_summary
-	// + repo_summary). Zero on indexes that pre-date this counter — the
-	// field was added incrementally, not back-filled.
-	SummaryGenerated int
 }
 
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
@@ -1050,44 +1024,6 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 		if ts > 0 {
 			st.LastIndex = time.Unix(0, ts)
 		}
-	}
-	// pending_summaries queue depth. Treat the table-missing case as 0
-	// so old indexes that pre-date the table don't break Stats.
-	row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pending_summaries`)
-	_ = row.Scan(&st.PendingSummaries)
-	if st.PendingSummaries > 0 {
-		// Same query as OldestPendingSummaryAge; inlined here so a single
-		// Stats() call gets both numbers in one DB hit instead of two.
-		var oldestNanos sql.NullInt64
-		_ = s.db.QueryRowContext(ctx,
-			`SELECT MIN(queued_at) FROM pending_summaries`).Scan(&oldestNanos)
-		if oldestNanos.Valid && oldestNanos.Int64 > 0 {
-			if age := time.Since(time.Unix(0, oldestNanos.Int64)); age > 0 {
-				st.PendingSummariesOldestAge = age
-			}
-		}
-	}
-
-	row = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='`+metaLastSummarizedAt+`'`)
-	var sv string
-	if err := row.Scan(&sv); err == nil {
-		ts, _ := strconv.ParseInt(sv, 10, 64)
-		if ts > 0 {
-			st.LastSummarized = time.Unix(0, ts)
-		}
-	}
-	// Summary coverage: how many source files have a file_summary vs total.
-	_ = s.db.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT path) FROM chunks
-		  WHERE kind NOT IN ('file_summary','chunk_summary','package_summary','repo_summary')`).
-		Scan(&st.SummarizableFiles)
-	_ = s.db.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT path) FROM chunks WHERE kind = 'file_summary'`).
-		Scan(&st.SummarizedFiles)
-	// Cumulative generated counter — zero on pre-migration indexes.
-	var gv string
-	if row = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='`+metaSummaryGenerated+`'`); row.Scan(&gv) == nil {
-		st.SummaryGenerated, _ = strconv.Atoi(gv)
 	}
 	return st, nil
 }

@@ -156,20 +156,13 @@ func displayCell(s string) string {
 // needs. Decoupled from store.Stats so the formatter doesn't depend
 // on the internal package layout.
 type projectStats struct {
-	lastIndex                 time.Time
-	files                     int
-	chunks                    int
-	nodes                     int64
-	edges                     int64
-	pendingSummaries          int
-	pendingSummariesOldestAge time.Duration
-	lastSummarized            time.Time
-	summaryGenerated          int
-	drainActive               bool // summary.lock is held by another process
-	dim                       int  // optional — emitted only when > 0
-	summarizableFiles         int
-	summarizedFiles           int
-	stale                     bool // embed model mismatch — pending queue is not drainable
+	lastIndex time.Time
+	files     int
+	chunks    int
+	nodes     int64
+	edges     int64
+	dim       int  // optional — emitted only when > 0
+	stale     bool // embed model mismatch — reindex required
 }
 
 // printProjectStatLines emits the labelled key:value rows that
@@ -179,7 +172,7 @@ type projectStats struct {
 // there's nothing to show — better than emitting "graph: 0 nodes 0
 // edges" which would just be noise.
 func printProjectStatLines(indent string, st projectStats) {
-	const labelWidth = 10 // "summaries:" is the longest label
+	const labelWidth = 8 // "indexed:" is the longest label
 	field := func(label, value string) {
 		fmt.Printf("%s%-*s %s\n", indent, labelWidth, label+":", value)
 	}
@@ -190,28 +183,11 @@ func printProjectStatLines(indent string, st projectStats) {
 		field("graph", fmt.Sprintf("%d nodes  %d edges", st.nodes, st.edges))
 	}
 	if st.stale {
-		field("summaries", fmt.Sprintf("%s  embed model changed — reindex required", formatSummaryStatus(st)))
-	} else if st.pendingSummaries > 0 || !st.lastSummarized.IsZero() {
-		field("summaries", formatSummaryStatus(st))
-	}
-	if st.summarizableFiles > 0 {
-		field("coverage", formatCoverage(st.summarizedFiles, st.summarizableFiles))
+		field("embed", "changed — reindex required")
 	}
 	if st.dim > 0 {
 		field("dim", fmt.Sprintf("%d", st.dim))
 	}
-}
-
-// formatCoverage renders the summary coverage as "N/M (P%)" or "100%" when complete.
-func formatCoverage(summarized, summarizable int) string {
-	if summarizable == 0 {
-		return "—"
-	}
-	pct := summarized * 100 / summarizable
-	if summarized >= summarizable {
-		return "100%"
-	}
-	return fmt.Sprintf("%d/%d (%d%%)", summarized, summarizable, pct)
 }
 
 // formatProjectAge renders the indexed-time string for one project.
@@ -229,38 +205,6 @@ func formatProjectAge(t time.Time) string {
 	return rel
 }
 
-// formatSummaryStatus condenses summary-related Stats fields into one line.
-// Examples (with drain active):
-//
-//	5476 queued · 256 done · last 4m ago  ⟳ active
-//	5476 queued · last 4m ago  ⟳ active
-//	5476 queued · last 2h ago  stalled
-//	256 done · last 4h ago
-//	last 4h ago
-func formatSummaryStatus(st projectStats) string {
-	var parts []string
-	if st.pendingSummaries > 0 {
-		parts = append(parts, fmt.Sprintf("%d queued", st.pendingSummaries))
-	}
-	if st.summaryGenerated > 0 {
-		parts = append(parts, fmt.Sprintf("%d done", st.summaryGenerated))
-	}
-	if !st.lastSummarized.IsZero() {
-		parts = append(parts, "last "+relativeTime(st.lastSummarized))
-	}
-	line := strings.Join(parts, " · ")
-	if st.pendingSummaries > 0 {
-		if st.drainActive {
-			line += "  ⟳ active"
-		} else if !st.lastSummarized.IsZero() && st.pendingSummariesOldestAge > 15*time.Minute {
-			line += "  stalled"
-		}
-	}
-	return line
-}
-
-// queryJSONHit is the wire shape for `dex search semantic --format=json`.
-// Mirrors mcp.SearchHit so the two CLI/MCP surfaces stay aligned.
 type queryJSONHit struct {
 	Path        string  `json:"path"`
 	Kind        string  `json:"kind"`
