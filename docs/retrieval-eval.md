@@ -2,9 +2,17 @@
 
 dex ships an offline retrieval eval harness (`dex bench eval`) that scores the
 live `Search` path against a golden set of `(query → relevant files)` pairs
-mined from a repo's own git history, reporting **NDCG@10, Recall@10, MRR**. It
-gates retrieval regressions and provides the measurement layer for tuning
-fusion, lanes, embedders, and index features.
+mined from a repo's own git history, reporting **NDCG@10, Recall@10,
+RecallPool@candidateK, MRR**, broken down **by query type** (nl / symbol /
+architecture). It gates retrieval regressions and provides the measurement
+layer for tuning fusion, lanes, embedders, and index features.
+
+`RecallPool@candidateK` is the recall measured at the full candidate-pool depth
+(`k*5`, min 30) the fusion/rerank stage sees — the **ceiling** top-k Recall
+can't exceed. The gap `RecallPool − Recall` separates a *ranking* failure (the
+file was in the pool, fusion/rerank buried it) from a *retrieval* failure (it
+never made the pool). The per-type breakdown catches a per-bucket regression an
+aggregate mean would hide.
 
 See `benchmark/eval/README.md` for the golden-set generation mechanics. This
 doc covers **what the metric does and does not measure**, and **how to A/B a
@@ -122,6 +130,41 @@ reported as separate rows (they measure different things; don't average across).
 Like `dex bench eval`, it needs a live embed endpoint + network and is a
 local/main_pc gate, not container-CI. See `benchmark/corpus/README.md` for
 adding a repo and authoring query sets.
+
+## Fusion calibration — the #317 verdict
+
+The dense+BM25 lanes are merged by one of two strategies (`DEX_FUSION_MODE`):
+
+- **FusionRRF** — Reciprocal Rank Fusion: combines lanes by *rank position*
+  only (`Σ weight/(60+rank)`), discarding score magnitude. Scale-free, robust.
+- **FusionLinear** — convex combination on min-max normalised scores:
+  `α·dense + (1−α)·bm25`. Magnitude-aware; α (`DEX_FUSION_ALPHA`) is the dense
+  weight.
+
+An earlier result ("+17% NDCG at α=0.2") was measured on dex's own golden set —
+the same queries used to pick α, so train == test. #317 re-ran this as a
+**leave-one-repo-out (LORO)** sweep over the corpus: for each held-out repo, the
+α is chosen on the *other* repos, then scored on the held-out one
+(`benchmark/corpus/sweep-lane-weights.sh` + `analyze-sweep.py`).
+
+**Verdict:** FusionLinear with **α=0.7** wins, robustly — selected in **all 5
+LORO folds** (not contaminated), +3.3% NDCG / +3pts Recall vs RRF on held-out
+repos, and **+145% NDCG over RRF on dex-self**. The α curve is a clean interior
+optimum: it climbs from α=0.1, peaks at 0.7, and falls back toward pure-dense
+(α=1.0) — α=0.2 was simply far too BM25-heavy. This is now the **default**
+(`fusionMode`/`fusionAlpha` in `cmd/dex/main.go`); `DEX_FUSION_MODE=rrf` reverts.
+
+Two findings bound what the sweep could tune:
+
+- **`GraphLaneWeight` is inert** under the production (rerank-on) path — gw ∈
+  {1,4,8} produced identical NDCG (±0.001) across all sets. The cross-encoder
+  reranker reorders the candidate pool *after* the graph lane, so the weight
+  only affects pool membership, which the dense+BM25 lanes already determine.
+  This is the same wall #248 hit; the graph lane can't be calibrated here while
+  the reranker dominates. Left at 1.0.
+- **`RecallPool` barely moves with α** (~0.85 corpus) — α reorders *within* the
+  pool, it doesn't change which docs the reranker sees. The win is a
+  ranking-order win, consistent with the reranker-pool model above.
 
 ## A/B-testing a change
 

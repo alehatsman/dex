@@ -550,33 +550,36 @@ func vectorQuant() string {
 }
 
 // fusionMode reads DEX_FUSION_MODE — score-fusion strategy for the dense+BM25 lanes.
-// Default is FusionRRF. Set DEX_FUSION_MODE=linear to opt in to the convex-combination
-// fusion (α=0.2 showed +17% NDCG / +30% Recall on dex's own golden set, but that eval
-// used the same queries for tuning and measurement — held-out validation pending #317).
+// Default is FusionLinear (convex combination, α=fusionAlpha). Calibrated in #317:
+// a leave-one-repo-out sweep over the multi-repo corpus picked FusionLinear α=0.7 in
+// all 5 folds (+3.3% NDCG / +3pts Recall vs RRF, de-contaminated), and a dex-self
+// confirmation showed +145% NDCG / +113% Recall over RRF. Set DEX_FUSION_MODE=rrf to
+// fall back to rank-only Reciprocal Rank Fusion.
 func fusionMode() store.FusionMode {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_FUSION_MODE"))) {
-	case "linear":
+	case "", "linear":
 		return store.FusionLinear
-	case "", "rrf":
+	case "rrf":
 		return store.FusionRRF
 	default:
-		fmt.Fprintf(os.Stderr, "warning: DEX_FUSION_MODE=%q unrecognized; using rrf\n", os.Getenv("DEX_FUSION_MODE"))
-		return store.FusionRRF
+		fmt.Fprintf(os.Stderr, "warning: DEX_FUSION_MODE=%q unrecognized; using linear\n", os.Getenv("DEX_FUSION_MODE"))
+		return store.FusionLinear
 	}
 }
 
 // fusionAlpha reads DEX_FUSION_ALPHA — dense weight for FusionLinear (0 < α ≤ 1).
-// Default 0.2 (tuned on dex's own golden set: peak NDCG@10 and Recall@10).
-// Values outside (0,1] are rejected with a warning.
+// Default 0.7: the leave-one-repo-out corpus sweep in #317 found a clean interior
+// optimum at α=0.7 (NDCG peaked there and fell off toward both pure-BM25 and
+// pure-dense), confirmed on dex-self. Values outside (0,1] are rejected with a warning.
 func fusionAlpha() float32 {
 	raw := os.Getenv("DEX_FUSION_ALPHA")
 	if raw == "" {
-		return 0.2
+		return 0.7
 	}
 	v, err := strconv.ParseFloat(raw, 32)
 	if err != nil || v <= 0 || v > 1 {
-		fmt.Fprintf(os.Stderr, "warning: DEX_FUSION_ALPHA=%q is not in (0,1]; using default (0.2)\n", raw)
-		return 0.2
+		fmt.Fprintf(os.Stderr, "warning: DEX_FUSION_ALPHA=%q is not in (0,1]; using default (0.7)\n", raw)
+		return 0.7
 	}
 	return float32(v)
 }

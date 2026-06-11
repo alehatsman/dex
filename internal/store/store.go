@@ -169,12 +169,14 @@ type Options struct {
 	VectorQuant string
 
 	// FusionMode selects the score-fusion strategy for the dense+BM25 lanes.
-	// FusionRRF (default) uses Reciprocal Rank Fusion. FusionLinear uses a
-	// convex combination on min-max normalised scores. Set via DEX_FUSION_MODE.
+	// FusionRRF uses Reciprocal Rank Fusion; FusionLinear uses a convex
+	// combination on min-max normalised scores. The zero value is FusionRRF,
+	// but the dex binary defaults to FusionLinear (calibrated in #317; set via
+	// DEX_FUSION_MODE).
 	FusionMode FusionMode
 
 	// FusionAlpha is the dense-lane weight in FusionLinear mode (0 = pure
-	// BM25, 1 = pure dense). Zero defaults to 0.2. Set via DEX_FUSION_ALPHA.
+	// BM25, 1 = pure dense). Zero defaults to 0.7 (#317). Set via DEX_FUSION_ALPHA.
 	FusionAlpha float32
 }
 
@@ -1938,7 +1940,7 @@ func isIdentRune(r rune) bool {
 // lane's range), which is conservative and avoids rewarding absent signals.
 func fuseLinear(semCosine, bm25Score map[int64]float32, alpha float32) map[int64]float32 {
 	if alpha <= 0 {
-		alpha = 0.2
+		alpha = 0.7
 	}
 	dMin, dMax := mapMinMax(semCosine)
 	bMin, bMax := mapMinMax(bm25Score)
@@ -2202,7 +2204,7 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	var rrf map[int64]float32
 	if s.opts.FusionMode == FusionLinear {
 		// Convex combination on min-max normalised scores.
-		// alpha (DEX_FUSION_ALPHA) is the dense weight; 0 defaults to 0.2.
+		// alpha (DEX_FUSION_ALPHA) is the dense weight; 0 defaults to 0.7 (#317).
 		rrf = fuseLinear(semCosine, bm25Score, s.opts.FusionAlpha)
 	} else {
 		// Weighted RRF. Weights are query-type-adaptive (SACL EMNLP 2025):
