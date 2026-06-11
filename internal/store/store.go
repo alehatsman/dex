@@ -2038,7 +2038,7 @@ func isIdentRune(r rune) bool {
 // lane's range), which is conservative and avoids rewarding absent signals.
 func fuseLinear(semCosine, bm25Score map[int64]float32, alpha float32) map[int64]float32 {
 	if alpha <= 0 {
-		alpha = 0.5
+		alpha = 0.2
 	}
 	dMin, dMax := mapMinMax(semCosine)
 	bMin, bMax := mapMinMax(bm25Score)

@@ -180,25 +180,7 @@ func runEval(ctx context.Context, args []string) {
 	// Use the index-recorded embed model so the query vectors match the
 	// indexed chunk vectors (dimension + semantics).
 	stats, _ := st.Stats(ctx)
-	em := newEmbedClient(stats.EmbedModel)
-
-	switch strings.ToLower(*lane) {
-	case "bm25":
-		em = nil
-		fmt.Fprintln(os.Stderr, "dex bench eval: --lane bm25 — BM25+symbol+graph only (zero-inference)")
-	case "onnx":
-		if os.Getenv("DEX_ONNX_MODEL") == "" || os.Getenv("DEX_ONNXRUNTIME_LIB") == "" {
-			fmt.Fprintln(os.Stderr, "dex bench eval: --lane onnx skipped — DEX_ONNX_MODEL/DEX_ONNXRUNTIME_LIB not set")
-			os.Exit(0)
-		}
-		_ = os.Setenv("DEX_EMBED_ENGINE", "onnx")
-		em = newEmbedClient("")
-	case "full", "":
-		// existing behaviour — em already set from newEmbedClient
-	default:
-		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --lane %q (want full|bm25|onnx)\n", *lane)
-		os.Exit(1)
-	}
+	em := evalEmbedForLane(*lane, stats.EmbedModel)
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
@@ -277,6 +259,29 @@ func shortHash(h string) string {
 	return h
 }
 
+// evalEmbedForLane constructs the embedder for the given lane, printing a note
+// and calling os.Exit for unsupported configurations.
+func evalEmbedForLane(lane, model string) embed.Embedder {
+	switch strings.ToLower(lane) {
+	case "bm25":
+		fmt.Fprintln(os.Stderr, "dex bench eval: --lane bm25 — BM25+symbol+graph only (zero-inference)")
+		return nil
+	case "onnx":
+		if os.Getenv("DEX_ONNX_MODEL") == "" || os.Getenv("DEX_ONNXRUNTIME_LIB") == "" {
+			fmt.Fprintln(os.Stderr, "dex bench eval: --lane onnx skipped — DEX_ONNX_MODEL/DEX_ONNXRUNTIME_LIB not set")
+			os.Exit(0)
+		}
+		_ = os.Setenv("DEX_EMBED_ENGINE", "onnx")
+		return newEmbedClient("")
+	case "full", "":
+		return newEmbedClient(model)
+	default:
+		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --lane %q (want full|bm25|onnx)\n", lane)
+		os.Exit(1)
+		return nil
+	}
+}
+
 // runAlphaSweep opens the store once per configuration (RRF baseline + FusionLinear
 // at α = 0.1, 0.2, …, 1.0) and prints a comparison table so the operator can pick
 // the best FusionAlpha value before setting DEX_FUSION_MODE=linear in production.
@@ -291,7 +296,7 @@ func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs e
 		if err != nil {
 			return row{}, fmt.Errorf("%s: %w", label, err)
 		}
-		defer st.Close()
+		defer func() { _ = st.Close() }()
 		results, err := eval.Run(ctx, em, st, gs, k, keepSummaries)
 		if err != nil {
 			return row{}, fmt.Errorf("%s: %w", label, err)
