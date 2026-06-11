@@ -104,7 +104,7 @@ func main() {
 
 	var err error
 	switch cmd {
-	case "index":
+	case "index", "idx":
 		err = cmdIndexDispatch(ctx, args)
 	case "ask":
 		err = cmdAsk(ctx, args)
@@ -229,6 +229,8 @@ build / maintenance:
   dex watch <path>                   keep the index fresh as files change
   dex reindex <path>                 drop and re-embed from scratch
   dex nuke <path>                    delete the on-disk index
+  dex bench <sub> [<path>]            benchmarks: eval|corpus|compress|perf|locomo
+  dex proxy <path>                    MCP proxy — forward tools to a remote dex server
 
 config / setup:
   dex setup                          guided first-run wizard

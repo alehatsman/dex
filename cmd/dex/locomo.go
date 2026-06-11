@@ -28,7 +28,7 @@ Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexin
 `
 
 func runBench(ctx context.Context, args []string) {
-	if len(args) == 0 {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprintln(os.Stderr, "Usage: dex bench <subcommand> [flags]\n\nSubcommands:\n  locomo    LoCoMo memory-recall benchmark\n  eval      offline code-retrieval eval (this repo's git history)\n  corpus    multi-repo retrieval eval (pinned real repos)\n  compress  offline compression benchmark (ratio/anchor%/fidelity)\n  perf      local-compute pipeline performance benchmark")
 		os.Exit(1)
 	}

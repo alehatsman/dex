@@ -103,7 +103,6 @@ var abbreviations = map[string]string{
 	"buffer":          "buf",
 	"buffers":         "bufs",
 	"length":          "len",
-	"index":           "idx",
 	"iterator":        "iter",
 	"output":          "out",
 	"input":           "in",
