@@ -51,6 +51,8 @@ func cmdProxy(ctx context.Context, args []string) error {
 		"Upstream API base URL requests are forwarded to.")
 	statsFlag := fs.Bool("stats", false,
 		"Fetch and print a token-savings snapshot from a running proxy, then exit.")
+	toolDescFlag := fs.String("tool-desc", "",
+		"MCP tool-description compression: full|terse|lazy (default full; env DEX_PROXY_TOOL_DESC). Forced full when ENABLE_TOOL_SEARCH is set.")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -66,6 +68,21 @@ func cmdProxy(ctx context.Context, args []string) error {
 		return printProxyStats(ctx, *addr, token)
 	}
 
+	// Tool-description compression mode (#242): --tool-desc, falling back to
+	// DEX_PROXY_TOOL_DESC, default full (no-op). Not a secret, so flag + env
+	// are both fine. Honor the caveat — when ENABLE_TOOL_SEARCH /
+	// tool_reference forwarding is in play the agent relies on full tool docs
+	// to pick tools, so clamp any aggressive mode back to full.
+	toolDescRaw := *toolDescFlag
+	if strings.TrimSpace(toolDescRaw) == "" {
+		toolDescRaw = os.Getenv("DEX_PROXY_TOOL_DESC")
+	}
+	toolDescMode := proxy.ParseToolDescMode(toolDescRaw)
+	if toolDescMode != proxy.ToolDescFull && envBool("ENABLE_TOOL_SEARCH", false) {
+		fmt.Printf("  tool-desc: %s requested but ENABLE_TOOL_SEARCH is set → forced full (preserves tool-selection docs)\n", toolDescMode)
+		toolDescMode = proxy.ToolDescFull
+	}
+
 	fmt.Printf("dex proxy\n")
 	fmt.Printf("  addr=%s  upstream=%s  auth=%v\n", *addr, *upstream, token != "")
 	fmt.Printf("  wire it up: export ANTHROPIC_BASE_URL=http://%s\n", *addr)
@@ -73,13 +90,15 @@ func cmdProxy(ctx context.Context, args []string) error {
 	if token != "" {
 		fmt.Printf("  auth: clients must send header %s: <DEX_PROXY_TOKEN>\n", proxy.ProxyTokenHeader)
 	}
+	fmt.Printf("  tool-desc: %s\n", toolDescMode)
 	fmt.Printf("  stats: dex proxy --stats\n")
 
 	return proxy.Run(ctx, proxy.Options{
-		Addr:     *addr,
-		Upstream: *upstream,
-		Logger:   cliLogger(),
-		Token:    token,
+		Addr:         *addr,
+		Upstream:     *upstream,
+		Logger:       cliLogger(),
+		Token:        token,
+		ToolDescMode: toolDescMode,
 	})
 }
 

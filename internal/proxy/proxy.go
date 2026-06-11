@@ -53,6 +53,10 @@ type Options struct {
 	// header and permits a non-loopback bind. Empty = loopback-only, no gate
 	// (same posture as DEX_SERVE_TOKEN on `dex serve`).
 	Token string
+	// ToolDescMode selects how aggressively MCP tool descriptions are
+	// rewritten in flight (see toolcompress.go). Zero value is ToolDescFull
+	// (no-op), the conservative default.
+	ToolDescMode ToolDescMode
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -79,7 +83,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -140,7 +144,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 // newProxyHandler builds the mux:
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -200,6 +204,16 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 				paths = append(paths, "compress")
 			}
 
+			// Tool-description compression runs before cache alignment so the
+			// cache pass marks breakpoints on the final (compressed) tools
+			// block. The mode is static per session, so the tools prefix stays
+			// byte-identical turn-over-turn and keeps the cache warm.
+			toolCompressed, toolDescStats := CompressToolDescriptions(current, toolDescMode)
+			if toolDescStats.Applied {
+				current = toolCompressed
+				paths = append(paths, "tooldesc")
+			}
+
 			// Cache-breakpoint alignment runs LAST, on the post-pruned bytes
 			// (see cache.go) so the marked prefix is the deterministic stable
 			// region the next turn re-sends and reads from cache.
@@ -212,7 +226,8 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			after := countBodyTokens(current)
 			stats.record(before, after)
 			stats.recordCache(cacheStats)
-			logRequestMetrics(logger, r, current, before, after, paths, cacheStats)
+			stats.recordToolDesc(toolDescStats)
+			logRequestMetrics(logger, r, current, before, after, paths, cacheStats, toolDescStats)
 
 			r.Body = io.NopCloser(strings.NewReader(string(current)))
 			r.ContentLength = int64(len(current))

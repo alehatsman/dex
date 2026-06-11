@@ -17,6 +17,11 @@ type Stats struct {
 	CacheBreakpoints     atomic.Int64
 	StableTokens         atomic.Int64
 	VolatileTokens       atomic.Int64
+
+	// Tool-description compression counters (#242): how many requests had at
+	// least one description rewritten, and the total descriptions changed.
+	RequestsToolDescCompressed atomic.Int64
+	ToolDescsCompressed        atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -31,6 +36,9 @@ type Snapshot struct {
 	RequestsCacheAligned int64   `json:"requests_cache_aligned"`
 	CacheBreakpoints     int64   `json:"cache_breakpoints"`
 	CacheEfficiency      float64 `json:"cache_efficiency"` // stable/(stable+volatile); 0 if no traffic
+
+	RequestsToolDescCompressed int64 `json:"requests_tool_desc_compressed"`
+	ToolDescsCompressed        int64 `json:"tool_descs_compressed"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.
@@ -53,6 +61,16 @@ func (s *Stats) recordCache(c CacheStats) {
 	}
 	s.StableTokens.Add(int64(c.StableTokens))
 	s.VolatileTokens.Add(int64(c.VolatileTokens))
+}
+
+// recordToolDesc folds one request's tool-description compression outcome into
+// the totals: how many requests had at least one description rewritten and the
+// running count of descriptions changed.
+func (s *Stats) recordToolDesc(t ToolDescStats) {
+	if t.Applied {
+		s.RequestsToolDescCompressed.Add(1)
+		s.ToolDescsCompressed.Add(int64(t.ToolsCompressed))
+	}
 }
 
 // Snapshot returns a consistent point-in-time view of the stats.
@@ -83,5 +101,8 @@ func (s *Stats) Snapshot() Snapshot {
 		RequestsCacheAligned: s.RequestsCacheAligned.Load(),
 		CacheBreakpoints:     s.CacheBreakpoints.Load(),
 		CacheEfficiency:      cacheEff,
+
+		RequestsToolDescCompressed: s.RequestsToolDescCompressed.Load(),
+		ToolDescsCompressed:        s.ToolDescsCompressed.Load(),
 	}
 }

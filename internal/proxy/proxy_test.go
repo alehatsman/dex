@@ -30,7 +30,7 @@ func newTestProxy(t *testing.T, upstream http.Handler) (*httptest.Server, *bytes
 	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, ""))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescFull))
 	t.Cleanup(front.Close)
 	return front, &logs
 }
@@ -227,7 +227,7 @@ func TestFailOpenUpstreamDown(t *testing.T) {
 	upURL, _ := url.Parse("http://" + addr)
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, ""))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescFull))
 	defer front.Close()
 
 	resp, err := http.Post(front.URL+"/v1/messages", "application/json", strings.NewReader(`{"model":"claude"}`))
@@ -288,7 +288,7 @@ func TestAuthGate(t *testing.T) {
 	defer upSrv.Close()
 	upURL, _ := url.Parse(upSrv.URL)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, token))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, token, ToolDescFull))
 	defer front.Close()
 
 	body := `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`
