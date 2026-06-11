@@ -693,6 +693,13 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.migrateCoAccessEdges(ctx); err != nil {
 		return err
 	}
+	// Each migration is invoked independently from migrate() and self-guards
+	// on its own meta flag. Never chain one migration inside another's
+	// "not done yet" branch: a DB that already cleared the outer flag would
+	// skip the inner migration forever.
+	if err := s.migrateChunkContext(ctx); err != nil {
+		return err
+	}
 	return s.migrateGraphNodeVec(ctx)
 }
 
@@ -720,7 +727,7 @@ func (s *Store) migrateCoAccessEdges(ctx context.Context) error {
 			return fmt.Errorf("migrateCoAccessEdges: %w", err)
 		}
 	}
-	return s.migrateChunkContext(ctx)
+	return nil
 }
 
 // migrateGraphNodeVec adds vec/vec_hash columns to graph_nodes for symbol KNN.

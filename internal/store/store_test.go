@@ -1248,3 +1248,38 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// TestMigrateChunkContextRunsIndependently guards the migration-chaining bug
+// (#329): migrateChunkContext used to be reachable only through
+// migrateCoAccessEdges' "not done yet" branch, so a DB that had already set
+// co_access_edges_added=1 would never get the chunk_context migration. migrate()
+// must invoke each migration independently, guarded by its own meta flag.
+func TestMigrateChunkContextRunsIndependently(t *testing.T) {
+	st, ctx := newStore(t)
+
+	// Simulate a legacy DB: co-access migration already complete, chunk_context
+	// migration never ran (its flag absent).
+	if _, err := st.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO meta(key, value) VALUES('co_access_edges_added', '1')`); err != nil {
+		t.Fatalf("seed co_access flag: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx,
+		`DELETE FROM meta WHERE key='chunk_context_added'`); err != nil {
+		t.Fatalf("clear chunk_context flag: %v", err)
+	}
+
+	if err := st.migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// Before the fix the early return in migrateCoAccessEdges would leave this
+	// flag absent (Scan -> ErrNoRows); with independent invocation it is set.
+	var done string
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT value FROM meta WHERE key='chunk_context_added'`).Scan(&done); err != nil {
+		t.Fatalf("chunk_context migration was skipped (read flag): %v", err)
+	}
+	if done != "1" {
+		t.Fatalf("chunk_context flag = %q, want \"1\"", done)
+	}
+}
