@@ -282,16 +282,16 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	}
 	ix.Options.Logger.Info("index: starting", "root", ix.Proj.Root)
 
-	if ix.Embed == nil {
-		return ErrNoEmbedder
-	}
-
 	// Refuse a silent embed-model swap: two same-dim models produce
 	// vectors in different latent spaces, so mixing them corrupts the
 	// vec table without tripping the dim check. EnsureEmbedModel writes
 	// the model identity on first run and rejects mismatched subsequent
-	// runs with an actionable hint.
-	if err := ix.Store.EnsureEmbedModel(ctx, ix.Embed.ModelName()); err != nil {
+	// runs with an actionable hint. BM25-only indexes use a sentinel.
+	modelName := "bm25-only"
+	if ix.Embed != nil {
+		modelName = ix.Embed.ModelName()
+	}
+	if err := ix.Store.EnsureEmbedModel(ctx, modelName); err != nil {
 		return err
 	}
 
@@ -821,9 +821,11 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			// toEmbed for the post-pass loop — the expensive part to overlap
 			// is the summary embed, which the chat phase otherwise idles
 			// through. Mirrors DrainPendingSummariesBatch's drain committer.
-			batchSize := ix.Embed.BatchSize()
-			if batchSize <= 0 {
-				batchSize = 32
+			batchSize := 32
+			if ix.Embed != nil {
+				if bs := ix.Embed.BatchSize(); bs > 0 {
+					batchSize = bs
+				}
 			}
 			summaryCh := make(chan pending, batchSize*2)
 			var summaryCount atomic.Int64
@@ -955,7 +957,12 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		// (timeout, embedding service crash), earlier batches survive
 		// in the store and the next index run skips them via
 		// content-sha matching — no wasted GPU time on retry.
-		batchSize := ix.Embed.BatchSize()
+		batchSize := 32
+		if ix.Embed != nil {
+			if bs := ix.Embed.BatchSize(); bs > 0 {
+				batchSize = bs
+			}
+		}
 		if batchSize <= 0 {
 			batchSize = 32
 		}
@@ -1097,31 +1104,34 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			if ix.Options.Verbose {
 				ix.Options.Logger.Info("embedding package summaries", "count", len(pkgEmbed))
 			}
-			texts := make([]string, len(pkgEmbed))
+			rows := make([]store.PendingChunk, len(pkgEmbed))
 			for i, p := range pkgEmbed {
-				texts[i] = p.chunk.EmbedText()
+				rows[i] = store.PendingChunk{
+					Path:       p.rel,
+					Kind:       p.chunk.Kind,
+					ContentSHA: p.sha,
+					Content:    p.chunk.Content,
+				}
 			}
-			vecs, err := ix.Embed.Embed(ctx, texts)
-			if err != nil {
-				ix.Options.Logger.Warn("package summary embed failed", "err", err)
-			} else {
-				rows := make([]store.PendingChunk, len(pkgEmbed))
+			if ix.Embed != nil {
+				texts := make([]string, len(pkgEmbed))
 				for i, p := range pkgEmbed {
-					rows[i] = store.PendingChunk{
-						Path:       p.rel,
-						Kind:       p.chunk.Kind,
-						ContentSHA: p.sha,
-						Content:    p.chunk.Content,
-						Vec:        vecs[i],
+					texts[i] = p.chunk.EmbedText()
+				}
+				if vecs, err := ix.Embed.Embed(ctx, texts); err != nil {
+					ix.Options.Logger.Warn("package summary embed failed", "err", err)
+				} else {
+					for i, v := range vecs {
+						rows[i].Vec = v
 					}
 				}
-				if err := ix.Store.UpsertMany(ctx, rows, startTime); err != nil {
-					return err
-				}
-				for _, r := range rows {
-					if _, err := ix.Store.DeleteOtherSummariesForPath(ctx, r.Path, r.Kind, r.ContentSHA); err != nil {
-						ix.Options.Logger.Warn("gc stale package_summary failed", "path", r.Path, "err", err)
-					}
+			}
+			if err := ix.Store.UpsertMany(ctx, rows, startTime); err != nil {
+				return err
+			}
+			for _, r := range rows {
+				if _, err := ix.Store.DeleteOtherSummariesForPath(ctx, r.Path, r.Kind, r.ContentSHA); err != nil {
+					ix.Options.Logger.Warn("gc stale package_summary failed", "path", r.Path, "err", err)
 				}
 			}
 		}
@@ -1148,23 +1158,25 @@ func (ix *Indexer) Run(ctx context.Context) error {
 				if err != nil {
 					ix.Options.Logger.Warn("repo summarize failed", "err", err)
 				} else if strings.TrimSpace(summary) != "" {
-					vecs, err := ix.Embed.Embed(ctx, []string{chunk.KindRepoSummary + "\n" + summary})
-					if err != nil {
-						ix.Options.Logger.Warn("repo summary embed failed", "err", err)
-					} else {
-						rows := []store.PendingChunk{{
-							Path:       ".",
-							Kind:       chunk.KindRepoSummary,
-							ContentSHA: repoSHA,
-							Content:    summary,
-							Vec:        vecs[0],
-						}}
-						if err := ix.Store.UpsertMany(ctx, rows, startTime); err != nil {
-							return err
+					row := store.PendingChunk{
+						Path:       ".",
+						Kind:       chunk.KindRepoSummary,
+						ContentSHA: repoSHA,
+						Content:    summary,
+					}
+					if ix.Embed != nil {
+						if vecs, err := ix.Embed.Embed(ctx, []string{chunk.KindRepoSummary + "\n" + summary}); err != nil {
+							ix.Options.Logger.Warn("repo summary embed failed", "err", err)
+						} else {
+							row.Vec = vecs[0]
 						}
-						if _, err := ix.Store.DeleteOtherSummariesForPath(ctx, ".", chunk.KindRepoSummary, repoSHA); err != nil {
-							ix.Options.Logger.Warn("gc stale repo_summary failed", "err", err)
-						}
+					}
+					rows := []store.PendingChunk{row}
+					if err := ix.Store.UpsertMany(ctx, rows, startTime); err != nil {
+						return err
+					}
+					if _, err := ix.Store.DeleteOtherSummariesForPath(ctx, ".", chunk.KindRepoSummary, repoSHA); err != nil {
+						ix.Options.Logger.Warn("gc stale repo_summary failed", "err", err)
 					}
 				}
 			}
@@ -1215,14 +1227,6 @@ type pending struct {
 // streaming summary committer (non-defer summarize, dex #233) and the
 // post-pass batch embed loop so both have one tested embed+upsert path.
 func (ix *Indexer) embedAndUpsertBatch(ctx context.Context, batch []pending, startTime time.Time) error {
-	texts := make([]string, len(batch))
-	for i, p := range batch {
-		texts[i] = p.chunk.EmbedText()
-	}
-	vecs, err := ix.Embed.Embed(ctx, texts)
-	if err != nil {
-		return fmt.Errorf("embed: %w", err)
-	}
 	rows := make([]store.PendingChunk, len(batch))
 	for i, p := range batch {
 		rows[i] = store.PendingChunk{
@@ -1233,7 +1237,19 @@ func (ix *Indexer) embedAndUpsertBatch(ctx context.Context, batch []pending, sta
 			EndLine:    p.chunk.EndLine,
 			ContentSHA: p.sha,
 			Content:    p.chunk.Content,
-			Vec:        vecs[i],
+		}
+	}
+	if ix.Embed != nil {
+		texts := make([]string, len(batch))
+		for i, p := range batch {
+			texts[i] = p.chunk.EmbedText()
+		}
+		vecs, err := ix.Embed.Embed(ctx, texts)
+		if err != nil {
+			return fmt.Errorf("embed: %w", err)
+		}
+		for i, v := range vecs {
+			rows[i].Vec = v
 		}
 	}
 	return ix.Store.UpsertMany(ctx, rows, startTime)

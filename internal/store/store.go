@@ -163,6 +163,7 @@ type Store struct {
 	db          *sql.DB
 	dim         atomic.Int64 // vector dimension; set once on first upsert, read concurrently
 	dimInit     sync.Mutex   // serializes first-write dim init so concurrent first UpsertMany calls don't double-init
+	noVec       atomic.Bool  // true when index is BM25-only (DEX_EMBED_ENGINE=none) — no vec0 table, nil vecs
 	embedModel  atomic.Value // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
 	opts        Options      // immutable after Open
 	rerankCache RerankCache  // memoizes rerank results across calls; lazily set on first use
@@ -1337,15 +1338,25 @@ func (s *Store) UpsertMany(ctx context.Context, rows []PendingChunk, now time.Ti
 	if len(rows) == 0 {
 		return nil
 	}
-	if s.dim.Load() == 0 {
-		// First write to a fresh index. Serialize init under dimInit so
-		// that `dex index` and `dex watch` racing their first UpsertMany
-		// don't both write meta.dim / build the vec0 table. dim is
-		// published to the atomic only after the vec0 table + triggers
-		// exist, so any reader that observes dim != 0 can safely INSERT
-		// into chunks and rely on the mirror triggers being present.
-		if err := s.initDim(ctx, int64(len(rows[0].Vec))); err != nil {
-			return err
+	if s.dim.Load() == 0 && !s.noVec.Load() {
+		if len(rows[0].Vec) == 0 {
+			// BM25-only mode: no embedder, no vec0 table. Mark once under
+			// dimInit so subsequent calls skip this block on the fast path.
+			s.dimInit.Lock()
+			if s.dim.Load() == 0 && !s.noVec.Load() {
+				s.noVec.Store(true)
+			}
+			s.dimInit.Unlock()
+		} else {
+			// First write to a fresh vector index. Serialize init under dimInit so
+			// that `dex index` and `dex watch` racing their first UpsertMany
+			// don't both write meta.dim / build the vec0 table. dim is
+			// published to the atomic only after the vec0 table + triggers
+			// exist, so any reader that observes dim != 0 can safely INSERT
+			// into chunks and rely on the mirror triggers being present.
+			if err := s.initDim(ctx, int64(len(rows[0].Vec))); err != nil {
+				return err
+			}
 		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -1369,7 +1380,7 @@ func (s *Store) UpsertMany(ctx context.Context, rows []PendingChunk, now time.Ti
 	}
 	defer stmt.Close()
 	for _, r := range rows {
-		if int64(len(r.Vec)) != s.dim.Load() {
+		if !s.noVec.Load() && int64(len(r.Vec)) != s.dim.Load() {
 			_ = tx.Rollback()
 			return fmt.Errorf("vector dim mismatch: index has dim=%d, got %d (did the embedding model change?)", s.dim.Load(), len(r.Vec))
 		}

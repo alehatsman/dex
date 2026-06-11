@@ -2,7 +2,6 @@ package index
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/alehatsman/dex/internal/ignore"
@@ -10,15 +9,14 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// TestRunWithoutEmbedderReturnsErrNoEmbedder proves the lean indexing contract:
-// Run with a nil embedder (DEX_EMBED_ENGINE=none) fails fast with ErrNoEmbedder
-// instead of nil-panicking on ix.Embed.ModelName(). Indexing needs vectors;
-// the lean profile is a serve mode (see #306 for pure no-embedder indexing).
-func TestRunWithoutEmbedderReturnsErrNoEmbedder(t *testing.T) {
+// TestRunWithoutEmbedderBuildsBM25Index proves that Run() with a nil embedder
+// (DEX_EMBED_ENGINE=none) succeeds and produces a queryable BM25/symbol/graph
+// index — no vectors, no panic, no ErrNoEmbedder. Issue #306.
+func TestRunWithoutEmbedderBuildsBM25Index(t *testing.T) {
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
 	writeIndexAll(t, projDir)
-	writeFile(t, projDir+"/a.go", "package main\n\nfunc A() string { return \"x\" }\n")
+	writeFile(t, projDir+"/a.go", "package main\n\nfunc MyFunc() string { return \"lean\" }\n")
 
 	p, _ := proj.Resolve(projDir, cacheDir)
 	_ = p.EnsureCacheDir()
@@ -26,10 +24,27 @@ func TestRunWithoutEmbedderReturnsErrNoEmbedder(t *testing.T) {
 	defer st.Close()
 	ig, _ := ignore.New(p.Root)
 
-	ix := New(p, st, nil, ig, Options{Verbose: false}) // nil embedder = lean profile
+	ix := New(p, st, nil, ig, Options{Verbose: false}) // nil embedder = lean / BM25-only
 
-	err := ix.Run(context.Background())
-	if !errors.Is(err, ErrNoEmbedder) {
-		t.Fatalf("Run with nil embedder: got %v, want ErrNoEmbedder", err)
+	if err := ix.Run(context.Background()); err != nil {
+		t.Fatalf("Run with nil embedder: unexpected error %v", err)
+	}
+
+	// search_symbol must work — uses the symbols table, not vec0.
+	hits, err := st.FindSymbol(context.Background(), "MyFunc", 10)
+	if err != nil {
+		t.Fatalf("FindSymbol after lean index: %v", err)
+	}
+	if len(hits) == 0 {
+		t.Error("FindSymbol returned no hits — expected function MyFunc")
+	}
+
+	// BM25 search must work with multi-char token.
+	bm25, err := st.Search(context.Background(), nil, "lean", 10)
+	if err != nil {
+		t.Fatalf("Search (BM25-only) after lean index: %v", err)
+	}
+	if len(bm25) == 0 {
+		t.Error("BM25 Search returned no hits — expected chunk containing 'lean'")
 	}
 }
