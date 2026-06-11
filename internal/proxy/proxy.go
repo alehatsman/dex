@@ -135,13 +135,17 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger) http.Handler {
 				rp.ServeHTTP(w, r)
 				return
 			}
-			pruned, savedBytes := PruneRequestBody(body, DefaultKeepRecent)
-			if savedBytes > 0 {
-				logger.Info("dex proxy prune", "saved_bytes", savedBytes)
+			pruned, prunedBytes := PruneRequestBody(body, DefaultKeepRecent)
+			if prunedBytes > 0 {
+				logger.Info("dex proxy prune", "saved_bytes", prunedBytes)
 			}
-			r.Body = io.NopCloser(strings.NewReader(string(pruned)))
-			r.ContentLength = int64(len(pruned))
-			logInputBaseline(logger, r, pruned)
+			compressed, compressedBytes := CompressRequestBody(pruned)
+			if compressedBytes > 0 {
+				logger.Info("dex proxy compress", "saved_bytes", compressedBytes)
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(compressed)))
+			r.ContentLength = int64(len(compressed))
+			logInputBaseline(logger, r, compressed)
 		}
 		rp.ServeHTTP(w, r)
 	})
