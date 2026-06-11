@@ -183,13 +183,13 @@ func (rc *remoteClient) contextRouter(ctx context.Context, _ *sdk.CallToolReques
 
 func (rc *remoteClient) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	var out SearchOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/semantic"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/find"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error) {
 	var out FindSymbolOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/symbol"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/lookup"), in, &out)
 	return nil, out, err
 }
 
@@ -207,25 +207,25 @@ func (rc *remoteClient) findRelated(ctx context.Context, _ *sdk.CallToolRequest,
 
 func (rc *remoteClient) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error) {
 	var out GraphDepsOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/deps"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/deps"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) graphCallers(ctx context.Context, _ *sdk.CallToolRequest, in CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error) {
 	var out CallEdgeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/callers"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/callers"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) graphCallees(ctx context.Context, _ *sdk.CallToolRequest, in CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error) {
 	var out CallEdgeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/callees"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/callees"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in ImpactInput) (*sdk.CallToolResult, ImpactOutput, error) {
 	var out ImpactOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/impact"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/impact"), in, &out)
 	return nil, out, err
 }
 
@@ -249,13 +249,13 @@ func (rc *remoteClient) graphTags(ctx context.Context, _ *sdk.CallToolRequest, i
 
 func (rc *remoteClient) summarize(ctx context.Context, _ *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	var out SummarizeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/file/view"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/read"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
 	var out KnowledgeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/knowledge"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/notes"), in, &out)
 	return nil, out, err
 }
 
@@ -267,13 +267,13 @@ func (rc *remoteClient) session(ctx context.Context, _ *sdk.CallToolRequest, in 
 
 func (rc *remoteClient) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
 	var out SearchTreeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/file/tree"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/ls"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
 	var out SearchGrepOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/grep"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/grep"), in, &out)
 	return nil, out, err
 }
 
@@ -297,13 +297,13 @@ func (rc *remoteClient) overview(ctx context.Context, _ *sdk.CallToolRequest, in
 
 func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	var out SmellsOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/smells"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/smells"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesInput) (*sdk.CallToolResult, RoutesOutput, error) {
 	var out RoutesOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/routes"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/routes"), in, &out)
 	return nil, out, err
 }
 
@@ -377,18 +377,18 @@ func (rc *remoteClient) graphCycles(ctx context.Context, _ *sdk.CallToolRequest,
 
 func (rc *remoteClient) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathInput) (*sdk.CallToolResult, PathOutput, error) {
 	var out PathOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/path"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/path"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffInput) (*sdk.CallToolResult, DiffOutput, error) {
 	var out DiffOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/diff"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/diff"), in, &out)
 	return nil, out, err
 }
 
 func (rc *remoteClient) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, in CommunitiesInput) (*sdk.CallToolResult, CommunitiesOutput, error) {
 	var out CommunitiesOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/communities"), in, &out)
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/clusters"), in, &out)
 	return nil, out, err
 }

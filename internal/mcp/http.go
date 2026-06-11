@@ -280,9 +280,12 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	}
 
 	wrapped := authMiddleware(opts.Token, authed)
-	mux.Handle("/v1/projects", wrapped)
-	mux.Handle("/v1/projects/", wrapped)
-	mux.Handle("/v1/status", wrapped)
+	// Forward the whole /v1/ subtree to the authenticated submux. The
+	// unauthenticated GET /v1/healthz and GET /v1/version are more specific
+	// patterns, so Go 1.22's ServeMux routes them to the bare mux first; every
+	// other /v1/* route (/v1/projects, /v1/status, /v1/shell, the per-project
+	// short-name tools) lands on the authed submux.
+	mux.Handle("/v1/", wrapped)
 
 	return recoverMiddleware(logger, logMiddleware(logger, mux))
 }

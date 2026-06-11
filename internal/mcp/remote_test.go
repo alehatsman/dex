@@ -84,11 +84,11 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 		{"search", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.search(c, nil, SearchInput{})
 			return err
-		}, http.MethodPost, base + "/search/semantic"},
+		}, http.MethodPost, base + "/find"},
 		{"findSymbol", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.findSymbol(c, nil, FindSymbolInput{})
 			return err
-		}, http.MethodPost, base + "/search/symbol"},
+		}, http.MethodPost, base + "/lookup"},
 		{"related", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.related(c, nil, RelatedInput{})
 			return err
@@ -96,15 +96,15 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 		{"graphDeps", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.graphDeps(c, nil, GraphDepsInput{})
 			return err
-		}, http.MethodPost, base + "/graph/deps"},
+		}, http.MethodPost, base + "/deps"},
 		{"graphCallers", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.graphCallers(c, nil, CallEdgeInput{})
 			return err
-		}, http.MethodPost, base + "/graph/callers"},
+		}, http.MethodPost, base + "/callers"},
 		{"graphCallees", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.graphCallees(c, nil, CallEdgeInput{})
 			return err
-		}, http.MethodPost, base + "/graph/callees"},
+		}, http.MethodPost, base + "/callees"},
 		{"graphLinks", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.graphLinks(c, nil, DocLinkInput{})
 			return err
@@ -120,7 +120,7 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 		{"summarize", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.summarize(c, nil, SummarizeInput{})
 			return err
-		}, http.MethodPost, base + "/file/view"},
+		}, http.MethodPost, base + "/read"},
 		{"status", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.status(c, nil, StatusInput{})
 			return err
@@ -249,5 +249,66 @@ func TestListRemoteProjects(t *testing.T) {
 	}
 	if len(projects) != 2 || projects[0].ID != "id-a" || projects[1].Root != "/srv/b" {
 		t.Fatalf("projects = %+v", projects)
+	}
+}
+
+// TestRemoteRouteParity guards against drift between the REST paths the remote
+// shim builds (remote.go) and the routes dex serve actually mounts
+// (buildHTTPHandler in http.go). It starts the real HTTP handler over httptest
+// with a registered project, points a remoteClient at it, and drives every
+// registered MCP tool's proxy method. The backend is index-less, so each call
+// is expected to fail — but a transport-level 404 means the shim and the server
+// have diverged on the path (route drift) or the route was never mounted
+// (the /v1/shell outer-mux gap). Either is a parity bug.
+func TestRemoteRouteParity(t *testing.T) {
+	dir := t.TempDir()
+	id, err := ProjectID(dir)
+	if err != nil {
+		t.Fatalf("ProjectID: %v", err)
+	}
+	ts := startTestHTTPServer(t, stubServer(t), RunHTTPOptions{
+		Projects: map[string]string{id: dir},
+	})
+	rc := &remoteClient{
+		base:      strings.TrimRight(ts.URL, "/"),
+		projectID: id,
+		http:      ts.Client(),
+	}
+	ctx := context.Background()
+
+	// One entry per tool registered in registerTools (server.go). Zero-value
+	// inputs are fine: we assert only that the route exists, not that the
+	// index-less backend produces a useful answer.
+	calls := []struct {
+		name string
+		fn   func() error
+	}{
+		{"ask", func() error { _, _, e := rc.contextRouter(ctx, nil, ContextInput{}); return e }},
+		{"find", func() error { _, _, e := rc.search(ctx, nil, SearchInput{}); return e }},
+		{"lookup", func() error { _, _, e := rc.findSymbol(ctx, nil, FindSymbolInput{}); return e }},
+		{"deps", func() error { _, _, e := rc.graphDeps(ctx, nil, GraphDepsInput{}); return e }},
+		{"callers", func() error { _, _, e := rc.graphCallers(ctx, nil, CallEdgeInput{}); return e }},
+		{"callees", func() error { _, _, e := rc.graphCallees(ctx, nil, CallEdgeInput{}); return e }},
+		{"impact", func() error { _, _, e := rc.graphImpact(ctx, nil, ImpactInput{}); return e }},
+		{"routes", func() error { _, _, e := rc.routes(ctx, nil, RoutesInput{}); return e }},
+		{"smells", func() error { _, _, e := rc.smells(ctx, nil, SmellsInput{}); return e }},
+		{"path", func() error { _, _, e := rc.graphPath(ctx, nil, PathInput{}); return e }},
+		{"diff", func() error { _, _, e := rc.graphDiff(ctx, nil, DiffInput{}); return e }},
+		{"clusters", func() error { _, _, e := rc.graphCommunities(ctx, nil, CommunitiesInput{}); return e }},
+		{"status", func() error { _, _, e := rc.status(ctx, nil, StatusInput{}); return e }},
+		{"notes", func() error { _, _, e := rc.knowledge(ctx, nil, KnowledgeInput{}); return e }},
+		{"session", func() error { _, _, e := rc.session(ctx, nil, SessionInput{}); return e }},
+		{"read", func() error { _, _, e := rc.summarize(ctx, nil, SummarizeInput{}); return e }},
+		{"shell", func() error { _, _, e := rc.shellRun(ctx, nil, ShellInput{}); return e }},
+		{"ls", func() error { _, _, e := rc.searchTree(ctx, nil, SearchTreeInput{}); return e }},
+		{"grep", func() error { _, _, e := rc.searchGrep(ctx, nil, SearchGrepInput{}); return e }},
+	}
+
+	for _, c := range calls {
+		t.Run(c.name, func(t *testing.T) {
+			if err := c.fn(); err != nil && strings.Contains(err.Error(), "404") {
+				t.Errorf("%s: route not mounted (shim/server drift): %v", c.name, err)
+			}
+		})
 	}
 }
