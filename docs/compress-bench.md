@@ -25,6 +25,31 @@ Baseline committed at `benchmark/compress/baseline.json`. Refresh with:
 dex bench compress --output json > benchmark/compress/baseline.json
 ```
 
+## Anchor-verbatim floor — strict / weak target_model (#291)
+
+`anchor%` is a *measurement*; the strict path is the *enforcement*. Weak local
+models (the `tokens.Llama` family — Qwen/DeepSeek/Llama/Mistral) hallucinate
+plausible-wrong tokens when an exact path, qualified identifier, or type name is
+mutated, so for those targets compression guarantees `anchor% == 100`.
+
+`Profile.StrictAnchors()` returns true for the weak family and false for
+frontier targets (Claude/GPT/Gemini). When true, the serving paths
+(`file_view --mode aggressive`, `dex read`, `dex compress`) call
+`compress.CompressCode(content, ext, strict=true)` →
+`compress.AggressiveCompressStrict`, which extracts an `AnchorSet` (paths with
+optional `:line`, dotted/`::` qualified identifiers, multi-segment PascalCase
+type names) from the comment-stripped source and holds each anchor off the four
+mutating passes:
+
+- entropy line-drop never drops a line containing an anchor,
+- token reductions skip rules whose source overlaps an anchor,
+- the symbol map and n-gram codebook exclude entries that would rewrite or
+  delete an anchor span.
+
+The floor holds by construction across every aggressiveness level — it is the
+hard floor that #163's adaptive ratio can never override. Frontier targets keep
+the relaxed pipeline (symmap/n-gram handles on) unchanged.
+
 ## What it does NOT measure
 
 **Embedding-similarity fidelity** (`--with-embed`, deferred).

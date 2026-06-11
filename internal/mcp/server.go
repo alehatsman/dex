@@ -1807,7 +1807,9 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 	case mode == "aggressive":
 		ext := filepath.Ext(realTarget)
-		content := compress.AggressiveCompress(string(data), ext)
+		// Weak target_model profiles get the anchor-verbatim floor (#291).
+		strict := profiles.Active(p.Root).StrictAnchors()
+		content := compress.CompressCode(string(data), ext, strict)
 		// Semantic chunk reordering (#105): when a task is provided, reorder
 		// compressed content so the most task-relevant blocks appear first.
 		if in.Task != "" {

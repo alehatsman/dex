@@ -134,6 +134,23 @@ func BuildNgramCodebook(content string) NgramCodebook {
 // Empty returns true when the codebook has no entries (Apply is a no-op).
 func (cb NgramCodebook) Empty() bool { return len(cb.entries) == 0 }
 
+// excludeAnchors returns a copy of cb without entries whose pattern overlaps an
+// anchor span. An n-gram replaces a whitespace-separated token sequence with a
+// ©N ref; if that sequence contains an anchor token, applying it would delete
+// the anchor — so the entry is dropped under a strict target_model.
+func (cb NgramCodebook) excludeAnchors(a AnchorSet) NgramCodebook {
+	if a.Empty() || cb.Empty() {
+		return cb
+	}
+	kept := make([]ngramEntry, 0, len(cb.entries))
+	for _, e := range cb.entries {
+		if !a.blocksText(strings.Join(e.pattern, " ")) {
+			kept = append(kept, e)
+		}
+	}
+	return NgramCodebook{entries: kept}
+}
+
 // Legend returns the ©MAP header to prepend to compressed output.
 func (cb NgramCodebook) Legend() string {
 	if cb.Empty() {

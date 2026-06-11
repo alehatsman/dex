@@ -11,6 +11,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/compress"
 	"github.com/alehatsman/dex/internal/mcp"
+	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/tokens"
 )
 
@@ -80,7 +81,13 @@ func cmdCompress(args []string) error {
 		}
 	}
 
-	compressed := applyCompressMode(*mode, content, fileExt)
+	// Weak target_model profiles get the anchor-verbatim floor (#291).
+	profRoot := "."
+	if src != "-" {
+		profRoot = filepath.Dir(src)
+	}
+	strict := profiles.Active(profRoot).StrictAnchors()
+	compressed := applyCompressMode(*mode, content, fileExt, strict)
 
 	if *format == "json" {
 		rep := struct {
@@ -126,14 +133,15 @@ func cmdCompress(args []string) error {
 // applyCompressMode runs the selected compression mode over content. ext is the
 // file-extension hint (with or without leading dot) for language-aware passes.
 // Modes that find no improvement fall back to the original content.
-func applyCompressMode(mode, content, ext string) string {
+func applyCompressMode(mode, content, ext string, strict bool) string {
 	switch mode {
 	case "off":
 		return content
 	case "aggressive", "auto":
 		// AggressiveCompress self-degrades to the original via SafeguardRatio
 		// when compression would not help, so it is the safe default for auto.
-		return compress.AggressiveCompress(content, ext)
+		// strict (weak target_model) keeps anchor tokens byte-identical.
+		return compress.CompressCode(content, ext, strict)
 	case "entropy":
 		lines := strings.Split(content, "\n")
 		filtered := compress.EntropyFilter(lines, compress.EntropyThresholdStandard)

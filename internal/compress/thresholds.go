@@ -85,3 +85,31 @@ func dropLowEntropyLines(lines []string, threshold float64) []string {
 	}
 	return out
 }
+
+// dropLowEntropyLinesStrict is dropLowEntropyLines that never drops a line
+// containing an anchor, so anchor tokens survive verbatim under a strict
+// target_model regardless of the line's entropy score.
+func dropLowEntropyLinesStrict(lines []string, threshold float64, a AnchorSet) []string {
+	lineTg := make([]map[string]struct{}, len(lines))
+	for i, line := range lines {
+		lineTg[i] = charTrigrams(line)
+	}
+
+	seen := make(map[string]struct{}, 256)
+	out := make([]string, 0, len(lines))
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			out = append(out, line)
+			continue
+		}
+		keep := a.lineHasAnchor(line) ||
+			lineScore(line, seen, windowTrigrams(lineTg, i)) >= threshold
+		if keep {
+			out = append(out, line)
+			for tg := range lineTg[i] {
+				seen[tg] = struct{}{}
+			}
+		}
+	}
+	return out
+}

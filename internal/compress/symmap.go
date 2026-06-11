@@ -89,6 +89,22 @@ func BuildSymbolMap(content string) SymbolMap {
 // Empty returns true when the map has no entries (Apply is a no-op).
 func (sm SymbolMap) Empty() bool { return len(sm.entries) == 0 }
 
+// excludeAnchors returns a copy of sm without entries whose identifier is
+// blocked by the anchor set — those identifiers (and any anchor they are a
+// substring of) must survive verbatim under a strict target_model.
+func (sm SymbolMap) excludeAnchors(a AnchorSet) SymbolMap {
+	if a.Empty() || sm.Empty() {
+		return sm
+	}
+	kept := make([]symEntry, 0, len(sm.entries))
+	for _, e := range sm.entries {
+		if !a.blocksToken(e.ident) {
+			kept = append(kept, e)
+		}
+	}
+	return SymbolMap{entries: kept}
+}
+
 // Legend returns the §MAP header to prepend to compressed output.
 func (sm SymbolMap) Legend() string {
 	if sm.Empty() {

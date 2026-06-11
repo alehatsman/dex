@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/profiles"
 )
 
 // cmdRead is the `dex read <file>` verb: a zero-cost (no LLM) structural read
@@ -74,6 +75,9 @@ func cmdRead(ctx context.Context, args []string) error {
 	}
 	fullLines := strings.Split(string(data), "\n")
 	ext := filepath.Ext(path)
+	// Weak target_model profiles get the anchor-verbatim floor (#291): paths,
+	// qualified identifiers, and type names survive compression byte-identical.
+	strict := profiles.Active(filepath.Dir(path)).StrictAnchors()
 
 	resolved := *mode
 	var content string
@@ -89,7 +93,7 @@ func cmdRead(ctx context.Context, args []string) error {
 				fmt.Fprintln(os.Stderr, "dex read: no index/symbols for this file — falling back to --mode=aggressive")
 			}
 			resolved = "aggressive"
-			content = compress.AggressiveCompress(rangeText(fullLines, *start, *end), ext)
+			content = compress.CompressCode(rangeText(fullLines, *start, *end), ext, strict)
 		}
 	case "auto":
 		// Mirror the redirect hook: large indexed files get a signatures view;
@@ -106,7 +110,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	case "full":
 		content = rangeText(fullLines, *start, *end)
 	case "aggressive":
-		content = compress.AggressiveCompress(rangeText(fullLines, *start, *end), ext)
+		content = compress.CompressCode(rangeText(fullLines, *start, *end), ext, strict)
 	case "entropy":
 		ranged := strings.Split(rangeText(fullLines, *start, *end), "\n")
 		filtered := compress.EntropyFilter(ranged, compress.EntropyThresholdStandard)

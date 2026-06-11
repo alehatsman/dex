@@ -75,6 +75,16 @@ func (p Profile) TokenFamily() tokens.Family {
 	return tokens.Detect(p.TargetModel)
 }
 
+// StrictAnchors reports whether compression must guarantee anchor tokens
+// (paths, qualified identifiers, type names, line numbers) byte-identical for
+// this profile's target model. Weak local models (Llama/Qwen/DeepSeek/Mistral,
+// the tokens.Llama family) substitute plausible-wrong tokens under ambiguity,
+// so they get the strict floor; frontier models (Claude/GPT/Gemini) tolerate
+// the relaxed path and its symmap/n-gram handles.
+func (p Profile) StrictAnchors() bool {
+	return p.TokenFamily() == tokens.Llama
+}
+
 // builtins holds the hard-coded profiles for the three standard task types.
 var builtins = map[string]Profile{
 	// claude is the primary consumer profile: Claude Code / Claude API.

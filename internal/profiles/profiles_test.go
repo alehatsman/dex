@@ -22,6 +22,21 @@ func TestTokenFamilyClaude(t *testing.T) {
 	}
 }
 
+func TestStrictAnchors(t *testing.T) {
+	weak := []string{"qwen2.5-coder:7b", "deepseek-coder", "llama3.1:8b", "mistral"}
+	for _, m := range weak {
+		if !(Profile{TargetModel: m}).StrictAnchors() {
+			t.Errorf("StrictAnchors(%q) = false, want true (weak local model)", m)
+		}
+	}
+	frontier := []string{"claude", "gpt-4o", "gemini-2.0-flash", ""}
+	for _, m := range frontier {
+		if (Profile{TargetModel: m}).StrictAnchors() {
+			t.Errorf("StrictAnchors(%q) = true, want false (frontier/default)", m)
+		}
+	}
+}
+
 func TestTokenFamilyGemini(t *testing.T) {
 	p := Profile{TargetModel: "gemini-2.0-flash"}
 	if got := p.TokenFamily(); got != tokens.Gemini {

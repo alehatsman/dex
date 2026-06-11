@@ -51,3 +51,26 @@ func ApplyTokenReductions(content, ext string) string {
 	}
 	return content
 }
+
+// applyTokenReductionsExcept is ApplyTokenReductions with anchor protection: a
+// rule whose source text overlaps an anchor is skipped, so the anchor is never
+// rewritten. This holds the Rust std::sync::Arc → Arc rule (and friends) when
+// std::sync::Arc is a qualified-identifier anchor under a strict target_model.
+func applyTokenReductionsExcept(content, ext string, a AnchorSet) string {
+	apply := func(rules []tokenRule) {
+		for _, r := range rules {
+			if a.blocksText(r.from) {
+				continue
+			}
+			content = strings.ReplaceAll(content, r.from, r.to)
+		}
+	}
+	apply(globalTokenRules)
+	switch ext {
+	case ".rs":
+		apply(rustTokenRules)
+	case ".ts", ".tsx", ".js", ".jsx":
+		apply(jstsTokenRules)
+	}
+	return content
+}
