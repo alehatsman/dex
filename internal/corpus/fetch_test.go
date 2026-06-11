@@ -30,13 +30,13 @@ func TestEnsureLocal(t *testing.T) {
 
 	src := t.TempDir()
 	runOrSkip(t, src, "init", "-q")
-	runOrSkip(t, src, "config", "user.email", "t@example.com")
-	runOrSkip(t, src, "config", "user.name", "t")
 	if err := os.WriteFile(filepath.Join(src, "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runOrSkip(t, src, "add", ".")
-	runOrSkip(t, src, "commit", "-q", "-m", "feat: initial")
+	// Pass identity inline so nothing is written to any git config file
+	// (neither the temp repo's .git/config nor the user's global config).
+	runOrSkip(t, src, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "feat: initial")
 	sha, err := gitOutput(ctx, src, "rev-parse", "HEAD")
 	if err != nil {
 		t.Skipf("rev-parse: %v", err)
