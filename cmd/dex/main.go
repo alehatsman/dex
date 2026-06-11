@@ -556,17 +556,18 @@ func vectorQuant() string {
 }
 
 // fusionMode reads DEX_FUSION_MODE — score-fusion strategy for the dense+BM25 lanes.
-// Default is FusionLinear (α=0.2, measured +17% NDCG / +30% Recall over RRF on dex's
-// own golden set). Set DEX_FUSION_MODE=rrf to revert to Reciprocal Rank Fusion.
+// Default is FusionRRF. Set DEX_FUSION_MODE=linear to opt in to the convex-combination
+// fusion (α=0.2 showed +17% NDCG / +30% Recall on dex's own golden set, but that eval
+// used the same queries for tuning and measurement — held-out validation pending #317).
 func fusionMode() store.FusionMode {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_FUSION_MODE"))) {
-	case "rrf":
+	case "linear":
+		return store.FusionLinear
+	case "", "rrf":
 		return store.FusionRRF
-	case "", "linear":
-		return store.FusionLinear
 	default:
-		fmt.Fprintf(os.Stderr, "warning: DEX_FUSION_MODE=%q unrecognized; using linear\n", os.Getenv("DEX_FUSION_MODE"))
-		return store.FusionLinear
+		fmt.Fprintf(os.Stderr, "warning: DEX_FUSION_MODE=%q unrecognized; using rrf\n", os.Getenv("DEX_FUSION_MODE"))
+		return store.FusionRRF
 	}
 }
 

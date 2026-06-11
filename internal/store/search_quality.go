@@ -286,6 +286,20 @@ func (s *Store) fetchPathsForIDs(ctx context.Context, ids []int64) (map[int64]st
 	return out, rows.Err()
 }
 
+// applyProximityBonus adds session proximity bonuses to the score map.
+// In FusionLinear mode scores are in [0,1] — the raw bonus (~1/rrfK ≈ 0.017)
+// would be ~60× weaker relative to primary scores than in RRF mode, so it is
+// scaled by rrfK/3 to give comparable proportional impact.
+func (s *Store) applyProximityBonus(ctx context.Context, rrf map[int64]float32, pathFor map[int64]string) {
+	scale := float32(1)
+	if s.opts.FusionMode == FusionLinear {
+		scale = float32(rrfK) / 3
+	}
+	for id, bonus := range s.sessionProximityBonus(ctx, pathFor) {
+		rrf[id] += bonus * scale
+	}
+}
+
 // sessionProximityBonus returns an extra RRF addend for chunks in session-touched
 // files. Files the agent recently read get an extra 1/(rrfK+0) term — equivalent
 // to being ranked first in an additional virtual leg.

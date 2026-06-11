@@ -176,7 +176,7 @@ type Options struct {
 	FusionMode FusionMode
 
 	// FusionAlpha is the dense-lane weight in FusionLinear mode (0 = pure
-	// BM25, 1 = pure dense). Zero defaults to 0.5. Set via DEX_FUSION_ALPHA.
+	// BM25, 1 = pure dense). Zero defaults to 0.2. Set via DEX_FUSION_ALPHA.
 	FusionAlpha float32
 }
 
@@ -2302,7 +2302,7 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	var rrf map[int64]float32
 	if s.opts.FusionMode == FusionLinear {
 		// Convex combination on min-max normalised scores.
-		// alpha (DEX_FUSION_ALPHA) is the dense weight; 0 defaults to 0.5.
+		// alpha (DEX_FUSION_ALPHA) is the dense weight; 0 defaults to 0.2.
 		rrf = fuseLinear(semCosine, bm25Score, s.opts.FusionAlpha)
 	} else {
 		// Weighted RRF. Weights are query-type-adaptive (SACL EMNLP 2025):
@@ -2335,9 +2335,7 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	// Session graph proximity boost (#118): files the agent recently
 	// touched in this session get an extra RRF addend, making search
 	// context-aware without explicit path filtering.
-	for id, bonus := range s.sessionProximityBonus(ctx, pathFor) {
-		rrf[id] += bonus
-	}
+	s.applyProximityBonus(ctx, rrf, pathFor)
 
 	fused := make([]scored, 0, len(rrf))
 	for id, r := range rrf {
