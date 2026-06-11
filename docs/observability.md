@@ -1,68 +1,91 @@
 # dex observability
 
-## Log field conventions
+dex uses Go's `log/slog` throughout. All structured log output goes to
+`os.Stderr` in text format by default.
 
-All structured log output from dex follows these rules:
+## Canonical attribute schema
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `subsystem` | string | Source subsystem (see roster below). Attached via `.With()` at logger construction — every line from a subsystem carries it automatically. |
-| `duration_ms` | int64 | Elapsed time in integer milliseconds. Always `int64`, never a string duration. Use `logx.DurMS(d)` at call sites. |
-| `err` | error | Error value. Use the bare key `"err"`, not `"error"`. |
-| `path` | string | File path (relative to project root). |
-| `root` | string | Project root (absolute path). |
-| `dir` | string | Package or directory path (relative to project root). |
-| `kind` | string | Chunk kind (`file_summary`, `chunk_summary`, `package_summary`, `repo_summary`). |
-| `count` | int | Row or item count in context-specific log messages. |
-| `batch` | int | Current batch number (1-based) in a multi-batch loop. |
-| `batch_total` | int | Total number of batches in a multi-batch loop. |
-| `chunks` | int | Number of chunks in the current operation. |
-| `start_line` | int | Start line of a chunk within its source file. |
-| `op` | string | Optional operation name when a subsystem runs multiple distinct operations (e.g. `"embed"`, `"walk"`, `"prune"`). |
+The helpers in `internal/logx/logx.go` produce these canonical keys. Use
+them instead of bare `slog.String`/`slog.Int` to keep log output consistent
+and machine-parseable across subsystems.
 
-Durations are always `int64` milliseconds (`duration_ms`) for machine parseability. Never log raw `time.Duration` values (they serialize as `"123ms"` strings, which break numeric queries).
+| Key            | Helper              | Type    | Meaning |
+|----------------|---------------------|---------|---------|
+| `duration_ms`  | `logx.DurMS(d)`     | int64   | elapsed time in milliseconds |
+| `path`         | `logx.Path(s)`      | string  | filesystem or logical path (do not use `"root"` or `"dir"`) |
+| `phase`        | `logx.Phase(s)`     | string  | pipeline phase (`start`, `walk`, `embed`, `summarize`, `done`, …) |
+| `kind`         | `logx.Kind(s)`      | string  | chunk or entity kind |
+| `count`        | `logx.Count(n)`     | int     | generic item count |
+| `model`        | `logx.Model(s)`     | string  | model identifier |
+
+Keys outside this set are fine for context-specific fields (`err`, `op`,
+`start_line`, `debounce`, `batch`, `chunks`, …) but must not shadow canonical
+keys under aliases (`"root"` or `"dir"` instead of `"path"`).
+
+Durations are always `int64` milliseconds (`duration_ms`) for machine
+parseability. Never log raw `time.Duration` values (they serialize as `"123ms"`
+strings and break numeric queries).
 
 ## Subsystem roster
 
-| `subsystem` | Package | Logger origin |
-|-------------|---------|---------------|
-| `indexer` | `internal/index` | `index.New()` — tags the indexer logger at construction |
-| `drain` | `internal/index` | `index.New()` — derived alongside `indexer` from the same base logger |
-| `watch` | `internal/watch` | `watch.New()` — tags at construction |
-| `graph` | `internal/graph` | `graph.New()` — tags at construction |
-| `mcp` | `internal/mcp` | `mcp.(*Server).RunHTTP()` — tags before the handler loop |
+Subsystems attach a fixed `subsystem` key at logger construction:
 
-`indexer` and `drain` share a common parent logger (set by the caller) but carry distinct `subsystem` tags so their lines are independently filterable.
+```go
+logger = logger.With("subsystem", "watch")
+```
 
-## Adding a new subsystem
+| `subsystem` | Package | Origin |
+|-------------|---------|--------|
+| `indexer`   | `internal/index` | `index.New()` |
+| `drain`     | `internal/index` | derived alongside `indexer` from the same base logger |
+| `watch`     | `internal/watch` | `watch.New()` |
+| `graph`     | `internal/graph` | `graph.New()` |
+| `mcp`       | `internal/mcp`   | `mcp.(*Server).RunHTTP()` |
 
-1. At the package's `New()` / construction point, derive the logger:
-   ```go
-   logger = logger.With("subsystem", "mysubsystem")
-   ```
-2. If the package has distinct internal components (like indexer/drain), derive separate loggers from the same base _before_ tagging either:
-   ```go
-   subA := base.With("subsystem", "a")
-   subB := base.With("subsystem", "b")
-   ```
-3. Use `logx.DurMS(elapsed)` for any timing field.
+## Log levels
 
-## Example queries
+| Level   | When |
+|---------|------|
+| `INFO`  | normal operational milestones (phase transitions, reindex complete, listen ready) |
+| `WARN`  | recoverable errors that don't stop the run (embed failed for one chunk, stale GC error) |
+| `ERROR` | fatal errors immediately before `os.Exit` or error return |
+| `DEBUG` | per-file/per-chunk detail; off by default |
 
-### grep / ripgrep
+## grep / ripgrep recipes
 
 ```sh
 # All drain activity
-dex serve 2>&1 | grep 'subsystem=drain'
+dex serve . 2>&1 | grep 'subsystem=drain'
 
 # Slow embed batches (>500 ms)
-dex serve 2>&1 | grep 'duration_ms=' | awk -F'duration_ms=' '{print $2, $0}' | awk '$1>500'
+dex serve . 2>&1 | grep 'duration_ms=' | awk -F'duration_ms=' '{print $2, $0}' | awk '$1>500'
 
 # Watch re-index events
-dex serve 2>&1 | grep 'subsystem=watch.*re-indexed'
+dex serve . 2>&1 | grep 'subsystem=watch.*re-indexed'
+
+# Index phase transitions
+dex index . 2>&1 | grep 'phase='
 ```
 
-### Loki (LogQL)
+## jq recipes (JSON handler)
+
+Switch to JSON output by setting `DEX_LOG_FORMAT=json` (or wiring a JSON
+handler in `cliLogger()`), then:
+
+```sh
+dex serve . 2>&1 | tee dex.log
+
+# Filter by phase
+jq 'select(.phase == "walk")' dex.log
+
+# Slowest index runs
+jq 'select(.phase == "done") | {time, path, duration_ms, chunks_seen}' dex.log
+
+# Embed errors only
+jq 'select(.level == "WARN" and (.msg | contains("embed")))' dex.log
+```
+
+## Loki (LogQL)
 
 ```logql
 # All drain lines
@@ -75,20 +98,12 @@ dex serve 2>&1 | grep 'subsystem=watch.*re-indexed'
 {job="dex"} | logfmt | err != "" | keep subsystem, err
 ```
 
-### jq (JSON handler output)
+## Adding a new subsystem
 
-```sh
-# Switch to JSON output by setting the handler in cmd/dex/main.go's cliLogger()
-dex serve 2>&1 | jq -c 'select(.subsystem=="drain") | {msg,duration_ms}'
-```
-
-## logx package
-
-`internal/logx` is the single source of truth for shared attr helpers:
-
-```go
-// DurMS returns a slog.Attr for duration as int64 milliseconds.
-logx.DurMS(time.Since(start))   // → duration_ms=<n>
-```
-
-Add new helpers here (not inline at call sites) if a field shape is reused across subsystems.
+1. At the package's `New()` / construction point, derive the logger:
+   ```go
+   logger = logger.With("subsystem", "mysubsystem")
+   ```
+2. For packages with distinct internal components (like `indexer`/`drain`),
+   derive separate loggers from the same base before tagging either.
+3. Use canonical `logx.*` helpers for timing, paths, phases, counts, and model IDs.

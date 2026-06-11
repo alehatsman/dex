@@ -968,7 +968,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		}
 		totalBatches := (len(toEmbed) + batchSize - 1) / batchSize
 		ix.Options.Logger.Info("index: embedding",
-			"chunks", len(toEmbed),
+			logx.Phase("embed"), "chunks", len(toEmbed),
 			"batches", totalBatches,
 			"batch_size", batchSize)
 		embedStart := time.Now()
@@ -1072,7 +1072,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 					pkgGroundingsMu.Unlock()
 					summary, err := summarizePackage(egctx, ix.Options.Chat, ix.Options.SummaryModels.Package, j.dir, fileSummaries, grounding)
 					if err != nil {
-						ix.Options.Logger.Warn("package summarize failed", "dir", j.dir, "err", err)
+						ix.Options.Logger.Warn("package summarize failed", logx.Path(j.dir), "err", err)
 						return nil
 					}
 					if strings.TrimSpace(summary) == "" {
@@ -1102,7 +1102,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		}
 		if len(pkgEmbed) > 0 {
 			if ix.Options.Verbose {
-				ix.Options.Logger.Info("embedding package summaries", "count", len(pkgEmbed))
+				ix.Options.Logger.Info("embedding package summaries", logx.Count(len(pkgEmbed)))
 			}
 			rows := make([]store.PendingChunk, len(pkgEmbed))
 			for i, p := range pkgEmbed {
@@ -1199,13 +1199,13 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		return err
 	}
 	if pruned > 0 {
-		ix.Options.Logger.Info("index: pruned stale chunks", "count", pruned)
+		ix.Options.Logger.Info("index: pruned stale chunks", logx.Count(int(pruned)))
 	}
 	if err := ix.Store.SetLastIndexedAt(ctx, startTime); err != nil {
 		return err
 	}
 	ix.Options.Logger.Info("index: done",
-		"chunks_seen", seen,
+		logx.Phase("done"), "chunks_seen", seen,
 		"files_fast_path", mtimeSkips.Load(),
 		"embedded", len(toEmbed),
 		"summaries_generated", summariesGenerated,

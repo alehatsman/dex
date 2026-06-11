@@ -91,7 +91,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		return err
 	}
 	if w.opts.Verbose {
-		w.opts.Logger.Info("watch ready", "root", w.root, "debounce", w.opts.Debounce)
+		w.opts.Logger.Info("watch ready", logx.Path(w.root), "debounce", w.opts.Debounce)
 	}
 
 	// Initial re-index (covers anything that changed while the daemon was
