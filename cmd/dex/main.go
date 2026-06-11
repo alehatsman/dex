@@ -20,7 +20,6 @@
 //	read <file>                   Structural read (signatures/aggressive/entropy); no LLM.
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
-//	index summarize <path>        Drain the pending_summaries queue (CLI-only).
 //	generate <path> <prompt>      Generate code grounded in the project's index.
 //	env                           Print effective env-var configuration.
 //	compact <path>                Concatenate indexable files for LLM prompts (alias: bundle).
@@ -304,12 +303,7 @@ build / maintenance:
                                           AND the Go static graph. Flags: --graph=off
                                           skips graph, --graph=only refreshes just the
                                           graph layer. Other flags: -v, --force,
-                                          --summarize[-defer], --dry-run, --format=text|json
-  dex index summarize <path>         drain pending_summaries: generate summaries
-                                          queued by `+"`dex index --summarize-defer`"+`,
-                                          embed them, upsert as summary chunks, then
-                                          cascade to package + repo summaries
-  dex generate <path> <prompt>       RAG: top-k chunks → chat endpoint
+                                          --dry-run, --format=text|json  dex generate <path> <prompt>       RAG: top-k chunks → chat endpoint
   dex env                            print effective env-var config with sources
                                           Flags: --all, --doc, -v, --format=text|json
   dex compact <path>                 concatenate indexable files under <path>
@@ -1066,10 +1060,8 @@ func clearCacheKeepLock(p *proj.Project) error {
 	return nil
 }
 
-// cmdIndexDispatch peels off `status` / `summarize` subcommands before
+// cmdIndexDispatch peels off the `status` subcommand before
 // falling through to `cmdIndex` (which expects a single path arg).
-// Mirrors the MCP tool layout: `index_status` and `index summarize`
-// live under the `index` group on the CLI side.
 func cmdIndexDispatch(ctx context.Context, args []string) error {
 	if len(args) >= 1 {
 		switch args[0] {
@@ -1989,13 +1981,6 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		})
 		// Action hints only on the per-project view — the
 		// multi-project listing keeps the per-block content uniform.
-		if stats.PendingSummaries > 0 && !stale {
-			if os.Getenv("DEX_SUMMARY_URL") != "" || os.Getenv("DEX_CHAT_URL") != "" {
-				fmt.Printf("    → `dex watch` will drain in the background, or run: dex index summarize %s\n", p.Root)
-			} else {
-				fmt.Printf("    → set DEX_SUMMARY_URL or DEX_CHAT_URL to enable summary draining\n")
-			}
-		}
 		if stale {
 			fmt.Printf("    → embed model changed — run: dex reindex %s\n", p.Root)
 		}
@@ -2214,10 +2199,6 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 	return nil
 }
 
-// ─── index summarize ───────────────────────────────────────────────────────
-
-// cmdIndexSummarize drains the pending_summaries queue: generates
-
 // ─── nuke ──────────────────────────────────────────────────────────────────
 
 func cmdNuke(_ context.Context, args []string) error {
@@ -2419,7 +2400,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	fmt.Fprintf(os.Stderr, "✓ reindexed %s\n", p.Root)
 	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
 	if stats.PendingSummaries > 0 {
-		fmt.Fprintf(os.Stderr, "  summaries queued: %d  (run `dex index summarize %s` or let watch drain)\n", stats.PendingSummaries, p.Root)
+		fmt.Fprintf(os.Stderr, "  summaries queued: %d\n", stats.PendingSummaries)
 	}
 	if gstats != nil {
 		_ = reportGraphStats(p.Root, gstats, "text")
@@ -2509,7 +2490,7 @@ func envDuration(name string, def time.Duration) time.Duration {
 func cmdWatch(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
 	setHelp(fs,
-		"Keep the index fresh as files change (foreground; runs chunk + graph after each debounce). When DEX_SUMMARY_URL (or DEX_CHAT_URL) is configured, drains pending summaries in the background between saves.",
+		"Keep the index fresh as files change (foreground; runs chunk + graph after each debounce).",
 		"dex watch [flags] <path>")
 	verbose := fs.Bool("v", false, "verbose")
 	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")

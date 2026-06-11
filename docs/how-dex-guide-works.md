@@ -1,41 +1,30 @@
 # How LLM_GUIDE.md is generated
 
-Two-phase model. The LLM work happens at **index time**, not guide
-time. Each module section in the output is a hybrid: an LLM-generated
-prose paragraph for narrative flavor, followed by mechanical
-ground-truth data pulled from the static call graph (no LLM,
-hallucination-proof).
+Two-phase model. Phase 1 (summarization) and phase 2 (rendering) are
+decoupled — the guide renders from whatever summary chunks already
+exist in the store. Zero LLM calls happen at render time.
 
-## Phase 1: index produces summary chunks
+## Phase 1: summaries in the store
 
-`dex index <path> --summarize --summarize-defer=false` runs six passes
-(`internal/index/index.go`):
+`dex guide` reads two kinds of chunks from the store:
 
-| Pass | What | Produces |
-|---|---|---|
-| 1 | walk + tree-sitter chunk | raw code chunks |
-| 2 | embed + upsert | `chunks` rows + sqlite-vec + FTS5 |
-| 3 | per-chunk summary | `chunk_summary` chunks |
-| 4 | prune unseen | drops stale rows |
-| **5** | **per-package summary** | **`package_summary` chunks (one per directory)** |
-| **6** | **repo summary** | **`repo_summary` chunk at path="."** |
+| Kind | What |
+|---|---|
+| `package_summary` | LLM-generated prose per directory |
+| `repo_summary` | single repo-level overview |
 
-Pass 5 (`summarizePackage`, `internal/index/index.go:921`) feeds the
-`file_summary` content of every file in a directory into the chat
-model, gets back a package-level overview.
+These chunks are written by the summarization pipeline. As of #314, the
+pipeline is no longer triggered automatically by `dex index`. Chunks
+from a previous summarization run persist and continue to feed the
+guide; a fresh index with no prior summaries produces a guide with empty
+prose sections.
 
-Pass 6 (`summarizeRepo`, `internal/index/index.go:947`) feeds all
-`package_summary` rows into the chat model, gets back the repo
-overview. Capped at 1200 tokens with `FinishReason=length` treated as
-an error so a truncated overview never replaces a good one.
+**Cache keys**: each summary is stored with a deterministic SHA over its
+inputs. Re-summarizing with no changes → cache hits → no LLM calls.
 
 The chat client is OpenAI-compatible (`internal/chat/client.go`) —
-Ollama, vLLM, anything that speaks `/v1/chat/completions`. Default for
-summary work is `qwen2.5-coder:7b` via `DEX_SUMMARY_URL`.
-
-**Cache keys**: each summary is stored with a deterministic SHA over
-its inputs (file SHAs for package, package contents for repo).
-Re-indexing with no changes → cache hits → no LLM calls.
+Ollama, vLLM, anything that speaks `/v1/chat/completions`. Configuration
+is via `DEX_SUMMARY_URL` / `DEX_SUMMARY_MODEL`.
 
 ## Phase 2: dex guide renders
 
@@ -100,41 +89,13 @@ Each module section combines LLM prose with graph-grounded data:
 
 ## Why the split
 
-Splitting "produce summaries" from "format guide" gives:
+Separating "produce summaries" from "format guide" gives:
 
-- **Cheap re-renders.** The guide can re-run instantly because nothing
-  about formatting needs an LLM.
-- **Incremental.** Only changed files re-summarize during `dex index`
-  (mtime + content_sha1 fast paths). The guide notices via
-  `max(last_seen_at)` ticking forward.
-- **Reusable summaries.** The same `package_summary` chunks already
-  power `view summarize`, `ask`'s suggested-reads, and MCP context
-  routing — the guide is a new consumer, not a new producer.
+- **Cheap re-renders.** The guide can re-run instantly because formatting
+  requires no LLM.
+- **Reusable summaries.** The same `package_summary` chunks power `ask`'s
+  suggested-reads and MCP context routing — the guide is a new consumer,
+  not a new producer.
 - **Hallucination resistance.** LLM prose carries the narrative; graph
   data carries the facts. If they disagree, the facts are the source
   of truth and a reader can see both.
-
-## Pre-commit chain
-
-```
-dex index . --summarize    # fast path on unchanged files; LLM only on touched
-dex guide .                # format → LLM_GUIDE.md + manifest
-```
-
-First half does the (potentially) slow work; second half is always
-near-instant. See `scripts/pre-commit-guide.sh` for an installable
-hook.
-
-## Configuration
-
-`.dex/guide.toml` (optional):
-
-```toml
-[guide]
-output = "LLM_GUIDE.md"
-```
-
-Missing file → defaults. There is no `[ollama]` block — the renderer
-makes no LLM calls. Summarization itself is configured via
-`DEX_SUMMARY_URL` / `DEX_SUMMARY_MODEL` environment variables, the
-same as the rest of the index pipeline.

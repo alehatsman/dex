@@ -31,50 +31,24 @@ and is never read from the file. `dex env` shows the per-setting source
 ## 2. ✅ Garbage-collect stale `package_summary` rows on cache miss
 
 **Shipped** in commit `04a872c`. `Store.DeleteOtherSummariesForPath`
-(`internal/store/store.go`) runs right after each summary `UpsertMany`
-at four sites — Pass 5 + Pass 6 in `internal/index/index.go`, and
-`runPackageJobs` + `cascadeRepoSummary` in `internal/index/drain.go`.
-GC failure is `Warn`-logged, not fatal: a stale row is recoverable, a
-missing fresh row is not. `TestDeleteOtherSummariesForPath` asserts
-exactly one row per `(path, kind)` after sequential writes and that
-sibling paths / sibling kinds are untouched.
+ran right after each summary `UpsertMany` at four sites in
+`internal/index/index.go` and `internal/index/drain.go`.
+
+> **Superseded by #314.** The summarization pipeline was removed; the
+> four call sites no longer exist. `DeleteOtherSummariesForPath` and its
+> test were deleted in #321.
 
 ---
 
 ## 3. ✅ Ground summarizer prompts with graph data
 
-**Shipped** in commit `98b354e`. New helpers in
-`internal/index/grounding.go` feed `summarizePackage` an EXPORTED
-SYMBOLS + PROJECT IMPORTS section (from `ExportedSymbolsByDir` +
-module-prefix-trimmed `ImportsForDir`) and `summarizeRepo` a PACKAGES
-(dir → top symbols) section (from `TopCentralByDir`). System prompts
-gained a GROUNDING RULE: backtick-wrapped identifiers in the output
-must come from those lists. Sections render only when grounding is
-non-empty so the first-index / non-Go / empty-graph fallback keeps the
-original prompt shape. `packageSummaryPromptVersion` and bumped
-`repoSummaryPromptVersion` (v3→v4) fold into the respective cache keys
-so prompt iterations re-run on the next index pass.
-`grounding_test.go` exercises the prompt builders directly. A
-full-pipeline sweep test that diffs generated `LLM_GUIDE.md`
-identifiers against `graph_nodes` is still useful follow-up work — the
-prompt-builder tests cover the structural guarantee but not the model's
-adherence to it.
+**Shipped** in commit `98b354e`. `internal/index/grounding.go` fed
+`summarizePackage` and `summarizeRepo` with graph-derived grounding
+sections (exported symbols, project imports, top-central nodes).
 
-**Original entry points** (kept for reference):
-- `internal/index/index.go:944` — `summarizePackage`. Today it gets
-  `dir` + concatenated file summaries.
-- Add an `extraContext` arg: pre-resolved list of exported symbols
-  (`Store.ExportedSymbolsByDir`) and project-imports
-  (`Store.ImportsForDir`, trimmed to project module prefix). Caller
-  fetches once per directory.
-- Update prompt: "constrain claims to the symbols and imports listed
-  below; do not invent identifiers not in this list."
-- Same treatment for `summarizeRepo`: pass the list of package paths +
-  the top-N most central symbols per package.
-
-**Done when.** A regenerated `LLM_GUIDE.md` has no module-summary
-prose paragraph mentioning identifiers absent from the package's
-`graph_nodes`. Validated by a sweep test.
+> **Superseded by #314.** The summarization pipeline was removed;
+> `internal/index/grounding.go`, `summarizePackage`, and `summarizeRepo`
+> were deleted.
 
 ---
 

@@ -1138,32 +1138,6 @@ func (s *Store) SetLastIndexedAt(ctx context.Context, t time.Time) error {
 	return err
 }
 
-// SetLastSummarizedAt records the wall-clock time of the most recent
-// successful summary generation. Bumped by the drainer whenever a
-// batch produces new summary chunks (chunk / file / package / repo).
-// Cache-hit batches that only TouchSeen existing summaries do not bump.
-func (s *Store) SetLastSummarizedAt(ctx context.Context, t time.Time) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO meta(key,value) VALUES('`+metaLastSummarizedAt+`', ?)
-		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-		strconv.FormatInt(t.UnixNano(), 10))
-	return err
-}
-
-// IncrSummaryGenerated atomically increments the cumulative summary
-// generation counter by delta. Called by the drainer alongside
-// SetLastSummarizedAt so status can show "X generated so far".
-func (s *Store) IncrSummaryGenerated(ctx context.Context, delta int) error {
-	if delta <= 0 {
-		return nil
-	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO meta(key,value) VALUES('`+metaSummaryGenerated+`', ?)
-		 ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+? AS TEXT)`,
-		strconv.Itoa(delta), delta)
-	return err
-}
-
 // EmbedModel returns the embedding model identity previously recorded
 // for this index, or "" if none has been recorded yet.
 func (s *Store) EmbedModel() string {
@@ -1553,23 +1527,6 @@ func (s *Store) SeenTime(ctx context.Context, now time.Time) (time.Time, error) 
 		ns = maxSeen.Int64 + 1
 	}
 	return time.Unix(0, ns), nil
-}
-
-// DeleteOtherSummariesForPath removes every chunk at (path, kind) whose
-// content_sha1 differs from keepSHA. Call it right after upserting a
-// fresh package_summary or repo_summary row to evict the prior
-// generation's row — PruneUnseen leaves *_summary kinds alone (see its
-// doc), so without this they accumulate as the cache key drifts across
-// edits.
-func (s *Store) DeleteOtherSummariesForPath(ctx context.Context, path, kind, keepSHA string) (int64, error) {
-	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM chunks
-		   WHERE path=? AND kind=? AND content_sha1<>?`,
-		path, kind, keepSHA)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
 }
 
 // DeletePath drops all chunks for a single relative path.

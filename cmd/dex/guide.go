@@ -45,7 +45,7 @@ func cmdGuide(ctx context.Context, args []string) error {
 	}
 	if _, err := os.Stat(p.DBPath); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("no index for %s — run `dex index %s --summarize` first", p.Root, p.Root)
+			return fmt.Errorf("no index for %s — run `dex index %s` first", p.Root, p.Root)
 		}
 		return err
 	}
@@ -74,13 +74,9 @@ func cmdGuide(ctx context.Context, args []string) error {
 
 	// Print truncation warnings regardless of mode — these signal an
 	// older summary in the index that the guard now rejects but that
-	// still feeds the guide. Surface them so the user knows to
-	// re-summarize.
+	// still feeds the guide.
 	for _, w := range res.Warnings {
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
-	}
-	if len(res.Warnings) > 0 {
-		fmt.Fprintln(os.Stderr, "  → re-run `dex index <path> --summarize` to refresh truncated summaries")
 	}
 
 	switch {
