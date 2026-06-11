@@ -238,7 +238,6 @@ _dex() {
                                 '--dry-run[preview what would be indexed without writing]' \
                                 '-v[verbose]' \
                                 '--force[bypass guards]' \
-                                '--summarize[generate summaries]' \
                                 '--wait[wait for lock]' \
                                 '*:path:_files -/'
                             ;;

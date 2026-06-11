@@ -355,35 +355,6 @@ func (s *Store) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_graph_edges_src       ON graph_edges(src_id, kind)`,
 		`CREATE INDEX IF NOT EXISTS idx_graph_edges_dst       ON graph_edges(dst_id, kind)`,
 		`CREATE INDEX IF NOT EXISTS idx_graph_edges_last_seen ON graph_edges(last_seen_at)`,
-		// pending_summaries holds work queued by `dex index --summarize`
-		// when running in deferred mode. Each row is one summarization job
-		// that the drainer (`dex index summarize` or watch idle ticks) will
-		// pick up later. UNIQUE(path,kind,content_sha1) makes Enqueue
-		// idempotent — repeating an index run on the same source content
-		// doesn't multiply queue entries.
-		//
-		// content_sha1 is the SHA of the *target* summary chunk (what
-		// ultimately lands in chunks.content_sha1 once drained), so a
-		// pending row that already has a matching chunks row can be
-		// deduped at enqueue time. source_sha1 is set on chunk_summary
-		// rows to let the drainer look up the source chunk's content in
-		// chunks (path, content_sha1=source_sha1) without re-parsing.
-		`CREATE TABLE IF NOT EXISTS pending_summaries (
-		   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-		   path          TEXT NOT NULL,
-		   kind          TEXT NOT NULL,
-		   content_sha1  TEXT NOT NULL,
-		   start_line    INTEGER NOT NULL DEFAULT 0,
-		   end_line      INTEGER NOT NULL DEFAULT 0,
-		   chunk_kind    TEXT NOT NULL DEFAULT '',
-		   chunk_name    TEXT NOT NULL DEFAULT '',
-		   source_sha1   TEXT NOT NULL DEFAULT '',
-		   queued_at     INTEGER NOT NULL,
-		   attempts      INTEGER NOT NULL DEFAULT 0,
-		   last_error    TEXT NOT NULL DEFAULT '',
-		   UNIQUE(path, kind, content_sha1)
-		 )`,
-		`CREATE INDEX IF NOT EXISTS idx_pending_summaries_queued ON pending_summaries(queued_at)`,
 		// sessions / session_files — lightweight cross-call memory: current
 		// task, notes, and recently-accessed files. One session per project
 		// (highest id = current). Files cascade-delete with the session.
@@ -1403,11 +1374,10 @@ func (s *Store) TouchPath(ctx context.Context, path string, now time.Time) (int6
 // re-index to remove stale rows for files that disappeared.
 //
 // The staleness delete excludes `package_summary` and `repo_summary` by
-// kind. Defer-mode index passes (used by `dex watch` and the MCP
-// auto-watcher) skip Pass 5/6 entirely, which means they never bump
-// last_seen_at on those rows — a staleness test would then destroy good
-// summaries every time the watcher fires, and the next `dex guide` run
-// would error with "no summaries".
+// kind. The indexer never bumps last_seen_at on those rows (they carry
+// over from pre-#314 indexes; nothing regenerates them now), so a
+// staleness test would destroy good summaries every prune, and the next
+// `dex guide` run would error with "no summaries".
 //
 // git_commit chunks (path "git:<hash>") are excluded for the same reason:
 // the file walk never bumps their last_seen_at, so without the carve-out a
@@ -1418,10 +1388,9 @@ func (s *Store) TouchPath(ctx context.Context, path string, now time.Time) (int6
 //
 // But that kind-exclusion also stranded summaries for *deleted*
 // directories: once a dir's files are gone, its package_summary can
-// never be reached by the staleness delete and the drainer never
-// regenerates it (there's nothing left to summarize), so it lingered in
-// search until a full `dex reindex`. So after the content delete we
-// drop any package_summary with no surviving descendant content chunk.
+// never be reached by the staleness delete, so it lingers in search
+// until a full `dex reindex`. So after the content delete we drop any
+// package_summary with no surviving descendant content chunk.
 // A live directory still has content chunks (the walk's mtime/SHA
 // fast-path bumps their last_seen_at every fire), so its summary is
 // preserved exactly as before — only genuinely orphaned ones go. The
@@ -1580,10 +1549,10 @@ func FormatHits(hits []Hit) string {
 }
 
 // dedupChunkSummaries drops chunk_summary hits whose source chunk already
-// appears at the same path:start_line in the result set. When --summarize
-// was used during indexing both a code chunk and its prose summary land in
-// the index; without dedup they consume two top-k slots for the same
-// function. Ordering is preserved.
+// appears at the same path:start_line in the result set. On indexes that
+// carry chunk summaries alongside code (pre-#314), both a code chunk and
+// its prose summary land in the index; without dedup they consume two
+// top-k slots for the same function. Ordering is preserved.
 func dedupChunkSummaries(hits []Hit) []Hit {
 	type locKey struct {
 		path string
@@ -1631,30 +1600,6 @@ func (s *Store) FileSummariesForPaths(ctx context.Context, paths []string) ([]st
 			return nil, err
 		}
 		out = append(out, content)
-	}
-	return out, rows.Err()
-}
-
-// FileSummarySHAs returns path → content_sha1 for every file_summary chunk
-// in the store. Used by the indexer's mtime fast-path under --summarize:
-// fetching all SHAs once up front lets the walker decide fast-path
-// eligibility synchronously without N round-trips, and the recovered SHA
-// feeds Pass 5's package_summary cache key so dirs whose files all took
-// the fast-path don't regenerate.
-func (s *Store) FileSummarySHAs(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT path, content_sha1 FROM chunks WHERE kind = 'file_summary'`)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	out := make(map[string]string)
-	for rows.Next() {
-		var path, sha string
-		if err := rows.Scan(&path, &sha); err != nil {
-			return nil, err
-		}
-		out[path] = sha
 	}
 	return out, rows.Err()
 }

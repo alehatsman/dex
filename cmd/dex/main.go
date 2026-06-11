@@ -967,7 +967,7 @@ func rerankPool() int {
 // ─── index ─────────────────────────────────────────────────────────────────
 
 // acquireProjectLock takes the per-project indexer lock. cmdName labels
-// the holder ("index"/"summarize"/"reindex"/"watch") and phase reports
+// the holder ("index"/"reindex"/"watch") and phase reports
 // the current pipeline stage. wait blocks until the lock is free;
 // breakLock discards an existing lockfile (only safe when the prior
 // holder is gone — a live flock cannot be stolen).

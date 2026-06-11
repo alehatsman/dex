@@ -61,11 +61,6 @@ const (
 	KindGitCommit      = "git_commit"
 )
 
-// KindChunkContext is the pending_summaries kind for contextual-retrieval
-// jobs. It is NOT a chunk.Kind — context sentences are stored back into
-// the source chunk's context_text column, not as a new chunk row.
-const KindChunkContext = "chunk_context"
-
 // IsSummaryKind reports whether kind is one of the chat-synthesized
 // summary kinds. The chunk row's Content for these holds prose, not a
 // file slice — readers should surface it directly instead of re-reading

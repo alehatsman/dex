@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -53,18 +52,6 @@ type Indexer struct {
 	Ignore  *ignore.Matcher
 	Options Options
 }
-
-// ErrNoEmbedder is returned by Run when the indexer has no embedder wired
-// (the lean profile, DEX_EMBED_ENGINE=none). Indexing currently requires
-// vectors; the lean profile is a serve/query mode. Build the index with an
-// embedder — the CPU-only `-tags onnx` engine needs no GPU — then serve it
-// with DEX_EMBED_ENGINE=none. Pure no-embedder indexing is tracked in #306.
-// See docs/lean-profile.md.
-var ErrNoEmbedder = errors.New(
-	"cannot index without an embedder: DEX_EMBED_ENGINE=none is a lean serve " +
-		"profile — build the index with an embedder (the CPU-only `-tags onnx` " +
-		"engine needs no GPU, or point at an HTTP backend), then serve it with " +
-		"DEX_EMBED_ENGINE=none (see docs/lean-profile.md)")
 
 func New(p *proj.Project, st *store.Store, em embed.Embedder, ig *ignore.Matcher, opt Options) *Indexer {
 	if opt.MaxFileSize <= 0 {
@@ -281,14 +268,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			return nil
 		}
 		// Mtime fast-path: file hasn't changed since the last successful
-		// index → just bump last_seen_at on its existing chunks.
-		// Under --summarize the fast-path requires that the previous run
-		// produced a file_summary row for this path. If so, the same
-		// TouchPath bumps the file_summary, chunk_summary and code chunks
-		// in one shot (they all share `path = rel`), and we recover the
-		// stored file_summary SHA so Pass 5's package_summary cache key
-		// still resolves cleanly. If not, fall through to the slow path
-		// so the missing summaries get generated.
+		// index → just bump last_seen_at on its existing chunks
+		// (TouchPath updates every chunk sharing `path = rel` in one shot).
 		//
 		if !lastIndexed.IsZero() && !info.ModTime().After(lastIndexed) {
 			rows, terr := ix.Store.TouchPath(ctx, rel, startTime)
@@ -324,10 +305,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	}
 
 	// Pass 2: one batch query for all slow-path files instead of N per-file
-	// queries. Also include unique package dirs so we can check package
-	// summary cache without extra round-trips in Pass 5. Dirs that hosted
-	// only fast-path-summarize files (no slow-path siblings) are included
-	// too, so their package_summary cache key still resolves.
+	// queries.
 	slowPaths := make([]string, len(slowFiles))
 	for i, sf := range slowFiles {
 		slowPaths[i] = sf.rel
@@ -433,9 +411,8 @@ type pending struct {
 }
 
 // embedAndUpsertBatch embeds one batch of pending chunks in a single
-// Embed.Embed call and upserts them under startTime. Shared by the
-// streaming summary committer (non-defer summarize, dex #233) and the
-// post-pass batch embed loop so both have one tested embed+upsert path.
+// Embed.Embed call and upserts them under startTime, driven by the
+// post-pass batch embed loop.
 func (ix *Indexer) embedAndUpsertBatch(ctx context.Context, batch []pending, startTime time.Time) error {
 	rows := make([]store.PendingChunk, len(batch))
 	for i, p := range batch {
