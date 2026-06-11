@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -1123,31 +1124,7 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVe
 		}
 	}
 
-	// Symbol KNN seeding: if a query vector is available and node_vecs is
-	// populated, find the closest symbol nodes and seed from their files.
-	// These seeds are structurally grounded (they name what the query is
-	// asking about), so they get weight 1.0.
-	symbolSeeded := false
-	if len(queryVec) > 0 {
-		if nvCount, err := s.NodeVecCount(ctx); err == nil && nvCount > 0 {
-			if _, nodeFiles, err := s.NodeKNN(ctx, queryVec, 5); err == nil {
-				for _, fp := range nodeFiles {
-					if fp == "" {
-						continue
-					}
-					if _, dup := seen[fp]; !dup {
-						seeds = append(seeds, SeedFile{Path: fp, Weight: 1.0})
-						seen[fp] = struct{}{}
-					}
-				}
-				symbolSeeded = len(nodeFiles) > 0
-			}
-		}
-	}
-
-	// Normalize hit scores to [0,1] and add as seeds.
-	// When symbol KNN seeded, we still include primary hits so that
-	// structurally adjacent but semantically distant files also propagate.
+	// Primary hits seed BFS (structural discovery from what's already relevant).
 	var maxScore float32
 	for _, h := range hits {
 		if h.Score > maxScore {
@@ -1157,7 +1134,6 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVe
 	if maxScore <= 0 {
 		maxScore = 1
 	}
-	_ = symbolSeeded // reserved for future tuning
 	for _, h := range hits {
 		if _, dup := seen[h.Path]; !dup {
 			seeds = append(seeds, SeedFile{Path: h.Path, Weight: h.Score / maxScore})
@@ -1166,18 +1142,12 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVe
 	}
 
 	activated, err := s.spreadActivation(ctx, seeds, 15)
-	if err != nil || len(activated) == 0 {
+	if err != nil {
 		return hits
 	}
 
 	// Weight each activated file by γ^hop so 1-hop structural neighbors boost
-	// more than distant ones. γ is tunable via Options.GraphGamma.
-	//
-	// Note: spreadActivation already trimmed to its top-n by *energy*, so a
-	// 1-hop neighbor diluted by heavy fan-out can be dropped before it earns
-	// its strong γ¹ weight here — selection is by energy, weighting by hop.
-	// The n=15 pool is generous enough that this is rare; revisit if the
-	// γ-sweep shows low-hop recall loss.
+	// more than distant ones.
 	gamma := s.opts.GraphGamma
 	if gamma <= 0 {
 		gamma = defaultGraphGamma
@@ -1186,6 +1156,8 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVe
 	if laneWeight <= 0 {
 		laneWeight = defaultGraphLaneWeight
 	}
+
+	// BFS graph hits.
 	paths := make([]string, len(activated))
 	weightByPath := make(map[string]float32, len(activated))
 	for i, a := range activated {
@@ -1196,9 +1168,46 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVe
 		}
 		weightByPath[a.Path] = pow32(gamma, hop)
 	}
+	var graphHits []Hit
+	if len(paths) > 0 {
+		graphHits, err = s.HitsForFiles(ctx, paths, n*2)
+		if err != nil {
+			return hits
+		}
+	}
 
-	graphHits, err := s.HitsForFiles(ctx, paths, n*2)
-	if err != nil || len(graphHits) == 0 {
+	// Symbol KNN structural discovery: find the closest symbol nodes to the
+	// query vector and fetch chunks for files that CALL INTO those nodes.
+	// Using callers (not the nodes themselves) avoids activating definition-side
+	// dependencies that hurt orphan recall. For orphan queries, callers of the
+	// KNN-found definition are the exact import-site targets. For structural
+	// queries, callers of the KNN-found coupled file are the co-coupling targets.
+	if len(queryVec) > 0 {
+		if nvCount, err2 := s.NodeVecCount(ctx); err2 == nil && nvCount > 0 {
+			if _, knnFiles, _, err2 := s.NodeKNN(ctx, queryVec, 3); err2 == nil {
+				var knnSeedFiles []string
+				for _, fp := range knnFiles {
+					if fp != "" {
+						knnSeedFiles = append(knnSeedFiles, fp)
+					}
+				}
+				if callers, err2 := s.CallerFiles(ctx, knnSeedFiles, 20); err2 == nil && len(callers) > 0 {
+					callerHits, err2 := s.HitsForFiles(ctx, callers, n)
+					if err2 == nil {
+						for _, h := range callerHits {
+							if _, ok := weightByPath[h.Path]; !ok {
+								// treat as 1-hop neighbor
+								weightByPath[h.Path] = pow32(gamma, 1)
+							}
+						}
+						graphHits = append(graphHits, callerHits...)
+					}
+				}
+			}
+		}
+	}
+
+	if len(graphHits) == 0 {
 		return hits
 	}
 	return fuseWithGraphNeighbors(hits, graphHits, weightByPath, laneWeight, n)
@@ -1341,28 +1350,64 @@ func (s *Store) SetNodeVecs(ctx context.Context, rows []NodeVecRow, vecs [][]flo
 }
 
 // NodeKNN queries node_vecs for the k nearest nodes to qvec and returns
-// their text IDs and file paths.
-func (s *Store) NodeKNN(ctx context.Context, qvec []float32, k int) (ids, files []string, err error) {
+// their text IDs, file paths, and cosine distances (0=identical, 1=orthogonal).
+func (s *Store) NodeKNN(ctx context.Context, qvec []float32, k int) (ids, files []string, distances []float32, err error) {
 	blob := encodeVec(qvec)
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT gn.id, gn.file_path
+		`SELECT gn.id, gn.file_path, nv.distance
 		 FROM node_vecs nv
 		 JOIN graph_nodes gn ON gn.rowid = nv.rowid
 		 WHERE nv.embedding MATCH ? AND k = ?
 		 ORDER BY nv.distance`, blob, k)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id, fp string
-		if err := rows.Scan(&id, &fp); err != nil {
-			return nil, nil, err
+		var dist float32
+		if err := rows.Scan(&id, &fp, &dist); err != nil {
+			return nil, nil, nil, err
 		}
 		ids = append(ids, id)
 		files = append(files, fp)
+		distances = append(distances, dist)
 	}
-	return ids, files, rows.Err()
+	return ids, files, distances, rows.Err()
+}
+
+// CallerFiles returns up to limit distinct src_file paths from graph_edges
+// whose dst_file is one of the given target files. These are the files that
+// directly call or import the targets — useful for finding usage sites when
+// the KNN search surfaces a definition file.
+func (s *Store) CallerFiles(ctx context.Context, dstFiles []string, limit int) ([]string, error) {
+	if len(dstFiles) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(dstFiles))
+	args := make([]any, len(dstFiles))
+	for i, f := range dstFiles {
+		placeholders[i] = "?"
+		args[i] = f
+	}
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT src_file FROM graph_edges
+		 WHERE dst_file IN (`+strings.Join(placeholders, ",")+`)
+		 LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, err
+		}
+		out = append(out, fp)
+	}
+	return out, rows.Err()
 }
 
 // NodeVecCount returns the number of rows in node_vecs.

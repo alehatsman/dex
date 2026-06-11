@@ -353,7 +353,7 @@ func TestNodeVecEmbedAndKNN(t *testing.T) {
 	}
 
 	// NodeKNN should return n:b as closest to qvec.
-	ids, files, err := st.NodeKNN(ctx, qvec, 2)
+	ids, files, _, err := st.NodeKNN(ctx, qvec, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
