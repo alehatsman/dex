@@ -844,10 +844,11 @@ func pickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, sy
 	// For code-oriented intents we also demote non-implementation paths
 	// (docs and build/CI config) as a tiebreaker, so a README or
 	// Taskfile.yml doesn't beat the .go file that implements the
-	// feature when scores are close. Architecture is the exception —
-	// the README often IS the right read, and build files can reveal
-	// structure.
-	preferCode := intent != IntentArchitecture
+	// feature when scores are close. Architecture and behavior_search
+	// are exceptions — for the former the README often IS the right
+	// read; for the latter a spec/behavior doc may be the best answer
+	// (e.g. specs/watch.md for "how does watch work?").
+	preferCode := intent != IntentArchitecture && intent != IntentBehaviorSearch
 	// usesCentrality intents bucket their scores into 0.05-wide bins and
 	// break ties by PageRank — so a structural hub beats a near-tied
 	// non-hub. Limited to architecture/package_topology where "which

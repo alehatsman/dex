@@ -466,9 +466,10 @@ func (e *graphEnricher) packageTopology() {
 }
 
 // runForIntent dispatches to the right expansion mix for the intent.
-// Default branch (behavior_search / unrecognized) unions
-// symbol-neighborhood + package rollup so the caller always sees
-// structural context when a graph exists.
+// Default branch (unrecognized intents) unions symbol-neighborhood +
+// pkg rollup. behavior_search is explicit: symbol-neighborhood only,
+// no pkg rollup (noisy semHits from help-text blobs would otherwise
+// dump an entire package's function list as graph noise).
 func (e *graphEnricher) runForIntent(intent string) {
 	switch intent {
 	case IntentSymbolLookup, IntentEditingContext:
@@ -497,6 +498,12 @@ func (e *graphEnricher) runForIntent(intent string) {
 		e.packageRollup(pkgs)
 	case IntentPackageTopology:
 		e.packageTopology()
+	case IntentBehaviorSearch:
+		// For behavioral questions the symbol neighborhood is the right
+		// anchor. Package rollup is intentionally omitted: if semantic
+		// hits are noisy (e.g. a help-text blob in main.go), rollup
+		// dumps the entire main package's function list as graph noise.
+		e.symbolNeighborhood()
 	default:
 		e.symbolNeighborhood()
 		e.packageRollup(packagesFromPaths(e.view, e.semHits))

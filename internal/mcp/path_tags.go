@@ -43,7 +43,11 @@ func pathTags(p string) pathTag {
 	switch {
 	case strings.HasSuffix(p, ".yml"),
 		strings.HasSuffix(p, ".yaml"),
-		strings.HasSuffix(p, ".toml"):
+		strings.HasSuffix(p, ".toml"),
+		strings.HasSuffix(p, ".sh"),
+		strings.HasSuffix(p, ".bash"),
+		strings.HasSuffix(p, ".zsh"),
+		strings.HasSuffix(p, ".fish"):
 		tags |= tagBuild
 	}
 	switch base {

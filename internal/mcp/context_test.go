@@ -146,24 +146,29 @@ func TestPickSuggestedReadsCrossLaneBias(t *testing.T) {
 	}
 }
 
-func TestPickSuggestedReadsCodePreferredOverDocs(t *testing.T) {
-	// A README at 0.66 shouldn't beat the .go file at 0.51 for a
-	// behavior_search question — the rerank stage occasionally lets
-	// docs outscore the code they describe, so the router applies a
-	// tiebreaker.
+func TestPickSuggestedReadsDocScoreWinsForBehavior(t *testing.T) {
+	// For behavior_search, a spec/behavior doc scoring higher should
+	// beat a code file — e.g. specs/watch.md is the right answer for
+	// "how does watch work?". No code-preference tiebreaker applies.
 	sem := []SemHit{
 		{Path: "README.md", Score: 0.66},
 		{Path: "internal/store/store.go", Score: 0.51},
 	}
 	got := pickSuggestedReads(IntentBehaviorSearch, sem, nil, nil, nil)
-	if len(got) == 0 || got[0].Path != "internal/store/store.go" {
-		t.Errorf("behavior_search should prefer .go over .md tiebreaker; got %+v", got)
+	if len(got) == 0 || got[0].Path != "README.md" {
+		t.Errorf("behavior_search: higher-scoring doc should win; got %+v", got)
 	}
 
-	// Architecture explicitly welcomes README — no demotion.
+	// Architecture — same: README wins by score.
 	gotArch := pickSuggestedReads(IntentArchitecture, sem, nil, nil, nil)
 	if len(gotArch) == 0 || gotArch[0].Path != "README.md" {
 		t.Errorf("architecture should keep README on top; got %+v", gotArch)
+	}
+
+	// Other code-oriented intents still apply the tiebreaker.
+	gotEdit := pickSuggestedReads(IntentEditingContext, sem, nil, nil, nil)
+	if len(gotEdit) == 0 || gotEdit[0].Path != "internal/store/store.go" {
+		t.Errorf("editing_context should prefer .go over README tiebreaker; got %+v", gotEdit)
 	}
 }
 
