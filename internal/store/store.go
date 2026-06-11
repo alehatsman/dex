@@ -231,6 +231,10 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("ensure vec table: %w", err)
 	}
+	if err := s.ensureNodeVecTable(ctx, s.dim.Load()); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ensure node vec table: %w", err)
+	}
 	return s, nil
 }
 
@@ -664,7 +668,10 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate: agent_msg_category flag: %w", err)
 		}
 	}
-	return s.migrateCoAccessEdges(ctx)
+	if err := s.migrateCoAccessEdges(ctx); err != nil {
+		return err
+	}
+	return s.migrateGraphNodeVec(ctx)
 }
 
 func (s *Store) migrateCoAccessEdges(ctx context.Context) error {
@@ -692,6 +699,21 @@ func (s *Store) migrateCoAccessEdges(ctx context.Context) error {
 		}
 	}
 	return s.migrateChunkContext(ctx)
+}
+
+// migrateGraphNodeVec adds vec/vec_hash columns to graph_nodes for symbol KNN.
+func (s *Store) migrateGraphNodeVec(ctx context.Context) error {
+	for _, col := range []struct{ name, def string }{
+		{"vec", "BLOB NOT NULL DEFAULT X''"},
+		{"vec_hash", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if _, err := s.db.ExecContext(ctx,
+			`ALTER TABLE graph_nodes ADD COLUMN `+col.name+` `+col.def); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrateGraphNodeVec: add %s: %w", col.name, err)
+		}
+	}
+	return nil
 }
 
 // migrateChunkContext adds context_text to chunks and updates the FTS5
@@ -899,6 +921,55 @@ func (s *Store) ensureVecTable(ctx context.Context, dim int64) error {
 		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 		metaVecQuant, mode); err != nil {
 		return fmt.Errorf("ensure vec table: record vec_quant: %w", err)
+	}
+	return nil
+}
+
+// ensureNodeVecTable creates the node_vecs sqlite-vec virtual table (always
+// float32) and the triggers that keep it in sync with graph_nodes.vec.
+// A one-shot backfill is run when node_vecs is empty but graph_nodes has rows
+// with non-empty vecs (e.g. after an upgrade).
+func (s *Store) ensureNodeVecTable(ctx context.Context, dim int64) error {
+	if dim == 0 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		`CREATE VIRTUAL TABLE IF NOT EXISTS node_vecs USING vec0(
+		   rowid INTEGER PRIMARY KEY,
+		   embedding FLOAT[%d] distance_metric=cosine
+		 )`, dim)); err != nil {
+		return fmt.Errorf("ensure node vec table: create: %w", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TRIGGER IF NOT EXISTS graph_nodes_vec_au
+		 AFTER UPDATE OF vec ON graph_nodes BEGIN
+		   DELETE FROM node_vecs WHERE rowid = old.rowid;
+		   INSERT INTO node_vecs(rowid, embedding)
+		     SELECT new.rowid, new.vec WHERE length(new.vec) > 0;
+		 END`,
+		`CREATE TRIGGER IF NOT EXISTS graph_nodes_vec_ad
+		 AFTER DELETE ON graph_nodes BEGIN
+		   DELETE FROM node_vecs WHERE rowid = old.rowid;
+		 END`,
+	} {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("ensure node vec table: trigger: %w", err)
+		}
+	}
+	// One-shot backfill for indexes built before this code shipped.
+	var vecRows, nodeRows int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM node_vecs`).Scan(&vecRows); err != nil {
+		return fmt.Errorf("ensure node vec table: count node_vecs: %w", err)
+	}
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM graph_nodes WHERE length(vec) > 0`).Scan(&nodeRows); err != nil {
+		return fmt.Errorf("ensure node vec table: count graph_nodes: %w", err)
+	}
+	if vecRows == 0 && nodeRows > 0 {
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO node_vecs(rowid, embedding) SELECT rowid, vec FROM graph_nodes WHERE length(vec) > 0`); err != nil {
+			return fmt.Errorf("ensure node vec table: backfill: %w", err)
+		}
 	}
 	return nil
 }
@@ -1249,6 +1320,9 @@ func (s *Store) initDim(ctx context.Context, dim int64) error {
 		return err
 	}
 	if err := s.ensureVecTable(ctx, dim); err != nil {
+		return err
+	}
+	if err := s.ensureNodeVecTable(ctx, dim); err != nil {
 		return err
 	}
 	s.dim.Store(dim)
@@ -1953,7 +2027,7 @@ func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string
 	if err != nil || len(hits) == 0 {
 		return hits, err
 	}
-	hits = s.FuseSpreadingActivation(ctx, hits, candidateK)
+	hits = s.FuseSpreadingActivation(ctx, hits, queryVec, candidateK)
 	hits, err = s.RerankFused(ctx, queryText, hits, k)
 	if err != nil {
 		return nil, err

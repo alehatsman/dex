@@ -1081,15 +1081,14 @@ func (s *Store) spreadActivation(ctx context.Context, seeds []SeedFile, n int) (
 	return results, nil
 }
 
-// FuseSpreadingActivation expands the hit set using spreading activation seeded
-// from both the session-recent files and the top semantic hits. Energy spreads
-// along bidirectional graph edges with fan-out normalization and per-hop decay,
-// then each activated file is fused into the RRF score at γ^hop weight — 1-hop
-// structural neighbors boost more than distant ones (γ tunable via
-// Options.GraphGamma, traversal depth via Options.GraphHopCap). Silently
-// returns primary hits unchanged on session absence, empty graph, or any store
-// failure — graph proximity is best-effort and must not degrade search.
-func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) []Hit {
+// FuseSpreadingActivation expands the hit set using spreading activation.
+// When queryVec is non-nil and node_vecs is populated, seeds come from the
+// top-k symbol KNN matches for the query vector (query→symbol→BFS). This
+// finds structurally-coupled files regardless of whether primary semantic
+// hits include the target. Falls back to primary-hit file seeds when
+// node_vecs is empty or KNN returns nothing. Silently returns primary hits
+// unchanged on any store failure — graph proximity is best-effort.
+func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVec []float32, n int) []Hit {
 	if len(hits) == 0 {
 		return hits
 	}
@@ -1124,7 +1123,31 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 		}
 	}
 
+	// Symbol KNN seeding: if a query vector is available and node_vecs is
+	// populated, find the closest symbol nodes and seed from their files.
+	// These seeds are structurally grounded (they name what the query is
+	// asking about), so they get weight 1.0.
+	symbolSeeded := false
+	if len(queryVec) > 0 {
+		if nvCount, err := s.NodeVecCount(ctx); err == nil && nvCount > 0 {
+			if _, nodeFiles, err := s.NodeKNN(ctx, queryVec, 5); err == nil {
+				for _, fp := range nodeFiles {
+					if fp == "" {
+						continue
+					}
+					if _, dup := seen[fp]; !dup {
+						seeds = append(seeds, SeedFile{Path: fp, Weight: 1.0})
+						seen[fp] = struct{}{}
+					}
+				}
+				symbolSeeded = len(nodeFiles) > 0
+			}
+		}
+	}
+
 	// Normalize hit scores to [0,1] and add as seeds.
+	// When symbol KNN seeded, we still include primary hits so that
+	// structurally adjacent but semantically distant files also propagate.
 	var maxScore float32
 	for _, h := range hits {
 		if h.Score > maxScore {
@@ -1134,6 +1157,7 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, n int) 
 	if maxScore <= 0 {
 		maxScore = 1
 	}
+	_ = symbolSeeded // reserved for future tuning
 	for _, h := range hits {
 		if _, dup := seen[h.Path]; !dup {
 			seeds = append(seeds, SeedFile{Path: h.Path, Weight: h.Score / maxScore})
@@ -1258,6 +1282,94 @@ func (s *Store) GraphCommunities(ctx context.Context, minMembers, limit int) ([]
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// NodeVecRow is returned by NodesNeedingEmbed.
+type NodeVecRow struct {
+	RowID       int64
+	ID          string
+	ContentHash string
+	EmbedText   string
+}
+
+// nodeEmbedText formats the embed text for a graph node.
+func nodeEmbedText(kind, name, qualifiedName string) string {
+	if qualifiedName != "" {
+		return kind + " " + qualifiedName
+	}
+	return kind + " " + name
+}
+
+// NodesNeedingEmbed returns up to limit graph_nodes whose content_hash
+// differs from vec_hash (i.e. not yet embedded or stale).
+func (s *Store) NodesNeedingEmbed(ctx context.Context, limit int) ([]NodeVecRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT rowid, id, content_hash, kind, name, qualified_name
+		 FROM graph_nodes
+		 WHERE vec_hash != content_hash
+		 ORDER BY rowid
+		 LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NodeVecRow
+	for rows.Next() {
+		var r NodeVecRow
+		var kind, name, qname string
+		if err := rows.Scan(&r.RowID, &r.ID, &r.ContentHash, &kind, &name, &qname); err != nil {
+			return nil, err
+		}
+		r.EmbedText = nodeEmbedText(kind, name, qname)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SetNodeVecs stores embeddings for the given nodes, updating vec and vec_hash.
+// The triggers on graph_nodes.vec sync node_vecs automatically.
+func (s *Store) SetNodeVecs(ctx context.Context, rows []NodeVecRow, vecs [][]float32) error {
+	for i, r := range rows {
+		blob := encodeVec(vecs[i])
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE graph_nodes SET vec=?, vec_hash=? WHERE rowid=?`,
+			blob, r.ContentHash, r.RowID); err != nil {
+			return fmt.Errorf("set node vec %s: %w", r.ID, err)
+		}
+	}
+	return nil
+}
+
+// NodeKNN queries node_vecs for the k nearest nodes to qvec and returns
+// their text IDs and file paths.
+func (s *Store) NodeKNN(ctx context.Context, qvec []float32, k int) (ids, files []string, err error) {
+	blob := encodeVec(qvec)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT gn.id, gn.file_path
+		 FROM node_vecs nv
+		 JOIN graph_nodes gn ON gn.rowid = nv.rowid
+		 WHERE nv.embedding MATCH ? AND k = ?
+		 ORDER BY nv.distance`, blob, k)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, fp string
+		if err := rows.Scan(&id, &fp); err != nil {
+			return nil, nil, err
+		}
+		ids = append(ids, id)
+		files = append(files, fp)
+	}
+	return ids, files, rows.Err()
+}
+
+// NodeVecCount returns the number of rows in node_vecs.
+func (s *Store) NodeVecCount(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM node_vecs`).Scan(&n)
+	return n, err
 }
 
 func sortCommunitiesBySize(cs []Community) {

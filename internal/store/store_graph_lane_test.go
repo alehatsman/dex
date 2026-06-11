@@ -303,3 +303,67 @@ func TestSpreadActivationFanOutNorm(t *testing.T) {
 		}
 	}
 }
+
+// TestNodeVecEmbedAndKNN verifies the NodesNeedingEmbed / SetNodeVecs /
+// NodeKNN round-trip.
+func TestNodeVecEmbedAndKNN(t *testing.T) {
+	st, ctx := newStore(t)
+	now := time.Now()
+
+	if err := st.UpsertMany(ctx, []PendingChunk{
+		{Path: "a.go", Kind: "fn", StartLine: 1, EndLine: 2, ContentSHA: "ha",
+			Content: "func A(){}", Vec: []float32{1, 0, 0, 0}},
+		{Path: "b.go", Kind: "fn", StartLine: 1, EndLine: 2, ContentSHA: "hb",
+			Content: "func B(){}", Vec: []float32{0, 0, 0, 1}},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.GraphUpsertNodes(ctx, []GraphNodeRow{
+		{ID: "n:a", Kind: "function", Name: "A", QualifiedName: "pkg.A", FilePath: "a.go", ContentHash: "ha"},
+		{ID: "n:b", Kind: "function", Name: "B", QualifiedName: "pkg.B", FilePath: "b.go", ContentHash: "hb"},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// All nodes need embedding initially.
+	rows, err := st.NodesNeedingEmbed(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 nodes needing embed, got %d", len(rows))
+	}
+
+	// Embed: n:b aligned to qvec, n:a orthogonal.
+	qvec := []float32{0, 0, 1, 0}
+	vecs := [][]float32{
+		{1, 0, 0, 0},
+		{0, 0, 1, 0},
+	}
+	if err := st.SetNodeVecs(ctx, rows, vecs); err != nil {
+		t.Fatal(err)
+	}
+
+	rows2, err := st.NodesNeedingEmbed(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows2) != 0 {
+		t.Fatalf("expected 0 nodes needing embed after SetNodeVecs, got %d", len(rows2))
+	}
+
+	// NodeKNN should return n:b as closest to qvec.
+	ids, files, err := st.NodeKNN(ctx, qvec, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) == 0 {
+		t.Fatal("NodeKNN returned no results")
+	}
+	if ids[0] != "n:b" {
+		t.Errorf("expected top KNN n:b, got %q (all: %v)", ids[0], ids)
+	}
+	if files[0] != "b.go" {
+		t.Errorf("expected top KNN file b.go, got %q", files[0])
+	}
+}

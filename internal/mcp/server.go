@@ -819,7 +819,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok {
 		sessionTask = ss.Task
 	}
-	hits = st.FuseSpreadingActivation(ctx, hits, candidateK)
+	hits = st.FuseSpreadingActivation(ctx, hits, vecs[0], candidateK)
 
 	hits, err = st.RerankFused(ctx, in.Query, hits, candidateK)
 	if err != nil {
@@ -1381,7 +1381,7 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 	// Graph-proximity lane: spreading activation from session-recent files and
 	// the current semantic hits. Silently skips when no session exists or the
 	// graph hasn't been built — never fails the search.
-	hits = st.FuseSpreadingActivation(ctx, hits, candidateK)
+	hits = st.FuseSpreadingActivation(ctx, hits, vecs[0], candidateK)
 
 	hits, err = st.RerankFused(ctx, src.Content, hits, candidateK)
 	if err != nil {

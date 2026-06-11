@@ -1231,6 +1231,19 @@ func cmdIndex(ctx context.Context, args []string) error {
 		}
 	}
 
+	// Phase 2.5: embed graph nodes (symbol KNN index).
+	// Skipped when: embedder unavailable (lean/none profile) or graph was off.
+	if *graphMode != "off" && gstats != nil {
+		if em := newEmbedClient(st.EmbedModel()); em != nil {
+			_ = lk.SetPhase("graph-embed")
+			if n, err := embedGraphNodes(ctx, st, em, *verbose); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠ graph-embed phase failed: %v\n", err)
+			} else if n > 0 && *verbose {
+				fmt.Printf("  [graph-embed] %d nodes embedded\n", n)
+			}
+		}
+	}
+
 	if *graphMode == "only" {
 		// Mirror the old `graph index` output shape so existing scripts
 		// piping --format=json keep parsing.
@@ -2549,6 +2562,13 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	if gstats != nil {
 		_ = reportGraphStats(p.Root, gstats, "text")
 	}
+	if gstats != nil {
+		if em := newEmbedClient(st.EmbedModel()); em != nil {
+			if _, err := embedGraphNodes(ctx, st, em, false); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠ graph-embed failed for %s: %v\n", p.Root, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -2717,8 +2737,15 @@ func cmdWatch(ctx context.Context, args []string) error {
 	// graph layer lives in the same SQLite file, so the chunk run has
 	// already released the writer when this fires.
 	afterIndex := func(c context.Context) error {
-		_, err := runGraphPhase(c, p, st, *verbose)
-		return err
+		if _, err := runGraphPhase(c, p, st, *verbose); err != nil {
+			return err
+		}
+		if em := newEmbedClient(st.EmbedModel()); em != nil {
+			if _, err := embedGraphNodes(c, st, em, false); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠ graph-embed failed: %v\n", err)
+			}
+		}
+		return nil
 	}
 	wOpts := watch.Options{
 		Debounce:   *debounce,
