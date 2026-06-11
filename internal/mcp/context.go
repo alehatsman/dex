@@ -337,7 +337,8 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	// Semantic lane — runs unless embed is offline. We always run it
 	// for recall even when the symbol lane has exact hits.
 	semHits, embedFailed := s.runSemanticLane(ctx, st, in.Question, k)
-	if embedFailed {
+	leanNoEmbedder := s.EmbedClient == nil
+	if embedFailed && !leanNoEmbedder {
 		out.Endpoint = s.EmbedClient.Endpoint()
 	}
 	if intent == IntentArchitecture || intent == IntentPackageTopology {
@@ -348,8 +349,13 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 
 	if len(out.Symbols) == 0 && len(out.SemanticHits) == 0 {
 		if embedFailed {
-			out.Status = "embedding-service-unreachable"
-			out.Hint = "the local embedding service is offline — fall back to grep / Glob / ripgrep for this query."
+			if leanNoEmbedder {
+				out.Status = "lean-no-embedder"
+				out.Hint = "lean profile (DEX_EMBED_ENGINE=none): no semantic lane — use search_symbol, search_grep, or the graph_* tools."
+			} else {
+				out.Status = "embedding-service-unreachable"
+				out.Hint = "the local embedding service is offline — fall back to grep / Glob / ripgrep for this query."
+			}
 			return nil, out, nil
 		}
 		out.Status = "ok"
@@ -650,6 +656,9 @@ func (s *Server) runSymbolLane(ctx context.Context, st *store.Store, cand intent
 // package_summary chunks). Used by architecture/package_topology intents to
 // surface prose overviews alongside the code results.
 func (s *Server) runSummaryLane(ctx context.Context, st *store.Store, question string, k int) []SemHit {
+	if s.EmbedClient == nil {
+		return nil // lean profile: no embedder, no summary lane
+	}
 	vecs, err := s.EmbedClient.Embed(ctx, []string{question})
 	if err != nil {
 		return nil
@@ -696,6 +705,12 @@ func mergeSummaryHits(summaries, code []SemHit, k int) []SemHit {
 // and the caller should surface the failure.
 func (s *Server) runSemanticLane(ctx context.Context, st *store.Store, question string, k int) ([]SemHit, bool) {
 	em := s.EmbedClient
+	if em == nil {
+		// Lean profile (DEX_EMBED_ENGINE=none): no embedder wired. Report the
+		// semantic lane as unreachable so ask falls back to the symbol + graph
+		// lanes and emits the grep hint, exactly like a downed embedder.
+		return nil, true
+	}
 	vecs, err := em.Embed(ctx, []string{question})
 	if err != nil {
 		if errors.Is(err, embed.ErrUnreachable) {

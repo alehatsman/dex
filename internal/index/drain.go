@@ -130,6 +130,9 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 	if ix.Options.Chat == nil {
 		return 0, 0, nil, fmt.Errorf("DrainPendingSummariesBatch: chat client not configured")
 	}
+	if ix.Embed == nil {
+		return 0, 0, nil, ErrNoEmbedder
+	}
 	// Same embed-model gate as Run: the drainer also embeds and upserts.
 	if err := ix.Store.EnsureEmbedModel(ctx, ix.Embed.ModelName()); err != nil {
 		return 0, 0, nil, err
@@ -354,6 +357,9 @@ func (ix *Indexer) DrainPendingSummariesBatch(ctx context.Context, max int) (gen
 func (ix *Indexer) CascadePackageRepoSummaries(ctx context.Context, dirtyDirs []string) (int, error) {
 	if ix.Options.Chat == nil {
 		return 0, fmt.Errorf("CascadePackageRepoSummaries: chat client not configured")
+	}
+	if ix.Embed == nil {
+		return 0, ErrNoEmbedder
 	}
 	if err := ix.Store.EnsureEmbedModel(ctx, ix.Embed.ModelName()); err != nil {
 		return 0, err

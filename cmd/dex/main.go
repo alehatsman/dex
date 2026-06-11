@@ -733,8 +733,18 @@ func newEmbedClient(indexModel string) embed.Embedder {
 	// defaults to "http" (the OpenAI-compatible backend). "onnx" selects the
 	// in-process engine, which is only linked in -tags onnx builds (otherwise
 	// embed.NewONNX returns a clear "rebuild with -tags onnx" error).
-	if eng := strings.ToLower(os.Getenv("DEX_EMBED_ENGINE")); eng == "onnx" {
+	switch strings.ToLower(os.Getenv("DEX_EMBED_ENGINE")) {
+	case "onnx":
 		return newONNXEmbedder()
+	case "none":
+		// Lean / zero-infra profile (#290): no embedder is wired at all.
+		// Returns a nil Embedder so the MCP server omits the embedding-backed
+		// tools (search_semantic/search_similar/search_context/ctx_overview/
+		// search_workspace) and ask degrades to the symbol + graph + BM25
+		// lanes. Explicit declaration, not a startup probe — deterministic
+		// under GPU contention. See docs/lean-profile.md.
+		fmt.Fprintln(os.Stderr, "dex: DEX_EMBED_ENGINE=none — lean profile, no embedder (BM25 + symbol + graph only)")
+		return nil
 	}
 
 	url := os.Getenv("DEX_EMBED_URL")

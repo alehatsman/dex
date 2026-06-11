@@ -44,6 +44,10 @@ every task automatically. Do not repeat it at call sites.
 
 ## Build-tag matrix
 
+> Running dex with no GPU? See **[docs/lean-profile.md](docs/lean-profile.md)** —
+> the CPU-ONNX (`-tags onnx`) and BM25-only (`DEX_EMBED_ENGINE=none`) deployment
+> modes, and the capability-derived tool surface they expose.
+
 | Tag(s) | What it adds | Native dep | Built by |
 |--------|--------------|------------|----------|
 | `sqlite_fts5` (default) | FTS5 / BM25 search | cgo + libsqlite3 (already required) | `mooncake task install` / `ci` / `ci-fast` |

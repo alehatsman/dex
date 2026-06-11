@@ -179,15 +179,18 @@ semantic lane simply dies to BM25. The pieces to make Rung C *good* exist but
 - **The proxy's history pruning (#232) is GPU-free** — deterministic structural
   compression. Rung C still gets context optimization, not just retrieval.
 
-**The framing that's missing.** dex today reads as an *infra project* — it
-needs ollama, a GPU, config. The "lean" intuition is that dex should *also* be
-a **drop-in tool you `go install` and it Just Works** with zero inference
-stack. That is the adoption lever. Proposed: a new epic — **"lean profile —
-zero-infra dex"** — treating CPU/ONNX + BM25 + graph as a *first-class
-deployment target*, not a fallback. Honesty caveat: the default build stays
-dep-free per #67 (ONNX stays behind the build tag, like `sqlite_fts5`); the
-lean profile is a documented build, never the silent default. If we cannot keep
-the default build dep-free, we stop and re-open #67 explicitly.
+**The framing — now shipped (#290).** dex used to read as an *infra project* —
+it needed ollama, a GPU, config. The "lean" intuition is that dex should *also*
+be a **drop-in tool you `go install` and it Just Works** with zero inference
+stack. That is the adoption lever, and it is now a documented, first-class
+deployment mode — see **[docs/lean-profile.md](lean-profile.md)**. Two forms:
+CPU-ONNX (`-tags onnx`, semantic lane on CPU) and BM25-only
+(`DEX_EMBED_ENGINE=none`, no embedder). The tool surface is **capability-derived**
+(#283): with no embedder wired, the embedding-backed tools are not advertised at
+all; `ask` degrades to the symbol + graph lanes. The default build stays
+dep-free per #67 (ONNX behind the build tag, like `sqlite_fts5`); the lean
+profile is a documented build, never the silent default. Remaining: pure
+no-embedder *indexing* (#306) and the lean-rung quality eval (#305).
 
 ---
 

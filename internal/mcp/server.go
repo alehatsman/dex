@@ -2308,10 +2308,15 @@ type healthChecker interface {
 
 func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
 	out := StatusOutput{
-		Endpoint: s.EmbedClient.Endpoint(),
-		Model:    s.EmbedClient.ModelName(),
 		Version:  Version,
 		IndexDir: s.IndexDir,
+	}
+	if s.EmbedClient != nil {
+		out.Endpoint = s.EmbedClient.Endpoint()
+		out.Model = s.EmbedClient.ModelName()
+	} else {
+		// Lean profile (DEX_EMBED_ENGINE=none): no embedder wired.
+		out.Model = "none (lean profile)"
 	}
 
 	// Populate optional endpoint metadata before probing (read-only).
@@ -2361,10 +2366,12 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 	}
 
 	var wg sync.WaitGroup
-	probe(&wg, s.EmbedClient, func(ok bool, errMsg string) {
-		out.Reachable = ok
-		out.Error = errMsg
-	})
+	if s.EmbedClient != nil {
+		probe(&wg, s.EmbedClient, func(ok bool, errMsg string) {
+			out.Reachable = ok
+			out.Error = errMsg
+		})
+	}
 	if s.ChatClient != nil {
 		probe(&wg, s.ChatClient, func(ok bool, _ string) { out.ChatReachable = ok })
 	}
@@ -2469,7 +2476,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		Instructions: ServerInstructions(),
 	})
 
-	registerTools(srv, s, toolTierFromEnv(), s.ChatClient != nil, descriptionModeFromEnv())
+	registerTools(srv, s, toolTierFromEnv(), s.ChatClient != nil, s.EmbedClient != nil, descriptionModeFromEnv())
 
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
@@ -2578,26 +2585,35 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 //
 // DEX_EXPOSE_RAW_TOOLS=1 is honoured as a backward-compatible alias for power.
 // The `dex` CLI subcommands are unaffected by tier.
-func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable bool, descMode DescriptionMode) {
+// registerTools advertises the MCP tool surface. Exposure is capability-derived
+// (#283/#290): tools that need a query-time embedder (search_semantic,
+// search_similar, search_context, ctx_overview, search_workspace) are only
+// registered when embedAvailable is true. With no embedder wired (the lean
+// profile, DEX_EMBED_ENGINE=none), those are omitted entirely and the surface
+// degrades to BM25 (search_grep) + symbol + graph + file lanes; `ask` stays and
+// routes to the non-semantic lanes. chatAvailable gates file_view the same way.
+func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable, embedAvailable bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 	// Power-only: raw search / graph / analysis lanes. Useful for CLI parity,
 	// A-B debugging, and power users — too noisy for everyday agents.
 	if tier >= TierPower {
-		addTool(srv, &sdk.Tool{
-			Name:        "search_semantic",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Prefer `ask` for general code-understanding questions — it composes this " +
-				"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
-				"want raw ranking without intent routing. " +
-				"Embeds the query and returns top-k matching chunks. Identifier tokens in the query (CamelCase, " +
-				"snake_case, qualified names) are automatically looked up by exact symbol name and fused into the " +
-				"results via Reciprocal Rank Fusion — no separate search_symbol call needed. " +
-				"Supports exclude list to skip paths. " +
-				"Optional 'languages' (e.g. ['go','typescript']) and 'path_glob' (e.g. 'internal/**') narrow results " +
-				"to specific file types or directories; when active, candidates are over-fetched to compensate for filtering. " +
-				"On error, returns a structured status: 'no-index' (run dex index first), " +
-				"'embedding-service-unreachable' (fall back to grep), or 'ok'."),
-		}, h.search)
+		if embedAvailable {
+			addTool(srv, &sdk.Tool{
+				Name:        "search_semantic",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Prefer `ask` for general code-understanding questions — it composes this " +
+					"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
+					"want raw ranking without intent routing. " +
+					"Embeds the query and returns top-k matching chunks. Identifier tokens in the query (CamelCase, " +
+					"snake_case, qualified names) are automatically looked up by exact symbol name and fused into the " +
+					"results via Reciprocal Rank Fusion — no separate search_symbol call needed. " +
+					"Supports exclude list to skip paths. " +
+					"Optional 'languages' (e.g. ['go','typescript']) and 'path_glob' (e.g. 'internal/**') narrow results " +
+					"to specific file types or directories; when active, candidates are over-fetched to compensate for filtering. " +
+					"On error, returns a structured status: 'no-index' (run dex index first), " +
+					"'embedding-service-unreachable' (fall back to grep), or 'ok'."),
+			}, h.search)
+		}
 
 		addTool(srv, &sdk.Tool{
 			Name:        "search_symbol",
@@ -2617,17 +2633,19 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Finds code that is semantically related even without keyword overlap."),
 		}, h.related)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "search_similar",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Find chunks semantically similar to the code at a given file:line location. " +
-				"Looks up the indexed chunk that contains the anchor line, embeds its content, and runs the full " +
-				"hybrid search + reranking pipeline — stronger than graph_neighbors, which uses only pre-computed " +
-				"cosine edges. The anchor chunk itself is excluded from results. " +
-				"Supports the same 'languages', 'path_glob', and 'exclude' filters as search_semantic. " +
-				"Returns 'not-found' when the location isn't indexed; 'embedding-service-unreachable' when the " +
-				"embedder is down."),
-		}, h.findRelated)
+		if embedAvailable {
+			addTool(srv, &sdk.Tool{
+				Name:        "search_similar",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Find chunks semantically similar to the code at a given file:line location. " +
+					"Looks up the indexed chunk that contains the anchor line, embeds its content, and runs the full " +
+					"hybrid search + reranking pipeline — stronger than graph_neighbors, which uses only pre-computed " +
+					"cosine edges. The anchor chunk itself is excluded from results. " +
+					"Supports the same 'languages', 'path_glob', and 'exclude' filters as search_semantic. " +
+					"Returns 'not-found' when the location isn't indexed; 'embedding-service-unreachable' when the " +
+					"embedder is down."),
+			}, h.findRelated)
+		}
 
 		addTool(srv, &sdk.Tool{
 			Name:        "graph_deps",
@@ -2793,16 +2811,18 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 	// Standard+ tools: orientation and persistent memory. Exposed by default so
 	// agents can accumulate project context without any configuration.
 	if tier >= TierStandard {
-		addTool(srv, &sdk.Tool{
-			Name:        "ctx_overview",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Task-relevant project map. Given a task description, ranks every indexed file by " +
-				"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
-				"`context` (top-k most relevant files with line counts and suggested file_view mode) and " +
-				"`distant` (all other indexed files). Use this as the first call in an unfamiliar codebase " +
-				"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
-				"no inlined content. Requires the embedding service."),
-		}, h.overview)
+		if embedAvailable {
+			addTool(srv, &sdk.Tool{
+				Name:        "ctx_overview",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Task-relevant project map. Given a task description, ranks every indexed file by " +
+					"semantic similarity to the task fused with graph centrality, and returns two buckets: " +
+					"`context` (top-k most relevant files with line counts and suggested file_view mode) and " +
+					"`distant` (all other indexed files). Use this as the first call in an unfamiliar codebase " +
+					"to decide what to read before touching code. Cheaper than ask — returns file paths only, " +
+					"no inlined content. Requires the embedding service."),
+			}, h.overview)
+		}
 
 		addTool(srv, &sdk.Tool{
 			Name: "ctx_knowledge",
@@ -2920,15 +2940,17 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Returns 'no-matches' when nothing matches. Use ask for conceptual queries."),
 		}, h.searchGrep)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "search_context",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Single-call alternative to the search → signatures → lines chain. " +
-				"Embeds the query, finds the top-k most relevant files, returns their symbol signatures " +
-				"and the body of the best-matching symbol — all in one round trip. " +
-				"Use at task-start to orient quickly without 2–3 follow-up calls. " +
-				"Requires the embedding service. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback."),
-		}, h.compose)
+		if embedAvailable {
+			addTool(srv, &sdk.Tool{
+				Name:        "search_context",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Single-call alternative to the search → signatures → lines chain. " +
+					"Embeds the query, finds the top-k most relevant files, returns their symbol signatures " +
+					"and the body of the best-matching symbol — all in one round trip. " +
+					"Use at task-start to orient quickly without 2–3 follow-up calls. " +
+					"Requires the embedding service. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback."),
+			}, h.compose)
+		}
 
 		addTool(srv, &sdk.Tool{
 			Name:        "ctx_prefetch",
@@ -2944,19 +2966,21 @@ func registerTools(srv *sdk.Server, h toolSurface, tier toolTier, chatAvailable 
 				"Requires a graph index (dex index --graph)."),
 		}, h.prefetch)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "search_workspace",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Search across all projects listed in .dex/workspace.yml. " +
-				"Runs hybrid search independently per project and merges results with RRF, " +
-				"tagging each hit with [project:name] so you know which project it came from. " +
-				"Create .dex/workspace.yml to enable:\n" +
-				"  projects:\n" +
-				"    - path: /absolute/or/relative/path\n" +
-				"      label: my-service   # optional\n" +
-				"Returns 'no-workspace' when no workspace.yml is found. " +
-				"Requires the embedding service and each project to be indexed."),
-		}, h.workspaceSearch)
+		if embedAvailable {
+			addTool(srv, &sdk.Tool{
+				Name:        "search_workspace",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Search across all projects listed in .dex/workspace.yml. " +
+					"Runs hybrid search independently per project and merges results with RRF, " +
+					"tagging each hit with [project:name] so you know which project it came from. " +
+					"Create .dex/workspace.yml to enable:\n" +
+					"  projects:\n" +
+					"    - path: /absolute/or/relative/path\n" +
+					"      label: my-service   # optional\n" +
+					"Returns 'no-workspace' when no workspace.yml is found. " +
+					"Requires the embedding service and each project to be indexed."),
+			}, h.workspaceSearch)
+		}
 
 		if chatAvailable {
 			addTool(srv, &sdk.Tool{

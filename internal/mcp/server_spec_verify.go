@@ -113,6 +113,15 @@ func (s *Server) specVerify(ctx context.Context, _ *sdk.CallToolRequest, in Spec
 		return nil, out, nil
 	}
 
+	if s.EmbedClient == nil {
+		// Lean profile (DEX_EMBED_ENGINE=none): spec verification retrieves
+		// matching code chunks by embedding each clause — no embedder, no
+		// verification.
+		out.Status = "lean-no-embedder"
+		out.Hint = "lean profile (DEX_EMBED_ENGINE=none): spec_check needs the embedding service to match clauses to code."
+		return nil, out, nil
+	}
+
 	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
 	if err != nil {
 		return nil, SpecVerifyOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil

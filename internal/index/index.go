@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -229,6 +230,18 @@ func (ix *Indexer) takePrunedDirs() []string {
 	return out
 }
 
+// ErrNoEmbedder is returned by Run when the indexer has no embedder wired
+// (the lean profile, DEX_EMBED_ENGINE=none). Indexing currently requires
+// vectors; the lean profile is a serve/query mode. Build the index with an
+// embedder — the CPU-only `-tags onnx` engine needs no GPU — then serve it
+// with DEX_EMBED_ENGINE=none. Pure no-embedder indexing is tracked in #306.
+// See docs/lean-profile.md.
+var ErrNoEmbedder = errors.New(
+	"cannot index without an embedder: DEX_EMBED_ENGINE=none is a lean serve " +
+		"profile — build the index with an embedder (the CPU-only `-tags onnx` " +
+		"engine needs no GPU, or point at an HTTP backend), then serve it with " +
+		"DEX_EMBED_ENGINE=none (see docs/lean-profile.md)")
+
 func New(p *proj.Project, st *store.Store, em embed.Embedder, ig *ignore.Matcher, opt Options) *Indexer {
 	if opt.MaxFileSize <= 0 {
 		opt.MaxFileSize = 1 << 20 // 1 MB
@@ -268,6 +281,10 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		return fmt.Errorf("seen time: %w", err)
 	}
 	ix.Options.Logger.Info("index: starting", "root", ix.Proj.Root)
+
+	if ix.Embed == nil {
+		return ErrNoEmbedder
+	}
 
 	// Refuse a silent embed-model swap: two same-dim models produce
 	// vectors in different latent spaces, so mixing them corrupts the
