@@ -200,9 +200,19 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 				paths = append(paths, "compress")
 			}
 
+			// Cache-breakpoint alignment runs LAST, on the post-pruned bytes
+			// (see cache.go) so the marked prefix is the deterministic stable
+			// region the next turn re-sends and reads from cache.
+			aligned, cacheStats := AlignCacheBreakpoints(current, DefaultKeepRecent)
+			if cacheStats.Applied {
+				current = aligned
+				paths = append(paths, "cache")
+			}
+
 			after := countBodyTokens(current)
 			stats.record(before, after)
-			logRequestMetrics(logger, r, current, before, after, paths)
+			stats.recordCache(cacheStats)
+			logRequestMetrics(logger, r, current, before, after, paths, cacheStats)
 
 			r.Body = io.NopCloser(strings.NewReader(string(current)))
 			r.ContentLength = int64(len(current))

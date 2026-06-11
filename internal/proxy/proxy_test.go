@@ -450,6 +450,70 @@ func TestPruneIntegration(t *testing.T) {
 	}
 }
 
+// TestCacheBreakpointIntegration drives a large multi-turn request through the
+// full forward path and asserts the proxy (a) injects cache_control breakpoints
+// on the stable prefix it forwards upstream, (b) caps them at maxBreakpoints,
+// and (c) logs the cache pass with a breakpoint count.
+func TestCacheBreakpointIntegration(t *testing.T) {
+	var upstreamBody string
+	up := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		upstreamBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{}`)
+	})
+	front, logs := newTestProxy(t, up)
+
+	// Large, stable system prompt + a long conversation so multiple stable
+	// boundaries clear the cacheable floor (Sonnet 4.5 → 1024 tokens).
+	bigSystem := strings.Repeat("alpha bravo charlie delta echo foxtrot ", 700)
+	var msgs []any
+	for i := 0; i < 24; i++ {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		msgs = append(msgs, map[string]any{
+			"role":    role,
+			"content": []any{map[string]any{"type": "text", "text": strings.Repeat("lorem ipsum dolor sit amet ", 120)}},
+		})
+	}
+	body, err := json.Marshal(map[string]any{
+		"model":    "claude-sonnet-4-5",
+		"system":   bigSystem,
+		"messages": msgs,
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	resp, err := http.Post(front.URL+"/v1/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+
+	if !strings.Contains(upstreamBody, `"cache_control"`) {
+		t.Fatalf("expected cache_control markers in upstream body")
+	}
+	if !strings.Contains(upstreamBody, `"ephemeral"`) {
+		t.Errorf("cache_control should be type ephemeral")
+	}
+	// Count markers reaching upstream — must respect the max.
+	got := strings.Count(upstreamBody, `"cache_control"`)
+	if got == 0 || got > maxBreakpoints {
+		t.Errorf("upstream has %d breakpoints, want 1..%d", got, maxBreakpoints)
+	}
+
+	logOut := logs.String()
+	if !strings.Contains(logOut, "cache_breakpoints=") {
+		t.Errorf("expected cache_breakpoints in log; got:\n%s", logOut)
+	}
+	if !strings.Contains(logOut, "cache") { // pass label includes "cache"
+		t.Errorf("expected cache pass label in log; got:\n%s", logOut)
+	}
+}
+
 // TestExtractTextToolResult ensures nested tool_result content contributes to
 // the token baseline — the dominant sink the follow-up tickets compress.
 func TestExtractTextToolResult(t *testing.T) {
