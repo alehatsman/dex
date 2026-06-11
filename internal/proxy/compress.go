@@ -264,7 +264,7 @@ func squeezeProse(content string) string {
 
 // compressCode applies EntropyFilter + TerseCompress to shell/build/search/code
 // output. Returns the original if no tokens are saved.
-func compressCode(content, toolName string) string {
+func compressCode(content, _ string) string {
 	lines := strings.Split(content, "\n")
 	filtered := compress.EntropyFilter(lines, compress.EntropyThresholdStandard)
 	if filtered == nil {
