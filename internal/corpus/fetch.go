@@ -86,8 +86,42 @@ func gitHead(ctx context.Context, dir string) (string, error) {
 	return out, nil
 }
 
+// hermeticGitEnv returns the ambient environment with git's repo-discovery
+// variables stripped. Corpus git commands always target their own cache repo
+// via cmd.Dir; an inherited GIT_DIR (e.g. injected into pre-commit/pre-push
+// hook children when the test suite runs from a linked worktree) would
+// otherwise override cmd.Dir and make `git init` reinitialize the real repo as
+// bare — flipping the shared core.bare=true and wiping every worktree. See
+// issue #341.
+func hermeticGitEnv() []string {
+	const prefix = "GIT_"
+	leaky := map[string]bool{
+		"GIT_DIR":              true,
+		"GIT_WORK_TREE":        true,
+		"GIT_INDEX_FILE":       true,
+		"GIT_COMMON_DIR":       true,
+		"GIT_OBJECT_DIRECTORY": true,
+		"GIT_NAMESPACE":        true,
+		"GIT_PREFIX":           true,
+	}
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		k := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			k = kv[:i]
+		}
+		if strings.HasPrefix(k, prefix) && leaky[k] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 func runGit(ctx context.Context, dir string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = hermeticGitEnv()
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -99,6 +133,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = hermeticGitEnv()
 	if dir != "" {
 		cmd.Dir = dir
 	}

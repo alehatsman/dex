@@ -73,3 +73,57 @@ func runOrSkip(t *testing.T, dir string, args ...string) {
 		t.Skipf("git %v: %v", args, err)
 	}
 }
+
+// TestRunGitIgnoresInheritedGitDir guards issue #341: git injects GIT_DIR
+// (pointing at the worktree gitdir) into pre-commit/pre-push hook children, so
+// when the suite runs from a linked worktree the corpus tests inherit it. A
+// bare `git init` honoring that GIT_DIR reinitializes the real repo as bare and
+// flips the shared core.bare=true, wiping every worktree. runGit/gitOutput must
+// scrub GIT_DIR so corpus git ops stay hermetic.
+func TestRunGitIgnoresInheritedGitDir(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	ctx := context.Background()
+
+	// Sentinel repo with a linked worktree, giving us a worktree-style gitdir
+	// (basename != ".git") — the shape that makes `git init` infer bare.
+	sentinel := t.TempDir()
+	setup := func(dir string, args ...string) {
+		t.Helper()
+		c := exec.CommandContext(ctx, "git", args...)
+		c.Dir = dir
+		c.Env = hermeticGitEnv() // build the sentinel free of any ambient GIT_DIR
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	setup(sentinel, "init", "-q")
+	setup(sentinel, "-c", "user.email=t@example.com", "-c", "user.name=t",
+		"commit", "-q", "--allow-empty", "-m", "init")
+	setup(sentinel, "worktree", "add", "-q", filepath.Join(sentinel, "wt"))
+
+	wtGitDir := filepath.Join(sentinel, ".git", "worktrees", "wt")
+	if _, err := os.Stat(wtGitDir); err != nil {
+		t.Fatalf("worktree gitdir missing: %v", err)
+	}
+
+	// Poison the environment exactly as the hook does.
+	t.Setenv("GIT_DIR", wtGitDir)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(wtGitDir, "index"))
+
+	// runGit must target `work`, not the inherited GIT_DIR.
+	work := t.TempDir()
+	if err := runGit(ctx, work, "init", "-q"); err != nil {
+		t.Fatalf("runGit init: %v", err)
+	}
+
+	// The sentinel's shared config must be untouched.
+	out, err := gitOutput(ctx, sentinel, "config", "--get", "core.bare")
+	if err != nil {
+		out = "false" // `--get` exits 1 when absent — also "not bare"
+	}
+	if strings.TrimSpace(out) == "true" {
+		t.Fatal("inherited GIT_DIR leaked: sentinel core.bare flipped to true")
+	}
+}
