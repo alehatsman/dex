@@ -3,63 +3,4638 @@
     "lane": "full",
     "k": 10,
     "num_queries": 304,
-    "num_reached": 231,
-    "reach_rate": 0.7598684210526315,
-    "mean_calls": 2.8744588744588744,
+    "num_reached": 234,
+    "reach_rate": 0.7697368421052632,
+    "mean_calls": 2.8632478632478633,
     "median_calls": 2,
-    "mean_tokens": 18645.17316017316,
-    "median_tokens": 12881
+    "mean_tokens": 19702.15811965812,
+    "median_tokens": 14670.5,
+    "results": [
+      {
+        "query": "maintenance mode stub — dex mcp --maintenance",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2412
+      },
+      {
+        "query": "bump rerank conc to 16",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26419
+      },
+      {
+        "query": "use GET /v1/models for Health() instead of live inference",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 6986
+      },
+      {
+        "query": "add 'dex knowledge add|query|rm' verb",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2101
+      },
+      {
+        "query": "add 'dex read \u003cfile\u003e' structural read verb",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1664
+      },
+      {
+        "query": "add 'dex compress \u003cfile|-\u003e' first-class verb",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2176
+      },
+      {
+        "query": "delta re-read on changed files (#217)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29640
+      },
+      {
+        "query": "promote graph_* rows to canonical rulesContent, bump to v2 (#245)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 7249
+      },
+      {
+        "query": "richer summary progress reporting in dex index status",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 32306
+      },
+      {
+        "query": "detect stale/drifted Claude routing rules (#244)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 4996
+      },
+      {
+        "query": "fix if-return revive in store.migrate (#243)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27156
+      },
+      {
+        "query": "clear golangci-lint full-gate failures (#243)",
+        "reached": true,
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 31584
+      },
+      {
+        "query": "extract migrateCoAccessEdges to reduce cyclop delta",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27155
+      },
+      {
+        "query": "suppress gosec G202 on CoAccessNeighbors query build",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1740
+      },
+      {
+        "query": "accumulate dirty dirs across batches in IdleSummaryDrainer",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 88113
+      },
+      {
+        "query": "mini-batch embed in runPackageJobs (#226)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 52177
+      },
+      {
+        "query": "prefetch grounding + git subjects before workers (#224)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 34494
+      },
+      {
+        "query": "pipelined embed — producer-consumer in DrainPendingSummariesBatch (#221)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 53693
+      },
+      {
+        "query": "dirty-dir incremental cascade (#222)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 22113
+      },
+      {
+        "query": "raise default SummaryConcurrency 4→8 for dual-GPU setups (issue #228)",
+        "reached": true,
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 42913
+      },
+      {
+        "query": "parallelize fetchRepoGrounding (issue #227)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 31514
+      },
+      {
+        "query": "use Search not SearchFused; SearchFused returns full pool (k×5, min 30), inflating retrieved tokens and recall",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 101420
+      },
+      {
+        "query": "dataset path lookup by project root; fix flag parsing; add reference baseline",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1624
+      },
+      {
+        "query": "graph_path (shortest-path BFS) + graph_diff (blast-radius) (#212)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 10672
+      },
+      {
+        "query": "add package comment; replace sha1 with fnv for ContentSHA",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 66392
+      },
+      {
+        "query": "wrap stdio tool handlers with panic recovery guard (#207)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29646
+      },
+      {
+        "query": "skeleton-first reads with on-demand body expansion (#206)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1329
+      },
+      {
+        "query": "prompt-cache-aware context layout for batch file_view (#205)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29642
+      },
+      {
+        "query": "add TestSetDefaultFamily",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 58472
+      },
+      {
+        "query": "target_model profile dimension (#204)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1631
+      },
+      {
+        "query": "agent diaries — persistent per-agent structured log (#156)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1350
+      },
+      {
+        "query": "ContextBus — category field + FTS5 on agent_messages (#148)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27144
+      },
+      {
+        "query": "semantic chunk grouping with attention bridges for file_view (#105)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3210
+      },
+      {
+        "query": "context profiles (DEX_PROFILE)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1629
+      },
+      {
+        "query": "attention-model layout for evidence assembly (DEX_ATTENTION_LAYOUT)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 923
+      },
+      {
+        "query": "index git commits as searchable chunks (phase 3)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 28296
+      },
+      {
+        "query": "augment file summary prompts with recent commit context",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 92291
+      },
+      {
+        "query": "include commit subject in blame enrichment for editing_context",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 8026
+      },
+      {
+        "query": "multi-scale TF-IDF index with query-type routing (#104)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29640
+      },
+      {
+        "query": "add 21 shell-output compression patterns from lean-ctx",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 15786
+      },
+      {
+        "query": "expand tree-sitter structural chunking to 6 new languages (#153)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 9371
+      },
+      {
+        "query": "add qwen3-embedding to priority list, verify liveness in DetectOllama",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2074
+      },
+      {
+        "query": "session SLO monitoring — warn/throttle/block on token/tool thresholds",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2371
+      },
+      {
+        "query": "graph-proximity lane in search_similar (findRelated) handler",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 46771
+      },
+      {
+        "query": "extract drainItem to reduce DrainPendingSummariesBatch cyclomatic complexity",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 82715
+      },
+      {
+        "query": "errcheck prior.Close + remove unused fuseWithGraphNeighbors",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 42456
+      },
+      {
+        "query": "add MCP server instructions + dex setup command",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29637
+      },
+      {
+        "query": "spreading activation for graph-neighborhood relevance (#92)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 12874
+      },
+      {
+        "query": "add --dry-run flag to dex index",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26411
+      },
+      {
+        "query": "extract pluggable Embedder interface from concrete embed.Client",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2152
+      },
+      {
+        "query": "restore rerank cache on the fused path (#191)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27151
+      },
+      {
+        "query": "emit incremental progress during dex index",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26408
+      },
+      {
+        "query": "lock ask/file_view degradation when chat backend is down",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 76345
+      },
+      {
+        "query": "wire graph-proximity lane into Store.Search (#145)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 12877
+      },
+      {
+        "query": "summary coverage %, --json stale flag, embed mismatch detection",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 29979
+      },
+      {
+        "query": "lock index-time partial embed failure — batch survival + resume",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 49264
+      },
+      {
+        "query": "cap drain generation window for incremental persistence (#140)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 51585
+      },
+      {
+        "query": "deterministic breaker cooldown via injectable clock",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1175
+      },
+      {
+        "query": "reindex now enqueues deferred summaries by default",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26408
+      },
+      {
+        "query": "switch symmap to 1-token Greek-letter refs (#173)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1520
+      },
+      {
+        "query": "default embed model from index meta to prevent dim mismatch",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 53994
+      },
+      {
+        "query": "lock serve/search-time degradation when embed backend is down",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 72450
+      },
+      {
+        "query": "raise definition boost 1.5x-\u003e3x, gated on an orphan-boost fix (#146)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3254
+      },
+      {
+        "query": "add playwright, cypress, next build, vite build patterns (#172)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14754
+      },
+      {
+        "query": "enhance log dedup with UUID and log-level normalization (#171)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14765
+      },
+      {
+        "query": "unify the two post-RRF rerankers into one canonical path (#144)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27156
+      },
+      {
+        "query": "per-session file access heatmap — hot/cold file tracking",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3123
+      },
+      {
+        "query": "ROI-based identifier symbol map for aggressive file_view",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1520
+      },
+      {
+        "query": "add --json shorthand to dex index status",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26410
+      },
+      {
+        "query": "cross-file TF-IDF codebook for multi-file file_view",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 11001
+      },
+      {
+        "query": "BPE-validated safe token reductions in aggressive mode (#103)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 743
+      },
+      {
+        "query": "SPLADE-style static term expansion for BM25 (#87)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1430
+      },
+      {
+        "query": "context window ledger — budget action for ctx_session (#136)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 493
+      },
+      {
+        "query": "RAM-resident trigram index for search_grep candidate narrowing",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1713
+      },
+      {
+        "query": "expanded noise penalty tiers in rerankLocal (#85)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 64021
+      },
+      {
+        "query": "per-language adaptive compression thresholds (#101)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1197
+      },
+      {
+        "query": "information bottleneck compression — binary-search entropy threshold (#115)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 2154
+      },
+      {
+        "query": "query-type-adaptive RRF weights (Symbol/NL/Architecture) (#86)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27147
+      },
+      {
+        "query": "handle missing root — delete index by hash when dir is gone (#138)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 5466
+      },
+      {
+        "query": "Shannon entropy + quality gate for terse pipeline (#89)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3013
+      },
+      {
+        "query": "task_aware_compress — intent routing for file_view (#130)",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 5532
+      },
+      {
+        "query": "language + path_glob filters for search_semantic (#133)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29640
+      },
+      {
+        "query": "AggressiveCompress + LightweightCleanup for file_view (#128)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2375
+      },
+      {
+        "query": "check ~/.claude.json for MCP registration",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 4395
+      },
+      {
+        "query": "terse engine Layer 1-3 — function-word stripping, abbreviations, zero-unique dedup (#116)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2390
+      },
+      {
+        "query": "ECS saliency scoring + MIG diversity selection for chunk ranking (#100)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1557
+      },
+      {
+        "query": "block-aware log dedup for CI/CD and service logs (#90)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14755
+      },
+      {
+        "query": "deps_cmd — dependency manifest summarization for file_view + ctx_shell (#125)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3012
+      },
+      {
+        "query": "verbatimCompact — timestamp normalization, hash normalization, boilerplate stripping, consecutive dedup (#129)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14756
+      },
+      {
+        "query": "output policy gate — verbatim classification + test runner + build error bypass (#123, #81, #82)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5931
+      },
+      {
+        "query": "over-compression guard + safety needle extraction (#88, #83)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14755
+      },
+      {
+        "query": "bounce tracker + budget-aware view downgrade (#98 #106)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1075
+      },
+      {
+        "query": "BM25 CamelCase query expansion + path enrichment (#95 #110)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1428
+      },
+      {
+        "query": "compact +N:/-N: diff format for git diff output (#131)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14760
+      },
+      {
+        "query": "add Tier C tool aliases in CompressText dispatch (#126)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 16839
+      },
+      {
+        "query": "mask credentials in ctx_shell output (#127)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 683
+      },
+      {
+        "query": "ANSI strip, shorter_only guard, auth-flow bypass, min-size gate",
+        "reached": true,
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 26026
+      },
+      {
+        "query": "noise penalties, MMR diversity, session graph proximity (#112 #113 #118)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27147
+      },
+      {
+        "query": "suppress errcheck on temp file close",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 101746
+      },
+      {
+        "query": "gofmt cmd/dex (pre-existing whitespace issues)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 4397
+      },
+      {
+        "query": "dex doctor — one-shot setup diagnostic command",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 4391
+      },
+      {
+        "query": "normalize ad-hoc slog keys + finalize canonical attr set",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 49043
+      },
+      {
+        "query": "ctx_nav — mount /v1/nav on main mux; read tier from env",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1837
+      },
+      {
+        "query": "subsystem tags at construction + observability doc",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 68153
+      },
+      {
+        "query": "end-to-end watcher pipeline preserves summaries",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 69370
+      },
+      {
+        "query": "graceful startup without ollama — degrade, auto-start, clear errors (#67)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 615
+      },
+      {
+        "query": "consolidate DEX_* env vars into .dex/config.yml (env \u003e file \u003e default)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1315
+      },
+      {
+        "query": "Revert \"feat(config): consolidate DEX_* env vars into .dex/config.toml\"",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2672
+      },
+      {
+        "query": "consolidate DEX_* env vars into .dex/config.toml",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1316
+      },
+      {
+        "query": "unify tool naming to category-prefix scheme (#68)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 63391
+      },
+      {
+        "query": "fail loud on silent/misleading empty results (audit #73)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 105654
+      },
+      {
+        "query": "passively alias 17 more tool-driver commands",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2178
+      },
+      {
+        "query": "file_view 'path' optional in paths[] batch mode",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29646
+      },
+      {
+        "query": "add 'index status --format text|json'",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26418
+      },
+      {
+        "query": "use exclude-only matcher so subdir compaction ignores opt-in include list",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3945
+      },
+      {
+        "query": "document spec_verify response shape — results key, not items",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 71183
+      },
+      {
+        "query": "clarify knowledge confidence field requires float 0.0–1.0",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 9743
+      },
+      {
+        "query": "document DEX_TOOLS and warn on mistyped DEX_TOOL_TIER",
+        "reached": true,
+        "first_gold_rank": 9,
+        "calls": 10,
+        "tokens": 73437
+      },
+      {
+        "query": "file_tree returns not-found for non-existent path",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1457
+      },
+      {
+        "query": "resolve graph_neighbors by line range, not exact start_line",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 35390
+      },
+      {
+        "query": "standardize timing log fields to duration_ms",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 438
+      },
+      {
+        "query": "redirect hook renders graph signatures, not CompressText",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5003
+      },
+      {
+        "query": "add dex hook rewrite (Bash) + widen redirect matcher",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5001
+      },
+      {
+        "query": "Claude Code hook + plugin support (dex hook inject/redirect/observe)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 7011
+      },
+      {
+        "query": "skip git worktree checkouts during indexing",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3997
+      },
+      {
+        "query": "file_view lines:N-M past EOF returns error with line count hint",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29648
+      },
+      {
+        "query": "sessionAutoFile skip goroutine when DB absent — prevents TempDir race under -race",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29644
+      },
+      {
+        "query": "add etag unchanged coverage for stdio transport (lines mode)",
+        "reached": true,
+        "first_gold_rank": 10,
+        "calls": 11,
+        "tokens": 96458
+      },
+      {
+        "query": "etag readCache dead on stdio transport",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29646
+      },
+      {
+        "query": "fix two stale assertions in internal/mcp",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 110810
+      },
+      {
+        "query": "session metrics — duration, file_count, note_count in get response",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3118
+      },
+      {
+        "query": "add compact text field to file_tree output",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 2747
+      },
+      {
+        "query": "fix exported-field marker + session auto-tracking on file_view",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29647
+      },
+      {
+        "query": "remove package-level deps from signatures mode output",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 81971
+      },
+      {
+        "query": "file_view fallback, compact signatures, overview task hints",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3362
+      },
+      {
+        "query": "ctx_shell output policy — passthrough, verbatim, auth-flow protection",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5928
+      },
+      {
+        "query": "add 8 compression patterns — grep, find, eslint, ruff, mypy, pytest, tsc, log_dedup",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14763
+      },
+      {
+        "query": "session-aware etag caching for view_summarize re-reads",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29643
+      },
+      {
+        "query": "file_view batch mode — paths[] reads up to 10 files in one round trip",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29647
+      },
+      {
+        "query": "knowledge action=consolidate — LLM-distills session notes into stored facts",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3887
+      },
+      {
+        "query": "knowledge revision tracking — increment revision_count on re-add, surface in list",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5914
+      },
+      {
+        "query": "expose all MCP tools on the REST API surface",
+        "reached": true,
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 38330
+      },
+      {
+        "query": "add spec_verify tests; update mcp-server spec",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 59470
+      },
+      {
+        "query": "add spec_verify tool at TierPower",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3497
+      },
+      {
+        "query": "N17 cold-start partial overview when index is empty",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3356
+      },
+      {
+        "query": "adopt lean-ctx N8-N13 features",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 76074
+      },
+      {
+        "query": "adopt 7 lean-ctx features into dex",
+        "reached": true,
+        "first_gold_rank": 9,
+        "calls": 10,
+        "tokens": 83765
+      },
+      {
+        "query": "skip \u003cthink\u003e assistant prefill for plain chat / ollama",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26417
+      },
+      {
+        "query": "resolve symlinks in allowlist check for macOS /var → /private/var",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 969
+      },
+      {
+        "query": "G11+G12 ollama model auto-pull and VRAM-aware batch sizing",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 28734
+      },
+      {
+        "query": "G5 compress_output tool — shell output compression",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14758
+      },
+      {
+        "query": "auto-detect ollama chat model; surface both embed+chat in index_status (G9)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 4678
+      },
+      {
+        "query": "add search_tree tool — indexed file listing with depth grouping (G6)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29642
+      },
+      {
+        "query": "surface ollama discovery in index_status (G8)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2074
+      },
+      {
+        "query": "auto-detect ollama for local embedding",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2075
+      },
+      {
+        "query": "tiered read fidelity for view_summarize",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 55997
+      },
+      {
+        "query": "fuse symbol lane into search_semantic via RRF",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 73080
+      },
+      {
+        "query": "native streamable-HTTP MCP transport (#49)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2749
+      },
+      {
+        "query": "remote stdio shim — dex mcp --remote proxies to dex serve (#48)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26413
+      },
+      {
+        "query": "expose is_main on package-graph nodes",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 18217
+      },
+      {
+        "query": "commit package summaries incrementally so the cascade is resumable (#33)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 80742
+      },
+      {
+        "query": "doc-graph PageRank/centrality (#16, slice C)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3575
+      },
+      {
+        "query": "markdown embeds + tags (#16, slice B part 1)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5263
+      },
+      {
+        "query": "resolve docs by nodesByPath so root-level docs resolve",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 18213
+      },
+      {
+        "query": "markdown doc graph — links/wikilinks extractor (#16, slice A)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3798
+      },
+      {
+        "query": "eager-watch the --project registry at boot",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 6489
+      },
+      {
+        "query": "resolve Python relative imports against the parent package (#95)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 7255
+      },
+      {
+        "query": "reset centrality for surviving nodes when calls vanish (#93)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 7310
+      },
+      {
+        "query": "surface pending-count errors; share package-summary plan",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 84986
+      },
+      {
+        "query": "return true top-k from callEdges; fix inline budget accounting",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 18220
+      },
+      {
+        "query": "serialize first-write vec dim init",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27152
+      },
+      {
+        "query": "conserve PageRank mass; surface JSONL close errors; drop dead TS code",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3574
+      },
+      {
+        "query": "graph/packages returns Go package nodes only (#24)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 25509
+      },
+      {
+        "query": "GET /graph/packages — whole package import DAG + centrality (#23)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 18215
+      },
+      {
+        "query": "collapse duplicated project-tool HTTP handlers",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 6495
+      },
+      {
+        "query": "satisfy errcheck in answerCacheKey hash write",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2491
+      },
+      {
+        "query": "make home-dir guard test hermetic (pin HOME)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 57587
+      },
+      {
+        "query": "synthesize grounded answers + thin MCP surface to ask-only",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 16078
+      },
+      {
+        "query": "drop unused pkgGrounding.empty",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 65827
+      },
+      {
+        "query": "enumerate-by-kind summaries endpoint",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 30449
+      },
+      {
+        "query": "prune orphaned package summaries on delete (#4)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 96164
+      },
+      {
+        "query": "skip generated/aggregated trash in DefaultPatterns",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3947
+      },
+      {
+        "query": "stacked per-project blocks for `dex index status`",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26411
+      },
+      {
+        "query": "redesign `dex index status` output",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26410
+      },
+      {
+        "query": "HTTP transport for the same MCP primitives",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 9181
+      },
+      {
+        "query": "Java tree-sitter extractor",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 6036
+      },
+      {
+        "query": "Rust tree-sitter extractor (fn/struct/enum/trait/impl)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 7445
+      },
+      {
+        "query": "multi-language extractor framework (no extractors yet)",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2951
+      },
+      {
+        "query": "rename .dex-ignore → .dexignore + add benchmark/results to project ignore",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3934
+      },
+      {
+        "query": "ground summarizer prompts with graph data",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 90836
+      },
+      {
+        "query": "GC stale package_summary/repo_summary rows on upsert",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 49521
+      },
+      {
+        "query": "dedupe by latest last_seen_at in SummariesByKindWithMeta",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27155
+      },
+      {
+        "query": "lower repo_summary input cap from 40 → 15",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 104423
+      },
+      {
+        "query": "version repo_summary cache key so prompt iterations invalidate",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 70775
+      },
+      {
+        "query": "give summarizeRepo positive direction + explicit anti-markdown",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 57831
+      },
+      {
+        "query": "cap summarizeRepo input at top-40 packages by centrality",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 65062
+      },
+      {
+        "query": "tighten summarizeRepo prompt + bump cap to 4096",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 70057
+      },
+      {
+        "query": "raise summarizeRepo MaxTokens 1200 → 2400",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 73541
+      },
+      {
+        "query": "production-focused summaries + interface-dispatch centrality",
+        "reached": true,
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 13986
+      },
+      {
+        "query": "demote non-architectural file_summary chunks",
+        "reached": true,
+        "first_gold_rank": 10,
+        "calls": 11,
+        "tokens": 123381
+      },
+      {
+        "query": "anchor architecture rollup on PageRank, not semHits",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5002
+      },
+      {
+        "query": "tighten retrieval regression harness for readability",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 34361
+      },
+      {
+        "query": "retrieval regression harness with per-leg precision check",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 32930
+      },
+      {
+        "query": "clean up new-code lint findings",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 54557
+      },
+      {
+        "query": "central path-tag rule table + import-extractor registry",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1792
+      },
+      {
+        "query": "honour ctx.Done between Pass 1 worker tasks and embed batches",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 4000
+      },
+      {
+        "query": "pending-summaries backpressure + visible queue health",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29647
+      },
+      {
+        "query": "Unicode-aware FTS tokenization + AND/OR mode knob",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27153
+      },
+      {
+        "query": "record embed model in meta, refuse silent swap",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27149
+      },
+      {
+        "query": "order modules by PageRank, not alphabetically",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 31031
+      },
+      {
+        "query": "--module renders one section to stdout",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 90078
+      },
+      {
+        "query": "--dry-run reports bytes and estimated tokens",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 80887
+      },
+      {
+        "query": "--stdout flag prints rendered guide without writing",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 61580
+      },
+      {
+        "query": "acquire per-project flock in cmdWatch",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26414
+      },
+      {
+        "query": "add benchmark data",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 23962
+      },
+      {
+        "query": "preserve package_summary + repo_summary across PruneUnseen",
+        "reached": true,
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 75794
+      },
+      {
+        "query": "lock package_summary output to single prose paragraph",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 78448
+      },
+      {
+        "query": "detect already-stored truncated summaries",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 92604
+      },
+      {
+        "query": "note that --full also bumps the manifest",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 79095
+      },
+      {
+        "query": "default output to LLM_GUIDE.md (was .txt)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 39582
+      },
+      {
+        "query": "add table of contents below Overview",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 35379
+      },
+      {
+        "query": "cap Exported API at top 10 by centrality",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 78459
+      },
+      {
+        "query": "H3 headers for renderer sections, not bold",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 63868
+      },
+      {
+        "query": "drop redundant (root) module when Overview exists",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 76023
+      },
+      {
+        "query": "filter testdata/ directories from module list",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 82245
+      },
+      {
+        "query": "polish — portability, hallucination guards, tests, docs",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 28031
+      },
+      {
+        "query": "default path to cwd; quickstart; nuke guardrails",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26422
+      },
+      {
+        "query": "ground module sections in graph + centrality data",
+        "reached": true,
+        "first_gold_rank": 7,
+        "calls": 8,
+        "tokens": 49424
+      },
+      {
+        "query": "replace Taskfile.yml with tasks.yml driven by mooncake",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 19122
+      },
+      {
+        "query": "auto-drain pending summaries when the watcher is idle",
+        "reached": true,
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 42461
+      },
+      {
+        "query": "OnIdle hook fires after quiet window post-flush",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2459
+      },
+      {
+        "query": "split drainer into bounded batch + cascade helpers",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 55407
+      },
+      {
+        "query": "cross-process lock prevents concurrent indexers on same project",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26411
+      },
+      {
+        "query": "inline summary content in semantic_hits text render",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 18544
+      },
+      {
+        "query": "defer summaries by default, log phases, ground prompts",
+        "reached": true,
+        "first_gold_rank": 10,
+        "calls": 11,
+        "tokens": 72617
+      },
+      {
+        "query": "PageRank tiebreaker for architecture/package_topology suggested_reads",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5011
+      },
+      {
+        "query": "skip raw test source in semantic_hits inlining for non-editing intents",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14670
+      },
+      {
+        "query": "mirror MCP tool surface as subcommand groups",
+        "reached": true,
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 65863
+      },
+      {
+        "query": "plumb role hint into ask's SymbolHit",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14670
+      },
+      {
+        "query": "extract Go `calls` edges via go/types",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 7365
+      },
+      {
+        "query": "prefetch more inline content in mcsearch_context",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 16936
+      },
+      {
+        "query": "drainer + `mcsearch summarize` subcommand (Layer 3 phase 3)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 79152
+      },
+      {
+        "query": "--summarize-defer queues into pending_summaries (Layer 3 phase 2)",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 37237
+      },
+      {
+        "query": "pending_summaries table + queue helpers (Layer 3 phase 1)",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 76385
+      },
+      {
+        "query": "parallelize summary chat calls across files",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 85648
+      },
+      {
+        "query": "keep mtime fast-path under --summarize",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27154
+      },
+      {
+        "query": "parallelize Pass 1 read+chunk",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 26103
+      },
+      {
+        "query": "parallel batch dispatch for /v1/embeddings",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2141
+      },
+      {
+        "query": "replace brute-force slab with sqlite-vec vec0 backend",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27147
+      },
+      {
+        "query": "startsWithName accepts bash function declarations",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 8027
+      },
+      {
+        "query": "assemble multi-line function signatures",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 8027
+      },
+      {
+        "query": "TouchSeen refreshes start_line/end_line on position drift",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27151
+      },
+      {
+        "query": "startsWithName rejects call sites",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 8027
+      },
+      {
+        "query": "demote testdata/ fixtures in symbol lane",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 15525
+      },
+      {
+        "query": "symbol_lookup signals ambiguity when multiple paths match",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14674
+      },
+      {
+        "query": "extract name from Go type_declaration",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 23916
+      },
+      {
+        "query": "readSignatureAndDoc accepts field-shape lines",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 8025
+      },
+      {
+        "query": "FindSymbol falls back to graph_nodes for fields/types",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27153
+      },
+      {
+        "query": "iter 2-4 — four more router papercuts",
+        "reached": true,
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 54248
+      },
+      {
+        "query": "iter 1 — adjacent-fn signature mixup + max not first score",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14674
+      },
+      {
+        "query": "extract YAML import refs; skip Go phase without go.mod",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1848
+      },
+      {
+        "query": "four CLI papercuts found while smoke-testing",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 47036
+      },
+      {
+        "query": "add implements edges using go/types checker",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 7367
+      },
+      {
+        "query": "add repo summary + drill-down guidance to complete issue #1",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 44252
+      },
+      {
+        "query": "add hierarchical summary index with package summaries",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 56738
+      },
+      {
+        "query": "resolve all golangci-lint issues",
+        "reached": true,
+        "first_gold_rank": 7,
+        "calls": 8,
+        "tokens": 51814
+      },
+      {
+        "query": "enrich mcsearch_context bundle with intent-gated static legs",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 8020
+      },
+      {
+        "query": "demote build files \u0026 inline semantic_hits content",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14671
+      },
+      {
+        "query": "inline suggested_reads content with intent-scaled caps",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 14673
+      },
+      {
+        "query": "ensureCache slice-bounds panic on indexes with \u003e1024 chunks",
+        "reached": true,
+        "first_gold_rank": 7,
+        "calls": 8,
+        "tokens": 88256
+      },
+      {
+        "query": "editing-context regex, code-preference bias, compact graph IDs",
+        "reached": true,
+        "first_gold_rank": 8,
+        "calls": 9,
+        "tokens": 51647
+      },
+      {
+        "query": "integrate graph layer 1 into mcsearch_context",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5001
+      },
+      {
+        "query": "add mcsearch_context router (issue #5)",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 41022
+      },
+      {
+        "query": "batch ExistingSHAs queries — N per-file queries → 1 round-trip",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3998
+      },
+      {
+        "query": "Phase 4 allocation micro-optimizations",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 36017
+      },
+      {
+        "query": "concurrency, race fix, ctx threading",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 36068
+      },
+      {
+        "query": "backfill name column in TouchSeen so re-index populates names",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27155
+      },
+      {
+        "query": "fix all golangci-lint issues surfaced by new .golangci.yml",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 62481
+      },
+      {
+        "query": "add git hooks (pre-commit → ci:fast, pre-push → ci)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 38979
+      },
+      {
+        "query": "find_symbol + related_chunks MCP tools; parent context; path diversity; exclude filter",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 30659
+      },
+      {
+        "query": "remove ask_codebase and generate_code tools; compact README",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 33038
+      },
+      {
+        "query": "index+store: make -summarize work on already-indexed projects; auto-invalidate stale cache",
+        "reached": true,
+        "first_gold_rank": 9,
+        "calls": 10,
+        "tokens": 101433
+      },
+      {
+        "query": "stamp identifier name into EmbedText for structural chunks",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 9357
+      },
+      {
+        "query": "fix six code-review issues across store, mcp, rerank",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 29480
+      },
+      {
+        "query": "decoder-style ChatReranker for Qwen3-Reranker-4B via vLLM",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 5034
+      },
+      {
+        "query": "per-chunk LLM summaries for structural code entities",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 60078
+      },
+      {
+        "query": "add context compression and speculative local draft pipelines",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 46217
+      },
+      {
+        "query": "switch client path /v1/rerank → /rerank",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 1390
+      },
+      {
+        "query": "ask_codebase prompt + ignore package doc — surface full filter chain",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 59396
+      },
+      {
+        "query": "exclude LICENSE / COPYING / NOTICE / AUTHORS family from index",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3940
+      },
+      {
+        "query": "summarize_path prompt — file-kind agnostic framing",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 29643
+      },
+      {
+        "query": "rerank spec, summarize",
+        "reached": true,
+        "first_gold_rank": 7,
+        "calls": 8,
+        "tokens": 50533
+      },
+      {
+        "query": "mcsearch reindex [\u003cpath\u003e|--all] + user-local install path",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 73911
+      },
+      {
+        "query": "indexability guard — refuse /, $HOME, system dirs + allowlist",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 967
+      },
+      {
+        "query": "generate_code — RAG-grounded code generation via /v1/chat/completions",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 48899
+      },
+      {
+        "query": "down-weight free-form window chunks in BM25 ranking",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 27145
+      },
+      {
+        "query": "hybrid search — BM25 + semantic via Reciprocal Rank Fusion",
+        "reached": true,
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 36557
+      },
+      {
+        "query": "MCSEARCH_DISABLE_VEC_CACHE escape hatch + honest perf in README",
+        "reached": true,
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 27915
+      },
+      {
+        "query": "don't skip test files that contain literal secret patterns",
+        "reached": true,
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 3945
+      },
+      {
+        "query": "in-RAM vector cache for Search (5–8× faster, 100–180× fewer allocs)",
+        "reached": true,
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 68030
+      },
+      {
+        "query": "medium-severity UX, perf, and correctness from QA pass",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 22647
+      },
+      {
+        "query": "high-severity correctness bugs from QA pass",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 48367
+      },
+      {
+        "query": "clone for worktrees, Dockerfile, nanosecond prune cutoff",
+        "reached": true,
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 56045
+      },
+      {
+        "query": "mcsearch watch — fsnotify-driven auto-reindex",
+        "reached": true,
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 14296
+      }
+    ]
   },
   "map_seeded": {
     "lane": "full (map-seeded)",
     "k": 0,
     "num_queries": 304,
-    "num_reached": 139,
-    "reach_rate": 0.45723684210526316,
+    "num_reached": 172,
+    "reach_rate": 0.5657894736842105,
     "mean_calls": 3,
     "median_calls": 3,
-    "mean_tokens": 16614.4964028777,
-    "median_tokens": 18789
+    "mean_tokens": 22473.877906976744,
+    "median_tokens": 27757,
+    "results": [
+      {
+        "query": "maintenance mode stub — dex mcp --maintenance",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 2933
+      },
+      {
+        "query": "bump rerank conc to 16",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "use GET /v1/models for Health() instead of live inference",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 2753
+      },
+      {
+        "query": "add 'dex knowledge add|query|rm' verb",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "add 'dex read \u003cfile\u003e' structural read verb",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "add 'dex compress \u003cfile|-\u003e' first-class verb",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "delta re-read on changed files (#217)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "promote graph_* rows to canonical rulesContent, bump to v2 (#245)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "richer summary progress reporting in dex index status",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "detect stale/drifted Claude routing rules (#244)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 5604
+      },
+      {
+        "query": "fix if-return revive in store.migrate (#243)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "clear golangci-lint full-gate failures (#243)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "extract migrateCoAccessEdges to reduce cyclop delta",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "suppress gosec G202 on CoAccessNeighbors query build",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "accumulate dirty dirs across batches in IdleSummaryDrainer",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "mini-batch embed in runPackageJobs (#226)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "prefetch grounding + git subjects before workers (#224)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "pipelined embed — producer-consumer in DrainPendingSummariesBatch (#221)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "dirty-dir incremental cascade (#222)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "raise default SummaryConcurrency 4→8 for dual-GPU setups (issue #228)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "parallelize fetchRepoGrounding (issue #227)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "use Search not SearchFused; SearchFused returns full pool (k×5, min 30), inflating retrieved tokens and recall",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "dataset path lookup by project root; fix flag parsing; add reference baseline",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "graph_path (shortest-path BFS) + graph_diff (blast-radius) (#212)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4892
+      },
+      {
+        "query": "add package comment; replace sha1 with fnv for ContentSHA",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "wrap stdio tool handlers with panic recovery guard (#207)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "skeleton-first reads with on-demand body expansion (#206)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "prompt-cache-aware context layout for batch file_view (#205)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "add TestSetDefaultFamily",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "target_model profile dimension (#204)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "agent diaries — persistent per-agent structured log (#156)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "ContextBus — category field + FTS5 on agent_messages (#148)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "semantic chunk grouping with attention bridges for file_view (#105)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "context profiles (DEX_PROFILE)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "attention-model layout for evidence assembly (DEX_ATTENTION_LAYOUT)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "index git commits as searchable chunks (phase 3)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "augment file summary prompts with recent commit context",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "include commit subject in blame enrichment for editing_context",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "multi-scale TF-IDF index with query-type routing (#104)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "add 21 shell-output compression patterns from lean-ctx",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "expand tree-sitter structural chunking to 6 new languages (#153)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add qwen3-embedding to priority list, verify liveness in DetectOllama",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "session SLO monitoring — warn/throttle/block on token/tool thresholds",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "graph-proximity lane in search_similar (findRelated) handler",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "extract drainItem to reduce DrainPendingSummariesBatch cyclomatic complexity",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "errcheck prior.Close + remove unused fuseWithGraphNeighbors",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "add MCP server instructions + dex setup command",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "spreading activation for graph-neighborhood relevance (#92)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 13481
+      },
+      {
+        "query": "add --dry-run flag to dex index",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "extract pluggable Embedder interface from concrete embed.Client",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 2753
+      },
+      {
+        "query": "restore rerank cache on the fused path (#191)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "emit incremental progress during dex index",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "lock ask/file_view degradation when chat backend is down",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "wire graph-proximity lane into Store.Search (#145)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 13481
+      },
+      {
+        "query": "summary coverage %, --json stale flag, embed mismatch detection",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "lock index-time partial embed failure — batch survival + resume",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "cap drain generation window for incremental persistence (#140)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "deterministic breaker cooldown via injectable clock",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "reindex now enqueues deferred summaries by default",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "switch symmap to 1-token Greek-letter refs (#173)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "default embed model from index meta to prevent dim mismatch",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "lock serve/search-time degradation when embed backend is down",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "raise definition boost 1.5x-\u003e3x, gated on an orphan-boost fix (#146)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "add playwright, cypress, next build, vite build patterns (#172)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "enhance log dedup with UUID and log-level normalization (#171)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "unify the two post-RRF rerankers into one canonical path (#144)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "per-session file access heatmap — hot/cold file tracking",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "ROI-based identifier symbol map for aggressive file_view",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add --json shorthand to dex index status",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "cross-file TF-IDF codebook for multi-file file_view",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "BPE-validated safe token reductions in aggressive mode (#103)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "SPLADE-style static term expansion for BM25 (#87)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "context window ledger — budget action for ctx_session (#136)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "RAM-resident trigram index for search_grep candidate narrowing",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "expanded noise penalty tiers in rerankLocal (#85)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "per-language adaptive compression thresholds (#101)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "information bottleneck compression — binary-search entropy threshold (#115)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "query-type-adaptive RRF weights (Symbol/NL/Architecture) (#86)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "handle missing root — delete index by hash when dir is gone (#138)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 1746
+      },
+      {
+        "query": "Shannon entropy + quality gate for terse pipeline (#89)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "task_aware_compress — intent routing for file_view (#130)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "language + path_glob filters for search_semantic (#133)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "AggressiveCompress + LightweightCleanup for file_view (#128)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "check ~/.claude.json for MCP registration",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "terse engine Layer 1-3 — function-word stripping, abbreviations, zero-unique dedup (#116)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "ECS saliency scoring + MIG diversity selection for chunk ranking (#100)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "block-aware log dedup for CI/CD and service logs (#90)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "deps_cmd — dependency manifest summarization for file_view + ctx_shell (#125)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "verbatimCompact — timestamp normalization, hash normalization, boilerplate stripping, consecutive dedup (#129)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "output policy gate — verbatim classification + test runner + build error bypass (#123, #81, #82)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "over-compression guard + safety needle extraction (#88, #83)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "bounce tracker + budget-aware view downgrade (#98 #106)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "BM25 CamelCase query expansion + path enrichment (#95 #110)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "compact +N:/-N: diff format for git diff output (#131)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add Tier C tool aliases in CompressText dispatch (#126)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "mask credentials in ctx_shell output (#127)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "ANSI strip, shorter_only guard, auth-flow bypass, min-size gate",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "noise penalties, MMR diversity, session graph proximity (#112 #113 #118)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "suppress errcheck on temp file close",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "gofmt cmd/dex (pre-existing whitespace issues)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 5604
+      },
+      {
+        "query": "dex doctor — one-shot setup diagnostic command",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "normalize ad-hoc slog keys + finalize canonical attr set",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "ctx_nav — mount /v1/nav on main mux; read tier from env",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "subsystem tags at construction + observability doc",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "end-to-end watcher pipeline preserves summaries",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "graceful startup without ollama — degrade, auto-start, clear errors (#67)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "consolidate DEX_* env vars into .dex/config.yml (env \u003e file \u003e default)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "Revert \"feat(config): consolidate DEX_* env vars into .dex/config.toml\"",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "consolidate DEX_* env vars into .dex/config.toml",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "unify tool naming to category-prefix scheme (#68)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "fail loud on silent/misleading empty results (audit #73)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "passively alias 17 more tool-driver commands",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "file_view 'path' optional in paths[] batch mode",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "add 'index status --format text|json'",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "use exclude-only matcher so subdir compaction ignores opt-in include list",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4547
+      },
+      {
+        "query": "document spec_verify response shape — results key, not items",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "clarify knowledge confidence field requires float 0.0–1.0",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "document DEX_TOOLS and warn on mistyped DEX_TOOL_TIER",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "file_tree returns not-found for non-existent path",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "resolve graph_neighbors by line range, not exact start_line",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "standardize timing log fields to duration_ms",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "redirect hook renders graph signatures, not CompressText",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 5604
+      },
+      {
+        "query": "add dex hook rewrite (Bash) + widen redirect matcher",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 5604
+      },
+      {
+        "query": "Claude Code hook + plugin support (dex hook inject/redirect/observe)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 5604
+      },
+      {
+        "query": "skip git worktree checkouts during indexing",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "file_view lines:N-M past EOF returns error with line count hint",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "sessionAutoFile skip goroutine when DB absent — prevents TempDir race under -race",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "add etag unchanged coverage for stdio transport (lines mode)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "etag readCache dead on stdio transport",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "fix two stale assertions in internal/mcp",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "session metrics — duration, file_count, note_count in get response",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add compact text field to file_tree output",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "fix exported-field marker + session auto-tracking on file_view",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "remove package-level deps from signatures mode output",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "file_view fallback, compact signatures, overview task hints",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "ctx_shell output policy — passthrough, verbatim, auth-flow protection",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add 8 compression patterns — grep, find, eslint, ruff, mypy, pytest, tsc, log_dedup",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "session-aware etag caching for view_summarize re-reads",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "file_view batch mode — paths[] reads up to 10 files in one round trip",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "knowledge action=consolidate — LLM-distills session notes into stored facts",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "knowledge revision tracking — increment revision_count on re-add, surface in list",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "expose all MCP tools on the REST API surface",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4892
+      },
+      {
+        "query": "add spec_verify tests; update mcp-server spec",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add spec_verify tool at TierPower",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4892
+      },
+      {
+        "query": "N17 cold-start partial overview when index is empty",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "adopt lean-ctx N8-N13 features",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "adopt 7 lean-ctx features into dex",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 13481
+      },
+      {
+        "query": "skip \u003cthink\u003e assistant prefill for plain chat / ollama",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "resolve symlinks in allowlist check for macOS /var → /private/var",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "G11+G12 ollama model auto-pull and VRAM-aware batch sizing",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "G5 compress_output tool — shell output compression",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4892
+      },
+      {
+        "query": "auto-detect ollama chat model; surface both embed+chat in index_status (G9)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "add search_tree tool — indexed file listing with depth grouping (G6)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4892
+      },
+      {
+        "query": "surface ollama discovery in index_status (G8)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "auto-detect ollama for local embedding",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "tiered read fidelity for view_summarize",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 13481
+      },
+      {
+        "query": "fuse symbol lane into search_semantic via RRF",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "native streamable-HTTP MCP transport (#49)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "remote stdio shim — dex mcp --remote proxies to dex serve (#48)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4892
+      },
+      {
+        "query": "expose is_main on package-graph nodes",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 8901
+      },
+      {
+        "query": "commit package summaries incrementally so the cascade is resumable (#33)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "doc-graph PageRank/centrality (#16, slice C)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 18815
+      },
+      {
+        "query": "markdown embeds + tags (#16, slice B part 1)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 18815
+      },
+      {
+        "query": "resolve docs by nodesByPath so root-level docs resolve",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 18815
+      },
+      {
+        "query": "markdown doc graph — links/wikilinks extractor (#16, slice A)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "eager-watch the --project registry at boot",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "resolve Python relative imports against the parent package (#95)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "reset centrality for surviving nodes when calls vanish (#93)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "surface pending-count errors; share package-summary plan",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "return true top-k from callEdges; fix inline budget accounting",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 18815
+      },
+      {
+        "query": "serialize first-write vec dim init",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "conserve PageRank mass; surface JSONL close errors; drop dead TS code",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "graph/packages returns Go package nodes only (#24)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 18815
+      },
+      {
+        "query": "GET /graph/packages — whole package import DAG + centrality (#23)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "collapse duplicated project-tool HTTP handlers",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "satisfy errcheck in answerCacheKey hash write",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "make home-dir guard test hermetic (pin HOME)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "synthesize grounded answers + thin MCP surface to ask-only",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "drop unused pkgGrounding.empty",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "enumerate-by-kind summaries endpoint",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "prune orphaned package summaries on delete (#4)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "skip generated/aggregated trash in DefaultPatterns",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4547
+      },
+      {
+        "query": "stacked per-project blocks for `dex index status`",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "redesign `dex index status` output",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "HTTP transport for the same MCP primitives",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 7002
+      },
+      {
+        "query": "Java tree-sitter extractor",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "Rust tree-sitter extractor (fn/struct/enum/trait/impl)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "multi-language extractor framework (no extractors yet)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "rename .dex-ignore → .dexignore + add benchmark/results to project ignore",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4547
+      },
+      {
+        "query": "ground summarizer prompts with graph data",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "GC stale package_summary/repo_summary rows on upsert",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "dedupe by latest last_seen_at in SummariesByKindWithMeta",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "lower repo_summary input cap from 40 → 15",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "version repo_summary cache key so prompt iterations invalidate",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "give summarizeRepo positive direction + explicit anti-markdown",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "cap summarizeRepo input at top-40 packages by centrality",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "tighten summarizeRepo prompt + bump cap to 4096",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "raise summarizeRepo MaxTokens 1200 → 2400",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "production-focused summaries + interface-dispatch centrality",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "demote non-architectural file_summary chunks",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "anchor architecture rollup on PageRank, not semHits",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "tighten retrieval regression harness for readability",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "retrieval regression harness with per-leg precision check",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "clean up new-code lint findings",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "central path-tag rule table + import-extractor registry",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "honour ctx.Done between Pass 1 worker tasks and embed batches",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "pending-summaries backpressure + visible queue health",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "Unicode-aware FTS tokenization + AND/OR mode knob",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "record embed model in meta, refuse silent swap",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "order modules by PageRank, not alphabetically",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 13481
+      },
+      {
+        "query": "--module renders one section to stdout",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "--dry-run reports bytes and estimated tokens",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "--stdout flag prints rendered guide without writing",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "acquire per-project flock in cmdWatch",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "add benchmark data",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "preserve package_summary + repo_summary across PruneUnseen",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "lock package_summary output to single prose paragraph",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "detect already-stored truncated summaries",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "note that --full also bumps the manifest",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "default output to LLM_GUIDE.md (was .txt)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "add table of contents below Overview",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "cap Exported API at top 10 by centrality",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "H3 headers for renderer sections, not bold",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "drop redundant (root) module when Overview exists",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "filter testdata/ directories from module list",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "polish — portability, hallucination guards, tests, docs",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 13481
+      },
+      {
+        "query": "default path to cwd; quickstart; nuke guardrails",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 8901
+      },
+      {
+        "query": "ground module sections in graph + centrality data",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 13481
+      },
+      {
+        "query": "replace Taskfile.yml with tasks.yml driven by mooncake",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "auto-drain pending summaries when the watcher is idle",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "OnIdle hook fires after quiet window post-flush",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "split drainer into bounded batch + cascade helpers",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "cross-process lock prevents concurrent indexers on same project",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 1746
+      },
+      {
+        "query": "inline summary content in semantic_hits text render",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "defer summaries by default, log phases, ground prompts",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27021
+      },
+      {
+        "query": "PageRank tiebreaker for architecture/package_topology suggested_reads",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "skip raw test source in semantic_hits inlining for non-editing intents",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "mirror MCP tool surface as subcommand groups",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 18815
+      },
+      {
+        "query": "plumb role hint into ask's SymbolHit",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "extract Go `calls` edges via go/types",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "prefetch more inline content in mcsearch_context",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "drainer + `mcsearch summarize` subcommand (Layer 3 phase 3)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "--summarize-defer queues into pending_summaries (Layer 3 phase 2)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "pending_summaries table + queue helpers (Layer 3 phase 1)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "parallelize summary chat calls across files",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "keep mtime fast-path under --summarize",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "parallelize Pass 1 read+chunk",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "parallel batch dispatch for /v1/embeddings",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 2753
+      },
+      {
+        "query": "replace brute-force slab with sqlite-vec vec0 backend",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "startsWithName accepts bash function declarations",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "assemble multi-line function signatures",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "TouchSeen refreshes start_line/end_line on position drift",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "startsWithName rejects call sites",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "demote testdata/ fixtures in symbol lane",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "symbol_lookup signals ambiguity when multiple paths match",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "extract name from Go type_declaration",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "readSignatureAndDoc accepts field-shape lines",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "FindSymbol falls back to graph_nodes for fields/types",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "iter 2-4 — four more router papercuts",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "iter 1 — adjacent-fn signature mixup + max not first score",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "extract YAML import refs; skip Go phase without go.mod",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "four CLI papercuts found while smoke-testing",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add implements edges using go/types checker",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add repo summary + drill-down guidance to complete issue #1",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "add hierarchical summary index with package summaries",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "resolve all golangci-lint issues",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "enrich mcsearch_context bundle with intent-gated static legs",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "demote build files \u0026 inline semantic_hits content",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "inline suggested_reads content with intent-scaled caps",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "ensureCache slice-bounds panic on indexes with \u003e1024 chunks",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "editing-context regex, code-preference bias, compact graph IDs",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "integrate graph layer 1 into mcsearch_context",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add mcsearch_context router (issue #5)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "batch ExistingSHAs queries — N per-file queries → 1 round-trip",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "Phase 4 allocation micro-optimizations",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "concurrency, race fix, ctx threading",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "backfill name column in TouchSeen so re-index populates names",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "fix all golangci-lint issues surfaced by new .golangci.yml",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "add git hooks (pre-commit → ci:fast, pre-push → ci)",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "find_symbol + related_chunks MCP tools; parent context; path diversity; exclude filter",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "remove ask_codebase and generate_code tools; compact README",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "index+store: make -summarize work on already-indexed projects; auto-invalidate stale cache",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "stamp identifier name into EmbedText for structural chunks",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "fix six code-review issues across store, mcp, rerank",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "decoder-style ChatReranker for Qwen3-Reranker-4B via vLLM",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 1992
+      },
+      {
+        "query": "per-chunk LLM summaries for structural code entities",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "add context compression and speculative local draft pipelines",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "switch client path /v1/rerank → /rerank",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 1992
+      },
+      {
+        "query": "ask_codebase prompt + ignore package doc — surface full filter chain",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4547
+      },
+      {
+        "query": "exclude LICENSE / COPYING / NOTICE / AUTHORS family from index",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4547
+      },
+      {
+        "query": "summarize_path prompt — file-kind agnostic framing",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "rerank spec, summarize",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "mcsearch reindex [\u003cpath\u003e|--all] + user-local install path",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "indexability guard — refuse /, $HOME, system dirs + allowlist",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      },
+      {
+        "query": "generate_code — RAG-grounded code generation via /v1/chat/completions",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 30247
+      },
+      {
+        "query": "down-weight free-form window chunks in BM25 ranking",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "hybrid search — BM25 + semantic via Reciprocal Rank Fusion",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "MCSEARCH_DISABLE_VEC_CACHE escape hatch + honest perf in README",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "don't skip test files that contain literal secret patterns",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 4547
+      },
+      {
+        "query": "in-RAM vector cache for Search (5–8× faster, 100–180× fewer allocs)",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "medium-severity UX, perf, and correctness from QA pass",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 1746
+      },
+      {
+        "query": "high-severity correctness bugs from QA pass",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "clone for worktrees, Dockerfile, nanosecond prune cutoff",
+        "reached": true,
+        "first_gold_rank": 0,
+        "calls": 3,
+        "tokens": 27757
+      },
+      {
+        "query": "mcsearch watch — fsnotify-driven auto-reindex",
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 1,
+        "tokens": 145
+      }
+    ]
   },
-  "both_reached": 111,
-  "no_map_mean_calls_both": 2.963963963963964,
+  "both_reached": 156,
+  "no_map_mean_calls_both": 2.8846153846153846,
   "map_mean_calls_both": 3,
-  "no_map_mean_tokens_both": 23910.54954954955,
-  "map_mean_tokens_both": 18104.972972972973,
-  "delta_mean_calls": 0.03603603603603611,
-  "delta_mean_tokens": -5805.5765765765755,
+  "no_map_mean_tokens_both": 23324.891025641027,
+  "map_mean_tokens_both": 22232.26282051282,
+  "delta_mean_calls": 0.11538461538461542,
+  "delta_mean_tokens": -1092.628205128207,
   "routing": {
     "lane": "full",
     "points": [
       {
         "budget": 75,
         "queries": 304,
-        "routed": 112,
-        "accuracy": 0.3684210526315789
+        "routed": 167,
+        "accuracy": 0.5493421052631579
       },
       {
         "budget": 150,
         "queries": 304,
-        "routed": 139,
-        "accuracy": 0.45723684210526316
+        "routed": 172,
+        "accuracy": 0.5657894736842105
       },
       {
         "budget": 300,
         "queries": 304,
-        "routed": 163,
-        "accuracy": 0.5361842105263158
+        "routed": 199,
+        "accuracy": 0.6546052631578947
       },
       {
         "budget": 600,
         "queries": 304,
-        "routed": 236,
-        "accuracy": 0.7763157894736842
+        "routed": 229,
+        "accuracy": 0.7532894736842105
       },
       {
         "budget": 1200,
         "queries": 304,
-        "routed": 239,
-        "accuracy": 0.7861842105263158
+        "routed": 230,
+        "accuracy": 0.756578947368421
+      }
+    ]
+  },
+  "breadth": {
+    "lane": "full",
+    "num_tasks": 25,
+    "k": 10,
+    "mean_no_map_coverage": 0.2269553224553225,
+    "mean_map_coverage": 0.2398896658896659,
+    "delta_coverage": 0.01293434343434341,
+    "mean_no_map_tokens": 69.52,
+    "mean_map_tokens": 643.32,
+    "delta_tokens": 573.8000000000001,
+    "mean_no_map_calls": 1,
+    "mean_map_calls": 1.96,
+    "results": [
+      {
+        "task": "neighborhood of (*Store).Close",
+        "targets": 26,
+        "no_map_found": 1,
+        "no_map_coverage": 0.038461538461538464,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 5,
+        "map_coverage": 0.19230769230769232,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of OpenWith",
+        "targets": 22,
+        "no_map_found": 2,
+        "no_map_coverage": 0.09090909090909091,
+        "no_map_calls": 1,
+        "no_map_tokens": 68,
+        "map_found": 3,
+        "map_coverage": 0.13636363636363635,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Server).summarize",
+        "targets": 20,
+        "no_map_found": 2,
+        "no_map_coverage": 0.1,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 3,
+        "map_coverage": 0.15,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of main",
+        "targets": 16,
+        "no_map_found": 0,
+        "no_map_coverage": 0,
+        "no_map_calls": 1,
+        "no_map_tokens": 108,
+        "map_found": 2,
+        "map_coverage": 0.125,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Server).resolveProject",
+        "targets": 16,
+        "no_map_found": 1,
+        "no_map_coverage": 0.0625,
+        "no_map_calls": 1,
+        "no_map_tokens": 68,
+        "map_found": 2,
+        "map_coverage": 0.125,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (Embedder).Embed",
+        "targets": 13,
+        "no_map_found": 2,
+        "no_map_coverage": 0.15384615384615385,
+        "no_map_calls": 1,
+        "no_map_tokens": 69,
+        "map_found": 2,
+        "map_coverage": 0.15384615384615385,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Server).contextRouter",
+        "targets": 13,
+        "no_map_found": 4,
+        "no_map_coverage": 0.3076923076923077,
+        "no_map_calls": 1,
+        "no_map_tokens": 69,
+        "map_found": 3,
+        "map_coverage": 0.23076923076923078,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Server).search",
+        "targets": 13,
+        "no_map_found": 1,
+        "no_map_coverage": 0.07692307692307693,
+        "no_map_calls": 1,
+        "no_map_tokens": 58,
+        "map_found": 3,
+        "map_coverage": 0.23076923076923078,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of setHelp",
+        "targets": 13,
+        "no_map_found": 4,
+        "no_map_coverage": 0.3076923076923077,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 1,
+        "map_coverage": 0.07692307692307693,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of Resolve",
+        "targets": 12,
+        "no_map_found": 3,
+        "no_map_coverage": 0.25,
+        "no_map_calls": 1,
+        "no_map_tokens": 68,
+        "map_found": 5,
+        "map_coverage": 0.4166666666666667,
+        "map_calls": 3,
+        "map_tokens": 1097
+      },
+      {
+        "task": "neighborhood of runEval",
+        "targets": 11,
+        "no_map_found": 4,
+        "no_map_coverage": 0.36363636363636365,
+        "no_map_calls": 1,
+        "no_map_tokens": 69,
+        "map_found": 2,
+        "map_coverage": 0.18181818181818182,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Store).Search",
+        "targets": 10,
+        "no_map_found": 1,
+        "no_map_coverage": 0.1,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 2,
+        "map_coverage": 0.2,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Store).SessionGet",
+        "targets": 10,
+        "no_map_found": 5,
+        "no_map_coverage": 0.5,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 3,
+        "map_coverage": 0.3,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of indexDir",
+        "targets": 10,
+        "no_map_found": 1,
+        "no_map_coverage": 0.1,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 2,
+        "map_coverage": 0.2,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of NodeID",
+        "targets": 9,
+        "no_map_found": 5,
+        "no_map_coverage": 0.5555555555555556,
+        "no_map_calls": 1,
+        "no_map_tokens": 70,
+        "map_found": 0,
+        "map_coverage": 0,
+        "map_calls": 1,
+        "map_tokens": 145
+      },
+      {
+        "task": "neighborhood of cmdIndex",
+        "targets": 9,
+        "no_map_found": 2,
+        "no_map_coverage": 0.2222222222222222,
+        "no_map_calls": 1,
+        "no_map_tokens": 65,
+        "map_found": 5,
+        "map_coverage": 0.5555555555555556,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Server).findRelated",
+        "targets": 9,
+        "no_map_found": 2,
+        "no_map_coverage": 0.2222222222222222,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 3,
+        "map_coverage": 0.3333333333333333,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of newEmbedClient",
+        "targets": 9,
+        "no_map_found": 4,
+        "no_map_coverage": 0.4444444444444444,
+        "no_map_calls": 1,
+        "no_map_tokens": 66,
+        "map_found": 1,
+        "map_coverage": 0.1111111111111111,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Server).overview",
+        "targets": 9,
+        "no_map_found": 2,
+        "no_map_coverage": 0.2222222222222222,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 4,
+        "map_coverage": 0.4444444444444444,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of reorderFlags",
+        "targets": 9,
+        "no_map_found": 1,
+        "no_map_coverage": 0.1111111111111111,
+        "no_map_calls": 1,
+        "no_map_tokens": 67,
+        "map_found": 1,
+        "map_coverage": 0.1111111111111111,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of runBenchNav",
+        "targets": 9,
+        "no_map_found": 4,
+        "no_map_coverage": 0.4444444444444444,
+        "no_map_calls": 1,
+        "no_map_tokens": 78,
+        "map_found": 2,
+        "map_coverage": 0.2222222222222222,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of EdgeID",
+        "targets": 8,
+        "no_map_found": 5,
+        "no_map_coverage": 0.625,
+        "no_map_calls": 1,
+        "no_map_tokens": 71,
+        "map_found": 0,
+        "map_coverage": 0,
+        "map_calls": 1,
+        "map_tokens": 145
+      },
+      {
+        "task": "neighborhood of New",
+        "targets": 8,
+        "no_map_found": 1,
+        "no_map_coverage": 0.125,
+        "no_map_calls": 1,
+        "no_map_tokens": 70,
+        "map_found": 2,
+        "map_coverage": 0.25,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of cmdWatch",
+        "targets": 8,
+        "no_map_found": 1,
+        "no_map_coverage": 0.125,
+        "no_map_calls": 1,
+        "no_map_tokens": 65,
+        "map_found": 5,
+        "map_coverage": 0.625,
+        "map_calls": 2,
+        "map_tokens": 668
+      },
+      {
+        "task": "neighborhood of (*Server).compose",
+        "targets": 8,
+        "no_map_found": 1,
+        "no_map_coverage": 0.125,
+        "no_map_calls": 1,
+        "no_map_tokens": 73,
+        "map_found": 5,
+        "map_coverage": 0.625,
+        "map_calls": 2,
+        "map_tokens": 668
       }
     ]
   }
