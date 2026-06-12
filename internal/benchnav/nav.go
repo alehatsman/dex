@@ -7,7 +7,8 @@
 // find() call, then reads the ranked files top-down until it touches a
 // relevant (gold) file. The metric is the count of tool calls and the tokens
 // consumed up to that first touch. Phase B (gated on `dex map`, story 1) will
-// re-measure with a map() call seeding navigation and report the delta.
+// re-measures with a map() call seeding navigation and reports the delta
+// (ComputeMap + Compare, below).
 //
 // The package is intentionally decoupled from the retrieval stack: callers
 // adapt their ranked results into Query values and supply a CostModel, so the
@@ -192,6 +193,162 @@ func (r Report) Regressions(ref Report, absTol, relTol float64) []Regression {
 	}
 	if ref.MeanTokens > 0 && r.MeanTokens > ref.MeanTokens*(1+relTol) {
 		regs = append(regs, Regression{"mean_tokens", ref.MeanTokens, r.MeanTokens})
+	}
+	return regs
+}
+
+// MapModel injects the orientation map the seeded policy navigates with. Like
+// CostModel it keeps benchnav free of the graph/codemap stack — the caller
+// builds it from the live communities. L0Tokens is the cost of the single
+// map() L0 orientation call. Locate answers, for a gold file, whether the map
+// surfaces it (named within an L0-shown cluster) and the token cost of the L1
+// zoom into that cluster — i.e. can the map route an agent to this file, and
+// for how many tokens.
+type MapModel struct {
+	L0Tokens int
+	// Locate reports (l1Tokens, true) when path is named in some L0-shown
+	// cluster — the agent zooms that cluster (one map() call costing l1Tokens)
+	// and sees the file's location. It reports (0, false) on a map miss: the
+	// file is not surfaced anywhere the agent could have navigated to from L0.
+	Locate func(path string) (l1Tokens int, named bool)
+}
+
+// ComputeMap runs the deterministic MAP-SEEDED navigation policy: the agent
+// issues one map() L0 call to orient, zooms the cluster that names the cheapest
+// reachable gold file (one more map() call), then opens that file — three calls
+// total. This is the map's ceiling: it credits L0 with routing the agent to the
+// right cluster, so the lane measures the cost when the map's structure is used
+// perfectly, bounded by ReachRate (how often the map names the gold file at
+// all). readCost is the SAME CostModel.Read the no-map lane uses, so the
+// Phase-B delta is honest. Results are emitted one-per-query in input order, so
+// Compare can zip them against a no-map report over the same queries.
+func ComputeMap(queries []Query, cost CostModel, m MapModel, lane string) Report {
+	rep := Report{Lane: lane + " (map-seeded)", NumQueries: len(queries)}
+	var callsReached, tokensReached []int
+	for _, q := range queries {
+		bestTokens, located := 0, false
+		for _, g := range q.Relevant {
+			l1, named := m.Locate(g)
+			if !named {
+				continue
+			}
+			// Cost to reach this gold via the map: orient + zoom + read it.
+			t := m.L0Tokens + l1 + cost.Read(g)
+			if !located || t < bestTokens {
+				located = true
+				bestTokens = t
+			}
+		}
+		res := NavResult{Query: q.Query, Reached: located}
+		if located {
+			res.Calls = 3 // map L0 (orient) + cluster L1 (zoom) + gold read
+			res.Tokens = bestTokens
+			callsReached = append(callsReached, res.Calls)
+			tokensReached = append(tokensReached, res.Tokens)
+		} else {
+			// Map miss: the agent paid for the L0 orientation and learned nothing.
+			res.Calls = 1
+			res.Tokens = m.L0Tokens
+		}
+		rep.Results = append(rep.Results, res)
+	}
+	rep.NumReached = len(callsReached)
+	if rep.NumQueries > 0 {
+		rep.ReachRate = float64(rep.NumReached) / float64(rep.NumQueries)
+	}
+	rep.MeanCalls, rep.MedianCalls = meanMedian(callsReached)
+	rep.MeanTokens, rep.MedianTokens = meanMedian(tokensReached)
+	return rep
+}
+
+// Comparison is the Phase-B headline: the no-map baseline and the map-seeded
+// lane over the same golden set, plus deltas taken over the queries reached by
+// BOTH lanes. Averaging a delta over a query only one lane reaches would be
+// dishonest (no comparable cost on the other side), so the intersection is the
+// only fair set; each lane's own ReachRate carries the coverage signal.
+type Comparison struct {
+	NoMap     Report `json:"no_map"`
+	MapSeeded Report `json:"map_seeded"`
+
+	BothReached         int     `json:"both_reached"`
+	NoMapMeanCallsBoth  float64 `json:"no_map_mean_calls_both"`
+	MapMeanCallsBoth    float64 `json:"map_mean_calls_both"`
+	NoMapMeanTokensBoth float64 `json:"no_map_mean_tokens_both"`
+	MapMeanTokensBoth   float64 `json:"map_mean_tokens_both"`
+	DeltaMeanCalls      float64 `json:"delta_mean_calls"`  // map - no-map; negative = map cheaper
+	DeltaMeanTokens     float64 `json:"delta_mean_tokens"` // map - no-map; negative = map cheaper
+}
+
+// Compare zips two reports produced over the SAME queries (Compute and
+// ComputeMap emit one result per query in input order) and averages the
+// cost delta over queries reached by both lanes.
+func Compare(noMap, mapSeeded Report) Comparison {
+	c := Comparison{NoMap: noMap, MapSeeded: mapSeeded}
+	var nmCalls, mCalls, nmTok, mTok []int
+	n := len(noMap.Results)
+	if len(mapSeeded.Results) < n {
+		n = len(mapSeeded.Results)
+	}
+	for i := 0; i < n; i++ {
+		a, b := noMap.Results[i], mapSeeded.Results[i]
+		if a.Reached && b.Reached {
+			nmCalls = append(nmCalls, a.Calls)
+			mCalls = append(mCalls, b.Calls)
+			nmTok = append(nmTok, a.Tokens)
+			mTok = append(mTok, b.Tokens)
+		}
+	}
+	c.BothReached = len(nmCalls)
+	c.NoMapMeanCallsBoth, _ = meanMedian(nmCalls)
+	c.MapMeanCallsBoth, _ = meanMedian(mCalls)
+	c.NoMapMeanTokensBoth, _ = meanMedian(nmTok)
+	c.MapMeanTokensBoth, _ = meanMedian(mTok)
+	c.DeltaMeanCalls = c.MapMeanCallsBoth - c.NoMapMeanCallsBoth
+	c.DeltaMeanTokens = c.MapMeanTokensBoth - c.NoMapMeanTokensBoth
+	return c
+}
+
+// JSON renders the comparison as indented JSON.
+func (c Comparison) JSON() ([]byte, error) { return json.MarshalIndent(c, "", "  ") }
+
+// Markdown renders the map-vs-no-map summary and the both-reached delta.
+func (c Comparison) Markdown() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# dex bench nav — map vs no-map (%s lane)\n\n", c.NoMap.Lane)
+	fmt.Fprintf(&b, "Cost to first gold-file touch. Map quality = gold file named within the\n")
+	fmt.Fprintf(&b, "L0-shown clusters (reach); interface quality = fewer calls + tokens to that touch.\n\n")
+	fmt.Fprintf(&b, "| metric | no-map | map-seeded |\n|---|---|---|\n")
+	fmt.Fprintf(&b, "| queries | %d | %d |\n", c.NoMap.NumQueries, c.MapSeeded.NumQueries)
+	fmt.Fprintf(&b, "| reached | %d (%.1f%%) | %d (%.1f%%) |\n",
+		c.NoMap.NumReached, c.NoMap.ReachRate*100, c.MapSeeded.NumReached, c.MapSeeded.ReachRate*100)
+	fmt.Fprintf(&b, "| mean calls to touch | %.2f | %.2f |\n", c.NoMap.MeanCalls, c.MapSeeded.MeanCalls)
+	fmt.Fprintf(&b, "| mean tokens to touch | %.0f | %.0f |\n", c.NoMap.MeanTokens, c.MapSeeded.MeanTokens)
+	fmt.Fprintf(&b, "\n**Delta over %d queries reached by both lanes** (negative = map cheaper):\n\n", c.BothReached)
+	fmt.Fprintf(&b, "| metric | no-map | map-seeded | delta |\n|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| mean calls | %.2f | %.2f | %+.2f |\n", c.NoMapMeanCallsBoth, c.MapMeanCallsBoth, c.DeltaMeanCalls)
+	fmt.Fprintf(&b, "| mean tokens | %.0f | %.0f | %+.0f |\n", c.NoMapMeanTokensBoth, c.MapMeanTokensBoth, c.DeltaMeanTokens)
+	return b.String()
+}
+
+// Regressions gates both lanes against a committed reference (each lane's own
+// reach/calls/tokens via Report.Regressions, map lane metrics prefixed "map_")
+// and flags erosion of the map's token advantage on the both-reached set — the
+// explore epic's whole thesis is that the map keeps navigation cheaper.
+func (c Comparison) Regressions(ref Comparison, absTol, relTol float64) []Regression {
+	regs := c.NoMap.Regressions(ref.NoMap, absTol, relTol)
+	for _, r := range c.MapSeeded.Regressions(ref.MapSeeded, absTol, relTol) {
+		r.Metric = "map_" + r.Metric
+		regs = append(regs, r)
+	}
+	// Map advantage is a negative delta; erosion = it rising toward 0. Only gate
+	// it once the advantage is MATERIAL (beyond 5% of the no-map cost) — a tiny
+	// advantage is within run-to-run noise and gating it would just flake. When
+	// material, bound it to within relTol of the reference's (negative) edge.
+	material := ref.DeltaMeanTokens < -0.05*ref.NoMapMeanTokensBoth
+	if material {
+		if ceil := ref.DeltaMeanTokens * (1 - relTol); c.DeltaMeanTokens > ceil {
+			regs = append(regs, Regression{"map_advantage_tokens", ref.DeltaMeanTokens, c.DeltaMeanTokens})
+		}
 	}
 	return regs
 }

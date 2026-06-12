@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/benchnav"
+	"github.com/alehatsman/dex/internal/codemap"
 	"github.com/alehatsman/dex/internal/eval"
+	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/store"
 	"github.com/alehatsman/dex/internal/tokens"
 )
@@ -23,9 +25,10 @@ deterministic, zero-inference policy: issue one find(query), then read the
 ranked files top-down until a relevant file is opened. Reports reach-rate and
 the calls + tokens to that first touch.
 
-This is the NO-MAP baseline. Once 'dex map' lands (story 1) the same lane will
-re-measure with a map() seeding navigation and report the delta — the whole
-point of the explore epic is to drive these numbers down.
+It reports BOTH lanes: the no-map baseline, and a map-seeded lane that issues one
+'dex map' L0 to orient, zooms the cluster naming the gold file (L1), then opens it
+— plus the delta between them. Driving that delta negative is the whole point of
+the explore epic.
 
 Reuses the committed eval golden set (query -> relevant files), so the query
 set is stable across runs. Like 'dex bench eval', this needs a live index and
@@ -35,6 +38,8 @@ Flags:
   --golden path   golden-set JSON (default: <project>/benchmark/eval/golden.json)
   --k int         read horizon — how deep the agent reads before giving up (default: 10)
   --lane name     retrieval lane: full (default) | bm25 | onnx
+  --l0-budget int map-lane L0 token budget (default: 150)
+  --l1-budget int map-lane L1 token budget per cluster (default: 1000)
   --output format json or md (default: md)
   --check path    compare against a reference report JSON; exit 1 on regression
 
@@ -48,6 +53,8 @@ func runBenchNav(ctx context.Context, args []string) {
 	goldenPath := fs.String("golden", "", "golden-set JSON path")
 	k := fs.Int("k", 10, "read horizon")
 	lane := fs.String("lane", "full", "retrieval lane: full | bm25 | onnx")
+	l0budget := fs.Int("l0-budget", 0, "map-lane L0 token budget (default 150)")
+	l1budget := fs.Int("l1-budget", 0, "map-lane L1 token budget per cluster (default 1000)")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
 
@@ -118,28 +125,42 @@ func runBenchNav(ctx context.Context, args []string) {
 		})
 	}
 
-	rep := benchnav.Compute(queries, *k, navCostModel(p.Root), *lane)
+	cost := navCostModel(p.Root)
+	noMap := benchnav.Compute(queries, *k, cost, *lane)
+
+	// Phase B: seed navigation with `dex map`. Build the same L0/L1 the agent
+	// would see by default, then measure the map-vs-no-map delta. If the graph has
+	// no communities (e.g. BM25-only index), report the no-map lane alone.
+	mapModel, mapErr := buildNavMapModel(ctx, p.Root, *l0budget, *l1budget)
+	if mapErr != nil {
+		fmt.Fprintf(os.Stderr, "dex bench nav: map lane unavailable (%v) — reporting no-map only\n", mapErr)
+		emitNavReport(noMap, *outputFmt)
+		return
+	}
+	mapSeeded := benchnav.ComputeMap(queries, cost, mapModel, *lane)
+	cmp := benchnav.Compare(noMap, mapSeeded)
 
 	switch *outputFmt {
 	case "json":
-		out, err := rep.JSON()
+		out, err := cmp.JSON()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "dex bench nav: marshal: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println(string(out))
 	default:
-		fmt.Print(rep.Markdown())
+		fmt.Print(cmp.Markdown())
 	}
 
 	if *checkPath != "" {
-		ref, err := loadNavReport(*checkPath)
+		ref, err := loadNavComparison(*checkPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "dex bench nav: load --check report: %v\n", err)
 			os.Exit(1)
 		}
-		// reach-rate may not fall >2 pts; mean calls/tokens may not rise >5%.
-		regs := rep.Regressions(ref, 0.02, 0.05)
+		// Each lane: reach may not fall >2 pts, mean calls/tokens may not rise >5%
+		// (map metrics prefixed map_); plus the map's token advantage may not erode.
+		regs := cmp.Regressions(ref, 0.02, 0.05)
 		if len(regs) > 0 {
 			fmt.Fprintln(os.Stderr, "dex bench nav: regression check FAILED:")
 			for _, r := range regs {
@@ -149,6 +170,71 @@ func runBenchNav(ctx context.Context, args []string) {
 		}
 		fmt.Fprintln(os.Stderr, "dex bench nav: regression check passed")
 	}
+}
+
+// emitNavReport prints a single no-map report (the fallback when the map lane
+// is unavailable), preserving the pre-Phase-B output shape.
+func emitNavReport(rep benchnav.Report, format string) {
+	if format == "json" {
+		out, err := rep.JSON()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "dex bench nav: marshal: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(out))
+		return
+	}
+	fmt.Print(rep.Markdown())
+}
+
+// buildNavMapModel constructs the orientation map the seeded policy navigates
+// with, from the live Louvain communities — the SAME L0/L1 `dex map` renders by
+// default (min-members 3, top-k 25). L0Tokens prices the one orientation call;
+// Locate reports whether a gold file is named in an L0-shown cluster's rendered
+// L1 (so budget truncation is honored exactly as the agent sees it) and that
+// zoom's token cost.
+func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int) (benchnav.MapModel, error) {
+	base, err := indexDir()
+	if err != nil {
+		return benchnav.MapModel{}, err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.GraphCommunities(ctx, mcp.CommunitiesInput{MinMembers: 3, TopK: 25, ProjectRoot: root})
+	if err != nil {
+		return benchnav.MapModel{}, err
+	}
+	if out.Status != "ok" {
+		return benchnav.MapModel{}, fmt.Errorf("graph communities status %q", out.Status)
+	}
+	clusters := adaptCommunities(out.Communities)
+	if len(clusters) == 0 {
+		return benchnav.MapModel{}, fmt.Errorf("no clusters in graph")
+	}
+
+	// Pre-render the L1 of each L0-shown cluster once; Locate scans these texts.
+	type shownL1 struct {
+		text   string
+		tokens int
+	}
+	var shown []shownL1
+	for _, c := range codemap.ShownL0(clusters, l0budget) {
+		txt := codemap.RenderL1(c, l1budget)
+		shown = append(shown, shownL1{text: txt, tokens: tokens.Count(txt)})
+	}
+	l0tokens := tokens.Count(codemap.RenderL0(clusters, l0budget))
+
+	return benchnav.MapModel{
+		L0Tokens: l0tokens,
+		Locate: func(path string) (int, bool) {
+			best, found := 0, false
+			for _, sc := range shown {
+				if strings.Contains(sc.text, path) && (!found || sc.tokens < best) {
+					best, found = sc.tokens, true
+				}
+			}
+			return best, found
+		},
+	}, nil
 }
 
 // navCostModel prices the agent's actions for the no-map policy. A read costs
@@ -175,11 +261,11 @@ func navCostModel(root string) benchnav.CostModel {
 	}
 }
 
-func loadNavReport(path string) (benchnav.Report, error) {
-	var rep benchnav.Report
+func loadNavComparison(path string) (benchnav.Comparison, error) {
+	var cmp benchnav.Comparison
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return rep, err
+		return cmp, err
 	}
-	return rep, json.Unmarshal(b, &rep)
+	return cmp, json.Unmarshal(b, &cmp)
 }

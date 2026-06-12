@@ -100,36 +100,55 @@ func dominantPkg(symbols []Symbol) string {
 	return best
 }
 
-// RenderL0 renders the repo-level map: clusters ranked by aggregate PageRank,
-// one headline each (dominant package, size, top symbols), greedily fit to
-// budget tokens. At least one cluster is always shown; a trailing note reports
-// any clusters dropped to honor the budget.
-func RenderL0(clusters []Cluster, budget int) string {
+const l0Header = "# code map — top clusters by PageRank\n\n"
+
+// ShownL0 returns the clusters RenderL0 would display under the token budget,
+// in display order (aggregate PageRank, descending). It single-sources the
+// greedy fit so callers can reason about exactly what an agent sees in the L0
+// overview — e.g. the nav bench (story 7), which may only "zoom" a cluster the
+// agent could actually have picked out of L0. At least one cluster is shown
+// when any exist.
+func ShownL0(clusters []Cluster, budget int) []Cluster {
 	if budget <= 0 {
 		budget = DefaultL0Budget
 	}
 	ranked := append([]Cluster(nil), clusters...)
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].weight() > ranked[j].weight() })
-
 	if len(ranked) == 0 {
-		return "# code map\n\n(no clusters — graph empty or not indexed)\n"
+		return nil
 	}
 
-	const header = "# code map — top clusters by PageRank\n\n"
 	var b strings.Builder
-	b.WriteString(header)
-
-	shown := 0
+	b.WriteString(l0Header)
+	shown := make([]Cluster, 0, len(ranked))
 	for _, c := range ranked {
 		line := l0Line(c)
 		// Always show the first cluster; otherwise stop before exceeding budget.
-		if shown > 0 && tokens.Count(b.String()+line) > budget {
+		if len(shown) > 0 && tokens.Count(b.String()+line) > budget {
 			break
 		}
 		b.WriteString(line)
-		shown++
+		shown = append(shown, c)
 	}
-	if dropped := len(ranked) - shown; dropped > 0 {
+	return shown
+}
+
+// RenderL0 renders the repo-level map: clusters ranked by aggregate PageRank,
+// one headline each (dominant package, size, top symbols), greedily fit to
+// budget tokens. At least one cluster is always shown; a trailing note reports
+// any clusters dropped to honor the budget.
+func RenderL0(clusters []Cluster, budget int) string {
+	if len(clusters) == 0 {
+		return "# code map\n\n(no clusters — graph empty or not indexed)\n"
+	}
+	shown := ShownL0(clusters, budget)
+
+	var b strings.Builder
+	b.WriteString(l0Header)
+	for _, c := range shown {
+		b.WriteString(l0Line(c))
+	}
+	if dropped := len(clusters) - len(shown); dropped > 0 {
 		fmt.Fprintf(&b, "\n…%d more cluster(s). `dex map --cluster <id>` to zoom in.\n", dropped)
 	}
 	return b.String()

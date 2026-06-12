@@ -112,3 +112,109 @@ func TestMeanMedian_EvenAndEmpty(t *testing.T) {
 		t.Fatalf("even: got mean=%.2f median=%.2f, want 2.5/2.5", m, md)
 	}
 }
+
+// fixedMap prices the L0 orientation at l0 tokens and locates each named file
+// at the given L1 zoom cost; unlisted files are map misses.
+func fixedMap(l0 int, located map[string]int) MapModel {
+	return MapModel{
+		L0Tokens: l0,
+		Locate: func(p string) (int, bool) {
+			v, ok := located[p]
+			return v, ok
+		},
+	}
+}
+
+func TestComputeMap_Hit(t *testing.T) {
+	// gold "b.go" named in an L0-shown cluster at L1=20; orient(7) + zoom(20) +
+	// read(10) = 37 tokens over 3 calls.
+	q := []Query{{Query: "q", Relevant: []string{"b.go"}}}
+	rep := ComputeMap(q, fixedCost(), fixedMap(7, map[string]int{"b.go": 20}), "test")
+	if rep.NumReached != 1 || rep.ReachRate != 1.0 {
+		t.Fatalf("reach: got reached=%d rate=%.2f, want 1 / 1.00", rep.NumReached, rep.ReachRate)
+	}
+	r := rep.Results[0]
+	if !r.Reached || r.Calls != 3 || r.Tokens != 37 {
+		t.Fatalf("hit: got %+v, want reached=true calls=3 tokens=37", r)
+	}
+}
+
+func TestComputeMap_Miss(t *testing.T) {
+	// gold not named in any L0-shown cluster: the agent pays only the wasted L0
+	// orientation (1 call, 7 tokens) and the miss is excluded from aggregates.
+	q := []Query{{Query: "q", Relevant: []string{"x.go"}}}
+	rep := ComputeMap(q, fixedCost(), fixedMap(7, map[string]int{"b.go": 20}), "test")
+	if rep.NumReached != 0 || rep.ReachRate != 0.0 {
+		t.Fatalf("reach: got reached=%d rate=%.2f, want 0 / 0.00", rep.NumReached, rep.ReachRate)
+	}
+	if rep.MeanCalls != 0 || rep.MeanTokens != 0 {
+		t.Fatalf("aggregates must skip misses: got calls=%.2f tokens=%.2f", rep.MeanCalls, rep.MeanTokens)
+	}
+	r := rep.Results[0]
+	if r.Reached || r.Calls != 1 || r.Tokens != 7 {
+		t.Fatalf("miss: got %+v, want reached=false calls=1 tokens=7", r)
+	}
+}
+
+func TestComputeMap_CheapestGold(t *testing.T) {
+	// two relevant files are both named; the map routes the agent to the cheaper
+	// one (g2: 7+5+10=22, beating g1: 7+50+10=67).
+	q := []Query{{Query: "q", Relevant: []string{"g1.go", "g2.go"}}}
+	rep := ComputeMap(q, fixedCost(), fixedMap(7, map[string]int{"g1.go": 50, "g2.go": 5}), "test")
+	if r := rep.Results[0]; !r.Reached || r.Tokens != 22 {
+		t.Fatalf("cheapest: got %+v, want reached=true tokens=22", r)
+	}
+}
+
+func TestCompare_DeltaOverIntersection(t *testing.T) {
+	// Only query 0 is reached by both lanes; the delta must average over it
+	// alone, ignoring the lane-specific reaches at indices 1 and 2.
+	noMap := Report{Results: []NavResult{
+		{Reached: true, Calls: 3, Tokens: 30},
+		{Reached: true, Calls: 4, Tokens: 40}, // no-map only
+		{Reached: false},
+	}}
+	mapSeeded := Report{Results: []NavResult{
+		{Reached: true, Calls: 3, Tokens: 20},
+		{Reached: false},
+		{Reached: true, Calls: 3, Tokens: 15}, // map only
+	}}
+	c := Compare(noMap, mapSeeded)
+	if c.BothReached != 1 {
+		t.Fatalf("both-reached: got %d, want 1", c.BothReached)
+	}
+	if c.DeltaMeanTokens != -10 || c.DeltaMeanCalls != 0 {
+		t.Fatalf("delta: got tokens=%.0f calls=%.2f, want -10 / 0", c.DeltaMeanTokens, c.DeltaMeanCalls)
+	}
+}
+
+func TestComparison_Regressions_AdvantageErosion(t *testing.T) {
+	// Material advantage: -1000 tokens is well past 5% of the 5000-token no-map
+	// cost, so erosion of it (down to -100) must trip the gate.
+	ref := Comparison{
+		NoMap:               Report{ReachRate: 1, MeanCalls: 3, MeanTokens: 30, NumReached: 1},
+		MapSeeded:           Report{ReachRate: 1, MeanCalls: 3, MeanTokens: 20, NumReached: 1},
+		NoMapMeanTokensBoth: 5000,
+		DeltaMeanTokens:     -1000,
+	}
+	cur := ref
+	cur.DeltaMeanTokens = -100
+	regs := cur.Regressions(ref, 0.02, 0.05)
+	if len(regs) != 1 || regs[0].Metric != "map_advantage_tokens" {
+		t.Fatalf("erosion gate: got %+v, want single map_advantage_tokens", regs)
+	}
+	// Identical comparison must be clean.
+	if r := ref.Regressions(ref, 0.02, 0.05); len(r) != 0 {
+		t.Fatalf("self-check must pass clean, got %+v", r)
+	}
+
+	// Immaterial advantage (-67 tokens against a ~19k no-map cost, the live
+	// reality): the gate must stay silent even if it erodes to ~0 — too small
+	// to distinguish from noise.
+	tiny := Comparison{NoMapMeanTokensBoth: 19000, DeltaMeanTokens: -67}
+	eroded := tiny
+	eroded.DeltaMeanTokens = -1
+	if r := eroded.Regressions(tiny, 0.02, 0.05); len(r) != 0 {
+		t.Fatalf("immaterial advantage must not gate, got %+v", r)
+	}
+}

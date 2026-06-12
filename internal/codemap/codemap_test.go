@@ -122,3 +122,26 @@ func TestShortName(t *testing.T) {
 		}
 	}
 }
+
+func TestShownL0_WeightOrderedAndComplete(t *testing.T) {
+	shown := ShownL0(sampleClusters(), 1000)
+	if len(shown) != 3 {
+		t.Fatalf("generous budget should show all 3 clusters, got %d", len(shown))
+	}
+	if shown[0].ID != 2 || shown[1].ID != 3 || shown[2].ID != 1 {
+		t.Fatalf("not weight-ranked: got ids %d,%d,%d (want 2,3,1)", shown[0].ID, shown[1].ID, shown[2].ID)
+	}
+}
+
+func TestShownL0_BudgetTruncatesAgreesWithRenderL0(t *testing.T) {
+	cs := sampleClusters()
+	// A tiny budget shows only the heaviest cluster; RenderL0 must then report
+	// the other two as dropped — proving the two are single-sourced.
+	shown := ShownL0(cs, 1)
+	if len(shown) != 1 || shown[0].ID != 2 {
+		t.Fatalf("tiny budget: want only cluster #2, got %d clusters", len(shown))
+	}
+	if out := RenderL0(cs, 1); !strings.Contains(out, "2 more cluster(s)") {
+		t.Fatalf("RenderL0 should note 2 dropped clusters:\n%s", out)
+	}
+}
