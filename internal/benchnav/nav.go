@@ -281,6 +281,12 @@ type Comparison struct {
 	// Routing is the L0-only orientation lane (issue #351): routing accuracy
 	// swept over L0 budgets. The primary map-quality number post-#349 verdict.
 	Routing RoutingCurve `json:"routing"`
+
+	// Breadth is the multi-target lane (#351 phase 2): coverage of a whole
+	// structural set (e.g. a symbol's call-graph neighborhood) via one map
+	// enumeration vs repeated find — the regime the map should win, the inverse
+	// of the first-touch lane the #349 verdict found it loses.
+	Breadth BreadthReport `json:"breadth"`
 }
 
 // Compare zips two reports produced over the SAME queries (Compute and
@@ -335,6 +341,10 @@ func (c Comparison) Markdown() string {
 		b.WriteString("\n")
 		b.WriteString(c.Routing.Markdown())
 	}
+	if len(c.Breadth.Results) > 0 {
+		b.WriteString("\n")
+		b.WriteString(c.Breadth.Markdown())
+	}
 	return b.String()
 }
 
@@ -360,5 +370,7 @@ func (c Comparison) Regressions(ref Comparison, absTol, relTol float64) []Regres
 	}
 	// Routing accuracy is a floor at every budget — stories must raise it.
 	regs = append(regs, c.Routing.Regressions(ref.Routing, absTol)...)
+	// Breadth coverage is a floor and its advantage may not erode (#351 ph2).
+	regs = append(regs, c.Breadth.Regressions(ref.Breadth, absTol)...)
 	return regs
 }

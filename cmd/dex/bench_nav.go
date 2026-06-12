@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/benchnav"
 	"github.com/alehatsman/dex/internal/codemap"
+	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/eval"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/store"
@@ -137,7 +139,7 @@ func runBenchNav(ctx context.Context, args []string) {
 	// Phase B: seed navigation with `dex map`. Build the same L0/L1 the agent
 	// would see by default, then measure the map-vs-no-map delta. If the graph has
 	// no communities (e.g. BM25-only index), report the no-map lane alone.
-	mapModel, routeModel, mapErr := buildNavMapModel(ctx, p.Root, *l0budget, *l1budget, navRoutingBudgets)
+	mapModel, routeModel, breadthModel, mapErr := buildNavMapModel(ctx, p.Root, *l0budget, *l1budget, navRoutingBudgets)
 	if mapErr != nil {
 		fmt.Fprintf(os.Stderr, "dex bench nav: map lane unavailable (%v) — reporting no-map only\n", mapErr)
 		emitNavReport(noMap, *outputFmt)
@@ -146,6 +148,11 @@ func runBenchNav(ctx context.Context, args []string) {
 	mapSeeded := benchnav.ComputeMap(queries, cost, mapModel, *lane)
 	cmp := benchnav.Compare(noMap, mapSeeded)
 	cmp.Routing = benchnav.ComputeRouting(queries, routeModel, navRoutingBudgets, *lane)
+	if tasks, terr := buildBreadthTasks(ctx, st, em, *k); terr != nil {
+		fmt.Fprintf(os.Stderr, "dex bench nav: breadth lane unavailable (%v) — skipping\n", terr)
+	} else {
+		cmp.Breadth = benchnav.ComputeBreadth(tasks, *k, cost, breadthModel, *lane)
+	}
 
 	switch *outputFmt {
 	case "json":
@@ -200,33 +207,34 @@ func emitNavReport(rep benchnav.Report, format string) {
 // Locate reports whether a gold file is named in an L0-shown cluster's rendered
 // L1 (so budget truncation is honored exactly as the agent sees it) and that
 // zoom's token cost.
-func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, routingBudgets []int) (benchnav.MapModel, benchnav.RoutingModel, error) {
+func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, routingBudgets []int) (benchnav.MapModel, benchnav.RoutingModel, benchnav.BreadthModel, error) {
 	base, err := indexDir()
 	if err != nil {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, err
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, err
 	}
 	s, _ := newServerFromEnv(base)
 	out, err := s.GraphCommunities(ctx, mcp.CommunitiesInput{MinMembers: 3, TopK: 25, ProjectRoot: root})
 	if err != nil {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, err
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, err
 	}
 	if out.Status != "ok" {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, fmt.Errorf("graph communities status %q", out.Status)
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, fmt.Errorf("graph communities status %q", out.Status)
 	}
 	clusters := adaptCommunities(out.Communities)
 	if len(clusters) == 0 {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, fmt.Errorf("no clusters in graph")
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, fmt.Errorf("no clusters in graph")
 	}
 
 	// Pre-render the L1 of each L0-shown cluster once; Locate scans these texts.
 	type shownL1 struct {
+		id     int
 		text   string
 		tokens int
 	}
 	var shown []shownL1
 	for _, c := range codemap.ShownL0(clusters, l0budget) {
 		txt := codemap.RenderL1(c, l1budget)
-		shown = append(shown, shownL1{text: txt, tokens: tokens.Count(txt)})
+		shown = append(shown, shownL1{id: c.ID, text: txt, tokens: tokens.Count(txt)})
 	}
 	l0tokens := tokens.Count(codemap.RenderL0(clusters, l0budget))
 	mapModel := benchnav.MapModel{
@@ -261,7 +269,24 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, 
 			return routable[budget][path]
 		},
 	}
-	return mapModel, routeModel, nil
+
+	// Breadth (issue #351 phase 2): the map's enumeration model. Cluster reports
+	// the cheapest L0-shown cluster whose rendered L1 names a path (honoring L1
+	// truncation, like Locate) plus that cluster's id, so distinct zooms are
+	// charged once when a task's targets share a region.
+	breadthModel := benchnav.BreadthModel{
+		L0Tokens: l0tokens,
+		Cluster: func(path string) (int, int, bool) {
+			id, best, found := 0, 0, false
+			for _, sc := range shown {
+				if strings.Contains(sc.text, path) && (!found || sc.tokens < best) {
+					id, best, found = sc.id, sc.tokens, true
+				}
+			}
+			return id, best, found
+		},
+	}
+	return mapModel, routeModel, breadthModel, nil
 }
 
 // navCostModel prices the agent's actions for the no-map policy. A read costs
@@ -295,4 +320,138 @@ func loadNavComparison(path string) (benchnav.Comparison, error) {
 		return cmp, err
 	}
 	return cmp, json.Unmarshal(b, &cmp)
+}
+
+// navBreadthMinNeighbors is the smallest neighbor set that counts as a breadth
+// task — a hub with fewer distinct neighbor files is not a multi-target problem.
+const navBreadthMinNeighbors = 4
+
+// navBreadthMaxTasks caps how many hub symbols become breadth tasks (highest
+// neighbor-file count first); the cap is logged, never silent.
+const navBreadthMaxTasks = 25
+
+// buildBreadthTasks derives multi-target navigation tasks from the call graph:
+// seed on the highest-fan-in function/method symbols, target set = the FULL
+// (uncapped) set of files holding the seed's callers ∪ callees, ground truth
+// from the graph edges. This is the map's claimed regime — communities are built
+// from those same edges, so a hub's neighbors cluster together and one L1 zoom
+// enumerates them, whereas find() ranks by similarity, not adjacency. One find()
+// per seed (over its short name) populates the no-map lane's ranking. Seeds are
+// taken by descending neighbor-file count and capped to bound runtime.
+func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, k int) ([]benchnav.BreadthTask, error) {
+	nodes, err := st.GraphAllNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	idFile := make(map[string]string, len(nodes))
+	idQual := make(map[string]string, len(nodes))
+	isHub := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		if n.FilePath == "" {
+			continue
+		}
+		idFile[n.ID] = n.FilePath
+		idQual[n.ID] = n.QualifiedName
+		if n.Kind == "function" || n.Kind == "method" {
+			isHub[n.ID] = true
+		}
+	}
+
+	edges, err := st.GraphAllEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Undirected adjacency over node ids: callers ∪ callees.
+	adj := map[string]map[string]bool{}
+	link := func(a, b string) {
+		if adj[a] == nil {
+			adj[a] = map[string]bool{}
+		}
+		adj[a][b] = true
+	}
+	for _, e := range edges {
+		if e.SrcID == "" || e.DstID == "" || e.SrcID == e.DstID {
+			continue
+		}
+		link(e.SrcID, e.DstID)
+		link(e.DstID, e.SrcID)
+	}
+
+	type seedTask struct {
+		query string
+		label string
+		files []string
+	}
+	var seeds []seedTask
+	usedQuery := map[string]bool{}
+	for id := range isHub {
+		own := idFile[id]
+		fileSet := map[string]bool{}
+		for nb := range adj[id] {
+			f := idFile[nb]
+			if f == "" || f == own {
+				continue
+			}
+			fileSet[f] = true
+		}
+		if len(fileSet) < navBreadthMinNeighbors {
+			continue
+		}
+		qual := idQual[id]
+		query := qual
+		if idx := strings.LastIndexAny(qual, "./"); idx >= 0 && idx < len(qual)-1 {
+			query = qual[idx+1:]
+		}
+		if query == "" || usedQuery[query] {
+			continue // keep find queries unique so results map back cleanly
+		}
+		usedQuery[query] = true
+		files := make([]string, 0, len(fileSet))
+		for f := range fileSet {
+			files = append(files, f)
+		}
+		sort.Strings(files)
+		seeds = append(seeds, seedTask{query: query, label: "neighborhood of " + qual, files: files})
+	}
+	if len(seeds) == 0 {
+		return nil, fmt.Errorf("no hub symbols with >= %d neighbor files", navBreadthMinNeighbors)
+	}
+	// Largest neighbor sets first; deterministic tie-break by query.
+	sort.SliceStable(seeds, func(i, j int) bool {
+		if len(seeds[i].files) != len(seeds[j].files) {
+			return len(seeds[i].files) > len(seeds[j].files)
+		}
+		return seeds[i].query < seeds[j].query
+	})
+	if len(seeds) > navBreadthMaxTasks {
+		fmt.Fprintf(os.Stderr, "dex bench nav: breadth lane — %d eligible hubs, capping to largest %d\n", len(seeds), navBreadthMaxTasks)
+		seeds = seeds[:navBreadthMaxTasks]
+	}
+
+	// One synthetic golden query per seed, run through the SAME retrieval path
+	// the no-map lane uses, to get each task's find() ranking. Look results back
+	// up by query (unique by construction) so order assumptions don't matter.
+	byQuery := make(map[string]seedTask, len(seeds))
+	gs := eval.GoldenSet{}
+	for _, sd := range seeds {
+		byQuery[sd.query] = sd
+		gs.Queries = append(gs.Queries, eval.GoldenQuery{Query: sd.query, RelevantFiles: sd.files})
+	}
+	results, err := eval.RunWithRewrite(ctx, em, st, gs, k, nil)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]benchnav.BreadthTask, 0, len(results))
+	for _, r := range results {
+		sd, ok := byQuery[r.Query]
+		if !ok {
+			continue
+		}
+		tasks = append(tasks, benchnav.BreadthTask{
+			Task:    sd.label,
+			Targets: sd.files,
+			Ranked:  r.RankedFiles,
+		})
+	}
+	return tasks, nil
 }
