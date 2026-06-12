@@ -275,7 +275,13 @@ func buildRulesContent(path string) (action, content string, err error) {
 
 	s := string(existing)
 
-	if strings.Contains(s, rulesVersion) {
+	// Already canonical, byte-for-byte? Nothing to do. Compare the same way
+	// checkRulesStatus does (extractRulesBlock == rulesContent) so the writer
+	// and the drift checker never disagree. Keying off rulesVersion presence
+	// here instead would wedge every existing file when rulesContent changes
+	// without a version bump: the checker reports drift, but the writer sees
+	// the marker and refuses to rewrite.
+	if extractRulesBlock(s) == rulesContent {
 		return "already up to date", s, nil
 	}
 
