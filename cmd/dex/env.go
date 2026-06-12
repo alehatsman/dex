@@ -56,26 +56,12 @@ var allEnvVars = []envVar{
 	{"DEX_DRAFT_URL", "", "Speculative-draft /v1/chat/completions server.", "draft", true},
 	{"DEX_DRAFT_MODEL", "<DEX_CHAT_MODEL>", "Model for the draft leg.", "draft", false},
 
-	// summary — optional override for the chat leg used during indexing
-	// (file / chunk / package / repo summaries). Defaults to DEX_CHAT_*.
-	{"DEX_SUMMARY_URL", "", "Chat server for index-time summaries (falls back to DEX_CHAT_URL).", "summary", true},
-	{"DEX_SUMMARY_MODEL", "<DEX_CHAT_MODEL>", "Model for index-time summaries. Smaller is fine — outputs are 1–4 sentences.", "summary", false},
-	{"DEX_CHUNK_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for per-chunk summaries (volume tier — hundreds of calls). Smaller = faster.", "summary", true},
-	{"DEX_CHUNK_SUMMARY_MODE", "off", "Chunk-summary tier: `off` (default — not generated; the raw code chunk is already embedded and a chunk_summary is a redundant, deduped second vector for the same path:line), `llm` (chat — one call per chunk, the volume tier), or `extractive` (zero-GPU — doc comment + signature + first body line lifted from source). Affects only the chunk tier; file/package/repo summaries always use the LLM.", "summary", true},
-	{"DEX_FILE_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for per-file summaries (medium volume).", "summary", true},
-	{"DEX_PACKAGE_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for per-directory summaries (low volume — quality compounds into LLM_GUIDE).", "summary", true},
-	{"DEX_REPO_SUMMARY_MODEL", "<DEX_SUMMARY_MODEL>", "Per-tier override: model for the single repo-overview summary (one call total — use the strongest model you can fit).", "summary", true},
-	{"DEX_AUTO_SUMMARIZE", "", "`dex watch` and the MCP auto-watcher auto-drain pending summaries when idle. Default on if a chat/summary endpoint is set; set off|0 to disable.", "summary", true},
-	{"DEX_SUMMARIZE_IDLE", "5s", "Quiet window after a re-index before the background summary drainer fires.", "summary", false},
-	{"DEX_SUMMARIZE_BATCH", "10", "Rows per idle batch. Smaller = faster yield back to fs events.", "summary", false},
-	{"DEX_SUMMARIZE_YIELD", "", "If set (e.g. 10s), the background summary drainer skips a tick when a foreground query (search/ask/symbol/graph) ran within this window — interactive latency wins over summary freshness. Cross-process via a marker file. Empty = never yield.", "summary", true},
-	{"DEX_SUMMARIZE_PACE", "", "If set (e.g. 2s), `dex index summarize` sleeps this long between batches so a manual whole-queue drain can't monopolise a shared GPU. Empty = drain at full speed.", "summary", true},
-	{"DEX_MCP_AUTOWATCH", "1", "MCP server spawns a per-project watcher on first request to keep the index fresh and (when chat is configured) fill summaries in the background. Set off|0 to disable.", "summary", true},
-	{"DEX_WATCH_DEBOUNCE", "500ms", "Quiet window before the MCP auto-watcher re-indexes after a burst of fs events.", "summary", false},
+	// watch — the dex watch / MCP auto-watcher fs-event indexer.
+	{"DEX_MCP_AUTOWATCH", "1", "MCP server spawns a per-project watcher on first request to keep the index fresh. Set off|0 to disable.", "watch", true},
+	{"DEX_WATCH_DEBOUNCE", "500ms", "Quiet window before the MCP auto-watcher re-indexes after a burst of fs events.", "watch", false},
 
 	// tuning — hidden unless --all. Most installs leave these alone.
 	{"DEX_EMBED_DIM", "0", "Truncate embedding vectors to this many dimensions and re-normalise (Matryoshka truncation). 0 = use full model output. Requires `dex reindex` after changing.", "tuning", false},
-	{"DEX_CHUNK_CONTEXT_MODE", "off", "Contextual Retrieval (Anthropic 2024): prepend a one-sentence situating summary to each chunk before embedding and FTS5 indexing. on = enable (requires DeferSummaries / background drainer with chat access); off = disabled (default).", "tuning", true},
 	{"DEX_EMBED_BATCH", "auto", "Max chunks per /v1/embeddings call. Unset = VRAM-aware auto (8/64/256 for <4 GB/4-16 GB/>16 GB); explicit value overrides.", "tuning", false},
 	{"DEX_EMBED_CONCURRENCY", "4", "Parallel /v1/embeddings calls in flight (1 = sequential, the historical default).", "tuning", false},
 	{"DEX_EMBED_TIMEOUT", "60s", "HTTP timeout per embed call.", "tuning", false},
@@ -86,12 +72,8 @@ var allEnvVars = []envVar{
 	{"DEX_RERANK_TIMEOUT", "5s", "HTTP timeout per rerank call.", "tuning", false},
 	{"DEX_RERANK_POOL", "40", "Candidates fed to the reranker. Clamped to [1, 100].", "tuning", false},
 	{"DEX_RERANK_CONCURRENCY", "4", "Parallel rerank goroutines (chat style only).", "tuning", false},
-	{"DEX_SUMMARY_TIMEOUT", "<DEX_CHAT_TIMEOUT>", "HTTP timeout per index-time summary call. Defaults to DEX_CHAT_TIMEOUT; raise in flood/burst mode so drain can tolerate slow GPU queuing without increasing interactive latency.", "tuning", false},
-	{"DEX_SUMMARY_CONCURRENCY", "8", "Parallel chunk-summary chat calls per file during indexing.", "tuning", false},
-	{"DEX_CHUNK_SUMMARY_MIN_LINES", "30", "Minimum chunk size (lines) eligible for a per-chunk summary. Raise to cut summary volume.", "tuning", false},
 	{"DEX_DISABLE_RERANK", "", "Set 1 to short-circuit rerank even when URL is set.", "tuning", false},
 	{"DEX_DISABLE_BM25", "", "Set 1 to disable the BM25 leg.", "tuning", false},
-	{"DEX_POWER_SAVE", "", "Set 1|on to disable `dex watch` background summary draining (e.g. on battery).", "tuning", false},
 	{"DEX_MAX_HITS_PER_FILE", "", "Cap hits per file in search results (0 = no cap).", "tuning", false},
 	{"DEX_GRAPH_GAMMA", "0.6", "Per-hop decay for the graph-proximity lane: a structural neighbor reached at h hops is fused at γ^h weight, so 1-hop callers outrank 3-hop. Range (0,1]; out-of-range ignored.", "tuning", false},
 	{"DEX_GRAPH_HOP_CAP", "4", "Spreading-activation traversal depth (graph blast-radius around matched symbols). Also bounds `prefetch` neighbor discovery, which shares the same traversal.", "tuning", false},

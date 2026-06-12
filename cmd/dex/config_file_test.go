@@ -25,7 +25,6 @@ endpoints:
   chat: http://chat:11434
 models:
   embed: mxbai-embed-large
-  chunk: qwen2.5-coder:3b
 tools:
   embed_batch: 8
   disable_rerank: true
@@ -38,13 +37,12 @@ env:
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"DEX_EMBED_URL":           "http://embed:11434",
-		"DEX_CHAT_URL":            "http://chat:11434",
-		"DEX_EMBED_MODEL":         "mxbai-embed-large",
-		"DEX_CHUNK_SUMMARY_MODEL": "qwen2.5-coder:3b",
-		"DEX_EMBED_BATCH":         "8",
-		"DEX_DISABLE_RERANK":      "1", // bool true -> "1"
-		"DEX_EMBED_CONCURRENCY":   "16",
+		"DEX_EMBED_URL":         "http://embed:11434",
+		"DEX_CHAT_URL":          "http://chat:11434",
+		"DEX_EMBED_MODEL":       "mxbai-embed-large",
+		"DEX_EMBED_BATCH":       "8",
+		"DEX_DISABLE_RERANK":    "1", // bool true -> "1"
+		"DEX_EMBED_CONCURRENCY": "16",
 	}
 	for k, v := range want {
 		if got[k] != v {

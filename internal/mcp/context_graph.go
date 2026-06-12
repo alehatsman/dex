@@ -181,8 +181,8 @@ func loadGraphView(ctx context.Context, st *store.Store) (*graphView, error) {
 //
 // Resolution prefers the node whose declared line range covers
 // startLine; falls back to the highest-PageRank node in the file when
-// none matches (file-level summary chunks point at line 0-0 and we
-// want the file's most-central symbol to represent them). Returns 0
+// none matches (chunks anchored at line 0 — file-level entries — fall
+// back to the file's most-central symbol). Returns 0
 // when no graph node exists for the path — non-Go files, top-level
 // consts, no graph indexed — which makes the tiebreaker degrade
 // silently to "no preference."

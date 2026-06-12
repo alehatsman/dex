@@ -228,9 +228,6 @@ func checkEndpoints(ctx context.Context) []doctorCheck {
 func endpointCheck(p endpointProbe, err error) doctorCheck {
 	if p.health == nil {
 		detail := p.status
-		if detail == "inherits chat" {
-			detail = "inherits chat endpoint"
-		}
 		return doctorCheck{name: p.name, status: docSkip, detail: detail}
 	}
 

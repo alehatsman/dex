@@ -18,20 +18,19 @@ import (
 
 // endpointProbe captures one configured backend for `dex index status`
 // to report. health is nil for probes that aren't reachable to begin with
-// (unset opt-in URL, summary inheriting chat) — those skip the HTTP call
+// (unset opt-in URL) — those skip the HTTP call
 // and use the pre-set status string.
 type endpointProbe struct {
 	name   string
 	url    string
 	model  string
 	health func(context.Context) error
-	status string // ok | UNREACHABLE | not configured | inherits chat
+	status string // ok | UNREACHABLE | not configured
 }
 
 // collectEndpoints builds the probe list the status command displays.
 // Mirrors the env wiring in main.go: embed/chat always present (they
-// have defaults); rerank/compress/draft are opt-in; summary falls back
-// to chat when DEX_SUMMARY_URL is unset.
+// have defaults); rerank/compress/draft are opt-in.
 func collectEndpoints() []endpointProbe {
 	probes := []endpointProbe{}
 
@@ -450,15 +449,6 @@ func printSemanticHits(hits []mcp.SemHit, maxBytes int) {
 			fmt.Printf("  (%s)", h.Reason)
 		}
 		fmt.Println()
-		// Summary-kind hits carry synthesized prose in Content; the
-		// line range points at source that wouldn't match if re-read,
-		// so inline the body here.
-		if strings.HasSuffix(h.Kind, "_summary") && h.Content != "" {
-			body := truncate(h.Content, maxBytes)
-			for line := range strings.SplitSeq(strings.TrimRight(body, "\n"), "\n") {
-				fmt.Printf("     │ %s\n", line)
-			}
-		}
 	}
 	fmt.Println()
 }
