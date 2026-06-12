@@ -194,6 +194,7 @@ func (s *Server) RunHTTP(ctx context.Context, opts RunHTTPOptions) error {
 	go func() { serveErr <- httpSrv.Serve(listener) }()
 
 	defer s.watcherWG.Wait()
+	defer s.waitSessionWrites() // flush pending session records before returning
 	select {
 	case <-ctx.Done():
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

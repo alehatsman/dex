@@ -103,6 +103,11 @@ type Server struct {
 	// before returning.
 	watcherWG sync.WaitGroup
 
+	// sessionWG tracks in-flight sessionAutoFile goroutines so callers can
+	// drain them. Tests use waitSessionWrites to avoid racing TempDir
+	// cleanup against background store writes.
+	sessionWG sync.WaitGroup
+
 	// searchThrottle tracks per-session repeated searches for the same
 	// (query, project) pair. After 4 identical searches a hint is added;
 	// after 7 a stronger warning fires. Resets after 5 minutes of idle.
@@ -385,7 +390,9 @@ func (s *Server) sessionAutoFile(dbPath, relPath string) {
 	if _, err := os.Stat(dbPath); err != nil {
 		return // no index yet — nothing to track
 	}
+	s.sessionWG.Add(1)
 	go func() {
+		defer s.sessionWG.Done()
 		ctx := context.Background()
 		st, err := store.OpenWith(ctx, dbPath, s.StoreOpts)
 		if err != nil {
@@ -395,6 +402,11 @@ func (s *Server) sessionAutoFile(dbPath, relPath string) {
 		_ = st.SessionTrackFile(ctx, relPath, "read")
 	}()
 }
+
+// waitSessionWrites blocks until all in-flight sessionAutoFile goroutines
+// finish their store writes. Tests defer it before TempDir cleanup so
+// background writes don't race the dir removal.
+func (s *Server) waitSessionWrites() { s.sessionWG.Wait() }
 
 // searchThrottleHint increments the repetition counter for (query, project)
 // and returns a hint string when the pattern crosses a threshold. Returns ""
@@ -2435,6 +2447,7 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 func (s *Server) RunStdio(ctx context.Context) error {
 	s.runCtx = ctx
 	defer s.watcherWG.Wait()
+	defer s.waitSessionWrites() // flush pending session records before returning
 
 	srv := sdk.NewServer(&sdk.Implementation{
 		Name:    "dex",

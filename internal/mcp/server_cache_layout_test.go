@@ -59,6 +59,7 @@ func TestCacheLayoutStableFirst(t *testing.T) {
 	seedSession(t, projDir, cacheDir, []string{"auth.go"})
 
 	s := &Server{IndexDir: cacheDir}
+	defer s.waitSessionWrites() // drain background store writes before TempDir cleanup
 	ctx := context.Background()
 
 	// Input order: math.go (fresh), auth.go (stable), log.go (fresh).
@@ -102,8 +103,7 @@ func TestCacheLayoutStableFirst(t *testing.T) {
 // TestCacheLayoutRecencyPreservesOrder locks that CacheLayout="recency" on the
 // input suppresses stable_first reordering and returns files in caller order.
 // No session is seeded — the test verifies the layout override path, not the
-// stability classifier. (A session would trigger sessionAutoFile goroutines
-// that race TempDir cleanup.)
+// stability classifier.
 func TestCacheLayoutRecencyPreservesOrder(t *testing.T) {
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
@@ -115,6 +115,7 @@ func TestCacheLayoutRecencyPreservesOrder(t *testing.T) {
 	// b.go first (the caller's order) and emit StablePrefixTokens=0.
 
 	s := &Server{IndexDir: cacheDir}
+	defer s.waitSessionWrites() // drain background store writes before TempDir cleanup
 	ctx := context.Background()
 
 	_, out, err := s.summarize(ctx, nil, SummarizeInput{
@@ -153,6 +154,7 @@ func TestCacheLayoutNoSession(t *testing.T) {
 	// No seedSession call — store exists but no session.
 
 	s := &Server{IndexDir: cacheDir}
+	defer s.waitSessionWrites() // drain background store writes before TempDir cleanup
 	ctx := context.Background()
 
 	_, out, err := s.summarize(ctx, nil, SummarizeInput{
