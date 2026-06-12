@@ -330,7 +330,7 @@ func printContextText(out mcp.ContextOutput, maxBytes int) {
 	printSymbols(out.Symbols)
 	printReferences(out.References)
 	printAnnotations(out.Annotations)
-	printSemanticHits(out.SemanticHits, maxBytes)
+	printSemanticHits(out.SemanticHits)
 	printGraph(out.Graph)
 	printNextActionAndAvoid(out)
 }
@@ -443,7 +443,7 @@ func printAnnotations(anns map[string]mcp.PathMeta) {
 	fmt.Println()
 }
 
-func printSemanticHits(hits []mcp.SemHit, maxBytes int) {
+func printSemanticHits(hits []mcp.SemHit) {
 	if len(hits) == 0 {
 		return
 	}
