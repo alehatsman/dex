@@ -85,10 +85,11 @@ func (s *Server) expandQuery(ctx context.Context, question string, mode expandMo
 
 	resp, err := s.ExpandClient.Generate(cctx, []chat.Message{
 		{Role: "system", Content: expandSystemPrompt},
-		// "/no_think" disables qwen3's reasoning trace so the reply is
-		// JSON, not a <think> block — faster and easier to parse.
-		{Role: "user", Content: "/no_think\n" + question},
-	}, chat.Options{Temperature: 0, MaxTokens: 256})
+		{Role: "user", Content: question},
+		// ReasoningEffort "none" disables the reasoning trace on thinking
+		// models (qwen3.x via ollama) so the JSON lands in content, not a
+		// separate reasoning channel — and keeps the call fast.
+	}, chat.Options{Temperature: 0, MaxTokens: 256, ReasoningEffort: "none"})
 	if err != nil {
 		return queryExpansion{} // failure-soft
 	}

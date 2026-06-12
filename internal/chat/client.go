@@ -61,6 +61,11 @@ type Options struct {
 	// that each want a different model on the same backend — e.g.
 	// generate_code on a coder model, ask_codebase on an instruct model.
 	Model string
+	// ReasoningEffort maps to the OpenAI-compatible reasoning_effort field.
+	// Set "none" to disable a thinking model's reasoning trace (qwen3.x via
+	// ollama) so the answer lands in content, not a separate reasoning
+	// channel. Empty omits the field (server default).
+	ReasoningEffort string
 }
 
 type Response struct {
@@ -70,11 +75,12 @@ type Response struct {
 }
 
 type chatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	Temperature *float32  `json:"temperature,omitempty"`
-	MaxTokens   *int      `json:"max_tokens,omitempty"`
-	Stream      bool      `json:"stream"`
+	Model           string    `json:"model"`
+	Messages        []Message `json:"messages"`
+	Temperature     *float32  `json:"temperature,omitempty"`
+	MaxTokens       *int      `json:"max_tokens,omitempty"`
+	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
+	Stream          bool      `json:"stream"`
 }
 
 type chatResponse struct {
@@ -122,6 +128,7 @@ func (c *Client) Generate(ctx context.Context, messages []Message, opts Options)
 		m := opts.MaxTokens
 		reqBody.MaxTokens = &m
 	}
+	reqBody.ReasoningEffort = opts.ReasoningEffort
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return Response{}, err
@@ -177,6 +184,7 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Op
 		m := opts.MaxTokens
 		reqBody.MaxTokens = &m
 	}
+	reqBody.ReasoningEffort = opts.ReasoningEffort
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return Response{}, err
