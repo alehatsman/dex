@@ -12,17 +12,14 @@ dex is a local semantic code-search service. The pipeline has **three indexers w
 
 ## Chunk pipeline (`Indexer.Run`, `internal/index/index.go:117`)
 
-Comment at top of the file is literal: *"walk → chunk → embed → upsert"*. Six passes:
+Comment at top of the file is literal: *"walk → chunk → embed → upsert"*. Three passes:
 
 1. **Pass 1 — walk + chunk** (`internal/index/index.go:1` header). Single-threaded directory walk; per-file work (read, `ignore.Match`/binary/secret heuristics from `internal/ignore`, tree-sitter parse in `internal/chunk`) runs on `Options.Concurrency` workers (defaults to `GOMAXPROCS`).
    - **Mtime fast-path** — file mtime ≤ last index run → `UPDATE last_seen_at` only.
    - **SHA fast-path** — content unchanged → bump `last_seen_at`, backfill `name`, no embed.
    - **Slow path** — surviving files become `slowFile{rel, data, chunks}` for Pass 2.
 2. **Pass 2 — embed + upsert**. Batches go to `internal/embed` (OpenAI-compatible `/v1/embeddings`, e.g. vLLM/TEI Qwen3). Result rows go through `store.UpsertMany`; triggers keep `chunk_vecs` (sqlite-vec) and `chunks_fts` in sync (`docs/internals.md:28-37`).
-3. **Pass 3 — per-chunk summaries** (optional, `Options.Summarize`). Calls `internal/chat` per non-tiny chunk. With `DeferSummaries=true`, just enqueues `pending_summaries` rows.
-4. **Pass 4 — prune unseen**. `PruneUnseen` deletes rows whose `last_seen_at < startTime` (files removed since the run started).
-5. **Pass 5 — package summary**. For each directory, summarize from its file-summary chunks.
-6. **Pass 6 — repo summary** (`internal/index/index.go:794`). One `path="."` summary built from all package summaries; protected from pruning.
+3. **Pass 3 — prune unseen**. `PruneUnseen` deletes rows whose `last_seen_at < startTime` (files removed since the run started).
 
 ## Graph pipeline (`internal/graph/graph.go:254`)
 
@@ -41,20 +38,10 @@ Independent of chunks; runs after them in `cmd/dex/main.go:cmdIndex`. `ExtractGo
 
 `Watcher.Run`: fsnotify subscribes to the project tree → events filtered through the same `ignore.Matcher` → debounced (`Options.Debounce`, default 500ms) → dirty set drained by re-invoking `Indexer.Run` → `AfterIndex` hook re-runs the graph phase. Used by `dex watch` (`cmd/dex/main.go:1512`).
 
-### Background summary draining — pacing (`internal/index/drain.go`)
-
-Both `dex serve` and every `dex mcp` spawn per-project watchers, so multiple processes can target one project's `pending_summaries` queue. To keep that from saturating a shared GPU, `IdleSummaryDrainer` guards each idle tick with three checks (in order):
-
-1. **Foreground yield** — if a query touched `Project.ActivityPath` (a marker file query handlers stamp via `markForeground`) within `DEX_SUMMARIZE_YIELD`, skip this tick. Cross-process: a `dex serve` drainer yields to a `dex mcp`'s queries. Off when the window is 0.
-2. **Cross-process drain lock** — a non-blocking flock on `Project.DrainLockPath` (`summary.lock`, separate from the index lock). If another process holds it, skip. Guarantees **one drainer per project** regardless of how many watchers exist.
-3. The watcher's `OnIdleAfter` re-arm already paces ~5 s between batches; `DEX_SUMMARIZE_PACE` adds an inter-batch sleep to the manual whole-queue drain (`dex index summarize`), which also takes the drain lock (waiting).
-
 ## Flow at a glance
 
 ```
 files ──► walk (ignore) ──► chunk (tree-sitter) ──► embed (HTTP) ──► chunks/chunk_vecs/chunks_fts
-                                                  │
-                                                  └─► (opt.) chat summaries ──► file_summary → package_summary → repo_summary
 files ──► ExtractGo/YAML ──► linkChunks ──► graph_nodes/graph_edges ──► PageRank → centrality
 
 query ──► embed ──► chunk_vecs (cosine)  ┐

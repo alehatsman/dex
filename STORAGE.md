@@ -16,9 +16,8 @@ Connection settings (`store.go:92-98`): WAL journal, `synchronous=NORMAL`, `busy
 | `chunk_vecs` | sqlite-vec `vec0` virtual | `embedding FLOAT[dim] distance_metric=cosine` — KNN index |
 | `graph_nodes` | regular | TEXT PK (stable across re-extraction), kind, name, qualified_name, package_path, file_path, lines, `chunk_id` (loose join to chunks.id; no FK because chunks rowids churn), metadata_json, content_hash, last_seen_at |
 | `graph_edges` | regular | TEXT PK, kind, src_id, dst_id, file_path, lines, metadata_json, content_hash, last_seen_at |
-| `pending_summaries` | regular | deferred summarization queue; UNIQUE(path, kind, content_sha1) makes Enqueue idempotent |
 
-Indexes: `idx_chunks_path`, `idx_chunks_last_seen`; `idx_graph_nodes_{kind,name,package,file,last_seen}`; `idx_graph_edges_{src,dst,last_seen}`; `idx_pending_summaries_queued`.
+Indexes: `idx_chunks_path`, `idx_chunks_last_seen`; `idx_graph_nodes_{kind,name,package,file,last_seen}`; `idx_graph_edges_{src,dst,last_seen}`.
 
 ## Triggers keep both virtual tables in sync
 
@@ -98,10 +97,6 @@ Disable knob: `Options.DisableBM25` (or empty query text) → semantic-only path
 
 Separate file. `GraphUpsertNodes`, `GraphUpsertEdges` are `INSERT … ON CONFLICT(id) DO UPDATE` keyed on the **string id**, so re-extraction doesn't churn rowids and `chunk_id` linkage stays meaningful. `GraphPruneUnseen(cutoff)` deletes by `last_seen_at`, same pattern as `chunks`. `GraphSetCentrality` writes PageRank / degree results computed by `internal/graph.ComputeCentrality`.
 
-## Summary queue (`store_pending.go`)
-
-Backs `DeferSummaries` mode in the chunk indexer. Enqueue is idempotent via the UNIQUE(path, kind, content_sha1). Drained by `dex index summarize` and by watch idle ticks.
-
 ## Layout at a glance
 
 ```
@@ -119,6 +114,6 @@ Backs `DeferSummaries` mode in the chunk indexer. Enqueue is idempotent via the 
                                                             ▼
                                                       Search → Hits
 
- graph_nodes (id TEXT) ──chunk_id──► chunks.id        pending_summaries (queue)
+ graph_nodes (id TEXT) ──chunk_id──► chunks.id
  graph_edges (src_id,dst_id TEXT)                     meta (dim, last_indexed_at, root)
 ```
