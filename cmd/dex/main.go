@@ -115,6 +115,14 @@ func main() {
 		err = cmdGraph(ctx, args)
 	case "map":
 		err = cmdMap(ctx, args)
+	// Verb facade front doors (#354) — mirror the default MCP tool surface.
+	// map/read/ask already exist above; these thin-wrap search/graph.
+	case "find":
+		err = cmdFind(ctx, args)
+	case "trace":
+		err = cmdTrace(ctx, args)
+	case "impact":
+		err = cmdImpact(ctx, args)
 	case "generate":
 		err = cmdGenerate(ctx, args)
 	case "env":
@@ -211,16 +219,20 @@ func usageQuickstart() {
 func usageConcise() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
 
-query:
-  dex ask [<path>] <q...>            one-shot router: semantic + symbol + graph
-                                       Flags: --intent, --k, --format, --max-content-bytes
-  dex search semantic [<path>] <q...> hybrid top-k chunks
-                                       Flags: --k, --rerank=off, --explain, --max-content-bytes
-  dex search symbol [<path>] <name>  exact identifier lookup
-  dex view summarize [<path>] <file> summarize a file slice via the chat model
-  dex index status [<path>]          endpoint health + project stats
-  dex graph <sub> [<path>] ...       graph traversal (deps/callers/callees/links/…)
-  dex map [--cluster <id>] [<path>]  deterministic repo orientation map (L0 clusters / L1 detail)
+verbs (match the MCP tools — run "dex help all" for the full reference):
+  dex map    [--cluster <id>] [<path>]   deterministic repo orientation map (L0/L1)
+  dex find   [<path>] <q...>             semantic + symbol search
+  dex read   <file>                      structural file read (signatures; no LLM)
+  dex trace  [<path>] <name>             call graph — --dir callers|callees|path
+  dex impact [<path>] <name>             transitive blast-radius (callers, by depth)
+  dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
+
+detail / power lanes:
+  dex search semantic|symbol [<path>]    raw hybrid / exact-symbol search
+  dex graph  <sub> [<path>] ...          deps/callers/callees/links/path/diff/communities
+  dex view   summarize [<path>] <file>   LLM file summary
+  dex knowledge add|query|rm|gc          per-project notes
+  dex index  status [<path>]             endpoint health + project stats
 
 build / maintenance:
   dex index <path>                   build or refresh the index  (--dry-run to preview)
@@ -259,6 +271,12 @@ quickstart:
   <path> defaults to cwd on every query/view/graph command.
 
 query (mirrors the MCP tool surface):
+  verb front doors (thin aliases over the lanes below, #354):
+    dex find   [<path>] <q...>    semantic + symbol search  (= search semantic)
+    dex trace  [<path>] <name>    call graph via --dir callers|callees|path
+    dex impact [<path>] <name>    transitive caller blast-radius
+    (map / read / ask are already top-level — see below)
+
   dex ask [<path>] <q...>            one-shot router (MCP: ask). Picks intent,
                                           fuses semantic + symbol + graph; returns
                                           suggested_reads and a prose next_action.
