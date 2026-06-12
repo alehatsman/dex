@@ -2009,7 +2009,11 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			st, err := store.Open(ctx, path)
+			// openStore (not store.Open) so DEX_VECTOR_QUANT is honored —
+			// a default-Options open resolves quant to float32 and would make
+			// this read-only listing drop+rebuild chunk_vecs on an int8 index
+			// (#334).
+			st, err := openStore(ctx, path)
 			if err != nil {
 				results[idx] = row{root: fmt.Sprintf("(corrupt cache: %s)", name), corrupt: true}
 				return
@@ -2301,7 +2305,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	// Preserved as the default so a plain `dex reindex` (no DEX_EMBED_MODEL)
 	// stays consistent with the original build and won't produce a dim mismatch.
 	var priorEmbedModel string
-	if prior, err := store.Open(ctx, p.DBPath); err == nil {
+	if prior, err := openStore(ctx, p.DBPath); err == nil {
 		priorEmbedModel = prior.EmbedModel()
 		_ = prior.Close()
 	}
@@ -2610,7 +2614,7 @@ func cmdClone(ctx context.Context, args []string) error {
 // the project_root meta key, so the dst cache no longer claims to be
 // src's index.
 func retagProjectRoot(ctx context.Context, dbPath, root string) error {
-	st, err := store.Open(ctx, dbPath)
+	st, err := openStore(ctx, dbPath)
 	if err != nil {
 		return err
 	}
