@@ -1,6 +1,6 @@
 # Model Selection Guide
 
-Practical advice for choosing embedding, chat, reranker, and summary models for
+Practical advice for choosing embedding, chat, and reranker models for
 dex. Benchmarks are from MTEB (mid-2026 leaderboard), hardware figures from
 RTX 5090 / 5080 inference benchmarks. All VRAM figures assume the default Ollama
 quantization (Q4_K_M GGUF) unless noted.
@@ -12,9 +12,6 @@ quantization (Q4_K_M GGUF) unless noted.
 | Embed | `DEX_EMBED_MODEL` | All search queries + indexing |
 | Chat/Ask | `DEX_CHAT_MODEL` | Foreground Q&A via `ask` |
 | Rerank | `DEX_RERANK_MODEL` | Post-retrieval scoring of top-40 candidates |
-| Chunk summary | `DEX_CHUNK_SUMMARY_MODEL` | Per-chunk summaries (high volume) |
-| File/Package summary | `DEX_FILE/PACKAGE_SUMMARY_MODEL` | Mid/low volume summaries |
-| Repo summary | `DEX_REPO_SUMMARY_MODEL` | One call per `dex guide` — use the strongest model |
 | Compress | `DEX_COMPRESS_MODEL` | Context compression via `ctx_shell` / `dex compress` |
 | Draft | `DEX_DRAFT_MODEL` | Speculative drafts for `generate` |
 
@@ -86,44 +83,22 @@ unsloth/Qwen3-Coder-Next-GGUF              # Q5_K_M GGUF for Ollama
 `enable_thinking=False`. Thinking mode generates 2–5× more tokens with no
 benefit for code-search Q&A.
 
-### Summary worker (RTX 5080)
-
-Use **Qwen3-14B Q5_K_M** (12.9 GB, ~59 t/s). Qwen3-14B matches Qwen2.5-32B
-on coding benchmarks; it is the correct quality/VRAM choice for the 5080.
-
-Force non-thinking mode here too — 1–4 sentence summaries gain nothing from
-chain-of-thought, and thinking doubles or triples the token output.
-
-Q4_K_M (8.7 GB) if you run concurrent summary streams or need >8K context per
-call; perplexity delta vs FP16 is +0.054, acceptable for short summaries.
-
 ### Compress (RTX 5090)
 
 **Qwen3-8B Q4_K_M** (~4.8 GB, ~185 t/s on 5090). Trivially fits alongside
 30B-A3B under time-multiplexing. Instruction-following quality is more than
 sufficient for compression; non-thinking mode.
 
-### Repo summary
-
-One call per `dex guide` run — use the strongest model available. Route to
-**Qwen3-Coder-30B-A3B** on the 5090 via `DEX_REPO_SUMMARY_MODEL`.
-
-### Recommended `.dex/config.yml` for a 5090 + 5080 setup
+### Recommended `.dex/config.yml`
 
 ```yaml
 endpoints:
   chat:    http://127.0.0.1:8081   # 5090 — Qwen3-Coder-30B-A3B (vLLM)
-  summary: http://127.0.0.1:11436  # 5080 — summary router
   compress: http://127.0.0.1:8081  # 5090
 
 models:
   embed:   qwen3-embedding:4b
   chat:    Qwen/Qwen3-Coder-30B-A3B-Instruct
-  summary: Qwen/Qwen3-14B           # non-thinking, background worker
-  chunk:   Qwen/Qwen3-14B
-  file:    Qwen/Qwen3-14B
-  package: Qwen/Qwen3-14B
-  repo:    Qwen/Qwen3-Coder-30B-A3B-Instruct  # one call — use the best
   compress: Qwen/Qwen3-8B
 ```
 
@@ -191,24 +166,19 @@ cannot substitute the cross-encoder/LLM-reranker step.
 | FP16 | 1× | 100% | Default when VRAM allows |
 | Q8_0 | 0.5× | 98–99% | Near-lossless; tight VRAM |
 | **Q5_K_M** | 0.39× | ~99% | **Sweet spot for 14B on 5080** |
-| Q4_K_M | 0.25× | 92–96% | VRAM-constrained; acceptable for summaries/compress |
+| Q4_K_M | 0.25× | 92–96% | VRAM-constrained; acceptable for compress |
 | Q4_0 / INT4 | 0.25× | 90–94% | Avoid for embed/rerank; last resort for generation |
-
-For the summary worker on RTX 5080: **Q5_K_M** is the call — +0.014 perplexity
-delta vs FP16 (barely measurable), 3 GB of headroom over Q4_K_M. Use Q4_K_M
-only if you need concurrent streams or >8K summary context.
 
 ---
 
-## GPU allocation summary (RTX 5090 + RTX 5080)
+## GPU allocation summary (RTX 5090)
 
 | GPU | Model | Role | VRAM |
 |---|---|---|---|
 | RTX 5090 (32 GB) | Qwen3-Embedding-4B | embed | ~5 GB |
-| RTX 5090 | Qwen3-Coder-30B-A3B Q5_K_M | ask / chat / repo-summary | ~22 GB |
+| RTX 5090 | Qwen3-Coder-30B-A3B Q5_K_M | ask / chat | ~22 GB |
 | RTX 5090 | Qwen3-8B Q4_K_M | compress | ~5 GB |
 | RTX 5090 | Qwen3-Reranker-4B Q4 | rerank | ~3 GB |
-| RTX 5080 (16 GB) | Qwen3-14B Q5_K_M | chunk/file/package summaries | ~13 GB |
 
 5090 peak load (embed + ask + compress time-multiplexed): ~27 GB — fits with
 ~5 GB headroom for KV cache. Reranker shares the ask slot (rerank runs before

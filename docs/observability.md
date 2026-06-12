@@ -13,7 +13,7 @@ and machine-parseable across subsystems.
 |----------------|---------------------|---------|---------|
 | `duration_ms`  | `logx.DurMS(d)`     | int64   | elapsed time in milliseconds |
 | `path`         | `logx.Path(s)`      | string  | filesystem or logical path (do not use `"root"` or `"dir"`) |
-| `phase`        | `logx.Phase(s)`     | string  | pipeline phase (`start`, `walk`, `embed`, `summarize`, `done`, …) |
+| `phase`        | `logx.Phase(s)`     | string  | pipeline phase (`start`, `walk`, `embed`, `done`, …) |
 | `kind`         | `logx.Kind(s)`      | string  | chunk or entity kind |
 | `count`        | `logx.Count(n)`     | int     | generic item count |
 | `model`        | `logx.Model(s)`     | string  | model identifier |
@@ -37,7 +37,6 @@ logger = logger.With("subsystem", "watch")
 | `subsystem` | Package | Origin |
 |-------------|---------|--------|
 | `indexer`   | `internal/index` | `index.New()` |
-| `drain`     | `internal/index` | derived alongside `indexer` from the same base logger |
 | `watch`     | `internal/watch` | `watch.New()` |
 | `graph`     | `internal/graph` | `graph.New()` |
 | `mcp`       | `internal/mcp`   | `mcp.(*Server).RunHTTP()` |
@@ -54,9 +53,6 @@ logger = logger.With("subsystem", "watch")
 ## grep / ripgrep recipes
 
 ```sh
-# All drain activity
-dex serve . 2>&1 | grep 'subsystem=drain'
-
 # Slow embed batches (>500 ms)
 dex serve . 2>&1 | grep 'duration_ms=' | awk -F'duration_ms=' '{print $2, $0}' | awk '$1>500'
 
@@ -88,9 +84,6 @@ jq 'select(.level == "WARN" and (.msg | contains("embed")))' dex.log
 ## Loki (LogQL)
 
 ```logql
-# All drain lines
-{job="dex"} | logfmt | subsystem="drain"
-
 # MCP requests slower than 200 ms
 {job="dex"} | logfmt | subsystem="mcp" | duration_ms > 200
 
@@ -104,6 +97,6 @@ jq 'select(.level == "WARN" and (.msg | contains("embed")))' dex.log
    ```go
    logger = logger.With("subsystem", "mysubsystem")
    ```
-2. For packages with distinct internal components (like `indexer`/`drain`),
-   derive separate loggers from the same base before tagging either.
+2. For packages with multiple distinct internal components, derive separate
+   loggers from the same base before tagging either.
 3. Use canonical `logx.*` helpers for timing, paths, phases, counts, and model IDs.

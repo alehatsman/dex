@@ -59,7 +59,6 @@ dex graph export    <path>
 
 # build / maintenance
 dex index <path>           # build or refresh (--graph=off|only, --dry-run, --no-git)
-dex index summarize <path> # drain pending_summaries queue
 dex watch <path>           # fsnotify auto-reindex
 dex reindex <path>         # drop and re-embed from scratch
 dex nuke <path>            # delete the on-disk index
@@ -165,7 +164,6 @@ Static binary on `distroless/static` (~36 MB). Add `--user "$(id -u):$(id -g)"` 
 - [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) — drop-in CLAUDE.md routing block
 - [`docs/observability.md`](docs/observability.md) — log field conventions
 - [`docs/lean-profile.md`](docs/lean-profile.md) — no-GPU / BM25-only deployment
-- [`docs/how-dex-guide-works.md`](docs/how-dex-guide-works.md) — how `dex guide` works
 - [`specs/`](specs/) — living specs for indexing, search, graph, MCP, storage
 
 ## License

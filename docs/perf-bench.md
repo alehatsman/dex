@@ -54,9 +54,9 @@ Same reason — network-bound, variable. Report-only: benchmark with
 `DEX_DISABLE_RERANK=0` and compare ask latency end-to-end.
 
 **Concurrent MCP session throughput.**
-The drain-lock / foreground-yield path (#17) matters under N concurrent MCP
-sessions but is not yet in scope here. Add a goroutine-parallel bench when the
-proxy (#232) is live and session concurrency becomes a bottleneck.
+Throughput under N concurrent MCP sessions is not yet in scope here. Add a
+goroutine-parallel bench when the proxy (#232) is live and session concurrency
+becomes a bottleneck.
 
 **Cold startup latency.**
 First-query latency (watcher spawn, DB open, first embed warm-up) requires a

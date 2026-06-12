@@ -14,7 +14,7 @@ Goal: understand what dex is, how it's structured, and where to find things.
 | 1 | [`README.md`](../README.md) | Installation, quick-start, tool surface |
 | 2 | [`docs/vision.md`](vision.md) | The capability ladder and *why* things are the way they are |
 | 3 | `internal/store/store.go` — top comment | The SQLite schema: chunks, vec0, FTS5, symbols, graph edges |
-| 4 | `internal/index/index.go` — `Run()` | Six-pass indexer pipeline (walk → chunk → embed → upsert → summarize → prune) |
+| 4 | `internal/index/index.go` — `Run()` | Indexer pipeline (walk → chunk → embed → upsert → prune) |
 | 5 | `internal/mcp/server.go` — tool registrations | Which MCP tools exist and what they call |
 | 6 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Workflow, build commands, conventions |
 
@@ -56,7 +56,6 @@ Goal: understand where a new feature fits and avoid re-inventing what exists.
 | Retrieval quality | [`docs/retrieval-eval.md`](retrieval-eval.md) — eval harness, golden set, NDCG/Recall/MRR |
 | Compression | [`docs/compress-bench.md`](compress-bench.md) — what the compress ruler measures |
 | Perf / latency | [`docs/perf-bench.md`](perf-bench.md) — what the perf ruler measures |
-| Context assembly | [`docs/how-dex-guide-works.md`](how-dex-guide-works.md) — two-phase summary pipeline |
 | Model selection | [`docs/model-selection.md`](model-selection.md) — embed/chat/reranker tradeoffs |
 | No-GPU / lean | [`docs/lean-profile.md`](lean-profile.md) — BM25-only, ONNX, DEX_EMBED_ENGINE |
 | Logging | [`docs/observability.md`](observability.md) — canonical slog keys, jq recipes |
@@ -82,7 +81,7 @@ Goal: run dex in production, understand config, and monitor it.
 | Package | Role |
 |---------|------|
 | `cmd/dex` | CLI entry point — all subcommands wired here |
-| `internal/index` | Six-pass indexer, watcher, drain, progress |
+| `internal/index` | Indexer pipeline, watcher, progress |
 | `internal/store` | SQLite store — FTS5, vec0, symbols, graph, knowledge |
 | `internal/mcp` | MCP server — tool handlers, compress, context assembly |
 | `internal/chunk` | Language-aware AST chunker (Go, TS, Python, Rust, …) |
@@ -93,7 +92,6 @@ Goal: run dex in production, understand config, and monitor it.
 | `internal/logx` | Canonical slog attribute helpers |
 | `internal/proj` | Project root detection, cache path layout |
 | `internal/ignore` | `.gitignore` + `.dexignore` matcher |
-| `internal/guide` | `dex guide` — generates `LLM_GUIDE.md` |
 | `internal/proxy` | ANTHROPIC_BASE_URL proxy — history pruning, tool compression |
 | `internal/knowledge` | Knowledge store — semantic recall with decay |
 | `internal/corpus` | Multi-repo eval corpus (pinned repos, per-cell scoring) |

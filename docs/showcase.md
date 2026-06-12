@@ -42,7 +42,6 @@ endpoints (1 reachable)
   rerank    UNREACHABLE  BAAI/bge-reranker-v2-m3   http://127.0.0.1:8082
   compress  UNREACHABLE  qwen2.5-coder:7b          http://127.0.0.1:11434
   draft     UNREACHABLE  qwen2.5-coder:3b          http://127.0.0.1:11434
-  summary   inherits chat
 
 projects (0 indexed)
 
@@ -192,7 +191,6 @@ endpoints (5 reachable)
   rerank    UNREACHABLE  BAAI/bge-reranker-v2-m3  http://127.0.0.1:8082
   compress  ok           qwen2.5-coder:7b         http://127.0.0.1:11434
   draft     ok           qwen2.5-coder:3b         http://127.0.0.1:11434
-  summary   ok           qwen2.5-coder:7b         http://127.0.0.1:11434
 
 project  /Users/alehatsman/Projects/dex
   indexed:    just now

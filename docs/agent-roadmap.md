@@ -62,32 +62,6 @@ Files: `internal/graph/sitter_{python,ts,javascript,java,rust}.go`.
 
 ---
 
-## 5. End-to-end watcher pipeline test
-
-**Why.** The defer-mode pruning bug (just fixed) would have been
-caught by an integration test that:
-1. Indexes a tiny project with `--summarize-defer=false` (writes
-   package + repo summaries).
-2. Runs a defer-mode index pass (mimicking the watcher).
-3. Asserts summaries survive.
-4. Runs `dex guide --check` — expects exit 0.
-
-We have store-level tests and CLI-level tests but no test exercises
-the full loop. The drainer + cascade + guide rendering interaction is
-under-tested.
-
-**Entry points.**
-- `internal/mcp/server_test.go` is the closest existing harness — adds
-  a watcher and exercises drains.
-- New file `e2e/guide_pipeline_test.go` (or `internal/index/pipeline_test.go`)
-  with a build tag so it can be opt-in (uses a fake chat server).
-
-**Done when.** New test passes; deliberately reverting the
-PruneUnseen fix causes it to fail with a clear "package_summary
-unexpectedly missing" message.
-
----
-
 ## 6. ✅ Fix `TestExtractGoNoModule` flake
 
 **Shipped** (pre-priorities sweep, no-op confirmation in this round).
@@ -127,8 +101,7 @@ manifest drift, expired tunnel).
 - `cmd/dex/main.go` — add `case "doctor":`
 - New file `cmd/dex/doctor.go`. Reuse `internal/mcp` health helpers.
 - Checks: embed reachable, chat reachable, rerank reachable, each
-  configured model is pulled, index exists, manifest fresh, last
-  `dex guide --check` would pass.
+  configured model is pulled, index exists, manifest fresh.
 - Output: green checkmarks per check; first red gets a "to fix:"
   one-liner.
 
@@ -143,7 +116,7 @@ listening; check `docker ps`" message.
 
 **Why.** This roadmap, `PIPELINE.md`, `STORAGE.md`,
 `architecture.md`, `internals.md`, `vision.md`,
-`how-dex-guide-works.md`, `tuning.md` — already eight sources of
+`tuning.md` — already seven sources of
 truth. A new agent (or human contributor) walks in cold and doesn't
 know which to read first or how they relate. Coherence here is meta:
 **a tool that helps agents understand code should be exemplary at
@@ -170,8 +143,8 @@ existing nine.
 **Why.** `dex clone <src> <dst>` exists for git worktrees (same
 machine), but there's no story for "you indexed mooncake, now let me
 have your index" across teammates with identical checkouts. Each
-person pays the full indexing cost. With per-tier 32b summaries
-costing significant GPU minutes, this is now a meaningful concern.
+person pays the full indexing cost (embedding every chunk), so this
+is a meaningful concern.
 
 **Entry points.**
 - `cmd/dex/main.go:1825` — `cmdClone` is the closest precedent.
@@ -191,17 +164,15 @@ re-indexing. Cross-machine smoke tested.
 
 ## Notes for the picker-upper
 
-Items 1–4 and 6 are closed. Open work: **5, 7, 8, 9, 10**.
+Items 1–4 and 6 are closed. Open work: **7, 8, 9, 10**.
 
-- **Item 5 (e2e pipeline test)** is the highest-leverage gap — a
-  missing test that would have caught a real bug. Pick this first.
 - **Items 7 + 8 + 9 are observability/DX work** — no user-visible
   behavior change but they compound future on-call and onboarding.
   Good focused sprint. Item 7 is partial (`duration_ms` done); finish
   the canonical attr set + `docs/observability.md` before 8 or 9.
 - **Item 10 (index portability)** is a real feature with security
-  implications (shared indexes = shared summaries that may quote
-  private code). Don't ship without auth thought.
+  implications (a shared index may quote private code). Don't ship
+  without auth thought.
 
 For each item: open a worktree, conventional commit prefix (`feat:`,
 `fix:`, `docs:`), ff-merge to main via PR, never push main directly.

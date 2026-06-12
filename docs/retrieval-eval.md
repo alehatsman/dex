@@ -179,27 +179,6 @@ two env settings:
 DEX_DISABLE_RERANK=1 DEX_GRAPH_GAMMA=0.6 dex bench eval . --output json
 ```
 
-**Index-level change (e.g. chunk summaries on/off):** you must reindex under
-each arm — and pass `--keep-summaries`. By default the runner drops
-summary-kind chunks from the ranked file list (to keep the git-history scoring
-code-focused). If you're A/B-ing a feature that *produces* summary chunks, that
-filter hides exactly the effect you're measuring: a file surfaced via its
-summary would be invisible, making the feature look like a no-op.
-
-```sh
-# arm A: summaries on
-dex index .                                      # with summary drain enabled
-dex bench eval . --keep-summaries --output json > /tmp/with-summaries.json
-
-# arm B: summaries off  (reindex without summary chunks)
-DEX_AUTO_SUMMARIZE=off dex reindex .
-dex bench eval . --keep-summaries --output json > /tmp/no-summaries.json
-```
-
-`--keep-summaries` keeps the unconditional `git_commit` filter (summaries carry
-no commit-subject leak — they derive from file content), so it's safe to enable
-for any A/B.
-
 ### Reading the result
 
 - Differences within **±0.002** on a ~300-query set are noise — don't ship a

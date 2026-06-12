@@ -57,7 +57,7 @@ dependence on the scarce resource. Concretely:
 - The lean rung (C) is the literal no-GPU path and is **prioritized ahead of
   the local-agent rung (B)** — a local agent still needs a GPU to run its
   model; a lean deployment needs none.
-- Heavy model upgrades (a 30B chat, a 14B summary) are **deferred** — they
+- Heavy model upgrades (a 30B chat) are **deferred** — they
   would worsen the exact contention we're hitting. Only the cheap reranker swap
   (~3 GB, ~2× on code retrieval) lands now.
 

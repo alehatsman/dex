@@ -13,7 +13,7 @@ covers:
 Storage is dex's local index engine: the on-disk format the indexer writes and
 every query surface reads. One SQLite file per project holds chunks, their
 embedding vectors, and the full-text rows that back lexical search, plus the
-structural graph and the deferred-summary queue. The store exists to make a
+structural graph. The store exists to make a
 repo's semantic index durable, self-describing, and concurrently safe to read
 while it is being rebuilt — so an interactive `ask`, a background `watch`
 re-index, and a manual `dex index` can all touch the same project without
@@ -32,7 +32,7 @@ query specs'.
   index and the same repo always resolves to the same file.
 - WHEN the store is opened, it records and recovers the index's self-describing
   metadata — embedding dimension, embedding-model identity, project root, and
-  last-indexed/-summarized times — so later runs can validate compatibility and
+  last-indexed time — so later runs can validate compatibility and
   locate the source tree.
 - WHEN the store engine lacks SQLite full-text (FTS5) support, opening or
   migrating an index fails loudly instead of degrading, because the lexical
@@ -62,9 +62,8 @@ query specs'.
 - WHEN concurrent writers contend for the index, each waits a bounded time for
   the write lock (WAL journaling, bounded busy-timeout) rather than failing
   immediately, so a `watch` re-index and a manual `dex index` can overlap.
-- WHEN a re-index completes, the store prunes chunks not seen in that pass while
-  preserving still-valid package/repo summaries, so vanished files leave no stale
-  rows but cached summaries survive incremental runs.
+- WHEN a re-index completes, the store prunes chunks not seen in that pass, so
+  vanished files leave no stale rows.
 - WHEN search reads the index, the store serves both a vector-similarity leg and
   a lexical (FTS5/BM25) leg and fuses them, and a lexical-query parse error
   degrades to the vector-only result rather than surfacing as a search failure.
@@ -104,7 +103,7 @@ query specs'.
   `migrate: no such module: fts5` and a reindex from such a binary wipes the
   index. (Enforced in `tasks.yml`/`Dockerfile`.)
 - [ ] Concurrent writers are bounded by WAL + busy-timeout; prune removes stale
-  chunks while preserving valid summaries.
+  chunks.
 - [ ] Hybrid read path (vector + BM25 fused) with graceful FTS-parse fallback and
   a bounded rerank cache.
 - [x] `knowledge_facts.revision_count` incremented on ON CONFLICT UPDATE; migrated

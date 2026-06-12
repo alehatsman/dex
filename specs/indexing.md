@@ -66,8 +66,8 @@ storage spec's, and reading it is the query specs'.
 - **The embedding model itself.** Which model/provider serves `/v1/embeddings`,
   its dimensions, and how it's run are the embedding spec / operator config; here
   only that chunks are sent in batches and vectors come back.
-- **The watch daemon.** Triggering reindex on file changes and draining summaries
-  is the watch spec; this spec is the pipeline it invokes.
+- **The watch daemon.** Triggering reindex on file changes is the watch spec;
+  this spec is the pipeline it invokes.
 - **Ignore-rule semantics.** The precise ignore/allowlist/opt-in matching is the
   ignore spec; here only that indexing applies it.
 
