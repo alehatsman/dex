@@ -320,6 +320,12 @@ func printContextText(out mcp.ContextOutput, maxBytes int) {
 		return
 	}
 	printContextHeader(out)
+	if out.Answer != "" {
+		if out.AnswerModel != "" {
+			fmt.Printf("answer (%s):\n", out.AnswerModel)
+		}
+		fmt.Printf("%s\n\n", out.Answer)
+	}
 	printSuggestedReads(out.SuggestedReads, maxBytes)
 	printSymbols(out.Symbols)
 	printReferences(out.References)
