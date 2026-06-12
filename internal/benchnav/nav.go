@@ -277,6 +277,10 @@ type Comparison struct {
 	MapMeanTokensBoth   float64 `json:"map_mean_tokens_both"`
 	DeltaMeanCalls      float64 `json:"delta_mean_calls"`  // map - no-map; negative = map cheaper
 	DeltaMeanTokens     float64 `json:"delta_mean_tokens"` // map - no-map; negative = map cheaper
+
+	// Routing is the L0-only orientation lane (issue #351): routing accuracy
+	// swept over L0 budgets. The primary map-quality number post-#349 verdict.
+	Routing RoutingCurve `json:"routing"`
 }
 
 // Compare zips two reports produced over the SAME queries (Compute and
@@ -327,6 +331,10 @@ func (c Comparison) Markdown() string {
 	fmt.Fprintf(&b, "| metric | no-map | map-seeded | delta |\n|---|---|---|---|\n")
 	fmt.Fprintf(&b, "| mean calls | %.2f | %.2f | %+.2f |\n", c.NoMapMeanCallsBoth, c.MapMeanCallsBoth, c.DeltaMeanCalls)
 	fmt.Fprintf(&b, "| mean tokens | %.0f | %.0f | %+.0f |\n", c.NoMapMeanTokensBoth, c.MapMeanTokensBoth, c.DeltaMeanTokens)
+	if len(c.Routing.Points) > 0 {
+		b.WriteString("\n")
+		b.WriteString(c.Routing.Markdown())
+	}
 	return b.String()
 }
 
@@ -350,5 +358,7 @@ func (c Comparison) Regressions(ref Comparison, absTol, relTol float64) []Regres
 			regs = append(regs, Regression{"map_advantage_tokens", ref.DeltaMeanTokens, c.DeltaMeanTokens})
 		}
 	}
+	// Routing accuracy is a floor at every budget — stories must raise it.
+	regs = append(regs, c.Routing.Regressions(ref.Routing, absTol)...)
 	return regs
 }

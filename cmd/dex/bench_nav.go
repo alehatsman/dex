@@ -46,6 +46,12 @@ Flags:
 Env: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
 `
 
+// navRoutingBudgets is the L0-budget sweep for routing accuracy@budget (issue
+// #351). Anchored on codemap.DefaultL0Budget (150); the spread shows how L0
+// breadth trades against orientation coverage — the curve stories #347/#348
+// must lift. Accuracy is monotonic non-decreasing across this sweep.
+var navRoutingBudgets = []int{75, 150, 300, 600, 1200}
+
 func runBenchNav(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("bench nav", flag.ExitOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, benchNavUsage) }
@@ -131,7 +137,7 @@ func runBenchNav(ctx context.Context, args []string) {
 	// Phase B: seed navigation with `dex map`. Build the same L0/L1 the agent
 	// would see by default, then measure the map-vs-no-map delta. If the graph has
 	// no communities (e.g. BM25-only index), report the no-map lane alone.
-	mapModel, mapErr := buildNavMapModel(ctx, p.Root, *l0budget, *l1budget)
+	mapModel, routeModel, mapErr := buildNavMapModel(ctx, p.Root, *l0budget, *l1budget, navRoutingBudgets)
 	if mapErr != nil {
 		fmt.Fprintf(os.Stderr, "dex bench nav: map lane unavailable (%v) — reporting no-map only\n", mapErr)
 		emitNavReport(noMap, *outputFmt)
@@ -139,6 +145,7 @@ func runBenchNav(ctx context.Context, args []string) {
 	}
 	mapSeeded := benchnav.ComputeMap(queries, cost, mapModel, *lane)
 	cmp := benchnav.Compare(noMap, mapSeeded)
+	cmp.Routing = benchnav.ComputeRouting(queries, routeModel, navRoutingBudgets, *lane)
 
 	switch *outputFmt {
 	case "json":
@@ -193,22 +200,22 @@ func emitNavReport(rep benchnav.Report, format string) {
 // Locate reports whether a gold file is named in an L0-shown cluster's rendered
 // L1 (so budget truncation is honored exactly as the agent sees it) and that
 // zoom's token cost.
-func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int) (benchnav.MapModel, error) {
+func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, routingBudgets []int) (benchnav.MapModel, benchnav.RoutingModel, error) {
 	base, err := indexDir()
 	if err != nil {
-		return benchnav.MapModel{}, err
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, err
 	}
 	s, _ := newServerFromEnv(base)
 	out, err := s.GraphCommunities(ctx, mcp.CommunitiesInput{MinMembers: 3, TopK: 25, ProjectRoot: root})
 	if err != nil {
-		return benchnav.MapModel{}, err
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, err
 	}
 	if out.Status != "ok" {
-		return benchnav.MapModel{}, fmt.Errorf("graph communities status %q", out.Status)
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, fmt.Errorf("graph communities status %q", out.Status)
 	}
 	clusters := adaptCommunities(out.Communities)
 	if len(clusters) == 0 {
-		return benchnav.MapModel{}, fmt.Errorf("no clusters in graph")
+		return benchnav.MapModel{}, benchnav.RoutingModel{}, fmt.Errorf("no clusters in graph")
 	}
 
 	// Pre-render the L1 of each L0-shown cluster once; Locate scans these texts.
@@ -222,8 +229,7 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int) 
 		shown = append(shown, shownL1{text: txt, tokens: tokens.Count(txt)})
 	}
 	l0tokens := tokens.Count(codemap.RenderL0(clusters, l0budget))
-
-	return benchnav.MapModel{
+	mapModel := benchnav.MapModel{
 		L0Tokens: l0tokens,
 		Locate: func(path string) (int, bool) {
 			best, found := 0, false
@@ -234,7 +240,28 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int) 
 			}
 			return best, found
 		},
-	}, nil
+	}
+
+	// Routing (issue #351): precompute, per sweep budget, the file paths that are
+	// members of the L0-shown clusters — the region one map(budget) call surfaces.
+	// Routable is then a set lookup, so cost is independent of the query count, and
+	// it is NOT confounded by L1 truncation (routing is an L0-only question).
+	routable := make(map[int]map[string]bool, len(routingBudgets))
+	for _, b := range routingBudgets {
+		set := make(map[string]bool)
+		for _, c := range codemap.ShownL0(clusters, b) {
+			for _, sym := range c.Symbols {
+				set[sym.Path] = true
+			}
+		}
+		routable[b] = set
+	}
+	routeModel := benchnav.RoutingModel{
+		Routable: func(path string, budget int) bool {
+			return routable[budget][path]
+		},
+	}
+	return mapModel, routeModel, nil
 }
 
 // navCostModel prices the agent's actions for the no-map policy. A read costs
