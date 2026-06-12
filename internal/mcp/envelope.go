@@ -7,8 +7,8 @@ package mcp
 // exactly as before and call one stamper just before returning.
 
 // makeHandle returns an expansion handle for a locator, or "" when the locator
-// isn't a real file range worth handing back: pseudo-paths (git-commit hits
-// carry start_line 0) and paths that fail the structural guard are skipped so
+// isn't a real file range worth handing back: a pseudo-hit with no line range
+// (start_line 0) and paths that fail the structural guard are skipped so
 // read() never receives a handle it is bound to reject.
 func makeHandle(path string, start, end int) string {
 	if start < 1 || !validateHandlePath(path) {

@@ -555,7 +555,7 @@ type SearchHit struct {
 	Content string `json:"content"`
 	// Handle is the opaque expansion handle for this hit's range (#344).
 	// Echo it into read(handle=…) instead of constructing a path:line.
-	// Empty for pseudo-paths (e.g. git-commit hits) that have no file range.
+	// Empty for pseudo-hits that have no concrete file range (start_line 0).
 	Handle string `json:"handle,omitempty"`
 }
 
