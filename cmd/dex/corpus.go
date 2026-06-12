@@ -11,6 +11,7 @@ import (
 	"github.com/alehatsman/dex/internal/corpus"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
+	"golang.org/x/sync/errgroup"
 )
 
 const corpusUsage = `Usage: dex bench corpus run [flags]
@@ -34,11 +35,19 @@ Flags:
   --output format  json or md (default: md)
   --check path     compare against a committed baseline JSON; exit 1 on any
                    per-cell regression (>0.02)
+  --jobs int       repos to score concurrently (0 = auto, capped at 4) — overlaps
+                   one repo's git-mining/indexing with another's GPU scoring
 
 Query-set paths in the manifest are resolved relative to the manifest's
 directory. Requires a live embed endpoint (DEX_EMBED_URL / ollama) — like
 'dex bench eval', this is a local gate, not a container-CI step.
 `
+
+// maxCorpusJobs caps the repo-level scoring fan-out. The repos are independent
+// (own store/embed client), but they share the embed/rerank endpoints; past ~4
+// concurrent repos the GPU servers are saturated and more just queues, while the
+// per-query DEX_EVAL_CONCURRENCY fan-out already keeps each repo busy.
+const maxCorpusJobs = 4
 
 func runCorpus(ctx context.Context, args []string) {
 	if len(args) == 0 || args[0] != "run" {
@@ -54,6 +63,7 @@ func runCorpus(ctx context.Context, args []string) {
 	cacheFlag := fs.String("cache", "", "checkout cache root (default: <index-base>/corpus)")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "baseline report JSON to check for per-cell regression")
+	jobs := fs.Int("jobs", 0, "repos to score concurrently (0 = auto, capped at maxCorpusJobs)")
 	_ = fs.Parse(args[1:])
 
 	base, err := indexDir()
@@ -83,16 +93,54 @@ func runCorpus(ctx context.Context, args []string) {
 	manifestDir := filepath.Dir(absManifest)
 	want := repoFilter(*reposFlag)
 
-	var allCells []corpus.LabeledReport
+	// Filter repos, preserving manifest order so cells stay deterministic.
+	var specs []corpus.RepoSpec
 	for _, spec := range m.Repos {
 		if want != nil && !want[spec.Name] {
 			continue
 		}
-		cells, err := runCorpusRepo(ctx, base, cacheRoot, manifestDir, spec, *k, *smoke)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench corpus: %v\n", err)
-			os.Exit(1)
-		}
+		specs = append(specs, spec)
+	}
+
+	jobsN := *jobs
+	if jobsN <= 0 {
+		jobsN = len(specs) // auto: all repos at once, capped below
+	}
+	if jobsN > maxCorpusJobs {
+		jobsN = maxCorpusJobs
+	}
+	if jobsN < 1 {
+		jobsN = 1
+	}
+
+	// Score repos concurrently. Each runCorpusRepo opens its own store + embed
+	// client on a distinct checkout/index, so they're independent; the only
+	// shared resources are the embed/rerank endpoints, which queue server-side.
+	// A bounded pool overlaps one repo's git-mining/indexing (CPU/IO, GPU idle)
+	// with another's scoring (GPU) — closing the corpus runner's remaining
+	// GPU-idle gap (#331). results[i] is written by a unique index so cell order
+	// is deterministic regardless of completion order.
+	results := make([][]corpus.LabeledReport, len(specs))
+	eg, egctx := errgroup.WithContext(ctx)
+	eg.SetLimit(jobsN)
+	for i, spec := range specs {
+		i, spec := i, spec
+		eg.Go(func() error {
+			cells, err := runCorpusRepo(egctx, base, cacheRoot, manifestDir, spec, *k, *smoke)
+			if err != nil {
+				return fmt.Errorf("%s: %w", spec.Name, err)
+			}
+			results[i] = cells
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		fmt.Fprintf(os.Stderr, "dex bench corpus: %v\n", err)
+		os.Exit(1)
+	}
+
+	var allCells []corpus.LabeledReport
+	for _, cells := range results {
 		allCells = append(allCells, cells...)
 	}
 	if len(allCells) == 0 {
