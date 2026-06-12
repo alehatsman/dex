@@ -654,14 +654,9 @@ func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, minGod
 	if err != nil {
 		return r, err
 	}
-	func() {
-		defer rows.Close()
-		for rows.Next() {
-			var s SmellSymbol
-			_ = rows.Scan(&s.QualifiedName, &s.Kind, &s.FilePath, &s.StartLine, &s.EndLine, &s.Lines)
-			r.LongFunctions = append(r.LongFunctions, s)
-		}
-	}()
+	if r.LongFunctions, err = scanSmellSymbols(rows); err != nil {
+		return r, err
+	}
 
 	// Dead exports: exported functions/methods with no incoming calls edges.
 	rows, err = s.db.QueryContext(ctx, `
@@ -677,14 +672,9 @@ func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, minGod
 	if err != nil {
 		return r, err
 	}
-	func() {
-		defer rows.Close()
-		for rows.Next() {
-			var s SmellSymbol
-			_ = rows.Scan(&s.QualifiedName, &s.Kind, &s.FilePath, &s.StartLine, &s.EndLine, &s.Lines)
-			r.DeadExports = append(r.DeadExports, s)
-		}
-	}()
+	if r.DeadExports, err = scanSmellSymbols(rows); err != nil {
+		return r, err
+	}
 
 	// God files: files with >= minFileSymbols indexed symbols.
 	rows, err = s.db.QueryContext(ctx, `
@@ -699,14 +689,9 @@ func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, minGod
 	if err != nil {
 		return r, err
 	}
-	func() {
-		defer rows.Close()
-		for rows.Next() {
-			var f SmellFile
-			_ = rows.Scan(&f.FilePath, &f.SymbolCount)
-			r.GodFiles = append(r.GodFiles, f)
-		}
-	}()
+	if r.GodFiles, err = scanSmellFiles(rows); err != nil {
+		return r, err
+	}
 
 	// God-nodes: functions/methods with very high in-degree or cross-package
 	// caller counts — over-coupled symbols that constrain many callers.
@@ -722,16 +707,42 @@ func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, minGod
 	if err != nil {
 		return r, err
 	}
-	func() {
-		defer rows.Close()
-		for rows.Next() {
-			var sym SmellSymbol
-			_ = rows.Scan(&sym.QualifiedName, &sym.Kind, &sym.FilePath, &sym.StartLine, &sym.EndLine, &sym.Lines)
-			r.GodNodes = append(r.GodNodes, sym)
-		}
-	}()
+	if r.GodNodes, err = scanSmellSymbols(rows); err != nil {
+		return r, err
+	}
 
 	return r, nil
+}
+
+// scanSmellSymbols drains a graph_nodes query selecting the six SmellSymbol
+// columns (qualified_name, kind, file_path, start_line, end_line, lines) and
+// surfaces scan/iteration errors instead of swallowing them. It closes rows.
+func scanSmellSymbols(rows *sql.Rows) ([]SmellSymbol, error) {
+	defer rows.Close()
+	var out []SmellSymbol
+	for rows.Next() {
+		var s SmellSymbol
+		if err := rows.Scan(&s.QualifiedName, &s.Kind, &s.FilePath, &s.StartLine, &s.EndLine, &s.Lines); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// scanSmellFiles drains a query selecting (file_path, symbol_count) into
+// SmellFile rows, surfacing scan/iteration errors. It closes rows.
+func scanSmellFiles(rows *sql.Rows) ([]SmellFile, error) {
+	defer rows.Close()
+	var out []SmellFile
+	for rows.Next() {
+		var f SmellFile
+		if err := rows.Scan(&f.FilePath, &f.SymbolCount); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // GraphNeighborFiles returns file paths that are graph-adjacent (1-hop via any
@@ -825,18 +836,29 @@ func (s *Store) HitsForFiles(ctx context.Context, paths []string, k int) ([]Hit,
 		if err != nil {
 			return nil, err
 		}
-		func() {
-			defer rows.Close()
-			for rows.Next() {
-				var h Hit
-				var pr float64
-				_ = rows.Scan(&h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &pr)
-				h.Score = float32(pr)
-				out = append(out, h)
-			}
-		}()
+		out, err = scanFileHits(rows, out)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
+}
+
+// scanFileHits drains a chunks+graph_nodes query into Hit rows, appending to
+// out, and surfaces scan/iteration errors instead of swallowing them. It
+// closes rows.
+func scanFileHits(rows *sql.Rows, out []Hit) ([]Hit, error) {
+	defer rows.Close()
+	for rows.Next() {
+		var h Hit
+		var pr float64
+		if err := rows.Scan(&h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &pr); err != nil {
+			return out, err
+		}
+		h.Score = float32(pr)
+		out = append(out, h)
+	}
+	return out, rows.Err()
 }
 
 // defaultGraphGamma is the per-hop decay for the graph-proximity lane when
