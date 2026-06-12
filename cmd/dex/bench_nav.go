@@ -153,6 +153,18 @@ func runBenchNav(ctx context.Context, args []string) {
 	} else {
 		cmp.Breadth = benchnav.ComputeBreadth(tasks, *k, cost, breadthModel, *lane)
 	}
+	// Re-orientation lane (#351 phase 3): restore a session's working set after
+	// compaction via recap() vs re-exploration. Built purely from the no-map
+	// queries already run — no extra retrieval — plus a graph-skeleton recap cost.
+	if rtasks := buildReorientTasks(queries, *k); len(rtasks) == 0 {
+		fmt.Fprintf(os.Stderr, "dex bench nav: reorient lane — no sessions with a reachable working set, skipping\n")
+	} else if rm, rerr := buildRecapModel(ctx, st); rerr != nil {
+		fmt.Fprintf(os.Stderr, "dex bench nav: reorient lane unavailable (%v) — skipping\n", rerr)
+	} else {
+		fmt.Fprintf(os.Stderr, "dex bench nav: reorient lane — %d sessions of %d queries, recap budget %d tokens\n",
+			len(rtasks), navReorientSessionSize, navReorientRecapBudget)
+		cmp.Reorient = benchnav.ComputeReorient(rtasks, *k, cost, rm, *lane)
+	}
 
 	switch *outputFmt {
 	case "json":
@@ -454,4 +466,99 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 		})
 	}
 	return tasks, nil
+}
+
+// navReorientSessionSize is how many consecutive golden queries form one
+// synthetic work session whose working set the re-orientation lane restores.
+// Larger sessions mean larger working sets — more find()s for re-exploration to
+// replay and more files for recap to fit, which is where recap's one-call edge
+// shows. navReorientRecapBudget caps the single recap() digest (#346 budget):
+// big enough for a typical working set, tight enough that oversized sessions
+// truncate so recap coverage becomes a real, gateable signal.
+const (
+	navReorientSessionSize = 5
+	navReorientRecapBudget = 4000
+)
+
+// buildReorientTasks groups the already-run no-map queries into work sessions
+// and derives each session's working set — the gold files reachable within k,
+// i.e. what the agent had open before compaction. No extra retrieval: it is a
+// pure transform of the queries the no-map lane already ranked. Sessions whose
+// working set is empty (no gold reachable across the bucket) are dropped.
+func buildReorientTasks(queries []benchnav.Query, k int) []benchnav.ReorientTask {
+	var tasks []benchnav.ReorientTask
+	for start := 0; start < len(queries); start += navReorientSessionSize {
+		end := start + navReorientSessionSize
+		if end > len(queries) {
+			end = len(queries)
+		}
+		seen := map[string]bool{}
+		var working []string
+		var rqs []benchnav.ReorientQuery
+		for _, q := range queries[start:end] {
+			depth := k
+			if len(q.Ranked) < depth {
+				depth = len(q.Ranked)
+			}
+			rel := map[string]bool{}
+			for _, r := range q.Relevant {
+				rel[r] = true
+			}
+			var gold []string
+			for i := 0; i < depth; i++ {
+				p := q.Ranked[i]
+				if !rel[p] {
+					continue
+				}
+				gold = append(gold, p)
+				if !seen[p] {
+					seen[p] = true
+					working = append(working, p)
+				}
+			}
+			if len(gold) == 0 {
+				continue // this find() re-surfaces nothing the agent had kept
+			}
+			rqs = append(rqs, benchnav.ReorientQuery{Ranked: q.Ranked, Gold: gold})
+		}
+		if len(working) == 0 {
+			continue
+		}
+		tasks = append(tasks, benchnav.ReorientTask{
+			Task:    fmt.Sprintf("session %d (queries %d-%d)", len(tasks)+1, start+1, end),
+			Working: working,
+			Queries: rqs,
+		})
+	}
+	return tasks
+}
+
+// buildRecapModel prices recap()'s digest from the graph: one working-set file
+// costs its path plus the symbol names it defines (a compressed signature
+// skeleton — restore WHERE you were, not the full file). Files with no graph
+// symbols fall back to the path line alone. This is the analytic stand-in for
+// #346 recap() until the verb ships, mirroring how the map/breadth lanes model
+// their verb without the live stack.
+func buildRecapModel(ctx context.Context, st *store.Store) (benchnav.ReorientModel, error) {
+	nodes, err := st.GraphAllNodes(ctx)
+	if err != nil {
+		return benchnav.ReorientModel{}, err
+	}
+	symbols := map[string][]string{}
+	for _, n := range nodes {
+		if n.FilePath == "" || n.QualifiedName == "" {
+			continue
+		}
+		symbols[n.FilePath] = append(symbols[n.FilePath], n.QualifiedName)
+	}
+	entry := func(path string) int {
+		var b strings.Builder
+		b.WriteString(path)
+		for _, s := range symbols[path] {
+			b.WriteString("\n")
+			b.WriteString(s)
+		}
+		return tokens.Count(b.String())
+	}
+	return benchnav.ReorientModel{RecapBudget: navReorientRecapBudget, Entry: entry}, nil
 }

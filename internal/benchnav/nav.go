@@ -287,6 +287,11 @@ type Comparison struct {
 	// enumeration vs repeated find — the regime the map should win, the inverse
 	// of the first-touch lane the #349 verdict found it loses.
 	Breadth BreadthReport `json:"breadth"`
+
+	// Reorient is the post-compaction re-orientation lane (#351 phase 3,
+	// gating #346 recap()): tokens to restore a session's working set via one
+	// recap() digest vs replaying the exploration (re-find + full re-read).
+	Reorient ReorientReport `json:"reorient"`
 }
 
 // Compare zips two reports produced over the SAME queries (Compute and
@@ -345,6 +350,10 @@ func (c Comparison) Markdown() string {
 		b.WriteString("\n")
 		b.WriteString(c.Breadth.Markdown())
 	}
+	if len(c.Reorient.Results) > 0 {
+		b.WriteString("\n")
+		b.WriteString(c.Reorient.Markdown())
+	}
 	return b.String()
 }
 
@@ -372,5 +381,8 @@ func (c Comparison) Regressions(ref Comparison, absTol, relTol float64) []Regres
 	regs = append(regs, c.Routing.Regressions(ref.Routing, absTol)...)
 	// Breadth coverage is a floor and its advantage may not erode (#351 ph2).
 	regs = append(regs, c.Breadth.Regressions(ref.Breadth, absTol)...)
+	// Re-orientation: recap coverage is a floor and its token advantage over
+	// re-exploration may not erode — recap's home regime (#351 ph3).
+	regs = append(regs, c.Reorient.Regressions(ref.Reorient, absTol, relTol)...)
 	return regs
 }
