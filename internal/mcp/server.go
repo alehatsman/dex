@@ -444,7 +444,7 @@ func (s *Server) searchThrottleHint(query, project string) string {
 
 	switch {
 	case count >= 7:
-		return fmt.Sprintf("search_semantic called %d times with identical query — consider storing findings via knowledge action=add instead of re-searching.", count)
+		return fmt.Sprintf("find called %d times with identical query — consider storing findings via knowledge action=add instead of re-searching.", count)
 	case count >= 4:
 		return fmt.Sprintf("repeated search (%d times) — if this keeps returning the same results, store key findings with the knowledge tool.", count)
 	}
@@ -1174,7 +1174,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 
 	hits, err := st.FindSymbol(ctx, in.Name, in.K)
 	if err != nil {
-		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("search_symbol: %v", err)}, nil
+		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("lookup: %v", err)}, nil
 	}
 	out := FindSymbolOutput{Status: "ok", Project: p.Root}
 	if ldHint != "" {
@@ -1458,7 +1458,7 @@ type SummarizeInput struct {
 	MaxTokens    int      `json:"max_tokens,omitempty" jsonschema:"maximum tokens to generate (0 = server default)"`
 	Etag         string   `json:"etag,omitempty" jsonschema:"content hash from a prior read; if the file is unchanged the server returns status=unchanged — re-use the content already in context instead of re-reading"`
 	BudgetTokens int      `json:"budget_tokens,omitempty" jsonschema:"optional remaining context budget in tokens; when set, dex auto-downgrades mode to fit (full→skeleton→signatures→map→handle) — omit for no budget constraint"`
-	Task         string   `json:"task,omitempty" jsonschema:"optional current task description (e.g. from ctx_session); when set, dex selects the compression level automatically — Generate/Test tasks use aggressive (no LLM), others use lightweight cleanup"`
+	Task         string   `json:"task,omitempty" jsonschema:"optional current task description (e.g. from the session tool); when set, dex selects the compression level automatically — Generate/Test tasks use aggressive (no LLM), others use lightweight cleanup"`
 	// CacheLayout overrides the profile's cache_layout knob for this call.
 	// Values: "stable_first" (default), "recency", "off". Empty means use profile default.
 	CacheLayout string `json:"cache_layout,omitempty" jsonschema:"batch ordering policy for prompt-cache hits: stable_first (session-seen files first), recency (caller order), off"`
@@ -1520,6 +1520,18 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		in.StartLine = start
 		in.EndLine = end
 		in.Paths = nil
+		// #355 F2: a handle encodes an exact range to read. Pin a lines: mode so
+		// the profile/task resolution below can't downgrade to a whole-file
+		// compressed view (signatures/map/aggressive/skeleton) that silently
+		// drops the range — only the `full` and `lines:` branches honor the
+		// decoded StartLine/EndLine. A lines: pin is chat-independent (unlike
+		// `full`, which the lean profile downgrades back to `map`, re-dropping
+		// the range) and returns exactly the requested slice. An explicit caller
+		// mode still wins: the handle supersedes path/lines, not a deliberate
+		// mode choice.
+		if strings.TrimSpace(in.Mode) == "" {
+			in.Mode = fmt.Sprintf("lines:%d-%d", start, end)
+		}
 	}
 
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
@@ -2548,14 +2560,14 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 }
 
 // registerTools wires the dex tool surface onto srv, dispatching to h.
-// Exposure is capability-derived (#283/#290): tools that need a query-time
-// embedder (search_semantic, search_similar, search_context, ctx_overview,
-// search_workspace) are only registered when embedAvailable is true. With no
-// embedder wired (the lean profile, DEX_EMBED_ENGINE=none), those are omitted
-// entirely and the surface degrades to BM25 (search_grep) + symbol + graph +
-// file lanes; `ask` stays and routes to the non-semantic lanes. chatAvailable
-// gates file_view the same way. When weakModel is true the full tool surface is
-// hidden and only ask, search_grep, file_tree, and ctx_shell are exposed.
+// Exposure is capability-derived (#283/#290): the embedder-backed lanes
+// (semantic search behind `find`/`ask`) are only registered when
+// embedAvailable is true. With no embedder wired (the lean profile,
+// DEX_EMBED_ENGINE=none), those are omitted entirely and the surface degrades
+// to BM25 (`grep`) + symbol + graph + file lanes; `ask` stays and routes to
+// the non-semantic lanes. chatAvailable gates `read` the same way. When
+// weakModel is true the full tool surface is hidden and only ask, grep, ls,
+// and shell are exposed.
 func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 	expert := expertEnabled()
@@ -2578,11 +2590,11 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				Name:        "find",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Prefer `ask` for general code-understanding questions — it composes this " +
-					"tool with symbol lookup and graph expansion. Use search_semantic directly only when you specifically " +
+					"tool with symbol lookup and graph expansion. Use `find` directly only when you specifically " +
 					"want raw ranking without intent routing. " +
 					"Embeds the query and returns top-k matching chunks. Identifier tokens in the query (CamelCase, " +
 					"snake_case, qualified names) are automatically looked up by exact symbol name and fused into the " +
-					"results via Reciprocal Rank Fusion — no separate search_symbol call needed. " +
+					"results via Reciprocal Rank Fusion — no separate `lookup` call needed. " +
 					"Supports exclude list to skip paths. " +
 					"Optional 'languages' (e.g. ['go','typescript']) and 'path_glob' (e.g. 'internal/**') narrow results " +
 					"to specific file types or directories; when active, candidates are over-fetched to compensate for filtering. " +
@@ -2606,7 +2618,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				Name:        "lookup",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Prefer `ask` — it detects identifiers in your question and runs this " +
-					"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
+					"lookup automatically as part of a fused response. Use `lookup` directly only when you " +
 					"already have the exact identifier name and want nothing else. " +
 					"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists."),
 			}, h.findSymbol)
@@ -2634,7 +2646,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				Name:        "callees",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
-					"Go-only for now. Same name resolution as graph_callers. " +
+					"Go-only for now. Same name resolution as `callers`. " +
 					"Returns 'no-graph' when calls edges haven't been indexed yet."),
 			}, h.graphCallees)
 		}
@@ -2646,7 +2658,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"in the callers direction up to max_depth (default 3) and returns every reachable function " +
 				"with its hop depth and PageRank. Depth 1 = direct callers; depth 2 = their callers; etc. " +
 				"Use before editing a widely-called symbol to gauge the ripple. " +
-				"Same name resolution as graph_callers. Returns 'no-graph' when calls edges haven't been indexed yet."),
+				"Same name resolution as `trace`. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphImpact)
 
 		if expert {
@@ -2739,7 +2751,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				Name:        "read",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Prefer `ask` first — its `suggested_reads` will name the file worth " +
-					"summarizing. Use file_view directly only when you already know which file you need digested. " +
+					"summarizing. Use `read` directly only when you already know which file you need digested. " +
 					"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
 					"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
 					"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
@@ -2747,7 +2759,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
 					"If the file changed since the last read the server may return status=delta with a compact unified diff " +
 					"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
-					"Pass `task` (your current task from ctx_session) to get automatic compression routing: " +
+					"Pass `task` (your current task from `session`) to get automatic compression routing: " +
 					"Generate/Test tasks use aggressive mode (strips comments, no LLM call), others apply lightweight cleanup. " +
 					"Skeleton mode (mode=skeleton): emits exported type declarations in full and function/method signatures " +
 					"with @B<n> body handles. Expand a body on demand: pass expand='@B<n>' on a subsequent call. " +
@@ -2774,7 +2786,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
 			"(dirs shown with trailing / and a summed chunk count). " +
 			"No embedding required — reads directly from the index. " +
-			"Use for orientation in an unfamiliar codebase before calling ask or file_view. " +
+			"Use for orientation in an unfamiliar codebase before calling ask or read. " +
 			"Returns 'no-index' when the project hasn't been indexed yet."),
 	}, h.searchTree)
 
@@ -2782,7 +2794,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		Name:        "grep",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: td("Regex search over project files — no embedding required. " +
-			"Complements ask/search_semantic for exact-match queries: cross-cutting symbol references, " +
+			"Complements ask/find for exact-match queries: cross-cutting symbol references, " +
 			"import paths, string literals, or patterns that semantic search misses. " +
 			"Searches the indexed file list when available (respects .gitignore via the index); " +
 			"falls back to walking the project directory and skipping .git/vendor/node_modules. " +

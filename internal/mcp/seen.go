@@ -6,6 +6,13 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// maxSeenSessions bounds the cross-turn dedup ledger (#355 L1). A long-lived
+// HTTP server with churning session IDs would otherwise retain one *seenState
+// per session for the process lifetime. Reaching the cap drops all per-session
+// state — best-effort dedup tolerates the reset. Stdio (one sentinel key) never
+// approaches it.
+const maxSeenSessions = 4096
+
 // seenState is one session's cross-turn dedup ledger: a monotonic turn counter
 // and the turn on which each locator key was first surfaced. Guarded by the
 // owning Server's seenMu (held for a whole apply pass), so it needs no lock of
@@ -55,6 +62,12 @@ func (s *Server) applySeenContext(key string, out *ContextOutput) {
 	}
 	st := s.seen[key]
 	if st == nil {
+		// Bound the ledger (#355 L1): on overflow drop the whole map. Active
+		// sessions re-send their already-seen ranges once, then rebuild — the
+		// key being added here starts fresh either way.
+		if len(s.seen) >= maxSeenSessions {
+			s.seen = make(map[string]*seenState)
+		}
 		st = &seenState{first: make(map[string]int)}
 		s.seen[key] = st
 	}

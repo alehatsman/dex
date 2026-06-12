@@ -385,7 +385,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 		if embedFailed {
 			if leanNoEmbedder {
 				out.Status = "lean-no-embedder"
-				out.Hint = "lean profile (DEX_EMBED_ENGINE=none): no semantic lane — use search_symbol, search_grep, or the graph_* tools."
+				out.Hint = "lean profile (DEX_EMBED_ENGINE=none): no semantic lane — use lookup, grep, or the trace/impact graph tools."
 			} else {
 				out.Status = "embedding-service-unreachable"
 				out.Hint = "the local embedding service is offline — fall back to grep / Glob / ripgrep for this query."

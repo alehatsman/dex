@@ -48,3 +48,34 @@ func TestSummarizeResolvesHandle(t *testing.T) {
 		t.Errorf("Path=%q, want a.go (resolved from handle)", out.Path)
 	}
 }
+
+// TestSummarizeHandlePinsRange is the #355 F2 regression: a handle encodes an
+// exact line range that read must honor even when a declared task would
+// otherwise route to a whole-file compressed mode. Before the fix the range was
+// decoded but silently dropped — mode resolved AFTER the decode and a Generate/
+// Test task pushed it to "aggressive", which ignores StartLine/EndLine. The
+// handle now pins a lines: mode before that resolution, so the slice survives.
+func TestSummarizeHandlePinsRange(t *testing.T) {
+	projDir := t.TempDir()
+	buildGoFile(t, projDir, "a.go", 10, "")
+	s := &Server{IndexDir: t.TempDir()}
+
+	h := EncodeHandle("a.go", 3, 6)
+	_, out, err := s.summarize(context.Background(), nil, SummarizeInput{
+		Handle:      h,
+		ProjectRoot: projDir,
+		Task:        "write tests for the parser", // routes TaskToMode → aggressive
+	})
+	if err != nil {
+		t.Fatalf("summarize: %v", err)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status=%q hint=%s — handle range was dropped by task routing", out.Status, out.Hint)
+	}
+	if out.StartLine != 3 || out.EndLine != 6 {
+		t.Errorf("slice=%d-%d, want 3-6 — task routing overrode the handle's range", out.StartLine, out.EndLine)
+	}
+	if out.Content == "" {
+		t.Error("empty content — expected the raw line slice, not a compressed whole-file view")
+	}
+}

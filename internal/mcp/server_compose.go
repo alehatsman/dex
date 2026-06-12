@@ -88,7 +88,7 @@ func (s *Server) compose(ctx context.Context, _ *sdk.CallToolRequest, in Compose
 	if err != nil {
 		if errors.Is(err, embed.ErrUnreachable) {
 			return nil, ComposeOutput{Status: "embedding-service-unreachable", Project: p.Root,
-				Hint: "embedding service offline — fall back to search_symbol or ask"}, nil
+				Hint: "embedding service offline — fall back to lookup or ask"}, nil
 		}
 		return nil, ComposeOutput{Status: "error", Hint: fmt.Sprintf("embed: %v", err)}, nil
 	}

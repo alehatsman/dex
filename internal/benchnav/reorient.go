@@ -121,6 +121,7 @@ func ComputeReorient(tasks []ReorientTask, k int, cost CostModel, m ReorientMode
 			res.ReexploreTokens += cost.FindEnvelope(q.Ranked)
 			res.ReexploreCalls++ // the find
 			need := len(gold)
+			counted := make(map[string]bool, len(gold)) // #355 L2: decrement need once per distinct gold path
 			for i := 0; i < depth && need > 0; i++ {
 				p := q.Ranked[i]
 				res.ReexploreTokens += cost.Read(p)
@@ -128,7 +129,12 @@ func ComputeReorient(tasks []ReorientTask, k int, cost CostModel, m ReorientMode
 				if gold[p] && !restored[p] {
 					restored[p] = true
 				}
-				if gold[p] {
+				// A gold path duplicated in this ranking must not over-decrement
+				// need (which would early-exit the read loop and undercount the
+				// reexplore call/token cost). restored[] is session-wide, so it
+				// can't gate this per-query count — track counted[] separately.
+				if gold[p] && !counted[p] {
+					counted[p] = true
 					need--
 				}
 			}

@@ -405,14 +405,14 @@ func containsAuthFlow(output string) bool {
 // tee, or heredoc-to-file.
 func shellValidate(command string) error {
 	if hasFileWriteRedirect(command) {
-		return fmt.Errorf("ctx_shell: file-write redirect detected (> or >>); use the Write tool instead")
+		return fmt.Errorf("shell: file-write redirect detected (> or >>); use the Write tool instead")
 	}
 	lower := strings.ToLower(command)
 	if strings.HasPrefix(lower, "tee ") || strings.Contains(lower, "| tee ") {
-		return fmt.Errorf("ctx_shell: tee detected; use the Write tool instead")
+		return fmt.Errorf("shell: tee detected; use the Write tool instead")
 	}
 	if hasHeredocFileWrite(command) {
-		return fmt.Errorf("ctx_shell: heredoc writing to a file detected; use the Write tool instead")
+		return fmt.Errorf("shell: heredoc writing to a file detected; use the Write tool instead")
 	}
 	return nil
 }

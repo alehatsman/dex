@@ -22,12 +22,12 @@ const (
 
 // loopBlockedMsg is returned when a call is blocked.
 const loopBlockedMsg = "loop-blocked: this exact call has been made %d times in the last 5 minutes. " +
-	"Consider: search_grep for an exact literal, file_tree to orient, narrowing with path= or kind= " +
+	"Consider: grep for an exact literal, ls to orient, narrowing with path= or kind= " +
 	"parameters, or storing findings with the knowledge tool."
 
 // loopHintMsg is a softer nudge for moderate repetition.
-const loopHintMsg = "repeated call (%d times) — if results aren't helping, try search_grep for " +
-	"exact text, file_tree for orientation, or knowledge action=add to store findings."
+const loopHintMsg = "repeated call (%d times) — if results aren't helping, try grep for " +
+	"exact text, ls for orientation, or knowledge action=add to store findings."
 
 // ThrottleLevel describes the loop detector's response to a call.
 type ThrottleLevel int
@@ -126,7 +126,7 @@ func (d *loopDetector) Check(tool, args string, isSearch bool) (ThrottleLevel, s
 	if isSearch && searchGroupCount >= searchGroupLimit {
 		return ThrottleBlock, fmt.Sprintf(
 			"search-group-blocked: %d search calls in the last 5 minutes. Store findings with "+
-				"knowledge action=add, use search_grep for exact literals, or read specific files directly.",
+				"knowledge action=add, use grep for exact literals, or read specific files directly.",
 			searchGroupCount,
 		)
 	}

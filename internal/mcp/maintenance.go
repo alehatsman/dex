@@ -12,18 +12,18 @@ import (
 // immediately fall back to native tools for the duration of the session.
 func maintenanceInstructions(reason string) string {
 	msg := "dex is under maintenance — use native tools instead:\n\n" +
-		"- Read (not file_view) for file contents\n" +
-		"- Bash with grep/rg (not search_semantic/search_symbol) for search\n" +
-		"- Bash (not ctx_shell) for shell commands\n" +
-		"- Manual cross-reference tracing (not graph_callers/graph_callees)\n\n" +
+		"- Read (not dex read) for file contents\n" +
+		"- Bash with grep/rg (not dex find/lookup) for search\n" +
+		"- Bash (not dex shell) for shell commands\n" +
+		"- Manual cross-reference tracing (not dex trace/impact)\n\n" +
 		"Do NOT call any dex MCP tools — they will all return maintenance errors.\n" +
 		"Resume normal dex usage once the maintenance window ends."
 	if reason != "" {
 		msg = "dex is under maintenance (" + reason + ") — use native tools instead:\n\n" +
-			"- Read (not file_view) for file contents\n" +
-			"- Bash with grep/rg (not search_semantic/search_symbol) for search\n" +
-			"- Bash (not ctx_shell) for shell commands\n" +
-			"- Manual cross-reference tracing (not graph_callers/graph_callees)\n\n" +
+			"- Read (not dex read) for file contents\n" +
+			"- Bash with grep/rg (not dex find/lookup) for search\n" +
+			"- Bash (not dex shell) for shell commands\n" +
+			"- Manual cross-reference tracing (not dex trace/impact)\n\n" +
 			"Do NOT call any dex MCP tools — they will all return maintenance errors.\n" +
 			"Resume normal dex usage once the maintenance window ends."
 	}

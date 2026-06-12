@@ -342,7 +342,7 @@ func (s *Server) packAutoLoad(ctx context.Context, st *store.Store, in PackInput
 		}
 		return nil, PackOutput{Status: "error", Hint: err.Error()}, nil
 	}
-	return nil, PackOutput{Status: "ok", Name: in.Name, Hint: "package will be loaded automatically on ctx_overview"}, nil
+	return nil, PackOutput{Status: "ok", Name: in.Name, Hint: "package will be loaded automatically on the next overview (ask with an architecture question)"}, nil
 }
 
 // loadCtxPkg reads and verifies a .ctxpkg file from disk.

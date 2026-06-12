@@ -217,7 +217,7 @@ func (s *Server) sessionSnapshot(ctx context.Context, st *store.Store, projectRo
 		b.WriteString(ss.Task)
 		b.WriteString("\n\n")
 		b.WriteString("## Re-establish context\n\n")
-		fmt.Fprintf(&b, "```\nsearch_semantic: {\"query\": %q, \"project_root\": %q}\n```\n\n", ss.Task, projectRoot)
+		fmt.Fprintf(&b, "```\nfind: {\"query\": %q, \"project_root\": %q}\n```\n\n", ss.Task, projectRoot)
 	}
 
 	if len(ss.Files) > 0 {
@@ -232,7 +232,7 @@ func (s *Server) sessionSnapshot(ctx context.Context, st *store.Store, projectRo
 			if f.Op == "write" {
 				mode = "map"
 			}
-			fmt.Fprintf(&b, "```\nfile_view: {\"path\": %q, \"mode\": %q, \"project_root\": %q}\n```\n",
+			fmt.Fprintf(&b, "```\nread: {\"path\": %q, \"mode\": %q, \"project_root\": %q}\n```\n",
 				f.Path, mode, projectRoot)
 		}
 		b.WriteString("\n")
@@ -277,7 +277,7 @@ type FeedbackInput struct {
 	ProjectRoot     string  `json:"project_root,omitempty"      jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	Intent          string  `json:"intent"                      jsonschema:"current task intent: read | search | refactor | generate | test | debug | review"`
 	OutputRatio     float64 `json:"output_ratio"                jsonschema:"LLM output tokens divided by context tokens for this turn (0.0–1.0+); values below 0.05 indicate the context was unhelpful"`
-	CtxReadLastMode string  `json:"ctx_read_last_mode,omitempty" jsonschema:"the file_view mode used on the last file read this turn (full|signatures|map|aggressive); omit if no file_view was called"`
+	CtxReadLastMode string  `json:"ctx_read_last_mode,omitempty" jsonschema:"the read mode used on the last file read this turn (full|signatures|map|aggressive); omit if no read was called"`
 }
 
 // FeedbackOutput is the result of ctx_feedback.
