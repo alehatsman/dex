@@ -38,6 +38,16 @@ const gitIndexDefaultMax = 500
 // Run performs the git commit indexing pass. It is safe to call from
 // cmdIndex as Phase 3 after the graph phase.
 func (g *GitIndexer) Run(ctx context.Context) error {
+	// A nil embedder means lean / BM25-only mode. Writing FTS-only
+	// (nil-vector) commit chunks is only safe when the store has no vector
+	// dimension; an existing dense index (dim != 0) rejects null vectors with
+	// a dim mismatch in UpsertMany. Skip the git lane rather than fail the
+	// pass or wipe history on the force-push path below — the operator can
+	// reindex with an embedder or run fully BM25-only. (#332)
+	if g.Embed == nil && g.St.Dim() != 0 {
+		return nil
+	}
+
 	max := g.MaxCommits
 	if max <= 0 {
 		max = gitIndexDefaultMax

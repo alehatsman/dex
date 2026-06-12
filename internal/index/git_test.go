@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -12,19 +13,38 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
+// pinGitEnv redirects every git invocation for the rest of the test at the
+// throwaway repo at dir, overriding whatever the process inherited. Git
+// exports GIT_DIR / GIT_INDEX_FILE to hook child processes, so the pre-push
+// gate (mooncake) runs this suite with those vars aimed at the dex worktree
+// and that worktree's core.hooksPath in scope. Without the override, setup
+// commits landed on the worktree's branch, the mooncake pre-commit hook fired
+// inside a tmp dir, and the production GitIndexer (which shells out to git)
+// read the wrong repo. Pointing GIT_DIR at the tmp repo fixes all three: the
+// tmp repo has no hooksPath, and every git call resolves to it. t.Setenv
+// restores the prior values on cleanup.
+func pinGitEnv(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("GIT_DIR", filepath.Join(dir, ".git"))
+	t.Setenv("GIT_WORK_TREE", dir)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(dir, ".git", "index"))
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	t.Setenv("GIT_AUTHOR_NAME", "Tester")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Tester")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+}
+
 // initGitRepo creates a throwaway git repo at dir with deterministic
 // identity so commit hashes/output are stable across machines.
 func initGitRepo(t *testing.T, dir string) {
 	t.Helper()
+	pinGitEnv(t, dir)
 	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(cmd.Environ(),
-			"GIT_AUTHOR_NAME=Tester", "GIT_AUTHOR_EMAIL=t@example.com",
-			"GIT_COMMITTER_NAME=Tester", "GIT_COMMITTER_EMAIL=t@example.com",
-			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
-		)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
@@ -36,6 +56,8 @@ func initGitRepo(t *testing.T, dir string) {
 
 func gitCommitFile(t *testing.T, dir, file, content, subject, body string) {
 	t.Helper()
+	// Callers run initGitRepo first, which pins GIT_DIR at this tmp repo via
+	// pinGitEnv, so the inherited environment already targets the right repo.
 	writeFile(t, filepath.Join(dir, file), content)
 	cmd := exec.Command("git", "add", file)
 	cmd.Dir = dir
@@ -46,11 +68,11 @@ func gitCommitFile(t *testing.T, dir, file, content, subject, body string) {
 	if body != "" {
 		msg = subject + "\n\n" + body
 	}
-	cmd = exec.Command("git", "commit", "-q", "-m", msg)
+	// --no-verify is belt-and-suspenders against any inherited core.hooksPath;
+	// fixed dates keep commit hashes stable across machines.
+	cmd = exec.Command("git", "commit", "--no-verify", "-q", "-m", msg)
 	cmd.Dir = dir
-	cmd.Env = append(cmd.Environ(),
-		"GIT_AUTHOR_NAME=Tester", "GIT_AUTHOR_EMAIL=t@example.com",
-		"GIT_COMMITTER_NAME=Tester", "GIT_COMMITTER_EMAIL=t@example.com",
+	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_DATE=2026-01-01T00:00:00", "GIT_COMMITTER_DATE=2026-01-01T00:00:00",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -128,6 +150,59 @@ func TestGitIndexerLeanNoEmbedder(t *testing.T) {
 	}
 	if len(hits) == 0 {
 		t.Fatal("no BM25 hits for commit subject — commit chunk not indexed in lean mode")
+	}
+}
+
+// TestGitIndexerSkipsDenseIndexWithoutEmbedder pins #332: a nil embedder
+// (DEX_EMBED_ENGINE=none) against an EXISTING dense index (dim != 0) must
+// skip the git lane, not fail. Before the fix GitIndexer.Run upserted git
+// chunks with empty vectors and UpsertMany rejected them with a dim mismatch
+// ("index has dim=N, got 0"), aborting the pass. The pre-existing dense
+// corpus must survive untouched and no git_commit chunk should be written.
+func TestGitIndexerSkipsDenseIndexWithoutEmbedder(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	gitCommitFile(t, dir, "alpha.go", "package a\n", "add alpha widget", "")
+
+	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	// Seed a dense row so the store records a nonzero vector dim (dim=3,
+	// noVec=false) — simulating an index built earlier with an embedder.
+	if err := st.UpsertMany(ctx, []store.PendingChunk{{
+		Path: "src/a.go", Kind: "code", Name: "Bar",
+		ContentSHA: "sha-bar", Content: "func Bar() {}",
+		Vec: []float32{0.1, 0.2, 0.3},
+	}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if st.Dim() == 0 {
+		t.Fatal("seed row did not set a vector dim; test precondition broken")
+	}
+
+	g := &GitIndexer{Root: dir, St: st, Embed: nil} // lean embedder, dense index
+	if err := g.Run(ctx); err != nil {
+		t.Fatalf("GitIndexer.Run skipped the git lane but returned error: %v", err)
+	}
+
+	// Pre-existing dense chunk survives.
+	hits, err := st.Search(ctx, nil, "Bar", 10)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(hits) == 0 {
+		t.Error("pre-existing dense chunk lost after skipped git pass")
+	}
+	// No git_commit chunk was written (lane skipped, not partially applied).
+	widget, _ := st.Search(ctx, nil, "widget", 10)
+	for _, h := range widget {
+		if strings.HasPrefix(h.Path, "git:") {
+			t.Errorf("git lane was not skipped: found git chunk %s", h.Path)
+		}
 	}
 }
 

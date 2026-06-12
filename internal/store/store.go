@@ -1016,6 +1016,11 @@ type Stats struct {
 	EmbedModel string
 }
 
+// Dim reports the index's vector dimension (0 == BM25-only / no vectors yet).
+// Cheap, lock-free read — used by callers that must decide whether the store
+// will accept null-vector rows before attempting an upsert.
+func (s *Store) Dim() int64 { return s.dim.Load() }
+
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	var st Stats
 	st.Dim = int(s.dim.Load())

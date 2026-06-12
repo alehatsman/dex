@@ -2361,15 +2361,22 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 // Shared by cmdIndex (Phase 3) and reindexOne so a reindex rebuilds the
 // commit-search corpus instead of silently dropping it. Honors the
 // DEX_NO_GIT_INDEX=1 opt-out. The embedder may be nil in lean/BM25-only
-// mode — GitIndexer then upserts FTS-only commit chunks (no vectors).
+// mode — GitIndexer then upserts FTS-only commit chunks (no vectors), but
+// only into a store with no vector dim; on an existing dense index the git
+// lane is skipped (the null-vec rows would be rejected). See #332.
 func runGitIndexPhase(ctx context.Context, p *proj.Project, st *store.Store) error {
 	if os.Getenv("DEX_NO_GIT_INDEX") == "1" {
+		return nil
+	}
+	em := newEmbedClient(st.EmbedModel())
+	if em == nil && st.Dim() != 0 {
+		fmt.Fprintf(os.Stderr, "dex: skipping git commit indexing — no embedder (DEX_EMBED_ENGINE=none) but index has dense vectors (dim=%d); reindex with an embedder or run fully BM25-only\n", st.Dim())
 		return nil
 	}
 	gi := &index.GitIndexer{
 		Root:  p.Root,
 		St:    st,
-		Embed: newEmbedClient(st.EmbedModel()),
+		Embed: em,
 	}
 	return gi.Run(ctx)
 }
