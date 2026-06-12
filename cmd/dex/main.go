@@ -917,6 +917,38 @@ func newDraftClient() *chat.Client {
 		envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"), 120*time.Second)
 }
 
+// newExpandClient builds the query-side expansion client (#252). Expansion is
+// opt-in: with DEX_EXPAND_MODEL unset it returns nil and the feature is a
+// no-op. The endpoint defaults to the resolved chat backend (base) so on the
+// standard local-ollama deployment, setting just DEX_EXPAND_MODEL=qwen3:4b is
+// enough to enable it; DEX_EXPAND_URL overrides the endpoint.
+func newExpandClient(base *chat.Client) *chat.Client {
+	model := os.Getenv("DEX_EXPAND_MODEL")
+	if model == "" {
+		return nil
+	}
+	url := os.Getenv("DEX_EXPAND_URL")
+	if url == "" && base != nil {
+		url = base.BaseURL
+	}
+	if url == "" {
+		return nil
+	}
+	timeout := parseDuration("DEX_EXPAND_TIMEOUT", envOr("DEX_EXPAND_TIMEOUT", "5s"), 5*time.Second)
+	return chat.New(url, model, timeout)
+}
+
+// expandDefaultMode resolves the server-side default expand level. With an
+// expansion client configured but DEX_EXPAND_MODE unset, expansion defaults
+// to "on" (cheap lexical expansion, no extra embed); otherwise it honors the
+// env value, and "off" when no client is wired.
+func expandDefaultMode(client *chat.Client) string {
+	if client == nil {
+		return "off"
+	}
+	return envOr("DEX_EXPAND_MODE", "on")
+}
+
 // envInt reads a positive integer env var with a default.
 // Non-positive or unparsable values fall back to def with a warning.
 func envInt(name string, def int) int {
@@ -2742,12 +2774,16 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 		rerankClient = rerank.NewBreaker(rerankClient, 3, 30*time.Second)
 		opts.Reranker = rerankClient
 	}
+	chatClient := newChatClient()
+	expandClient := newExpandClient(chatClient)
 	srv := &mcp.Server{
 		EmbedClient:    newEmbedClient(""),
-		ChatClient:     newChatClient(),
+		ChatClient:     chatClient,
 		RerankClient:   rerankClient,
 		CompressClient: newCompressClient(),
 		DraftClient:    newDraftClient(),
+		ExpandClient:   expandClient,
+		ExpandMode:     expandDefaultMode(expandClient),
 		IndexDir:       base,
 		StoreOpts:      opts,
 		AutoWatch:      autoWatchConfigFromEnv(),

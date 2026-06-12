@@ -86,6 +86,8 @@ type Server struct {
 	RerankClient   rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through StoreOpts.Reranker
 	CompressClient *chat.Client         // optional — health reported by status
 	DraftClient    *chat.Client         // optional — health reported by status
+	ExpandClient   *chat.Client         // optional — drives opt-in query-side expansion (#252); nil disables it
+	ExpandMode     string               // server default expand level (off|on|full) when a request omits it
 	IndexDir       string               // base dir holding per-project index folders
 	StoreOpts      store.Options        // applied to every Store opened by the server
 	AutoWatch      AutoWatchConfig      // lazy per-project watcher; zero value disables

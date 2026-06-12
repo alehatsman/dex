@@ -56,6 +56,11 @@ var allEnvVars = []envVar{
 	{"DEX_DRAFT_URL", "", "Speculative-draft /v1/chat/completions server.", "draft", true},
 	{"DEX_DRAFT_MODEL", "<DEX_CHAT_MODEL>", "Model for the draft leg.", "draft", false},
 
+	// expand — optional opt-in query-side expansion (#252) for ask.
+	{"DEX_EXPAND_MODEL", "", "Small fast model for opt-in query-side expansion on ask (e.g. qwen3:4b). Unset disables expansion entirely.", "expand", true},
+	{"DEX_EXPAND_URL", "<DEX_CHAT_URL>", "Endpoint for the expansion model. Unset reuses the resolved chat backend.", "expand", false},
+	{"DEX_EXPAND_MODE", "on", "Default expansion level when a request omits `expand`: off|on|full. Only consulted when DEX_EXPAND_MODEL is set.", "expand", false},
+
 	// watch — the dex watch / MCP auto-watcher fs-event indexer.
 	{"DEX_MCP_AUTOWATCH", "1", "MCP server spawns a per-project watcher on first request to keep the index fresh. Set off|0 to disable.", "watch", true},
 	{"DEX_WATCH_DEBOUNCE", "500ms", "Quiet window before the MCP auto-watcher re-indexes after a burst of fs events.", "watch", false},
@@ -69,6 +74,7 @@ var allEnvVars = []envVar{
 	{"DEX_CHAT_TIMEOUT", "120s", "HTTP timeout per chat call.", "tuning", false},
 	{"DEX_COMPRESS_TIMEOUT", "30s", "HTTP timeout per compress call.", "tuning", false},
 	{"DEX_DRAFT_TIMEOUT", "120s", "HTTP timeout per draft call.", "tuning", false},
+	{"DEX_EXPAND_TIMEOUT", "5s", "HTTP timeout per query-expansion call (then falls back to the raw query).", "tuning", false},
 	{"DEX_RERANK_TIMEOUT", "5s", "HTTP timeout per rerank call.", "tuning", false},
 	{"DEX_RERANK_POOL", "40", "Candidates fed to the reranker. Clamped to [1, 100].", "tuning", false},
 	{"DEX_RERANK_CONCURRENCY", "4", "Parallel rerank goroutines (chat style only).", "tuning", false},
@@ -167,7 +173,7 @@ func cmdEnv(_ context.Context, args []string) error {
 }
 
 func printEnvText(vars []effVar, withDoc bool) {
-	groupOrder := []string{"core", "chat", "rerank", "compress", "draft", "summary", "tuning"}
+	groupOrder := []string{"core", "chat", "rerank", "compress", "draft", "expand", "summary", "tuning"}
 	byGroup := map[string][]effVar{}
 	nameW, valW := 0, 0
 	for _, v := range vars {

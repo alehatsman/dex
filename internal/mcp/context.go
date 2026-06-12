@@ -85,6 +85,7 @@ type ContextInput struct {
 	Intent   string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context (default: auto)"`
 	K        int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
 	NoInline bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
+	Expand   string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
 }
 
 // SemHit is a semantic-search result reduced to the wire shape the
@@ -262,6 +263,10 @@ type ContextOutput struct {
 	// no content was inlined. Use this to gauge context-window cost and
 	// decide whether to pass no_inline=true on follow-up calls.
 	ContentBytesInlined int `json:"content_bytes_inlined,omitempty"`
+	// Expanded reports that query-side expansion (#252) contributed terms to
+	// this answer's lanes. Off unless DEX_EXPAND_MODEL is configured and the
+	// expansion call returned something usable.
+	Expanded bool `json:"expanded,omitempty"`
 }
 
 // ContextRouter is the exported entry point used by the CLI
@@ -331,6 +336,18 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	// indexed; intents that need it will note this in `avoid`.
 	graphView, _ := loadGraphView(ctx, st)
 
+	// Query-side expansion (#252) — opt-in, failure-soft. One small-model
+	// call turns the question into extra retrieval terms fanned across the
+	// lanes; the raw question stays in every lane so a fanciful generation
+	// is diluted by RRF rather than amplified. Empty/timeout/error → the
+	// un-expanded query. Placed after store-open so a broken repo never
+	// pays the GPU call.
+	exp := s.expandQuery(ctx, in.Question, resolveExpandMode(in.Expand, s.ExpandMode))
+	if !exp.empty() {
+		candidates.identifiers = appendExpansionIdentifiers(candidates.identifiers, exp.Identifiers)
+		out.Expanded = true
+	}
+
 	// Symbol lane — exact identifier lookups. Cheap, no embed required.
 	// Runs whenever the question contains identifier-shaped tokens, even
 	// for non-symbol intents (a behavior_search question that mentions
@@ -339,8 +356,10 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	out.Symbols = symbols
 
 	// Semantic lane — runs unless embed is offline. We always run it
-	// for recall even when the symbol lane has exact hits.
-	semHits, embedFailed := s.runSemanticLane(ctx, st, in.Question, k)
+	// for recall even when the symbol lane has exact hits. The embed text
+	// stays the raw question (no extra GPU) unless full-mode HyDE is on;
+	// the BM25 text carries the expansion keywords/identifiers for free.
+	semHits, embedFailed := s.runSemanticLane(ctx, st, expandedEmbedText(in.Question, exp), expandedFTSText(in.Question, exp), k)
 	leanNoEmbedder := s.EmbedClient == nil
 	if embedFailed && !leanNoEmbedder {
 		out.Endpoint = s.EmbedClient.Endpoint()
@@ -653,10 +672,13 @@ func (s *Server) runSymbolLane(ctx context.Context, st *store.Store, cand intent
 	return out, paths
 }
 
-// runSemanticLane embeds the question and runs Search. Returns
-// (hits, embedUnreachable). When embedUnreachable is true hits is nil
-// and the caller should surface the failure.
-func (s *Server) runSemanticLane(ctx context.Context, st *store.Store, question string, k int) ([]SemHit, bool) {
+// runSemanticLane embeds embedText and runs Search with ftsText as the
+// BM25/FTS leg of the RRF fusion. The two are usually identical (the raw
+// question); query-side expansion (#252) lets them diverge — extra keywords
+// widen the lexical leg for free, while a HyDE passage shifts only the
+// embedded vector. Returns (hits, embedUnreachable). When embedUnreachable
+// is true hits is nil and the caller should surface the failure.
+func (s *Server) runSemanticLane(ctx context.Context, st *store.Store, embedText, ftsText string, k int) ([]SemHit, bool) {
 	em := s.EmbedClient
 	if em == nil {
 		// Lean profile (DEX_EMBED_ENGINE=none): no embedder wired. Report the
@@ -664,14 +686,14 @@ func (s *Server) runSemanticLane(ctx context.Context, st *store.Store, question 
 		// lanes and emits the grep hint, exactly like a downed embedder.
 		return nil, true
 	}
-	vecs, err := em.Embed(ctx, []string{question})
+	vecs, err := em.Embed(ctx, []string{embedText})
 	if err != nil {
 		if errors.Is(err, embed.ErrUnreachable) {
 			return nil, true
 		}
 		return nil, false
 	}
-	hits, err := st.Search(ctx, vecs[0], question, k)
+	hits, err := st.Search(ctx, vecs[0], ftsText, k)
 	if err != nil {
 		return nil, false
 	}
