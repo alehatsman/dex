@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Build a doc-stripped copy of the dex repo for the native baseline.
 #
-# Native mode must not benefit from in-repo docs that dex itself generated
-# (LLM_GUIDE.md) or that constitute hand-written codebase explanation
-# (PIPELINE.md, STORAGE.md, README.md, docs/). Stripping them means native
+# Native mode must not benefit from hand-written codebase explanation
+# (README.md, PIPELINE.md, STORAGE.md, docs/). Stripping them means native
 # mode is judged on its ability to derive understanding from *source* alone.
 #
 # Code-level comments in *.go files are kept — they are part of the code.
@@ -43,7 +42,6 @@ rsync -a \
 
 # Strip top-level explanation docs.
 rm -f "$DEST/README.md"
-rm -f "$DEST/LLM_GUIDE.md"
 rm -f "$DEST/PIPELINE.md"
 rm -f "$DEST/STORAGE.md"
 

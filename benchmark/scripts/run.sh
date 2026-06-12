@@ -15,7 +15,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BENCH="$ROOT/benchmark"
 
 # Where each mode's claude process runs and is granted access to.
-#   DEX mode    -> the real repo (with LLM_GUIDE.md, PIPELINE.md, etc. — that's the point).
+#   DEX mode    -> the real repo, served by the dex MCP code-intelligence server over
+#                  a pre-built index — the variable under test. No checked-in guide file.
 #   NATIVE mode -> a doc-stripped fixture so native cannot read in-repo explanations.
 #                  Build it with: benchmark/scripts/make-native-fixture.sh
 DEX_ROOT="${DEX_ROOT:-$ROOT}"
@@ -85,7 +86,7 @@ run_one() {
       mcp_cfg="$BENCH/configs/mcp-dex.json"
       sys_prompt="$BENCH/configs/system-dex.md"
       # In dex mode: allow dex MCP tools + Read for verification, no Grep/Glob/Bash.
-      allowed_tools="Read mcp__dex__ask mcp__dex__search_semantic mcp__dex__search_symbol mcp__dex__graph_callers mcp__dex__graph_callees mcp__dex__graph_deps mcp__dex__graph_neighbors mcp__dex__view_summarize"
+      allowed_tools="Read mcp__dex__ask mcp__dex__find mcp__dex__lookup mcp__dex__read mcp__dex__callers mcp__dex__callees mcp__dex__deps mcp__dex__path"
       workdir="$DEX_ROOT"
       ;;
     native)

@@ -58,10 +58,10 @@ questions:
 
 - id: L2-02
   band: L2
-  question: "What is the role of `internal/guide`? What does it produce and from what inputs?"
+  question: "What is the role of `internal/rerank`? What does it talk to and where does it sit in retrieval?"
   ground_truth: |
-    Renders `LLM_GUIDE.md` from data already in the store: repo summary, per-package summaries, and Go graph sections (exported API, PageRank entry points, depends-on / used-by). Entry point is `guide.Render` in `internal/guide/render.go`. The CLI command `dex guide` drives it.
-  must_mention: ["LLM_GUIDE.md", "guide"]
+    Cross-encoder relevance reranker: scores (query, doc) pairs jointly with cross-attention to reorder the fused candidate pool that `store.Search` produces. Talks to a Cohere-shape `/rerank` HTTP endpoint (TEI / Infinity / vLLM reranker model). Entry point is `Client.Rerank` in `internal/rerank/client.go:92`; a circuit breaker (`internal/rerank/breaker.go`) degrades to non-reranked results when the endpoint is unhealthy.
+  must_mention: ["rerank", "cross", "reorder"]
 
 - id: L2-03
   band: L2
@@ -215,7 +215,6 @@ questions:
     - `internal/mcp/<tool>.go` if you split it out, plus a `_test.go`.
     - The store layer if a new query is needed (e.g. `internal/store/store.go` with a corresponding `Store.FindImports`).
     - `README.md` MCP tool table.
-    - `LLM_GUIDE.md` is regenerated, do not hand-edit.
     No changes to `internal/index`, `internal/watch`, `internal/embed` etc.
   must_mention: ["internal/mcp/server.go", "README"]
 
