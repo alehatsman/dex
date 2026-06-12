@@ -15,13 +15,17 @@ var embedBackedTools = []string{
 	"find",
 }
 
-// zeroInferenceTools work with no embedder at all (BM25, exact-symbol, the
-// pre-computed graph, and the ask router which degrades to those lanes). They
-// must always be advertised, lean or not.
+// zeroInferenceTools work with no embedder at all (ripgrep, the pre-computed
+// graph behind map/trace/impact, and the ask router which degrades to those
+// lanes). They are part of the default verb surface and must always be
+// advertised, lean or not. (Exact-symbol lookup still needs no embedder, but
+// it now lives in the DEX_EXPERT power tier, so it is not asserted here.)
 var zeroInferenceTools = []string{
 	"grep",
-	"lookup",
 	"ask",
+	"map",
+	"trace",
+	"impact",
 }
 
 func listToolNames(t *testing.T, srv *Server) map[string]bool {

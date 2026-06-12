@@ -44,19 +44,22 @@ func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
 Tool mapping (use these instead):
-- ask(question)          instead of free-form reasoning about code structure
-- find(query, path)      instead of Grep/rg for concept/intent searches
-- lookup(name, path)     instead of Grep for exact identifier lookup
-- shell(command)         instead of Bash for shell commands (compressed output)
-- read(file)             instead of Read for large files (signatures + summaries)
-- callers / callees      instead of manual cross-ref tracing
-- deps(path)             instead of manual import scanning
+- ask(question)            instead of free-form reasoning about code structure
+- map()                    instead of guessing layout — orient first in an unfamiliar repo
+- find(query, path)        instead of Grep/rg for concept/intent searches
+- trace(symbol, direction) instead of manual cross-ref tracing (callers/callees/path)
+- impact(symbol)           instead of guessing an edit's blast radius
+- read(file)               instead of Read for large files (signatures + summaries)
+- shell(command)           instead of Bash for shell commands (compressed output)
+- grep(pattern)            instead of rg for exact regex matches
 
 Workflow:
-1. Orient: ask(question) — routes intent, returns suggested_reads + next_action
-2. Locate: find for concepts; lookup for exact names
+1. Orient: ask(question) — routes intent, returns suggested_reads + next_action; map() for layout
+2. Locate: find for concepts; trace to follow the call graph
 3. Read: read for large files; native Read for small ones
 4. Shell: shell(command) for build/test output
+
+Power lanes (lookup, deps, callers, callees, path, diff, clusters, routes, smells, status, notes, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
 Start every session by calling ask() with the task description.`
 }
@@ -2555,9 +2558,21 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // hidden and only ask, search_grep, file_tree, and ctx_shell are exposed.
 func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
-	// Power-only: raw search / graph / analysis lanes. Useful for CLI parity,
-	// A-B debugging, and power users — too noisy for everyday agents.
+	expert := expertEnabled()
 	if !weakModel {
+		// Default verb surface (#316 story 3): map (orient) / find (search) /
+		// trace (call graph) / impact (blast radius) / read (digest); ask is
+		// always-on below. The granular lanes these verbs compose over move
+		// behind DEX_EXPERT to keep the everyday surface small.
+		addTool(srv, &sdk.Tool{
+			Name:        "map",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Orient in an unfamiliar codebase: a deterministic, multi-zoom map of the " +
+				"project's top packages/dirs and how they connect — no embedding or chat required. " +
+				"Call this FIRST when you don't yet know where things live, before find/ask fan-out. " +
+				"Returns 'no-index' when the project hasn't been indexed yet."),
+		}, mapHandler(h))
+
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
 				Name:        "find",
@@ -2577,40 +2592,52 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}
 
 		addTool(srv, &sdk.Tool{
-			Name:        "lookup",
+			Name:        "trace",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Prefer `ask` — it detects identifiers in your question and runs this " +
-				"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
-				"already have the exact identifier name and want nothing else. " +
-				"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists."),
-		}, h.findSymbol)
+			Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
+				"who calls it), 'callees' (what it calls), or 'path' (shortest call route to the `to` symbol). " +
+				"Go-only for now; other languages fall back to ripgrep via `ask`. Accepts a bare name ('Foo'), " +
+				"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
+				"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
+		}, traceHandler(h))
 
-		addTool(srv, &sdk.Tool{
-			Name:        "deps",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Return the `imports` edges for a file or package — the package the file belongs to, " +
-				"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
-				"Pass `path` (relative file inside the project) OR `package` (full package path). " +
-				"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing."),
-		}, h.graphDeps)
+		if expert {
+			addTool(srv, &sdk.Tool{
+				Name:        "lookup",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Prefer `ask` — it detects identifiers in your question and runs this " +
+					"lookup automatically as part of a fused response. Use search_symbol directly only when you " +
+					"already have the exact identifier name and want nothing else. " +
+					"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists."),
+			}, h.findSymbol)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "callers",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
-				"Go-only for now (Python/JS/Rust callers fall back to ripgrep via `ask`). " +
-				"Accepts a bare name (`Foo`), a qualified method (`(*Server).RunStdio`), or a package-qualified " +
-				"name (`mcp.NewServer`). Multiple matches are returned with their package paths so the agent can " +
-				"disambiguate. Returns 'no-graph' when calls edges haven't been indexed yet."),
-		}, h.graphCallers)
+			addTool(srv, &sdk.Tool{
+				Name:        "deps",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Return the `imports` edges for a file or package — the package the file belongs to, " +
+					"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
+					"Pass `path` (relative file inside the project) OR `package` (full package path). " +
+					"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing."),
+			}, h.graphDeps)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "callees",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
-				"Go-only for now. Same name resolution as graph_callers. " +
-				"Returns 'no-graph' when calls edges haven't been indexed yet."),
-		}, h.graphCallees)
+			addTool(srv, &sdk.Tool{
+				Name:        "callers",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
+					"Go-only for now (Python/JS/Rust callers fall back to ripgrep via `ask`). " +
+					"Accepts a bare name (`Foo`), a qualified method (`(*Server).RunStdio`), or a package-qualified " +
+					"name (`mcp.NewServer`). Multiple matches are returned with their package paths so the agent can " +
+					"disambiguate. Returns 'no-graph' when calls edges haven't been indexed yet."),
+			}, h.graphCallers)
+
+			addTool(srv, &sdk.Tool{
+				Name:        "callees",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
+					"Go-only for now. Same name resolution as graph_callers. " +
+					"Returns 'no-graph' when calls edges haven't been indexed yet."),
+			}, h.graphCallees)
+		}
 
 		addTool(srv, &sdk.Tool{
 			Name:        "impact",
@@ -2622,88 +2649,90 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"Same name resolution as graph_callers. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphImpact)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "routes",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
-				"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
-				"and callers of registration functions (Handle, HandleFunc, AddTool, RegisterService, etc.). " +
-				"Returns each handler with its file location and the registration function that wires it in. " +
-				"Requires a graph index (`dex index . --graph=only`)."),
-		}, h.routes)
+		if expert {
+			addTool(srv, &sdk.Tool{
+				Name:        "routes",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
+					"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
+					"and callers of registration functions (Handle, HandleFunc, AddTool, RegisterService, etc.). " +
+					"Returns each handler with its file location and the registration function that wires it in. " +
+					"Requires a graph index (`dex index . --graph=only`)."),
+			}, h.routes)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "smells",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("AST-based code quality signals derived from the graph index — no LLM required. " +
-				"Returns four categories: `long_functions` (bodies >= min_func_lines, default 80), " +
-				"`dead_exports` (exported functions/methods with no indexed callers), " +
-				"`god_files` (files with >= min_file_symbols symbols, default 30), and " +
-				"`god_nodes` (functions/methods with in_degree >= min_god_node_callers (20) OR " +
-				"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
-				"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
-		}, h.smells)
+			addTool(srv, &sdk.Tool{
+				Name:        "smells",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("AST-based code quality signals derived from the graph index — no LLM required. " +
+					"Returns four categories: `long_functions` (bodies >= min_func_lines, default 80), " +
+					"`dead_exports` (exported functions/methods with no indexed callers), " +
+					"`god_files` (files with >= min_file_symbols symbols, default 30), and " +
+					"`god_nodes` (functions/methods with in_degree >= min_god_node_callers (20) OR " +
+					"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
+					"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
+			}, h.smells)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "path",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Find the shortest call/import path between two symbols in the graph. " +
-				"BFS over `calls` and `imports` edges from src to dst. " +
-				"Returns an ordered list of hops (symbol + edge_kind leading into it). " +
-				"Status `no-path` means no route within max_depth (default 8). " +
-				"Requires a graph index (`dex index . --graph=only`)."),
-		}, h.graphPath)
+			addTool(srv, &sdk.Tool{
+				Name:        "path",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Find the shortest call/import path between two symbols in the graph. " +
+					"BFS over `calls` and `imports` edges from src to dst. " +
+					"Returns an ordered list of hops (symbol + edge_kind leading into it). " +
+					"Status `no-path` means no route within max_depth (default 8). " +
+					"Requires a graph index (`dex index . --graph=only`)."),
+			}, h.graphPath)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "diff",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Blast-radius analysis for a git diff. " +
-				"Runs `git diff --name-only <ref> HEAD` to find changed files, " +
-				"collects all function/method nodes in those files as seeds, " +
-				"then BFS over `calls` edges to find transitive callers (default depth 2, max 5). " +
-				"Returns the blast-radius node list sorted by depth and PageRank. " +
-				"Requires a graph index (`dex index . --graph=only`)."),
-		}, h.graphDiff)
+			addTool(srv, &sdk.Tool{
+				Name:        "diff",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Blast-radius analysis for a git diff. " +
+					"Runs `git diff --name-only <ref> HEAD` to find changed files, " +
+					"collects all function/method nodes in those files as seeds, " +
+					"then BFS over `calls` edges to find transitive callers (default depth 2, max 5). " +
+					"Returns the blast-radius node list sorted by depth and PageRank. " +
+					"Requires a graph index (`dex index . --graph=only`)."),
+			}, h.graphDiff)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "clusters",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("List Louvain communities in the call/import graph — " +
-				"clusters of tightly-interconnected symbols. " +
-				"Communities are sorted by descending size. " +
-				"Top members per community are sorted by PageRank. " +
-				"Community IDs are stable across re-runs for unchanged subgraphs. " +
-				"Requires a graph index (`dex index . --graph=only`). " +
-				"Useful for understanding module boundaries, finding hidden coupling, and planning refactors."),
-		}, h.graphCommunities)
+			addTool(srv, &sdk.Tool{
+				Name:        "clusters",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("List Louvain communities in the call/import graph — " +
+					"clusters of tightly-interconnected symbols. " +
+					"Communities are sorted by descending size. " +
+					"Top members per community are sorted by PageRank. " +
+					"Community IDs are stable across re-runs for unchanged subgraphs. " +
+					"Requires a graph index (`dex index . --graph=only`). " +
+					"Useful for understanding module boundaries, finding hidden coupling, and planning refactors."),
+			}, h.graphCommunities)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "status",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
-		}, h.status)
+			addTool(srv, &sdk.Tool{
+				Name:        "status",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
+			}, h.status)
 
-		addTool(srv, &sdk.Tool{
-			Name: "notes",
-			Description: td("Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
-				"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
-				"list (retrieve top-k facts ordered by salience), delete (remove a fact by id). " +
-				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
-				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
-				"as knowledge_facts. No embedding required."),
-		}, h.knowledge)
+			addTool(srv, &sdk.Tool{
+				Name: "notes",
+				Description: td("Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
+					"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
+					"list (retrieve top-k facts ordered by salience), delete (remove a fact by id). " +
+					"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
+					"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
+					"as knowledge_facts. No embedding required."),
+			}, h.knowledge)
 
-		addTool(srv, &sdk.Tool{
-			Name: "session",
-			Description: td("Manage per-project session memory across tool calls. " +
-				"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
-				"add_file (track a file you read/wrote), get (retrieve the current session state), " +
-				"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
-				"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical), " +
-				"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files). " +
-				"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
-				"don't lose context across reconnects. No embedding required."),
-		}, h.session)
+			addTool(srv, &sdk.Tool{
+				Name: "session",
+				Description: td("Manage per-project session memory across tool calls. " +
+					"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
+					"add_file (track a file you read/wrote), get (retrieve the current session state), " +
+					"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
+					"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical), " +
+					"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files). " +
+					"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
+					"don't lose context across reconnects. No embedding required."),
+			}, h.session)
+		}
 
 		if chatAvailable {
 			addTool(srv, &sdk.Tool{

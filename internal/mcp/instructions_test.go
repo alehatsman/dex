@@ -13,7 +13,7 @@ import (
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
 var instructionTools = []string{
-	"ask", "find", "lookup", "shell", "read", "callers", "callees", "deps",
+	"ask", "map", "find", "trace", "impact", "read", "shell", "grep",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the
