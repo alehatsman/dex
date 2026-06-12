@@ -11,6 +11,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/eval"
+	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -76,6 +77,7 @@ func runEval(ctx context.Context, args []string) {
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
 	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+symbol+graph, zero-inference) | onnx (in-process ONNX, requires env vars)")
 	alphaSweep := fs.Bool("alpha-sweep", false, "sweep FusionLinear α from 0.1 to 1.0 and print a comparison table with RRF as baseline")
+	expand := fs.String("expand", "off", "query-side expansion to A/B (#252): off | on | full. Requires DEX_EXPAND_MODEL.")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	var projectPath string
@@ -187,7 +189,20 @@ func runEval(ctx context.Context, args []string) {
 		return
 	}
 
-	results, err := eval.Run(ctx, em, st, gs, *k)
+	var rw eval.Rewrite
+	if *expand != "" && *expand != "off" {
+		xc := newExpandClient(newChatClient())
+		if xc == nil {
+			fmt.Fprintln(os.Stderr, "dex bench eval: --expand set but DEX_EXPAND_MODEL is empty; expansion disabled")
+		} else {
+			mode := *expand
+			rw = func(ctx context.Context, q string) (string, string) {
+				return mcp.ExpandForEval(ctx, xc, mode, q)
+			}
+			fmt.Fprintf(os.Stderr, "dex bench eval: query expansion=%s via %s\n", mode, xc.ModelName())
+		}
+	}
+	results, err := eval.RunWithRewrite(ctx, em, st, gs, *k, rw)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "dex bench eval: run: %v\n", err)
 		os.Exit(1)

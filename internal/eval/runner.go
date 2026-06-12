@@ -48,18 +48,46 @@ type QueryResult struct {
 // derived from a commit subject, so the matching git_commit chunk (which
 // contains that subject verbatim) would be a trivial leak.
 func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, k int) ([]QueryResult, error) {
+	return RunWithRewrite(ctx, em, st, gs, k, nil)
+}
+
+// Rewrite optionally transforms a query before scoring, returning the text to
+// embed (vector lane) and the text for the BM25/FTS leg. Used to A/B query-
+// side expansion (#252); both default to the raw query when rw is nil.
+type Rewrite func(ctx context.Context, query string) (embedText, ftsText string)
+
+// RunWithRewrite is Run with an optional per-query Rewrite applied before
+// scoring. See Run for the scoring contract.
+func RunWithRewrite(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, k int, rw Rewrite) ([]QueryResult, error) {
 	if len(gs.Queries) == 0 {
 		return nil, fmt.Errorf("eval: golden set is empty")
 	}
 
-	texts := make([]string, len(gs.Queries))
+	embedTexts := make([]string, len(gs.Queries))
+	ftsTexts := make([]string, len(gs.Queries))
 	for i, q := range gs.Queries {
-		texts[i] = q.Query
+		embedTexts[i], ftsTexts[i] = q.Query, q.Query
 	}
-	vecs := make([][]float32, len(texts)) // nil slices → BM25-only lane when em == nil
+	// Apply the rewrite concurrently — each call is an independent model
+	// round-trip, latency-bound like the scoring loop below.
+	if rw != nil {
+		eg, egctx := errgroup.WithContext(ctx)
+		eg.SetLimit(evalConcurrency())
+		for i, q := range gs.Queries {
+			i, q := i, q
+			eg.Go(func() error {
+				embedTexts[i], ftsTexts[i] = rw(egctx, q.Query)
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, fmt.Errorf("eval: rewrite: %w", err)
+		}
+	}
+	vecs := make([][]float32, len(embedTexts)) // nil slices → BM25-only lane when em == nil
 	if em != nil {
 		var err error
-		vecs, err = em.Embed(ctx, texts)
+		vecs, err = em.Embed(ctx, embedTexts)
 		if err != nil {
 			return nil, fmt.Errorf("eval: embed queries: %w", err)
 		}
@@ -82,7 +110,7 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 			if pool < 30 {
 				pool = 30
 			}
-			hits, err := st.Search(egctx, vecs[i], q.Query, pool)
+			hits, err := st.Search(egctx, vecs[i], ftsTexts[i], pool)
 			if err != nil {
 				return fmt.Errorf("eval: search q%d (%s): %w", i, q.ID, err)
 			}

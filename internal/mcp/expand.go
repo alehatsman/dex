@@ -139,6 +139,19 @@ func stripThink(s string) string {
 	return s[:open]
 }
 
+// ExpandForEval runs query expansion outside a live Server so the eval
+// harness can A/B the lanes (#252). Given a chat client and mode (off|on|
+// full), it returns the embed text and BM25/FTS text the semantic lane would
+// use for `question` — exactly mirroring contextRouter's wiring. A nil client
+// or off mode returns the raw question unchanged for both. The symbol lane's
+// identifier expansion is not reflected here: eval scores store.Search, which
+// has no symbol lane.
+func ExpandForEval(ctx context.Context, client *chat.Client, mode, question string) (embedText, ftsText string) {
+	s := &Server{ExpandClient: client}
+	exp := s.expandQuery(ctx, question, resolveExpandMode(mode, ""))
+	return expandedEmbedText(question, exp), expandedFTSText(question, exp)
+}
+
 // expandedFTSText folds expansion keywords and identifiers into the BM25/FTS
 // text of the semantic lane. The raw question leads so its terms keep their
 // weight; extra terms only widen recall. Costs nothing extra to embed.
