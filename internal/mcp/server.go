@@ -545,6 +545,10 @@ type SearchHit struct {
 	// const, etc.) or sits in the unremarkable middle. See formatRole.
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content"`
+	// Handle is the opaque expansion handle for this hit's range (#344).
+	// Echo it into read(handle=…) instead of constructing a path:line.
+	// Empty for pseudo-paths (e.g. git-commit hits) that have no file range.
+	Handle string `json:"handle,omitempty"`
 }
 
 type SearchOutput struct {
@@ -860,6 +864,10 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		out.Hits = out.Hits[:5]
 		out.Hint = ldHint + " [reduced: showing top 5]"
 	}
+
+	// Stamp expansion handles on the final hit set (#344) — after truncation
+	// so we don't mint handles for hits we drop.
+	stampSearchHandles(out.Hits)
 
 	// SLO monitoring: record this tool call and check thresholds.
 	tr := s.sloFor(p.Root)
@@ -1188,6 +1196,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 		out.Hits = out.Hits[:5]
 		out.Hint = ldHint + " [reduced: showing top 5]"
 	}
+	stampSearchHandles(out.Hits)
 	return nil, out, nil
 }
 
@@ -1253,6 +1262,7 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 			Content:   h.Content,
 		})
 	}
+	stampSearchHandles(out.Hits)
 	return nil, out, nil
 }
 
@@ -1419,6 +1429,7 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 			Content:     h.Content,
 		})
 	}
+	stampSearchHandles(out.Hits)
 	return nil, out, nil
 }
 
@@ -1443,10 +1454,16 @@ type SummarizeInput struct {
 	// Expand retrieves a suppressed function/method body from a previous skeleton-mode
 	// read. Pass the handle key from the skeleton output (e.g. "@B3").
 	Expand string `json:"expand,omitempty" jsonschema:"expand a body handle issued by a previous skeleton-mode read, e.g. '@B3'; returns the full source lines for that scope"`
+	// Handle is an expansion handle (#344) minted by find/ask/lookup. When set it
+	// decodes to a concrete path + line range and supersedes path/paths/start_line/
+	// end_line — the agent echoes the opaque token instead of constructing a
+	// reference, so it can never read a path it invented. Distinct from `expand`,
+	// which addresses suppressed bodies within one skeleton read.
+	Handle string `json:"handle,omitempty" jsonschema:"expansion handle from a find/ask/lookup result (the result's 'handle' field); reads that exact range — supersedes path/paths/start_line/end_line"`
 }
 
 type SummarizeOutput struct {
-	Status       string   `json:"status"` // "ok" | "unchanged" | "delta" | "chat-service-unreachable" | "error"
+	Status       string   `json:"status"` // "ok" | "unchanged" | "delta" | "chat-service-unreachable" | "bad-handle" | "error"
 	Hint         string   `json:"hint,omitempty"`
 	Project      string   `json:"project,omitempty"`
 	Path         string   `json:"path,omitempty"` // resolved path, relative to project root
@@ -1477,6 +1494,22 @@ const maxSummarizeBytes = 64 * 1024
 
 func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) { //nolint:cyclop
 	out := SummarizeOutput{}
+
+	// Expansion handle (#344): decode it to a concrete path + line range that
+	// supersedes any path/paths/lines the caller also passed. A token that fails
+	// to decode is rejected here (status="bad-handle") so a hallucinated handle
+	// never reaches the filesystem. Existence of the decoded path is enforced
+	// downstream by the normal path resolution + stat below.
+	if h := strings.TrimSpace(in.Handle); h != "" {
+		path, start, end, ok := DecodeHandle(h)
+		if !ok {
+			return nil, SummarizeOutput{Status: "bad-handle", Hint: "handle did not decode to a valid path:line range; re-run find/ask to get a fresh handle"}, nil
+		}
+		in.Path = path
+		in.StartLine = start
+		in.EndLine = end
+		in.Paths = nil
+	}
 
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
 	if mode == "" {

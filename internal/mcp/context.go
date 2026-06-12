@@ -104,6 +104,8 @@ type SemHit struct {
 	Reason    string  `json:"reason,omitempty"`
 	Content   string  `json:"content,omitempty"`
 	Truncated bool    `json:"truncated,omitempty"`
+	// Handle is the opaque expansion handle for this hit's range (#344).
+	Handle string `json:"handle,omitempty"`
 }
 
 type SymbolHit struct {
@@ -134,6 +136,8 @@ type SymbolHit struct {
 	// the same to an agent.
 	Role      string `json:"role,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
+	// Handle is the opaque expansion handle for this symbol's range (#344).
+	Handle string `json:"handle,omitempty"`
 }
 
 // RefHit is a lexical reference produced by the references lane
@@ -221,6 +225,8 @@ type SuggestedRead struct {
 	// file has no imports, the StartLine range already covers the
 	// imports, or the shared byte budget is exhausted.
 	Imports string `json:"imports,omitempty"`
+	// Handle is the opaque expansion handle for this read's range (#344).
+	Handle string `json:"handle,omitempty"`
 }
 
 type ContextOutput struct {
@@ -470,6 +476,12 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	}
 
 	s.synthesizeAnswer(ctx, session, intent, in.Question, &out)
+
+	// Stamp expansion handles on every locator the bundle hands back (#344),
+	// after truncation so dropped hits don't get handles.
+	stampSemHandles(out.SemanticHits)
+	stampSymbolHandles(out.Symbols)
+	stampReadHandles(out.SuggestedReads)
 	return nil, out, nil
 }
 
