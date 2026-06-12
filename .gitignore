@@ -30,3 +30,6 @@ coverage.txt
 !.dex/config.yml
 
 data/
+
+# fusion calibration sweep output — reproducible via sweep-lane-weights.sh
+benchmark/corpus/sweep-results/

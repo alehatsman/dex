@@ -1,5 +1,0 @@
-dex bench corpus: scoring flask (1 query set(s) + gen:git-history,structural)
-dex bench corpus: scoring gin (1 query set(s) + gen:git-history,blast-radius,structural)
-dex bench corpus: scoring ripgrep (1 query set(s) + gen:git-history,structural)
-dex bench corpus: scoring zod (1 query set(s) + gen:git-history,structural)
-dex bench corpus: scoring react (1 query set(s) + gen:git-history,structural)
