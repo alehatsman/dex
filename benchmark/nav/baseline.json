@@ -1,0 +1,11 @@
+{
+  "lane": "full",
+  "k": 10,
+  "num_queries": 304,
+  "num_reached": 228,
+  "reach_rate": 0.75,
+  "mean_calls": 2.8289473684210527,
+  "median_calls": 2,
+  "mean_tokens": 18601.140350877195,
+  "median_tokens": 14345.5
+}
