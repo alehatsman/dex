@@ -3,25 +3,8 @@ package eval
 import (
 	"testing"
 
-	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/store"
 )
-
-func TestUniqueFilesFiltersGit(t *testing.T) {
-	hits := []store.Hit{
-		{Path: "git:abcd1234", Kind: chunk.KindGitCommit},
-		{Path: "a.go", Kind: "window"},
-		{Path: "a.go", Kind: "window"}, // dup file, collapsed
-		{Path: "c.go", Kind: "function_declaration"},
-	}
-	// git_commit chunks are dropped (commit-subject leak); files collapse to
-	// first-seen.
-	got := uniqueFiles(hits, 10, "")
-	want := []string{"a.go", "c.go"}
-	if !eq(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
 
 func TestUniqueFilesExcludesAnchor(t *testing.T) {
 	hits := []store.Hit{

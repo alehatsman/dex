@@ -1066,7 +1066,6 @@ func cmdIndex(ctx context.Context, args []string) error {
 	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")
 	dryRun := fs.Bool("dry-run", false, "walk the file tree and show what would be indexed, without writing to the index")
 	graphMode := fs.String("graph", "on", "graph phase: on|off|only ('on' runs both phases, 'off' skips graph, 'only' skips chunk/embed and just refreshes the graph)")
-	noGit := fs.Bool("no-git", false, "skip git commit indexing (Phase 3)")
 	format := fs.String("format", "text", "output format: text|json")
 	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
 	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
@@ -1177,15 +1176,6 @@ func cmdIndex(ctx context.Context, args []string) error {
 		// Mirror the old `graph index` output shape so existing scripts
 		// piping --format=json keep parsing.
 		return reportGraphStats(p.Root, gstats, *format)
-	}
-
-	// Phase 3: git commit indexing (incremental; skipped with --no-git or
-	// DEX_NO_GIT_INDEX=1; warn-and-continue on failure like Phase 2).
-	if !*noGit {
-		_ = lk.SetPhase("git")
-		if gerr := runGitIndexPhase(ctx, p, st); gerr != nil {
-			fmt.Fprintf(os.Stderr, "⚠ git index phase failed: %v (file index is still usable)\n", gerr)
-		}
 	}
 
 	stats, err := st.Stats(ctx)
@@ -2347,38 +2337,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 			}
 		}
 	}
-	// Rebuild the git commit-search corpus too — reindex clears the cache,
-	// so without this the git_commit chunks would be gone until the next
-	// `dex index`.
-	_ = lk.SetPhase("git")
-	if gerr := runGitIndexPhase(ctx, p, st); gerr != nil {
-		fmt.Fprintf(os.Stderr, "⚠ git index phase failed for %s: %v (chunk index is still usable)\n", p.Root, gerr)
-	}
 	return nil
-}
-
-// runGitIndexPhase indexes git commits as searchable git_commit chunks.
-// Shared by cmdIndex (Phase 3) and reindexOne so a reindex rebuilds the
-// commit-search corpus instead of silently dropping it. Honors the
-// DEX_NO_GIT_INDEX=1 opt-out. The embedder may be nil in lean/BM25-only
-// mode — GitIndexer then upserts FTS-only commit chunks (no vectors), but
-// only into a store with no vector dim; on an existing dense index the git
-// lane is skipped (the null-vec rows would be rejected). See #332.
-func runGitIndexPhase(ctx context.Context, p *proj.Project, st *store.Store) error {
-	if os.Getenv("DEX_NO_GIT_INDEX") == "1" {
-		return nil
-	}
-	em := newEmbedClient(st.EmbedModel())
-	if em == nil && st.Dim() != 0 {
-		fmt.Fprintf(os.Stderr, "dex: skipping git commit indexing — no embedder (DEX_EMBED_ENGINE=none) but index has dense vectors (dim=%d); reindex with an embedder or run fully BM25-only\n", st.Dim())
-		return nil
-	}
-	gi := &index.GitIndexer{
-		Root:  p.Root,
-		St:    st,
-		Embed: em,
-	}
-	return gi.Run(ctx)
 }
 
 // knownProjectRoots walks the index dir, opening each per-project index

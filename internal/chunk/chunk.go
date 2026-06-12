@@ -52,9 +52,8 @@ const WindowOverlap = 10
 
 // Kind values for Chunk.Kind.
 const (
-	KindWindow    = "window"
-	KindOrphan    = "orphan"
-	KindGitCommit = "git_commit"
+	KindWindow = "window"
+	KindOrphan = "orphan"
 )
 
 // LineCount returns the number of lines in data. A trailing newline is

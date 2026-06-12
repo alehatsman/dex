@@ -22,9 +22,7 @@ source files becomes one labeled query:
   disk; non-code files filtered out).
 
 This is reproducible from `git log` at a fixed HEAD, so the query set — and
-therefore the metrics — are stable across runs. `git_commit` and summary
-chunks are dropped from the candidate hits during scoring: the query is the
-commit subject, so the matching `git_commit` chunk would be a trivial leak.
+therefore the metrics — are stable across runs.
 
 ## Usage
 

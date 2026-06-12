@@ -58,7 +58,7 @@ dex graph tags      <path> --tag=<t>|--doc=<d>
 dex graph export    <path>
 
 # build / maintenance
-dex index <path>           # build or refresh (--graph=off|only, --dry-run, --no-git)
+dex index <path>           # build or refresh (--graph=off|only, --dry-run)
 dex watch <path>           # fsnotify auto-reindex
 dex reindex <path>         # drop and re-embed from scratch
 dex nuke <path>            # delete the on-disk index

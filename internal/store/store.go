@@ -40,12 +40,11 @@ func init() {
 }
 
 const (
-	metaDim            = "dim"
-	metaLastIndexedAt  = "last_indexed_at"
-	metaProjectRoot    = "project_root"
-	metaEmbedModel     = "embed_model"
-	metaGitLastIndexed = "git_last_indexed_commit"
-	metaVecQuant       = "vec_quant"
+	metaDim           = "dim"
+	metaLastIndexedAt = "last_indexed_at"
+	metaProjectRoot   = "project_root"
+	metaEmbedModel    = "embed_model"
+	metaVecQuant      = "vec_quant"
 )
 
 // ErrEmbedModelMismatch is returned by EnsureEmbedModel when the active
@@ -1120,29 +1119,6 @@ func (s *Store) ProjectRoot(ctx context.Context) (string, error) {
 	return v, nil
 }
 
-// SetGitLastIndexed records the full commit hash that was the HEAD when
-// the most recent git-commit index pass completed.
-func (s *Store) SetGitLastIndexed(ctx context.Context, hash string) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO meta(key,value) VALUES('`+metaGitLastIndexed+`', ?)
-		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, hash)
-	return err
-}
-
-// GitLastIndexed returns the commit hash stored by SetGitLastIndexed, or
-// "" if git indexing has not run before.
-func (s *Store) GitLastIndexed(ctx context.Context) (string, error) {
-	var v string
-	row := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='`+metaGitLastIndexed+`'`)
-	if err := row.Scan(&v); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil
-		}
-		return "", err
-	}
-	return v, nil
-}
-
 // ExistingSHAs returns the set of content_sha1 already present for path,
 // so the indexer can skip re-embedding unchanged chunks.
 func (s *Store) ExistingSHAs(ctx context.Context, path string) (map[string]bool, error) {
@@ -1370,17 +1346,10 @@ func (s *Store) TouchPath(ctx context.Context, path string, now time.Time) (int6
 
 // PruneUnseen deletes chunks last seen before `cutoff`. Call at the end of a
 // re-index to remove stale rows for files that disappeared.
-//
-// git_commit chunks (path "git:<hash>") are excluded by kind: the file walk
-// never bumps their last_seen_at, so without the carve-out a no-change
-// re-index would wipe the entire commit-search corpus and the incremental git
-// indexer (seeing no new commits) would never rebuild it. The git indexer owns
-// their lifecycle — incremental add, and a full wipe + rebuild on force-push.
 func (s *Store) PruneUnseen(ctx context.Context, cutoff time.Time) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM chunks
-		   WHERE last_seen_at < ?
-		     AND kind != 'git_commit'`,
+		   WHERE last_seen_at < ?`,
 		cutoff.UnixNano())
 	if err != nil {
 		return 0, err
@@ -2633,13 +2602,11 @@ func (s *Store) ChunkAt(ctx context.Context, path string, startLine int) (Hit, e
 // CodeFilePaths returns every real code file in the chunks table
 // mapped to its inferred line count (max end_line across all its chunks).
 // Used by overview to enumerate the indexed codebase without loading content.
-// git_commit chunks (synthetic "git:<hash>" paths) are not files, so excluded.
 func (s *Store) CodeFilePaths(ctx context.Context) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT path, MAX(end_line)
 		FROM chunks
-		WHERE kind != 'git_commit'
-		  AND path != ''
+		WHERE path != ''
 		GROUP BY path
 		ORDER BY path`)
 	if err != nil {

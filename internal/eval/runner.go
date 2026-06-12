@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/store"
@@ -43,10 +42,6 @@ type QueryResult struct {
 // open project store. For each query it embeds the query text, retrieves a
 // pool of hits, collapses them to a ranked list of unique source files, and
 // computes NDCG@k / Recall@k / reciprocal-rank against the relevant set.
-//
-// git_commit chunks are always dropped from the candidate hits: the query is
-// derived from a commit subject, so the matching git_commit chunk (which
-// contains that subject verbatim) would be a trivial leak.
 func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, k int) ([]QueryResult, error) {
 	return RunWithRewrite(ctx, em, st, gs, k, nil)
 }
@@ -151,17 +146,13 @@ func RunWithRewrite(ctx context.Context, em embed.Embedder, st *store.Store, gs 
 }
 
 // uniqueFiles collapses hits to the first-seen (best-ranked) occurrence of
-// each source file and returns the top limit files in rank order. git_commit
-// chunks are always dropped (commit-subject leak); the exclude path (a
-// blast-radius anchor, "" for none) is dropped so the query's own file never
-// counts.
+// each source file and returns the top limit files in rank order. The exclude
+// path (a blast-radius anchor, "" for none) is dropped so the query's own
+// file never counts.
 func uniqueFiles(hits []store.Hit, limit int, exclude string) []string {
 	seen := make(map[string]bool)
 	var files []string
 	for _, h := range hits {
-		if strings.HasPrefix(h.Path, "git:") {
-			continue
-		}
 		if exclude != "" && h.Path == exclude {
 			continue
 		}

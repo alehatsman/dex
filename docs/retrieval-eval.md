@@ -25,8 +25,7 @@ change** without fooling yourself.
   stripped). **Relevant** = the files that commit touched (still on disk).
 - **Runner:** embeds each query, runs the live fused `Search`, collapses hits
   to a ranked list of unique source files, scores NDCG@10 / Recall@10 / MRR
-  against the relevant set. `git_commit` chunks are always dropped (the query
-  *is* the commit subject — the matching commit chunk would be a trivial leak).
+  against the relevant set.
 
 ```sh
 dex bench eval .                                 # print the metrics table
