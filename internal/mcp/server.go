@@ -81,16 +81,14 @@ type AutoWatchConfig struct {
 
 // Server holds everything the MCP handlers need.
 type Server struct {
-	EmbedClient    embed.Embedder
-	ChatClient     *chat.Client         // optional — when nil, view_summarize is not registered
-	RerankClient   rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through StoreOpts.Reranker
-	CompressClient *chat.Client         // optional — health reported by status
-	DraftClient    *chat.Client         // optional — health reported by status
-	ExpandClient   *chat.Client         // optional — drives opt-in query-side expansion (#252); nil disables it
-	ExpandMode     string               // server default expand level (off|on|full) when a request omits it
-	IndexDir       string               // base dir holding per-project index folders
-	StoreOpts      store.Options        // applied to every Store opened by the server
-	AutoWatch      AutoWatchConfig      // lazy per-project watcher; zero value disables
+	EmbedClient  embed.Embedder
+	ChatClient   *chat.Client         // optional — when nil, view_summarize is not registered
+	RerankClient rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through StoreOpts.Reranker
+	ExpandClient *chat.Client         // optional — drives opt-in query-side expansion (#252); nil disables it
+	ExpandMode   string               // server default expand level (off|on|full) when a request omits it
+	IndexDir     string               // base dir holding per-project index folders
+	StoreOpts    store.Options        // applied to every Store opened by the server
+	AutoWatch    AutoWatchConfig      // lazy per-project watcher; zero value disables
 
 	// runCtx is set at the start of RunStdio and is used as the parent
 	// context for spawned watcher goroutines. nil for non-stdio usage
@@ -2280,12 +2278,6 @@ type StatusOutput struct {
 	RerankReachable   bool            `json:"rerank_reachable,omitempty"`
 	RerankModel       string          `json:"rerank_model,omitempty"`
 	RerankBreaker     *BreakerStatus  `json:"rerank_breaker,omitempty"`
-	CompressEndpoint  string          `json:"compress_endpoint,omitempty"`
-	CompressReachable bool            `json:"compress_reachable,omitempty"`
-	CompressModel     string          `json:"compress_model,omitempty"`
-	DraftEndpoint     string          `json:"draft_endpoint,omitempty"`
-	DraftReachable    bool            `json:"draft_reachable,omitempty"`
-	DraftModel        string          `json:"draft_model,omitempty"`
 	OllamaEndpoint    string          `json:"ollama_endpoint,omitempty"`
 	OllamaEmbedModels []string        `json:"ollama_embed_models,omitempty"`
 	OllamaChatModels  []string        `json:"ollama_chat_models,omitempty"`
@@ -2333,14 +2325,6 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 			out.RerankBreaker = bs
 		}
 	}
-	if s.CompressClient != nil {
-		out.CompressEndpoint = s.CompressClient.Endpoint()
-		out.CompressModel = s.CompressClient.ModelName()
-	}
-	if s.DraftClient != nil {
-		out.DraftEndpoint = s.DraftClient.Endpoint()
-		out.DraftModel = s.DraftClient.ModelName()
-	}
 
 	// Probe all clients concurrently — each has a 3 s timeout; running
 	// them in parallel keeps the total wall-clock cost at ~3 s instead
@@ -2371,12 +2355,6 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 	}
 	if s.RerankClient != nil {
 		probe(&wg, s.RerankClient, func(ok bool, _ string) { out.RerankReachable = ok })
-	}
-	if s.CompressClient != nil {
-		probe(&wg, s.CompressClient, func(ok bool, _ string) { out.CompressReachable = ok })
-	}
-	if s.DraftClient != nil {
-		probe(&wg, s.DraftClient, func(ok bool, _ string) { out.DraftReachable = ok })
 	}
 	wg.Go(func() {
 		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)

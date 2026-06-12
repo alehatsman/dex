@@ -12,8 +12,6 @@ quantization (Q4_K_M GGUF) unless noted.
 | Embed | `DEX_EMBED_MODEL` | All search queries + indexing |
 | Chat/Ask | `DEX_CHAT_MODEL` | Foreground Q&A via `ask` |
 | Rerank | `DEX_RERANK_MODEL` | Post-retrieval scoring of top-40 candidates |
-| Compress | `DEX_COMPRESS_MODEL` | Context compression via `shell` / `dex compress` |
-| Draft | `DEX_DRAFT_MODEL` | Speculative drafts for `generate` |
 
 ---
 

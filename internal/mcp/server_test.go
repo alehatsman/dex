@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
@@ -430,68 +429,6 @@ func fakeChat(t *testing.T, body string) *httptest.Server {
 			"model": "fake-chat",
 		})
 	}))
-}
-
-func TestStatusReportsCompressAndDraftEndpoints(t *testing.T) {
-	embedSrv := fakeEmbed(t, 16)
-	defer embedSrv.Close()
-
-	compressSrv := fakeChat(t, "summary")
-	defer compressSrv.Close()
-	draftSrv := fakeChat(t, "draft code")
-	defer draftSrv.Close()
-
-	s := &Server{
-		EmbedClient:    embed.New(embedSrv.URL, "fake-embed", 16, 5*time.Second),
-		CompressClient: chat.New(compressSrv.URL, "fake-compress", 5*time.Second),
-		DraftClient:    chat.New(draftSrv.URL, "fake-draft", 5*time.Second),
-		IndexDir:       t.TempDir(),
-	}
-	_, out, _ := s.status(context.Background(), nil, StatusInput{})
-
-	if out.CompressEndpoint != compressSrv.URL {
-		t.Errorf("CompressEndpoint = %q, want %q", out.CompressEndpoint, compressSrv.URL)
-	}
-	if out.CompressModel != "fake-compress" {
-		t.Errorf("CompressModel = %q, want fake-compress", out.CompressModel)
-	}
-	if !out.CompressReachable {
-		t.Error("CompressReachable = false, want true")
-	}
-	if out.DraftEndpoint != draftSrv.URL {
-		t.Errorf("DraftEndpoint = %q, want %q", out.DraftEndpoint, draftSrv.URL)
-	}
-	if out.DraftModel != "fake-draft" {
-		t.Errorf("DraftModel = %q, want fake-draft", out.DraftModel)
-	}
-	if !out.DraftReachable {
-		t.Error("DraftReachable = false, want true")
-	}
-}
-
-func TestStatusOmitsCompressAndDraftWhenUnwired(t *testing.T) {
-	srv := fakeEmbed(t, 16)
-	defer srv.Close()
-	s := newServer(srv.URL, t.TempDir())
-
-	_, out, _ := s.status(context.Background(), nil, StatusInput{})
-	if out.CompressEndpoint != "" || out.CompressModel != "" || out.CompressReachable {
-		t.Errorf("compress fields should be zero when CompressClient is nil; got endpoint=%q model=%q reachable=%v",
-			out.CompressEndpoint, out.CompressModel, out.CompressReachable)
-	}
-	if out.DraftEndpoint != "" || out.DraftModel != "" || out.DraftReachable {
-		t.Errorf("draft fields should be zero when DraftClient is nil; got endpoint=%q model=%q reachable=%v",
-			out.DraftEndpoint, out.DraftModel, out.DraftReachable)
-	}
-}
-
-// clamp returns n if n < max, else max. Used in test error messages to
-// truncate long strings without importing min from math.
-func clamp(max, n int) int {
-	if n < max {
-		return n
-	}
-	return max
 }
 
 func itoa(i int) string {

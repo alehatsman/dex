@@ -30,7 +30,7 @@ type endpointProbe struct {
 
 // collectEndpoints builds the probe list the status command displays.
 // Mirrors the env wiring in main.go: embed/chat always present (they
-// have defaults); rerank/compress/draft are opt-in.
+// have defaults); rerank is opt-in.
 func collectEndpoints() []endpointProbe {
 	probes := []endpointProbe{}
 
@@ -44,18 +44,6 @@ func collectEndpoints() []endpointProbe {
 		probes = append(probes, endpointProbe{name: "rerank", url: rc.Endpoint(), model: rc.ModelName(), health: rc.Health})
 	} else {
 		probes = append(probes, endpointProbe{name: "rerank", status: "not configured"})
-	}
-
-	if c := newCompressClient(); c != nil {
-		probes = append(probes, endpointProbe{name: "compress", url: c.BaseURL, model: c.Model, health: c.Health})
-	} else {
-		probes = append(probes, endpointProbe{name: "compress", status: "not configured"})
-	}
-
-	if c := newDraftClient(); c != nil {
-		probes = append(probes, endpointProbe{name: "draft", url: c.BaseURL, model: c.Model, health: c.Health})
-	} else {
-		probes = append(probes, endpointProbe{name: "draft", status: "not configured"})
 	}
 
 	return probes

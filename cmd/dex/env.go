@@ -22,8 +22,8 @@ import (
 //
 //   - Default is the value the binary uses when the env var is unset.
 //     Empty string + Disable=true means the feature is OFF until set.
-//   - Group steers display: "core"/"chat"/"rerank"/"compress"/"draft"
-//     show by default; "tuning" hides behind `--all`.
+//   - Group steers display: "core"/"chat"/"rerank" show by default;
+//     "tuning" hides behind `--all`.
 type envVar struct {
 	Name    string
 	Default string
@@ -48,14 +48,6 @@ var allEnvVars = []envVar{
 	{"DEX_RERANK_STYLE", "chat-vllm", "Backend shape: cohere | chat | chat-vllm. chat = ollama/standard chat endpoint; chat-vllm = vLLM + Qwen3-Reranker (adds <think> prefill).", "rerank", false},
 	{"DEX_RERANK_MODEL", "Qwen/Qwen3-Reranker-4B", "Model for the rerank leg.", "rerank", false},
 
-	// compress — optional context-compression server.
-	{"DEX_COMPRESS_URL", "", "Context-compression /v1/chat/completions server.", "compress", true},
-	{"DEX_COMPRESS_MODEL", "<DEX_CHAT_MODEL>", "Model for the compress leg.", "compress", false},
-
-	// draft — optional speculative-draft server for generate_code.
-	{"DEX_DRAFT_URL", "", "Speculative-draft /v1/chat/completions server.", "draft", true},
-	{"DEX_DRAFT_MODEL", "<DEX_CHAT_MODEL>", "Model for the draft leg.", "draft", false},
-
 	// expand — optional opt-in query-side expansion (#252) for ask.
 	{"DEX_EXPAND_MODEL", "", "Small fast model for opt-in query-side expansion on ask (e.g. qwen3:4b). Unset disables expansion entirely.", "expand", true},
 	{"DEX_EXPAND_URL", "<DEX_CHAT_URL>", "Endpoint for the expansion model. Unset reuses the resolved chat backend.", "expand", false},
@@ -72,8 +64,6 @@ var allEnvVars = []envVar{
 	{"DEX_EMBED_TIMEOUT", "60s", "HTTP timeout per embed call.", "tuning", false},
 	{"DEX_INDEX_CONCURRENCY", "0", "Parallel file readers/chunkers in Pass 1 of `index` (0 = GOMAXPROCS).", "tuning", false},
 	{"DEX_CHAT_TIMEOUT", "120s", "HTTP timeout per chat call.", "tuning", false},
-	{"DEX_COMPRESS_TIMEOUT", "30s", "HTTP timeout per compress call.", "tuning", false},
-	{"DEX_DRAFT_TIMEOUT", "120s", "HTTP timeout per draft call.", "tuning", false},
 	{"DEX_EXPAND_TIMEOUT", "5s", "HTTP timeout per query-expansion call (then falls back to the raw query).", "tuning", false},
 	{"DEX_RERANK_TIMEOUT", "5s", "HTTP timeout per rerank call.", "tuning", false},
 	{"DEX_RERANK_POOL", "40", "Candidates fed to the reranker. Clamped to [1, 100].", "tuning", false},
@@ -173,7 +163,7 @@ func cmdEnv(_ context.Context, args []string) error {
 }
 
 func printEnvText(vars []effVar, withDoc bool) {
-	groupOrder := []string{"core", "chat", "rerank", "compress", "draft", "expand", "summary", "tuning"}
+	groupOrder := []string{"core", "chat", "rerank", "expand", "summary", "tuning"}
 	byGroup := map[string][]effVar{}
 	nameW, valW := 0, 0
 	for _, v := range vars {

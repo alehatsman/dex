@@ -357,7 +357,7 @@ env:
   Run `+"`dex env`"+` for the effective configuration. The 5 vars that
   matter for 80% of setups: DEX_EMBED_URL, DEX_EMBED_MODEL,
   DEX_INDEX_DIR, DEX_CHAT_URL, DEX_CHAT_MODEL.
-  Tuning knobs (timeouts, batch sizes, optional rerank/compress/draft
+  Tuning knobs (timeouts, batch sizes, optional rerank/expand
   endpoints) — see docs/tuning.md or run `+"`dex env --all --doc`"+`.
 
 exit codes:
@@ -892,29 +892,6 @@ func newRerankClient() rerank.HealthChecker {
 		return c
 	}
 	return rerank.New(url, model, timeout)
-}
-
-// chatClientFromEnv creates a *chat.Client from environment variables.
-// Returns nil if urlEnv is unset (opt-in feature). modelFallback is used
-// when modelEnv is also unset.
-func chatClientFromEnv(urlEnv, modelEnv, timeoutEnv, modelFallback string, defTimeout time.Duration) *chat.Client {
-	url := os.Getenv(urlEnv)
-	if url == "" {
-		return nil
-	}
-	model := envOr(modelEnv, modelFallback)
-	timeout := parseDuration(timeoutEnv, envOr(timeoutEnv, defTimeout.String()), defTimeout)
-	return chat.New(url, model, timeout)
-}
-
-func newCompressClient() *chat.Client {
-	return chatClientFromEnv("DEX_COMPRESS_URL", "DEX_COMPRESS_MODEL", "DEX_COMPRESS_TIMEOUT",
-		envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"), 30*time.Second)
-}
-
-func newDraftClient() *chat.Client {
-	return chatClientFromEnv("DEX_DRAFT_URL", "DEX_DRAFT_MODEL", "DEX_DRAFT_TIMEOUT",
-		envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"), 120*time.Second)
 }
 
 // newExpandClient builds the query-side expansion client (#252). Expansion is
@@ -2777,16 +2754,14 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 	chatClient := newChatClient()
 	expandClient := newExpandClient(chatClient)
 	srv := &mcp.Server{
-		EmbedClient:    newEmbedClient(""),
-		ChatClient:     chatClient,
-		RerankClient:   rerankClient,
-		CompressClient: newCompressClient(),
-		DraftClient:    newDraftClient(),
-		ExpandClient:   expandClient,
-		ExpandMode:     expandDefaultMode(expandClient),
-		IndexDir:       base,
-		StoreOpts:      opts,
-		AutoWatch:      autoWatchConfigFromEnv(),
+		EmbedClient:  newEmbedClient(""),
+		ChatClient:   chatClient,
+		RerankClient: rerankClient,
+		ExpandClient: expandClient,
+		ExpandMode:   expandDefaultMode(expandClient),
+		IndexDir:     base,
+		StoreOpts:    opts,
+		AutoWatch:    autoWatchConfigFromEnv(),
 	}
 	return srv, rerankClient
 }
