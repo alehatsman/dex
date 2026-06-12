@@ -216,13 +216,25 @@ func TestFailOpenMalformedBody(t *testing.T) {
 // TestFailOpenUpstreamDown asserts that when the upstream is unreachable the
 // proxy returns a 502 (never a panic / hang) — the ErrorHandler path.
 func TestFailOpenUpstreamDown(t *testing.T) {
-	// Bind then close to obtain a port nothing is listening on.
+	// Hold a listener that immediately closes every connection. Holding the
+	// port avoids the ephemeral-port-reuse race (another parallel test
+	// process grabbing a just-closed port and answering 200); the reset
+	// forces the proxy round trip to fail -> ErrorHandler -> 502.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	defer l.Close()
 	addr := l.Addr().String()
-	_ = l.Close()
+	go func() {
+		for {
+			c, aerr := l.Accept()
+			if aerr != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
 
 	upURL, _ := url.Parse("http://" + addr)
 	var logs bytes.Buffer
