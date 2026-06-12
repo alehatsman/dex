@@ -106,6 +106,9 @@ type SemHit struct {
 	Truncated bool    `json:"truncated,omitempty"`
 	// Handle is the opaque expansion handle for this hit's range (#344).
 	Handle string `json:"handle,omitempty"`
+	// SeenTurn is set (>0) when this exact range was already surfaced to the
+	// session on an earlier turn (#344); content is then omitted to save bytes.
+	SeenTurn int `json:"seen,omitempty"`
 }
 
 type SymbolHit struct {
@@ -138,6 +141,9 @@ type SymbolHit struct {
 	Truncated bool   `json:"truncated,omitempty"`
 	// Handle is the opaque expansion handle for this symbol's range (#344).
 	Handle string `json:"handle,omitempty"`
+	// SeenTurn is set (>0) when this exact range was already surfaced to the
+	// session on an earlier turn (#344); content is then omitted to save bytes.
+	SeenTurn int `json:"seen,omitempty"`
 }
 
 // RefHit is a lexical reference produced by the references lane
@@ -227,6 +233,9 @@ type SuggestedRead struct {
 	Imports string `json:"imports,omitempty"`
 	// Handle is the opaque expansion handle for this read's range (#344).
 	Handle string `json:"handle,omitempty"`
+	// SeenTurn is set (>0) when this exact range was already surfaced to the
+	// session on an earlier turn (#344); content is then omitted to save bytes.
+	SeenTurn int `json:"seen,omitempty"`
 }
 
 type ContextOutput struct {
@@ -482,6 +491,11 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	stampSemHandles(out.SemanticHits)
 	stampSymbolHandles(out.Symbols)
 	stampReadHandles(out.SuggestedReads)
+
+	// Cross-turn dedup (#344): mark locators already surfaced to this session on
+	// an earlier turn and drop their content, so we don't resend bytes the agent
+	// already holds.
+	s.applySeenContext(sessionKey(req), &out)
 	return nil, out, nil
 }
 

@@ -153,6 +153,14 @@ type Server struct {
 	bodyHandles    map[string]map[string]bodyHandle // sessionID → "@B<n>" → handle
 	bodyHandlesMu  sync.Mutex
 	bodyHandlesSeq map[string]int // sessionID → next N
+
+	// seen is the cross-turn dedup ledger (#344): per session, the turn on which
+	// each locator (path:start-end) was first surfaced. A locator re-emitted on a
+	// later turn is marked "seen" and its content omitted, so we never resend
+	// bytes the agent already has. In-memory and connection-scoped — dies with the
+	// session, no persistence or GC.
+	seen   map[string]*seenState // sessionKey → ledger
+	seenMu sync.Mutex
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from
