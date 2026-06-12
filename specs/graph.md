@@ -60,13 +60,14 @@ so a consumer can branch on status instead of catching a failure.
   a source tree in an unregistered language contributes no nodes.
 - WHERE result counts are bounded, each query caps its hits (with per-tool
   defaults and ceilings) and orders peers deterministically.
-- WHERE the same logic backs both surfaces, the `graph_*` MCP tools and the
+- WHERE the same logic backs both surfaces, the graph MCP tools
+  (`callers`/`callees`/`deps`/`path`/`impact`/`diff`/`clusters`) and the
   `dex graph …` CLI call one implementation.
 - WHEN `impact` is called, dex performs a transitive BFS over
   incoming `calls` edges from the given symbol, returns all reachable callers
   depth-sorted with their PageRank score, so a caller can gauge the blast radius
   of a change before editing.
-- WHEN `graph_cycles` is called, dex runs iterative Tarjan SCC on the
+- WHEN `cycles` is called, dex runs iterative Tarjan SCC on the
   `calls` edges and returns strongly connected components of size ≥ `min_size`
   (default 2), sorted by descending size — surfacing mutual recursion and
   recursive call clusters without false positives from single-node SCCs.
@@ -109,9 +110,9 @@ so a consumer can branch on status instead of catching a failure.
 - **Symbol definition lookup.** Returning a symbol's definition by exact name is
   the **symbol-search** spec; the graph returns relationships (edges), not
   definitions (though symbol search borrows the graph's centrality for ranking).
-- **Semantic neighborhood.** `graph_neighbors` returns cosine-similar chunks, not
-  structural edges — it belongs to **semantic-search**, not this spec, despite
-  the `graph_` name.
+- **Semantic neighborhood.** Cosine-similar chunk expansion (neighbors by
+  embedding distance, not structural edges) belongs to **semantic-search** and
+  the **ask** router's neighborhood expansion, not this spec.
 - **Composed retrieval.** The **ask** router fuses semantic + symbol + graph and
   decides when to expand the neighborhood; this spec is the standalone graph
   lanes it calls.
@@ -141,7 +142,7 @@ so a consumer can branch on status instead of catching a failure.
       carry `metadata.language`
 - [x] Per-tool result caps + deterministic ordering
 - [x] `impact`: transitive BFS over incoming `calls` edges, depth-sorted with PageRank, blast-radius analysis
-- [x] `graph_cycles`: Tarjan SCC on `calls` edges, SCCs ≥ min_size returned sorted by size
+- [x] `cycles`: Tarjan SCC on `calls` edges, SCCs ≥ min_size returned sorted by size
 - [x] `path`: BFS shortest path over `calls`+`imports` edges from src to dst, with per-hop edge_kind
 - [x] `diff`: git diff → changed-file seeds → `calls` BFS blast-radius, sorted by depth+PageRank
 - [x] `clusters`: Louvain community detection over `calls`+`imports`, stable 1-based IDs, sorted by size
