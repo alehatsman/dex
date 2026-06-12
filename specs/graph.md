@@ -62,31 +62,31 @@ so a consumer can branch on status instead of catching a failure.
   defaults and ceilings) and orders peers deterministically.
 - WHERE the same logic backs both surfaces, the `graph_*` MCP tools and the
   `dex graph …` CLI call one implementation.
-- WHEN `graph_impact` is called (TierPower), dex performs a transitive BFS over
+- WHEN `impact` is called, dex performs a transitive BFS over
   incoming `calls` edges from the given symbol, returns all reachable callers
   depth-sorted with their PageRank score, so a caller can gauge the blast radius
   of a change before editing.
-- WHEN `graph_cycles` is called (TierPower), dex runs iterative Tarjan SCC on the
+- WHEN `graph_cycles` is called, dex runs iterative Tarjan SCC on the
   `calls` edges and returns strongly connected components of size ≥ `min_size`
   (default 2), sorted by descending size — surfacing mutual recursion and
   recursive call clusters without false positives from single-node SCCs.
-- WHEN `graph_path` is called (TierPower), dex runs BFS over `calls` and `imports`
+- WHEN `path` is called, dex runs BFS over `calls` and `imports`
   edges from `src` to `dst` and returns the shortest hop list (node + edge_kind
   per hop) or `status:"no-path"` when `dst` is unreachable within `max_depth`
   (default 8) — useful for tracing control-flow chains or dependency paths between
   two symbols.
-- WHEN `graph_diff` is called (TierPower), dex runs `git diff --name-only <ref> HEAD`
+- WHEN `diff` is called, dex runs `git diff --name-only <ref> HEAD`
   in the project root, collects function/method nodes in the changed files as seeds,
   then BFS over `calls` edges to find transitive callers up to `max_depth` hops
   (default 2), returning the blast-radius node list sorted by depth and PageRank —
   the pre-PR impact sweep in one call.
-- WHEN `graph_communities` is called (TierPower), dex returns the Louvain community
+- WHEN `clusters` is called, dex returns the Louvain community
   assignments from the last index run: clusters of tightly-interconnected
   functions/methods/types, sorted by descending size, with top members sorted by
   PageRank. Community IDs are 1-based and stable for unchanged subgraphs across
   re-runs. Nodes with `community_id = 0` were not reached by community detection
   (isolated or non-code nodes).
-- WHEN `graph_smells` is called (TierPower), dex returns four structural quality
+- WHEN `smells` is called, dex returns four structural quality
   signals without LLM involvement: `long_functions` (bodies ≥ min_func_lines,
   default 80), `dead_exports` (exported functions/methods with no indexed callers),
   `god_files` (files with ≥ min_file_symbols symbols, default 30), and `god_nodes`
@@ -124,9 +124,9 @@ so a consumer can branch on status instead of catching a failure.
 
 ## Checklist
 
-- [x] `graph_callers` / `graph_callees`: incoming / outgoing `calls` edges with
+- [x] `callers` / `callees`: incoming / outgoing `calls` edges with
       call-site location; target resolution + disambiguation
-- [x] `graph_deps`: a package's import edges
+- [x] `deps`: a package's import edges
 - [x] Whole-project package import DAG (nodes with degree/pagerank + edges) in
       one call for a codebase-map consumer
 - [x] Code/call/import graph spans Go (go/types, type-resolved) plus tree-sitter
@@ -140,12 +140,12 @@ so a consumer can branch on status instead of catching a failure.
       for Python, JS, TS, Rust, Java; edges stamped `provenance=sitter`, nodes
       carry `metadata.language`
 - [x] Per-tool result caps + deterministic ordering
-- [x] `graph_impact`: transitive BFS over incoming `calls` edges, depth-sorted with PageRank, blast-radius analysis
+- [x] `impact`: transitive BFS over incoming `calls` edges, depth-sorted with PageRank, blast-radius analysis
 - [x] `graph_cycles`: Tarjan SCC on `calls` edges, SCCs ≥ min_size returned sorted by size
-- [x] `graph_path`: BFS shortest path over `calls`+`imports` edges from src to dst, with per-hop edge_kind
-- [x] `graph_diff`: git diff → changed-file seeds → `calls` BFS blast-radius, sorted by depth+PageRank
-- [x] `graph_communities`: Louvain community detection over `calls`+`imports`, stable 1-based IDs, sorted by size
-- [x] `graph_smells`: long_functions, dead_exports, god_files, god_nodes (in_degree ≥ 20 OR cross_pkg_callers ≥ 8)
+- [x] `path`: BFS shortest path over `calls`+`imports` edges from src to dst, with per-hop edge_kind
+- [x] `diff`: git diff → changed-file seeds → `calls` BFS blast-radius, sorted by depth+PageRank
+- [x] `clusters`: Louvain community detection over `calls`+`imports`, stable 1-based IDs, sorted by size
+- [x] `smells`: long_functions, dead_exports, god_files, god_nodes (in_degree ≥ 20 OR cross_pkg_callers ≥ 8)
 - [x] Brandes betweenness centrality persisted in `graph_nodes.betweenness`; "bridge:N%" role tag for nodes with betweenness ≥ 0.1
 - [x] Shared by `graph_*` MCP tools and `dex graph …` CLI
 - [x] Verified against the code by the verify workflow (flip to `living`)

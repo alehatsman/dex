@@ -71,7 +71,7 @@ tool interface for Claude is the mcp-server spec's.
 ## Non-goals
 
 - **The stdio MCP tool interface.** The same handlers exposed as MCP tools over
-  stdio for Claude Code (the `ask`-default surface, `DEX_EXPOSE_RAW_TOOLS`, the
+  stdio for Claude Code (the `ask`-led, capability-derived surface, the
   lazy per-session watcher) are the **mcp-server** spec. This spec is the REST
   endpoint contract for service clients only.
 - **Native HTTP-MCP transport.** Speaking MCP JSON-RPC over HTTP — so `claude`

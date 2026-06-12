@@ -202,7 +202,7 @@ thirty. That rationale is sound (the tool-description block costs tokens, and a
 long menu induces choice paralysis). But splitting on *count* is the wrong
 axis. The right axis is **the capability ladder itself**:
 
-- A no-GPU deployment (Rung C) physically *cannot* offer `search_semantic` with
+- A no-GPU deployment (Rung C) physically *cannot* offer `find` with
   no embedder wired — the surface should reflect what's actually reachable.
 - A weak local model (Rung B) wants *fewer* tools because it can't handle
   choice — a `target_model` concern, not a separate tier system.

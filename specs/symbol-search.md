@@ -45,7 +45,7 @@ typo into an actionable retry rather than a dead end.
   names the `dex index` command to run, rather than failing opaquely.
 - WHILE a result count cap applies, the caller may set it (default 10); both the
   exact-match query and the graph fallback honor it.
-- WHERE the same logic backs both surfaces, the `search_symbol` MCP tool and the
+- WHERE the same logic backs both surfaces, the `lookup` MCP tool and the
   `dex search symbol [<path>] <name>` CLI call one implementation, and the CLI
   can emit text or JSON.
 
@@ -76,5 +76,5 @@ typo into an actionable retry rather than a dead end.
 - [x] Not-found returns a "did you mean" substring candidate list
 - [x] Empty-name → error; missing index → no-index status naming `dex index`
 - [x] Caller-settable result cap (default 10), honored by match + fallback
-- [x] Shared by `search_symbol` MCP tool and `dex search symbol` CLI (text/JSON)
+- [x] Shared by `lookup` MCP tool and `dex search symbol` CLI (text/JSON)
 - [x] Verified against the code by the verify workflow (flip to `living`)

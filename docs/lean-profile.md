@@ -1,7 +1,7 @@
 # Lean profile — dex with no GPU
 
 dex normally wants an embedding backend (ollama / an OpenAI-compatible server)
-and, for `ask`/`file_view` summaries, a chat model. The **lean profile** is the
+and, for `ask`/`read` summaries, a chat model. The **lean profile** is the
 opposite end of the capability ladder ([Rung C](vision.md#rung-c--useful-with-no-gpu)):
 run dex with **zero inference stack** — no GPU, no embedding server — and keep
 the lanes that need no inference at all: **BM25 (full-text), exact-symbol
@@ -61,29 +61,28 @@ dex mcp
 This is the **serve/query** mode. dex serves an existing index over MCP with no
 embedder wired. What works with zero inference:
 
-- `search_grep` — BM25 / FTS5 full-text search
-- `search_symbol` — exact identifier lookup
-- `graph_neighbors`, `graph_callers`, `graph_callees`, `graph_path`,
-  `graph_deps`, `graph_cycles`, `graph_communities`, `graph_smells` — the
-  pre-computed call/import graph (built at index time, no query-time inference)
-- `file_tree`, `file_view` (signatures view; summaries need a chat model),
-  `ctx_shell`, `ctx_prefetch` (graph spreading-activation), and the `ctx_*`
-  knowledge/session tools
+- `grep` — BM25 / FTS5 full-text search
+- `lookup` — exact identifier lookup
+- `callers`, `callees`, `deps`, `impact`, `path`, `diff`, `clusters`,
+  `smells`, `routes` — the pre-computed call/import graph (built at index
+  time, no query-time inference)
+- `ls`, `read` (signatures view; summaries need a chat model),
+  `shell`, and the `notes` / `session` knowledge tools
+- `status` — index freshness and backend reachability
 - `ask` — the router still works; it **degrades** to the symbol + graph lanes
-  and returns a hint to use `search_grep`/`search_symbol` for the rest
+  and returns a hint to use `grep`/`lookup` for the rest
 
 ## Capability-derived tool exposure (#283)
 
 The lean profile is the proof case for **deriving the MCP tool surface from what
 is actually reachable** rather than a hand-maintained tier split. With no
-embedder wired, the embedding-backed tools are **not advertised at all**:
+embedder wired, the embedding-backed tool is **not advertised at all**:
 
-- `search_semantic`, `search_similar`, `ctx_overview`, `search_context`,
-  `search_workspace`, `spec_check`
+- `find` — semantic search; the only tool gated on a reachable embedder
 
 An agent connected to a lean server simply never sees a semantic tool it can't
 use — no failed calls, no wasted tool-description tokens. The same mechanism
-already gates `file_view` summaries on a reachable **chat** model
+already gates `read` summaries on a reachable **chat** model
 (`chatAvailable`); the lean profile adds the symmetric `embedAvailable` gate.
 
 This is an **explicit declaration** (`DEX_EMBED_ENGINE=none`), not a startup
@@ -99,7 +98,7 @@ the [perf bench](perf-bench.md) and [measurement layer](vision.md) follow.
 - **No semantic ranking in BM25-only form.** Conceptual / intent queries
   ("where do we handle retries?") are weaker than full semantic search. Use
   Form 1 (CPU-ONNX) if you need the semantic lane with no GPU.
-- **`file_view` summaries and `ask` synthesis need a chat model.** Without one
+- **`read` summaries and `ask` synthesis need a chat model.** Without one
   they degrade to the signatures view and raw evidence respectively.
 
 ## Retrieval quality (#305)

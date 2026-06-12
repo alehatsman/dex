@@ -56,7 +56,7 @@ path; building the index and the on-disk engine are sibling specs'.
   diversity). This pass operates on RRF scores and degrades to cosine scores
   for semantic-only results.
 - WHEN the same query is issued ≥4 times within 5 minutes, search appends a
-  hint advising the caller to store the finding in `ctx_knowledge` rather than
+  hint advising the caller to store the finding in `notes` rather than
   repeating the search.
 - IF the FTS query is malformed (e.g. unbalanced quotes), dex falls back to the
   semantic-only ranking rather than failing the search.
@@ -93,7 +93,7 @@ path; building the index and the on-disk engine are sibling specs'.
   import topology is **graph**, and the composed one-shot answer is **ask**.
 - **Result enrichment from the graph.** Role hints / centrality on hits are
   composed by **graph**/**ask**; plain semantic search returns the bare scores.
-- **How search is exposed.** The MCP `search_semantic` tool wiring and the HTTP
+- **How search is exposed.** The MCP `find` tool wiring and the HTTP
   surface are the **mcp-server** / **http-api** specs; this spec is the behavior
   behind them.
 

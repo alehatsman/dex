@@ -8,8 +8,8 @@ owners: [aleh]
 ## Intent
 
 dex is a local semantic-search server for Claude Code: it indexes a repository
-and serves `search_semantic`, `ask`, `search_symbol`, and the `graph_*` tools
-over MCP so an agent can find code by meaning, not just by string. This spec is
+and serves `ask`, `find`, `lookup`, and the graph/analysis tools (`callers`,
+`callees`, `deps`, `impact`, `clusters`, …) over MCP so an agent can find code by meaning, not just by string. This spec is
 the project's constitution — the repo-wide invariants every subsystem inherits.
 It does not describe any one surface (those are the indexing, storage,
 semantic-search, symbol-search, graph, ask, embedding, mcp-server, http-api,

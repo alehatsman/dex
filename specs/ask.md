@@ -14,7 +14,7 @@ covers:
 
 `ask` (`dex ask` / the MCP `ask` tool) is the single retrieval-augmented entry
 point an agent reaches for instead of fanning out into grep / Read /
-search_semantic loops. Given a project and a free-text question, it routes the
+find loops. Given a project and a free-text question, it routes the
 question to a strategy, retrieves evidence from the index (semantic, symbol, and
 graph lanes), and asks an LLM to compose a short prose answer grounded in that
 evidence and citing `path:line`. The defining contract is that answer synthesis

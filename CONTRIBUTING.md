@@ -45,7 +45,7 @@ dex index .
 dex serve .
 ```
 
-Then use `search_semantic`, `ask`, `graph_*` inside Claude Code to navigate
+Then use `find`, `ask`, `graph_*` inside Claude Code to navigate
 the codebase. See [docs/READING_ORDER.md](docs/READING_ORDER.md) for where
 to start.
 

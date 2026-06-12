@@ -34,7 +34,7 @@ mutated, so for those targets compression guarantees `anchor% == 100`.
 
 `Profile.StrictAnchors()` returns true for the weak family and false for
 frontier targets (Claude/GPT/Gemini). When true, the serving paths
-(`file_view --mode aggressive`, `dex read`, `dex compress`) call
+(`read --mode aggressive`, `dex read`, `dex compress`) call
 `compress.CompressCode(content, ext, strict=true)` →
 `compress.AggressiveCompressStrict`, which extracts an `AnchorSet` (paths with
 optional `:line`, dotted/`::` qualified identifiers, multi-segment PascalCase
@@ -74,7 +74,7 @@ the corpus is expanded with content where rule eligibility differs by family.
 
 **Production traffic distribution**.
 The built-in corpus is small (4 samples) and synthetic. Real dex tool outputs
-— especially large `ctx_shell` outputs, multi-file `file_view` results, and
+— especially large `shell` outputs, multi-file `read` results, and
 long graph dumps — are not yet represented. Expand `benchcompress.BuiltinCorpus`
 with real-session fixtures to close the gap.
 
