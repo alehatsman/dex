@@ -25,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -346,10 +345,6 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	if embedFailed && !leanNoEmbedder {
 		out.Endpoint = s.EmbedClient.Endpoint()
 	}
-	if intent == IntentArchitecture || intent == IntentPackageTopology {
-		summaryHits := s.runSummaryLane(ctx, st, in.Question, k)
-		semHits = mergeSummaryHits(summaryHits, semHits, k)
-	}
 	out.SemanticHits = semHits
 
 	if len(out.Symbols) == 0 && len(out.SemanticHits) == 0 {
@@ -658,54 +653,6 @@ func (s *Server) runSymbolLane(ctx context.Context, st *store.Store, cand intent
 	return out, paths
 }
 
-// runSummaryLane runs a summary-only semantic search (file_summary +
-// package_summary chunks). Used by architecture/package_topology intents to
-// surface prose overviews alongside the code results.
-func (s *Server) runSummaryLane(ctx context.Context, st *store.Store, question string, k int) []SemHit {
-	if s.EmbedClient == nil {
-		return nil // lean profile: no embedder, no summary lane
-	}
-	vecs, err := s.EmbedClient.Embed(ctx, []string{question})
-	if err != nil {
-		return nil
-	}
-	hits, err := st.SearchSummaries(ctx, vecs[0], question, k)
-	if err != nil || len(hits) == 0 {
-		return nil
-	}
-	out := make([]SemHit, 0, len(hits))
-	for _, h := range hits {
-		// Summary chunks store synthesized prose in Content. Use it
-		// directly — the line range points at the underlying source
-		// file (or a directory for package_summary) and would yield
-		// raw source or nothing if re-read from disk.
-		out = append(out, SemHit{
-			Path:      h.Path,
-			StartLine: h.StartLine,
-			EndLine:   h.EndLine,
-			Score:     h.Score,
-			Kind:      h.Kind,
-			Reason:    h.Name,
-			Content:   h.Content,
-		})
-	}
-	return out
-}
-
-// mergeSummaryHits prepends summary hits before code hits, filling up to k
-// total slots. Summaries lead so agents see the prose overview first.
-func mergeSummaryHits(summaries, code []SemHit, k int) []SemHit {
-	out := make([]SemHit, 0, k)
-	out = append(out, summaries...)
-	for _, h := range code {
-		if len(out) >= k {
-			break
-		}
-		out = append(out, h)
-	}
-	return out
-}
-
 // runSemanticLane embeds the question and runs Search. Returns
 // (hits, embedUnreachable). When embedUnreachable is true hits is nil
 // and the caller should surface the failure.
@@ -730,11 +677,6 @@ func (s *Server) runSemanticLane(ctx context.Context, st *store.Store, question 
 	}
 	out := make([]SemHit, 0, len(hits))
 	for _, h := range hits {
-		// Summaries are orientation prose, not retrieval substrate. They
-		// surface only through the intent-gated runSummaryLane.
-		if chunk.IsSummaryKind(h.Kind) {
-			continue
-		}
 		// In hybrid mode, Hit.Score is raw cosine — zero for hits
 		// that came in via BM25 only (the FTS leg of the RRF fusion).
 		// Surfacing 0 here misleads the agent into thinking it's

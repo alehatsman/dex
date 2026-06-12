@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/store"
 	"golang.org/x/sync/errgroup"
@@ -47,13 +46,8 @@ type QueryResult struct {
 //
 // git_commit chunks are always dropped from the candidate hits: the query is
 // derived from a commit subject, so the matching git_commit chunk (which
-// contains that subject verbatim) would be a trivial leak. Summary chunks are
-// dropped too by default — keepSummaries=true retains them, which is required
-// when A/B-testing an index feature that produces summary chunks (otherwise a
-// file surfaced via its summary is invisible and the feature looks like a
-// no-op). Summaries carry no commit-subject leak (they derive from file
-// content), so retaining them is safe.
-func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, k int, keepSummaries bool) ([]QueryResult, error) {
+// contains that subject verbatim) would be a trivial leak.
+func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, k int) ([]QueryResult, error) {
 	if len(gs.Queries) == 0 {
 		return nil, fmt.Errorf("eval: golden set is empty")
 	}
@@ -95,14 +89,14 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 
 			// For blast-radius queries the anchor file is the "given" — exclude it
 			// from the ranked list so it neither earns credit nor occupies a slot.
-			ranked := uniqueFiles(hits, k, keepSummaries, q.Anchor)
+			ranked := uniqueFiles(hits, k, q.Anchor)
 			// recall@candidateK: collapse the SAME hits at the full pool depth. This
 			// is the pool-recall ceiling — the fraction of relevant files present
 			// anywhere in the candidate pool the fusion/rerank stage sees. Top-k
 			// Recall can never exceed it, so the gap (RecallPool − Recall) isolates
 			// a ranking failure (doc was in the pool, fusion buried it) from a
 			// retrieval failure (doc never made the pool). No extra search.
-			rankedPool := uniqueFiles(hits, pool, keepSummaries, q.Anchor)
+			rankedPool := uniqueFiles(hits, pool, q.Anchor)
 			relevant := make(map[string]bool, len(q.RelevantFiles))
 			for _, f := range q.RelevantFiles {
 				relevant[f] = true
@@ -130,17 +124,14 @@ func Run(ctx context.Context, em embed.Embedder, st *store.Store, gs GoldenSet, 
 
 // uniqueFiles collapses hits to the first-seen (best-ranked) occurrence of
 // each source file and returns the top limit files in rank order. git_commit
-// chunks are always dropped (commit-subject leak); summary chunks are dropped
-// unless keepSummaries is set; the exclude path (a blast-radius anchor, "" for
-// none) is dropped so the query's own file never counts.
-func uniqueFiles(hits []store.Hit, limit int, keepSummaries bool, exclude string) []string {
+// chunks are always dropped (commit-subject leak); the exclude path (a
+// blast-radius anchor, "" for none) is dropped so the query's own file never
+// counts.
+func uniqueFiles(hits []store.Hit, limit int, exclude string) []string {
 	seen := make(map[string]bool)
 	var files []string
 	for _, h := range hits {
 		if strings.HasPrefix(h.Path, "git:") {
-			continue
-		}
-		if !keepSummaries && chunk.IsSummaryKind(h.Kind) {
 			continue
 		}
 		if exclude != "" && h.Path == exclude {

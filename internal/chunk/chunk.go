@@ -52,26 +52,10 @@ const WindowOverlap = 10
 
 // Kind values for Chunk.Kind.
 const (
-	KindWindow         = "window"
-	KindOrphan         = "orphan"
-	KindFileSummary    = "file_summary"
-	KindChunkSummary   = "chunk_summary"
-	KindPackageSummary = "package_summary"
-	KindRepoSummary    = "repo_summary"
-	KindGitCommit      = "git_commit"
+	KindWindow    = "window"
+	KindOrphan    = "orphan"
+	KindGitCommit = "git_commit"
 )
-
-// IsSummaryKind reports whether kind is one of the chat-synthesized
-// summary kinds. The chunk row's Content for these holds prose, not a
-// file slice — readers should surface it directly instead of re-reading
-// the underlying file by line range.
-func IsSummaryKind(kind string) bool {
-	switch kind {
-	case KindFileSummary, KindChunkSummary, KindPackageSummary, KindRepoSummary:
-		return true
-	}
-	return false
-}
 
 // LineCount returns the number of lines in data. A trailing newline is
 // treated as a line terminator, not the start of an empty line, so a

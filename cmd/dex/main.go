@@ -27,7 +27,6 @@
 //	reindex <path>|--all          Drop and re-embed.
 //	watch <path>                  Keep the index fresh as files change.
 //	clone <src> <dst>             Seed dst's index from src's (worktrees).
-//	guide <path>                  Render LLM_GUIDE.md from existing summaries.
 //	hook inject                   Claude Code UserPromptSubmit hook — injects dex context.
 //	hook rewrite                  Claude Code PreToolUse(Bash) hook — rewrites rg/grep to dex.
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
@@ -134,8 +133,6 @@ func main() {
 		err = cmdWatch(ctx, args)
 	case "clone":
 		err = cmdClone(ctx, args)
-	case "guide":
-		err = cmdGuide(ctx, args)
 	case "hook":
 		err = cmdHook(ctx, args)
 	case "knowledge":
@@ -333,12 +330,6 @@ build / maintenance:
   dex clone  <src> <dst>             seed dst's index from src's (e.g. for a
                                           new git worktree); follow with
                                           `+"`dex index <dst>`"+` to reconcile
-  dex guide  <path>                  render LLM_GUIDE.md from existing
-                                          repo + package summaries (zero LLM
-                                          calls — summaries are already
-                                          chunks). Flags: --full, --check,
-                                          --dry-run. Pre-commit usage:
-                                          `+"`dex index <path> && dex guide <path>`"+`
   dex mcp                            run as an MCP server over stdio
   dex serve [flags] --project <p>    run as an HTTP daemon (multi-project).
                                           Flags: --addr=:8080 (default loopback
@@ -375,8 +366,7 @@ exit codes:
   2    usage error (bad flags, missing arguments, unknown command)
   130  interrupted (SIGINT / Ctrl-C)
 
-  dex setup --check exits 1 when setup is incomplete.
-  dex guide --check exits 1 when LLM_GUIDE.md is out of date.`)
+  dex setup --check exits 1 when setup is incomplete.`)
 }
 
 // splitProjectArg peels an optional <path> off the front of a
@@ -926,12 +916,6 @@ func newDraftClient() *chat.Client {
 	return chatClientFromEnv("DEX_DRAFT_URL", "DEX_DRAFT_MODEL", "DEX_DRAFT_TIMEOUT",
 		envOr("DEX_CHAT_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"), 120*time.Second)
 }
-
-// newSummaryClient builds the chat client used for index-time
-// summaries (file / chunk / package / repo). Per-chunk and per-file
-// summaries are short (≤ 400 tokens) and dominated by call count, so
-// users typically point this at a smaller, faster model than the main
-// chat leg used by generate / ask_codebase. Falls back to the main
 
 // envInt reads a positive integer env var with a default.
 // Non-positive or unparsable values fall back to def with a warning.

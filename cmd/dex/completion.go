@@ -54,7 +54,7 @@ _dex_completion() {
         prev="${COMP_WORDS[COMP_CWORD-1]}"
     }
 
-    local top_commands="ask search view graph index generate env compact nuke reindex mcp serve watch clone guide hook compress-stdin shell-hook doctor version completion setup config"
+    local top_commands="ask search view graph index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config"
 
     # Depth-1: top-level command
     if [[ $COMP_CWORD -eq 1 ]]; then
@@ -70,7 +70,7 @@ _dex_completion() {
             search)     COMPREPLY=($(compgen -W "semantic symbol" -- "$cur")); return ;;
             view)       COMPREPLY=($(compgen -W "summarize" -- "$cur")); return ;;
             graph)      COMPREPLY=($(compgen -W "neighbors deps packages callers callees links backlinks tags export" -- "$cur")); return ;;
-            index)      COMPREPLY=($(compgen -W "status summarize" -- "$cur")); return ;;
+            index)      COMPREPLY=($(compgen -W "status" -- "$cur")); return ;;
             hook)       COMPREPLY=($(compgen -W "inject rewrite redirect observe" -- "$cur")); return ;;
             completion) COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur")); return ;;
             config)     COMPREPLY=($(compgen -W "init" -- "$cur")); return ;;
@@ -123,7 +123,6 @@ _dex() {
         'serve:run as an HTTP daemon (multi-project)'
         'watch:keep the index fresh as files change'
         'clone:seed dst index from src'
-        'guide:render LLM_GUIDE.md from summaries'
         'hook:Claude Code hook scripts'
         'doctor:check the dex setup'
         'version:print the build version'
@@ -227,7 +226,7 @@ _dex() {
                     ;;
                 index)
                     local -a sub
-                    sub=('status:endpoint health and project stats' 'summarize:drain pending summaries')
+                    sub=('status:endpoint health and project stats')
                     _arguments '1: :->sub' '*:: :->rest'
                     case $state in
                         sub) _describe 'subcommand' sub ;;
@@ -310,7 +309,7 @@ _dex "$@"
 const fishCompletionScript = `# dex fish completions
 # dex completion fish > ~/.config/fish/completions/dex.fish
 
-set -l top_cmds ask search view graph index generate env compact nuke reindex mcp serve watch clone guide hook compress-stdin shell-hook doctor version completion setup config
+set -l top_cmds ask search view graph index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config
 
 # Top-level commands
 complete -c dex -f -n 'not __fish_seen_subcommand_from $top_cmds' -a "$top_cmds"
@@ -327,8 +326,7 @@ set -l graph_sub neighbors deps packages callers callees links backlinks tags ex
 complete -c dex -f -n '__fish_seen_subcommand_from graph; and not __fish_seen_subcommand_from $graph_sub' -a "$graph_sub"
 
 # --- index subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from index; and not __fish_seen_subcommand_from status summarize' -a 'status' -d 'endpoint health and project stats'
-complete -c dex -f -n '__fish_seen_subcommand_from index; and not __fish_seen_subcommand_from status summarize' -a 'summarize' -d 'drain pending summaries'
+complete -c dex -f -n '__fish_seen_subcommand_from index; and not __fish_seen_subcommand_from status' -a 'status' -d 'endpoint health and project stats'
 
 # --- hook subcommands ---
 complete -c dex -f -n '__fish_seen_subcommand_from hook; and not __fish_seen_subcommand_from inject rewrite redirect observe' -a 'inject' -d 'UserPromptSubmit hook'
@@ -364,7 +362,6 @@ complete -c dex -n '__fish_seen_subcommand_from index' -l format -r -a 'text jso
 complete -c dex -n '__fish_seen_subcommand_from index' -l dry-run -d 'preview without writing'
 complete -c dex -n '__fish_seen_subcommand_from index' -s v -d 'verbose'
 complete -c dex -n '__fish_seen_subcommand_from index' -l force -d 'bypass guards'
-complete -c dex -n '__fish_seen_subcommand_from index' -l summarize -d 'generate summaries'
 complete -c dex -n '__fish_seen_subcommand_from index' -l wait -d 'wait for lock'
 
 # --- env flags ---

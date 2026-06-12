@@ -4,9 +4,6 @@
 // surface MCP wiring commands, write Claude Code routing rules, and show a
 // working example. Idempotent and re-runnable. Non-interactive (CI/dotfiles):
 // `dex setup --check`.
-//
-// Note: `dex guide` is already taken by the LLM_GUIDE.md renderer; this
-// command uses the name `setup` instead.
 package main
 
 import (

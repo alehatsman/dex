@@ -53,10 +53,6 @@ Flags:
   --max-per-kind N orphan mode: max queries per declaration kind (default: 50)
   --output format  json or md (default: md)
   --check path     compare against a reference report JSON; exit 1 on regression
-  --keep-summaries retain summary chunks in the ranked file list — needed when
-                   A/B-testing an index feature that produces summaries (off by
-                   default: summaries are filtered so the git-history golden set
-                   scores direct code retrieval)
   --alpha-sweep   sweep FusionLinear α from 0.1 to 1.0 in 0.1 steps, printing
                    a table with the RRF baseline. Use to tune DEX_FUSION_ALPHA.
 
@@ -78,7 +74,6 @@ func runEval(ctx context.Context, args []string) {
 	maxPerKind := fs.Int("max-per-kind", 0, "orphan mode: max queries per declaration kind (default: 50)")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
-	keepSummaries := fs.Bool("keep-summaries", false, "retain summary chunks in the ranked file list (for A/B-ing index features that produce summaries)")
 	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+symbol+graph, zero-inference) | onnx (in-process ONNX, requires env vars)")
 	alphaSweep := fs.Bool("alpha-sweep", false, "sweep FusionLinear α from 0.1 to 1.0 and print a comparison table with RRF as baseline")
 
@@ -185,14 +180,14 @@ func runEval(ctx context.Context, args []string) {
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
 	if *alphaSweep {
-		if err := runAlphaSweep(ctx, p, em, gs, *k, *keepSummaries); err != nil {
+		if err := runAlphaSweep(ctx, p, em, gs, *k); err != nil {
 			fmt.Fprintf(os.Stderr, "dex bench eval: alpha sweep: %v\n", err)
 			os.Exit(1)
 		}
 		return
 	}
 
-	results, err := eval.Run(ctx, em, st, gs, *k, *keepSummaries)
+	results, err := eval.Run(ctx, em, st, gs, *k)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "dex bench eval: run: %v\n", err)
 		os.Exit(1)
@@ -285,7 +280,7 @@ func evalEmbedForLane(lane, model string) embed.Embedder {
 // runAlphaSweep opens the store once per configuration (RRF baseline + FusionLinear
 // at α = 0.1, 0.2, …, 1.0) and prints a comparison table so the operator can pick
 // the best FusionAlpha value before setting DEX_FUSION_MODE=linear in production.
-func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs eval.GoldenSet, k int, keepSummaries bool) error {
+func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs eval.GoldenSet, k int) error {
 	type row struct {
 		label string
 		rep   eval.Report
@@ -297,7 +292,7 @@ func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs e
 			return row{}, fmt.Errorf("%s: %w", label, err)
 		}
 		defer func() { _ = st.Close() }()
-		results, err := eval.Run(ctx, em, st, gs, k, keepSummaries)
+		results, err := eval.Run(ctx, em, st, gs, k)
 		if err != nil {
 			return row{}, fmt.Errorf("%s: %w", label, err)
 		}

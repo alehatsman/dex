@@ -47,11 +47,11 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 	}
 
 	var out []LabeledReport
-	score := func(setLabel string, gs eval.GoldenSet, keepSummaries bool) error {
+	score := func(setLabel string, gs eval.GoldenSet) error {
 		if len(gs.Queries) == 0 {
 			return nil // nothing to score (e.g. a repo with no qualifying history)
 		}
-		results, err := eval.Run(ctx, em, st, gs, k, keepSummaries)
+		results, err := eval.Run(ctx, em, st, gs, k)
 		if err != nil {
 			return fmt.Errorf("corpus: score %s/%s: %w", spec.Name, setLabel, err)
 		}
@@ -70,7 +70,7 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 		if err != nil {
 			return nil, fmt.Errorf("corpus: load query set %q: %w", qs, err)
 		}
-		if err := score("curated:"+filepath.Base(qs), gs, false); err != nil {
+		if err := score("curated:"+filepath.Base(qs), gs); err != nil {
 			return nil, err
 		}
 	}
@@ -83,7 +83,7 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 		if err != nil {
 			return nil, fmt.Errorf("corpus: generate git-history for %s: %w", spec.Name, err)
 		}
-		if err := score(SetGitHistory, gs, false); err != nil {
+		if err := score(SetGitHistory, gs); err != nil {
 			return nil, err
 		}
 	}
@@ -94,7 +94,7 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 		if err != nil {
 			return nil, fmt.Errorf("corpus: generate blast-radius for %s: %w", spec.Name, err)
 		}
-		if err := score(SetBlastRadius, gs, false); err != nil {
+		if err := score(SetBlastRadius, gs); err != nil {
 			return nil, err
 		}
 	}
@@ -105,7 +105,7 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 		if err != nil {
 			return nil, fmt.Errorf("corpus: generate structural for %s: %w", spec.Name, err)
 		}
-		if err := score(SetStructural, gs, false); err != nil {
+		if err := score(SetStructural, gs); err != nil {
 			return nil, err
 		}
 	}

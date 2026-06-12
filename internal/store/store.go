@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1369,65 +1368,24 @@ func (s *Store) TouchPath(ctx context.Context, path string, now time.Time) (int6
 	return res.RowsAffected()
 }
 
-// PruneUnseen deletes chunks last seen before `cutoff`, then drops any
-// package_summary left orphaned by that delete. Call at the end of a
+// PruneUnseen deletes chunks last seen before `cutoff`. Call at the end of a
 // re-index to remove stale rows for files that disappeared.
 //
-// The staleness delete excludes `package_summary` and `repo_summary` by
-// kind. The indexer never bumps last_seen_at on those rows (they carry
-// over from pre-#314 indexes; nothing regenerates them now), so a
-// staleness test would destroy good summaries every prune, and the next
-// `dex guide` run would error with "no summaries".
-//
-// git_commit chunks (path "git:<hash>") are excluded for the same reason:
-// the file walk never bumps their last_seen_at, so without the carve-out a
-// no-change re-index would wipe the entire commit-search corpus and the
-// incremental git indexer (seeing no new commits) would never rebuild it.
-// The git indexer owns their lifecycle — incremental add, and a full wipe
-// + rebuild on force-push.
-//
-// But that kind-exclusion also stranded summaries for *deleted*
-// directories: once a dir's files are gone, its package_summary can
-// never be reached by the staleness delete, so it lingers in search
-// until a full `dex reindex`. So after the content delete we drop any
-// package_summary with no surviving descendant content chunk.
-// A live directory still has content chunks (the walk's mtime/SHA
-// fast-path bumps their last_seen_at every fire), so its summary is
-// preserved exactly as before — only genuinely orphaned ones go. The
-// descendant probe uses a [path/, path0) range ('0' is the byte after
-// '/') so idx_chunks_path serves it instead of a full scan.
-//
-// repo_summary (path ".") is left alone: it's a single regenerated row,
-// and its prefix range wouldn't match the un-prefixed content paths
-// anyway. The root package_summary (path "." too, from filepath.Dir of a
-// root file) is excluded for the same reason — its descendants are the
-// repo's root files, which don't start with "./".
+// git_commit chunks (path "git:<hash>") are excluded by kind: the file walk
+// never bumps their last_seen_at, so without the carve-out a no-change
+// re-index would wipe the entire commit-search corpus and the incremental git
+// indexer (seeing no new commits) would never rebuild it. The git indexer owns
+// their lifecycle — incremental add, and a full wipe + rebuild on force-push.
 func (s *Store) PruneUnseen(ctx context.Context, cutoff time.Time) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM chunks
 		   WHERE last_seen_at < ?
-		     AND kind NOT IN ('package_summary','repo_summary','git_commit')`,
+		     AND kind != 'git_commit'`,
 		cutoff.UnixNano())
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
-
-	res2, err := s.db.ExecContext(ctx,
-		`DELETE FROM chunks
-		   WHERE kind = 'package_summary'
-		     AND chunks.path NOT IN ('.', '')
-		     AND NOT EXISTS (
-		           SELECT 1 FROM chunks c
-		            WHERE c.kind NOT IN ('package_summary','repo_summary')
-		              AND c.path >= chunks.path || '/'
-		              AND c.path <  chunks.path || '0'
-		         )`)
-	if err != nil {
-		return n, err
-	}
-	n2, _ := res2.RowsAffected()
-	return n + n2, nil
+	return res.RowsAffected()
 }
 
 // SeenTime returns the timestamp an index Run should stamp its chunks
@@ -1546,229 +1504,6 @@ func FormatHits(hits []Hit) string {
 		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-// dedupChunkSummaries drops chunk_summary hits whose source chunk already
-// appears at the same path:start_line in the result set. On indexes that
-// carry chunk summaries alongside code (pre-#314), both a code chunk and
-// its prose summary land in the index; without dedup they consume two
-// top-k slots for the same function. Ordering is preserved.
-func dedupChunkSummaries(hits []Hit) []Hit {
-	type locKey struct {
-		path string
-		line int
-	}
-	codeAt := make(map[locKey]bool, len(hits))
-	for _, h := range hits {
-		if h.Kind != "chunk_summary" {
-			codeAt[locKey{h.Path, h.StartLine}] = true
-		}
-	}
-	out := make([]Hit, 0, len(hits))
-	for _, h := range hits {
-		if h.Kind == "chunk_summary" && codeAt[locKey{h.Path, h.StartLine}] {
-			continue
-		}
-		out = append(out, h)
-	}
-	return out
-}
-
-// FileSummariesForPaths returns the content of file_summary chunks for the
-// given relative file paths, ordered by path. Used by the indexer to collect
-// per-file prose when generating a package-level summary.
-func (s *Store) FileSummariesForPaths(ctx context.Context, paths []string) ([]string, error) {
-	if len(paths) == 0 {
-		return nil, nil
-	}
-	args := make([]any, len(paths)+1)
-	args[0] = "file_summary"
-	for i, p := range paths {
-		args[i+1] = p
-	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT content FROM chunks WHERE kind = ? AND path IN (`+inPlaceholders(len(paths))+`) ORDER BY path`,
-		args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []string
-	for rows.Next() {
-		var content string
-		if err := rows.Scan(&content); err != nil {
-			return nil, err
-		}
-		out = append(out, content)
-	}
-	return out, rows.Err()
-}
-
-// FileSummaryDirsUnseen returns the distinct directories of file_summary
-// chunks last seen strictly before cutoff — i.e. the dirs whose
-// file_summary rows the next PruneUnseen(cutoff) will delete. Call it
-// BEFORE PruneUnseen so the rows still exist.
-//
-// Used to drive the incremental cascade after a deletion: a file removed
-// from a still-surviving package leaves a stale package_summary that the
-// dirty-dir cascade would otherwise skip (no file_summary was *committed*
-// for that dir, only deleted). Feeding these dirs into the cascade lets
-// planPackageJobs catch the pkgSHA change and regenerate (dex #234).
-func (s *Store) FileSummaryDirsUnseen(ctx context.Context, cutoff time.Time) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT path FROM chunks
-		   WHERE kind = 'file_summary' AND last_seen_at < ?`,
-		cutoff.UnixNano())
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	seen := make(map[string]struct{})
-	var out []string
-	for rows.Next() {
-		var path string
-		if err := rows.Scan(&path); err != nil {
-			return nil, err
-		}
-		dir := filepath.Dir(path)
-		if _, ok := seen[dir]; ok {
-			continue
-		}
-		seen[dir] = struct{}{}
-		out = append(out, dir)
-	}
-	return out, rows.Err()
-}
-
-// AllSummariesByKind returns the content of every chunk with the given kind,
-// ordered by path. Used by the indexer to aggregate lower-level summaries
-// into a higher-level one (e.g. package summaries → repo summary).
-func (s *Store) AllSummariesByKind(ctx context.Context, kind string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT content FROM chunks WHERE kind = ? ORDER BY path`, kind)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []string
-	for rows.Next() {
-		var content string
-		if err := rows.Scan(&content); err != nil {
-			return nil, err
-		}
-		out = append(out, content)
-	}
-	return out, rows.Err()
-}
-
-// SummaryRow carries the columns the guide renderer needs.
-// last_seen_at is unix-nanoseconds; callers compare against
-// the guide's stored render timestamp to detect dirtiness.
-type SummaryRow struct {
-	Path       string
-	Content    string
-	LastSeenAt int64
-}
-
-// SummariesByKindWithMeta returns path + content + last_seen_at for every
-// chunk of the given kind, ordered by path. Drives the guide renderer.
-//
-// Schema allows multiple rows per (path, kind) because the UNIQUE
-// constraint is (path, content_sha1) — successive prompt iterations
-// for the same path produce different SHAs and therefore distinct
-// rows. To keep the renderer picking the freshest one for each path,
-// we sort by path ASC then last_seen_at DESC and dedupe in the loop:
-// the first row seen for each path is the most recent, later rows for
-// the same path are skipped.
-func (s *Store) SummariesByKindWithMeta(ctx context.Context, kind string) ([]SummaryRow, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT path, content, last_seen_at FROM chunks WHERE kind = ? ORDER BY path, last_seen_at DESC`, kind)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []SummaryRow
-	var seenPath string
-	first := true
-	for rows.Next() {
-		var r SummaryRow
-		if err := rows.Scan(&r.Path, &r.Content, &r.LastSeenAt); err != nil {
-			return nil, err
-		}
-		if !first && r.Path == seenPath {
-			continue
-		}
-		out = append(out, r)
-		seenPath = r.Path
-		first = false
-	}
-	return out, rows.Err()
-}
-
-// SummaryChunk is one enumerated summary row: the path it describes, its kind
-// (file_summary | package_summary | repo_summary), and the prose.
-type SummaryChunk struct {
-	Path    string
-	Kind    string
-	Content string
-}
-
-// AllSummaryChunks returns every file/package/repo summary chunk — the freshest
-// row per (path, kind), ordered by path then kind. Unlike SearchSummaries this
-// is a direct enumeration, no embedding/rerank, so callers get the complete,
-// stable set regardless of index size. Dedupe mirrors SummariesByKindWithMeta:
-// rows are ordered last_seen_at DESC within each (path, kind) group and only
-// the first (freshest) is kept.
-func (s *Store) AllSummaryChunks(ctx context.Context) ([]SummaryChunk, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT path, kind, content FROM chunks
-		   WHERE kind IN ('file_summary', 'package_summary', 'repo_summary')
-		   ORDER BY path, kind, last_seen_at DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []SummaryChunk
-	var lastPath, lastKind string
-	first := true
-	for rows.Next() {
-		var c SummaryChunk
-		if err := rows.Scan(&c.Path, &c.Kind, &c.Content); err != nil {
-			return nil, err
-		}
-		if !first && c.Path == lastPath && c.Kind == lastKind {
-			continue
-		}
-		out = append(out, c)
-		lastPath, lastKind = c.Path, c.Kind
-		first = false
-	}
-	return out, rows.Err()
-}
-
-// SearchSummaries runs a semantic search restricted to summary-kind chunks
-// (file_summary, package_summary, repo_summary). Fetches a larger candidate
-// pool than k to compensate for summaries being sparse relative to code
-// chunks, then filters and trims to k.
-func (s *Store) SearchSummaries(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error) {
-	candidates := k * 20
-	if candidates < 50 {
-		candidates = 50
-	}
-	hits, err := s.searchRaw(ctx, queryVec, queryText, candidates, true)
-	if err != nil || len(hits) == 0 {
-		return hits, err
-	}
-	out := hits[:0]
-	for _, h := range hits {
-		if h.Kind == "file_summary" || h.Kind == "package_summary" || h.Kind == "repo_summary" {
-			out = append(out, h)
-			if len(out) == k {
-				break
-			}
-		}
-	}
-	return out, nil
 }
 
 // scored holds one chunk's score during ranking. Used internally by
@@ -2684,7 +2419,7 @@ func (s *Store) fetchHits(ctx context.Context, ranked []scored, sc scoreContext)
 		}
 		out = append(out, h)
 	}
-	return dedupChunkSummaries(out), nil
+	return out, nil
 }
 
 // FindSymbol returns chunks whose `name` column exactly matches the
@@ -2895,14 +2630,15 @@ func (s *Store) ChunkAt(ctx context.Context, path string, startLine int) (Hit, e
 	return h, nil
 }
 
-// CodeFilePaths returns every non-summary file in the chunks table
+// CodeFilePaths returns every real code file in the chunks table
 // mapped to its inferred line count (max end_line across all its chunks).
 // Used by overview to enumerate the indexed codebase without loading content.
+// git_commit chunks (synthetic "git:<hash>" paths) are not files, so excluded.
 func (s *Store) CodeFilePaths(ctx context.Context) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT path, MAX(end_line)
 		FROM chunks
-		WHERE kind NOT IN ('file_summary','chunk_summary','package_summary','repo_summary')
+		WHERE kind != 'git_commit'
 		  AND path != ''
 		GROUP BY path
 		ORDER BY path`)
