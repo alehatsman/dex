@@ -113,6 +113,8 @@ func main() {
 		err = cmdRead(ctx, args)
 	case "graph":
 		err = cmdGraph(ctx, args)
+	case "map":
+		err = cmdMap(ctx, args)
 	case "generate":
 		err = cmdGenerate(ctx, args)
 	case "env":
@@ -218,6 +220,7 @@ query:
   dex view summarize [<path>] <file> summarize a file slice via the chat model
   dex index status [<path>]          endpoint health + project stats
   dex graph <sub> [<path>] ...       graph traversal (deps/callers/callees/links/…)
+  dex map [--cluster <id>] [<path>]  deterministic repo orientation map (L0 clusters / L1 detail)
 
 build / maintenance:
   dex index <path>                   build or refresh the index  (--dry-run to preview)
