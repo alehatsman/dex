@@ -77,21 +77,24 @@ func (s *Server) runSymbolLane(ctx context.Context, st store.Searcher, cand inte
 // embedded vector. Returns (hits, embedUnreachable). When embedUnreachable
 // is true hits is nil and the caller should surface the failure.
 func (s *Server) runSemanticLane(ctx context.Context, st store.Searcher, embedText, ftsText string, k int) ([]SemHit, bool) {
-	em := s.EmbedClient
-	if em == nil {
-		// Lean profile (DEX_EMBED_ENGINE=none): no embedder wired. Report the
-		// semantic lane as unreachable so ask falls back to the symbol + graph
-		// lanes and emits the grep hint, exactly like a downed embedder.
-		return nil, true
-	}
-	vecs, err := em.Embed(ctx, []string{embedText})
-	if err != nil {
-		if errors.Is(err, embed.ErrUnreachable) {
-			return nil, true
+	// queryVec stays nil in the lean profile (DEX_EMBED_ENGINE=none, no embedder
+	// wired). Search then runs BM25-only through the fusion path — the semantic
+	// leg contributes nothing — so ask still answers on the lexical lane (plus
+	// the symbol + graph lanes upstream). This is the documented lean
+	// degradation; only a *downed* embedder (ErrUnreachable) is reported as
+	// unreachable so the caller can surface the failure.
+	var queryVec []float32
+	if em := s.EmbedClient; em != nil {
+		vecs, err := em.Embed(ctx, []string{embedText})
+		if err != nil {
+			if errors.Is(err, embed.ErrUnreachable) {
+				return nil, true
+			}
+			return nil, false
 		}
-		return nil, false
+		queryVec = vecs[0]
 	}
-	hits, err := st.Search(ctx, vecs[0], ftsText, k)
+	hits, err := st.Search(ctx, queryVec, ftsText, k)
 	if err != nil {
 		return nil, false
 	}

@@ -69,8 +69,9 @@ embedder wired. What works with zero inference:
 - `ls`, `read` (signatures view; summaries need a chat model),
   `shell`, and the `notes` / `session` knowledge tools
 - `status` — index freshness and backend reachability
-- `ask` — the router still works; it **degrades** to the symbol + graph lanes
-  and returns a hint to use `grep`/`lookup` for the rest
+- `ask` — the router still works; it **degrades** to the BM25 + symbol + graph
+  lanes (the lexical leg runs with a nil query vector through the same fusion
+  path), and only when those return nothing does it hint to use `grep`/`lookup`
 
 ## Capability-derived tool exposure (#283)
 
