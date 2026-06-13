@@ -879,14 +879,16 @@ func scanFileHits(rows *sql.Rows, out []Hit) ([]Hit, error) {
 // defaultGraphGamma is the per-hop decay for the graph-proximity lane when
 // Options.GraphGamma is unset. γ=0.6 makes a 1-hop neighbor (0.60) outweigh
 // the old flat 0.5× lane while a 3-hop neighbor (0.22) is strongly damped —
-// tuned on the retrieval eval harness (#248).
-const defaultGraphGamma = float32(0.6)
+// tuned on the retrieval eval harness (#248). Sourced from the embedded
+// calibration artifact (calibration.yml / #467).
+var defaultGraphGamma = CalibratedDefaults().GraphGamma
 
 // defaultGraphLaneWeight is the flat multiplier on the graph-proximity lane
 // when Options.GraphLaneWeight is unset. 1.0 = neutral (lane contribution
 // equals γ^hop, ≤0.6 of a primary hit at the same rank). Raise to make
 // the graph lane compete more strongly with dense+BM25 — see DEX_GRAPH_WEIGHT.
-const defaultGraphLaneWeight = float32(1.0)
+// Sourced from the embedded calibration artifact (calibration.yml / #467).
+var defaultGraphLaneWeight = CalibratedDefaults().GraphLaneWeight
 
 // fuseWithGraphNeighbors merges primary hits with graph-proximity hits via
 // Reciprocal Rank Fusion (k=60). Each graph hit is weighted by
@@ -1022,8 +1024,9 @@ type ActivatedFile struct {
 	Hop    int
 }
 
-// defaultGraphHopCap bounds spreading-activation traversal depth.
-const defaultGraphHopCap = 4
+// defaultGraphHopCap bounds spreading-activation traversal depth. Sourced from
+// the embedded calibration artifact (calibration.yml / #467).
+var defaultGraphHopCap = CalibratedDefaults().GraphHopCap
 
 // hopCap returns the configured spreading-activation depth, defaulting to
 // defaultGraphHopCap when unset.

@@ -85,8 +85,9 @@ type scored struct {
 }
 
 // rrfK is the RRF dampening constant. 60 is the canonical default from
-// Cormack et al. (2009); behavior is robust to values in [10, 100].
-const rrfK = 60
+// Cormack et al. (2009); behavior is robust to values in [10, 100]. Sourced
+// from the embedded calibration artifact (see calibration.yml / #467).
+var rrfK = CalibratedDefaults().RRFK
 
 // queryType classifies an incoming query to drive adaptive RRF weights.
 // SACL (EMNLP 2025): query structure is a strong signal for which retrieval

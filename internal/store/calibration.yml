@@ -1,0 +1,24 @@
+# Calibrated retrieval-fusion defaults.
+#
+# These values are DATA, not source — the product of `dex eval --alpha-sweep`
+# runs over the retrieval corpus. Regenerate with
+#   dex eval --alpha-sweep --emit-calibration
+# and commit the diff; do not hand-edit values without a corresponding eval run.
+# The `provenance` block below must describe the run that produced them.
+#
+# Env vars still override per-process for experiments: DEX_FUSION_MODE,
+# DEX_FUSION_ALPHA, DEX_GRAPH_GAMMA, DEX_GRAPH_HOP_CAP, DEX_GRAPH_WEIGHT,
+# DEX_RERANK_POOL. Precedence: env  >  this artifact  >  built-in fallback.
+
+fusion_mode: linear        # "linear" (convex dense+BM25) | "rrf" (rank-only)
+fusion_alpha: 0.7          # dense-lane weight for linear fusion, (0,1]
+rrf_k: 60                  # RRF rank constant (Cormack 2009)
+graph_gamma: 0.6           # per-hop decay on the graph-proximity lane, (0,1]
+graph_lane_weight: 1.0     # flat multiplier on the graph lane (1.0 = neutral)
+graph_hop_cap: 4           # spreading-activation traversal depth
+rerank_pool: 0             # cap on fused pool sent to reranker; 0 = no cap
+
+provenance:
+  source: "#317 leave-one-repo-out sweep over the multi-repo corpus (#278), confirmed on dex-self"
+  date: "2026-02 (baseline; not yet regenerated via --emit-calibration)"
+  metric: "FusionLinear a=0.7 picked in all 5 LORO folds: +3.3% NDCG / +3pts Recall vs RRF (de-contaminated)"
