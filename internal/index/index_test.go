@@ -385,3 +385,77 @@ func F%d() string { return "f%d" }
 		t.Errorf("Chunks indexed = %d, want >= %d (one func per file)", stats.Chunks, fileCount)
 	}
 }
+
+// TestMtimeFastPathEqualMtimeReindexes guards #439: a file whose mtime
+// equals the previous run's last_indexed_at must NOT be skipped by the
+// mtime fast-path. Filesystem mtimes are often second-granular, so a
+// file edited in the same second the prior run started lands on exactly
+// that boundary; a `<=` test would skip it forever, silently dropping
+// the edit. The fix is a strict `<` so equal-mtime files fall to the
+// slow path, where the SHA dedup re-confirms whether they changed.
+func TestMtimeFastPathEqualMtimeReindexes(t *testing.T) {
+	srv := fakeEmbedServer(t)
+	defer srv.Close()
+
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+	fpath := filepath.Join(projDir, "a.go")
+	writeFile(t, fpath, "package main\n\nfunc A() {}\n")
+
+	ctx := context.Background()
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ig, err := ignore.New(p.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	em := embed.New(srv.URL, "fake", 8, 5*time.Second)
+	ix := New(p, st, em, ig, Options{})
+
+	if err := ix.Run(ctx); err != nil {
+		t.Fatalf("Run #1: %v", err)
+	}
+	before, err := st.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Edit the file to add a second declaration, then pin the stored
+	// last_indexed_at to the file's actual on-disk mtime. Reading the
+	// mtime back from the filesystem (rather than asserting a value)
+	// makes the test independent of mtime precision: whatever the FS
+	// stored, the next run sees mtime == last_indexed_at exactly — the
+	// boundary the fix turns from "skip" into "re-index".
+	writeFile(t, fpath, "package main\n\nfunc A() {}\n\nfunc B() {}\n")
+	fi, err := os.Stat(fpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLastIndexedAt(ctx, fi.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ix.Run(ctx); err != nil {
+		t.Fatalf("Run #2: %v", err)
+	}
+	after, err := st.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Chunks <= before.Chunks {
+		t.Fatalf("equal-mtime edit was skipped by the mtime fast-path: "+
+			"chunks %d → %d (want an increase from the added declaration)",
+			before.Chunks, after.Chunks)
+	}
+}

@@ -68,11 +68,16 @@ func New(p *proj.Project, st *store.Store, em embed.Embedder, ig *ignore.Matcher
 // Files unchanged since the last index get their last_seen_at bumped but
 // are not re-embedded. Stale rows (files removed) are pruned at the end.
 //
-// Mtime fast-path: if a file's mtime is <= the previous run's
+// Mtime fast-path: if a file's mtime is strictly < the previous run's
 // last_indexed_at, we know the content is identical to what we
 // processed last time. We TouchPath() all of its chunks in one UPDATE
 // and skip the read+parse+SHA work entirely — turning the no-change
 // re-index from O(files × parse) into O(files × stat + 1 UPDATE).
+// The comparison must be strict: filesystem mtimes are second-granular
+// on many platforms, so a file edited in the same second the previous
+// run started carries mtime == last_indexed_at. A `<=` test would skip
+// it forever; `<` sends equal-mtime files down the slow path, where the
+// SHA dedup re-confirms (cheaply) whether they actually changed (#439).
 // slowFile holds one file that survived all walk-phase filters and needs
 // SHA-based deduplication against the store.
 type slowFile struct {
@@ -271,7 +276,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		// index → just bump last_seen_at on its existing chunks
 		// (TouchPath updates every chunk sharing `path = rel` in one shot).
 		//
-		if !lastIndexed.IsZero() && !info.ModTime().After(lastIndexed) {
+		if !lastIndexed.IsZero() && info.ModTime().Before(lastIndexed) {
 			rows, terr := ix.Store.TouchPath(ctx, rel, startTime)
 			if terr == nil && rows > 0 {
 				seen += int(rows)
