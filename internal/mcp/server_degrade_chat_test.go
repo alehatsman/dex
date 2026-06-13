@@ -25,7 +25,7 @@ func chatDownFixture(t *testing.T) (projRoot, cacheDir string) {
 	return projRoot, cacheDir
 }
 
-func chatDownServer(t *testing.T, cacheDir string, chatClient *chat.Client) *Server {
+func chatDownServer(t *testing.T, cacheDir string, chatClient chat.Chatter) *Server {
 	t.Helper()
 	embedSrv := fakeEmbed(t, 16)
 	t.Cleanup(embedSrv.Close)
