@@ -35,6 +35,10 @@ func TestValidate(t *testing.T) {
 			r.QuerySets = nil
 			r.Gen.GitHistory = GenSpec{Enabled: true}
 		}), false},
+		{"valid structural-only", mutate(func(r *RepoSpec) {
+			r.QuerySets = nil
+			r.Gen.Structural = GenSpec{Enabled: true}
+		}), false},
 		{"empty", Manifest{}, true},
 		{"bad name", mutate(func(r *RepoSpec) { r.Name = "Flask Repo" }), true},
 		{"empty name", mutate(func(r *RepoSpec) { r.Name = "" }), true},

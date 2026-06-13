@@ -113,7 +113,7 @@ func (m Manifest) Validate() error {
 		if len(r.Languages) == 0 {
 			return fmt.Errorf("%s: at least one language required", where)
 		}
-		if len(r.QuerySets) == 0 && !r.Gen.GitHistory.Enabled && !r.Gen.BlastRadius.Enabled {
+		if len(r.QuerySets) == 0 && !r.Gen.GitHistory.Enabled && !r.Gen.BlastRadius.Enabled && !r.Gen.Structural.Enabled {
 			return fmt.Errorf("%s: no query source (add a query_set or enable a gen flavor)", where)
 		}
 	}
