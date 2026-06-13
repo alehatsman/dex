@@ -67,11 +67,10 @@ func (s *Server) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvi
 		k = 20
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, OverviewOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	// Auto-load any context packages marked for automatic loading.
 	// KnowledgeAdd is idempotent (UNIQUE body), so this is safe to call on every overview.

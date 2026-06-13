@@ -326,13 +326,12 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	}
 	k = min(k, 30)
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		out.Status = "error"
 		out.Hint = fmt.Sprintf("open index: %v", err)
 		return nil, out, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	if stats, statsErr := st.Stats(ctx); statsErr == nil && !stats.LastIndex.IsZero() && time.Since(stats.LastIndex) > 24*time.Hour {
 		out.Stale = true

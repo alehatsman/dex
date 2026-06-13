@@ -102,7 +102,7 @@ func (s *Server) workspaceSearch(ctx context.Context, _ *sdk.CallToolRequest, in
 		if err != nil {
 			continue // project doesn't exist yet — skip silently
 		}
-		st, err := store.OpenWith(ctx, pp.DBPath, s.StoreOpts)
+		st, err := s.openStore(pp.DBPath)
 		if err != nil {
 			continue // not indexed — skip
 		}

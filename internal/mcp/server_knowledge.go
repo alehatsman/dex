@@ -54,11 +54,10 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		}, nil
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	switch in.Action {
 	case "add":

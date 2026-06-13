@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
-	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -82,11 +81,10 @@ func (s *Server) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in Graph
 		return nil, GraphDepsOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, GraphDepsOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -210,11 +208,10 @@ func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in Pa
 		return nil, PackageGraphOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, PackageGraphOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -426,11 +423,10 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 		return nil, CallEdgeOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, CallEdgeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -702,11 +698,10 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 		return nil, ImpactOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, ImpactOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -897,11 +892,10 @@ func (s *Server) docEdges(ctx context.Context, in DocLinkInput, backlinks bool) 
 		return nil, DocLinkOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, DocLinkOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -1099,11 +1093,10 @@ func (s *Server) graphTags(ctx context.Context, _ *sdk.CallToolRequest, in TagIn
 		return nil, TagOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, TagOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -1321,11 +1314,10 @@ func (s *Server) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in Cyc
 		return nil, CyclesOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, CyclesOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -1452,11 +1444,10 @@ func (s *Server) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathI
 		return nil, PathOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, PathOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -1660,11 +1651,10 @@ func (s *Server) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffI
 			Hint: fmt.Sprintf("no files changed between %s and HEAD", ref)}, nil
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, DiffOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
@@ -1813,11 +1803,10 @@ func (s *Server) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, i
 		topK = 50
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, CommunitiesOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	communities, err := st.GraphCommunities(ctx, minMembers, k*2) // fetch 2× to allow topK trim
 	if err != nil {

@@ -122,11 +122,10 @@ func (s *Server) specVerify(ctx context.Context, _ *sdk.CallToolRequest, in Spec
 		return nil, out, nil
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, SpecVerifyOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	for _, item := range spec.items {
 		res := SpecItemResult{

@@ -104,11 +104,10 @@ func (s *Server) ctxPack(ctx context.Context, _ *sdk.CallToolRequest, in PackInp
 		}, nil
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, PackOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	// Validate Name before any path construction.
 	if in.Name != "" && !isValidPackName(in.Name) {

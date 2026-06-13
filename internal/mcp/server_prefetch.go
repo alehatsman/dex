@@ -64,12 +64,11 @@ func (s *Server) prefetch(ctx context.Context, _ *sdk.CallToolRequest, in Prefet
 		return nil, PrefetchOutput{Status: "error", Hint: hint}, nil
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, PrefetchOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	maxFiles := in.MaxFiles
 	if maxFiles <= 0 {

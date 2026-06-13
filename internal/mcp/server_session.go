@@ -68,11 +68,10 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		}, nil
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	switch in.Action {
 	case "set_task":

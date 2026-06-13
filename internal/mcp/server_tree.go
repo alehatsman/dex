@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -65,11 +64,10 @@ func (s *Server) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 		depth = 3
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, SearchTreeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	// Validate that the requested subdirectory actually exists on disk before
 	// querying the index, so callers get not-found instead of a misleading

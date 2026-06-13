@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
-	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -49,11 +48,10 @@ func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesIn
 		return nil, RoutesOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, RoutesOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {

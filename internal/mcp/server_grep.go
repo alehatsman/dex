@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -78,9 +77,8 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	// Build file list from the index when available; fall back to walking the fs.
 	var filePaths []string
 	if _, statErr := os.Stat(p.DBPath); !errors.Is(statErr, os.ErrNotExist) {
-		st, openErr := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+		st, openErr := s.openStore(p.DBPath)
 		if openErr == nil {
-			defer func() { _ = st.Close() }()
 			if files, treeErr := st.FileTree(ctx, prefix); treeErr == nil {
 				for _, f := range files {
 					if extFilter != "" && !strings.HasSuffix(f.Path, "."+extFilter) {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -86,11 +85,10 @@ func (s *Server) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsIn
 		limit = 100
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, SmellsOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	report, err := st.Smells(ctx, minFuncLines, minFileSymbols, minGodNodeCallers, minGodNodePkgCallers, limit)
 	if err != nil {

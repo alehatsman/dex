@@ -176,6 +176,11 @@ type Server struct {
 	// multiScaleByPath caches the last BuildMultiScale result per project DB path.
 	// Keyed by DBPath; value is *cachedMultiScale. Invalidated when last_indexed_at changes.
 	multiScaleByPath sync.Map // string → *cachedMultiScale
+
+	// storeByPath caches an opened *store.Store per project DB path.
+	// Keyed by DBPath; value is *cachedStore. The connection is opened once and
+	// never closed per-request — SQLite WAL mode supports concurrent readers.
+	storeByPath sync.Map // string → *cachedStore
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from
@@ -417,11 +422,10 @@ func (s *Server) sessionAutoFile(dbPath, relPath string) {
 	go func() {
 		defer s.sessionWG.Done()
 		ctx := context.Background()
-		st, err := store.OpenWith(ctx, dbPath, s.StoreOpts)
+		st, err := s.openStore(dbPath)
 		if err != nil {
 			return
 		}
-		defer st.Close()
 		_ = st.SessionTrackFile(ctx, relPath, "read")
 	}()
 }
@@ -660,12 +664,11 @@ func (s *Server) runWatcher(p *proj.Project) {
 		logger.Warn("mcp watch: cache dir failed", "root", p.Root, "err", err)
 		return
 	}
-	st, err := store.OpenWith(s.runCtx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		logger.Warn("mcp watch: store open failed", "root", p.Root, "err", err)
 		return
 	}
-	defer st.Close()
 	ig, err := ignore.New(p.Root)
 	if err != nil {
 		logger.Warn("mcp watch: ignore init failed", "root", p.Root, "err", err)
@@ -765,13 +768,12 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		out.Status = "error"
 		out.Hint = fmt.Sprintf("open index: %v", err)
 		return nil, out, nil
 	}
-	defer st.Close()
 
 	stats, err := st.Stats(ctx)
 	if err == nil && !stats.LastIndex.IsZero() && time.Since(stats.LastIndex) > 24*time.Hour {
@@ -1174,11 +1176,10 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 		return nil, FindSymbolOutput{Status: "no-index", Project: p.Root,
 			Hint: fmt.Sprintf("no index for %s — run `dex index %s` first.", p.Root, p.Root)}, nil
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer st.Close()
 	ldLevel, ldHint := s.ld().Check("lookup", argsKey(in.Name), true)
 	if ldLevel == ThrottleBlock {
 		return nil, FindSymbolOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
@@ -1261,11 +1262,10 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 	if k > 30 {
 		k = 30
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, RelatedOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer st.Close()
 	hits, err := st.RelatedChunks(ctx, in.Path, in.StartLine, k)
 	if err != nil {
 		if strings.Contains(err.Error(), "no chunk at") {
@@ -1344,11 +1344,10 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 		}
 	}
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, FindRelatedOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer st.Close()
 
 	src, err := st.ChunkAt(ctx, in.FilePath, in.Line)
 	if err != nil {
@@ -1794,11 +1793,10 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return nil, out, nil
 
 	case mode == "signatures":
-		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+		st, err := s.openStore(p.DBPath)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 		}
-		defer st.Close()
 		syms, err := st.SymbolsByFile(ctx, relTarget)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
@@ -1833,11 +1831,10 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 			s.readCacheMark(sessionID, relTarget, etag)
 			return nil, out, nil
 		}
-		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+		st, err := s.openStore(p.DBPath)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 		}
-		defer st.Close()
 		syms, err := st.SymbolsByFile(ctx, relTarget)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
@@ -1897,11 +1894,10 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		// Skeleton mode (#206): exported type declarations in full; exported
 		// function/method bodies replaced with @B<n> handles; unexported omitted.
 		// Falls back to signatures when the index has no symbols.
-		st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+		st, err := s.openStore(p.DBPath)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 		}
-		defer st.Close()
 		syms, err := st.SymbolsByFile(ctx, relTarget)
 		if err != nil {
 			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
@@ -2144,7 +2140,6 @@ func batchStableSet(ctx context.Context, projectRoot, indexDir string) map[strin
 	if err != nil {
 		return map[string]bool{}
 	}
-	defer st.Close()
 	ss, ok, err := st.SessionGet(ctx)
 	if err != nil || !ok {
 		return map[string]bool{}
@@ -2457,7 +2452,7 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 				defer pwg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				st, err := store.OpenWith(ctx, path, s.StoreOpts)
+				st, err := s.openStore(path)
 				if err != nil {
 					return
 				}

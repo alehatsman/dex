@@ -94,11 +94,10 @@ func (s *Server) compose(ctx context.Context, _ *sdk.CallToolRequest, in Compose
 	}
 	vec := vecs[0]
 
-	st, err := store.OpenWith(ctx, p.DBPath, s.StoreOpts)
+	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, ComposeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	defer func() { _ = st.Close() }()
 
 	hits, err := st.Search(ctx, vec, in.Query, k*15)
 	if err != nil {
