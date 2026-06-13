@@ -112,8 +112,9 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	}
 
 	var (
-		toEmbed []pending
-		seen    int
+		toEmbed      []pending
+		seen         int
+		embedSkipped int // chunks dropped by a skipped embed batch (see pass-2)
 	)
 
 	prevStats, statsErr := ix.Store.Stats(ctx)
@@ -370,6 +371,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			logx.Phase("embed"), "chunks", len(toEmbed),
 			"batches", totalBatches,
 			"batch_size", batchSize)
+		var skippedBatches int
+		var lastBatchErr error
 		embedStart := time.Now()
 		for start := 0; start < len(toEmbed); start += batchSize {
 			// Bail between batches so Ctrl-C during a long embed pass
@@ -385,7 +388,32 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			batch := toEmbed[start:end]
 			batchStart := time.Now()
 			if err := ix.embedAndUpsertBatch(ctx, batch, startTime); err != nil {
-				return err
+				// A canceled/expired context is fatal: the operator asked to
+				// stop (Ctrl-C) or the whole run is timing out — surface it,
+				// don't mask it as a per-batch skip.
+				if ctx.Err() != nil {
+					return err
+				}
+				// Isolate the failure: one bad batch (an embed error that
+				// survived #436's retry, or a transient SQLite BUSY on upsert)
+				// must not throw away every other batch's GPU work. Log, count,
+				// and continue. These are new chunks (their row is created only
+				// by the batch's UpsertMany), so a skip leaves no row behind —
+				// nothing for PruneUnseen to act on — and the next run re-queues
+				// them via content-sha matching. Same recoverable state as a
+				// crash mid-embed, minus the lost work on the good batches.
+				lastBatchErr = err
+				skippedBatches++
+				embedSkipped += len(batch)
+				ix.Options.Logger.Warn("index: embed batch failed, skipping",
+					"batch", start/batchSize+1,
+					"batch_total", totalBatches,
+					"chunks", len(batch),
+					"err", err)
+				if ix.Options.Progress != nil {
+					ix.Options.Progress("embed", end, len(toEmbed))
+				}
+				continue
 			}
 			ix.Options.Logger.Info("index: embed batch",
 				"batch", start/batchSize+1,
@@ -395,6 +423,18 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			if ix.Options.Progress != nil {
 				ix.Options.Progress("embed", end, len(toEmbed))
 			}
+		}
+		// All batches failed → the backend is down, not a sporadic bad file.
+		// Isolation must not silently turn a total outage into a "success"
+		// that embedded nothing, so fail loud in that case.
+		if skippedBatches > 0 && skippedBatches == totalBatches {
+			return fmt.Errorf("embed pass: all %d batch(es) failed; last error: %w", totalBatches, lastBatchErr)
+		}
+		if skippedBatches > 0 {
+			ix.Options.Logger.Warn("index: embed pass completed with skipped batches",
+				"skipped_batches", skippedBatches,
+				"batch_total", totalBatches,
+				"skipped_chunks", embedSkipped)
 		}
 		ix.Options.Logger.Info("index: embedding done",
 			logx.DurMS(time.Since(embedStart)))
@@ -413,7 +453,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	ix.Options.Logger.Info("index: done",
 		logx.Phase("done"), "chunks_seen", seen,
 		"files_fast_path", mtimeSkips.Load(),
-		"embedded", len(toEmbed),
+		"embedded", len(toEmbed)-embedSkipped,
+		"embed_skipped", embedSkipped,
 		"pruned", pruned,
 		"skipped", skipped.Load(),
 		logx.DurMS(time.Since(startTime)))

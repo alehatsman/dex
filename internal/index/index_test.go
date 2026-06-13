@@ -530,3 +530,135 @@ func TestMtimeFastPathEqualMtimeReindexes(t *testing.T) {
 			before.Chunks, after.Chunks)
 	}
 }
+
+// flakyEmbedder hash-embeds like fakeEmbedServer but fails any batch whose
+// input contains failMarker (per-batch isolation) or, with failAll, every
+// batch (total-outage). BatchSize is 1 so each chunk is its own batch, making
+// "this one chunk's batch fails" deterministic regardless of chunk ordering.
+type flakyEmbedder struct {
+	failMarker string
+	failAll    bool
+}
+
+func (flakyEmbedder) Health(context.Context) error { return nil }
+func (flakyEmbedder) Endpoint() string             { return "flaky://test" }
+func (flakyEmbedder) ModelName() string            { return "fake" }
+func (flakyEmbedder) BatchSize() int               { return 1 }
+
+func (f flakyEmbedder) Embed(_ context.Context, inputs []string) ([][]float32, error) {
+	if f.failAll {
+		return nil, fmt.Errorf("flaky: backend down")
+	}
+	for _, in := range inputs {
+		if f.failMarker != "" && strings.Contains(in, f.failMarker) {
+			return nil, fmt.Errorf("flaky: poisoned batch")
+		}
+	}
+	out := make([][]float32, len(inputs))
+	for i, in := range inputs {
+		out[i] = hashVec(in, 16)
+	}
+	return out, nil
+}
+
+// openIndexerStore wires a temp project + store + ignore for the embed-pass
+// tests and returns the project handle, open store, and ignore matcher.
+func openIndexerStore(t *testing.T, projDir, cacheDir string) (*proj.Project, *store.Store, *ignore.Matcher) {
+	t.Helper()
+	ctx := context.Background()
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ig, err := ignore.New(p.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p, st, ig
+}
+
+// TestIndexEmbedBatchIsolation: one bad embed batch is logged and skipped, the
+// run still succeeds, the good files land, and a later healthy run backfills
+// the skipped chunk. Regression for #438 (one bad file killed the whole pass).
+func TestIndexEmbedBatchIsolation(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+
+	writeFile(t, filepath.Join(projDir, "good_a.go"),
+		"package main\n\n// Aaa does a.\nfunc Aaa() string { return \"aaa\" }\n")
+	writeFile(t, filepath.Join(projDir, "good_b.go"),
+		"package main\n\n// Bbb does b.\nfunc Bbb() string { return \"bbb\" }\n")
+	// EmbedText stamps "// path: <file>" into every chunk, so a marker in the
+	// filename poisons all of this file's batches (its chunks never embed),
+	// regardless of how the file splits into chunks.
+	const poisonFile = "POISONPILL_ccc.go"
+	writeFile(t, filepath.Join(projDir, poisonFile),
+		"package main\n\n// Ccc returns c.\nfunc Ccc() string { return \"ccc\" }\n")
+
+	ctx := context.Background()
+	p, st, ig := openIndexerStore(t, projDir, cacheDir)
+
+	ix := New(p, st, flakyEmbedder{failMarker: "POISONPILL"}, ig, Options{})
+	if err := ix.Run(ctx); err != nil {
+		t.Fatalf("Run with one poisoned batch must succeed (isolation): %v", err)
+	}
+
+	existing, err := st.ExistingSHAsBatch(ctx, []string{"good_a.go", "good_b.go", poisonFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(existing["good_a.go"]) == 0 || len(existing["good_b.go"]) == 0 {
+		t.Errorf("good files must be embedded despite the poisoned batch; got a=%d b=%d",
+			len(existing["good_a.go"]), len(existing["good_b.go"]))
+	}
+	if n := len(existing[poisonFile]); n != 0 {
+		t.Errorf("poisoned file's batches must leave no chunk rows; got %d", n)
+	}
+
+	// Recovery: a healthy embedder backfills the skipped chunks on the next run.
+	ix2 := New(p, st, flakyEmbedder{}, ig, Options{})
+	if err := ix2.Run(ctx); err != nil {
+		t.Fatalf("recovery Run: %v", err)
+	}
+	recovered, err := st.ExistingSHAsBatch(ctx, []string{poisonFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered[poisonFile]) == 0 {
+		t.Error("previously-skipped chunks should be backfilled on the recovery run")
+	}
+}
+
+// TestIndexEmbedAllBatchesFail: isolation must not mask a total outage as a
+// run that silently embedded nothing — when every batch fails, Run fails loud.
+func TestIndexEmbedAllBatchesFail(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+
+	writeFile(t, filepath.Join(projDir, "a.go"),
+		"package main\n\n// Aaa does a.\nfunc Aaa() string { return \"aaa\" }\n")
+	writeFile(t, filepath.Join(projDir, "b.go"),
+		"package main\n\n// Bbb does b.\nfunc Bbb() string { return \"bbb\" }\n")
+
+	ctx := context.Background()
+	p, st, ig := openIndexerStore(t, projDir, cacheDir)
+
+	ix := New(p, st, flakyEmbedder{failAll: true}, ig, Options{})
+	err := ix.Run(ctx)
+	if err == nil {
+		t.Fatal("Run must fail loud when every embed batch fails (total outage)")
+	}
+	if !strings.Contains(err.Error(), "all") {
+		t.Errorf("error should report that all batches failed; got %v", err)
+	}
+}

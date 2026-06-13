@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -199,8 +198,8 @@ func chunkCount(t *testing.T, projDir, cacheDir string) int {
 }
 
 // TestIndexPartialEmbedFailureSurvivesAndResumes pins the core contract:
-// a mid-index embed crash leaves earlier batches committed, and the next run
-// embeds only the remaining chunks.
+// a mid-index embed crash is isolated (#438) — earlier batches stay committed,
+// the run still succeeds, and the next run embeds only the remaining chunks.
 func TestIndexPartialEmbedFailureSurvivesAndResumes(t *testing.T) {
 	const (
 		dim    = 16
@@ -237,12 +236,12 @@ func TestIndexPartialEmbedFailureSurvivesAndResumes(t *testing.T) {
 
 	err := runIndex(t, ctx, projDir, cacheDir, failSrv.srv.URL, batch)
 
-	// (a) the run returns the embed error.
-	if err == nil {
-		t.Fatal("expected embed failure to surface from ix.Run, got nil")
-	}
-	if !errors.Is(err, embed.ErrUnreachable) {
-		t.Fatalf("want ErrUnreachable from a crashed backend, got %v", err)
+	// (a) the run SUCCEEDS: per-batch isolation (#438) logs and skips the
+	// crashed batches and continues, rather than aborting the whole pass. (A
+	// *total* outage — every batch failing — still fails loud; that is covered
+	// by TestIndexEmbedAllBatchesFail. Here failK batches succeed first.)
+	if err != nil {
+		t.Fatalf("partial embed failure must be isolated, not surfaced: %v", err)
 	}
 
 	// (b) the store contains exactly the chunks from the surviving batches:
