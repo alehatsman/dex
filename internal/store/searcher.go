@@ -11,7 +11,6 @@ import "context"
 type Searcher interface {
 	Search(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error)
 	SearchFused(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error)
-	RerankFused(ctx context.Context, queryText string, hits []Hit, k int) ([]Hit, error)
 	FindSymbol(ctx context.Context, name string, k int) ([]Hit, error)
 	FindSymbolCandidates(ctx context.Context, query string, k int) ([]string, error)
 	RelatedChunks(ctx context.Context, path string, startLine, k int) ([]Hit, error)

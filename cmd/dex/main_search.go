@@ -62,7 +62,10 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	}
 	opts := storeOpts()
 	if *rerankFlag == "off" {
-		opts.Reranker = nil
+		// Disable the cross-encoder hook and its pool cap; Search falls back
+		// to the local quality rerank over the full candidate pool.
+		opts.Rerank = nil
+		opts.MaxCandidatePool = 0
 	}
 	st, err := store.OpenWith(ctx, p.DBPath, opts)
 	if err != nil {

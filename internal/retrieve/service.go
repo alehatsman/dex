@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/rerank"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -18,6 +20,24 @@ type Service struct {
 	// Embed is the embedding backend for the semantic lane. Optional: nil
 	// runs the lane BM25-only (the lean DEX_EMBED_ENGINE=none profile).
 	Embed embed.Embedder
+
+	// Rerank, when non-nil, is the cross-encoder RerankFused reorders the
+	// fused candidate pool with before truncating to k. Nil = local quality
+	// rerank only (store.ApplyLocalRerank). On rerank.ErrUnreachable RerankFused
+	// degrades to the local rerank without surfacing an error.
+	Rerank rerank.Reranker
+
+	// RerankTimeout is the per-call deadline on the reranker. Zero = 1500ms.
+	RerankTimeout time.Duration
+
+	// RerankCache memoizes cross-encoder scores across calls. Nil = no memo
+	// (every eligible call hits the reranker). Production wires one shared
+	// instance so the store rerank hook and the search tools share it.
+	RerankCache *RerankCache
+
+	// DefinitionBoost is the symbol-query declaration multiplier passed to the
+	// local quality rerank fallback; 0 = store's built-in default.
+	DefinitionBoost float64
 }
 
 // SemHit is one semantic-lane result in neutral (transport-free) form —

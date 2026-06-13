@@ -301,8 +301,8 @@ func TestIndexPartialEmbedFailureSurvivesAndResumes(t *testing.T) {
 // between the cancel landing and the loop reaching its next iteration, so this
 // test does NOT assert the specific error type — only that the run bails with
 // an error and preserves committed work. (The "outer-cancel is not masked as
-// unreachable" guarantee is covered at the store layer:
-// store_rerank_test.go TestRerankTimeoutDoesNotMaskCallerCancel.)
+// unreachable" guarantee is covered in the retrieval layer:
+// internal/retrieve TestRerankTimeoutDoesNotMaskCallerCancel.)
 func TestIndexCtxCancelPreservesCommitted(t *testing.T) {
 	const (
 		dim         = 16

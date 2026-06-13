@@ -24,7 +24,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/alehatsman/dex/internal/rerank"
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	_ "github.com/mattn/go-sqlite3" // register sqlite3 driver
 )
@@ -119,7 +118,29 @@ type SearchOptions struct {
 	// FusionAlpha is the dense-lane weight in FusionLinear mode (0 = pure
 	// BM25, 1 = pure dense). Zero defaults to 0.7 (#317). Set via DEX_FUSION_ALPHA.
 	FusionAlpha float32
+
+	// Rerank, when non-nil, is the ranking-policy hook the store delegates the
+	// final rerank-and-trim step to (Search calls it over the fused candidate
+	// pool). It is transport-neutral by design — the store no longer owns the
+	// cross-encoder; ranking is retrieval policy, supplied by internal/retrieve
+	// (#473). Nil = the store applies its own local quality rerank
+	// (ApplyLocalRerank) and trims to k.
+	Rerank RerankFunc
+
+	// MaxCandidatePool caps the fused candidate pool before the rerank hook
+	// runs. Zero = no cap (the natural pool size, max(5×k, 30)). The wiring
+	// sets it from the reranker pool budget so the store doesn't pay to fetch
+	// more candidates than the reranker will score; honored only when Rerank
+	// is set.
+	MaxCandidatePool int
 }
+
+// RerankFunc reorders a fused candidate pool and trims it to k. It is the
+// store's ranking-policy seam (#473): the implementation lives in
+// internal/retrieve (cross-encoder + cache, with a local-rerank fallback), so
+// the store imports no ranking machinery. queryText is the original query;
+// hits is the fused pool in pre-rerank order.
+type RerankFunc func(ctx context.Context, queryText string, hits []Hit, k int) ([]Hit, error)
 
 // GraphOptions controls the graph-proximity spreading-activation lane.
 type GraphOptions struct {
@@ -152,32 +173,6 @@ type GraphOptions struct {
 	GraphLaneDisabled bool
 }
 
-// RerankOptions configures the optional cross-encoder reranking stage.
-type RerankOptions struct {
-	// Reranker, when non-nil, reorders the fused candidate pool via a
-	// cross-encoder before truncating to k. Nil = today's behaviour
-	// (pure RRF). On rerank.ErrUnreachable the search falls back to
-	// the pre-rerank order without surfacing an error to the caller.
-	Reranker rerank.Reranker
-
-	// RerankPool caps the fused candidate pool sent to the reranker.
-	// Only honored when Reranker is non-nil. Zero = no cap (use the
-	// natural pool size, max(5×k, 30)). Typical values 40–100: larger
-	// = better recall but slower rerank call.
-	RerankPool int
-
-	// RerankTimeout is the per-call deadline applied to the rerank
-	// request. A hung rerank endpoint must not stretch the whole `ask`
-	// round-trip past the MCP timeout. Zero = 1500ms.
-	RerankTimeout time.Duration
-
-	// RerankCache, when non-nil, memoizes rerank results across calls
-	// keyed on (query, sorted fused ids). Nil = the Store allocates a
-	// 256-entry LRU on first use. Set explicitly to a sized cache to
-	// override; pass a no-op cache to disable.
-	RerankCache RerankCache
-}
-
 // InfraOptions controls storage and learning behaviour.
 type InfraOptions struct {
 	// DisableCoAccess turns off Hebbian co-access edge learning and spreading.
@@ -203,19 +198,16 @@ type InfraOptions struct {
 type Options struct {
 	SearchOptions
 	GraphOptions
-	RerankOptions
 	InfraOptions
 }
 
 type Store struct {
-	db          *sql.DB
-	dim         atomic.Int64 // vector dimension; set once on first upsert, read concurrently
-	dimInit     sync.Mutex   // serializes first-write dim init so concurrent first UpsertMany calls don't double-init
-	noVec       atomic.Bool  // true when index is BM25-only (DEX_EMBED_ENGINE=none) — no vec0 table, nil vecs
-	embedModel  atomic.Value // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
-	opts        Options      // immutable after Open
-	rerankCache RerankCache  // memoizes rerank results across calls; lazily set on first use
-	rerankInit  sync.Once    // guards lazy rerankCache init
+	db         *sql.DB
+	dim        atomic.Int64 // vector dimension; set once on first upsert, read concurrently
+	dimInit    sync.Mutex   // serializes first-write dim init so concurrent first UpsertMany calls don't double-init
+	noVec      atomic.Bool  // true when index is BM25-only (DEX_EMBED_ENGINE=none) — no vec0 table, nil vecs
+	embedModel atomic.Value // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
+	opts       Options      // immutable after Open
 
 	knowledgeStore // knowledge-fact methods, keyed on Store.db
 }

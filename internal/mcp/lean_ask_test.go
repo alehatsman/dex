@@ -26,9 +26,6 @@ func (f *bm25OnlySearcher) Search(_ context.Context, queryVec []float32, _ strin
 func (f *bm25OnlySearcher) SearchFused(context.Context, []float32, string, int) ([]store.Hit, error) {
 	return nil, nil
 }
-func (f *bm25OnlySearcher) RerankFused(context.Context, string, []store.Hit, int) ([]store.Hit, error) {
-	return nil, nil
-}
 func (f *bm25OnlySearcher) FindSymbol(context.Context, string, int) ([]store.Hit, error) {
 	return nil, nil
 }

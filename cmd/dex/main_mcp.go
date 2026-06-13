@@ -10,6 +10,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/rerank"
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 func cmdMCP(ctx context.Context, args []string) error {
@@ -115,15 +116,23 @@ func runRemoteMCP(ctx context.Context, baseURL, projectID, projectRoot string) e
 func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 	var rerankClient rerank.HealthChecker = newRerankClient()
 	opts := storeOpts()
+	var rerankSvc retrieve.Service
 	if rerankClient != nil {
 		// Wrap in a circuit breaker so a hung rerank backend doesn't
 		// drag every search through its full timeout for the next 30s
 		// after a string of failures. The same wrapper is shared by
-		// status (RerankClient) and search (StoreOpts.Reranker) so the
-		// breaker state in `dex index status` reflects what callers
-		// actually see.
+		// status (RerankClient) and the rerank service (StoreOpts.Rerank
+		// hook + Server.Retrieve) so the breaker state in `dex index
+		// status` reflects what callers actually see.
+		//
+		// One service (and one score cache) is built here and shared: the
+		// store rerank hook and the mcp search tools both route through it,
+		// so an identical (query, pool) is reranked once per process — the
+		// long-lived equivalent of the CLI's per-command cache (#473).
 		rerankClient = rerank.NewBreaker(rerankClient, 3, 30*time.Second)
-		opts.Reranker = rerankClient
+		rerankSvc = newRerankService(rerankClient, opts.DefinitionBoost)
+		opts.Rerank = rerankSvc.RerankFused
+		opts.MaxCandidatePool = rerankPool()
 	}
 	chatClient := newChatClient()
 	expandClient := newExpandClient(chatClient)
@@ -135,6 +144,7 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 		ExpandMode:   expandDefaultMode(expandClient),
 		IndexDir:     base,
 		StoreOpts:    opts,
+		Retrieve:     rerankSvc,
 		AutoWatch:    autoWatchConfigFromEnv(),
 	}
 	return srv, rerankClient

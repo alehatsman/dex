@@ -22,6 +22,7 @@ import (
 	"github.com/alehatsman/dex/internal/index"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/rerank"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -352,7 +353,7 @@ func TestSearchPopulatesRerankScore(t *testing.T) {
 	s := &Server{
 		EmbedClient: embed.New(srv.URL, "fake", 16, 5*time.Second),
 		IndexDir:    cacheDir,
-		StoreOpts:   store.Options{RerankOptions: store.RerankOptions{Reranker: stubReranker{}}},
+		Retrieve:    retrieve.Service{Rerank: stubReranker{}, RerankCache: retrieve.NewRerankCache(0)},
 	}
 	_, out, err := s.search(context.Background(), nil, SearchInput{
 		Query:       "function",

@@ -301,6 +301,41 @@ func (substringReranker) Rerank(_ context.Context, query string, docs []string) 
 	return scores, nil
 }
 
+// substringRerankHook adapts substringReranker into a store.RerankFunc,
+// mirroring retrieve.Service.RerankFused's happy path (no cache): at or below k
+// it defers to the local quality rerank, above k it scores the pool and stamps
+// RerankScore in the reranker's returned order. Keeps the regression suite in
+// the store package without importing internal/retrieve (#473).
+func substringRerankHook(ctx context.Context, query string, hits []Hit, k int) ([]Hit, error) {
+	if k <= 0 {
+		k = 8
+	}
+	if len(hits) <= k {
+		return ApplyLocalRerank(hits, classifyQueryType(query) == querySymbol, 0), nil
+	}
+	docs := make([]string, len(hits))
+	for i := range hits {
+		docs[i] = hits[i].Content
+	}
+	scores, err := substringReranker{}.Rerank(ctx, query, docs)
+	if err != nil {
+		return nil, err
+	}
+	ordered := make([]Hit, 0, len(scores))
+	for _, sc := range scores {
+		if sc.Index < 0 || sc.Index >= len(hits) {
+			continue
+		}
+		h := hits[sc.Index]
+		h.RerankScore = sc.Score
+		ordered = append(ordered, h)
+	}
+	if len(ordered) > k {
+		ordered = ordered[:k]
+	}
+	return ordered, nil
+}
+
 func TestRetrievalRegression(t *testing.T) {
 	corpus := loadCorpus(t, "testdata/regression/corpus.jsonl")
 	queries := loadQueries(t, "testdata/regression/queries.jsonl")
@@ -313,7 +348,7 @@ func TestRetrievalRegression(t *testing.T) {
 		opts Options
 	}{
 		{name: "plain", opts: Options{}},
-		{name: "rerank", opts: Options{RerankOptions: RerankOptions{Reranker: substringReranker{}, RerankPool: 30}}},
+		{name: "rerank", opts: Options{SearchOptions: SearchOptions{Rerank: substringRerankHook, MaxCandidatePool: 30}}},
 	}
 
 	for _, tc := range cases {
@@ -326,7 +361,7 @@ func TestRetrievalRegression(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = st.Close() })
 			id2path := indexRegressionCorpus(t, st, corpus)
-			rerankOn := tc.opts.Reranker != nil
+			rerankOn := tc.opts.Rerank != nil
 
 			// queriesRan + rerankObservations track suite-wide state for
 			// the rerank-wiring check below. Subtests run sequentially

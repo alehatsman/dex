@@ -160,7 +160,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	}
 	hits = st.FuseSpreadingActivation(ctx, hits, vecs[0], candidateK)
 
-	hits, err = st.RerankFused(ctx, in.Query, hits, candidateK)
+	hits, err = s.Retrieve.RerankFused(ctx, in.Query, hits, candidateK)
 	if err != nil {
 		out.Status = "error"
 		out.Hint = fmt.Sprintf("rerank: %v", err)

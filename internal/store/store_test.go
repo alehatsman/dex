@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/alehatsman/dex/internal/rerank"
 )
 
 func newStore(t *testing.T) (*Store, context.Context) {
@@ -530,29 +528,22 @@ func TestDisableBM25(t *testing.T) {
 	}
 }
 
-// reverseReranker is a deterministic stub: it returns the input docs
-// in reversed order so we can verify the rerank stage actually
-// reorders the fused candidates.
-type reverseReranker struct{}
-
-func (reverseReranker) Rerank(_ context.Context, _ string, docs []string) ([]rerank.Score, error) {
-	out := make([]rerank.Score, len(docs))
-	for i := range docs {
-		out[i] = rerank.Score{
-			Index: len(docs) - 1 - i,
-			// Descending scores so fetchHits's order = ranking order.
-			Score: 1.0 - float32(i)/float32(len(docs)),
-		}
+// rerankReverseHook is a store.RerankFunc test double: it reverses the pool,
+// stamps a descending RerankScore, and trims to k. The store's only ranking
+// responsibility is to call the hook and thread its output (order +
+// RerankScore) through Search while the pre-rerank RRFScore survives; the
+// cross-encoder behaviour behind the hook is tested in internal/retrieve.
+func rerankReverseHook(_ context.Context, _ string, hits []Hit, k int) ([]Hit, error) {
+	out := make([]Hit, len(hits))
+	for j := range hits {
+		h := hits[len(hits)-1-j]
+		h.RerankScore = float32(len(hits) - j) // descending, out[0] highest
+		out[j] = h
+	}
+	if len(out) > k {
+		out = out[:k]
 	}
 	return out, nil
-}
-
-// unreachableReranker mirrors what a network-down rerank.Client returns.
-// store.Search must catch this and degrade to pre-rerank truncation.
-type unreachableReranker struct{}
-
-func (unreachableReranker) Rerank(_ context.Context, _ string, _ []string) ([]rerank.Score, error) {
-	return nil, rerank.ErrUnreachable
 }
 
 func TestSearchReranks(t *testing.T) {
@@ -592,8 +583,8 @@ func TestSearchReranks(t *testing.T) {
 		}
 	}
 
-	// Reranked: stub reverses the fused order.
-	st.opts.Reranker = reverseReranker{}
+	// Reranked: the hook reverses the fused order.
+	st.opts.Rerank = rerankReverseHook
 	reranked, err := st.Search(ctx, queryVec, "rerank candidate", k)
 	if err != nil {
 		t.Fatal(err)
@@ -633,7 +624,7 @@ func TestSearchReranks(t *testing.T) {
 	}
 }
 
-func TestSearchRerankerUnreachableFallsBack(t *testing.T) {
+func TestSearchRerankHookError(t *testing.T) {
 	st, ctx := newStore(t)
 	now := time.Now()
 	var rows []PendingChunk
@@ -649,31 +640,15 @@ func TestSearchRerankerUnreachableFallsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	queryVec := []float32{1, 0, 0, 0}
-	const k = 5
-
-	baseline, err := st.Search(ctx, queryVec, "rerank candidate", k)
-	if err != nil {
-		t.Fatal(err)
+	// A hook error is the ranking layer's to handle — degradation on a
+	// reranker outage lives in internal/retrieve, behind the hook. Search must
+	// surface a hook error, not swallow it.
+	wantErr := errors.New("rank boom")
+	st.opts.Rerank = func(context.Context, string, []Hit, int) ([]Hit, error) {
+		return nil, wantErr
 	}
-
-	st.opts.Reranker = unreachableReranker{}
-	fallback, err := st.Search(ctx, queryVec, "rerank candidate", k)
-	if err != nil {
-		t.Fatalf("unreachable reranker should not surface as error: %v", err)
-	}
-	if len(fallback) != len(baseline) {
-		t.Fatalf("fallback returned %d hits, baseline %d", len(fallback), len(baseline))
-	}
-	for i := range fallback {
-		if fallback[i].Path != baseline[i].Path {
-			t.Errorf("fallback[%d] = %q, want %q (should equal pre-rerank order)",
-				i, fallback[i].Path, baseline[i].Path)
-		}
-		if fallback[i].RerankScore != 0 {
-			t.Errorf("fallback[%d] %q: RerankScore = %v, want 0 (rerank didn't run)",
-				i, fallback[i].Path, fallback[i].RerankScore)
-		}
+	if _, err := st.Search(ctx, []float32{1, 0, 0, 0}, "rerank candidate", 5); !errors.Is(err, wantErr) {
+		t.Fatalf("Search err = %v, want %v", err, wantErr)
 	}
 }
 

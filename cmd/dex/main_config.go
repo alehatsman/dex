@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/ignore"
+	"github.com/alehatsman/dex/internal/rerank"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -48,21 +50,35 @@ func storeOpts() store.Options {
 			GraphHopCap:     graphHopCap(),
 			GraphLaneWeight: graphLaneWeight(),
 		},
-		RerankOptions: store.RerankOptions{
-			RerankPool: rerankPool(),
-		},
 		InfraOptions: store.InfraOptions{
 			DisableCoAccess: os.Getenv("DEX_COACCESS") == "0",
 			VectorQuant:     vectorQuant(),
 		},
 	}
-	// Assign through a typed-nil check: a (*rerank.Client)(nil) stored
-	// in the Reranker interface field would still compare != nil, and
-	// store.Search would dispatch into a nil receiver.
+	// Ranking is retrieval policy (#473): when a reranker is configured, wire
+	// the store's rerank hook to internal/retrieve's cross-encoder and cap the
+	// candidate pool to the reranker budget. Typed-nil guard — a
+	// (*rerank.Client)(nil) stored in the Reranker interface would still
+	// compare != nil and dispatch into a nil receiver.
 	if rc := newRerankClient(); rc != nil {
-		opts.Reranker = rc
+		svc := newRerankService(rc, opts.DefinitionBoost)
+		opts.Rerank = svc.RerankFused
+		opts.MaxCandidatePool = rerankPool()
 	}
 	return opts
+}
+
+// newRerankService builds the query-time ranking service from a configured
+// reranker. Each call allocates its own cross-encoder score cache: that is the
+// right lifetime for a one-shot CLI command (the cache lives as long as the
+// process). The long-lived MCP server builds one service and shares it across
+// requests (see runMCP), so the store hook and the search tools hit one cache.
+func newRerankService(rc rerank.Reranker, defBoost float64) retrieve.Service {
+	return retrieve.Service{
+		Rerank:          rc,
+		RerankCache:     retrieve.NewRerankCache(0),
+		DefinitionBoost: defBoost,
+	}
 }
 
 // vectorQuant reads DEX_VECTOR_QUANT — the chunk_vecs KNN encoding.
