@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -9,6 +10,9 @@ import (
 	"strings"
 	"time"
 )
+
+// knowledgeStore holds knowledge-fact methods, embedded in Store.
+type knowledgeStore struct{ db *sql.DB }
 
 // KnowledgeFact is one persisted fact about the project.
 type KnowledgeFact struct {
@@ -49,7 +53,7 @@ func archetypeWeight(a string) float64 {
 // (case-sensitive). Updating an existing fact bumps its confidence and
 // updated_at without creating a duplicate. Returns the revision_count after
 // insert/update (0 = first time stored, 1 = first revision, etc.).
-func (s *Store) KnowledgeAdd(ctx context.Context, archetype, body string, confidence float64) (int, error) {
+func (s *knowledgeStore) KnowledgeAdd(ctx context.Context, archetype, body string, confidence float64) (int, error) {
 	if confidence <= 0 {
 		confidence = 0.8
 	}
@@ -132,7 +136,7 @@ func clampK(k int) int {
 // KnowledgeQuery returns the top-k facts ordered by salience
 // (confidence × archetype weight × recency decay).
 // Pass k<=0 for the default (10).
-func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, error) {
+func (s *knowledgeStore) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, error) {
 	k = clampK(k)
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
@@ -147,14 +151,14 @@ func (s *Store) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, err
 }
 
 // KnowledgeCount returns the number of stored facts.
-func (s *Store) KnowledgeCount(ctx context.Context) (int, error) {
+func (s *knowledgeStore) KnowledgeCount(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_facts`).Scan(&n)
 	return n, err
 }
 
 // KnowledgeDelete removes a fact by id.
-func (s *Store) KnowledgeDelete(ctx context.Context, id int64) error {
+func (s *knowledgeStore) KnowledgeDelete(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM knowledge_facts WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -170,7 +174,7 @@ func (s *Store) KnowledgeDelete(ctx context.Context, id int64) error {
 // touch updated_at — that stays the "last confirmed" timestamp, so decay
 // (KnowledgeGC) measures staleness from confirmation while protecting facts
 // that are still being retrieved.
-func (s *Store) KnowledgeBump(ctx context.Context, id int64) error {
+func (s *knowledgeStore) KnowledgeBump(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE knowledge_facts SET hit_count=hit_count+1, last_retrieved=? WHERE id=?`,
 		time.Now().UnixNano(), id)
@@ -179,7 +183,7 @@ func (s *Store) KnowledgeBump(ctx context.Context, id int64) error {
 
 // KnowledgeTopForAsk returns up to k high-salience facts to inject into
 // ask context. It also bumps the hit_count for every returned fact.
-func (s *Store) KnowledgeTopForAsk(ctx context.Context, k int) ([]KnowledgeFact, error) {
+func (s *knowledgeStore) KnowledgeTopForAsk(ctx context.Context, k int) ([]KnowledgeFact, error) {
 	facts, err := s.KnowledgeQuery(ctx, k)
 	if err != nil || len(facts) == 0 {
 		return facts, err
@@ -197,7 +201,7 @@ func (s *Store) KnowledgeTopForAsk(ctx context.Context, k int) ([]KnowledgeFact,
 // when the fact is removed. Idempotent. If a fact_vecs table already exists at a
 // different dimension (e.g. the embed model changed), it is dropped and
 // recreated — the embeddings are re-backfilled lazily on the next recall.
-func (s *Store) ensureFactVecTable(ctx context.Context, dim int) error {
+func (s *knowledgeStore) ensureFactVecTable(ctx context.Context, dim int) error {
 	if dim <= 0 {
 		return nil
 	}
@@ -233,7 +237,7 @@ func (s *Store) ensureFactVecTable(ctx context.Context, dim int) error {
 // KnowledgeUpsertVec stores (or replaces) the embedding for a fact id in the
 // fact_vecs table. The vec0 table is created on first use at the vector's
 // dimension. A nil/empty vec is a no-op.
-func (s *Store) KnowledgeUpsertVec(ctx context.Context, id int64, vec []float32) error {
+func (s *knowledgeStore) KnowledgeUpsertVec(ctx context.Context, id int64, vec []float32) error {
 	if len(vec) == 0 {
 		return nil
 	}
@@ -250,7 +254,7 @@ func (s *Store) KnowledgeUpsertVec(ctx context.Context, id int64, vec []float32)
 
 // KnowledgeUpsertVecByBody resolves a fact id by its (unique) body and stores
 // its embedding. Used right after KnowledgeAdd, which dedups by body.
-func (s *Store) KnowledgeUpsertVecByBody(ctx context.Context, body string, vec []float32) error {
+func (s *knowledgeStore) KnowledgeUpsertVecByBody(ctx context.Context, body string, vec []float32) error {
 	var id int64
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT id FROM knowledge_facts WHERE body=?`, body).Scan(&id); err != nil {
@@ -263,7 +267,7 @@ func (s *Store) KnowledgeUpsertVecByBody(ctx context.Context, body string, vec [
 // fact_vecs (never embedded, or embedded under a now-dropped dimension). When
 // the fact_vecs table does not exist yet, every fact is considered missing.
 // Callers embed these bodies and feed them back through KnowledgeUpsertVec.
-func (s *Store) KnowledgeFactsMissingVec(ctx context.Context, limit int) ([]KnowledgeFact, error) {
+func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int) ([]KnowledgeFact, error) {
 	if limit <= 0 {
 		limit = 128
 	}
@@ -292,7 +296,7 @@ func (s *Store) KnowledgeFactsMissingVec(ctx context.Context, limit int) ([]Know
 //
 // Falls back to salience-only KnowledgeQuery when queryVec is empty or no fact
 // embeddings exist yet (fresh store, or embed endpoint was offline at add time).
-func (s *Store) KnowledgeQueryVec(ctx context.Context, queryVec []float32, k int) ([]KnowledgeFact, error) {
+func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float32, k int) ([]KnowledgeFact, error) {
 	k = clampK(k)
 	if len(queryVec) == 0 {
 		return s.KnowledgeQuery(ctx, k)
@@ -426,7 +430,7 @@ type KnowledgeGCResult struct {
 // archetype, and eviction past a cap. It is safe to call repeatedly — decay is
 // proportional to time elapsed since the previous GC (recorded in meta), so it
 // never double-counts.
-func (s *Store) KnowledgeGC(ctx context.Context, cfg KnowledgeGCConfig) (KnowledgeGCResult, error) {
+func (s *knowledgeStore) KnowledgeGC(ctx context.Context, cfg KnowledgeGCConfig) (KnowledgeGCResult, error) {
 	cfg.applyDefaults()
 	var res KnowledgeGCResult
 	now := time.Now()
@@ -459,7 +463,7 @@ func (s *Store) KnowledgeGC(ctx context.Context, cfg KnowledgeGCConfig) (Knowled
 // elapsed since the last GC, divided by a protection factor that grows with
 // hit_count, and further softened for facts retrieved within the last week.
 // On the first ever GC it just records the baseline timestamp (no decay).
-func (s *Store) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConfig, now time.Time) (int, error) {
+func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConfig, now time.Time) (int, error) {
 	var lastGCStr string
 	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='knowledge_last_gc'`).Scan(&lastGCStr)
 	recordNow := func() error {
@@ -532,7 +536,7 @@ func (s *Store) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConfig, now t
 // word-sets overlap at or above cfg.JaccardMerge. The higher-confidence fact
 // survives, accumulating the other's hit_count; the duplicate is deleted (its
 // fact_vecs row cascades away via trigger).
-func (s *Store) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
+func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, archetype, body, confidence, hit_count FROM knowledge_facts ORDER BY archetype, confidence DESC`)
 	if err != nil {
@@ -594,7 +598,7 @@ func (s *Store) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGC
 
 // knowledgeEvict drops the lowest-confidence facts when the store exceeds the
 // configured cap. Ties break toward the least-recently-retrieved.
-func (s *Store) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
+func (s *knowledgeStore) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
 	if cfg.MaxFacts <= 0 {
 		return 0, nil
 	}

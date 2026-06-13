@@ -204,6 +204,8 @@ type Store struct {
 	opts        Options      // immutable after Open
 	rerankCache RerankCache  // memoizes rerank results across calls; lazily set on first use
 	rerankInit  sync.Once    // guards lazy rerankCache init
+
+	knowledgeStore // knowledge-fact methods, keyed on Store.db
 }
 
 // Open opens or creates the SQLite file at path with default
@@ -229,7 +231,7 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	s := &Store{db: db, opts: opts}
+	s := &Store{db: db, opts: opts, knowledgeStore: knowledgeStore{db: db}}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, err
