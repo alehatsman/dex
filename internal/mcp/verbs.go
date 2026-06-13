@@ -170,7 +170,7 @@ type TraceOutput struct {
 	Hint      string        `json:"hint,omitempty"`
 	Project   string        `json:"project,omitempty"`
 	Targets   []TargetMatch `json:"targets,omitempty"` // callers/callees: resolved interpretations of `symbol`
-	Hits      []CallSite    `json:"hits,omitempty"`    // callers/callees: the call-edge endpoints
+	Hits      []CallSite    `json:"hits"`              // callers/callees: the call-edge endpoints
 	Src       string        `json:"src,omitempty"`     // path
 	Dst       string        `json:"dst,omitempty"`     // path
 	Path      []PathHop     `json:"path,omitempty"`    // path: ordered hops

@@ -568,7 +568,7 @@ type SearchOutput struct {
 	Endpoint string      `json:"endpoint,omitempty"` // when unreachable
 	Project  string      `json:"project,omitempty"`  // resolved project root
 	Stale    bool        `json:"stale,omitempty"`    // last_indexed older than 24h
-	Hits     []SearchHit `json:"hits,omitempty"`
+	Hits     []SearchHit `json:"hits"`
 }
 
 // resolveProject canonicalizes projectRoot (falling back to cwd) and
@@ -694,7 +694,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 }
 
 func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) { //nolint:cyclop
-	out := SearchOutput{}
+	out := SearchOutput{Hits: []SearchHit{}}
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, SearchOutput{Status: "error", Hint: "query is empty — pass a natural-language description or code fragment"}, nil
 	}
@@ -1147,7 +1147,7 @@ type FindSymbolOutput struct {
 	Status  string      `json:"status"` // "ok" | "no-index" | "not-found" | "error"
 	Hint    string      `json:"hint,omitempty"`
 	Project string      `json:"project,omitempty"`
-	Hits    []SearchHit `json:"hits,omitempty"`
+	Hits    []SearchHit `json:"hits"`
 }
 
 func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error) {
@@ -1176,7 +1176,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 	if err != nil {
 		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("lookup: %v", err)}, nil
 	}
-	out := FindSymbolOutput{Status: "ok", Project: p.Root}
+	out := FindSymbolOutput{Status: "ok", Project: p.Root, Hits: []SearchHit{}}
 	if ldHint != "" {
 		out.Hint = ldHint
 	}
@@ -1224,7 +1224,7 @@ type RelatedOutput struct {
 	Status  string      `json:"status"` // "ok" | "no-index" | "not-found" | "embedding-service-unreachable" | "error"
 	Hint    string      `json:"hint,omitempty"`
 	Project string      `json:"project,omitempty"`
-	Hits    []SearchHit `json:"hits,omitempty"`
+	Hits    []SearchHit `json:"hits"`
 }
 
 func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in RelatedInput) (*sdk.CallToolResult, RelatedOutput, error) {
@@ -1262,7 +1262,7 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 		}
 		return nil, RelatedOutput{Status: "error", Hint: fmt.Sprintf("related: %v", err)}, nil
 	}
-	out := RelatedOutput{Status: "ok", Project: p.Root}
+	out := RelatedOutput{Status: "ok", Project: p.Root, Hits: []SearchHit{}}
 	for _, h := range hits {
 		out.Hits = append(out.Hits, SearchHit{
 			Path:      h.Path,
@@ -1295,7 +1295,7 @@ type FindRelatedOutput struct {
 	// Source is the resolved anchor chunk.
 	Source  *SearchHit  `json:"source,omitempty"`
 	Project string      `json:"project,omitempty"`
-	Hits    []SearchHit `json:"hits,omitempty"`
+	Hits    []SearchHit `json:"hits"`
 }
 
 func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in FindRelatedInput) (*sdk.CallToolResult, FindRelatedOutput, error) {
@@ -1415,6 +1415,7 @@ func (s *Server) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in Fin
 	out := FindRelatedOutput{
 		Status:  "ok",
 		Project: p.Root,
+		Hits:    []SearchHit{},
 		Source: &SearchHit{
 			Path:      src.Path,
 			Kind:      src.Kind,

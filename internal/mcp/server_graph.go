@@ -401,7 +401,7 @@ type CallEdgeOutput struct {
 	Hint    string        `json:"hint,omitempty"`
 	Project string        `json:"project,omitempty"`
 	Targets []TargetMatch `json:"targets,omitempty"`
-	Hits    []CallSite    `json:"hits,omitempty"`
+	Hits    []CallSite    `json:"hits"`
 }
 
 func (s *Server) graphCallers(ctx context.Context, _ *sdk.CallToolRequest, in CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error) {
@@ -459,7 +459,7 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 		k = 50
 	}
 
-	out := CallEdgeOutput{Status: "ok", Project: p.Root}
+	out := CallEdgeOutput{Status: "ok", Project: p.Root, Hits: []CallSite{}}
 	for _, t := range targets {
 		out.Targets = append(out.Targets, TargetMatch{
 			QualifiedName: t.QualifiedName,
@@ -857,7 +857,7 @@ type DocLinkOutput struct {
 	Hint    string      `json:"hint,omitempty"`
 	Project string      `json:"project,omitempty"`
 	Targets []DocTarget `json:"targets,omitempty"`
-	Hits    []DocLink   `json:"hits,omitempty"`
+	Hits    []DocLink   `json:"hits"`
 }
 
 // GraphLinks, GraphBacklinks are exported wrappers so the CLI can reuse
@@ -951,7 +951,7 @@ func (s *Server) docEdges(ctx context.Context, in DocLinkInput, backlinks bool) 
 // view — unit-testable off a hand-built graph.
 func collectDocEdges(view *graphView, targets []graphNode, backlinks bool, k int) []DocLink {
 	seen := map[string]bool{}
-	var hits []DocLink
+	hits := []DocLink{}
 	for _, t := range targets {
 		// For backlinks, scan edges incident to the doc AND each of its
 		// heading nodes (same FilePath, kind heading), so section-targeted
