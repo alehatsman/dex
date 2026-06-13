@@ -21,17 +21,22 @@ func CompressZig(cmd string, lines []string) []string {
 	return CompactLines(lines, 15)
 }
 
+// isZigFailHeader reports whether a (trimmed) line is a zig test failure header.
+// The `expected X, found Y` / panic / stack-trace lines that follow are retained
+// as detail (#455).
+func isZigFailHeader(t string) bool {
+	return strings.Contains(t, "FAIL") || strings.Contains(t, "test failed")
+}
+
 func CompressZigTest(lines []string) []string {
 	var passed, failed int
-	var failures []string
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
 		if strings.Contains(t, "1/1 test") || strings.Contains(t, "test passed") {
 			passed++
 		}
-		if strings.Contains(t, "FAIL") || strings.Contains(t, "test failed") {
+		if isZigFailHeader(t) {
 			failed++
-			failures = append(failures, t)
 		}
 		if strings.Contains(t, "All") && strings.Contains(t, "passed") {
 			parts := strings.Fields(t)
@@ -42,6 +47,7 @@ func CompressZigTest(lines []string) []string {
 			}
 		}
 	}
+	blocks := collectFailures(lines, isZigFailHeader, nil, 12)
 	if passed == 0 && failed == 0 {
 		return CompactLines(lines, 10)
 	}
@@ -49,14 +55,7 @@ func CompressZigTest(lines []string) []string {
 	if failed > 0 {
 		result += fmt.Sprintf(", %d failed", failed)
 	}
-	out := []string{result}
-	for i, f := range failures {
-		if i >= 5 {
-			break
-		}
-		out = append(out, "  "+f)
-	}
-	return out
+	return appendFailureBlocks([]string{result}, blocks, "  ", 5)
 }
 
 func CompressZigBuild(lines []string) []string {

@@ -121,30 +121,32 @@ func CompressBundle(lines []string) []string {
 	return out
 }
 
+// reMinitestHeader matches a minitest failure/error header. Minitest prints
+// `FAIL:`/`ERROR:` lines, numbered `1) Failure:` / `1) Error:` blocks, or bare
+// `Failure:` / `Error:` headers; all are followed by the test-location line and
+// the `Expected: … Actual: …` diff + backtrace, which are flush-left (not
+// indented) and run until the next blank line.
+var reMinitestHeader = &lazyRe{pattern: `^(FAIL:|ERROR:|(\d+\)\s+)?(Failure|Error):)`}
+
 func CompressMinitest(lines []string) []string {
-	var runs, failures, errors int
+	var failures, errors int
 	var summary string
-	var failureLines []string
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
 		if strings.Contains(t, "runs,") && strings.Contains(t, "assertions") {
 			summary = t
 		}
-		if strings.HasPrefix(t, "FAIL:") || strings.HasPrefix(t, "ERROR:") {
-			if strings.HasPrefix(t, "FAIL:") {
-				failures++
-			} else {
-				errors++
-			}
-			failureLines = append(failureLines, t)
-		}
-		if strings.Contains(t, " run") && (strings.Contains(t, "failure") || strings.Contains(t, "error")) {
-			if n := extractFirstInt(t); n > 0 {
-				runs = n
-			}
+		if strings.HasPrefix(t, "FAIL:") || strings.Contains(t, ") Failure:") {
+			failures++
+		} else if strings.HasPrefix(t, "ERROR:") || strings.Contains(t, ") Error:") {
+			errors++
 		}
 	}
-	_ = runs
+	// Retain the per-failure diff/backtrace (#455), not just the header line.
+	// Minitest detail is flush-left, so any non-blank line is detail until the
+	// blank-line boundary that closes the block.
+	anyNonBlank := func(l string) bool { return strings.TrimSpace(l) != "" }
+	blocks := collectFailures(lines, reMinitestHeader.MatchString, anyNonBlank, 12)
 	if summary == "" && failures == 0 && errors == 0 {
 		return lines
 	}
@@ -154,12 +156,5 @@ func CompressMinitest(lines []string) []string {
 	} else {
 		out = append(out, fmt.Sprintf("%d failures, %d errors", failures, errors))
 	}
-	for i, f := range failureLines {
-		if i >= 5 {
-			out = append(out, fmt.Sprintf("  … +%d more", len(failureLines)-5))
-			break
-		}
-		out = append(out, "  "+f)
-	}
-	return out
+	return appendFailureBlocks(out, blocks, "  ", 5)
 }

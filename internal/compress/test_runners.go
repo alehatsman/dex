@@ -5,6 +5,82 @@ import (
 	"strings"
 )
 
+// ── shared failure-diagnostic retention (#455) ────────────────────────────────
+//
+// Test/lint compressors keep the summary count and the failure HEADER line but
+// historically dropped the indented detail that follows (assertion diff,
+// expected/actual, traceback) — the part that says *why* it failed. collectFailures
+// is the one shared collector: once isHeader matches a line, it RETAINS the
+// subsequent detail lines (indented, or `E `/`>`-prefixed) up to perFailureBudget,
+// until the next test boundary (the next header, or a non-detail flush line).
+
+// failureBlock is one failure: its header plus the retained detail lines.
+type failureBlock struct {
+	header string
+	detail []string
+}
+
+// isIndentedDetail reports whether l is a continuation/detail line: leading
+// whitespace, or the pytest-style `E `/`>` assertion markers at column 0. This
+// is the common detail rule (indented diff/traceback) — runners whose detail is
+// flush-left (e.g. minitest) pass their own predicate to collectFailures.
+func isIndentedDetail(l string) bool {
+	if l == "" {
+		return false
+	}
+	if l[0] == ' ' || l[0] == '\t' {
+		return true
+	}
+	// `E ` (error) and `> ` (failing source) markers sit at column 0.
+	return rePytestDetail.MatchString(l)
+}
+
+// collectFailures scans lines and returns one failureBlock per failure header
+// (matched by isHeader, on the trimmed line). For each header it retains up to
+// perFailureBudget following detail lines (per isDetail, on the RAW line); the
+// boundary is a blank line, the next header, or any non-detail line. Headers are
+// stored trimmed; detail keeps original indentation so the diff/traceback shape
+// survives. A nil isDetail uses isIndentedDetail.
+func collectFailures(lines []string, isHeader func(string) bool, isDetail func(string) bool, perFailureBudget int) []failureBlock {
+	if isDetail == nil {
+		isDetail = isIndentedDetail
+	}
+	var blocks []failureBlock
+	cur := -1
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		switch {
+		case isHeader(t):
+			blocks = append(blocks, failureBlock{header: t})
+			cur = len(blocks) - 1
+		case cur >= 0 && t != "" && isDetail(l):
+			if len(blocks[cur].detail) < perFailureBudget {
+				blocks[cur].detail = append(blocks[cur].detail, l)
+			}
+		default:
+			// Blank or non-detail line ends the current failure block.
+			cur = -1
+		}
+	}
+	return blocks
+}
+
+// appendFailureBlocks renders up to maxFailures blocks onto out: header prefixed
+// with headerPrefix, detail lines indented under it. Returns the extended slice.
+func appendFailureBlocks(out []string, blocks []failureBlock, headerPrefix string, maxFailures int) []string {
+	for i, b := range blocks {
+		if i >= maxFailures {
+			out = append(out, fmt.Sprintf("  … +%d more", len(blocks)-maxFailures))
+			break
+		}
+		out = append(out, headerPrefix+b.header)
+		for _, d := range b.detail {
+			out = append(out, "  "+strings.TrimRight(d, " \t"))
+		}
+	}
+	return out
+}
+
 // ── pytest / jest / vitest ────────────────────────────────────────────────────
 
 var (

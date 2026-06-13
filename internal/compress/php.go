@@ -145,9 +145,15 @@ func CompressArtisanMigrateStatus(lines []string) []string {
 	return out
 }
 
+// isArtisanFailHeader reports whether a (trimmed) line is a PHPUnit/Pest failure
+// header. The indented assertion message + `--- Expected/+++ Actual` diff +
+// `at file:line` that follow are retained as detail (#455).
+func isArtisanFailHeader(t string) bool {
+	return strings.HasPrefix(t, "FAIL") || strings.HasPrefix(t, "✕") || strings.HasPrefix(t, "×")
+}
+
 func CompressArtisanTest(lines []string) []string {
 	var passed, failed int
-	var failures []string
 	var timeStr string
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
@@ -165,13 +171,11 @@ func CompressArtisanTest(lines []string) []string {
 				failed = ParseInt(m[2])
 			}
 		}
-		if strings.HasPrefix(t, "FAIL") || strings.HasPrefix(t, "✕") || strings.HasPrefix(t, "×") {
-			failures = append(failures, t)
-		}
 		if strings.Contains(t, "Time:") || strings.Contains(t, "Duration:") {
 			timeStr = t
 		}
 	}
+	blocks := collectFailures(lines, isArtisanFailHeader, nil, 12)
 	status := "ok"
 	if failed > 0 {
 		status = "FAIL"
@@ -180,14 +184,7 @@ func CompressArtisanTest(lines []string) []string {
 	if timeStr != "" {
 		result += fmt.Sprintf(" (%s)", strings.TrimSpace(timeStr))
 	}
-	out := []string{result}
-	for i, f := range failures {
-		if i >= 10 {
-			break
-		}
-		out = append(out, "  "+f)
-	}
-	return out
+	return appendFailureBlocks([]string{result}, blocks, "  ", 10)
 }
 
 func CompressArtisanRoutes(lines []string) []string {

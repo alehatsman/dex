@@ -23,9 +23,16 @@ func CompressSwiftBuild(cmd string, lines []string) []string {
 	return CompactLines(lines, 15)
 }
 
+// reSwiftDiag matches an XCTest/swift-testing diagnostic — the line that says
+// *why* a test failed. XCTest prints `file:line: error: … : XCTAssertEqual failed: …`
+// (immediately BEFORE the `Test Case … failed` line); swift-testing prints
+// `✘`/`recorded an issue`/`Expectation failed`. These carry the reason.
+var reSwiftDiag = &lazyRe{pattern: `:\s*error:|recorded an issue|Expectation failed|XCTAssert\w* failed`}
+
 func CompressSwiftTest(lines []string) []string {
 	var passed, failed int
 	var failures []string
+	var diagnostics []string
 	var timeStr string
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
@@ -34,6 +41,11 @@ func CompressSwiftTest(lines []string) []string {
 		} else if strings.Contains(t, "Test Case") && strings.Contains(t, "failed") {
 			failed++
 			failures = append(failures, t)
+		}
+		// Retain the diagnostic reason line (#455). XCTest prints it before the
+		// `failed` summary line, so collect it independently of the test boundary.
+		if reSwiftDiag.MatchString(t) {
+			diagnostics = append(diagnostics, t)
 		}
 		if strings.HasPrefix(t, "Test Suite") && strings.Contains(t, "Executed") {
 			timeStr = t
@@ -60,6 +72,13 @@ func CompressSwiftTest(lines []string) []string {
 			break
 		}
 		out = append(out, "  FAIL: "+f)
+	}
+	for i, d := range diagnostics {
+		if i >= 10 {
+			out = append(out, fmt.Sprintf("  … +%d more", len(diagnostics)-10))
+			break
+		}
+		out = append(out, "  "+d)
 	}
 	return out
 }

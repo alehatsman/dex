@@ -151,7 +151,11 @@ func CompressRuff(cmd string, lines []string) []string {
 // ── mypy ──────────────────────────────────────────────────────────────────────
 
 var (
-	reMypy        = &lazyRe{pattern: `^([^:]+):(\d+): (error|note|warning): (.+?) \[([^\]]+)\]$`}
+	// Trailing `[error-code]` is OPTIONAL: mypy run without --show-error-codes
+	// emits `file:line: error: msg` with no bracketed code (#455). note/warning
+	// lines carry the "why" (e.g. the revealed type, the missing-stub hint) and
+	// are retained too — not just errors.
+	reMypy        = &lazyRe{pattern: `^([^:]+):(\d+): (error|note|warning): (.+?)(?: \[([^\]]+)\])?$`}
 	reMypySummary = &lazyRe{pattern: `^Found \d+ error`}
 	reMypySuccess = &lazyRe{pattern: `^Success: no issues`}
 )
@@ -164,29 +168,43 @@ func CompressMypy(lines []string) []string {
 	}
 	type mypyIssue struct {
 		file string
+		kind string
 		code string
 		msg  string
 	}
-	var errors []mypyIssue
+	var issues []mypyIssue
+	var errCount int
 	var summaryLine string
 	for _, l := range lines {
-		if m := reMypy.FindStringSubmatch(l); m != nil && m[3] == "error" {
-			errors = append(errors, mypyIssue{file: m[1], code: m[5], msg: m[4]})
+		if m := reMypy.FindStringSubmatch(l); m != nil {
+			issues = append(issues, mypyIssue{file: m[1], kind: m[3], code: m[5], msg: m[4]})
+			if m[3] == "error" {
+				errCount++
+			}
 		}
 		if reMypySummary.MatchString(l) {
 			summaryLine = strings.TrimSpace(l)
 		}
 	}
-	if len(errors) == 0 && summaryLine == "" {
+	if len(issues) == 0 && summaryLine == "" {
 		return lines
 	}
+	if summaryLine == "" {
+		summaryLine = fmt.Sprintf("Found %d errors", errCount)
+	}
 	out := []string{summaryLine}
-	for i, e := range errors {
-		if i >= 10 {
-			out = append(out, fmt.Sprintf("  … +%d more", len(errors)-10))
+	for i, e := range issues {
+		if i >= 15 {
+			out = append(out, fmt.Sprintf("  … +%d more", len(issues)-15))
 			break
 		}
-		out = append(out, fmt.Sprintf("  %s [%s]: %s", e.file, e.code, e.msg))
+		// Render the diagnostic itself — file, kind, optional code, message —
+		// so the reason survives, not just the count.
+		loc := e.file
+		if e.code != "" {
+			loc += " [" + e.code + "]"
+		}
+		out = append(out, fmt.Sprintf("  %s %s: %s", loc, e.kind, e.msg))
 	}
 	return out
 }
