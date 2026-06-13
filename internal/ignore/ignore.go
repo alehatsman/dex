@@ -84,11 +84,18 @@ var DefaultPatterns = []string{
 	"venv/",
 	".tox/",
 	"__pycache__/",
-	"target/",
-	"dist/",
-	"build/",
-	".next/",
-	".cache/",
+	// Generic English-word build-output dirs are root-anchored (leading
+	// slash): they live at the repo root by convention, and an unanchored
+	// pattern would also match any-depth source packages that happen to
+	// share the name — internal/build/, pkg/dist/, cmd/target/ — silently
+	// dropping real source from the index (#457). Tool-specific dirs above
+	// (node_modules/, __pycache__/, …) stay unanchored on purpose: nested
+	// copies are always junk and should be excluded at any depth.
+	"/target/",
+	"/dist/",
+	"/build/",
+	"/.next/",
+	"/.cache/",
 	".git/",
 	".hg/",
 	".svn/",
@@ -107,9 +114,9 @@ var DefaultPatterns = []string{
 	"package-lock.json", // npm lockfile (.json, slips past *.lock)
 	"npm-shrinkwrap.json",
 	"pnpm-lock.yaml", // pnpm lockfile (.yaml, slips past *.lock)
-	"coverage/",      // test-coverage output
+	"/coverage/",     // test-coverage output (root-anchored, see #457 note above)
 	".nyc_output/",
-	"htmlcov/",
+	"/htmlcov/",
 	"__snapshots__/", // jest/vitest snapshot fixtures
 	// License / legal-text files. They index successfully but their
 	// uniform legalese gives the embedder something to latch onto for

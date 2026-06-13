@@ -82,6 +82,51 @@ func TestDefaultsIgnoreVendorDirs(t *testing.T) {
 	}
 }
 
+func TestDefaultBuildPatternsAnchoredToRoot(t *testing.T) {
+	// Generic-word build-output dirs must be ignored at the repo root but
+	// NOT at any depth — a source package named build/ dist/ target/ etc.
+	// must stay indexable (#457). Tool-specific dirs (node_modules, vendor)
+	// stay unanchored and are excluded wherever they appear.
+	root := t.TempDir()
+	writeConfig(t, root, "index:\n  include: [\"*\"]\n")
+	m, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		path    string
+		isDir   bool
+		ignored bool
+	}{
+		// root-level build outputs: still ignored
+		{"build", true, true},
+		{"dist", true, true},
+		{"target", true, true},
+		{"coverage", true, true},
+		{"htmlcov", true, true},
+		{".next", true, true},
+		{".cache", true, true},
+		{"build/out.o", false, true},
+		{"target/release/app", false, true},
+		// same names nested as source packages: must be indexed now
+		{"internal/build", true, false},
+		{"internal/build/server.go", false, false},
+		{"pkg/dist/client.go", false, false},
+		{"cmd/target/main.go", false, false},
+		{"src/coverage/report.go", false, false},
+		{"app/htmlcov/render.go", false, false},
+		// tool-specific dirs stay unanchored: excluded at any depth
+		{"pkg/node_modules/foo.js", false, true},
+		{"app/vendor/lib/util.go", false, true},
+		{"svc/__pycache__/mod.py", false, true},
+	}
+	for _, c := range cases {
+		if got := m.Match(c.path, c.isDir); got != c.ignored {
+			t.Errorf("Match(%q, isDir=%v) = %v, want %v", c.path, c.isDir, got, c.ignored)
+		}
+	}
+}
+
 func TestGitignoreAndMcsearchIgnore(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"),
