@@ -79,7 +79,7 @@ func TestGenerateUnreachable(t *testing.T) {
 
 func TestGenerateServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "model overloaded", 503)
+		http.Error(w, "model overloaded", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
 	c := New(srv.URL, "fake", 2*time.Second)

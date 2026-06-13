@@ -101,7 +101,7 @@ func TestEmbedUnreachable(t *testing.T) {
 
 func TestEmbedServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "model overloaded", 503)
+		http.Error(w, "model overloaded", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
 	c := New(srv.URL, "fake", 4, 2*time.Second)

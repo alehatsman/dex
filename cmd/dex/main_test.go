@@ -1,36 +1,11 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
-	"encoding/json"
-	"math"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/alehatsman/dex/internal/rerank"
 )
-
-// writeIndexAll opts the temp project into indexing everything. Indexing
-// is opt-in (.dex/config.yml index.include); without an include list
-// the matcher skips every file, so these indexer-driven tests would see
-// an empty index. Mirrors the include = ["*"] escape used in the ignore
-// tests.
-func writeIndexAll(t *testing.T, dir string) {
-	t.Helper()
-	cfgDir := filepath.Join(dir, ".dex")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"),
-		[]byte("index:\n  include: [\"*\"]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestNewRerankClientNilWhenURLEmpty(t *testing.T) {
 	t.Setenv("DEX_RERANK_URL", "")
@@ -183,46 +158,3 @@ func TestEnvBool(t *testing.T) {
 		}
 	}
 }
-
-// fakeEmbedServer mirrors the helper in internal/index/*_test.go so the
-// cmd-level test can build an Indexer end-to-end without depending on
-// a real embedding endpoint.
-func fakeEmbedServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Model string   `json:"model"`
-			Input []string `json:"input"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		type item struct {
-			Embedding []float32 `json:"embedding"`
-			Index     int       `json:"index"`
-		}
-		out := struct {
-			Data  []item `json:"data"`
-			Model string `json:"model"`
-		}{Model: body.Model}
-		for i, s := range body.Input {
-			out.Data = append(out.Data, item{Index: i, Embedding: hashVec(s, 8)})
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(out)
-	}))
-}
-
-func hashVec(s string, dim int) []float32 {
-	out := make([]float32, dim)
-	h := sha256.Sum256([]byte(s))
-	for i := range dim {
-		u := binary.LittleEndian.Uint32(h[(i*4)%len(h):])
-		out[i] = float32(int32(u)) / float32(math.MaxInt32)
-	}
-	return out
-}
-
-// TestIdleSummaryDrainerEndToEnd queues a few rows via a defer-mode
-// index, then drives newIdleSummaryDrainer's callback until it
-
-// TestIdleSummaryDrainerReArmsOnNoProgress simulates a failing chat
-// endpoint: every drain attempt fails so the queue depth doesn't move.

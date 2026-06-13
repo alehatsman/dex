@@ -822,9 +822,7 @@ func rustPackagePath(relPath string) string {
 	if p == "lib" || p == "main" {
 		return p
 	}
-	if strings.HasSuffix(p, "/mod") {
-		p = strings.TrimSuffix(p, "/mod")
-	}
+	p = strings.TrimSuffix(p, "/mod")
 	return strings.ReplaceAll(p, "/", "::")
 }
 

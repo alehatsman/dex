@@ -801,9 +801,7 @@ func pythonPackagePath(relPath string) string {
 	if p == "__init__" {
 		return ""
 	}
-	if strings.HasSuffix(p, "/__init__") {
-		p = strings.TrimSuffix(p, "/__init__")
-	}
+	p = strings.TrimSuffix(p, "/__init__")
 	return strings.ReplaceAll(p, "/", ".")
 }
 
