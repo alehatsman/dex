@@ -289,7 +289,11 @@ func hookRewrite() error {
 		fmt.Print(hookAllow)
 		return nil
 	}
-	rewrittenJSON, _ := json.Marshal(rewritten)
+	rewrittenJSON, err := json.Marshal(rewritten)
+	if err != nil {
+		fmt.Print(hookAllow)
+		return nil
+	}
 	inputMap["command"] = rewrittenJSON
 
 	out := map[string]any{
@@ -615,7 +619,7 @@ func hookObserve() error {
 	ev := event{TS: time.Now().Unix()}
 
 	if raw, ok := v["tool_name"]; ok {
-		json.Unmarshal(raw, &ev.ToolName) //nolint:errcheck
+		_ = json.Unmarshal(raw, &ev.ToolName)
 	}
 	if raw, ok := v["tool_input"]; ok {
 		ev.Tokens = len(raw) / 4 // rough 4-bytes-per-token estimate
