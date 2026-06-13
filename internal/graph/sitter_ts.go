@@ -27,6 +27,8 @@ package graph
 // works naturally for upper-case identifiers; lower-case JSX is
 // HTML), type-only imports, decorators, and generics. Same trade
 // as Python — best-effort by name; precision is the LSP lane.
+//
+// Shared state and methods live in jstsBase (sitter_jsts.go).
 
 import (
 	"context"
@@ -41,38 +43,17 @@ import (
 func init() { Register(newTSExtractor) }
 
 func newTSExtractor() Extractor {
-	return &tsExtractor{
+	return &tsExtractor{jstsBase: jstsBase{
+		lang:        "typescript",
 		nodeIDs:     map[string]struct{}{},
 		symbols:     map[string]map[string]string{},
 		fileImports: map[string]*tsImportTable{},
 		knownFiles:  map[string]string{},
-	}
+	}}
 }
 
 type tsExtractor struct {
-	projectRoot string
-
-	nodes []Node
-	edges []Edge
-
-	nodeIDs map[string]struct{}
-	// symbols: packagePath → name → nodeID. "default" is reserved for
-	// the file's default export.
-	symbols map[string]map[string]string
-
-	// fileImports keyed by file relpath (slash form).
-	fileImports map[string]*tsImportTable
-
-	// knownFiles: source packagePath → first observed file relpath.
-	// Used by resolveModuleSpecifier to choose between `foo.ts`,
-	// `foo.tsx`, `foo/index.ts` after both directory and file forms
-	// resolve to the same packagePath. Don't need the value beyond
-	// presence; the map doubles as the existence set.
-	knownFiles map[string]string
-
-	pendingCalls []tsPendingCall
-
-	warnings []string
+	jstsBase
 }
 
 // tsImportTable per-file: each local binding maps to either an
@@ -108,11 +89,6 @@ type tsPendingCall struct {
 func (e *tsExtractor) Name() string               { return "typescript" }
 func (e *tsExtractor) Language() *sitter.Language { return typescript.GetLanguage() }
 func (e *tsExtractor) Extensions() []string       { return []string{".ts", ".tsx"} }
-
-func (e *tsExtractor) Init(_ context.Context, root string) error {
-	e.projectRoot = root
-	return nil
-}
 
 func (e *tsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	pkg := tsPackagePath(in.RelPath)
@@ -162,42 +138,6 @@ func (e *tsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	return nil
 }
 
-func (e *tsExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, error) {
-	// Module specifiers were captured as raw strings during the walk;
-	// resolve them now that knownFiles is complete (a forward
-	// reference would otherwise miss because of walk order).
-	for _, imp := range e.fileImports {
-		for local, target := range imp.modules {
-			if local == "__from__" {
-				continue
-			}
-			imp.modules[local] = e.resolveModuleSpecifier(target, imp.modules["__from__"])
-		}
-		for local, fi := range imp.fromImports {
-			fi.pkg = e.resolveModuleSpecifier(fi.pkg, imp.modules["__from__"])
-			imp.fromImports[local] = fi
-		}
-		delete(imp.modules, "__from__")
-	}
-
-	for _, c := range e.pendingCalls {
-		dst := e.resolveCall(c)
-		if dst == "" {
-			continue
-		}
-		e.edges = append(e.edges, Edge{
-			ID:        EdgeID(c.callerID, EdgeCalls, dst, c.filePath, c.line),
-			Kind:      EdgeCalls,
-			SrcID:     c.callerID,
-			DstID:     dst,
-			FilePath:  c.filePath,
-			StartLine: c.line,
-			EndLine:   c.line,
-		})
-	}
-	return e.nodes, e.edges, e.warnings, nil
-}
-
 // ---- top-level processing --------------------------------------------------
 
 // processTopLevel handles one direct child of the module root.
@@ -239,140 +179,8 @@ func (e *tsExtractor) processTopLevel(
 	}
 }
 
-// addFunction registers a top-level function OR a class method.
-// Container symmetry with the Python extractor: when className is
-// non-empty the node gets `has_method` from the class.
-func (e *tsExtractor) addFunction(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID, className string,
-) {
-	nameNode := n.ChildByFieldName("name")
-	if nameNode == nil {
-		return
-	}
-	name := nodeText(nameNode, src)
-	if name == "" {
-		return
-	}
-	kind := NodeFunction
-	qn := name
-	if className != "" {
-		kind = NodeMethod
-		qn = className + "." + name
-	}
-	id := NodeID("", pkg, kind, qn)
-	startLine := lineOfPoint(n.StartPoint().Row)
-	endLine := lineOfPoint(n.EndPoint().Row)
-	meta := map[string]any{"language": "typescript"}
-	if className != "" {
-		meta["receiver"] = className
-	}
-	if e.addNode(Node{
-		ID:            id,
-		Kind:          kind,
-		Name:          name,
-		QualifiedName: qn,
-		PackagePath:   pkg,
-		FilePath:      filePath,
-		StartLine:     startLine,
-		EndLine:       endLine,
-		Metadata:      meta,
-	}) {
-		e.symbols[pkg] = ensureMap(e.symbols[pkg])
-		e.symbols[pkg][qn] = id
-		if className == "" {
-			e.symbols[pkg][name] = id
-		}
-	}
-	e.edges = append(e.edges, Edge{
-		ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
-		Kind:      EdgeContains,
-		SrcID:     fileID,
-		DstID:     id,
-		FilePath:  filePath,
-		StartLine: startLine,
-		EndLine:   endLine,
-	})
-	if className != "" {
-		clsID := NodeID("", pkg, NodeClass, className)
-		e.edges = append(e.edges, Edge{
-			ID:        EdgeID(clsID, EdgeHasMethod, id, filePath, startLine),
-			Kind:      EdgeHasMethod,
-			SrcID:     clsID,
-			DstID:     id,
-			FilePath:  filePath,
-			StartLine: startLine,
-			EndLine:   endLine,
-		})
-	}
-	if body := n.ChildByFieldName("body"); body != nil {
-		e.collectCalls(body, src, id, pkg, className, filePath)
-	}
-}
+// ---- TS-specific declarations ---------------------------------------------
 
-// addClass: class + recurse into class_body for methods. Nested
-// classes are treated as top-level; their QN doesn't include the
-// outer class (matches Python's first-cut).
-func (e *tsExtractor) addClass(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	nameNode := n.ChildByFieldName("name")
-	if nameNode == nil {
-		return
-	}
-	name := nodeText(nameNode, src)
-	if name == "" {
-		return
-	}
-	id := NodeID("", pkg, NodeClass, name)
-	startLine := lineOfPoint(n.StartPoint().Row)
-	endLine := lineOfPoint(n.EndPoint().Row)
-	if e.addNode(Node{
-		ID:            id,
-		Kind:          NodeClass,
-		Name:          name,
-		QualifiedName: name,
-		PackagePath:   pkg,
-		FilePath:      filePath,
-		StartLine:     startLine,
-		EndLine:       endLine,
-		Metadata:      map[string]any{"language": "typescript"},
-	}) {
-		e.symbols[pkg] = ensureMap(e.symbols[pkg])
-		e.symbols[pkg][name] = id
-	}
-	e.edges = append(e.edges, Edge{
-		ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
-		Kind:      EdgeContains,
-		SrcID:     fileID,
-		DstID:     id,
-		FilePath:  filePath,
-		StartLine: startLine,
-		EndLine:   endLine,
-	})
-
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil {
-			continue
-		}
-		switch child.Type() {
-		case "method_definition":
-			e.addFunction(child, src, filePath, pkg, fileID, name)
-		case "class_declaration":
-			e.addClass(child, src, filePath, pkg, fileID)
-		}
-	}
-}
-
-// addInterface: emit a NodeInterface (Go's existing kind) with body
-// methods walked just like a class but tagged on_interface in
-// metadata so consumers can tell them apart.
 func (e *tsExtractor) addInterface(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID string,
@@ -411,104 +219,6 @@ func (e *tsExtractor) addInterface(
 		StartLine: startLine,
 		EndLine:   endLine,
 	})
-}
-
-// addLexicalDecl handles `const foo = () => {}` and `const foo =
-// function(){}`. Other const forms (object/string literals) are
-// ignored — they're not callable in a graph-meaningful way. Multiple
-// declarators in one statement (`const a=…, b=…`) each emit their
-// own node.
-func (e *tsExtractor) addLexicalDecl(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	for i := 0; i < int(n.NamedChildCount()); i++ {
-		child := n.NamedChild(i)
-		if child == nil || child.Type() != "variable_declarator" {
-			continue
-		}
-		nameNode := child.ChildByFieldName("name")
-		valueNode := child.ChildByFieldName("value")
-		if nameNode == nil || valueNode == nil {
-			continue
-		}
-		name := nodeText(nameNode, src)
-		if name == "" {
-			continue
-		}
-		// Only function-like values become function nodes. Anything
-		// else (literals, calls, refs) gets skipped — they're not
-		// callable targets from elsewhere.
-		switch valueNode.Type() {
-		case "arrow_function", "function", "function_expression":
-		default:
-			continue
-		}
-		id := NodeID("", pkg, NodeFunction, name)
-		startLine := lineOfPoint(n.StartPoint().Row)
-		endLine := lineOfPoint(n.EndPoint().Row)
-		if e.addNode(Node{
-			ID:            id,
-			Kind:          NodeFunction,
-			Name:          name,
-			QualifiedName: name,
-			PackagePath:   pkg,
-			FilePath:      filePath,
-			StartLine:     startLine,
-			EndLine:       endLine,
-			Metadata:      map[string]any{"language": "typescript", "form": "arrow"},
-		}) {
-			e.symbols[pkg] = ensureMap(e.symbols[pkg])
-			e.symbols[pkg][name] = id
-		}
-		e.edges = append(e.edges, Edge{
-			ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
-			Kind:      EdgeContains,
-			SrcID:     fileID,
-			DstID:     id,
-			FilePath:  filePath,
-			StartLine: startLine,
-			EndLine:   endLine,
-		})
-		if body := valueNode.ChildByFieldName("body"); body != nil {
-			e.collectCalls(body, src, id, pkg, "", filePath)
-		}
-	}
-}
-
-// maybeMarkDefaultExport sets symbols[pkg]["default"] to the node ID
-// of the just-emitted declaration when the wrapping export_statement
-// declared it as the default. The declaration may be anonymous
-// (`export default function(){}`), in which case there's nothing to
-// alias — handled by trying for the most-recently-emitted node in
-// the package's symbol table.
-func (e *tsExtractor) maybeMarkDefaultExport(decl *sitter.Node, src []byte, pkg string) {
-	// We only get here from an export_statement, but it may or may
-	// not be `default`. Tree-sitter exposes the `default` keyword as
-	// an anonymous child; check by source.
-	parent := decl.Parent()
-	if parent == nil || parent.Type() != "export_statement" {
-		return
-	}
-	hasDefault := false
-	for i := 0; i < int(parent.ChildCount()); i++ {
-		c := parent.Child(i)
-		if c != nil && c.Type() == "default" {
-			hasDefault = true
-			break
-		}
-	}
-	if !hasDefault {
-		return
-	}
-	// Find the name of the just-emitted decl, if any, and alias it.
-	if nameNode := decl.ChildByFieldName("name"); nameNode != nil {
-		name := nodeText(nameNode, src)
-		if id := e.symbolIn(pkg, name); id != "" {
-			e.symbols[pkg] = ensureMap(e.symbols[pkg])
-			e.symbols[pkg]["default"] = id
-		}
-	}
 }
 
 // ---- import parsing --------------------------------------------------------
@@ -591,118 +301,7 @@ func (e *tsExtractor) parseImportStatement(
 	})
 }
 
-// processImportClause walks an import_clause and seeds the import
-// table with each binding. specifier is the raw "./foo" form — it's
-// stored as-is and rewritten to a packagePath in Finalize.
-func (e *tsExtractor) processImportClause(
-	clause *sitter.Node, src []byte,
-	specifier string, imports *tsImportTable,
-) {
-	for i := 0; i < int(clause.NamedChildCount()); i++ {
-		child := clause.NamedChild(i)
-		if child == nil {
-			continue
-		}
-		switch child.Type() {
-		case "identifier":
-			// Default import: `import Foo from "./p"`.
-			local := nodeText(child, src)
-			if local != "" {
-				imports.fromImports[local] = pyFromImport{pkg: specifier, name: "default"}
-			}
-		case "namespace_import":
-			// `import * as X from "./p"` — X is bound to the module.
-			aliasNode := child.ChildByFieldName("alias")
-			if aliasNode == nil {
-				// Older grammars expose it as the last child.
-				aliasNode = lastNamedChild(child)
-			}
-			if aliasNode != nil {
-				if local := nodeText(aliasNode, src); local != "" {
-					imports.modules[local] = specifier
-				}
-			}
-		case "named_imports":
-			for j := 0; j < int(child.NamedChildCount()); j++ {
-				spec := child.NamedChild(j)
-				if spec == nil || spec.Type() != "import_specifier" {
-					continue
-				}
-				nameNode := spec.ChildByFieldName("name")
-				aliasNode := spec.ChildByFieldName("alias")
-				if nameNode == nil {
-					continue
-				}
-				original := nodeText(nameNode, src)
-				local := original
-				if aliasNode != nil {
-					local = nodeText(aliasNode, src)
-				}
-				if original == "" || local == "" {
-					continue
-				}
-				imports.fromImports[local] = pyFromImport{pkg: specifier, name: original}
-			}
-		}
-	}
-}
-
-// ---- call collection + resolution ------------------------------------------
-
-// collectCalls walks `body` for call_expression and new_expression,
-// stopping descent at nested function/class definitions. Same
-// approach as the Python extractor.
-func (e *tsExtractor) collectCalls(
-	body *sitter.Node, src []byte,
-	callerID, callerPkg, callerCls, filePath string,
-) {
-	var walk func(*sitter.Node)
-	walk = func(n *sitter.Node) {
-		if n == nil {
-			return
-		}
-		switch n.Type() {
-		case "function_declaration", "class_declaration",
-			"arrow_function", "function", "function_expression",
-			"method_definition":
-			return
-		case "call_expression":
-			fn := n.ChildByFieldName("function")
-			if fn != nil {
-				expr := classifyTSCallee(fn, src)
-				if expr.kind != "skip" {
-					e.pendingCalls = append(e.pendingCalls, tsPendingCall{
-						callerID:   callerID,
-						callerPkg:  callerPkg,
-						callerCls:  callerCls,
-						calleeExpr: expr,
-						filePath:   filePath,
-						line:       lineOfPoint(n.StartPoint().Row),
-					})
-				}
-			}
-		case "new_expression":
-			ctor := n.ChildByFieldName("constructor")
-			if ctor != nil {
-				expr := classifyTSCallee(ctor, src)
-				if expr.kind != "skip" {
-					e.pendingCalls = append(e.pendingCalls, tsPendingCall{
-						callerID:   callerID,
-						callerPkg:  callerPkg,
-						callerCls:  callerCls,
-						calleeExpr: expr,
-						filePath:   filePath,
-						line:       lineOfPoint(n.StartPoint().Row),
-					})
-				}
-			}
-		}
-		for i := 0; i < int(n.NamedChildCount()); i++ {
-			walk(n.NamedChild(i))
-		}
-	}
-	walk(body)
-}
+// ---- helpers ---------------------------------------------------------------
 
 // classifyTSCallee mirrors classifyCallee for Python. `this` is the
 // TS analogue of `self`; flattening member_expression chains gives us
@@ -752,118 +351,6 @@ func flattenTSMember(n *sitter.Node, src []byte) []string {
 		return nil
 	}
 	return out
-}
-
-func (e *tsExtractor) resolveCall(c tsPendingCall) string {
-	switch c.calleeExpr.kind {
-	case "bare":
-		name := c.calleeExpr.parts[0]
-		if id := e.symbolIn(c.callerPkg, name); id != "" {
-			return id
-		}
-		imports := e.fileImports[c.filePath]
-		if imports == nil {
-			return ""
-		}
-		if fi, ok := imports.fromImports[name]; ok {
-			return e.symbolIn(fi.pkg, fi.name)
-		}
-		return ""
-
-	case "self":
-		if c.callerCls == "" || len(c.calleeExpr.parts) < 2 {
-			return ""
-		}
-		methodName := c.calleeExpr.parts[1]
-		return e.symbolIn(c.callerPkg, c.callerCls+"."+methodName)
-
-	case "attr":
-		imports := e.fileImports[c.filePath]
-		if imports == nil {
-			return ""
-		}
-		head := c.calleeExpr.parts[0]
-		tail := c.calleeExpr.parts[1:]
-		if len(tail) == 0 {
-			return ""
-		}
-		if mod, ok := imports.modules[head]; ok {
-			// `import * as X from "./p"` — X.f() resolves to symbol
-			// f in package mod. Deeper chains (X.a.b) aren't first-cut.
-			if len(tail) != 1 {
-				return ""
-			}
-			return e.symbolIn(mod, tail[0])
-		}
-		if fi, ok := imports.fromImports[head]; ok {
-			if len(tail) == 1 {
-				// `Foo.method` where Foo was imported as a class
-				// from another module.
-				return e.symbolIn(fi.pkg, fi.name+"."+tail[0])
-			}
-			return ""
-		}
-		return ""
-	}
-	return ""
-}
-
-func (e *tsExtractor) symbolIn(pkg, name string) string {
-	bucket := e.symbols[pkg]
-	if bucket == nil {
-		return ""
-	}
-	return bucket[name]
-}
-
-// ---- module-specifier resolution -------------------------------------------
-
-// resolveModuleSpecifier turns a raw specifier (./foo, ../bar/baz,
-// react) into the packagePath of the file it refers to, or returns
-// the original string when the specifier doesn't resolve to a known
-// project file (external package, missing file, etc.). External
-// packages effectively become opaque — they show up as imports but
-// resolveCall ignores them because the package has no symbol bucket.
-//
-// fromFile is the relpath of the importing file (slash form) — used
-// only when specifier is relative.
-func (e *tsExtractor) resolveModuleSpecifier(specifier, fromFile string) string {
-	if specifier == "" {
-		return ""
-	}
-	if !strings.HasPrefix(specifier, ".") {
-		// Non-relative — could be a tsconfig path alias or an npm
-		// package. We don't model either; leave the raw value so the
-		// import edge still names something useful, but no symbol
-		// lookup will match.
-		return specifier
-	}
-	if fromFile == "" {
-		return specifier
-	}
-	base := path.Dir(filepath.ToSlash(fromFile))
-	joined := path.Clean(path.Join(base, specifier))
-	// knownFiles is keyed on packagePath (extension already stripped),
-	// so a single lookup of "joined" matches `./foo` → `foo.ts`/`foo.tsx`
-	// alike; "joined/index" matches `./foo` → directory `foo/index.ts(x)`.
-	if _, ok := e.knownFiles[joined]; ok {
-		return joined
-	}
-	if _, ok := e.knownFiles[joined+"/index"]; ok {
-		return joined + "/index"
-	}
-	return specifier
-}
-
-// ---- helpers ---------------------------------------------------------------
-
-func (e *tsExtractor) addNode(n Node) bool {
-	if _, ok := e.nodeIDs[n.ID]; ok {
-		return false
-	}
-	e.nodeIDs[n.ID] = struct{}{}
-	e.nodes = append(e.nodes, n)
-	return true
 }
 
 // tsPackagePath strips the extension from a .ts/.tsx file path. The
