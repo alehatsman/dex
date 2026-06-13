@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -138,6 +139,33 @@ func TestRerankServerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "400") {
 		t.Errorf("error should mention status code: %v", err)
+	}
+}
+
+// TestRerankServiceUnavailableIsUnreachable guards #445: a 5xx from the
+// reranker is a reachability-shaped outage, not a config bug. It must map to
+// ErrUnreachable so the breaker counts it and store.Search degrades to fused
+// (pre-rerank) order instead of failing the whole query. The
+// ErrUnreachable → fused-order degradation itself is locked by
+// store_rerank_test.go; this test guards the classification that feeds it.
+func TestRerankServiceUnavailableIsUnreachable(t *testing.T) {
+	for _, code := range []int{http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusTooManyRequests} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte("backend overloaded"))
+		}))
+		c := New(srv.URL, "test", 5*time.Second)
+		_, err := c.Rerank(context.Background(), "q", []string{"a"})
+		srv.Close()
+		if err == nil {
+			t.Fatalf("status %d: expected error", code)
+		}
+		if !errors.Is(err, ErrUnreachable) {
+			t.Errorf("status %d: expected ErrUnreachable (graceful degradation), got %v", code, err)
+		}
+		if !strings.Contains(err.Error(), fmt.Sprint(code)) {
+			t.Errorf("status %d: error should mention status code: %v", code, err)
+		}
 	}
 }
 
