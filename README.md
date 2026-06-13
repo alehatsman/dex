@@ -1,194 +1,79 @@
 # dex
 
-Local semantic code intel for AI agents. Indexes a repo over MCP: tree-sitter
-chunks → SQLite (BM25 full-text + symbol table + call graph, type-resolved for
-Go; AST-based for TypeScript, JavaScript, Python, Java, Rust). Runs with **zero
-inference stack** — no GPU, no embedding server — and adds an optional
-self-hosted embedding lane (hybrid RRF + cross-encoder rerank) when you want
-semantic search. Source never leaves your machine.
+Local semantic code search for [Claude Code](https://docs.claude.com/en/docs/claude-code)
+and the terminal. `dex` indexes a repo (chunks + embeddings + a call/import
+graph) and serves `ask` / `find` / `lookup` and graph navigation as MCP tools,
+so an agent reaches for one dex tool instead of grepping blind.
 
-```console
-$ dex find ./ "where is filesystem event debouncing handled"
-─── #1 markDirty  internal/watch/watch.go:60-71  (method_declaration)
-```
+## Install
 
-## Quick start — zero inference stack
-
-No GPU, no embedding server, nothing to pull. `DEX_EMBED_ENGINE=none` builds a
-BM25 + symbol + call-graph index and `ask` runs on those lanes:
-
-```bash
+```sh
 git clone https://github.com/alehatsman/dex.git && cd dex
-mooncake task install   # → ~/bin; safe to re-run while dex is live
-
-export DEX_EMBED_ENGINE=none          # lean: no embedder wired
-dex index ./                          # BM25 + symbols + Go call graph
-dex ask ./ "where is filesystem event debouncing handled?"
+mooncake task install        # builds with -tags sqlite_fts5 (CGO), installs ~/.local/bin/dex
 ```
 
-This lean form captures **~94% of full-stack retrieval quality at zero
-inference cost** (NDCG@10 0.539 vs 0.572 — see
-[docs/lean-profile.md](docs/lean-profile.md)). The embedding-backed tools are
-simply not advertised when no embedder is wired (#283).
+Needs Go and a C toolchain (the build links SQLite FTS5 + tree-sitter). No
+mooncake? `CGO_ENABLED=1 go install -tags sqlite_fts5 ./cmd/dex`.
 
-### Add the semantic lane (optional)
+## Backends
 
-Point dex at any OpenAI-compatible embedding endpoint (e.g. a local ollama) for
-hybrid semantic + lexical retrieval — or run the embedder in-process on CPU
-with `-tags onnx`, no GPU required ([docs/lean-profile.md](docs/lean-profile.md)):
+- **Embeddings** (semantic search): an OpenAI-compatible or ollama server —
+  defaults to `http://localhost:11434`. Override with `DEX_EMBED_URL` /
+  `DEX_EMBED_MODEL`.
+- **Chat** (optional): powers `ask` answer synthesis and `read --mode=summary`.
+  Set `DEX_CHAT_URL` / `DEX_CHAT_MODEL`; without it those degrade gracefully.
+- **No GPU?** `DEX_EMBED_ENGINE=none` runs the *lean profile*: BM25 + exact
+  symbol + call-graph lanes, zero inference required.
 
-```bash
-unset DEX_EMBED_ENGINE                 # back to the embedding lane
-export DEX_EMBED_URL=http://127.0.0.1:11434   # your OpenAI-compatible endpoint
-dex reindex ./
+## Use it with Claude Code
+
+```sh
+cd your-project
+dex setup                              # guided: checks backends, indexes, wires up MCP
 ```
 
-**Build requirements:** CGO (tree-sitter + sqlite-vec) and `-tags sqlite_fts5`
-(BM25). `mooncake task install` and `tasks.yml` pass both. Direct `go
-build`/`go install`? Add `-tags sqlite_fts5`, `CGO_ENABLED=1`, and a C
-toolchain on `PATH`.
+Or do it by hand:
 
-## The headline tool: `ask`
-
-Call `ask` before grep. One free-text question returns `semantic_hits`,
-`symbols`, `suggested_reads`, a `next_action` directive, and an `avoid` line —
-collapsing the grep → Read → "find references" loop into one round-trip.
-
-Intent is inferred from the question shape (`behavior_search` / `symbol_lookup`
-/ `callers` / `callees` / `architecture` / `package_topology` /
-`editing_context`); pass `intent` to override.
-
-Drop [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) into `CLAUDE.md`
-to route the agent here before its grep/Read reflex. The other MCP tools are
-the legs `ask` composes — call them directly only when you know which leg you
-want.
-
-## CLI reference
-
-```bash
-# query
-dex ask <path> "..."                       # primary entry point (use BEFORE grep)
-dex orient [<path>]                        # session-start L0+L1 codemap (--l0/--l1/--format); = ask("")
-dex find <path> "..."                       # hybrid top-k chunks
-dex lookup <path> <name>                    # exact identifier lookup
-dex graph neighbors <path> <file> <line>   # vector neighbours of a chunk
-dex graph deps      <path> [--file|--package]
-dex graph callers   <path> <name>          # incoming calls
-dex graph callees   <path> <name>          # outgoing calls
-dex graph links     <path> <doc>
-dex graph backlinks <path> <doc>
-dex graph tags      <path> --tag=<t>|--doc=<d>
-dex graph export    <path>
-
-# build / maintenance
-dex index <path>           # build or refresh (--graph=off|only, --dry-run)
-dex watch <path>           # fsnotify auto-reindex
-dex reindex <path>         # drop and re-embed from scratch
-dex nuke <path>            # delete the on-disk index
-dex clone <src> <dst>      # seed a worktree index from a sibling
-dex compact <path>         # cat all indexable files to stdout (--out, --max-bytes, --strip)
-
-# config / setup
-dex mcp                    # MCP server over stdio
-dex serve [--addr] [--project]  # HTTP-MCP daemon for remote clients
-dex setup                  # first-run wizard
-dex config init            # scaffold .dex/config.yml
-dex doctor                 # check endpoints, index, MCP wiring
-dex env [--all] [--doc]    # print effective DEX_* config
-dex version
-
-# Claude Code hooks (JSON on stdin)
-dex hook inject            # UserPromptSubmit → prepend ask context
-dex hook rewrite           # PreToolUse(Bash) → rewrite rg/grep to dex
-dex hook redirect          # PreToolUse(Read) → signatures view for big files
-dex hook observe           # PostToolUse/Stop → append to hooks.jsonl
+```sh
+dex index .                            # build the index (chunks + graph)
+claude mcp add --scope user dex -- dex mcp
 ```
 
-## Configuration
+`dex doctor` verifies the whole setup end-to-end. The agent then calls dex
+tools (`ask`, `find`, `read`, …) automatically.
 
-Pin config in `.dex/config.yml` (precedence: env var > file > default):
+## Verbs
 
-```yaml
-endpoints:
-  embed: http://localhost:11434   # DEX_EMBED_URL
-  chat:  http://localhost:11434   # DEX_CHAT_URL
-models:
-  embed: mxbai-embed-large        # DEX_EMBED_MODEL
-  chat:  qwen2.5-coder:14b        # DEX_CHAT_MODEL
-index:
-  include: ["cmd/", "internal/", "*.md"]  # gitignore grammar; required — no include = empty index
-  ignore:  ["testdata/"]
-env:                              # any DEX_* knob verbatim
-  DEX_EMBED_CONCURRENCY: 8
+The CLI verbs and the MCP tool names are identical. CLI form is
+`dex <verb> [path] <args…>`; `path` defaults to the current directory.
+
+| verb     | what it does                                                        |
+|----------|---------------------------------------------------------------------|
+| `ask`    | one-shot router: picks intent, fuses lanes, returns suggested reads + a cited answer |
+| `find`   | hybrid semantic top-k search                                        |
+| `lookup` | exact identifier lookup                                             |
+| `map`    | deterministic repo orientation map                                  |
+| `trace`  | call graph — `--dir callers\|callees\|path`                         |
+| `impact` | transitive caller blast-radius                                      |
+| `read`   | read a file — `--mode full` (raw, default), `signatures`, `summary` (LLM), … |
+| `grep`   | exact regex match                                                   |
+| `ls`     | file-tree listing                                                   |
+| `shell`  | run a command with compressed output                                |
+
+```sh
+dex ask "where is filesystem event debouncing handled?"
+dex find . "retry logic"
+dex trace . Run --dir callers
 ```
 
-Key env vars:
+Start with `ask` — it routes the query and tells you what to read next. Every
+verb works on the CLI. As MCP tools the everyday set is `ask find map trace
+impact read grep ls shell`; the rest (`lookup deps callers callees path diff
+clusters routes smells notes session`) is behind `DEX_EXPERT=1` to keep the
+agent's tool list small.
 
-| Variable            | Default                          | Meaning                                    |
-| ------------------- | -------------------------------- | ------------------------------------------ |
-| `DEX_EMBED_URL`     | `auto`                           | OpenAI-shape `/v1/embeddings` base URL; probes ollama at localhost:11434, falls back to `http://127.0.0.1:8082` |
-| `DEX_EMBED_MODEL`   | `auto`                           | Embedding model; auto-detects from ollama, falls back to `Qwen/Qwen3-Embedding-4B` |
-| `DEX_INDEX_DIR`     | `~/.cache/dex`                   | Per-project index files                    |
-| `DEX_CHAT_URL`      | `auto`                           | Chat completions endpoint; probes ollama, falls back to `http://127.0.0.1:8081` |
-| `DEX_CHAT_MODEL`    | `auto`                           | Chat model; auto-detects from ollama, falls back to `Qwen/Qwen2.5-Coder-7B-Instruct` |
-| `DEX_PROFILE`       | *(unset)*                        | Context profile: `claude`, `explore`, `bugfix`, `ci` |
-| `DEX_SERVE_TOKEN`   | *(unset)*                        | Bearer token for `dex serve` (env only)    |
+## Config
 
-Run `dex env --all --doc` for the full list of tuning knobs.
-
-`DEX_PROFILE=claude` is the recommended default for Claude Code — selects
-`cl100k_base` tokenizer so token-budget reports are accurate.
-
-## Claude Code hooks
-
-Four hooks wire dex into Claude Code's hook events without the agent remembering
-to call a tool. All fail open (3 s timeout, errors pass through untouched):
-
-| Hook             | Event           | Effect                                                      |
-| ---------------- | --------------- | ----------------------------------------------------------- |
-| `inject`         | UserPromptSubmit| Prepend `ask` context to every prompt (skips < 4 words)     |
-| `rewrite`        | PreToolUse/Bash | Rewrite `rg`/`grep -r` to `dex find`            |
-| `redirect`       | PreToolUse/Read | Redirect reads of indexed files > 400 lines to signatures view |
-| `observe`        | PostToolUse/Stop| Append `{ts, tool_name, tokens}` to hooks.jsonl            |
-
-Wiring lives in `.claude/settings.json` (committed).
-
-## Remote access
-
-```bash
-# host
-dex serve --addr :8080 --project /path/to/repo
-
-# HTTP-MCP (preferred)
-# .mcp.json: { "dex": { "type": "http", "url": "http://host:8080/v1/projects/<sha>/mcp",
-#               "headers": { "Authorization": "Bearer <DEX_SERVE_TOKEN>" } } }
-
-# stdio shim
-DEX_SERVE_TOKEN=… dex mcp --remote http://host:8080 --project-id <sha>
-```
-
-## Docker
-
-```bash
-docker build -t dex .
-docker run --rm -v "$PWD":/work:ro -v dex-cache:/cache \
-    -e DEX_EMBED_URL=http://host.docker.internal:8082 \
-    dex index /work
-```
-
-Static binary on `distroless/static` (~36 MB). Add `--user "$(id -u):$(id -g)"` for host-bound cache.
-
-## Docs
-
-- [`docs/READING_ORDER.md`](docs/READING_ORDER.md) — where to start (four reading paths by goal)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — workflow, build commands, conventions
-- [`docs/vision.md`](docs/vision.md) — the capability-ladder vision (Claude / local-agent / no-GPU rungs)
-- [`docs/model-selection.md`](docs/model-selection.md) — model recommendations (MTEB, VRAM, quant)
-- [`docs/claude-md-snippet.md`](docs/claude-md-snippet.md) — drop-in CLAUDE.md routing block
-- [`docs/observability.md`](docs/observability.md) — log field conventions
-- [`docs/lean-profile.md`](docs/lean-profile.md) — no-GPU / BM25-only deployment
-- [`specs/`](specs/) — living specs for indexing, search, graph, MCP, storage
-
-## License
-
-MIT — see [LICENSE](./LICENSE).
+Per-project settings live in `.dex/config.yml`; any `DEX_*` env var overrides
+them. Run `dex env` to print the effective configuration, `dex help` for the
+full command reference.
