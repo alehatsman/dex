@@ -85,9 +85,9 @@ type AutoWatchConfig struct {
 // Server holds everything the MCP handlers need.
 type Server struct {
 	EmbedClient  embed.Embedder
-	ChatClient   *chat.Client         // optional — when nil, view_summarize is not registered
+	ChatClient   chat.Chatter         // optional — when nil, view_summarize is not registered
 	RerankClient rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through StoreOpts.Reranker
-	ExpandClient *chat.Client         // optional — drives opt-in query-side expansion (#252); nil disables it
+	ExpandClient chat.Chatter         // optional — drives opt-in query-side expansion (#252); nil disables it
 	ExpandMode   string               // server default expand level (off|on|full) when a request omits it
 	IndexDir     string               // base dir holding per-project index folders
 	StoreOpts    store.Options        // applied to every Store opened by the server

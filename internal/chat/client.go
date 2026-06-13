@@ -23,6 +23,17 @@ import (
 // cleanly instead of pretending success.
 var ErrUnreachable = errors.New("chat service unreachable")
 
+// Chatter is the interface satisfied by *Client. Callers that need to
+// inject a stub in tests should hold a Chatter, not a *Client.
+// Mirrors the embed.Embedder pattern in internal/embed/client.go.
+type Chatter interface {
+	Generate(ctx context.Context, msgs []Message, opts Options) (Response, error)
+	GenerateStream(ctx context.Context, msgs []Message, opts Options, onToken func(string)) (Response, error)
+	Endpoint() string
+	ModelName() string
+	Health(ctx context.Context) error
+}
+
 type Client struct {
 	BaseURL string
 	Model   string
