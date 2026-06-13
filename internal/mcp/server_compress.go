@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -306,10 +305,10 @@ func (s *Server) compressOutput(_ context.Context, _ *sdk.CallToolRequest, in Co
 // ── go test ──────────────────────────────────────────────────────────────────
 
 var (
-	reGoTestPass    = regexp.MustCompile(`^ok\s+`)
-	reGoTestFail    = regexp.MustCompile(`^(FAIL|---\s+FAIL|panic:|\s+Error:)`)
-	reGoTestSkip    = regexp.MustCompile(`^---\s+SKIP`)
-	reGoTestCovLine = regexp.MustCompile(`^coverage:`)
+	reGoTestPass    = &lazyRe{pattern: `^ok\s+`}
+	reGoTestFail    = &lazyRe{pattern: `^(FAIL|---\s+FAIL|panic:|\s+Error:)`}
+	reGoTestSkip    = &lazyRe{pattern: `^---\s+SKIP`}
+	reGoTestCovLine = &lazyRe{pattern: `^coverage:`}
 )
 
 func compressGoTest(lines []string) []string {
@@ -333,7 +332,7 @@ func compressGoTest(lines []string) []string {
 
 // ── go build / vet ───────────────────────────────────────────────────────────
 
-var reGoBuildInfo = regexp.MustCompile(`^#\s+`)
+var reGoBuildInfo = &lazyRe{pattern: `^#\s+`}
 
 func compressGoBuild(lines []string) []string {
 	var out []string
@@ -353,7 +352,7 @@ func compressGoBuild(lines []string) []string {
 // ── git ──────────────────────────────────────────────────────────────────────
 
 var (
-	reGitDiffHunkParse = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+	reGitDiffHunkParse = &lazyRe{pattern: `^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`}
 )
 
 func compressGit(lines []string) []string {
@@ -435,9 +434,9 @@ func mustAtoi(s string) int {
 // ── cargo ────────────────────────────────────────────────────────────────────
 
 var (
-	reCargoCompiling = regexp.MustCompile(`^\s*Compiling\s`)
-	reCargoChecking  = regexp.MustCompile(`^\s*Checking\s`)
-	reCargoDownload  = regexp.MustCompile(`^\s*Downloading|^\s*Downloaded\s`)
+	reCargoCompiling = &lazyRe{pattern: `^\s*Compiling\s`}
+	reCargoChecking  = &lazyRe{pattern: `^\s*Checking\s`}
+	reCargoDownload  = &lazyRe{pattern: `^\s*Downloading|^\s*Downloaded\s`}
 )
 
 func compressCargo(lines []string) []string {
@@ -466,9 +465,9 @@ func compressCargo(lines []string) []string {
 // ── npm / yarn / bun / pnpm ──────────────────────────────────────────────────
 
 var (
-	reNpmProgress = regexp.MustCompile(`^\s*(npm warn|npm notice|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]|▐|▌|\[[\d.]+s\])`)
-	reNpmAdded    = regexp.MustCompile(`added \d+ package`)
-	reNpmErr      = regexp.MustCompile(`(?i)^(npm ERR!|error\b|warn\b)`)
+	reNpmProgress = &lazyRe{pattern: `^\s*(npm warn|npm notice|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]|▐|▌|\[[\d.]+s\])`}
+	reNpmAdded    = &lazyRe{pattern: `added \d+ package`}
+	reNpmErr      = &lazyRe{pattern: `(?i)^(npm ERR!|error\b|warn\b)`}
 )
 
 func compressNpm(lines []string) []string {
@@ -492,9 +491,9 @@ func compressNpm(lines []string) []string {
 // ── docker ───────────────────────────────────────────────────────────────────
 
 var (
-	reDockerStep   = regexp.MustCompile(`^Step \d+/\d+`)
-	reDockerArrow  = regexp.MustCompile(`^ --->`)
-	reDockerRemove = regexp.MustCompile(`^Removing intermediate`)
+	reDockerStep   = &lazyRe{pattern: `^Step \d+/\d+`}
+	reDockerArrow  = &lazyRe{pattern: `^ --->`}
+	reDockerRemove = &lazyRe{pattern: `^Removing intermediate`}
 )
 
 func compressDocker(lines []string) []string {
@@ -519,8 +518,8 @@ func compressDocker(lines []string) []string {
 // ── generic ──────────────────────────────────────────────────────────────────
 
 var (
-	reProgressLine = regexp.MustCompile(`(\d+%|[\d.]+/[\d.]+\s*(MB|KB|GB)|ETA|elapsed|\[=+>?\s*\])`)
-	reTimestamp    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}`)
+	reProgressLine = &lazyRe{pattern: `(\d+%|[\d.]+/[\d.]+\s*(MB|KB|GB)|ETA|elapsed|\[=+>?\s*\])`}
+	reTimestamp    = &lazyRe{pattern: `^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}`}
 )
 
 func compressGeneric(lines []string) []string {
@@ -549,10 +548,10 @@ func compressGeneric(lines []string) []string {
 // ── kubectl ───────────────────────────────────────────────────────────────────
 
 var (
-	reKubectlHealthy  = regexp.MustCompile(`\s+Running\s+0\s+`)
-	reKubectlProgress = regexp.MustCompile(`^(Waiting for|waiting for|Watching)`)
-	reKubectlBoiler   = regexp.MustCompile(`^(Warning: resource|kubectl\.kubernetes\.io)`)
-	reKubectlLogTS    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`)
+	reKubectlHealthy  = &lazyRe{pattern: `\s+Running\s+0\s+`}
+	reKubectlProgress = &lazyRe{pattern: `^(Waiting for|waiting for|Watching)`}
+	reKubectlBoiler   = &lazyRe{pattern: `^(Warning: resource|kubectl\.kubernetes\.io)`}
+	reKubectlLogTS    = &lazyRe{pattern: `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`}
 )
 
 func compressKubectl(lines []string) []string {
@@ -588,9 +587,9 @@ func compressKubectl(lines []string) []string {
 // ── make ──────────────────────────────────────────────────────────────────────
 
 var (
-	reMakeEnter   = regexp.MustCompile(`^make(\[\d+\])?: (Entering|Leaving) directory`)
-	reMakeNothing = regexp.MustCompile(`^make(\[\d+\])?: Nothing to be done`)
-	reMakeTarget  = regexp.MustCompile(`^make(\[\d+\])?:`)
+	reMakeEnter   = &lazyRe{pattern: `^make(\[\d+\])?: (Entering|Leaving) directory`}
+	reMakeNothing = &lazyRe{pattern: `^make(\[\d+\])?: Nothing to be done`}
+	reMakeTarget  = &lazyRe{pattern: `^make(\[\d+\])?:`}
 )
 
 func compressMake(lines []string) []string {
@@ -615,8 +614,8 @@ func compressMake(lines []string) []string {
 // ── gh ────────────────────────────────────────────────────────────────────────
 
 var (
-	reGhSeparator = regexp.MustCompile(`^─+$|^═+$`)
-	reGhLabel     = regexp.MustCompile(`^(Labels|Assignees|Projects|Milestone|Reviewers):\s*$`)
+	reGhSeparator = &lazyRe{pattern: `^─+$|^═+$`}
+	reGhLabel     = &lazyRe{pattern: `^(Labels|Assignees|Projects|Milestone|Reviewers):\s*$`}
 )
 
 func compressGh(lines []string) []string {
@@ -640,10 +639,10 @@ func compressGh(lines []string) []string {
 // ── pip / uv ──────────────────────────────────────────────────────────────────
 
 var (
-	rePipCollect  = regexp.MustCompile(`^(Collecting|Downloading|Using cached|Obtaining)\s`)
-	rePipProgress = regexp.MustCompile(`^\s+\d+%\|`)
-	rePipDepSolve = regexp.MustCompile(`^(Requirement already satisfied|Looking in indexes)`)
-	rePipResolvUV = regexp.MustCompile(`^\s+(Resolved|Downloaded|Prepared|Installed|Uninstalled)\s`)
+	rePipCollect  = &lazyRe{pattern: `^(Collecting|Downloading|Using cached|Obtaining)\s`}
+	rePipProgress = &lazyRe{pattern: `^\s+\d+%\|`}
+	rePipDepSolve = &lazyRe{pattern: `^(Requirement already satisfied|Looking in indexes)`}
+	rePipResolvUV = &lazyRe{pattern: `^\s+(Resolved|Downloaded|Prepared|Installed|Uninstalled)\s`}
 )
 
 func compressPip(lines []string) []string {
@@ -671,9 +670,9 @@ func compressPip(lines []string) []string {
 // ── terraform / opentofu ──────────────────────────────────────────────────────
 
 var (
-	reTFRefresh   = regexp.MustCompile(`^.+: (Refreshing state\.\.\.|Still (creating|destroying|modifying)\.\.\.)`)
-	reTFProgress  = regexp.MustCompile(`^\s*[\d.]+s elapsed`)
-	reTFModHeader = regexp.MustCompile(`^Terraform (will|has) (perform|been working)`)
+	reTFRefresh   = &lazyRe{pattern: `^.+: (Refreshing state\.\.\.|Still (creating|destroying|modifying)\.\.\.)`}
+	reTFProgress  = &lazyRe{pattern: `^\s*[\d.]+s elapsed`}
+	reTFModHeader = &lazyRe{pattern: `^Terraform (will|has) (perform|been working)`}
 )
 
 func compressTerraform(lines []string) []string {
@@ -698,10 +697,10 @@ func compressTerraform(lines []string) []string {
 // ── cmake / ninja ─────────────────────────────────────────────────────────────
 
 var (
-	reCmakeProgress = regexp.MustCompile(`^\[\s*\d+%\]`)
-	reCmakeDashes   = regexp.MustCompile(`^-{10,}`)
-	reNinjaProgress = regexp.MustCompile(`^\[\d+/\d+\] `)
-	reNinjaWarning  = regexp.MustCompile(`warning:`)
+	reCmakeProgress = &lazyRe{pattern: `^\[\s*\d+%\]`}
+	reCmakeDashes   = &lazyRe{pattern: `^-{10,}`}
+	reNinjaProgress = &lazyRe{pattern: `^\[\d+/\d+\] `}
+	reNinjaWarning  = &lazyRe{pattern: `warning:`}
 )
 
 func compressCmake(lines []string) []string {
@@ -767,7 +766,7 @@ func compactLines(lines []string, max int) []string {
 
 // ── grep / rg / ag ────────────────────────────────────────────────────────────
 
-var reGrepLine = regexp.MustCompile(`^([^:]+):(\d+):(.*)$`)
+var reGrepLine = &lazyRe{pattern: `^([^:]+):(\d+):(.*)$`}
 
 func compressGrep(lines []string) []string {
 	type match struct {
@@ -834,7 +833,7 @@ func compressGrep(lines []string) []string {
 
 // ── find / fd ─────────────────────────────────────────────────────────────────
 
-var reFindSkip = regexp.MustCompile(`node_modules/|\.git/|target/(debug|release)/|__pycache__/|\.next/|dist/`)
+var reFindSkip = &lazyRe{pattern: `node_modules/|\.git/|target/(debug|release)/|__pycache__/|\.next/|dist/`}
 
 func compressFind(lines []string) []string {
 	byDir := make(map[string][]string)
@@ -899,8 +898,8 @@ func compressFind(lines []string) []string {
 // ── eslint / biome ────────────────────────────────────────────────────────────
 
 var (
-	reEslintFile = regexp.MustCompile(`^(/\S+|[A-Za-z]:\\\S+|\S+\.\w+)$`)
-	reEslintDiag = regexp.MustCompile(`^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$`)
+	reEslintFile = &lazyRe{pattern: `^(/\S+|[A-Za-z]:\\\S+|\S+\.\w+)$`}
+	reEslintDiag = &lazyRe{pattern: `^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$`}
 )
 
 func compressEslint(lines []string) []string {
@@ -961,9 +960,9 @@ func compressEslint(lines []string) []string {
 // ── ruff ──────────────────────────────────────────────────────────────────────
 
 var (
-	reRuffCheck  = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$`)
-	reRuffFixed  = regexp.MustCompile(`Found (\d+) errors?.*?(\d+) fixable`)
-	reRuffFormat = regexp.MustCompile(`(\d+) files? reformatted`)
+	reRuffCheck  = &lazyRe{pattern: `^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$`}
+	reRuffFixed  = &lazyRe{pattern: `Found (\d+) errors?.*?(\d+) fixable`}
+	reRuffFormat = &lazyRe{pattern: `(\d+) files? reformatted`}
 )
 
 func compressRuff(cmd string, lines []string) []string {
@@ -1039,8 +1038,8 @@ func compressRuff(cmd string, lines []string) []string {
 // ── mypy ──────────────────────────────────────────────────────────────────────
 
 var (
-	reMypyDiag    = regexp.MustCompile(`^(.+?):(\d+):\s+(error|warning|note):\s+(.+?)(?:\s+\[(.+)\])?$`)
-	reMypySummary = regexp.MustCompile(`Found (\d+) errors? in (\d+) files?`)
+	reMypyDiag    = &lazyRe{pattern: `^(.+?):(\d+):\s+(error|warning|note):\s+(.+?)(?:\s+\[(.+)\])?$`}
+	reMypySummary = &lazyRe{pattern: `Found (\d+) errors? in (\d+) files?`}
 )
 
 func compressMypy(lines []string) []string {
@@ -1115,9 +1114,9 @@ func compressMypy(lines []string) []string {
 // ── pytest ────────────────────────────────────────────────────────────────────
 
 var (
-	rePytestResult  = regexp.MustCompile(`^(PASSED|FAILED|ERROR)\s+(.+?)(?:\s+-\s+(.+))?$`)
-	rePytestSummary = regexp.MustCompile(`=+ ([\d]+ passed|[\d]+ failed|[\w ,]+) in ([\d.]+)s =+`)
-	rePytestShort   = regexp.MustCompile(`^(FAILED|ERROR) (.+)$`)
+	rePytestResult  = &lazyRe{pattern: `^(PASSED|FAILED|ERROR)\s+(.+?)(?:\s+-\s+(.+))?$`}
+	rePytestSummary = &lazyRe{pattern: `=+ ([\d]+ passed|[\d]+ failed|[\w ,]+) in ([\d.]+)s =+`}
+	rePytestShort   = &lazyRe{pattern: `^(FAILED|ERROR) (.+)$`}
 )
 
 func compressPytest(lines []string) []string {
@@ -1156,8 +1155,8 @@ func compressPytest(lines []string) []string {
 // ── tsc ───────────────────────────────────────────────────────────────────────
 
 var (
-	reTscError = regexp.MustCompile(`(\S+)\((\d+),\d+\):\s+error\s+(TS\d+):\s+(.+)`)
-	reTscCount = regexp.MustCompile(`Found (\d+) error`)
+	reTscError = &lazyRe{pattern: `(\S+)\((\d+),\d+\):\s+error\s+(TS\d+):\s+(.+)`}
+	reTscCount = &lazyRe{pattern: `Found (\d+) error`}
 )
 
 func compressTsc(lines []string) []string {
@@ -1201,16 +1200,15 @@ func compressTsc(lines []string) []string {
 
 var (
 	// Matches ISO 8601, space-separated datetime, and common log timestamp formats.
-	reTS = regexp.MustCompile(
-		`\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?`)
+	reTS = &lazyRe{pattern: `\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?`}
 	// Matches 32-64 char lowercase hex strings (commit hashes, checksums, IDs).
-	reHex = regexp.MustCompile(`\b[0-9a-f]{32,64}\b`)
+	reHex = &lazyRe{pattern: `\b[0-9a-f]{32,64}\b`}
 	// Matches RFC 4122 UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
-	reUUID = regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`)
+	reUUID = &lazyRe{pattern: `\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`}
 	// Matches common log-level prefixes at the start of a line or after a timestamp.
-	reLogLevel = regexp.MustCompile(`\b(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL|FATAL|TRACE)\b\s*:?\s*`)
+	reLogLevel = &lazyRe{pattern: `\b(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL|FATAL|TRACE)\b\s*:?\s*`}
 	// Separator lines (====, ----, ***) that occupy >80% of non-space characters.
-	reSep = regexp.MustCompile(`^[\s=\-*#]{3,}$`)
+	reSep = &lazyRe{pattern: `^[\s=\-*#]{3,}$`}
 )
 
 // normalizeTimestamps replaces ISO 8601 / datetime strings in a line with [TS].
@@ -1335,9 +1333,9 @@ func compressLogDedup(lines []string) []string {
 // ── log block compressor ──────────────────────────────────────────────────────
 
 var (
-	reBlockHeader  = regexp.MustCompile(`^(===|---|###|##|Step\s+\d|STEP\s+\d|stage\s+\d)`)
-	reGitCommitHdr = regexp.MustCompile(`^commit\s+[0-9a-f]{7,}`)
-	reGitDiffHdrB  = regexp.MustCompile(`^diff --git `)
+	reBlockHeader  = &lazyRe{pattern: `^(===|---|###|##|Step\s+\d|STEP\s+\d|stage\s+\d)`}
+	reGitCommitHdr = &lazyRe{pattern: `^commit\s+[0-9a-f]{7,}`}
+	reGitDiffHdrB  = &lazyRe{pattern: `^diff --git `}
 )
 
 // isBlockBoundary returns true for lines that start a new logical block
@@ -1519,7 +1517,7 @@ func compressLogBlock(lines []string) []string {
 
 // ── playwright / cypress ──────────────────────────────────────────────────────
 
-var rePwFailed = regexp.MustCompile(`^\s+\d+\)\s+(.+)$`)
+var rePwFailed = &lazyRe{pattern: `^\s+\d+\)\s+(.+)$`}
 
 // compressPlaywright compresses Playwright and Cypress test output into a
 // summary line + failed test list.
@@ -1628,10 +1626,10 @@ func extractFirstInt(s string) int {
 // ── next build / vite build ───────────────────────────────────────────────────
 
 var (
-	reNextRoute     = regexp.MustCompile(`[○●λƒ◐]\s+(/\S*)`)
-	reNextSize      = regexp.MustCompile(`(\d+\.?\d*)\s*(kB|MB|B)\b`)
-	reNextBuildTime = regexp.MustCompile(`(?:compiled|built|done|ready)\s+(?:in\s+)?(\d+\.?\d*\s*[ms]+)`)
-	reViteChunk     = regexp.MustCompile(`dist/(\S+)\s+(\d+\.?\d*\s*[kKMm]?B)`)
+	reNextRoute     = &lazyRe{pattern: `[○●λƒ◐]\s+(/\S*)`}
+	reNextSize      = &lazyRe{pattern: `(\d+\.?\d*)\s*(kB|MB|B)\b`}
+	reNextBuildTime = &lazyRe{pattern: `(?:compiled|built|done|ready)\s+(?:in\s+)?(\d+\.?\d*\s*[ms]+)`}
+	reViteChunk     = &lazyRe{pattern: `dist/(\S+)\s+(\d+\.?\d*\s*[kKMm]?B)`}
 )
 
 // compressNextBuild compresses Next.js and Vite build output into a route/chunk
