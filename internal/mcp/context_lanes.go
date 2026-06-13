@@ -2,131 +2,69 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"sort"
-	"strings"
 
-	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
 
 // ─── lanes ────────────────────────────────────────────────────────────────
+//
+// The lane bodies (identifier resolution + symbol search, query
+// embedding + hybrid search) live in retrieve.Service. These wrappers
+// adapt the neutral lane output to the wire types and apply the two
+// transport-edge concerns: the call-graph Role string (formatRole, whose
+// vocabulary is shared with the search/symbol/graph tools) and the
+// test/doc/fixture demotion that keeps the prose directive on real
+// implementation code.
 
-// runSymbolLane runs search_symbol for each detected identifier and
-// returns deduplicated symbol hits plus a set of file paths the lane
-// touched (used by pickSuggestedReads). At most `k` hits returned.
 func (s *Server) runSymbolLane(ctx context.Context, st store.Searcher, cand retrieve.IntentCandidates, k int) ([]SymbolHit, map[string]struct{}) {
-	if len(cand.Identifiers) == 0 {
-		return nil, nil
+	svc := retrieve.Service{Embed: s.EmbedClient}
+	raw, paths := svc.SymbolLane(ctx, st, cand, k)
+	if raw == nil {
+		return nil, paths
 	}
-	paths := map[string]struct{}{}
-	seen := map[string]struct{}{}
-	var out []SymbolHit
-	for _, id := range cand.Identifiers {
-		// search_symbol expects the bare name; strip a "(*T)." prefix.
-		bare := id
-		if i := strings.LastIndex(bare, "."); i >= 0 {
-			bare = bare[i+1:]
-		}
-		hits, err := st.FindSymbol(ctx, bare, k)
-		if err != nil {
-			continue
-		}
-		for _, h := range hits {
-			key := h.Path + ":" + h.Name
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			qual := h.Name
-			if h.Name == "" {
-				qual = bare
-			}
-			out = append(out, SymbolHit{
-				QualifiedName: qual,
-				Path:          h.Path,
-				StartLine:     h.StartLine,
-				EndLine:       h.EndLine,
-				Kind:          h.Kind,
-				Role:          formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
-			})
-			paths[h.Path] = struct{}{}
-			if len(out) >= k {
-				break
-			}
-		}
-		if len(out) >= k {
-			break
-		}
+	out := make([]SymbolHit, 0, len(raw))
+	for _, h := range raw {
+		out = append(out, SymbolHit{
+			QualifiedName: h.QualifiedName,
+			Path:          h.Path,
+			StartLine:     h.StartLine,
+			EndLine:       h.EndLine,
+			Kind:          h.Kind,
+			Role:          formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
+		})
 	}
-	// Demote test/doc/build/fixture paths so the prose directive
-	// (which points at the first symbol) lands on real implementation.
-	// FindSymbol returns rows sorted by (path, start_line), which
-	// alphabetically lifts `internal/graph/testdata/...` above the
-	// real `internal/store/...` for shared names like `Store`.
+	// Demote test/doc/build/fixture paths so the prose directive (which
+	// points at the first symbol) lands on real implementation. FindSymbol
+	// returns rows sorted by (path, start_line), which alphabetically lifts
+	// `internal/graph/testdata/...` above the real `internal/store/...` for
+	// shared names like `Store`.
 	sort.SliceStable(out, func(i, j int) bool {
 		return !isNonImplPath(out[i].Path) && isNonImplPath(out[j].Path)
 	})
 	return out, paths
 }
 
-// runSemanticLane embeds embedText and runs Search with ftsText as the
-// BM25/FTS leg of the RRF fusion. The two are usually identical (the raw
-// question); query-side expansion (#252) lets them diverge — extra keywords
-// widen the lexical leg for free, while a HyDE passage shifts only the
-// embedded vector. Returns (hits, embedUnreachable). When embedUnreachable
-// is true hits is nil and the caller should surface the failure.
 func (s *Server) runSemanticLane(ctx context.Context, st store.Searcher, embedText, ftsText string, k int) ([]SemHit, bool) {
-	// queryVec stays nil in the lean profile (DEX_EMBED_ENGINE=none, no embedder
-	// wired). Search then runs BM25-only through the fusion path — the semantic
-	// leg contributes nothing — so ask still answers on the lexical lane (plus
-	// the symbol + graph lanes upstream). This is the documented lean
-	// degradation; only a *downed* embedder (ErrUnreachable) is reported as
-	// unreachable so the caller can surface the failure.
-	var queryVec []float32
-	if em := s.EmbedClient; em != nil {
-		vecs, err := em.Embed(ctx, []string{embedText})
-		if err != nil {
-			if errors.Is(err, embed.ErrUnreachable) {
-				return nil, true
-			}
-			return nil, false
-		}
-		queryVec = vecs[0]
+	svc := retrieve.Service{Embed: s.EmbedClient}
+	raw, embedFailed := svc.SemanticLane(ctx, st, embedText, ftsText, k)
+	if raw == nil {
+		return nil, embedFailed
 	}
-	hits, err := st.Search(ctx, queryVec, ftsText, k)
-	if err != nil {
-		return nil, false
-	}
-	out := make([]SemHit, 0, len(hits))
-	for _, h := range hits {
-		// In hybrid mode, Hit.Score is raw cosine — zero for hits
-		// that came in via BM25 only (the FTS leg of the RRF fusion).
-		// Surfacing 0 here misleads the agent into thinking it's
-		// looking at irrelevant content. Fall back to the RRF
-		// score so every returned hit has a positive ranking signal.
-		// Scales differ (cosine ~0-1, RRF ~0-0.03) but ordering
-		// within the list is what matters.
-		score := h.Score
-		if score == 0 && h.RRFScore > 0 {
-			score = h.RRFScore
-		}
+	out := make([]SemHit, 0, len(raw))
+	for _, h := range raw {
 		out = append(out, SemHit{
 			Path:      h.Path,
 			StartLine: h.StartLine,
 			EndLine:   h.EndLine,
 			Kind:      h.Kind,
-			Score:     score,
-			Reason:    h.Name,
+			Score:     h.Score,
+			Reason:    h.Reason,
 		})
 	}
-	return out, false
+	return out, embedFailed
 }
-
-// Path-classification helpers (isTestPath, isNonImplPath, pathTags)
-// live in path_tags.go — one rule table for every demotion the
-// suggested_reads ranker applies.
 
 // maxSemanticScore returns the highest Score across all semantic
 // hits. semantic_hits isn't strictly score-sorted (summary merging
