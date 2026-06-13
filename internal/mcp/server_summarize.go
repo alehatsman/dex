@@ -189,8 +189,13 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	bt := s.bt()
 	bt.recordRead(sessionID, relTarget)
 	if bt.shouldForceFull(sessionID, relTarget) && mode != "full" {
-		mode = "full"
-		isFull = mode == "full" && s.ChatClient != nil
+		if s.ChatClient != nil {
+			mode = "full"
+			isFull = true
+		} else {
+			mode = "map"
+			isFull = false
+		}
 	}
 
 	// Budget-aware downgrade (#106): auto-select richest mode within budget.
