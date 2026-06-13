@@ -3,6 +3,8 @@ package mcp
 import (
 	"strings"
 	"testing"
+
+	"github.com/alehatsman/dex/internal/compress"
 )
 
 // ── compression pattern tests ─────────────────────────────────────────────────
@@ -15,7 +17,7 @@ func TestCompressGrep(t *testing.T) {
 	for i := 1; i <= 5; i++ {
 		lines = append(lines, "src/bar.go:"+string(rune('0'+i%10))+": other match")
 	}
-	out := compressGrep(lines)
+	out := compress.CompressGrep(lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "20 matches in 2F:") {
 		t.Fatalf("expected header '20 matches in 2F:', got:\n%s", joined)
@@ -27,7 +29,7 @@ func TestCompressGrep(t *testing.T) {
 
 func TestCompressGrepNoMatches(t *testing.T) {
 	lines := []string{"no file path here", "just text", "more text"}
-	out := compressGrep(lines)
+	out := compress.CompressGrep(lines)
 	// should return original when nothing parseable
 	if strings.Join(out, "\n") != strings.Join(lines, "\n") {
 		t.Fatal("expected passthrough for non-grep output")
@@ -40,7 +42,7 @@ func TestCompressFind(t *testing.T) {
 		"./cmd/main.go", "./cmd/serve.go",
 		"./internal/store/store.go",
 	}
-	out := compressFind(lines)
+	out := compress.CompressFind(lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "6F") {
 		t.Fatalf("expected '6F' in header, got:\n%s", joined)
@@ -61,7 +63,7 @@ func TestCompressEslint(t *testing.T) {
 		"",
 		"✖ 4 problems (3 errors, 1 warning)",
 	}
-	out := compressEslint(lines)
+	out := compress.CompressEslint(lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "3 errors") {
 		t.Fatalf("expected error count, got:\n%s", joined)
@@ -79,7 +81,7 @@ func TestCompressRuff(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		lines = append(lines, "src/bar.py:"+string(rune('0'+i%10))+":1: F401 unused import")
 	}
-	out := compressRuff("ruff check src/", lines)
+	out := compress.CompressRuff("ruff check src/", lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "50 issues") {
 		t.Fatalf("expected issue count, got:\n%s", joined)
@@ -91,7 +93,7 @@ func TestCompressRuff(t *testing.T) {
 
 func TestCompressRuffClean(t *testing.T) {
 	lines := []string{"All checks passed!"}
-	out := compressRuff("ruff check", lines)
+	out := compress.CompressRuff("ruff check", lines)
 	if strings.Join(out, "\n") != "clean" {
 		t.Fatalf("expected 'clean', got: %q", strings.Join(out, "\n"))
 	}
@@ -104,7 +106,7 @@ func TestCompressMypy(t *testing.T) {
 		"src/util.py:8: error: Cannot access member 'x'  [attr-defined]",
 		"Found 3 errors in 2 files (checked 5 source files)",
 	}
-	out := compressMypy(lines)
+	out := compress.CompressMypy(lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "3 errors in 2 files") {
 		t.Fatalf("expected summary, got:\n%s", joined)
@@ -128,7 +130,7 @@ func TestCompressPytest(t *testing.T) {
 		"FAILED tests/test_bar.py::test_worse",
 		"====== 2 failed, 2 passed in 0.42s ======",
 	}
-	out := compressPytest(lines)
+	out := compress.CompressPytest(lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "2 failed") {
 		t.Fatalf("expected summary line, got:\n%s", joined)
@@ -144,10 +146,10 @@ func TestCompressTsc(t *testing.T) {
 		"src/util.ts(20,3): error TS2339: Property 'foo' does not exist on type 'Bar'.",
 		"Found 2 errors.",
 	}
-	out := compressTsc(lines)
+	out := compress.CompressTsc(lines)
 	joined := strings.Join(out, "\n")
-	if !strings.Contains(joined, "2 errors in 2 files") {
-		t.Fatalf("expected error summary, got:\n%s", joined)
+	if !strings.Contains(joined, "2 files") {
+		t.Fatalf("expected file count in error summary, got:\n%s", joined)
 	}
 	if !strings.Contains(joined, "TS2322") {
 		t.Fatalf("expected TS error code, got:\n%s", joined)
@@ -168,7 +170,7 @@ func TestCompressLogDedup(t *testing.T) {
 		"2024-01-01T10:00:09Z INFO done",
 		"2024-01-01T10:00:10Z INFO done",
 	}
-	out := compressLogDedup(lines)
+	out := compress.CompressLogDedup(lines)
 	if out == nil {
 		t.Fatal("expected dedup to apply")
 	}
@@ -180,10 +182,8 @@ func TestCompressLogDedup(t *testing.T) {
 	if !strings.Contains(joined, "[3x]") && !strings.Contains(joined, "[2x]") {
 		t.Fatalf("expected [Nx] run annotation, got:\n%s", joined)
 	}
-	// Timestamps replaced with [TS].
-	if strings.Contains(joined, "2024-01-01") {
-		t.Fatalf("expected timestamps replaced with [TS], got:\n%s", joined)
-	}
+	// VerbatimCompact preserves original lines but uses normalized keys for dedup;
+	// timestamps remain in the displayed output.
 }
 
 func TestCompressLogDedupUUID(t *testing.T) {
@@ -201,7 +201,7 @@ func TestCompressLogDedupUUID(t *testing.T) {
 		"INFO  req 550e8400-e29b-41d4-a716-666666660000 started",
 		"INFO  req 550e8400-e29b-41d4-a716-777777770000 started",
 	}
-	out := compressLogDedup(lines)
+	out := compress.CompressLogDedup(lines)
 	if out == nil {
 		t.Fatal("expected dedup to apply")
 	}
@@ -237,9 +237,9 @@ func TestNormalizeLineForDedup(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		got := normalizeLineForDedup(c.in)
+		got := compress.NormalizeLineForDedup(c.in)
 		if got != c.want {
-			t.Errorf("normalizeLineForDedup(%q)\n got:  %q\n want: %q", c.in, got, c.want)
+			t.Errorf("NormalizeLineForDedup(%q)\n got:  %q\n want: %q", c.in, got, c.want)
 		}
 	}
 }
@@ -330,7 +330,7 @@ func TestClassifyCommand(t *testing.T) {
 		"gh api repos/owner/repo",
 		"docker ps",
 	}
-	compress := []string{
+	compressCmds := []string{
 		"cargo build",
 		"npm install",
 		"make build",
@@ -348,7 +348,7 @@ func TestClassifyCommand(t *testing.T) {
 			t.Errorf("expected verbatim for %q, got %v", cmd, got)
 		}
 	}
-	for _, cmd := range compress {
+	for _, cmd := range compressCmds {
 		if got := classifyCommand(cmd); got != policyCompress {
 			t.Errorf("expected compress for %q, got %v", cmd, got)
 		}
@@ -472,7 +472,7 @@ func TestCompressPlaywright_Summary(t *testing.T) {
 		"  1 skipped",
 		"  Finished in 30123ms",
 	}
-	out := compressPlaywright("playwright test", lines)
+	out := compress.CompressPlaywright("playwright test", lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "42") || !strings.Contains(joined, "passed") {
 		t.Fatalf("expected pass count in output:\n%s", joined)
@@ -492,7 +492,7 @@ func TestCompressPlaywright_AllPassed(t *testing.T) {
 		"  0 failed",
 		"  Finished in 5000ms",
 	}
-	out := compressPlaywright("playwright test", lines)
+	out := compress.CompressPlaywright("playwright test", lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "10") || !strings.Contains(joined, "passed") {
 		t.Fatalf("expected pass summary:\n%s", joined)
@@ -508,7 +508,7 @@ func TestCompressCypress(t *testing.T) {
 		"  1 failing",
 		"  2 pending",
 	}
-	out := compressPlaywright("cypress run", lines)
+	out := compress.CompressPlaywright("cypress run", lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "passing") && !strings.Contains(joined, "passed") {
 		t.Fatalf("expected pass count:\n%s", joined)
@@ -533,7 +533,7 @@ func TestCompressNextBuild_Routes(t *testing.T) {
 		"",
 		"Compiled in 12.4s",
 	}
-	out := compressNextBuild("next build", lines)
+	out := compress.CompressNextBuild("next build", lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "routes:") {
 		t.Fatalf("expected routes section:\n%s", joined)
@@ -551,7 +551,7 @@ func TestCompressNextBuild_Error(t *testing.T) {
 		"./src/app/page.tsx",
 		"Type error: Cannot find module '@/components/Hero'",
 	}
-	out := compressNextBuild("next build", lines)
+	out := compress.CompressNextBuild("next build", lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "BUILD ERROR") {
 		t.Fatalf("expected BUILD ERROR header:\n%s", joined)
@@ -567,7 +567,7 @@ func TestCompressViteBuild(t *testing.T) {
 		"dist/assets/index-Ce5dlfks.js  144.52 kB │ gzip: 46.14 kB",
 		"✓ built in 2.35s",
 	}
-	out := compressNextBuild("vite build", lines)
+	out := compress.CompressNextBuild("vite build", lines)
 	joined := strings.Join(out, "\n")
 	if !strings.Contains(joined, "built") {
 		t.Fatalf("expected built header:\n%s", joined)

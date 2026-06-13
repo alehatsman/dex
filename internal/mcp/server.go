@@ -2109,7 +2109,7 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 			sb.WriteString(chunk)
 			resolvedPaths = append(resolvedPaths, r.path)
 			if countingStable && r.stable {
-				stablePrefixTokens += estimateTokens(chunk)
+				stablePrefixTokens += compress.EstimateTokens(chunk)
 			} else {
 				countingStable = false // stop counting once we hit a fresh file
 			}
