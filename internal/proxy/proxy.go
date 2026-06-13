@@ -19,6 +19,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -225,7 +226,7 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			stats.recordToolDesc(toolDescStats)
 			logRequestMetrics(logger, r, current, before, after, paths, cacheStats, toolDescStats)
 
-			r.Body = io.NopCloser(strings.NewReader(string(current)))
+			r.Body = io.NopCloser(bytes.NewReader(current))
 			r.ContentLength = int64(len(current))
 		}
 
