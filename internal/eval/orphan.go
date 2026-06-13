@@ -51,6 +51,35 @@ func GenerateOrphan(ctx context.Context, root string, opts OrphanOpts) (GoldenSe
 
 	kindCounts := map[string]int{"import": 0, "const": 0, "var": 0}
 
+	appendValSpecQueries := func(gd *ast.GenDecl, pos token.Position, relPath, kind string, queryFn func(string) string, counter *int) {
+		if kindCounts[kind] >= opts.MaxPerKind {
+			return
+		}
+		for _, spec := range gd.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, name := range vs.Names {
+				if kindCounts[kind] >= opts.MaxPerKind {
+					break
+				}
+				q := queryFn(name.Name)
+				if q == "" || seen[q] {
+					continue
+				}
+				seen[q] = true
+				kindCounts[kind]++
+				*counter++
+				queries = append(queries, GoldenQuery{
+					ID:            fmt.Sprintf("%s:%d:%s", relPath, pos.Line, name.Name),
+					Query:         q,
+					RelevantFiles: []string{relPath},
+				})
+			}
+		}
+	}
+
 	fset := token.NewFileSet()
 	for _, relPath := range goFiles {
 		if err := ctx.Err(); err != nil {
@@ -90,60 +119,10 @@ func GenerateOrphan(ctx context.Context, root string, opts OrphanOpts) (GoldenSe
 				})
 
 			case token.CONST:
-				if kindCounts["const"] >= opts.MaxPerKind {
-					continue
-				}
-				for _, spec := range gd.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok {
-						continue
-					}
-					for _, name := range vs.Names {
-						if kindCounts["const"] >= opts.MaxPerKind {
-							break
-						}
-						q := constQuery(name.Name)
-						if q == "" || seen[q] {
-							continue
-						}
-						seen[q] = true
-						kindCounts["const"]++
-						counts.Consts++
-						queries = append(queries, GoldenQuery{
-							ID:            fmt.Sprintf("%s:%d:%s", relPath, pos.Line, name.Name),
-							Query:         q,
-							RelevantFiles: []string{relPath},
-						})
-					}
-				}
+				appendValSpecQueries(gd, pos, relPath, "const", constQuery, &counts.Consts)
 
 			case token.VAR:
-				if kindCounts["var"] >= opts.MaxPerKind {
-					continue
-				}
-				for _, spec := range gd.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok {
-						continue
-					}
-					for _, name := range vs.Names {
-						if kindCounts["var"] >= opts.MaxPerKind {
-							break
-						}
-						q := varQuery(name.Name)
-						if q == "" || seen[q] {
-							continue
-						}
-						seen[q] = true
-						kindCounts["var"]++
-						counts.Vars++
-						queries = append(queries, GoldenQuery{
-							ID:            fmt.Sprintf("%s:%d:%s", relPath, pos.Line, name.Name),
-							Query:         q,
-							RelevantFiles: []string{relPath},
-						})
-					}
-				}
+				appendValSpecQueries(gd, pos, relPath, "var", varQuery, &counts.Vars)
 			}
 		}
 	}
