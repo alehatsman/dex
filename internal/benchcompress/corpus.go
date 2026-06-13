@@ -158,7 +158,7 @@ index 3a1bc2f..9d4e8c1 100644
 		Content: `# dex — semantic search context router
 
 dex is a local MCP server that indexes a repository and serves
-search_semantic, search_symbol, and graph_* tools to Claude Code.
+find, lookup, and graph_* tools to Claude Code.
 
 ## Architecture
 
