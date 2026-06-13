@@ -1135,3 +1135,61 @@ func TestFindRelatedEmptyFilePath(t *testing.T) {
 		t.Errorf("status = %q, want error", out.Status)
 	}
 }
+
+func TestSearchTreeFilePathReturnsError(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "main.go"), "package main\nfunc main() {}\n")
+	writeFile(t, filepath.Join(projDir, "util.go"), "package main\nfunc Util() {}\n")
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+
+	_, out, err := s.searchTree(context.Background(), nil, SearchTreeInput{
+		ProjectRoot: root,
+		Path:        "main.go", // file, not directory
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "error" {
+		t.Fatalf("status = %q, want error; hint = %q", out.Status, out.Hint)
+	}
+	if !strings.Contains(out.Hint, "file, not a directory") {
+		t.Fatalf("hint = %q, want message about file not directory", out.Hint)
+	}
+}
+
+func TestApplyMultiScaleFilterFallsBackOnNoOverlap(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	// Five files so multi-scale index has material to produce >= 3 candidates.
+	for _, name := range []string{"alpha.go", "beta.go", "gamma.go", "delta.go", "epsilon.go"} {
+		writeFile(t, filepath.Join(projDir, name), "package main\n// "+name+" handles authentication\nfunc Handle() {}\n")
+	}
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+
+	p, hint := s.resolveProject(root)
+	if hint != "" {
+		t.Fatalf("resolveProject: %s", hint)
+	}
+	st, err := store.Open(context.Background(), p.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// A hit whose path is not in the indexed project; FilterByPaths would return empty.
+	fakeHit := store.Hit{Path: "virtual/phantom/missing.go"}
+	result := s.applyMultiScaleFilter(context.Background(), st, p.DBPath, "authentication", []store.Hit{fakeHit})
+
+	// Without the fix, FilterByPaths would have silently dropped all hits.
+	// With the fix we fall back to the original hits.
+	if len(result) == 0 {
+		t.Error("applyMultiScaleFilter: dropped all hits when candidate paths had no overlap — expected fallback to original hits")
+	}
+}

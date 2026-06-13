@@ -486,7 +486,9 @@ func (s *Server) applyMultiScaleFilter(ctx context.Context, st *store.Store, dbP
 		candidatePaths = idx.SearchMeso(queryToks, 8)
 	}
 	if len(candidatePaths) >= 3 {
-		return store.FilterByPaths(hits, candidatePaths)
+		if filtered := store.FilterByPaths(hits, candidatePaths); len(filtered) > 0 {
+			return filtered
+		}
 	}
 	return hits
 }

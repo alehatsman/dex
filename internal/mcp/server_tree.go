@@ -73,11 +73,19 @@ func (s *Server) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	// querying the index, so callers get not-found instead of a misleading
 	// ok+empty response when the path was never indexed or doesn't exist.
 	if prefix != "" {
-		if _, statErr := os.Stat(filepath.Join(p.Root, prefix)); errors.Is(statErr, os.ErrNotExist) {
+		info, statErr := os.Stat(filepath.Join(p.Root, prefix))
+		if errors.Is(statErr, os.ErrNotExist) {
 			return nil, SearchTreeOutput{
 				Status: "not-found",
 				Root:   p.Root,
 				Hint:   fmt.Sprintf("path %q does not exist under %s", prefix, p.Root),
+			}, nil
+		}
+		if statErr == nil && !info.IsDir() {
+			return nil, SearchTreeOutput{
+				Status: "error",
+				Root:   p.Root,
+				Hint:   fmt.Sprintf("path %q is a file, not a directory — ls lists directories", prefix),
 			}, nil
 		}
 	}
