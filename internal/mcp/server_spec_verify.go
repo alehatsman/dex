@@ -84,11 +84,18 @@ func (s *Server) specVerify(ctx context.Context, _ *sdk.CallToolRequest, in Spec
 	if !filepath.IsAbs(specPath) {
 		specPath = filepath.Join(p.Root, specPath)
 	}
-	raw, err := os.ReadFile(specPath)
+	realSpec, err := filepath.EvalSymlinks(specPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, SpecVerifyOutput{Status: "no-spec", Hint: "spec file not found: " + specPath}, nil
 		}
+		return nil, SpecVerifyOutput{Status: "error", Hint: fmt.Sprintf("resolve spec path: %v", err)}, nil
+	}
+	if rel, relErr := filepath.Rel(p.Root, realSpec); relErr != nil || strings.HasPrefix(rel, "..") || rel == ".." {
+		return nil, SpecVerifyOutput{Status: "error", Hint: "spec_path must be inside the project root"}, nil
+	}
+	raw, err := os.ReadFile(realSpec)
+	if err != nil {
 		return nil, SpecVerifyOutput{Status: "error", Hint: fmt.Sprintf("read spec: %v", err)}, nil
 	}
 
