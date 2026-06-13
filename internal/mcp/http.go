@@ -64,10 +64,6 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// osStat is a package-level indirection so tests can mock disk-state
-// checks without touching the real filesystem. Production: os.Stat.
-var osStat = func(name string) (os.FileInfo, error) { return os.Stat(name) }
-
 // ProjectEntry registers one project the daemon will serve. ID is
 // derived from sha256(realpath(Root)) — same scheme proj.Resolve uses
 // — so URLs computed by clients line up with cache directory names.
@@ -642,6 +638,6 @@ func PreflightProjects(projects map[string]string, indexDir string) (warnings []
 // fileExists checks whether a path exists on disk. Used only by
 // PreflightProjects to flag missing indexes at startup.
 func fileExists(path string) bool {
-	_, err := osStat(path)
+	_, err := os.Stat(path)
 	return err == nil
 }
