@@ -481,7 +481,7 @@ func (s *Server) ShellRun(ctx context.Context, in ShellInput) (ShellOutput, erro
 	return out, err
 }
 
-func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
+func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
 	if strings.TrimSpace(in.Command) == "" {
 		return nil, ShellOutput{}, fmt.Errorf("command is required")
 	}
@@ -498,7 +498,7 @@ func (s *Server) shellRun(_ context.Context, _ *sdk.CallToolRequest, in ShellInp
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), shellTimeout)
+	ctx, cancel := context.WithTimeout(ctx, shellTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", in.Command)
