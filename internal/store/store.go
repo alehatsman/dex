@@ -82,10 +82,8 @@ const (
 	FTSModeOR
 )
 
-// Options influence the runtime behaviour of an opened Store.
-// All fields are optional; the zero value matches the default
-// (hybrid BM25+semantic search enabled).
-type Options struct {
+// SearchOptions controls the lexical/semantic retrieval legs and score fusion.
+type SearchOptions struct {
 	// DisableBM25 turns off the lexical (FTS5/BM25) leg of hybrid
 	// search. Useful for ablation / debugging the semantic ranking,
 	// or for indexes built before the chunks_fts migration on a
@@ -96,6 +94,54 @@ type Options struct {
 	// FTSModeAuto (recommended). See FTSMode for semantics.
 	FTSMode FTSMode
 
+	// MaxHitsPerFile, when > 0, caps results returned per unique file path.
+	// Applied after ranking, before final truncation to k. Zero = no cap.
+	MaxHitsPerFile int
+
+	// DefinitionBoost is the multiplier applied in ApplyLocalRerank to
+	// declaration-kind chunks (function/method/class/struct/…) for symbol
+	// queries, lifting the definition site over window/orphan fragments that
+	// merely mention the symbol. Zero = the default (defaultDefinitionBoost).
+	// Tuned against the symbol-query eval set (see symbol_eval_test.go, #146).
+	DefinitionBoost float64
+
+	// FusionMode selects the score-fusion strategy for the dense+BM25 lanes.
+	// FusionRRF uses Reciprocal Rank Fusion; FusionLinear uses a convex
+	// combination on min-max normalised scores. The zero value is FusionRRF,
+	// but the dex binary defaults to FusionLinear (calibrated in #317; set via
+	// DEX_FUSION_MODE).
+	FusionMode FusionMode
+
+	// FusionAlpha is the dense-lane weight in FusionLinear mode (0 = pure
+	// BM25, 1 = pure dense). Zero defaults to 0.7 (#317). Set via DEX_FUSION_ALPHA.
+	FusionAlpha float32
+}
+
+// GraphOptions controls the graph-proximity spreading-activation lane.
+type GraphOptions struct {
+	// GraphGamma is the per-hop decay applied to the graph-proximity lane
+	// during RRF fusion: a neighbor first reached at h hops contributes at
+	// γ^h weight, so 1-hop callers outrank 3-hop ones (GraphCoder-style,
+	// arXiv:2406.07003). Zero = the default (defaultGraphGamma). Set via
+	// DEX_GRAPH_GAMMA. Tuned on the retrieval eval harness (#247/#248).
+	GraphGamma float32
+
+	// GraphHopCap bounds spreading-activation traversal depth — the context
+	// blast-radius around matched symbols. Zero = the default
+	// (defaultGraphHopCap). Set via DEX_GRAPH_HOP_CAP.
+	GraphHopCap int
+
+	// GraphLaneWeight is a flat multiplier on the graph-proximity RRF lane.
+	// It scales the whole lane's contribution independently of the per-hop
+	// γ decay, so raising it lets the graph lane compete with dense+BM25.
+	// Zero = the default (defaultGraphLaneWeight = 1.0). Set via
+	// DEX_GRAPH_WEIGHT. Useful range: 1–4; at 2× a 1-hop neighbor (γ=0.6)
+	// contributes 1.2× the RRF score of a primary hit at the same rank.
+	GraphLaneWeight float32
+}
+
+// RerankOptions configures the optional cross-encoder reranking stage.
+type RerankOptions struct {
 	// Reranker, when non-nil, reorders the fused candidate pool via a
 	// cross-encoder before truncating to k. Nil = today's behaviour
 	// (pure RRF). On rerank.ErrUnreachable the search falls back to
@@ -118,41 +164,13 @@ type Options struct {
 	// 256-entry LRU on first use. Set explicitly to a sized cache to
 	// override; pass a no-op cache to disable.
 	RerankCache RerankCache
+}
 
-	// MaxHitsPerFile, when > 0, caps results returned per unique file path.
-	// Applied after ranking, before final truncation to k. Zero = no cap.
-	MaxHitsPerFile int
-
+// InfraOptions controls storage and learning behaviour.
+type InfraOptions struct {
 	// DisableCoAccess turns off Hebbian co-access edge learning and spreading.
 	// Set via DEX_COACCESS=0 or programmatically for isolated test stores.
 	DisableCoAccess bool
-
-	// DefinitionBoost is the multiplier applied in ApplyLocalRerank to
-	// declaration-kind chunks (function/method/class/struct/…) for symbol
-	// queries, lifting the definition site over window/orphan fragments that
-	// merely mention the symbol. Zero = the default (defaultDefinitionBoost).
-	// Tuned against the symbol-query eval set (see symbol_eval_test.go, #146).
-	DefinitionBoost float64
-
-	// GraphGamma is the per-hop decay applied to the graph-proximity lane
-	// during RRF fusion: a neighbor first reached at h hops contributes at
-	// γ^h weight, so 1-hop callers outrank 3-hop ones (GraphCoder-style,
-	// arXiv:2406.07003). Zero = the default (defaultGraphGamma). Set via
-	// DEX_GRAPH_GAMMA. Tuned on the retrieval eval harness (#247/#248).
-	GraphGamma float32
-
-	// GraphHopCap bounds spreading-activation traversal depth — the context
-	// blast-radius around matched symbols. Zero = the default
-	// (defaultGraphHopCap). Set via DEX_GRAPH_HOP_CAP.
-	GraphHopCap int
-
-	// GraphLaneWeight is a flat multiplier on the graph-proximity RRF lane.
-	// It scales the whole lane's contribution independently of the per-hop
-	// γ decay, so raising it lets the graph lane compete with dense+BM25.
-	// Zero = the default (defaultGraphLaneWeight = 1.0). Set via
-	// DEX_GRAPH_WEIGHT. Useful range: 1–4; at 2× a 1-hop neighbor (γ=0.6)
-	// contributes 1.2× the RRF score of a primary hit at the same rank.
-	GraphLaneWeight float32
 
 	// VectorQuant selects the on-disk encoding of the chunk_vecs KNN index.
 	// "" / "none" / "float32" = full-precision float32 (today's behavior);
@@ -165,17 +183,16 @@ type Options struct {
 	// Flipping the mode on an existing index rebuilds chunk_vecs from
 	// chunks.vec on the next Open.
 	VectorQuant string
+}
 
-	// FusionMode selects the score-fusion strategy for the dense+BM25 lanes.
-	// FusionRRF uses Reciprocal Rank Fusion; FusionLinear uses a convex
-	// combination on min-max normalised scores. The zero value is FusionRRF,
-	// but the dex binary defaults to FusionLinear (calibrated in #317; set via
-	// DEX_FUSION_MODE).
-	FusionMode FusionMode
-
-	// FusionAlpha is the dense-lane weight in FusionLinear mode (0 = pure
-	// BM25, 1 = pure dense). Zero defaults to 0.7 (#317). Set via DEX_FUSION_ALPHA.
-	FusionAlpha float32
+// Options influence the runtime behaviour of an opened Store.
+// All fields are optional; the zero value matches the default
+// (hybrid BM25+semantic search enabled).
+type Options struct {
+	SearchOptions
+	GraphOptions
+	RerankOptions
+	InfraOptions
 }
 
 type Store struct {

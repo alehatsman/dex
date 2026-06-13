@@ -94,7 +94,7 @@ func TestRecordCoAccessLTPFormula(t *testing.T) {
 func TestCoAccessDisabled(t *testing.T) {
 	db := t.TempDir() + "/disabled.db"
 	ctx := t.Context()
-	st, err := OpenWith(ctx, db, Options{DisableCoAccess: true})
+	st, err := OpenWith(ctx, db, Options{InfraOptions: InfraOptions{DisableCoAccess: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

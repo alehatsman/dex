@@ -503,7 +503,7 @@ func TestHybridDegradesGracefully(t *testing.T) {
 func TestDisableBM25(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	ctx := context.Background()
-	st, err := OpenWith(ctx, dbPath, Options{DisableBM25: true})
+	st, err := OpenWith(ctx, dbPath, Options{SearchOptions: SearchOptions{DisableBM25: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

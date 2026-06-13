@@ -527,16 +527,24 @@ func indexDir() (string, error) {
 // path that opens a Store sees the same configuration.
 func storeOpts() store.Options {
 	opts := store.Options{
-		DisableBM25:     os.Getenv("DEX_DISABLE_BM25") == "1",
-		DisableCoAccess: os.Getenv("DEX_COACCESS") == "0",
-		RerankPool:      rerankPool(),
-		MaxHitsPerFile:  maxHitsPerFile(),
-		GraphGamma:      graphGamma(),
-		GraphHopCap:     graphHopCap(),
-		GraphLaneWeight: graphLaneWeight(),
-		VectorQuant:     vectorQuant(),
-		FusionMode:      fusionMode(),
-		FusionAlpha:     fusionAlpha(),
+		SearchOptions: store.SearchOptions{
+			DisableBM25:    os.Getenv("DEX_DISABLE_BM25") == "1",
+			MaxHitsPerFile: maxHitsPerFile(),
+			FusionMode:     fusionMode(),
+			FusionAlpha:    fusionAlpha(),
+		},
+		GraphOptions: store.GraphOptions{
+			GraphGamma:      graphGamma(),
+			GraphHopCap:     graphHopCap(),
+			GraphLaneWeight: graphLaneWeight(),
+		},
+		RerankOptions: store.RerankOptions{
+			RerankPool: rerankPool(),
+		},
+		InfraOptions: store.InfraOptions{
+			DisableCoAccess: os.Getenv("DEX_COACCESS") == "0",
+			VectorQuant:     vectorQuant(),
+		},
 	}
 	// Assign through a typed-nil check: a (*rerank.Client)(nil) stored
 	// in the Reranker interface field would still compare != nil, and

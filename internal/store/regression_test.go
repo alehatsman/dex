@@ -313,7 +313,7 @@ func TestRetrievalRegression(t *testing.T) {
 		opts Options
 	}{
 		{name: "plain", opts: Options{}},
-		{name: "rerank", opts: Options{Reranker: substringReranker{}, RerankPool: 30}},
+		{name: "rerank", opts: Options{RerankOptions: RerankOptions{Reranker: substringReranker{}, RerankPool: 30}}},
 	}
 
 	for _, tc := range cases {

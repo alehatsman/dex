@@ -352,7 +352,7 @@ func TestSearchPopulatesRerankScore(t *testing.T) {
 	s := &Server{
 		EmbedClient: embed.New(srv.URL, "fake", 16, 5*time.Second),
 		IndexDir:    cacheDir,
-		StoreOpts:   store.Options{Reranker: stubReranker{}},
+		StoreOpts:   store.Options{RerankOptions: store.RerankOptions{Reranker: stubReranker{}}},
 	}
 	_, out, err := s.search(context.Background(), nil, SearchInput{
 		Query:       "function",

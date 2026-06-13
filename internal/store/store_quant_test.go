@@ -15,7 +15,7 @@ import (
 func openQuant(t *testing.T, dbPath, mode string) (*Store, context.Context) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := OpenWith(ctx, dbPath, Options{VectorQuant: mode})
+	st, err := OpenWith(ctx, dbPath, Options{InfraOptions: InfraOptions{VectorQuant: mode}})
 	if err != nil {
 		t.Fatalf("OpenWith(%q): %v", mode, err)
 	}
@@ -165,7 +165,7 @@ func TestVectorQuantMetaRoundTrip(t *testing.T) {
 	}
 
 	// 1. Build as int8.
-	st, err := OpenWith(ctx, dbPath, Options{VectorQuant: "int8"})
+	st, err := OpenWith(ctx, dbPath, Options{InfraOptions: InfraOptions{VectorQuant: "int8"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestVectorQuantMetaRoundTrip(t *testing.T) {
 	_ = st.Close()
 
 	// 2. Reopen as float32 — a mode flip must rebuild chunk_vecs (no reindex).
-	st, err = OpenWith(ctx, dbPath, Options{VectorQuant: ""})
+	st, err = OpenWith(ctx, dbPath, Options{InfraOptions: InfraOptions{VectorQuant: ""}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestVectorQuantMetaRoundTrip(t *testing.T) {
 	_ = st.Close()
 
 	// 3. Reopen as int8 again — flips back and still searches.
-	st, err = OpenWith(ctx, dbPath, Options{VectorQuant: "int8"})
+	st, err = OpenWith(ctx, dbPath, Options{InfraOptions: InfraOptions{VectorQuant: "int8"}})
 	if err != nil {
 		t.Fatal(err)
 	}
