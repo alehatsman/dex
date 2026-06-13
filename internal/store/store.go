@@ -41,6 +41,7 @@ const (
 	metaProjectRoot   = "project_root"
 	metaEmbedModel    = "embed_model"
 	metaVecQuant      = "vec_quant"
+	metaSchemaVersion = "schema_version"
 )
 
 // ErrEmbedModelMismatch is returned by EnsureEmbedModel when the active
@@ -49,6 +50,13 @@ const (
 // so silently mixing them would corrupt retrieval — callers must rebuild
 // the index (`dex reindex <path>`) before continuing.
 var ErrEmbedModelMismatch = errors.New("embedding model mismatch")
+
+// ErrSchemaVersionMismatch is returned by migrate when the index was written
+// by a binary with a different on-disk schema version. dex does not migrate
+// indexes in place — the index is a disposable derived artifact, so the
+// recovery path is a one-time `dex reindex` that rebuilds from source. Mirrors
+// the ErrEmbedModelMismatch fail-closed contract (#431).
+var ErrSchemaVersionMismatch = errors.New("schema version mismatch")
 
 // FusionMode controls how the dense and BM25 retrieval lanes are combined.
 type FusionMode int

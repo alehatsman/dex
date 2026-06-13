@@ -1096,37 +1096,62 @@ func min(a, b int) int {
 	return b
 }
 
-// TestMigrateChunkContextRunsIndependently guards the migration-chaining bug
-// (#329): migrateChunkContext used to be reachable only through
-// migrateCoAccessEdges' "not done yet" branch, so a DB that had already set
-// co_access_edges_added=1 would never get the chunk_context migration. migrate()
-// must invoke each migration independently, guarded by its own meta flag.
-func TestMigrateChunkContextRunsIndependently(t *testing.T) {
+// TestMigrateStampsSchemaVersion verifies a fresh index records the current
+// schema version, and that re-running migrate on a current index is an
+// idempotent no-op (self-heal path) rather than a failure (#431).
+func TestMigrateStampsSchemaVersion(t *testing.T) {
 	st, ctx := newStore(t)
 
-	// Simulate a legacy DB: co-access migration already complete, chunk_context
-	// migration never ran (its flag absent).
-	if _, err := st.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO meta(key, value) VALUES('co_access_edges_added', '1')`); err != nil {
-		t.Fatalf("seed co_access flag: %v", err)
-	}
-	if _, err := st.db.ExecContext(ctx,
-		`DELETE FROM meta WHERE key='chunk_fts_content_v2'`); err != nil {
-		t.Fatalf("clear chunk_context flag: %v", err)
-	}
-
-	if err := st.migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	// Before the fix the early return in migrateCoAccessEdges would leave this
-	// flag absent (Scan -> ErrNoRows); with independent invocation it is set.
-	var done string
+	var got string
 	if err := st.db.QueryRowContext(ctx,
-		`SELECT value FROM meta WHERE key='chunk_fts_content_v2'`).Scan(&done); err != nil {
-		t.Fatalf("chunk_context migration was skipped (read flag): %v", err)
+		`SELECT value FROM meta WHERE key='schema_version'`).Scan(&got); err != nil {
+		t.Fatalf("read schema_version: %v", err)
 	}
-	if done != "1" {
-		t.Fatalf("chunk_context flag = %q, want \"1\"", done)
+	if got != schemaVersion {
+		t.Fatalf("schema_version = %q, want %q", got, schemaVersion)
+	}
+
+	// Re-asserting the current schema must succeed (idempotent).
+	if err := st.migrate(ctx); err != nil {
+		t.Fatalf("re-migrate current schema: %v", err)
+	}
+}
+
+// TestMigrateRejectsForeignSchemaVersion verifies the fail-closed gate: an
+// initialized index whose recorded schema version differs from this binary's
+// is rejected with ErrSchemaVersionMismatch, never silently patched in place.
+// This covers both a legacy index (no schema_version row at all) and an index
+// written by a future binary.
+func TestMigrateRejectsForeignSchemaVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, st *Store, ctx context.Context)
+	}{
+		{
+			name: "legacy index without version key",
+			setup: func(t *testing.T, st *Store, ctx context.Context) {
+				if _, err := st.db.ExecContext(ctx,
+					`DELETE FROM meta WHERE key='schema_version'`); err != nil {
+					t.Fatalf("clear schema_version: %v", err)
+				}
+			},
+		},
+		{
+			name: "index from a future binary",
+			setup: func(t *testing.T, st *Store, ctx context.Context) {
+				if _, err := st.db.ExecContext(ctx,
+					`UPDATE meta SET value='9999' WHERE key='schema_version'`); err != nil {
+					t.Fatalf("bump schema_version: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, ctx := newStore(t)
+			tc.setup(t, st, ctx)
+			if err := st.migrate(ctx); !errors.Is(err, ErrSchemaVersionMismatch) {
+				t.Fatalf("migrate err = %v, want ErrSchemaVersionMismatch", err)
+			}
+		})
 	}
 }
