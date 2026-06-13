@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -71,12 +71,12 @@ func (s *Server) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathI
 			Hint: fmt.Sprintf("graph not indexed for %s — run `dex index %s --graph=only`.", p.Root, p.Root)}, nil
 	}
 
-	srcs := resolveCallTargets(view, in.Src, in.Package)
+	srcs := graphquery.ResolveCallTargets(view, in.Src, in.Package)
 	if len(srcs) == 0 {
 		return nil, PathOutput{Status: "not-found", Project: p.Root,
 			Hint: fmt.Sprintf("no graph node matches src=%q", in.Src)}, nil
 	}
-	dsts := resolveCallTargets(view, in.Dst, in.Package)
+	dsts := graphquery.ResolveCallTargets(view, in.Dst, in.Package)
 	if len(dsts) == 0 {
 		return nil, PathOutput{Status: "not-found", Project: p.Root,
 			Hint: fmt.Sprintf("no graph node matches dst=%q", in.Dst)}, nil
@@ -95,7 +95,7 @@ func (s *Server) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathI
 		dstSet[d.ID] = true
 	}
 
-	hops := bfsPath(view, srcs, dstSet, maxDepth)
+	hops := graphquery.BFSPath(view, srcs, dstSet, maxDepth)
 	if hops == nil {
 		return nil, PathOutput{
 			Status: "no-path", Project: p.Root,
@@ -106,102 +106,6 @@ func (s *Server) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathI
 	return nil, PathOutput{
 		Status: "ok", Project: p.Root,
 		Src: in.Src, Dst: in.Dst, MaxDepth: maxDepth,
-		Path: hops,
+		Path: pathHopsFrom(hops),
 	}, nil
-}
-
-// bfsPath finds the shortest path from any seed node to any node in dstSet,
-// following `calls` and `imports` edges. Returns nil when no path exists
-// within maxDepth hops.
-func bfsPath(view *graphView, seeds []graphNode, dstSet map[string]bool, maxDepth int) []PathHop {
-	type item struct {
-		id       string
-		depth    int
-		prevID   string
-		edgeKind graph.EdgeKind
-	}
-
-	visited := map[string]bool{}
-	parent := map[string]item{}
-
-	queue := make([]item, 0, len(seeds))
-	for _, s := range seeds {
-		if dstSet[s.ID] {
-			// src == dst: trivial path of one hop
-			n := view.nodesByID[s.ID]
-			return []PathHop{{
-				QualifiedName: n.QualifiedName,
-				Package:       n.PackagePath,
-				Kind:          string(n.Kind),
-				Path:          n.FilePath,
-				StartLine:     n.StartLine,
-			}}
-		}
-		visited[s.ID] = true
-		queue = append(queue, item{id: s.ID, depth: 0})
-	}
-
-	var found string
-	for len(queue) > 0 && found == "" {
-		cur := queue[0]
-		queue = queue[1:]
-		if cur.depth >= maxDepth {
-			continue
-		}
-		for _, e := range view.edgesBySrc[cur.id] {
-			if e.Kind != graph.EdgeCalls && e.Kind != graph.EdgeImports {
-				continue
-			}
-			if visited[e.DstID] {
-				continue
-			}
-			visited[e.DstID] = true
-			parent[e.DstID] = item{id: cur.id, depth: cur.depth, edgeKind: e.Kind}
-			if dstSet[e.DstID] {
-				found = e.DstID
-				break
-			}
-			queue = append(queue, item{id: e.DstID, depth: cur.depth + 1, prevID: cur.id, edgeKind: e.Kind})
-		}
-	}
-
-	if found == "" {
-		return nil
-	}
-
-	// Reconstruct path from found back to seed.
-	var ids []string
-	cur := found
-	for {
-		ids = append(ids, cur)
-		p, ok := parent[cur]
-		if !ok {
-			break
-		}
-		cur = p.id
-	}
-	// Reverse so it reads src → dst.
-	for i, j := 0, len(ids)-1; i < j; i, j = i+1, j-1 {
-		ids[i], ids[j] = ids[j], ids[i]
-	}
-
-	hops := make([]PathHop, 0, len(ids))
-	for i, id := range ids {
-		n, ok := view.nodesByID[id]
-		if !ok {
-			continue
-		}
-		hop := PathHop{
-			QualifiedName: n.QualifiedName,
-			Package:       n.PackagePath,
-			Kind:          string(n.Kind),
-			Path:          n.FilePath,
-			StartLine:     n.StartLine,
-		}
-		if i > 0 {
-			hop.EdgeKind = string(parent[id].edgeKind)
-		}
-		hops = append(hops, hop)
-	}
-	return hops
 }

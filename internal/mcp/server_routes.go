@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -65,7 +66,7 @@ func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesIn
 	var routes []RouteEntry
 	seen := map[string]bool{}
 
-	add := func(n graphNode, kind, registeredBy string) {
+	add := func(n graphquery.Node, kind, registeredBy string) {
 		key := n.ID + "|" + kind
 		if seen[key] {
 			return
@@ -82,14 +83,14 @@ func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesIn
 	}
 
 	// 1. ServeHTTP implementations → HTTP handlers.
-	for _, n := range view.nodesByName["ServeHTTP"] {
+	for _, n := range view.NodesByName["ServeHTTP"] {
 		if n.Kind == graph.NodeMethod {
 			add(n, "http_handler", "")
 		}
 	}
 
 	// 2. Functions/methods named handle*/Handle* (excluding ServeHTTP already captured).
-	for name, nodes := range view.nodesByName {
+	for name, nodes := range view.NodesByName {
 		lower := strings.ToLower(name)
 		if name == "ServeHTTP" {
 			continue
@@ -118,12 +119,12 @@ func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesIn
 		"RegisterService": "grpc_handler",
 	}
 	for regName, kind := range registrationTargets {
-		for _, regNode := range view.nodesByName[regName] {
-			for _, e := range view.edgesByDst[regNode.ID] {
+		for _, regNode := range view.NodesByName[regName] {
+			for _, e := range view.EdgesByDst[regNode.ID] {
 				if e.Kind != graph.EdgeCalls {
 					continue
 				}
-				caller, ok := view.nodesByID[e.SrcID]
+				caller, ok := view.NodesByID[e.SrcID]
 				if !ok {
 					continue
 				}

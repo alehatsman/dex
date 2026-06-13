@@ -11,6 +11,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/codemap"
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -201,8 +202,8 @@ func TestPickSuggestedReadsPageRankTiebreaker(t *testing.T) {
 	// view stub: hub.go has a node with PageRank 0.8, ordinary.go is
 	// 0.05. Both files have one whole-file-spanning function node so
 	// chunkPageRank's "covering" path resolves.
-	view := &graphView{
-		nodesByPath: map[string][]graphNode{
+	view := &graphquery.View{
+		NodesByPath: map[string][]graphquery.Node{
 			"hub.go":      {{ID: "hub", Kind: graph.NodeFunction, FilePath: "hub.go", StartLine: 1, EndLine: 100, PageRank: 0.8}},
 			"ordinary.go": {{ID: "ord", Kind: graph.NodeFunction, FilePath: "ordinary.go", StartLine: 1, EndLine: 100, PageRank: 0.05}},
 		},
@@ -340,19 +341,19 @@ func TestIsTestPath(t *testing.T) {
 // the response budget.
 func TestEnrichGraphCaps(t *testing.T) {
 	t.Run("node cap via package rollup", func(t *testing.T) {
-		view := &graphView{
-			nodesByID:        map[string]graphNode{},
-			nodesByName:      map[string][]graphNode{},
-			nodesByQualified: map[string][]graphNode{},
-			nodesByPackage:   map[string][]graphNode{},
-			nodesByPath:      map[string][]graphNode{},
-			edgesBySrc:       map[string][]graphEdge{},
-			edgesByDst:       map[string][]graphEdge{},
-			edgesByKind:      map[graph.EdgeKind][]graphEdge{},
+		view := &graphquery.View{
+			NodesByID:        map[string]graphquery.Node{},
+			NodesByName:      map[string][]graphquery.Node{},
+			NodesByQualified: map[string][]graphquery.Node{},
+			NodesByPackage:   map[string][]graphquery.Node{},
+			NodesByPath:      map[string][]graphquery.Node{},
+			EdgesBySrc:       map[string][]graphquery.Edge{},
+			EdgesByDst:       map[string][]graphquery.Edge{},
+			EdgesByKind:      map[graph.EdgeKind][]graphquery.Edge{},
 		}
 		const pkg = "example.com/bigpkg"
 		for i := range 100 {
-			n := graphNode{
+			n := graphquery.Node{
 				ID:            fmt.Sprintf("n%d", i),
 				Kind:          graph.NodeFunction,
 				Name:          fmt.Sprintf("Fn%d", i),
@@ -360,9 +361,9 @@ func TestEnrichGraphCaps(t *testing.T) {
 				PackagePath:   pkg,
 				FilePath:      "bigpkg/bigpkg.go",
 			}
-			view.nodesByID[n.ID] = n
-			view.nodesByPackage[pkg] = append(view.nodesByPackage[pkg], n)
-			view.nodesByPath[n.FilePath] = append(view.nodesByPath[n.FilePath], n)
+			view.NodesByID[n.ID] = n
+			view.NodesByPackage[pkg] = append(view.NodesByPackage[pkg], n)
+			view.NodesByPath[n.FilePath] = append(view.NodesByPath[n.FilePath], n)
 		}
 		out := &ContextOutput{}
 		enrichGraph(out, IntentArchitecture, view, []SemHit{{Path: "bigpkg/bigpkg.go"}}, nil)
@@ -375,29 +376,29 @@ func TestEnrichGraphCaps(t *testing.T) {
 	})
 
 	t.Run("edge cap via package_topology imports", func(t *testing.T) {
-		view := &graphView{
-			nodesByID:        map[string]graphNode{},
-			nodesByName:      map[string][]graphNode{},
-			nodesByQualified: map[string][]graphNode{},
-			nodesByPackage:   map[string][]graphNode{},
-			nodesByPath:      map[string][]graphNode{},
-			edgesBySrc:       map[string][]graphEdge{},
-			edgesByDst:       map[string][]graphEdge{},
-			edgesByKind:      map[graph.EdgeKind][]graphEdge{},
+		view := &graphquery.View{
+			NodesByID:        map[string]graphquery.Node{},
+			NodesByName:      map[string][]graphquery.Node{},
+			NodesByQualified: map[string][]graphquery.Node{},
+			NodesByPackage:   map[string][]graphquery.Node{},
+			NodesByPath:      map[string][]graphquery.Node{},
+			EdgesBySrc:       map[string][]graphquery.Edge{},
+			EdgesByDst:       map[string][]graphquery.Edge{},
+			EdgesByKind:      map[graph.EdgeKind][]graphquery.Edge{},
 		}
 		const src = "example.com/src"
-		srcPkg := graphNode{ID: "src", Kind: graph.NodePackage, Name: "src", PackagePath: src, FilePath: "src/src.go"}
-		view.nodesByID[srcPkg.ID] = srcPkg
-		view.nodesByPackage[src] = append(view.nodesByPackage[src], srcPkg)
-		view.nodesByPath[srcPkg.FilePath] = append(view.nodesByPath[srcPkg.FilePath], srcPkg)
+		srcPkg := graphquery.Node{ID: "src", Kind: graph.NodePackage, Name: "src", PackagePath: src, FilePath: "src/src.go"}
+		view.NodesByID[srcPkg.ID] = srcPkg
+		view.NodesByPackage[src] = append(view.NodesByPackage[src], srcPkg)
+		view.NodesByPath[srcPkg.FilePath] = append(view.NodesByPath[srcPkg.FilePath], srcPkg)
 		for i := range 100 {
 			dstID := fmt.Sprintf("dst%d", i)
-			dst := graphNode{ID: dstID, Kind: graph.NodePackage, Name: dstID, PackagePath: "example.com/" + dstID}
-			view.nodesByID[dstID] = dst
-			e := graphEdge{Kind: graph.EdgeImports, SrcID: srcPkg.ID, DstID: dstID}
-			view.edgesByKind[graph.EdgeImports] = append(view.edgesByKind[graph.EdgeImports], e)
-			view.edgesBySrc[srcPkg.ID] = append(view.edgesBySrc[srcPkg.ID], e)
-			view.edgesByDst[dstID] = append(view.edgesByDst[dstID], e)
+			dst := graphquery.Node{ID: dstID, Kind: graph.NodePackage, Name: dstID, PackagePath: "example.com/" + dstID}
+			view.NodesByID[dstID] = dst
+			e := graphquery.Edge{Kind: graph.EdgeImports, SrcID: srcPkg.ID, DstID: dstID}
+			view.EdgesByKind[graph.EdgeImports] = append(view.EdgesByKind[graph.EdgeImports], e)
+			view.EdgesBySrc[srcPkg.ID] = append(view.EdgesBySrc[srcPkg.ID], e)
+			view.EdgesByDst[dstID] = append(view.EdgesByDst[dstID], e)
 		}
 		out := &ContextOutput{}
 		enrichGraph(out, IntentPackageTopology, view, []SemHit{{Path: "src/src.go"}}, nil)
@@ -416,15 +417,15 @@ func TestEnrichGraphCaps(t *testing.T) {
 // anchoring the rollup must surface the project's central packages
 // even when semHits point only at non-Go paths.
 func TestArchitectureAnchorsOnPageRank(t *testing.T) {
-	view := &graphView{
-		nodesByID:        map[string]graphNode{},
-		nodesByName:      map[string][]graphNode{},
-		nodesByQualified: map[string][]graphNode{},
-		nodesByPackage:   map[string][]graphNode{},
-		nodesByPath:      map[string][]graphNode{},
-		edgesBySrc:       map[string][]graphEdge{},
-		edgesByDst:       map[string][]graphEdge{},
-		edgesByKind:      map[graph.EdgeKind][]graphEdge{},
+	view := &graphquery.View{
+		NodesByID:        map[string]graphquery.Node{},
+		NodesByName:      map[string][]graphquery.Node{},
+		NodesByQualified: map[string][]graphquery.Node{},
+		NodesByPackage:   map[string][]graphquery.Node{},
+		NodesByPath:      map[string][]graphquery.Node{},
+		EdgesBySrc:       map[string][]graphquery.Edge{},
+		EdgesByDst:       map[string][]graphquery.Edge{},
+		EdgesByKind:      map[graph.EdgeKind][]graphquery.Edge{},
 	}
 	// Three packages, descending centrality: core (hub), mid, tangent.
 	type pkgSpec struct {
@@ -438,14 +439,14 @@ func TestArchitectureAnchorsOnPageRank(t *testing.T) {
 		{"example.com/tangent", "tangent/tangent.go", 0.05},
 	}
 	for _, s := range specs {
-		pkgNode := graphNode{
+		pkgNode := graphquery.Node{
 			ID: s.path + "::pkg", Kind: graph.NodePackage,
 			Name: pkgTail(s.path), PackagePath: s.path,
 			FilePath: s.file, PageRank: s.pr,
 		}
-		view.nodesByID[pkgNode.ID] = pkgNode
-		view.nodesByPackage[s.path] = append(view.nodesByPackage[s.path], pkgNode)
-		view.nodesByPath[s.file] = append(view.nodesByPath[s.file], pkgNode)
+		view.NodesByID[pkgNode.ID] = pkgNode
+		view.NodesByPackage[s.path] = append(view.NodesByPackage[s.path], pkgNode)
+		view.NodesByPath[s.file] = append(view.NodesByPath[s.file], pkgNode)
 	}
 	// semHits point only at a doc file — no graph nodes there.
 	out := &ContextOutput{}
@@ -468,30 +469,30 @@ func TestArchitectureAnchorsOnPageRank(t *testing.T) {
 // anchor union still pulls in subsystem-specific packages when the user
 // names one. The architecture rollup should be hub ∪ requested.
 func TestArchitectureAnchorAugmentedBySemHits(t *testing.T) {
-	view := &graphView{
-		nodesByID:        map[string]graphNode{},
-		nodesByName:      map[string][]graphNode{},
-		nodesByQualified: map[string][]graphNode{},
-		nodesByPackage:   map[string][]graphNode{},
-		nodesByPath:      map[string][]graphNode{},
-		edgesBySrc:       map[string][]graphEdge{},
-		edgesByDst:       map[string][]graphEdge{},
-		edgesByKind:      map[graph.EdgeKind][]graphEdge{},
+	view := &graphquery.View{
+		NodesByID:        map[string]graphquery.Node{},
+		NodesByName:      map[string][]graphquery.Node{},
+		NodesByQualified: map[string][]graphquery.Node{},
+		NodesByPackage:   map[string][]graphquery.Node{},
+		NodesByPath:      map[string][]graphquery.Node{},
+		EdgesBySrc:       map[string][]graphquery.Edge{},
+		EdgesByDst:       map[string][]graphquery.Edge{},
+		EdgesByKind:      map[graph.EdgeKind][]graphquery.Edge{},
 	}
-	hub := graphNode{
+	hub := graphquery.Node{
 		ID: "hub::pkg", Kind: graph.NodePackage,
 		Name: "hub", PackagePath: "example.com/hub",
 		FilePath: "hub/hub.go", PageRank: 0.9,
 	}
-	leaf := graphNode{
+	leaf := graphquery.Node{
 		ID: "leaf::pkg", Kind: graph.NodePackage,
 		Name: "leaf", PackagePath: "example.com/leaf",
 		FilePath: "leaf/leaf.go", PageRank: 0, // no centrality
 	}
-	for _, n := range []graphNode{hub, leaf} {
-		view.nodesByID[n.ID] = n
-		view.nodesByPackage[n.PackagePath] = append(view.nodesByPackage[n.PackagePath], n)
-		view.nodesByPath[n.FilePath] = append(view.nodesByPath[n.FilePath], n)
+	for _, n := range []graphquery.Node{hub, leaf} {
+		view.NodesByID[n.ID] = n
+		view.NodesByPackage[n.PackagePath] = append(view.NodesByPackage[n.PackagePath], n)
+		view.NodesByPath[n.FilePath] = append(view.NodesByPath[n.FilePath], n)
 	}
 	out := &ContextOutput{}
 	enrichGraph(out, IntentArchitecture, view, []SemHit{{Path: "leaf/leaf.go"}}, nil)
@@ -1475,15 +1476,15 @@ func TestContextRouterEmptyQuestionRendersMap(t *testing.T) {
 func TestCompactID(t *testing.T) {
 	cases := []struct {
 		name string
-		n    graphNode
+		n    graphquery.Node
 		want string
 	}{
-		{"method", graphNode{Kind: graph.NodeMethod, Name: "ContextRouter", QualifiedName: "(*Server).ContextRouter", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp.(*Server).ContextRouter"},
-		{"type", graphNode{Kind: graph.NodeStruct, Name: "Server", QualifiedName: "Server", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp.Server"},
-		{"package", graphNode{Kind: graph.NodePackage, QualifiedName: "github.com/foo/bar/internal/mcp", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp"},
-		{"import", graphNode{Kind: graph.NodeImport, Name: "sync", QualifiedName: "sync", PackagePath: "github.com/foo/bar/internal/mcp"}, "sync"},
-		{"field", graphNode{Kind: graph.NodeField, Name: "ChatClient", QualifiedName: "Server.ChatClient", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp.Server.ChatClient"},
-		{"stdlib pkg path", graphNode{Kind: graph.NodeFunction, Name: "Println", QualifiedName: "Println", PackagePath: "fmt"}, "fmt.Println"},
+		{"method", graphquery.Node{Kind: graph.NodeMethod, Name: "ContextRouter", QualifiedName: "(*Server).ContextRouter", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp.(*Server).ContextRouter"},
+		{"type", graphquery.Node{Kind: graph.NodeStruct, Name: "Server", QualifiedName: "Server", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp.Server"},
+		{"package", graphquery.Node{Kind: graph.NodePackage, QualifiedName: "github.com/foo/bar/internal/mcp", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp"},
+		{"import", graphquery.Node{Kind: graph.NodeImport, Name: "sync", QualifiedName: "sync", PackagePath: "github.com/foo/bar/internal/mcp"}, "sync"},
+		{"field", graphquery.Node{Kind: graph.NodeField, Name: "ChatClient", QualifiedName: "Server.ChatClient", PackagePath: "github.com/foo/bar/internal/mcp"}, "mcp.Server.ChatClient"},
+		{"stdlib pkg path", graphquery.Node{Kind: graph.NodeFunction, Name: "Println", QualifiedName: "Println", PackagePath: "fmt"}, "fmt.Println"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

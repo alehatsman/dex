@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -68,7 +69,7 @@ func (s *Server) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in Cyc
 		return nil, CyclesOutput{Status: "no-graph", Project: p.Root,
 			Hint: fmt.Sprintf("graph not indexed for %s — run `dex index %s --graph=only`.", p.Root, p.Root)}, nil
 	}
-	if len(view.edgesByKind[graph.EdgeCalls]) == 0 {
+	if len(view.EdgesByKind[graph.EdgeCalls]) == 0 {
 		return nil, CyclesOutput{Status: "no-graph", Project: p.Root,
 			Hint: "graph has no `calls` edges — reindex with this release (`dex index . --graph=only`) to extract them."}, nil
 	}
@@ -85,7 +86,7 @@ func (s *Server) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in Cyc
 		k = 100
 	}
 
-	sccs := buildCycles(view, minSize)
+	sccs := graphquery.BuildCycles(view, minSize)
 	out := CyclesOutput{Status: "ok", Project: p.Root, Total: len(sccs)}
 	if len(sccs) > k {
 		sccs = sccs[:k]
@@ -93,7 +94,7 @@ func (s *Server) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in Cyc
 	for _, scc := range sccs {
 		c := Cycle{Size: len(scc)}
 		for _, id := range scc {
-			n, ok := view.nodesByID[id]
+			n, ok := view.NodesByID[id]
 			if !ok {
 				continue
 			}
@@ -108,33 +109,4 @@ func (s *Server) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in Cyc
 		out.Cycles = append(out.Cycles, c)
 	}
 	return nil, out, nil
-}
-
-// buildCycles computes Tarjan SCCs over the `calls` edges in the view
-// and returns IDs of components of size ≥ minSize, sorted by descending
-// size. Pure over view — unit-testable.
-func buildCycles(view *graphView, minSize int) [][]string {
-	nodes := make([]graph.Node, 0, len(view.nodesByID))
-	for _, n := range view.nodesByID {
-		nodes = append(nodes, graph.Node{
-			ID:          n.ID,
-			PackagePath: n.PackagePath,
-		})
-	}
-	edges := make([]graph.Edge, 0, len(view.edgesByKind[graph.EdgeCalls]))
-	for _, e := range view.edgesByKind[graph.EdgeCalls] {
-		edges = append(edges, graph.Edge{
-			Kind:  graph.EdgeCalls,
-			SrcID: e.SrcID,
-			DstID: e.DstID,
-		})
-	}
-	sccs := graph.TarjanSCC(nodes, edges, nil)
-	var out [][]string
-	for _, scc := range sccs {
-		if len(scc.IDs) >= minSize {
-			out = append(out, scc.IDs)
-		}
-	}
-	return out
 }

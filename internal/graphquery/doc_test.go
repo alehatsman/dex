@@ -1,4 +1,4 @@
-package mcp
+package graphquery
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/alehatsman/dex/internal/graph"
 )
 
-// docVaultView hand-builds a graphView for a small doc vault:
+// docVaultView hand-builds a View for a small doc vault:
 //
 //	index.md  --links-->     specs/auth.md   (two sites: lines 3 and 4)
 //	index.md  --wikilinks--> specs/auth.md   (line 8)
@@ -14,9 +14,9 @@ import (
 //	notes/ideas.md --wikilinks--> specs/auth.md
 //	index.md  --calls-->     specs/auth.md   (a bogus code edge that must
 //	                                           never surface via doc tools)
-func docVaultView() *graphView {
-	doc := func(rel string) graphNode {
-		return graphNode{
+func docVaultView() *View {
+	doc := func(rel string) Node {
+		return Node{
 			ID:   graph.NodeID("", "_markdown", graph.NodeDocument, rel),
 			Kind: graph.NodeDocument, Name: baseName(rel), QualifiedName: rel,
 			PackagePath: "_markdown", FilePath: rel,
@@ -27,10 +27,10 @@ func docVaultView() *graphView {
 	gloss := doc("specs/glossary.md")
 	ideas := doc("notes/ideas.md")
 
-	edge := func(kind graph.EdgeKind, src, dst graphNode, line int) graphEdge {
-		return graphEdge{Kind: kind, SrcID: src.ID, DstID: dst.ID, FilePath: src.FilePath, StartLine: line}
+	edge := func(kind graph.EdgeKind, src, dst Node, line int) Edge {
+		return Edge{Kind: kind, SrcID: src.ID, DstID: dst.ID, FilePath: src.FilePath, StartLine: line}
 	}
-	edges := []graphEdge{
+	edges := []Edge{
 		edge(graph.EdgeLinks, index, auth, 3),
 		edge(graph.EdgeLinks, index, auth, 4),
 		edge(graph.EdgeWikilinks, index, auth, 8),
@@ -39,28 +39,28 @@ func docVaultView() *graphView {
 		edge(graph.EdgeCalls, index, auth, 99), // must be ignored by doc tools
 	}
 
-	v := &graphView{
-		nodesByID:        map[string]graphNode{},
-		nodesByQualified: map[string][]graphNode{},
-		nodesByPath:      map[string][]graphNode{},
-		edgesBySrc:       map[string][]graphEdge{},
-		edgesByDst:       map[string][]graphEdge{},
+	v := &View{
+		NodesByID:        map[string]Node{},
+		NodesByQualified: map[string][]Node{},
+		NodesByPath:      map[string][]Node{},
+		EdgesBySrc:       map[string][]Edge{},
+		EdgesByDst:       map[string][]Edge{},
 	}
-	for _, n := range []graphNode{index, auth, gloss, ideas} {
-		v.nodesByID[n.ID] = n
-		// Mirror loadGraphView exactly: nodesByQualified is populated only
+	for _, n := range []Node{index, auth, gloss, ideas} {
+		v.NodesByID[n.ID] = n
+		// Mirror loadGraphView exactly: NodesByQualified is populated only
 		// when QualifiedName != Name (so a root-level doc like "index.md"
-		// is absent), while nodesByPath is keyed on FilePath for every node.
+		// is absent), while NodesByPath is keyed on FilePath for every node.
 		if n.QualifiedName != "" && n.QualifiedName != n.Name {
-			v.nodesByQualified[n.QualifiedName] = append(v.nodesByQualified[n.QualifiedName], n)
+			v.NodesByQualified[n.QualifiedName] = append(v.NodesByQualified[n.QualifiedName], n)
 		}
 		if n.FilePath != "" {
-			v.nodesByPath[n.FilePath] = append(v.nodesByPath[n.FilePath], n)
+			v.NodesByPath[n.FilePath] = append(v.NodesByPath[n.FilePath], n)
 		}
 	}
 	for _, e := range edges {
-		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
-		v.edgesByDst[e.DstID] = append(v.edgesByDst[e.DstID], e)
+		v.EdgesBySrc[e.SrcID] = append(v.EdgesBySrc[e.SrcID], e)
+		v.EdgesByDst[e.DstID] = append(v.EdgesByDst[e.DstID], e)
 	}
 	return v
 }
@@ -76,11 +76,11 @@ func baseName(rel string) string {
 
 func TestCollectDocEdgesOutgoing(t *testing.T) {
 	v := docVaultView()
-	targets := resolveDocTargets(v, "index.md")
+	targets := ResolveDocTargets(v, "index.md")
 	if len(targets) != 1 {
-		t.Fatalf("resolveDocTargets(index.md) = %d targets, want 1", len(targets))
+		t.Fatalf("ResolveDocTargets(index.md) = %d targets, want 1", len(targets))
 	}
-	hits := collectDocEdges(v, targets, false, 50)
+	hits := CollectDocEdges(v, targets, false, 50)
 
 	// 4 outgoing doc edges (two auth links on distinct lines + one auth
 	// wikilink + one glossary wikilink). The `calls` edge is excluded.
@@ -94,7 +94,7 @@ func TestCollectDocEdgesOutgoing(t *testing.T) {
 	}
 	// Sorted by doc, then kind, then line: glossary(wiki) last; auth links
 	// (lines 3,4) before auth wikilink (line 8).
-	want := []DocLink{
+	want := []DocEdge{
 		{Doc: "specs/auth.md", Kind: "links", LinkSiteLine: 3},
 		{Doc: "specs/auth.md", Kind: "links", LinkSiteLine: 4},
 		{Doc: "specs/auth.md", Kind: "wikilinks", LinkSiteLine: 8},
@@ -110,8 +110,8 @@ func TestCollectDocEdgesOutgoing(t *testing.T) {
 
 func TestCollectDocEdgesBacklinks(t *testing.T) {
 	v := docVaultView()
-	targets := resolveDocTargets(v, "specs/auth.md")
-	hits := collectDocEdges(v, targets, true, 50)
+	targets := ResolveDocTargets(v, "specs/auth.md")
+	hits := CollectDocEdges(v, targets, true, 50)
 
 	// Incoming: index.md links (3,4) + index.md wikilink (8) + ideas.md
 	// wikilink (3) = 4. The calls edge is excluded.
@@ -137,8 +137,8 @@ func TestCollectDocEdgesBacklinks(t *testing.T) {
 // surfaces the anchor, and that outgoing links render a heading peer
 // under its parent doc. The doc→heading `contains` edge must not leak in.
 func TestCollectDocEdgesHeadingRollup(t *testing.T) {
-	mkDoc := func(rel string) graphNode {
-		return graphNode{
+	mkDoc := func(rel string) Node {
+		return Node{
 			ID:   graph.NodeID("", "_markdown", graph.NodeDocument, rel),
 			Kind: graph.NodeDocument, Name: baseName(rel), QualifiedName: rel,
 			PackagePath: "_markdown", FilePath: rel,
@@ -147,37 +147,37 @@ func TestCollectDocEdgesHeadingRollup(t *testing.T) {
 	spec := mkDoc("spec.md")
 	guide := mkDoc("guide.md")
 	flowQN := "spec.md#flow"
-	flow := graphNode{
+	flow := Node{
 		ID:   graph.NodeID("", "_markdown", graph.NodeHeading, flowQN),
 		Kind: graph.NodeHeading, Name: "Flow", QualifiedName: flowQN,
 		PackagePath: "_markdown", FilePath: "spec.md",
 	}
-	edge := func(kind graph.EdgeKind, src, dst graphNode, line int) graphEdge {
-		return graphEdge{Kind: kind, SrcID: src.ID, DstID: dst.ID, FilePath: src.FilePath, StartLine: line}
+	edge := func(kind graph.EdgeKind, src, dst Node, line int) Edge {
+		return Edge{Kind: kind, SrcID: src.ID, DstID: dst.ID, FilePath: src.FilePath, StartLine: line}
 	}
-	edges := []graphEdge{
+	edges := []Edge{
 		edge(graph.EdgeContains, spec, flow, 5), // doc → heading; must be ignored
 		edge(graph.EdgeLinks, guide, flow, 3),   // guide links to spec.md#flow
 		edge(graph.EdgeLinks, guide, spec, 4),   // guide links to spec.md (whole doc)
 	}
-	v := &graphView{
-		nodesByID:   map[string]graphNode{},
-		nodesByPath: map[string][]graphNode{},
-		edgesBySrc:  map[string][]graphEdge{},
-		edgesByDst:  map[string][]graphEdge{},
+	v := &View{
+		NodesByID:   map[string]Node{},
+		NodesByPath: map[string][]Node{},
+		EdgesBySrc:  map[string][]Edge{},
+		EdgesByDst:  map[string][]Edge{},
 	}
-	for _, n := range []graphNode{spec, guide, flow} {
-		v.nodesByID[n.ID] = n
-		v.nodesByPath[n.FilePath] = append(v.nodesByPath[n.FilePath], n)
+	for _, n := range []Node{spec, guide, flow} {
+		v.NodesByID[n.ID] = n
+		v.NodesByPath[n.FilePath] = append(v.NodesByPath[n.FilePath], n)
 	}
 	for _, e := range edges {
-		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
-		v.edgesByDst[e.DstID] = append(v.edgesByDst[e.DstID], e)
+		v.EdgesBySrc[e.SrcID] = append(v.EdgesBySrc[e.SrcID], e)
+		v.EdgesByDst[e.DstID] = append(v.EdgesByDst[e.DstID], e)
 	}
 
 	// Backlinks of spec.md: both guide links roll up; the #flow one carries
 	// the anchor. The contains edge is excluded.
-	back := collectDocEdges(v, []graphNode{spec}, true, 50)
+	back := CollectDocEdges(v, []Node{spec}, true, 50)
 	if len(back) != 2 {
 		t.Fatalf("backlinks = %d, want 2: %+v", len(back), back)
 	}
@@ -202,7 +202,7 @@ func TestCollectDocEdgesHeadingRollup(t *testing.T) {
 
 	// Outgoing links of guide.md: the heading peer renders under its parent
 	// doc (spec.md) with the anchor surfaced.
-	out := collectDocEdges(v, []graphNode{guide}, false, 50)
+	out := CollectDocEdges(v, []Node{guide}, false, 50)
 	var sawHeadingPeer bool
 	for _, h := range out {
 		if h.Doc == "spec.md" && h.TargetAnchor == "flow" {
@@ -217,42 +217,42 @@ func TestCollectDocEdgesHeadingRollup(t *testing.T) {
 // TestGraphTagsHelpers checks the tag-graph walks: a tag → its documents
 // and a doc → its tags, ignoring non-`tagged` edges.
 func TestGraphTagsHelpers(t *testing.T) {
-	mkDoc := func(rel string) graphNode {
-		return graphNode{ID: graph.NodeID("", "_markdown", graph.NodeDocument, rel), Kind: graph.NodeDocument, Name: baseName(rel), QualifiedName: rel, FilePath: rel}
+	mkDoc := func(rel string) Node {
+		return Node{ID: graph.NodeID("", "_markdown", graph.NodeDocument, rel), Kind: graph.NodeDocument, Name: baseName(rel), QualifiedName: rel, FilePath: rel}
 	}
-	mkTag := func(name string) graphNode {
-		return graphNode{ID: graph.NodeID("", "_markdown", graph.NodeTag, name), Kind: graph.NodeTag, Name: name, QualifiedName: name}
+	mkTag := func(name string) Node {
+		return Node{ID: graph.NodeID("", "_markdown", graph.NodeTag, name), Kind: graph.NodeTag, Name: name, QualifiedName: name}
 	}
 	a, b := mkDoc("a.md"), mkDoc("b.md")
 	spec := mkTag("spec")
-	edge := func(kind graph.EdgeKind, src, dst graphNode) graphEdge {
-		return graphEdge{Kind: kind, SrcID: src.ID, DstID: dst.ID}
+	edge := func(kind graph.EdgeKind, src, dst Node) Edge {
+		return Edge{Kind: kind, SrcID: src.ID, DstID: dst.ID}
 	}
-	v := &graphView{
-		nodesByID:  map[string]graphNode{},
-		edgesBySrc: map[string][]graphEdge{},
-		edgesByDst: map[string][]graphEdge{},
+	v := &View{
+		NodesByID:  map[string]Node{},
+		EdgesBySrc: map[string][]Edge{},
+		EdgesByDst: map[string][]Edge{},
 	}
-	edges := []graphEdge{
+	edges := []Edge{
 		edge(graph.EdgeTagged, a, spec),
 		edge(graph.EdgeTagged, b, spec),
 		edge(graph.EdgeLinks, a, b), // not a tag edge — must be ignored
 	}
-	for _, n := range []graphNode{a, b, spec} {
-		v.nodesByID[n.ID] = n
+	for _, n := range []Node{a, b, spec} {
+		v.NodesByID[n.ID] = n
 	}
 	for _, e := range edges {
-		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
-		v.edgesByDst[e.DstID] = append(v.edgesByDst[e.DstID], e)
+		v.EdgesBySrc[e.SrcID] = append(v.EdgesBySrc[e.SrcID], e)
+		v.EdgesByDst[e.DstID] = append(v.EdgesByDst[e.DstID], e)
 	}
 
-	docs := docsForTag(v, spec.ID)
+	docs := DocsForTag(v, spec.ID)
 	if len(docs) != 2 {
-		t.Errorf("docsForTag(spec) = %v, want [a.md b.md]", docs)
+		t.Errorf("DocsForTag(spec) = %v, want [a.md b.md]", docs)
 	}
-	tags := tagsForDoc(v, a.ID)
+	tags := TagsForDoc(v, a.ID)
 	if len(tags) != 1 || tags[0] != "spec" {
-		t.Errorf("tagsForDoc(a.md) = %v, want [spec] (links edge must be ignored)", tags)
+		t.Errorf("TagsForDoc(a.md) = %v, want [spec] (links edge must be ignored)", tags)
 	}
 }
 
@@ -260,25 +260,25 @@ func TestResolveDocTargets(t *testing.T) {
 	v := docVaultView()
 
 	// Exact relpath.
-	if got := resolveDocTargets(v, "specs/auth.md"); len(got) != 1 || got[0].QualifiedName != "specs/auth.md" {
+	if got := ResolveDocTargets(v, "specs/auth.md"); len(got) != 1 || got[0].QualifiedName != "specs/auth.md" {
 		t.Errorf("exact path: got %+v", got)
 	}
-	// Root-level doc (QualifiedName == Name, so absent from nodesByQualified)
-	// must still resolve via nodesByPath — regression guard for the
+	// Root-level doc (QualifiedName == Name, so absent from NodesByQualified)
+	// must still resolve via NodesByPath — regression guard for the
 	// README.md not-found bug.
-	if got := resolveDocTargets(v, "index.md"); len(got) != 1 || got[0].QualifiedName != "index.md" {
+	if got := ResolveDocTargets(v, "index.md"); len(got) != 1 || got[0].QualifiedName != "index.md" {
 		t.Errorf("root-level doc: got %+v, want index.md", got)
 	}
 	// Leading ./ and extension completion.
-	if got := resolveDocTargets(v, "./specs/auth"); len(got) != 1 || got[0].QualifiedName != "specs/auth.md" {
+	if got := ResolveDocTargets(v, "./specs/auth"); len(got) != 1 || got[0].QualifiedName != "specs/auth.md" {
 		t.Errorf("./path + ext completion: got %+v", got)
 	}
 	// Unique bare basename.
-	if got := resolveDocTargets(v, "glossary"); len(got) != 1 || got[0].QualifiedName != "specs/glossary.md" {
+	if got := ResolveDocTargets(v, "glossary"); len(got) != 1 || got[0].QualifiedName != "specs/glossary.md" {
 		t.Errorf("bare basename: got %+v", got)
 	}
 	// Unknown path → no targets.
-	if got := resolveDocTargets(v, "does/not/exist.md"); len(got) != 0 {
+	if got := ResolveDocTargets(v, "does/not/exist.md"); len(got) != 0 {
 		t.Errorf("unknown path: got %+v, want none", got)
 	}
 }

@@ -1,4 +1,4 @@
-package mcp
+package graphquery
 
 import (
 	"testing"
@@ -12,26 +12,26 @@ import (
 // an edge, degrees come from the internal import edges, and PageRank
 // flows importer → imported so the foundation outranks the entry point.
 func TestBuildPackageGraph(t *testing.T) {
-	pkg := func(id, path, name string) graphNode {
-		return graphNode{ID: id, Kind: graph.NodePackage, Name: name, PackagePath: path}
+	pkg := func(id, path, name string) Node {
+		return Node{ID: id, Kind: graph.NodePackage, Name: name, PackagePath: path}
 	}
-	imp := func(id, importer, imported string) graphNode {
-		return graphNode{ID: id, Kind: graph.NodeImport, PackagePath: importer, QualifiedName: imported}
+	imp := func(id, importer, imported string) Node {
+		return Node{ID: id, Kind: graph.NodeImport, PackagePath: importer, QualifiedName: imported}
 	}
-	edge := func(srcPkgID, impID string) graphEdge {
-		return graphEdge{Kind: graph.EdgeImports, SrcID: srcPkgID, DstID: impID}
+	edge := func(srcPkgID, impID string) Edge {
+		return Edge{Kind: graph.EdgeImports, SrcID: srcPkgID, DstID: impID}
 	}
 	// A non-Go (tree-sitter) package node, stamped with its language — as a
 	// python/js/ts testdata fixture or web/src module would be. These form a
 	// real LINKED sub-graph (py.a → py.b) but must be excluded from the Go DAG.
-	sitterPkg := func(id, path, lang string) graphNode {
-		return graphNode{
+	sitterPkg := func(id, path, lang string) Node {
+		return Node{
 			ID: id, Kind: graph.NodePackage, PackagePath: path,
 			MetadataJSON: []byte(`{"language":"` + lang + `"}`),
 		}
 	}
-	view := &graphView{
-		nodesByID: map[string]graphNode{
+	view := &View{
+		NodesByID: map[string]Node{
 			"pa":     pkg("pa", "mod/a", "main"), // executable entry point
 			"pb":     pkg("pb", "mod/b", "b"),
 			"pc":     pkg("pc", "mod/c", "c"),
@@ -43,7 +43,7 @@ func TestBuildPackageGraph(t *testing.T) {
 			"py-b":  sitterPkg("py-b", "py.b", "python"),
 			"ipy-b": imp("ipy-b", "py.a", "py.b"),
 		},
-		edgesByKind: map[graph.EdgeKind][]graphEdge{
+		EdgesByKind: map[graph.EdgeKind][]Edge{
 			graph.EdgeImports: {
 				edge("pa", "ia-b"),
 				edge("pa", "ia-fmt"), // external — dropped
@@ -53,13 +53,13 @@ func TestBuildPackageGraph(t *testing.T) {
 		},
 	}
 
-	out := buildPackageGraph(view)
-	if out.Status != "ok" {
-		t.Fatalf("status = %q, want ok (hint=%q)", out.Status, out.Hint)
+	out := BuildPackageGraph(view)
+	if len(out.Nodes) == 0 {
+		t.Fatalf("got empty package graph, want populated")
 	}
 
 	// Edges: internal-only (no fmt), sorted by (from, to).
-	wantEdges := []PackageEdge{
+	wantEdges := []PackageImport{
 		{FromPackage: "mod/a", ToPackage: "mod/b"},
 		{FromPackage: "mod/b", ToPackage: "mod/c"},
 	}
@@ -72,7 +72,7 @@ func TestBuildPackageGraph(t *testing.T) {
 		}
 	}
 
-	byPkg := map[string]PackageNode{}
+	byPkg := map[string]PackageStat{}
 	for _, n := range out.Nodes {
 		byPkg[n.Package] = n
 	}
@@ -117,16 +117,17 @@ func TestBuildPackageGraph(t *testing.T) {
 }
 
 // TestBuildPackageGraphNoPackages: a view with no package nodes (e.g. a
-// non-Go repo whose graph has only file/function nodes) degrades to
-// no-graph so the consumer can fall back to its flat listing.
+// non-Go repo whose graph has only file/function nodes) yields an empty
+// graph so the consumer can fall back to its flat listing (the transport
+// maps an empty Nodes slice to "no-graph").
 func TestBuildPackageGraphNoPackages(t *testing.T) {
-	view := &graphView{
-		nodesByID: map[string]graphNode{
+	view := &View{
+		NodesByID: map[string]Node{
 			"f": {ID: "f", Kind: graph.NodeFunction, Name: "Foo"},
 		},
-		edgesByKind: map[graph.EdgeKind][]graphEdge{},
+		EdgesByKind: map[graph.EdgeKind][]Edge{},
 	}
-	if out := buildPackageGraph(view); out.Status != "no-graph" {
-		t.Errorf("status = %q, want no-graph", out.Status)
+	if out := BuildPackageGraph(view); len(out.Nodes) != 0 {
+		t.Errorf("nodes = %d, want 0 (no-graph)", len(out.Nodes))
 	}
 }

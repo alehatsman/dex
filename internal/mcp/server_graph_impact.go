@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -74,12 +74,12 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 		return nil, ImpactOutput{Status: "no-graph", Project: p.Root,
 			Hint: fmt.Sprintf("graph not indexed for %s — run `dex index %s --graph=only`.", p.Root, p.Root)}, nil
 	}
-	if len(view.edgesByKind[graph.EdgeCalls]) == 0 {
+	if len(view.EdgesByKind[graph.EdgeCalls]) == 0 {
 		return nil, ImpactOutput{Status: "no-graph", Project: p.Root,
 			Hint: "graph has no `calls` edges — reindex with this release (`dex index . --graph=only`) to extract them."}, nil
 	}
 
-	targets := resolveCallTargets(view, in.Name, in.Package)
+	targets := graphquery.ResolveCallTargets(view, in.Name, in.Package)
 	if len(targets) == 0 {
 		return nil, ImpactOutput{Status: "not-found", Project: p.Root,
 			Hint: fmt.Sprintf("no graph node matches name=%q", in.Name)}, nil
@@ -105,78 +105,12 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 	}
 
 	const maxImpactNodes = 200
-	nodes := computeImpactNodes(view, targets, maxDepth)
+	nodes := graphquery.ComputeImpact(view, targets, maxDepth)
 	out.Total = len(nodes)
 	if len(nodes) > maxImpactNodes {
 		nodes = nodes[:maxImpactNodes]
 		out.Truncated = true
 	}
-	out.Nodes = nodes
+	out.Nodes = impactNodesFrom(nodes)
 	return nil, out, nil
-}
-
-// computeImpactNodes performs a BFS over incoming calls edges (callers
-// direction) starting from seeds, up to maxDepth hops. Returns nodes
-// sorted by depth asc, PageRank desc, then path+line for determinism.
-// Pure over view — unit-testable without a store.
-func computeImpactNodes(view *graphView, seeds []graphNode, maxDepth int) []ImpactNode {
-	type item struct {
-		id    string
-		depth int
-	}
-	visited := map[string]bool{}
-	for _, t := range seeds {
-		visited[t.ID] = true
-	}
-	queue := make([]item, 0, len(seeds))
-	for _, t := range seeds {
-		queue = append(queue, item{t.ID, 0})
-	}
-
-	var nodes []ImpactNode
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		if cur.depth >= maxDepth {
-			continue
-		}
-		for _, e := range view.edgesByDst[cur.id] {
-			if e.Kind != graph.EdgeCalls {
-				continue
-			}
-			if visited[e.SrcID] {
-				continue
-			}
-			visited[e.SrcID] = true
-			caller, ok := view.nodesByID[e.SrcID]
-			if !ok {
-				continue
-			}
-			nodes = append(nodes, ImpactNode{
-				QualifiedName: caller.QualifiedName,
-				Package:       caller.PackagePath,
-				Kind:          string(caller.Kind),
-				Path:          caller.FilePath,
-				StartLine:     caller.StartLine,
-				Depth:         cur.depth + 1,
-				PageRank:      caller.PageRank,
-			})
-			queue = append(queue, item{e.SrcID, cur.depth + 1})
-		}
-	}
-
-	sort.Slice(nodes, func(i, j int) bool {
-		a, b := nodes[i], nodes[j]
-		if a.Depth != b.Depth {
-			return a.Depth < b.Depth
-		}
-		if a.PageRank != b.PageRank {
-			return a.PageRank > b.PageRank
-		}
-		if a.Path != b.Path {
-			return a.Path < b.Path
-		}
-		return a.StartLine < b.StartLine
-	})
-	return nodes
 }

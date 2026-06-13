@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/source"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -106,12 +107,12 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 		return nil, CallEdgeOutput{Status: "no-graph", Project: p.Root,
 			Hint: fmt.Sprintf("graph not indexed for %s — run `dex index %s --graph=only`.", p.Root, p.Root)}, nil
 	}
-	if len(view.edgesByKind[graph.EdgeCalls]) == 0 {
+	if len(view.EdgesByKind[graph.EdgeCalls]) == 0 {
 		return nil, CallEdgeOutput{Status: "no-graph", Project: p.Root,
 			Hint: "graph has no `calls` edges — reindex the project with this release (`dex index . --graph=only`) to extract them."}, nil
 	}
 
-	targets := resolveCallTargets(view, in.Name, in.Package)
+	targets := graphquery.ResolveCallTargets(view, in.Name, in.Package)
 	if len(targets) == 0 {
 		return nil, CallEdgeOutput{Status: "not-found", Project: p.Root,
 			Hint: fmt.Sprintf("no graph node matches name=%q — try the bare identifier or the receiver-qualified form like '(*Type).Method'", in.Name)}, nil
@@ -138,11 +139,11 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 
 	seen := map[string]bool{}
 	for _, t := range targets {
-		var edges []graphEdge
+		var edges []graphquery.Edge
 		if callers {
-			edges = view.edgesByDst[t.ID]
+			edges = view.EdgesByDst[t.ID]
 		} else {
-			edges = view.edgesBySrc[t.ID]
+			edges = view.EdgesBySrc[t.ID]
 		}
 		for _, e := range edges {
 			if e.Kind != graph.EdgeCalls {
@@ -152,7 +153,7 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 			if !callers {
 				peerID = e.DstID
 			}
-			peer, ok := view.nodesByID[peerID]
+			peer, ok := view.NodesByID[peerID]
 			if !ok {
 				continue
 			}
@@ -179,19 +180,19 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	}
 
 	// Sort hits by peer centrality, then by path/line for determinism.
-	// peerCentrality is a closure over view.nodesByID so we don't
+	// peerCentrality is a closure over view.NodesByID so we don't
 	// re-resolve per hit. PageRank dominates; in_degree breaks ties
 	// for peers that didn't pick up rank (e.g. callees with no
 	// incoming edges in the indexed slice).
 	peerCentrality := func(h CallSite) (float64, int) {
 		// Resolve peer node by qualified name + package — the same key
 		// we used when populating the hit.
-		for _, n := range view.nodesByQualified[h.QualifiedName] {
+		for _, n := range view.NodesByQualified[h.QualifiedName] {
 			if n.PackagePath == h.Package {
 				return n.PageRank, n.InDegree
 			}
 		}
-		for _, n := range view.nodesByName[h.QualifiedName] {
+		for _, n := range view.NodesByName[h.QualifiedName] {
 			if n.PackagePath == h.Package {
 				return n.PageRank, n.InDegree
 			}
@@ -245,76 +246,4 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	}
 
 	return nil, out, nil
-}
-
-// resolveCallTargets maps the user-supplied `name` (and optional pkg
-// filter) onto graph nodes. Recognised shapes, in order:
-//
-//	"Foo"                  — bare; matches NodeFunction / NodeMethod / NodeType by Name
-//	"(*T).Foo" / "T.Foo"   — receiver-qualified; matches by QualifiedName
-//	"pkg.Foo"              — package-tail-qualified; PackagePath must end with /pkg or equal pkg
-//
-// Multiple matches are returned so the caller can disambiguate. The
-// optional `pkgFilter` collapses ambiguity by full package path.
-func resolveCallTargets(view *graphView, name, pkgFilter string) []graphNode {
-	name = strings.TrimSpace(name)
-	pkgFilter = strings.TrimSpace(pkgFilter)
-	if name == "" {
-		return nil
-	}
-	want := func(n graphNode) bool {
-		switch n.Kind {
-		case graph.NodeFunction, graph.NodeMethod:
-			return true
-		default:
-			return false
-		}
-	}
-	pkgOK := func(n graphNode) bool {
-		if pkgFilter == "" {
-			return true
-		}
-		return n.PackagePath == pkgFilter
-	}
-	out := []graphNode{}
-	seen := map[string]bool{}
-	add := func(n graphNode) {
-		if seen[n.ID] || !want(n) || !pkgOK(n) {
-			return
-		}
-		seen[n.ID] = true
-		out = append(out, n)
-	}
-
-	// 1) Exact QualifiedName match — covers "(*T).Foo", "T.Foo", and
-	//    bare function names that happen to be unique within a pkg.
-	for _, n := range view.nodesByQualified[name] {
-		add(n)
-	}
-	// 2) Bare Name match — covers "Foo" both as a function name and
-	//    as the method portion of "(*T).Foo" (graph stores Name="Foo"
-	//    alongside QualifiedName="(*T).Foo").
-	for _, n := range view.nodesByName[name] {
-		add(n)
-	}
-	if len(out) > 0 {
-		return out
-	}
-
-	// 3) "pkg.Foo" — split on the last dot and try pkg-tail matching.
-	//    Only attempt when there's exactly one dot and the second
-	//    segment looks like an identifier (no receiver parens).
-	if i := strings.LastIndex(name, "."); i > 0 && !strings.ContainsAny(name, "()*") {
-		pkgTail, bare := name[:i], name[i+1:]
-		for _, n := range view.nodesByName[bare] {
-			tail := n.PackagePath
-			if j := strings.LastIndex(tail, "/"); j >= 0 {
-				tail = tail[j+1:]
-			}
-			if tail == pkgTail {
-				add(n)
-			}
-		}
-	}
-	return out
 }

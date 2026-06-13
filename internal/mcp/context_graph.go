@@ -26,191 +26,11 @@
 package mcp
 
 import (
-	"context"
-	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
-	"github.com/alehatsman/dex/internal/store"
+	"github.com/alehatsman/dex/internal/graphquery"
 )
-
-// graphView holds an in-memory snapshot of graph_nodes/graph_edges
-// indexed for the queries the router needs. All maps point into the
-// same underlying node/edge slices so memory cost is one slice copy.
-type graphView struct {
-	nodesByID        map[string]graphNode
-	nodesByName      map[string][]graphNode // bare name → matching nodes
-	nodesByQualified map[string][]graphNode // qualified name → matching nodes
-	nodesByPackage   map[string][]graphNode // package path → all nodes in pkg
-	nodesByPath      map[string][]graphNode // file path → all nodes in file
-	edgesBySrc       map[string][]graphEdge
-	edgesByDst       map[string][]graphEdge
-	edgesByKind      map[graph.EdgeKind][]graphEdge
-}
-
-type graphNode struct {
-	ID            string
-	Kind          graph.NodeKind
-	Name          string
-	QualifiedName string
-	PackagePath   string
-	FilePath      string
-	StartLine     int
-	EndLine       int
-	// Centrality columns, populated from graph_nodes. Used by call-edge
-	// tools to sort peers by importance and to compose the role hint
-	// attached to each result.
-	InDegree        int
-	OutDegree       int
-	CrossPkgCallers int
-	PageRank        float64
-	Betweenness     float64
-	CommunityID     int
-	// MetadataJSON is the raw graph_nodes.metadata_json payload, kept
-	// unparsed so the hot paths pay nothing. The package-graph tool reads
-	// it to tell a Go package node (no "language" key) from a tree-sitter
-	// one (stamped with its language) — see isGoPackageNode.
-	MetadataJSON []byte
-}
-
-type graphEdge struct {
-	Kind      graph.EdgeKind
-	SrcID     string
-	DstID     string
-	FilePath  string
-	StartLine int
-}
-
-// docNodes returns every markdown document node in the view. Used by the
-// doc-graph tools to count/scan documents for basename resolution and to
-// tell "no doc graph indexed" from "unknown doc path". Order is
-// unspecified (map iteration); callers that need determinism sort.
-func (v *graphView) docNodes() []graphNode {
-	var out []graphNode
-	for _, n := range v.nodesByID {
-		if n.Kind == graph.NodeDocument {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-// loadGraphView pulls every node and edge from the store and indexes
-// them. Returns nil (no error) when the project has no graph indexed
-// — the caller should treat that as "graph not available."
-func loadGraphView(ctx context.Context, st *store.Store) (*graphView, error) {
-	nodes, edges, err := st.GraphStats(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if nodes == 0 && edges == 0 {
-		return nil, nil
-	}
-
-	nodeRows, err := st.GraphAllNodes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	edgeRows, err := st.GraphAllEdges(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	v := &graphView{
-		nodesByID:        make(map[string]graphNode, len(nodeRows)),
-		nodesByName:      map[string][]graphNode{},
-		nodesByQualified: map[string][]graphNode{},
-		nodesByPackage:   map[string][]graphNode{},
-		nodesByPath:      map[string][]graphNode{},
-		edgesBySrc:       map[string][]graphEdge{},
-		edgesByDst:       map[string][]graphEdge{},
-		edgesByKind:      map[graph.EdgeKind][]graphEdge{},
-	}
-	for _, r := range nodeRows {
-		n := graphNode{
-			ID:              r.ID,
-			Kind:            graph.NodeKind(r.Kind),
-			Name:            r.Name,
-			QualifiedName:   r.QualifiedName,
-			PackagePath:     r.PackagePath,
-			FilePath:        r.FilePath,
-			StartLine:       r.StartLine,
-			EndLine:         r.EndLine,
-			InDegree:        r.InDegree,
-			OutDegree:       r.OutDegree,
-			CrossPkgCallers: r.CrossPkgCallers,
-			PageRank:        r.PageRank,
-			Betweenness:     r.Betweenness,
-			CommunityID:     r.CommunityID,
-			MetadataJSON:    r.MetadataJSON,
-		}
-		v.nodesByID[n.ID] = n
-		if n.Name != "" {
-			v.nodesByName[n.Name] = append(v.nodesByName[n.Name], n)
-		}
-		if n.QualifiedName != "" && n.QualifiedName != n.Name {
-			v.nodesByQualified[n.QualifiedName] = append(v.nodesByQualified[n.QualifiedName], n)
-		}
-		if n.PackagePath != "" {
-			v.nodesByPackage[n.PackagePath] = append(v.nodesByPackage[n.PackagePath], n)
-		}
-		if n.FilePath != "" {
-			v.nodesByPath[n.FilePath] = append(v.nodesByPath[n.FilePath], n)
-		}
-	}
-	for _, r := range edgeRows {
-		e := graphEdge{
-			Kind:      graph.EdgeKind(r.Kind),
-			SrcID:     r.SrcID,
-			DstID:     r.DstID,
-			FilePath:  r.FilePath,
-			StartLine: r.StartLine,
-		}
-		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
-		v.edgesByDst[e.DstID] = append(v.edgesByDst[e.DstID], e)
-		v.edgesByKind[e.Kind] = append(v.edgesByKind[e.Kind], e)
-	}
-	return v, nil
-}
-
-// chunkPageRank resolves a chunk's PageRank via the in-memory graph
-// view. Used by pickSuggestedReads as a tiebreaker for exploration
-// intents (architecture / package_topology) so a high-centrality hub
-// like Indexer.Run beats a marginally-higher-scored tuning doc when
-// scores cluster.
-//
-// Resolution prefers the node whose declared line range covers
-// startLine; falls back to the highest-PageRank node in the file when
-// none matches (chunks anchored at line 0 — file-level entries — fall
-// back to the file's most-central symbol). Returns 0
-// when no graph node exists for the path — non-Go files, top-level
-// consts, no graph indexed — which makes the tiebreaker degrade
-// silently to "no preference."
-func chunkPageRank(view *graphView, path string, startLine int) float64 {
-	if view == nil {
-		return 0
-	}
-	nodes := view.nodesByPath[path]
-	if len(nodes) == 0 {
-		return 0
-	}
-	var bestCovering float64
-	for _, n := range nodes {
-		if startLine >= n.StartLine && startLine <= n.EndLine && n.PageRank > bestCovering {
-			bestCovering = n.PageRank
-		}
-	}
-	if bestCovering > 0 {
-		return bestCovering
-	}
-	var bestAny float64
-	for _, n := range nodes {
-		if n.PageRank > bestAny {
-			bestAny = n.PageRank
-		}
-	}
-	return bestAny
-}
 
 // enrichGraph populates GraphResult based on the resolved intent.
 // Mutates out.Graph in place. Returns whether anything was emitted —
@@ -233,7 +53,7 @@ const (
 	maxGraphEdges = 50
 )
 
-func enrichGraph(out *ContextOutput, intent string, view *graphView, semHits []SemHit, symbols []SymbolHit) bool {
+func enrichGraph(out *ContextOutput, intent string, view *graphquery.View, semHits []SemHit, symbols []SymbolHit) bool {
 	if view == nil {
 		return false
 	}
@@ -257,7 +77,7 @@ func enrichGraph(out *ContextOutput, intent string, view *graphView, semHits []S
 // Hoisting the closures off enrichGraph into methods keeps the dispatch
 // switch short and the helpers individually testable.
 type graphEnricher struct {
-	view     *graphView
+	view     *graphquery.View
 	semHits  []SemHit
 	symbols  []SymbolHit
 	gr       *GraphResult
@@ -265,7 +85,7 @@ type graphEnricher struct {
 	seenEdge map[string]bool
 }
 
-func (e *graphEnricher) addNode(n graphNode) {
+func (e *graphEnricher) addNode(n graphquery.Node) {
 	// Import nodes are emitted per-file in layer 1, so the same
 	// dependency (e.g. `fmt`) shows up as N distinct node IDs.
 	// Dedup on QualifiedName for imports so the agent sees one
@@ -291,12 +111,12 @@ func (e *graphEnricher) addNode(n graphNode) {
 	})
 }
 
-func (e *graphEnricher) addEdge(ge graphEdge) {
+func (e *graphEnricher) addEdge(ge graphquery.Edge) {
 	from, to := ge.SrcID, ge.DstID
-	if n, ok := e.view.nodesByID[ge.SrcID]; ok {
+	if n, ok := e.view.NodesByID[ge.SrcID]; ok {
 		from = compactID(n)
 	}
-	if n, ok := e.view.nodesByID[ge.DstID]; ok {
+	if n, ok := e.view.NodesByID[ge.DstID]; ok {
 		to = compactID(n)
 	}
 	// Dedup on the compact (from,kind,to) triple — the raw IDs
@@ -320,30 +140,30 @@ func (e *graphEnricher) addEdge(ge graphEdge) {
 // the same type, embedded types).
 func (e *graphEnricher) symbolNeighborhood() {
 	for _, sym := range e.symbols {
-		lookup := e.view.nodesByName[sym.QualifiedName]
+		lookup := e.view.NodesByName[sym.QualifiedName]
 		if len(lookup) == 0 {
 			// Some MCP symbol hits use the bare method name even
 			// when the graph stored a qualified form like (*T).M.
-			lookup = e.view.nodesByQualified[sym.QualifiedName]
+			lookup = e.view.NodesByQualified[sym.QualifiedName]
 		}
 		for _, n := range lookup {
 			e.addNode(n)
-			for _, parentEdge := range e.view.edgesByDst[n.ID] {
+			for _, parentEdge := range e.view.EdgesByDst[n.ID] {
 				if parentEdge.Kind != graph.EdgeHasMethod && parentEdge.Kind != graph.EdgeHasField {
 					continue
 				}
-				parent, ok := e.view.nodesByID[parentEdge.SrcID]
+				parent, ok := e.view.NodesByID[parentEdge.SrcID]
 				if !ok {
 					continue
 				}
 				e.addNode(parent)
 				e.addEdge(parentEdge)
-				for _, sibling := range e.view.edgesBySrc[parent.ID] {
+				for _, sibling := range e.view.EdgesBySrc[parent.ID] {
 					if sibling.Kind != graph.EdgeHasMethod && sibling.Kind != graph.EdgeHasField && sibling.Kind != graph.EdgeEmbeds {
 						continue
 					}
 					e.addEdge(sibling)
-					if dst, ok := e.view.nodesByID[sibling.DstID]; ok {
+					if dst, ok := e.view.NodesByID[sibling.DstID]; ok {
 						e.addNode(dst)
 					}
 				}
@@ -356,7 +176,7 @@ func (e *graphEnricher) symbolNeighborhood() {
 // package in pkgs.
 func (e *graphEnricher) packageRollup(pkgs map[string]struct{}) {
 	for pkg := range pkgs {
-		for _, n := range e.view.nodesByPackage[pkg] {
+		for _, n := range e.view.NodesByPackage[pkg] {
 			switch n.Kind {
 			case graph.NodePackage, graph.NodeType, graph.NodeStruct, graph.NodeInterface, graph.NodeFunction:
 				e.addNode(n)
@@ -370,55 +190,20 @@ func (e *graphEnricher) packageRollup(pkgs map[string]struct{}) {
 // a meaningful cross-section without burning the budget on one package.
 const architectureAnchorPkgs = 8
 
-// topPackagesByPageRank returns the K packages with the highest
-// aggregate PageRank (sum across all nodes in the package). Used by
-// architecture rollup to seed the graph with the project's central
-// packages instead of depending on whatever semHits happened to surface
-// — a docs-dominated semantic lane otherwise collapses the rollup to
-// the single Go file that leaked in. Packages with zero aggregate
-// PageRank are skipped: missing centrality data means the graph rerank
-// pass hasn't run and seeding would be arbitrary.
-func (v *graphView) topPackagesByPageRank(k int) map[string]struct{} {
-	type pkgScore struct {
-		pkg string
-		pr  float64
-	}
-	scores := make([]pkgScore, 0, len(v.nodesByPackage))
-	for pkg, nodes := range v.nodesByPackage {
-		var sum float64
-		for _, n := range nodes {
-			sum += n.PageRank
-		}
-		if sum <= 0 {
-			continue
-		}
-		scores = append(scores, pkgScore{pkg, sum})
-	}
-	sort.Slice(scores, func(i, j int) bool { return scores[i].pr > scores[j].pr })
-	if len(scores) > k {
-		scores = scores[:k]
-	}
-	out := make(map[string]struct{}, len(scores))
-	for _, s := range scores {
-		out[s.pkg] = struct{}{}
-	}
-	return out
-}
-
 // callsExpansion walks the calls-edges in or out of the matched
 // symbols. Direction picks which side the symbol is on:
 // `dst` = callers (edges arriving at the symbol), `src` = callees.
 func (e *graphEnricher) callsExpansion(direction string) {
 	for _, sym := range e.symbols {
-		lookup := e.view.nodesByQualified[sym.QualifiedName]
+		lookup := e.view.NodesByQualified[sym.QualifiedName]
 		if len(lookup) == 0 {
-			lookup = e.view.nodesByName[sym.QualifiedName]
+			lookup = e.view.NodesByName[sym.QualifiedName]
 		}
 		for _, n := range lookup {
 			e.addNode(n)
-			edges := e.view.edgesBySrc[n.ID]
+			edges := e.view.EdgesBySrc[n.ID]
 			if direction == "dst" {
-				edges = e.view.edgesByDst[n.ID]
+				edges = e.view.EdgesByDst[n.ID]
 			}
 			for _, ge := range edges {
 				if ge.Kind != graph.EdgeCalls {
@@ -428,7 +213,7 @@ func (e *graphEnricher) callsExpansion(direction string) {
 				if direction == "src" {
 					peerID = ge.DstID
 				}
-				if peer, ok := e.view.nodesByID[peerID]; ok {
+				if peer, ok := e.view.NodesByID[peerID]; ok {
 					e.addNode(peer)
 					e.addEdge(ge)
 				}
@@ -443,14 +228,14 @@ func (e *graphEnricher) callsExpansion(direction string) {
 func (e *graphEnricher) packageTopology() {
 	pkgs := packagesFromPaths(e.view, e.semHits)
 	for pkg := range pkgs {
-		for _, n := range e.view.nodesByPackage[pkg] {
+		for _, n := range e.view.NodesByPackage[pkg] {
 			if n.Kind == graph.NodePackage {
 				e.addNode(n)
 			}
 		}
 	}
-	for _, ge := range e.view.edgesByKind[graph.EdgeImports] {
-		srcN, srcOK := e.view.nodesByID[ge.SrcID]
+	for _, ge := range e.view.EdgesByKind[graph.EdgeImports] {
+		srcN, srcOK := e.view.NodesByID[ge.SrcID]
 		if !srcOK {
 			continue
 		}
@@ -458,7 +243,7 @@ func (e *graphEnricher) packageTopology() {
 			continue
 		}
 		e.addNode(srcN)
-		if dst, ok := e.view.nodesByID[ge.DstID]; ok {
+		if dst, ok := e.view.NodesByID[ge.DstID]; ok {
 			e.addNode(dst)
 		}
 		e.addEdge(ge)
@@ -491,7 +276,7 @@ func (e *graphEnricher) runForIntent(intent string) {
 		// anchors first; semHit-derived packages augment so a question
 		// that does point at a specific subsystem still pulls that
 		// subsystem in.
-		pkgs := e.view.topPackagesByPageRank(architectureAnchorPkgs)
+		pkgs := e.view.TopPackagesByPageRank(architectureAnchorPkgs)
 		for pkg := range packagesFromPaths(e.view, e.semHits) {
 			pkgs[pkg] = struct{}{}
 		}
@@ -514,10 +299,10 @@ func (e *graphEnricher) runForIntent(intent string) {
 // least one of the file paths in semHits. Lets architecture /
 // package_topology focus on the neighborhood the user is actually
 // asking about, instead of dumping the whole graph.
-func packagesFromPaths(view *graphView, semHits []SemHit) map[string]struct{} {
+func packagesFromPaths(view *graphquery.View, semHits []SemHit) map[string]struct{} {
 	pkgs := map[string]struct{}{}
 	for _, h := range semHits {
-		for _, n := range view.nodesByPath[h.Path] {
+		for _, n := range view.NodesByPath[h.Path] {
 			if n.PackagePath != "" {
 				pkgs[n.PackagePath] = struct{}{}
 			}
@@ -534,7 +319,7 @@ func packagesFromPaths(view *graphView, semHits []SemHit) map[string]struct{} {
 //	mcp.(*Server).ContextRouter    — methods, functions, types, fields
 //	internal/mcp                    — packages (qualified_name *is* the path)
 //	github.com/foo/bar              — imports (qualified_name is the path)
-func compactID(n graphNode) string {
+func compactID(n graphquery.Node) string {
 	switch n.Kind {
 	case graph.NodePackage:
 		if n.PackagePath != "" {

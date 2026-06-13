@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -101,9 +102,9 @@ func (s *Server) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffI
 		// Also try relative path without leading ./
 		changedSet[strings.TrimPrefix(f, "./")] = true
 	}
-	var seeds []graphNode
+	var seeds []graphquery.Node
 	seen := map[string]bool{}
-	for _, n := range view.nodesByID {
+	for _, n := range view.NodesByID {
 		rel := n.FilePath
 		if !changedSet[rel] {
 			continue
@@ -120,7 +121,7 @@ func (s *Server) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffI
 	}
 
 	const maxBlastNodes = 300
-	nodes := computeImpactNodes(view, seeds, maxDepth)
+	nodes := graphquery.ComputeImpact(view, seeds, maxDepth)
 
 	out := DiffOutput{
 		Status: "ok", Project: p.Root, Ref: ref,
@@ -132,7 +133,7 @@ func (s *Server) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffI
 		nodes = nodes[:maxBlastNodes]
 		out.Truncated = true
 	}
-	out.Nodes = nodes
+	out.Nodes = impactNodesFrom(nodes)
 	return nil, out, nil
 }
 

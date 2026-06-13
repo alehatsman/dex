@@ -1,4 +1,4 @@
-package mcp
+package graphquery
 
 import (
 	"testing"
@@ -12,10 +12,10 @@ import (
 //	store.Search  <-- index.Run          (separate caller, same depth)
 //
 // PageRank: contextRouter > index.Run (to verify sort order at depth 1).
-func impactView() (*graphView, graphNode) {
-	fn := func(pkg, name, file string, line int, pr float64) graphNode {
+func impactView() (*View, Node) {
+	fn := func(pkg, name, file string, line int, pr float64) Node {
 		qn := pkg + "." + name
-		return graphNode{
+		return Node{
 			ID:            graph.NodeID("", pkg, graph.NodeFunction, qn),
 			Kind:          graph.NodeFunction,
 			Name:          name,
@@ -33,35 +33,35 @@ func impactView() (*graphView, graphNode) {
 	caller2 := fn("index", "Run", "internal/index/index.go", 30, 0.3)
 	depth2 := fn("mcp", "RunStdio", "internal/mcp/server.go", 10, 0.5)
 
-	callEdge := func(src, dst graphNode) graphEdge {
-		return graphEdge{Kind: graph.EdgeCalls, SrcID: src.ID, DstID: dst.ID,
+	callEdge := func(src, dst Node) Edge {
+		return Edge{Kind: graph.EdgeCalls, SrcID: src.ID, DstID: dst.ID,
 			FilePath: src.FilePath, StartLine: src.StartLine}
 	}
-	edges := []graphEdge{
+	edges := []Edge{
 		callEdge(caller1, seed),
 		callEdge(caller2, seed),
 		callEdge(depth2, caller1),
 	}
 
-	v := &graphView{
-		nodesByID:        map[string]graphNode{},
-		nodesByName:      map[string][]graphNode{},
-		nodesByQualified: map[string][]graphNode{},
-		nodesByPath:      map[string][]graphNode{},
-		edgesBySrc:       map[string][]graphEdge{},
-		edgesByDst:       map[string][]graphEdge{},
-		edgesByKind:      map[graph.EdgeKind][]graphEdge{},
+	v := &View{
+		NodesByID:        map[string]Node{},
+		NodesByName:      map[string][]Node{},
+		NodesByQualified: map[string][]Node{},
+		NodesByPath:      map[string][]Node{},
+		EdgesBySrc:       map[string][]Edge{},
+		EdgesByDst:       map[string][]Edge{},
+		EdgesByKind:      map[graph.EdgeKind][]Edge{},
 	}
-	for _, n := range []graphNode{seed, caller1, caller2, depth2} {
-		v.nodesByID[n.ID] = n
-		v.nodesByName[n.Name] = append(v.nodesByName[n.Name], n)
-		v.nodesByQualified[n.QualifiedName] = append(v.nodesByQualified[n.QualifiedName], n)
-		v.nodesByPath[n.FilePath] = append(v.nodesByPath[n.FilePath], n)
+	for _, n := range []Node{seed, caller1, caller2, depth2} {
+		v.NodesByID[n.ID] = n
+		v.NodesByName[n.Name] = append(v.NodesByName[n.Name], n)
+		v.NodesByQualified[n.QualifiedName] = append(v.NodesByQualified[n.QualifiedName], n)
+		v.NodesByPath[n.FilePath] = append(v.NodesByPath[n.FilePath], n)
 	}
 	for _, e := range edges {
-		v.edgesBySrc[e.SrcID] = append(v.edgesBySrc[e.SrcID], e)
-		v.edgesByDst[e.DstID] = append(v.edgesByDst[e.DstID], e)
-		v.edgesByKind[e.Kind] = append(v.edgesByKind[e.Kind], e)
+		v.EdgesBySrc[e.SrcID] = append(v.EdgesBySrc[e.SrcID], e)
+		v.EdgesByDst[e.DstID] = append(v.EdgesByDst[e.DstID], e)
+		v.EdgesByKind[e.Kind] = append(v.EdgesByKind[e.Kind], e)
 	}
 	return v, seed
 }
@@ -69,7 +69,7 @@ func impactView() (*graphView, graphNode) {
 func TestComputeImpactNodes(t *testing.T) {
 	view, seed := impactView()
 
-	nodes := computeImpactNodes(view, []graphNode{seed}, 3)
+	nodes := ComputeImpact(view, []Node{seed}, 3)
 
 	if len(nodes) != 3 {
 		t.Fatalf("expected 3 nodes, got %d: %v", len(nodes), nodes)
@@ -91,7 +91,7 @@ func TestComputeImpactNodes(t *testing.T) {
 func TestComputeImpactNodesDepthCap(t *testing.T) {
 	view, seed := impactView()
 
-	nodes := computeImpactNodes(view, []graphNode{seed}, 1)
+	nodes := ComputeImpact(view, []Node{seed}, 1)
 
 	if len(nodes) != 2 {
 		t.Fatalf("expected 2 nodes at depth 1, got %d", len(nodes))
@@ -105,7 +105,7 @@ func TestComputeImpactNodesDepthCap(t *testing.T) {
 
 func TestComputeImpactNodesSeedNotIncluded(t *testing.T) {
 	view, seed := impactView()
-	nodes := computeImpactNodes(view, []graphNode{seed}, 3)
+	nodes := ComputeImpact(view, []Node{seed}, 3)
 	for _, n := range nodes {
 		if n.QualifiedName == seed.QualifiedName {
 			t.Errorf("seed %s must not appear in impact output", seed.QualifiedName)

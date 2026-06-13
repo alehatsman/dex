@@ -1,6 +1,10 @@
 package mcp
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/alehatsman/dex/internal/graphquery"
+)
 
 // ─── suggested_reads ──────────────────────────────────────────────────────
 
@@ -18,7 +22,7 @@ import "sort"
 //   - behavior_search, editing_context: top 2 semantic hits, prefer
 //     paths that also appear in the symbol lane (cross-lane agreement
 //     bumps confidence).
-func pickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, symbolPaths map[string]struct{}, view *graphView) []SuggestedRead {
+func pickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, symbolPaths map[string]struct{}, view *graphquery.View) []SuggestedRead {
 	maxReads := 2
 	switch intent {
 	case IntentArchitecture, IntentPackageTopology:
@@ -86,7 +90,7 @@ func pickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, sy
 		_, cross := symbolPaths[h.Path]
 		r := ranked{hit: h, crossLane: cross, nonImpl: isNonImplPath(h.Path)}
 		if usesCentrality {
-			r.pageRank = chunkPageRank(view, h.Path, h.StartLine)
+			r.pageRank = graphquery.ChunkPageRank(view, h.Path, h.StartLine)
 		}
 		rs = append(rs, r)
 	}
