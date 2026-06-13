@@ -13,7 +13,7 @@ import (
 // Rules (applied in order; first match wins):
 //
 //	rg PATTERN [PATH]         — simple form, no flags
-//	  → dex search semantic [PATH] "PATTERN"
+//	  → dex find [PATH] "PATTERN"
 //
 //	grep [-rniI]* PATTERN [PATH] — simple recursive grep, no pipes/redirections
 //	  → appends 2>&1 | dex compress-stdin --command grep
@@ -99,7 +99,7 @@ func rewriteShellCommand(cmd string) (string, bool) {
 	return "", false
 }
 
-// rewriteRg rewrites simple `rg PATTERN [PATH]` to `dex search semantic`.
+// rewriteRg rewrites simple `rg PATTERN [PATH]` to `dex find`.
 // Only fires for the 2- or 3-token form with no flag arguments.
 func rewriteRg(tokens []string) (string, bool) {
 	switch len(tokens) {
@@ -108,13 +108,13 @@ func rewriteRg(tokens []string) (string, bool) {
 		if tokens[1][0] == '-' {
 			return "", false
 		}
-		return fmt.Sprintf("dex search semantic . %s", shellQuote(tokens[1])), true
+		return fmt.Sprintf("dex find . %s", shellQuote(tokens[1])), true
 	case 3:
 		// rg PATTERN PATH — explicit path
 		if tokens[1][0] == '-' || tokens[2][0] == '-' {
 			return "", false
 		}
-		return fmt.Sprintf("dex search semantic %s %s", shellQuote(tokens[2]), shellQuote(tokens[1])), true
+		return fmt.Sprintf("dex find %s %s", shellQuote(tokens[2]), shellQuote(tokens[1])), true
 	}
 	return "", false
 }

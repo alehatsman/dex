@@ -98,41 +98,52 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 	})
 }
 
-// TestFileViewFullDegradesWhenChatDown locks the file_view "full" chat-leg
-// contract: a nil chat client downgrades full → map (no LLM), and an
-// unreachable chat client returns the raw file content with status "ok" and an
-// "offline" hint — never a crash or hard error.
-func TestFileViewFullDegradesWhenChatDown(t *testing.T) {
+// TestReadModesAndChatDegradation locks the read contract after the v1 mode
+// flip (#427): `full` is raw content needing no chat, and `summary` is the only
+// LLM path — it returns status "needs-chat" when no chat client is wired, and
+// degrades to raw content with an "offline" hint when the chat client is
+// unreachable. Never a crash or hard error.
+func TestReadModesAndChatDegradation(t *testing.T) {
 	projRoot, cacheDir := chatDownFixture(t)
 	ctx := context.Background()
 
-	t.Run("nil chat downgrades full to map", func(t *testing.T) {
+	t.Run("full is raw content, no chat engaged", func(t *testing.T) {
 		s := chatDownServer(t, cacheDir, nil)
 		_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "auth.go", Mode: "full", ProjectRoot: projRoot})
 		if err != nil {
-			t.Fatalf("file_view full returned hard error with nil chat: %v", err)
+			t.Fatalf("read full returned hard error with nil chat: %v", err)
 		}
 		if out.Status != "ok" {
-			t.Errorf("status = %q, want ok (full must downgrade to map, not crash)", out.Status)
+			t.Errorf("status = %q, want ok (full is raw, needs no chat)", out.Status)
 		}
-		// The LLM path was never taken: Endpoint/Model are only populated
-		// when full mode actually runs against the chat client. With no chat
-		// client wired, full silently downgrades and these stay empty.
+		if !strings.Contains(out.Content, "func Authenticate") {
+			t.Errorf("expected raw file content for mode=full, got %q", out.Content)
+		}
+		// The LLM path was never taken: chat metadata stays empty for raw modes.
 		if out.Model != "" || out.Endpoint != "" {
-			t.Errorf("chat metadata set (model=%q endpoint=%q); full must NOT engage chat when none is wired", out.Model, out.Endpoint)
-		}
-		// A well-formed degraded response: either map content or an
-		// actionable hint, not a silent empty body with no explanation.
-		if strings.TrimSpace(out.Content) == "" && strings.TrimSpace(out.Hint) == "" {
-			t.Error("downgraded file_view returned neither content nor hint")
+			t.Errorf("chat metadata set (model=%q endpoint=%q); full must NOT engage chat", out.Model, out.Endpoint)
 		}
 	})
 
-	t.Run("unreachable chat shows raw content", func(t *testing.T) {
-		s := chatDownServer(t, cacheDir, chat.New(closedURL(t), "fake", 200*time.Millisecond))
-		_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "auth.go", Mode: "full", ProjectRoot: projRoot})
+	t.Run("summary with no chat returns needs-chat", func(t *testing.T) {
+		s := chatDownServer(t, cacheDir, nil)
+		_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "auth.go", Mode: "summary", ProjectRoot: projRoot})
 		if err != nil {
-			t.Fatalf("file_view full returned hard error with unreachable chat: %v", err)
+			t.Fatalf("read summary returned hard error with nil chat: %v", err)
+		}
+		if out.Status != "needs-chat" {
+			t.Errorf("status = %q, want needs-chat (summary requires a chat model)", out.Status)
+		}
+		if strings.TrimSpace(out.Hint) == "" {
+			t.Error("needs-chat response should carry an actionable hint")
+		}
+	})
+
+	t.Run("summary with unreachable chat degrades to raw content", func(t *testing.T) {
+		s := chatDownServer(t, cacheDir, chat.New(closedURL(t), "fake", 200*time.Millisecond))
+		_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "auth.go", Mode: "summary", ProjectRoot: projRoot})
+		if err != nil {
+			t.Fatalf("read summary returned hard error with unreachable chat: %v", err)
 		}
 		if out.Status != "ok" {
 			t.Errorf("status = %q, want ok (unreachable chat must degrade to raw content)", out.Status)

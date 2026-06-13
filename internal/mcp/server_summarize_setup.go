@@ -17,9 +17,11 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// summarizeResolveMode picks the compression mode, applying profile defaults,
-// task-aware overrides, and the no-chat fallback.
-func (s *Server) summarizeResolveMode(in SummarizeInput) (mode string, isFull bool) {
+// summarizeResolveMode picks the read mode, applying profile defaults and
+// task-aware overrides. The default `full` is raw file content (no LLM); the
+// only LLM path is `summary` (isLLM). The no-chat handling for summary lives
+// in the caller, which degrades it to a `needs-chat` status.
+func (s *Server) summarizeResolveMode(in SummarizeInput) (mode string, isLLM bool) {
 	mode = strings.ToLower(strings.TrimSpace(in.Mode))
 	if mode == "" {
 		if in.ProjectRoot != "" {
@@ -31,7 +33,9 @@ func (s *Server) summarizeResolveMode(in SummarizeInput) (mode string, isFull bo
 			mode = "full"
 		}
 	}
-	isFull = mode == "full"
+	isLLM = mode == "summary"
+	// A task hint compresses the raw default toward a structural mode (e.g. a
+	// Generate task → signatures) to save tokens; it never forces the LLM.
 	if in.Task != "" && mode == "full" {
 		if override := compress.TaskToMode(in.Task); override != "" {
 			if p2, h2 := s.resolveProject(in.ProjectRoot); h2 == "" {
@@ -39,14 +43,9 @@ func (s *Server) summarizeResolveMode(in SummarizeInput) (mode string, isFull bo
 				override = pt.ChooseMode(compress.IntentFromTask(in.Task), override)
 			}
 			mode = override
-			isFull = false
 		}
 	}
-	if isFull && s.ChatClient == nil {
-		mode = "map"
-		isFull = false
-	}
-	return mode, isFull
+	return mode, isLLM
 }
 
 // summarizeReadFile resolves target under p, validates it stays inside the

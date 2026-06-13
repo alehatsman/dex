@@ -151,7 +151,7 @@ guessing.
 ### A.3 — Symbol lookup: "(*Store).Search"
 
 ```
-$ dex search symbol ./ "Search"
+$ dex lookup ./ "Search"
 
 ─── #1 Search  internal/store/store.go:1262  (method_declaration)
   sig: func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error)
@@ -455,7 +455,7 @@ Shows the per-hit cosine / BM25 / RRF scores from `--explain`:
 
 ```
 $ DEX_EMBED_MODEL=nomic-embed-text:latest \
-    dex search semantic ./ "markDirty debounce timer fsnotify" --k 3 --explain
+    dex find ./ "markDirty debounce timer fsnotify" --k 3 --explain
 
 ─── #1 markDirty  internal/watch/watch.go:148-167  (method_declaration)
   sem=0.6064  bm25=22.2303  rrf=0.0323

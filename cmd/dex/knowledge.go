@@ -13,13 +13,13 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// cmdKnowledge dispatches `dex knowledge <add|query|rm>` — CLI access to the
+// cmdKnowledge dispatches `dex notes <add|query|rm>` — CLI access to the
 // per-project knowledge store, which was previously reachable only through the
 // `ctx_knowledge` MCP tool. This lets scripts, CI steps, and commit hooks
 // record and inspect project facts without an MCP session.
 func cmdKnowledge(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("knowledge needs a subcommand: add | query | rm")
+		return fmt.Errorf("notes needs a subcommand: add | query | rm")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -33,25 +33,25 @@ func cmdKnowledge(ctx context.Context, args []string) error {
 		return cmdKnowledgeGC(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
-  dex knowledge add [<path>] --archetype A --confidence c <body...>   store a fact
-  dex knowledge query [<path>] [--k N]                                top-k facts by salience
-  dex knowledge rm [<path>] <id>                                      delete a fact by id
-  dex knowledge gc [<path>]                                           decay + consolidate + evict`)
+  dex notes add [<path>] --archetype A --confidence c <body...>   store a fact
+  dex notes query [<path>] [--k N]                                top-k facts by salience
+  dex notes rm [<path>] <id>                                      delete a fact by id
+  dex notes gc [<path>]                                           decay + consolidate + evict`)
 		return nil
 	default:
-		return fmt.Errorf("unknown knowledge subcommand: %s (have: add, query, rm, gc)", sub)
+		return fmt.Errorf("unknown notes subcommand: %s (have: add, query, rm, gc)", sub)
 	}
 }
 
 // cmdKnowledgeGC runs the knowledge-store lifecycle pass: confidence decay,
 // consolidation of near-duplicate facts, and eviction past the cap.
 func cmdKnowledgeGC(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("knowledge gc", flag.ContinueOnError)
+	fs := flag.NewFlagSet("notes gc", flag.ContinueOnError)
 	setHelp(fs,
 		"Run the knowledge-store lifecycle: decay, consolidate, evict.",
-		"dex knowledge gc [flags] [<path>]",
-		`dex knowledge gc`,
-		`dex knowledge gc --max-facts 500 --format json`,
+		"dex notes gc [flags] [<path>]",
+		`dex notes gc`,
+		`dex notes gc --max-facts 500 --format json`,
 	)
 	maxFacts := fs.Int("max-facts", 0, "evict lowest-confidence facts beyond this cap (0 = default 1000)")
 	format := fs.String("format", "text", "output format: text|json")
@@ -60,7 +60,7 @@ func cmdKnowledgeGC(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) > 0 {
-		return fmt.Errorf("knowledge gc takes no positional args besides an optional <path>")
+		return fmt.Errorf("notes gc takes no positional args besides an optional <path>")
 	}
 	st, _, err := openProjectStore(ctx, path)
 	if err != nil {
@@ -104,12 +104,12 @@ func openProjectStore(ctx context.Context, path string) (*store.Store, *proj.Pro
 }
 
 func cmdKnowledgeAdd(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("knowledge add", flag.ContinueOnError)
+	fs := flag.NewFlagSet("notes add", flag.ContinueOnError)
 	setHelp(fs,
 		"Store a project fact in the knowledge store.",
-		"dex knowledge add [flags] [<path>] <body...>",
-		`dex knowledge add --archetype Gotcha "store tests need -tags sqlite_fts5"`,
-		`dex knowledge add --archetype Decision --confidence 0.9 "we use yaml.v3 for config"`,
+		"dex notes add [flags] [<path>] <body...>",
+		`dex notes add --archetype Gotcha "store tests need -tags sqlite_fts5"`,
+		`dex notes add --archetype Decision --confidence 0.9 "we use yaml.v3 for config"`,
 	)
 	archetype := fs.String("archetype", "Fact", "fact archetype: Architecture|Gotcha|Decision|Convention|Dependency|Pattern|Fact")
 	confidence := fs.Float64("confidence", 0, "confidence in (0,1] (default 0.8 when unset)")
@@ -120,7 +120,7 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	path, rest := splitProjectArg(fs.Args())
 	body := strings.TrimSpace(strings.Join(rest, " "))
 	if body == "" {
-		return fmt.Errorf("knowledge add needs a <body> (the fact text)")
+		return fmt.Errorf("notes add needs a <body> (the fact text)")
 	}
 	st, _, err := openProjectStore(ctx, path)
 	if err != nil {
@@ -151,12 +151,12 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 }
 
 func cmdKnowledgeQuery(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("knowledge query", flag.ContinueOnError)
+	fs := flag.NewFlagSet("notes query", flag.ContinueOnError)
 	setHelp(fs,
 		"List top-k project facts ordered by salience.",
-		"dex knowledge query [flags] [<path>]",
-		`dex knowledge query`,
-		`dex knowledge query --k 20 --format json`,
+		"dex notes query [flags] [<path>]",
+		`dex notes query`,
+		`dex notes query --k 20 --format json`,
 	)
 	k := fs.Int("k", 10, "max facts to return (1–50)")
 	format := fs.String("format", "text", "output format: text|json")
@@ -165,7 +165,7 @@ func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) > 0 {
-		return fmt.Errorf("knowledge query takes no positional args besides an optional <path> (got %q) — semantic query is #223", strings.Join(rest, " "))
+		return fmt.Errorf("notes query takes no positional args besides an optional <path> (got %q) — semantic query is #223", strings.Join(rest, " "))
 	}
 	st, _, err := openProjectStore(ctx, path)
 	if err != nil {
@@ -183,7 +183,7 @@ func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 		return enc.Encode(facts)
 	}
 	if len(facts) == 0 {
-		fmt.Println("no facts stored — add some with `dex knowledge add`")
+		fmt.Println("no facts stored — add some with `dex notes add`")
 		return nil
 	}
 	for _, f := range facts {
@@ -193,18 +193,18 @@ func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 }
 
 func cmdKnowledgeRm(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("knowledge rm", flag.ContinueOnError)
+	fs := flag.NewFlagSet("notes rm", flag.ContinueOnError)
 	setHelp(fs,
 		"Delete a project fact by id.",
-		"dex knowledge rm [<path>] <id>",
-		`dex knowledge rm 7`,
+		"dex notes rm [<path>] <id>",
+		`dex notes rm 7`,
 	)
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 1 {
-		return fmt.Errorf("knowledge rm needs exactly one <id>")
+		return fmt.Errorf("notes rm needs exactly one <id>")
 	}
 	id, err := strconv.ParseInt(rest[0], 10, 64)
 	if err != nil {

@@ -15,7 +15,7 @@ func usageQuickstart() {
 		"  dex index .                        build the per-project index (chunks + graph)\n"+
 		`  dex ask "where is the watcher?"    one-shot router — picks intent, fuses search lanes`+"\n"+
 		"  dex mcp                            run as MCP server (stdio) for Claude Code\n\n"+
-		"  <path> defaults to cwd on every query/view/graph command.\n\n"+
+		"  <path> defaults to cwd on every query/graph command.\n\n"+
 		"run `dex help` for common commands · `dex help all` for the full reference")
 }
 
@@ -27,16 +27,15 @@ func usageConcise() {
 verbs (match the MCP tools — run "dex help all" for the full reference):
   dex map    [--cluster <id>] [<path>]   deterministic repo orientation map (L0/L1)
   dex find   [<path>] <q...>             semantic + symbol search
-  dex read   <file>                      structural file read (signatures; no LLM)
+  dex lookup [<path>] <name>             exact identifier lookup
+  dex read   <file>                      read a file — default raw (no LLM); --mode for views/summary
   dex trace  [<path>] <name>             call graph — --dir callers|callees|path
   dex impact [<path>] <name>             transitive blast-radius (callers, by depth)
   dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
 
 detail / power lanes:
-  dex search semantic|symbol [<path>]    raw hybrid / exact-symbol search
-  dex graph  <sub> [<path>] ...          deps/callers/callees/links/path/diff/communities
-  dex view   summarize [<path>] <file>   LLM file summary
-  dex knowledge add|query|rm|gc          per-project notes
+  dex graph  <sub> [<path>] ...          deps/callers/callees/links/path/diff/clusters
+  dex notes  add|query|rm|gc             per-project notes (MCP: notes)
   dex index  status [<path>]             endpoint health + project stats
 
 build / maintenance:
@@ -73,11 +72,11 @@ quickstart:
   dex env --doc                      see effective config with inline docs
   dex doctor                         check the setup is working end-to-end
 
-  <path> defaults to cwd on every query/view/graph command.
+  <path> defaults to cwd on every query/graph command.
 
-query (mirrors the MCP tool surface):
-  verb front doors (thin aliases over the lanes below, #354):
-    dex find   [<path>] <q...>    semantic + symbol search  (= search semantic)
+query (the CLI verbs share the MCP tool names, #354/#427):
+    dex find   [<path>] <q...>    semantic + symbol search (MCP: find)
+    dex lookup [<path>] <name>    exact identifier lookup (MCP: lookup)
     dex trace  [<path>] <name>    call graph via --dir callers|callees|path
     dex impact [<path>] <name>    transitive caller blast-radius
     (map / read / ask are already top-level — see below)
@@ -87,10 +86,10 @@ query (mirrors the MCP tool surface):
                                           suggested_reads and a prose next_action.
                                           Flags: --intent, --k, --format=text|json,
                                           --no-inline, --max-content-bytes, -v
-  dex search semantic [<path>] <q...> hybrid top-k chunks (MCP: find)
+  dex find [<path>] <q...>           hybrid semantic top-k chunks (MCP: find)
                                           Flags: --k, --rerank=off, --explain,
                                           --format=text|json, --max-content-bytes, -v
-  dex search symbol [<path>] <name>  exact identifier lookup (MCP: lookup)
+  dex lookup [<path>] <name>         exact identifier lookup (MCP: lookup)
                                           Flags: --k, --format=text|json,
                                           --max-content-bytes, -v
   dex graph neighbors [<path>] <file> <line>
@@ -110,13 +109,12 @@ query (mirrors the MCP tool surface):
                                           Flags: --k
   dex graph export [<path>]          dump graph_nodes/graph_edges as JSONL
                                           Flags: --output=<dir>
-  dex view summarize [<path>] <file> summarize a file slice via the chat model
-                                          (MCP: read). Flags: --start, --end,
-                                          --focus, --temperature, --max-tokens, -v,
-                                          --format=text|json
-  dex read <file>                    structural read — no LLM call. Modes:
-                                          auto|full|signatures|aggressive|entropy.
-                                          Flags: --mode, --start, --end,
+  dex read <file>                    read a file (MCP: read). Modes:
+                                          full (default; raw, no LLM), signatures,
+                                          aggressive, entropy, auto, and summary
+                                          (LLM digest — needs a chat model).
+                                          Flags: --mode, --start, --end, --focus,
+                                          --temperature, --max-tokens, -v,
                                           --format=text|json
   dex index status [<path>]          endpoint health + project stats
                                           (MCP: status)
@@ -138,7 +136,7 @@ build / maintenance:
                                           engine — no LLM call. Writes to stdout
                                           or --out. Flags: --mode=auto|aggressive|
                                           entropy|terse|off, --ext, --format=text|json
-  dex knowledge add|query|rm|gc      CLI access to the per-project knowledge
+  dex notes add|query|rm|gc          CLI access to the per-project knowledge
                                           store (MCP: notes). add stores
                                           a fact (--archetype, --confidence),
                                           query lists top-k by salience (--k),
@@ -164,7 +162,7 @@ build / maintenance:
   dex hook inject                    Claude Code UserPromptSubmit hook:
                                           inject dex context before each turn.
   dex hook rewrite                   Claude Code PreToolUse(Bash) hook:
-                                          rewrite rg/grep to dex search.
+                                          rewrite rg/grep to dex find.
   dex hook redirect                  Claude Code PreToolUse(Read/Grep/…) hook:
                                           compress large files to save tokens.
   dex hook observe                   Claude Code PostToolUse/Stop hook:

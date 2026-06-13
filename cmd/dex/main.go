@@ -1,11 +1,11 @@
 // dex — local semantic-search helper for Claude Code.
 //
-// The query-side subcommands mirror the MCP tool surface 1:1
-// (subcommand-group form). The build/maintenance commands are CLI-only.
+// The query-side verbs share the MCP tool names 1:1 (find, lookup, trace,
+// impact, map, read, ask). The build/maintenance commands are CLI-only.
 //
 //	ask <path> <q...>             Primary entry point (MCP: ask).
-//	search semantic <path> <q...> Hybrid top-k chunks (MCP: find).
-//	search symbol <path> <name>   Exact identifier lookup (MCP: lookup).
+//	find <path> <q...>            Hybrid semantic top-k chunks (MCP: find).
+//	lookup <path> <name>          Exact identifier lookup (MCP: lookup).
 //	graph neighbors <path> <file> <line>
 //	                              Vector neighbours of a chunk (CLI-only).
 //	graph deps <path> [--file|--package]
@@ -16,8 +16,7 @@
 //	graph backlinks <path> <doc>  Docs that link to this markdown doc (CLI-only).
 //	graph tags <path> --tag|--doc Tag→docs or doc→tags (CLI-only).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
-//	view summarize <path> <file>  Summarize a file slice (MCP: read).
-//	read <file>                   Structural read (signatures/aggressive/entropy); no LLM.
+//	read <file>                   Read a file (MCP: read). Default mode=full is raw (no LLM); mode=summary is an LLM digest.
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
 //	generate <path> <prompt>      Generate code grounded in the project's index.
@@ -32,7 +31,7 @@
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	bench locomo <path>           LoCoMo memory-recall benchmark (recall@k / token-F1).
-//	knowledge add|query|rm|gc     Store/list/delete/gc per-project facts (MCP: notes).
+//	notes add|query|rm|gc         Store/list/delete/gc per-project facts (MCP: notes).
 //	compress <file|->             Compress a file or stdin through the dex engine (no LLM).
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.
@@ -83,10 +82,6 @@ func main() {
 		err = cmdIndexDispatch(ctx, args)
 	case "ask":
 		err = cmdAsk(ctx, args)
-	case "search":
-		err = cmdSearch(ctx, args)
-	case "view":
-		err = cmdView(ctx, args)
 	case "read":
 		err = cmdRead(ctx, args)
 	case "graph":
@@ -95,10 +90,12 @@ func main() {
 		err = cmdMap(ctx, args)
 	case "orient":
 		err = cmdOrient(ctx, args)
-	// Verb facade front doors (#354) — mirror the default MCP tool surface.
-	// map/read/ask already exist above; these thin-wrap search/graph.
+	// Verb front doors (#354/#427) — the CLI verbs share the MCP tool names:
+	// find / lookup / trace / impact (map / read / ask already exist above).
 	case "find":
 		err = cmdFind(ctx, args)
+	case "lookup":
+		err = cmdLookup(ctx, args)
 	case "trace":
 		err = cmdTrace(ctx, args)
 	case "impact":
@@ -125,7 +122,7 @@ func main() {
 		err = cmdClone(ctx, args)
 	case "hook":
 		err = cmdHook(ctx, args)
-	case "knowledge":
+	case "notes":
 		err = cmdKnowledge(ctx, args)
 	case "compress":
 		err = cmdCompress(args)

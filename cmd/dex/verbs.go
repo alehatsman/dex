@@ -12,16 +12,19 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// CLI verb front doors mirroring the MCP tool facade (#345/#354): find / trace
-// / impact. They are thin wrappers over the existing commands — `dex search`,
-// `dex graph …`, `dex knowledge`, etc. all keep working unchanged. map / read /
-// ask are already top-level, so the six verbs (map find read trace impact ask)
-// now match the default MCP surface one-for-one.
+// CLI verb front doors mirroring the MCP tool facade (#345/#354/#427): the CLI
+// verbs are the same names as the MCP tools — find / lookup / trace / impact /
+// map / read / ask — so an agent and a human share one vocabulary across the
+// stdio MCP surface, the REST surface, and the CLI.
 
-// cmdFind is the verb front door for code search (MCP: find). It runs the same
-// fused semantic+symbol lane as `dex search semantic`.
+// cmdFind is the front door for semantic code search (MCP: find).
 func cmdFind(ctx context.Context, args []string) error {
 	return cmdSearchSemantic(ctx, args)
+}
+
+// cmdLookup is the front door for exact identifier lookup (MCP: lookup).
+func cmdLookup(ctx context.Context, args []string) error {
+	return cmdSearchSymbol(ctx, args)
 }
 
 // splitTraceArgs peels trace's own flags (--direction/--dir/-d and --to) off the

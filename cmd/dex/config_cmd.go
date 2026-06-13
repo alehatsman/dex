@@ -115,7 +115,7 @@ func buildConfigYAML(full bool) string {
 	writeln("models:")
 	writeln("  # embed: model name for embedding  (DEX_EMBED_MODEL)")
 	writeln("  embed: " + effOrDefault("DEX_EMBED_MODEL", "nomic-embed-text"))
-	writeln("  # chat: model name for ask/generate/view summarize  (DEX_CHAT_MODEL)")
+	writeln("  # chat: model name for ask/generate/read summary  (DEX_CHAT_MODEL)")
 	writeln("  chat:  " + effOrDefault("DEX_CHAT_MODEL", "qwen2.5-coder:14b"))
 	writeln("")
 

@@ -23,7 +23,7 @@ type SummarizeInput struct {
 	Path         string   `json:"path,omitempty" jsonschema:"file path to summarize; relative paths are resolved against project_root; required when paths is not set"`
 	Paths        []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
 	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Mode         string   `json:"mode,omitempty" jsonschema:"read fidelity: 'full' (default, summarize via LLM), 'skeleton' (exported signatures + @B<n> body handles, no LLM), 'signatures' (indexed symbols + source lines, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM)"`
+	Mode         string   `json:"mode,omitempty" jsonschema:"read mode (default 'full'): 'full' (raw file content, no LLM), 'signatures' (indexed symbols + source lines, no LLM), 'skeleton' (exported type decls in full + function/method signatures with @B<n> body handles, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM), 'summary' (LLM-generated digest — the only mode needing a chat model; returns status='needs-chat' when none is wired)"`
 	StartLine    int      `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
 	EndLine      int      `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
 	Focus        string   `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
@@ -110,7 +110,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		}
 	}
 
-	mode, isFull := s.summarizeResolveMode(in)
+	mode, isLLM := s.summarizeResolveMode(in)
 
 	if len(in.Paths) > 0 {
 		return s.summarizeBatch(ctx, in)
@@ -137,16 +137,25 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	{
 		tr := s.sloFor(p.Root)
 		tr.RecordToolCall()
-		if tr.ConsumeThrottle() && mode == "full" {
+		if tr.ConsumeThrottle() && mode == "summary" {
 			mode = "signatures"
-			isFull = false
+			isLLM = false
 		}
 		if blockMsg := sloBlock(tr.Check()); blockMsg != "" {
 			return nil, SummarizeOutput{Status: "error", Hint: blockMsg}, nil
 		}
 	}
 
-	if isFull {
+	// mode=summary is the only LLM path; the structural modes (full/raw,
+	// signatures, skeleton, map, lines) need no chat model. Degrade with a
+	// clear status when summary is requested but no chat model is wired.
+	if isLLM && s.ChatClient == nil {
+		out.Status = "needs-chat"
+		out.Hint = "mode=summary needs a chat model (set DEX_CHAT_URL); use mode=full (raw) or signatures/skeleton/map for no-LLM reads"
+		return nil, out, nil
+	}
+
+	if isLLM {
 		out.Endpoint = s.ChatClient.Endpoint()
 		out.Model = s.ChatClient.ModelName()
 	}
@@ -169,7 +178,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	defer s.recordSummarizeMetrics(cacheDir, sloTracker, relTarget, &out)
 
 	var sessionID string
-	sessionID, earlyOut, done = s.summarizeCheckCached(req, in, relTarget, etag, isFull, data, out)
+	sessionID, earlyOut, done = s.summarizeCheckCached(req, in, relTarget, etag, isLLM, data, out)
 	if done {
 		out = earlyOut
 		return
@@ -185,26 +194,32 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return
 	}
 
-	// Bounce detection (#98): re-escalate to full on repeated compressed reads.
+	// Bounce detection (#98): re-escalate on repeated compressed reads — give
+	// the agent the complete view (LLM summary when a chat model is wired,
+	// else the raw full file).
 	bt := s.bt()
 	bt.recordRead(sessionID, relTarget)
-	if bt.shouldForceFull(sessionID, relTarget) && mode != "full" {
+	if bt.shouldForceFull(sessionID, relTarget) && mode != "summary" && mode != "full" {
 		if s.ChatClient != nil {
-			mode = "full"
-			isFull = true
+			mode = "summary"
+			isLLM = true
 		} else {
-			mode = "map"
-			isFull = false
+			mode = "full"
+			isLLM = false
 		}
 	}
 
 	// Budget-aware downgrade (#106): auto-select richest mode within budget.
-	if in.BudgetTokens > 0 && !isFull {
+	// Skips the LLM summary (its output is already small); raw full is the
+	// largest payload, so it is downgraded toward signatures/map as needed.
+	if in.BudgetTokens > 0 && !isLLM {
 		mode = selectAffordableMode(mode, len(data)/4, in.BudgetTokens)
 	}
 
 	// Dependency manifest shortcut (#125): compact summary for package.json etc.
-	if compress.IsDepsFilename(filepath.Base(realTarget)) && mode != "full" {
+	// Honor an explicit raw-full or LLM-summary request; compact only the
+	// structural modes.
+	if compress.IsDepsFilename(filepath.Base(realTarget)) && mode != "full" && mode != "summary" {
 		if summary, ok := compress.CompressDepsFile(relTarget, data); ok {
 			out.Status = "ok"
 			out.Etag = etag
@@ -221,6 +236,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		sessionID: sessionID, etag: etag, bt: bt, out: out,
 	}
 	switch {
+	case mode == "summary":
+		result, out, err = s.summarizeModeSummary(w)
 	case strings.HasPrefix(mode, "lines:"):
 		result, out, err = s.summarizeModeLines(w, mode)
 	case mode == "signatures":
@@ -231,8 +248,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		result, out, err = s.summarizeModeAggressive(w)
 	case mode == "skeleton":
 		result, out, err = s.summarizeModeSkeleton(w)
-	default:
-		result, out, err = s.summarizeModeFull(w)
+	default: // "full" — raw file content, no LLM, no compression.
+		result, out, err = s.summarizeModeRaw(w)
 	}
 	return
 }

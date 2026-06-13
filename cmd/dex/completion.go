@@ -54,7 +54,7 @@ _dex_completion() {
         prev="${COMP_WORDS[COMP_CWORD-1]}"
     }
 
-    local top_commands="ask search view graph index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config"
+    local top_commands="ask find lookup read map trace impact graph notes index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config"
 
     # Depth-1: top-level command
     if [[ $COMP_CWORD -eq 1 ]]; then
@@ -67,9 +67,9 @@ _dex_completion() {
     # Depth-2: subcommands
     if [[ $COMP_CWORD -eq 2 ]]; then
         case $cmd in
-            search)     COMPREPLY=($(compgen -W "semantic symbol" -- "$cur")); return ;;
-            view)       COMPREPLY=($(compgen -W "summarize" -- "$cur")); return ;;
-            graph)      COMPREPLY=($(compgen -W "neighbors deps packages callers callees links backlinks tags export" -- "$cur")); return ;;
+            graph)      COMPREPLY=($(compgen -W "neighbors deps packages callers callees links backlinks tags cycles path diff clusters export" -- "$cur")); return ;;
+            notes)      COMPREPLY=($(compgen -W "add query rm gc" -- "$cur")); return ;;
+            read)       COMPREPLY=($(compgen -W "--mode --start --end --focus --format" -- "$cur")); return ;;
             index)      COMPREPLY=($(compgen -W "status" -- "$cur")); return ;;
             hook)       COMPREPLY=($(compgen -W "inject rewrite redirect observe" -- "$cur")); return ;;
             completion) COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur")); return ;;
@@ -110,9 +110,14 @@ _dex() {
     local -a top_commands
     top_commands=(
         'ask:one-shot router (semantic + symbol + graph)'
-        'search:hybrid top-k or exact symbol search'
-        'view:file summarization'
+        'find:hybrid semantic top-k search'
+        'lookup:exact identifier lookup'
+        'read:read a file (--mode full|signatures|summary…)'
+        'map:deterministic repo orientation map'
+        'trace:call-graph callers/callees/path'
+        'impact:transitive caller blast-radius'
         'graph:graph traversal'
+        'notes:per-project notes'
         'index:build or refresh the project index'
         'generate:RAG code generation'
         'env:print effective DEX_* configuration'
@@ -152,52 +157,35 @@ _dex() {
                         '-v[verbose: show timing]' \
                         '*:path:_files -/'
                     ;;
-                search)
-                    local -a sub
-                    sub=('semantic:hybrid top-k chunks' 'symbol:exact identifier lookup')
-                    _arguments '1: :->sub' '*:: :->rest'
-                    case $state in
-                        sub)  _describe 'subcommand' sub ;;
-                        rest)
-                            case $words[1] in
-                                semantic)
-                                    _arguments \
-                                        '--k=[number of results]:n:' \
-                                        '--format=[output format]:fmt:(text json)' \
-                                        '--rerank=[disable rerank]:r:(off)' \
-                                        '--explain[show per-chunk score breakdown]' \
-                                        '--max-content-bytes=[truncation limit]:bytes:' \
-                                        '-v[verbose]' \
-                                        '*:path:_files -/'
-                                    ;;
-                                symbol)
-                                    _arguments \
-                                        '--k=[max results]:n:' \
-                                        '--format=[output format]:fmt:(text json)' \
-                                        '--max-content-bytes=[truncation limit]:bytes:' \
-                                        '-v[verbose]' \
-                                        '*:path:_files -/'
-                                    ;;
-                            esac
-                            ;;
-                    esac
+                find)
+                    _arguments \
+                        '--k=[number of results]:n:' \
+                        '--format=[output format]:fmt:(text json)' \
+                        '--rerank=[disable rerank]:r:(off)' \
+                        '--explain[show per-chunk score breakdown]' \
+                        '--max-content-bytes=[truncation limit]:bytes:' \
+                        '-v[verbose]' \
+                        '*:path:_files -/'
                     ;;
-                view)
-                    local -a sub
-                    sub=('summarize:summarize a file slice via the chat model')
-                    _arguments '1: :->sub' '*:: :->rest'
-                    case $state in
-                        sub) _describe 'subcommand' sub ;;
-                        rest)
-                            _arguments \
-                                '--start=[first line]:line:' \
-                                '--end=[last line]:line:' \
-                                '--focus=[steering hint]:focus:' \
-                                '--format=[output format]:fmt:(text json)' \
-                                '-v[verbose]' \
-                                '*:path:_files -/'
-                            ;;
-                    esac
+                lookup)
+                    _arguments \
+                        '--k=[max results]:n:' \
+                        '--format=[output format]:fmt:(text json)' \
+                        '--max-content-bytes=[truncation limit]:bytes:' \
+                        '-v[verbose]' \
+                        '*:path:_files -/'
+                    ;;
+                read)
+                    _arguments \
+                        '--mode=[read mode]:mode:(full signatures aggressive entropy auto summary)' \
+                        '--start=[first line]:line:' \
+                        '--end=[last line]:line:' \
+                        '--focus=[summary steering hint]:focus:' \
+                        '--temperature=[summary sampling temperature]:t:' \
+                        '--max-tokens=[summary max tokens]:n:' \
+                        '--format=[output format]:fmt:(text json)' \
+                        '-v[verbose]' \
+                        '*:path:_files'
                     ;;
                 graph)
                     local -a sub
@@ -246,7 +234,7 @@ _dex() {
                     local -a sub
                     sub=(
                         'inject:UserPromptSubmit hook — inject dex context'
-                        'rewrite:Bash hook — rewrite rg/grep to dex search'
+                        'rewrite:Bash hook — rewrite rg/grep to dex find'
                         'redirect:Read/Grep hook — compress large files'
                         'observe:PostToolUse/Stop hook — append event log'
                     )
@@ -309,20 +297,16 @@ _dex "$@"
 const fishCompletionScript = `# dex fish completions
 # dex completion fish > ~/.config/fish/completions/dex.fish
 
-set -l top_cmds ask search view graph index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config
+set -l top_cmds ask find lookup read map trace impact graph notes index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config
 
 # Top-level commands
 complete -c dex -f -n 'not __fish_seen_subcommand_from $top_cmds' -a "$top_cmds"
 
-# --- search subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from search; and not __fish_seen_subcommand_from semantic symbol' -a 'semantic' -d 'hybrid top-k chunks'
-complete -c dex -f -n '__fish_seen_subcommand_from search; and not __fish_seen_subcommand_from semantic symbol' -a 'symbol' -d 'exact identifier lookup'
-
-# --- view subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from view; and not __fish_seen_subcommand_from summarize' -a 'summarize' -d 'summarize a file slice'
+# --- notes subcommands ---
+complete -c dex -f -n '__fish_seen_subcommand_from notes; and not __fish_seen_subcommand_from add query rm gc' -a 'add query rm gc'
 
 # --- graph subcommands ---
-set -l graph_sub neighbors deps packages callers callees links backlinks tags export
+set -l graph_sub neighbors deps packages callers callees links backlinks tags cycles path diff clusters export
 complete -c dex -f -n '__fish_seen_subcommand_from graph; and not __fish_seen_subcommand_from $graph_sub' -a "$graph_sub"
 
 # --- index subcommands ---
@@ -348,13 +332,18 @@ complete -c dex -n '__fish_seen_subcommand_from ask' -l no-inline -d 'skip inlin
 complete -c dex -n '__fish_seen_subcommand_from ask' -l max-content-bytes -r -d 'truncation limit in bytes (0=no limit)'
 complete -c dex -n '__fish_seen_subcommand_from ask' -s v -d 'verbose: show timing'
 
-# --- search semantic flags ---
-complete -c dex -n '__fish_seen_subcommand_from search' -l format -r -a 'text json' -d 'output format'
-complete -c dex -n '__fish_seen_subcommand_from search' -l k -r -d 'number of results'
-complete -c dex -n '__fish_seen_subcommand_from search' -l rerank -r -a 'off' -d 'disable rerank for this query'
-complete -c dex -n '__fish_seen_subcommand_from search' -l explain -d 'show per-chunk score breakdown'
-complete -c dex -n '__fish_seen_subcommand_from search' -l max-content-bytes -r -d 'truncation limit in bytes (0=no limit)'
-complete -c dex -n '__fish_seen_subcommand_from search' -s v -d 'verbose'
+# --- find / lookup flags ---
+complete -c dex -n '__fish_seen_subcommand_from find lookup' -l format -r -a 'text json' -d 'output format'
+complete -c dex -n '__fish_seen_subcommand_from find lookup' -l k -r -d 'number of results'
+complete -c dex -n '__fish_seen_subcommand_from find' -l rerank -r -a 'off' -d 'disable rerank for this query'
+complete -c dex -n '__fish_seen_subcommand_from find' -l explain -d 'show per-chunk score breakdown'
+complete -c dex -n '__fish_seen_subcommand_from find lookup' -l max-content-bytes -r -d 'truncation limit in bytes (0=no limit)'
+complete -c dex -n '__fish_seen_subcommand_from find lookup' -s v -d 'verbose'
+
+# --- read flags ---
+complete -c dex -n '__fish_seen_subcommand_from read' -l mode -r -a 'full signatures aggressive entropy auto summary' -d 'read mode'
+complete -c dex -n '__fish_seen_subcommand_from read' -l format -r -a 'text json' -d 'output format'
+complete -c dex -n '__fish_seen_subcommand_from read' -l focus -r -d 'summary steering hint'
 
 # --- index flags ---
 complete -c dex -n '__fish_seen_subcommand_from index' -l graph -r -a 'on off only' -d 'graph phase mode'

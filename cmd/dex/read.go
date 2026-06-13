@@ -10,16 +10,15 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/profiles"
+	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdRead is the `dex read <file>` verb: a zero-cost (no LLM) structural read
-// of a file. It mirrors the PreToolUse redirect hook's behavior as a
-// first-class, flagged entrypoint — useful in CI, manual inspection, and
-// piping. Unlike `dex view summarize`, it never calls the chat model.
+// cmdRead is the `dex read <file>` verb (MCP: read). It shares the MCP tool's
+// mode vocabulary so an agent and a human read with one verb:
 //
-// Modes:
-//   - full        — raw content (honoring --start/--end)
+//   - full        — raw content, no LLM (the default; honors --start/--end)
 //   - signatures  — index-backed declaration view (imports + top-level decls,
 //     bodies dropped); falls back to aggressive when the file is
 //     not indexed or has no symbols
@@ -27,30 +26,36 @@ import (
 //   - entropy     — drop low-information lines
 //   - auto        — large indexed files → signatures, otherwise full (mirrors
 //     the redirect hook's redirectLineThreshold)
+//   - summary     — LLM-generated digest (the only mode that calls the chat
+//     model; honors --focus/--temperature/--max-tokens)
 //
 // `dex compress` (#229) is the generic text-in/out sibling; `dex read` is
 // file-oriented with line ranges and index-aware mode auto-selection.
 func cmdRead(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("read", flag.ContinueOnError)
 	setHelp(fs,
-		"Structural read of a file — no LLM call (MCP-free sibling of view summarize).",
+		"Read a file (MCP: read). Default mode=full is raw content (no LLM); mode=summary is an LLM digest.",
 		"dex read [flags] <file>",
 		`dex read internal/store/store.go`,
 		`dex read --mode=signatures internal/mcp/server.go`,
 		`dex read --start=100 --end=160 cmd/dex/main.go`,
-		`dex read --mode=aggressive --format=json build.go`,
+		`dex read --mode=summary --focus="public API" internal/mcp/server.go`,
 	)
-	mode := fs.String("mode", "auto", "read mode: auto|full|signatures|aggressive|entropy")
+	mode := fs.String("mode", "full", "read mode: full|signatures|aggressive|entropy|auto|summary")
 	start := fs.Int("start", 0, "first line to read (1-based, inclusive; 0 = file start)")
 	end := fs.Int("end", 0, "last line to read (1-based, inclusive; 0 = end of file)")
 	format := fs.String("format", "text", "output format: text|json")
+	focus := fs.String("focus", "", "summary mode: steer the digest — e.g. 'public API surface'")
+	temp := fs.Float64("temperature", 0, "summary mode: sampling temperature (0 = server default)")
+	maxTok := fs.Int("max-tokens", 0, "summary mode: max tokens to generate (0 = server default)")
+	verbose := fs.Bool("v", false, "summary mode: include model name in text output")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
 	switch *mode {
-	case "auto", "full", "signatures", "aggressive", "entropy":
+	case "auto", "full", "signatures", "aggressive", "entropy", "summary":
 	default:
-		return fmt.Errorf("invalid --mode=%s (want auto|full|signatures|aggressive|entropy)", *mode)
+		return fmt.Errorf("invalid --mode=%s (want full|signatures|aggressive|entropy|auto|summary)", *mode)
 	}
 	switch *format {
 	case "text", "json":
@@ -62,6 +67,9 @@ func cmdRead(ctx context.Context, args []string) error {
 		return fmt.Errorf("read needs exactly one <file> argument")
 	}
 	path := rest[0]
+	if *mode == "summary" {
+		return readSummarize(ctx, path, *start, *end, *focus, *temp, *maxTok, *format, *verbose)
+	}
 	if *start < 0 || *end < 0 {
 		return fmt.Errorf("--start/--end must be non-negative")
 	}
@@ -149,6 +157,61 @@ func cmdRead(ctx context.Context, args []string) error {
 		fmt.Fprintln(os.Stdout)
 	}
 	return err
+}
+
+// readSummarize handles `dex read --mode=summary`: the LLM digest path (MCP:
+// read mode=summary). It routes through the same Summarize handler the MCP
+// `read` tool uses, so CLI and tool produce the same digest. Returns a
+// needs-chat status (not an error) when no chat model is wired.
+func readSummarize(ctx context.Context, file string, start, end int, focus string, temp float64, maxTok int, format string, verbose bool) error {
+	base, err := indexDir()
+	if err != nil {
+		return err
+	}
+	p, err := proj.Resolve("", base)
+	if err != nil {
+		return err
+	}
+	s, _ := newServerFromEnv(base)
+	out, err := s.Summarize(ctx, mcp.SummarizeInput{
+		Path:        file,
+		ProjectRoot: p.Root,
+		StartLine:   start,
+		EndLine:     end,
+		Focus:       focus,
+		Temperature: float32(temp),
+		MaxTokens:   maxTok,
+		Mode:        "summary",
+	})
+	if err != nil {
+		return err
+	}
+	if format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if out.Status != "ok" {
+		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
+		if out.Hint != "" {
+			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
+		}
+		return nil
+	}
+	fmt.Printf("file:  %s (lines %d-%d, %d bytes", out.Path, out.StartLine, out.EndLine, out.Bytes)
+	if out.Truncated {
+		fmt.Print(", truncated")
+	}
+	fmt.Println(")")
+	if verbose && out.Model != "" {
+		fmt.Printf("model: %s\n", out.Model)
+	}
+	fmt.Println()
+	fmt.Println(out.Content)
+	if out.FinishReason != "" && out.FinishReason != "stop" {
+		fmt.Fprintf(os.Stderr, "\n(finish_reason=%s)\n", out.FinishReason)
+	}
+	return nil
 }
 
 // rangeText returns the [start,end] (1-based, inclusive) slice of lines joined

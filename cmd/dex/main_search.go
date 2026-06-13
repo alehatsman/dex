@@ -16,34 +16,14 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-func cmdSearch(ctx context.Context, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("search needs a subcommand: semantic | symbol")
-	}
-	sub, rest := args[0], args[1:]
-	switch sub {
-	case "semantic":
-		return cmdSearchSemantic(ctx, rest)
-	case "symbol":
-		return cmdSearchSymbol(ctx, rest)
-	case "-h", "--help", "help":
-		fmt.Fprintln(os.Stderr, `usage:
-  dex search semantic <path> <query...>   hybrid top-k chunks (MCP: find)
-  dex search symbol   <path> <name>       exact identifier lookup (MCP: lookup)`)
-		return nil
-	default:
-		return fmt.Errorf("unknown search subcommand: %s (have: semantic, symbol)", sub)
-	}
-}
-
 func cmdSearchSemantic(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("search semantic", flag.ContinueOnError)
+	fs := flag.NewFlagSet("find", flag.ContinueOnError)
 	setHelp(fs,
-		"Hybrid top-k chunks for a query (MCP: find).",
-		"dex search semantic [flags] [<path>] <query...>",
-		`dex search semantic . "retry logic"`,
-		`dex search semantic . --k=16 --explain "rate limiter"`,
-		`dex search semantic . --max-content-bytes=4000 "error handling"`,
+		"Hybrid semantic top-k chunks for a query (MCP: find).",
+		"dex find [flags] [<path>] <query...>",
+		`dex find . "retry logic"`,
+		`dex find . --k=16 --explain "rate limiter"`,
+		`dex find . --max-content-bytes=4000 "error handling"`,
 	)
 	k := fs.Int("k", 8, "number of results to return")
 	rerankFlag := fs.String("rerank", "", "set to 'off' to skip the rerank stage for this query (no effect when DEX_RERANK_URL is unset)")
@@ -59,7 +39,7 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) == 0 {
-		return fmt.Errorf("search semantic needs a query (path defaults to cwd)")
+		return fmt.Errorf("find needs a query (path defaults to cwd)")
 	}
 	q := strings.Join(rest, " ")
 	if strings.TrimSpace(q) == "" {
@@ -163,15 +143,15 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	}
 }
 
-// cmdSearchSymbol wraps the MCP `search_symbol` tool. Exact identifier
+// cmdSearchSymbol wraps the MCP `lookup` tool. Exact identifier
 // lookup against the indexed chunks — no embedding required.
 func cmdSearchSymbol(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("search symbol", flag.ContinueOnError)
+	fs := flag.NewFlagSet("lookup", flag.ContinueOnError)
 	setHelp(fs,
 		"Exact identifier lookup (MCP: lookup).",
-		"dex search symbol [flags] [<path>] <name>",
-		`dex search symbol . "RateLimiter"`,
-		`dex search symbol . --k=20 "func.*Handler"`,
+		"dex lookup [flags] [<path>] <name>",
+		`dex lookup . "RateLimiter"`,
+		`dex lookup . --k=20 "func.*Handler"`,
 	)
 	k := fs.Int("k", 10, "max results to return")
 	format := fs.String("format", "text", "output format: text | json")
@@ -183,9 +163,9 @@ func cmdSearchSymbol(ctx context.Context, args []string) error {
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 1 {
 		if len(rest) == 0 {
-			return fmt.Errorf("search symbol needs a name (path defaults to cwd) — e.g. `dex search symbol Watcher`")
+			return fmt.Errorf("lookup needs a name (path defaults to cwd) — e.g. `dex lookup Watcher`")
 		}
-		return fmt.Errorf("search symbol takes one <name> (got %d extra args)", len(rest)-1)
+		return fmt.Errorf("lookup takes one <name> (got %d extra args)", len(rest)-1)
 	}
 	base, err := indexDir()
 	if err != nil {

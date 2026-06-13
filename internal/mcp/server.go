@@ -734,10 +734,12 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // embedAvailable is true. With no embedder wired (the lean profile,
 // DEX_EMBED_ENGINE=none), those are omitted entirely and the surface degrades
 // to BM25 (`grep`) + symbol + graph + file lanes; `ask` stays and routes to
-// the non-semantic lanes. chatAvailable gates `read` the same way. When
-// weakModel is true the full tool surface is hidden and only ask, grep, ls,
-// and shell are exposed.
+// the non-semantic lanes. `read` is always registered (its structural modes
+// need no chat); only `read mode=summary` needs a chat model and returns
+// status='needs-chat' when chatAvailable is false. When weakModel is true the
+// full tool surface is hidden and only ask, grep, ls, and shell are exposed.
 func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
+	_ = chatAvailable // read no longer gates on chat; summary degrades at call time
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 	expert := expertEnabled()
 	if !weakModel {
@@ -915,26 +917,26 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			}, h.session)
 		}
 
-		if chatAvailable {
-			addTool(srv, &sdk.Tool{
-				Name:        "read",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Prefer `ask` first — its `suggested_reads` will name the file worth " +
-					"summarizing. Use `read` directly only when you already know which file you need digested. " +
-					"Sends the file slice directly to the chat model. Pass `focus` to steer (e.g. 'public API surface'). " +
-					"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
-					"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
-					"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
-					"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
-					"If the file changed since the last read the server may return status=delta with a compact unified diff " +
-					"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
-					"Pass `task` (your current task from `session`) to get automatic compression routing: " +
-					"Generate/Test tasks use aggressive mode (strips comments, no LLM call), others apply lightweight cleanup. " +
-					"Skeleton mode (mode=skeleton): emits exported type declarations in full and function/method signatures " +
-					"with @B<n> body handles. Expand a body on demand: pass expand='@B<n>' on a subsequent call. " +
-					"On error, returns 'chat-service-unreachable' or 'error'."),
-			}, h.summarize)
-		}
+		addTool(srv, &sdk.Tool{
+			Name:        "read",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Prefer `ask` first — its `suggested_reads` will name the file worth reading. " +
+				"Use `read` directly when you already know which file you need. " +
+				"`mode` (default 'full') selects the view: 'full' = raw file content (no LLM, exact bytes); " +
+				"'signatures' = indexed symbols + source lines; 'skeleton' = exported type declarations in full plus " +
+				"function/method signatures with @B<n> body handles (expand one later via expand='@B<n>'); " +
+				"'map' = imports + exported symbols; 'lines:N-M' = raw line slice; " +
+				"'summary' = LLM-generated digest (the only mode needing a chat model — pass `focus` to steer, " +
+				"e.g. 'public API surface'; returns status='needs-chat' when no chat model is wired). " +
+				"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
+				"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
+				"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
+				"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
+				"If the file changed since the last read the server may return status=delta with a compact unified diff " +
+				"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
+				"Pass `task` (your current task from `session`) for automatic compression routing of the raw default. " +
+				"On error, returns 'chat-service-unreachable' or 'error'."),
+		}, h.summarize)
 	}
 
 	addTool(srv, &sdk.Tool{

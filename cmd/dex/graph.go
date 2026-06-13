@@ -24,7 +24,7 @@ import (
 // the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | path | diff | communities | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | path | diff | clusters | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -52,7 +52,7 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphPath(ctx, rest)
 	case "diff":
 		return cmdGraphDiff(ctx, rest)
-	case "communities":
+	case "clusters":
 		return cmdGraphCommunities(ctx, rest)
 	case "export":
 		return cmdGraphExport(ctx, rest)
@@ -79,7 +79,7 @@ func cmdGraph(ctx context.Context, args []string) error {
                                                     --package=<pkg>  --max-depth=<n>
   dex graph diff        [<path>]                blast-radius of current git diff (MCP: diff)
                                                     --ref=<ref>  --depth=<n>
-  dex graph communities [<path>]                Louvain communities (MCP: clusters)
+  dex graph clusters    [<path>]                Louvain call/import-graph clusters (MCP: clusters)
                                                     --min-members=<n>  --k=<n>  --top-k=<n>
   dex graph export      [<path>] [--output=<dir>]
                                                     dump nodes/edges as JSONL
@@ -90,7 +90,7 @@ note:
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, path, diff, communities, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, path, diff, clusters, export)", sub)
 	}
 }
 
@@ -821,12 +821,12 @@ func cmdGraphDiff(ctx context.Context, args []string) error {
 }
 
 func cmdGraphCommunities(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("graph communities", flag.ContinueOnError)
+	fs := flag.NewFlagSet("graph clusters", flag.ContinueOnError)
 	setHelp(fs,
-		"List Louvain communities in the call/import graph (MCP: clusters).",
-		"dex graph communities [flags] [<path>]")
+		"List Louvain clusters in the call/import graph (MCP: clusters).",
+		"dex graph clusters [flags] [<path>]")
 	minMembers := fs.Int("min-members", 3, "min community size (default 3)")
-	k := fs.Int("k", 20, "max communities to return (default 20)")
+	k := fs.Int("k", 20, "max clusters to return (default 20)")
 	topK := fs.Int("top-k", 10, "max members per community (default 10)")
 	format := fs.String("format", "text", "output format: text | json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
@@ -834,7 +834,7 @@ func cmdGraphCommunities(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 0 {
-		return fmt.Errorf("graph communities takes no extra positional args (got %v)", rest)
+		return fmt.Errorf("graph clusters takes no extra positional args (got %v)", rest)
 	}
 	base, err := indexDir()
 	if err != nil {
@@ -866,7 +866,7 @@ func cmdGraphCommunities(ctx context.Context, args []string) error {
 		}
 		return nil
 	}
-	fmt.Printf("%d communities (total=%d", len(out.Communities), out.Total)
+	fmt.Printf("%d clusters (total=%d", len(out.Communities), out.Total)
 	if out.Truncated {
 		fmt.Printf(", truncated")
 	}

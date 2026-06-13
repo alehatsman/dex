@@ -182,7 +182,33 @@ func (s *Server) summarizeModeSkeleton(w summarizeWork) (*sdk.CallToolResult, Su
 	return nil, out, nil
 }
 
-func (s *Server) summarizeModeFull(w summarizeWork) (*sdk.CallToolResult, SummarizeOutput, error) {
+// summarizeModeRaw returns the file's raw content — no LLM, no compression.
+// This is the `full` mode (the default): predictable, cheap, exact bytes.
+// StartLine/EndLine slice a sub-range; the whole file otherwise.
+func (s *Server) summarizeModeRaw(w summarizeWork) (*sdk.CallToolResult, SummarizeOutput, error) {
+	slice, sliceStart, sliceEnd := sliceLines(w.data, w.in.StartLine, w.in.EndLine)
+	out := w.out
+	out.StartLine = sliceStart
+	out.EndLine = sliceEnd
+	if len(slice) > maxSummarizeBytes {
+		slice = slice[:maxSummarizeBytes]
+		out.Truncated = true
+	}
+	out.Status = "ok"
+	out.Etag = w.etag
+	out.Bytes = len(slice)
+	out.Content = string(slice)
+	if lineCount := bytes.Count(w.data, []byte("\n")) + 1; lineCount > 250 {
+		out.Hint = fmt.Sprintf("⚠ Large file (%d lines): pass mode=skeleton, mode=signatures, or mode=map to reduce tokens, or mode=summary for an LLM digest.", lineCount)
+	}
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	return nil, out, nil
+}
+
+// summarizeModeSummary is the LLM path (`mode=summary`): it sends the file
+// slice to the chat model and returns the generated digest. On chat error it
+// degrades to raw content.
+func (s *Server) summarizeModeSummary(w summarizeWork) (*sdk.CallToolResult, SummarizeOutput, error) {
 	slice, sliceStart, sliceEnd := sliceLines(w.data, w.in.StartLine, w.in.EndLine)
 	out := w.out
 	out.StartLine = sliceStart
@@ -192,10 +218,6 @@ func (s *Server) summarizeModeFull(w summarizeWork) (*sdk.CallToolResult, Summar
 		out.Truncated = true
 	}
 	out.Bytes = len(slice)
-
-	if lineCount := bytes.Count(w.data, []byte("\n")) + 1; lineCount > 250 {
-		out.Hint = fmt.Sprintf("⚠ Large file (%d lines): pass mode=skeleton, mode=signatures, or mode=map to reduce tokens.", lineCount)
-	}
 
 	system := buildSummarizeSystem(w.in.Focus)
 	cleaned := compress.LightweightCleanup(string(slice))
