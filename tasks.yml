@@ -110,7 +110,8 @@ tasks:
       - shell: |
           # sqlite-vec and go-tree-sitter/lua emit macOS-only deprecation/null-char warnings from C code we don't control
           [ "$(uname -s)" = "Darwin" ] && export CGO_CFLAGS="-Wno-deprecated-declarations -Wno-null-character"
-          go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+          go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w -X github.com/alehatsman/dex/internal/mcp.Version=$VERSION" -o {{ BIN }} ./cmd/dex
       - name: install binary and ensure ~/bin symlink
         shell: |
           mkdir -p "$HOME/.local/bin" "$HOME/bin"

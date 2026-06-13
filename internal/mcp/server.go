@@ -1003,5 +1003,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 
 }
 
-// Version is set at build time via -ldflags.
+// Version is the build version. A release build overrides it via
+// -ldflags "-X .../internal/mcp.Version=<v>" (mooncake task install). When it
+// is still "dev" — e.g. a plain `go install` — resolveVersion (version.go)
+// recovers the VCS revision Go embeds in the build info.
 var Version = "dev"
