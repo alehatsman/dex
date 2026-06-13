@@ -84,6 +84,14 @@ type PackInfoEntry struct {
 	SessionTask   string `json:"session_task,omitempty"`
 }
 
+// isValidPackName returns true if name is safe to use as a filename component:
+// no path separators, no leading dot, non-empty, and filepath.Base is identity.
+func isValidPackName(name string) bool {
+	return name != "" &&
+		name[0] != '.' &&
+		filepath.Base(name) == name
+}
+
 func (s *Server) ctxPack(ctx context.Context, _ *sdk.CallToolRequest, in PackInput) (*sdk.CallToolResult, PackOutput, error) {
 	p, hint := s.resolveProject(in.ProjectRoot)
 	if hint != "" {
@@ -101,6 +109,11 @@ func (s *Server) ctxPack(ctx context.Context, _ *sdk.CallToolRequest, in PackInp
 		return nil, PackOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
 	defer func() { _ = st.Close() }()
+
+	// Validate Name before any path construction.
+	if in.Name != "" && !isValidPackName(in.Name) {
+		return nil, PackOutput{Status: "error", Hint: fmt.Sprintf("invalid package name %q: must be a plain filename (no path separators or leading dots)", in.Name)}, nil
+	}
 
 	packDir := filepath.Join(p.CacheDir, "packages")
 
