@@ -145,3 +145,41 @@ func TestShownL0_BudgetTruncatesAgreesWithRenderL0(t *testing.T) {
 		t.Fatalf("RenderL0 should note 2 dropped clusters:\n%s", out)
 	}
 }
+
+// RenderOrient must compose the L0 overview followed by an L1 zoom into the
+// most-central cluster — the session-start orientation bundle (#348).
+func TestRenderOrient_ComposesL0PlusTopClusterL1(t *testing.T) {
+	cs := sampleClusters()
+	bundle := RenderOrient(cs, 1000, 1000)
+
+	// L0 overview leads the bundle verbatim.
+	l0 := RenderL0(cs, 1000)
+	if !strings.HasPrefix(bundle, l0) {
+		t.Fatalf("orient bundle must start with the L0 overview:\n%s", bundle)
+	}
+	// The L1 zoom of the top-ranked cluster (#2, internal/mcp) follows verbatim.
+	top := ShownL0(cs, 1000)[0]
+	if top.ID != 2 {
+		t.Fatalf("top cluster should be the heaviest (#2), got #%d", top.ID)
+	}
+	if l1 := RenderL1(top, 1000); !strings.Contains(bundle, l1) {
+		t.Fatalf("orient bundle must contain the L1 zoom of the top cluster:\n%s", bundle)
+	}
+}
+
+// The bundle must be byte-stable across calls so injected orientation stays
+// cache-friendly for a session (#348).
+func TestRenderOrient_Deterministic(t *testing.T) {
+	cs := sampleClusters()
+	if a, b := RenderOrient(cs, 1000, 1000), RenderOrient(cs, 1000, 1000); a != b {
+		t.Fatalf("orient bundle not byte-stable across calls:\n%q\n!=\n%q", a, b)
+	}
+}
+
+// With no clusters there is nothing to zoom — orient degrades to L0 alone and
+// must not panic.
+func TestRenderOrient_EmptyDegradesToL0(t *testing.T) {
+	if got, want := RenderOrient(nil, 150, 1000), RenderL0(nil, 150); got != want {
+		t.Fatalf("empty orient should equal L0 alone:\ngot  %q\nwant %q", got, want)
+	}
+}

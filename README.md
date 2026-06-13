@@ -46,6 +46,7 @@ want.
 ```bash
 # query
 dex ask <path> "..."                       # primary entry point (use BEFORE grep)
+dex orient [<path>]                        # session-start L0+L1 codemap (--l0/--l1/--format); = ask("")
 dex search semantic <path> "..."           # hybrid top-k chunks
 dex search symbol   <path> <name>          # exact identifier lookup
 dex graph neighbors <path> <file> <line>   # vector neighbours of a chunk

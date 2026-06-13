@@ -259,6 +259,10 @@ type ContextOutput struct {
 	SuggestedReads []SuggestedRead `json:"suggested_reads,omitempty"`
 	NextAction     string          `json:"next_action,omitempty"`
 	Avoid          string          `json:"avoid,omitempty"`
+	// Map is the deterministic L0+L1 orientation bundle, set only on the
+	// session-start orientation path (ask called with an empty question, #348 /
+	// #316 story 6). Zero inference, byte-stable across calls. Absent otherwise.
+	Map string `json:"map,omitempty"`
 	// References is the ripgrep-backed reference list. Populated for
 	// callers/callees intents when at least one SymbolHit is present.
 	// Stand-in for the deferred `calls` graph edges.
@@ -292,7 +296,10 @@ func (s *Server) ContextRouter(ctx context.Context, in ContextInput) (*sdk.CallT
 
 func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) { //nolint:cyclop
 	if strings.TrimSpace(in.Question) == "" {
-		return nil, ContextOutput{Status: "error", Hint: "question is empty — pass a natural-language question about the codebase"}, nil
+		// Empty question = session-start orientation: return the deterministic
+		// L0+L1 map so the agent names the right cluster before any find()
+		// (#348 / #316 story 6). No inference, byte-stable, cache-friendly.
+		return s.orientResponse(ctx, in)
 	}
 	p, hint := s.resolveProject(in.Project)
 	if hint != "" {

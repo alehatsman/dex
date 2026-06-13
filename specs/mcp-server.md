@@ -75,6 +75,14 @@ service clients are the http-api spec's.
   line); a caller MAY override the inferred intent. Inline content shares one
   per-intent byte pool across both lanes; oversize ranges arrive `truncated:true`
   with their original line range, and `no_inline:true` omits payloads.
+- WHEN `ask` is called with an empty question, it routes to session-start
+  orientation (intent `orient`): a deterministic, zero-inference L0+L1 codemap
+  bundle (repo cluster overview plus an L1 zoom into the most-central cluster) is
+  returned in the `map` field, so an agent names the right package before any
+  `find`. The bundle is byte-stable across calls (cache-friendly) and is rendered
+  through the same path as `dex orient` and `dex map`. WHEN no call graph is
+  indexed it degrades to a `no-graph`/`no-index` hint pointing at
+  `dex index . --graph=only`, never an error.
 - WHEN `find` is called, dex embeds the query and returns top-k chunks; identifier
   tokens in the query are also looked up by exact symbol name and fused via RRF.
   Supports `languages`, `path_glob`, and `exclude` filters.
@@ -170,6 +178,7 @@ service clients are the http-api spec's.
 
 - [x] `dex mcp` registers an MCP server on stdio, blocks until transport closes
 - [x] `ask` leads the surface; composes lanes + synthesizes cited answer when a chat model is wired
+- [x] `ask` with an empty question → session-start orientation (intent `orient`): deterministic L0+L1 codemap in `map`, byte-stable, single-sourced with `dex orient`/`dex map`; degrades to a `no-graph`/`no-index` hint, never an error (#348 / #316 story 6)
 - [x] Single `registerTools` path wires the surface for stdio, remote shim, and HTTP-MCP — no name/schema drift
 - [x] Capability-derived exposure (#283/#290): `find` gated on `embedAvailable`, `read` on `chatAvailable`; weak model → only `ask`/`grep`/`ls`/`shell`
 - [x] Flat, prefix-free surface of up to 19 tools (no `DEX_TOOLS` tiers)

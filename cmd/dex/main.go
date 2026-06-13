@@ -115,6 +115,8 @@ func main() {
 		err = cmdGraph(ctx, args)
 	case "map":
 		err = cmdMap(ctx, args)
+	case "orient":
+		err = cmdOrient(ctx, args)
 	// Verb facade front doors (#354) — mirror the default MCP tool surface.
 	// map/read/ask already exist above; these thin-wrap search/graph.
 	case "find":

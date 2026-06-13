@@ -229,6 +229,21 @@ func renderGrouped(title string, symbols []Symbol, size, budget int) string {
 	return b.String()
 }
 
+// RenderOrient composes the session-start orientation bundle: the L0 overview
+// followed by an L1 zoom into the most-central cluster (the first ShownL0
+// entry, ranked by aggregate PageRank). Deterministic and zero-inference — the
+// single home both `ask("")` and `dex orient` render through, so they agree
+// with `dex map` by construction (#348 / #316 story 6). Returns just L0 when no
+// cluster is shown (empty or unindexed graph).
+func RenderOrient(clusters []Cluster, l0budget, l1budget int) string {
+	l0 := RenderL0(clusters, l0budget)
+	shown := ShownL0(clusters, l0budget)
+	if len(shown) == 0 {
+		return l0
+	}
+	return l0 + "\n" + RenderL1(shown[0], l1budget)
+}
+
 // l1Segment renders one package block within a cluster.
 func l1Segment(pkg string, symbols []Symbol) string {
 	var b strings.Builder

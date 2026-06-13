@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alehatsman/dex/internal/codemap"
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
@@ -1386,14 +1387,88 @@ func TestContextRouterNoIndex(t *testing.T) {
 	}
 }
 
-func TestContextRouterEmptyQuestion(t *testing.T) {
+// An empty question is no longer an error — it routes to the session-start
+// orientation path (#348 / #316 story 6). On an unindexed project it must
+// degrade gracefully: intent "orient" with a hint that points at indexing,
+// never the old "question is empty" error.
+func TestContextRouterEmptyQuestionOrients(t *testing.T) {
 	s := newServer("http://127.0.0.1:0", t.TempDir())
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{Project: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Status != "error" {
-		t.Errorf("status=%s, want error", out.Status)
+	if out.Intent != "orient" {
+		t.Errorf("intent=%q, want orient", out.Intent)
+	}
+	if out.Status == "ok" {
+		t.Errorf("status=ok on an unindexed project, want a graceful degrade status; out=%+v", out)
+	}
+	if !strings.Contains(out.Hint, "index") {
+		t.Errorf("hint should guide toward indexing, got %q", out.Hint)
+	}
+	if strings.Contains(out.Hint, "question is empty") {
+		t.Errorf("empty question must orient, not error: %q", out.Hint)
+	}
+}
+
+// On an indexed project with a community graph, an empty question returns the
+// deterministic L0+L1 orientation bundle in out.Map (#348). Proves the router
+// reaches codemap.RenderOrient end-to-end and names the indexed package.
+func TestContextRouterEmptyQuestionRendersMap(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "main.go"),
+		"package main\n\ntype Store struct{}\nfunc (s *Store) Search() {}\nfunc (s *Store) Open() {}\n")
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	ctx := context.Background()
+	seedGraph(t, ctx, root, cacheDir)
+
+	// Assign all three nodes to one community with PageRank so GraphCommunities
+	// (min-members 3) returns a cluster the orient bundle can zoom into.
+	p, err := proj.Resolve(root, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.GraphSetCentrality(ctx, []store.GraphCentralityRow{
+		{ID: "m::p::type::Store", PageRank: 0.5, InDegree: 2, CommunityID: 1},
+		{ID: "m::p::method::(*Store).Search", PageRank: 0.3, InDegree: 1, CommunityID: 1},
+		{ID: "m::p::method::(*Store).Open", PageRank: 0.2, InDegree: 1, CommunityID: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+
+	s := newServer(srv.URL, cacheDir)
+	_, out, err := s.ContextRouter(ctx, ContextInput{Project: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Intent != "orient" {
+		t.Fatalf("intent=%q, want orient", out.Intent)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status=%s hint=%s", out.Status, out.Hint)
+	}
+	if out.Map == "" {
+		t.Fatal("out.Map should hold the L0+L1 orientation bundle, got empty")
+	}
+	if !strings.Contains(out.Map, "p") {
+		t.Errorf("orient bundle should name the indexed package; got:\n%s", out.Map)
+	}
+	// The map must equal a direct render of the same clusters — single-sourced
+	// through codemap.RenderOrient, never a divergent reimplementation.
+	comm, err := s.GraphCommunities(ctx, CommunitiesInput{MinMembers: 3, K: 50, TopK: 25, ProjectRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := codemap.RenderOrient(adaptCommunities(comm.Communities), codemap.DefaultL0Budget, codemap.DefaultL1Budget); out.Map != want {
+		t.Errorf("out.Map diverges from codemap.RenderOrient:\ngot:\n%s\nwant:\n%s", out.Map, want)
 	}
 }
 
