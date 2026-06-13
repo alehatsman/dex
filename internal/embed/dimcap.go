@@ -33,8 +33,19 @@ func (d *dimCapEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 		return nil, err
 	}
 	for i, v := range vecs {
-		if len(v) > d.dim {
+		switch {
+		case len(v) > d.dim:
+			// MRL: the first d.dim elements form a valid sub-embedding.
 			v = v[:d.dim]
+		case len(v) < d.dim:
+			// The cap can't be satisfied — the model emits fewer dims than the
+			// configured cap. Silently normalising the short vector would still
+			// store it under the "model@<cap>" tag, leaving EnsureEmbedModel
+			// blind to a later model-dim change (it compares the cap, not the
+			// emitted dim). Fail loud so the misconfiguration / model swap
+			// surfaces at index/query time instead of forming a dim-mismatched
+			// index.
+			return nil, fmt.Errorf("embed: dim cap %d exceeds model output %d (reindex or correct the cap)", d.dim, len(v))
 		}
 		l2Normalize(v)
 		vecs[i] = v

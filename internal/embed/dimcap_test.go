@@ -3,6 +3,7 @@ package embed
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -58,19 +59,19 @@ func TestWithDimCap_truncatesAndNormalises(t *testing.T) {
 	}
 }
 
-func TestWithDimCap_dimLargerThanVector(t *testing.T) {
-	inner := &stubEmbedder{model: "m", vecs: [][]float32{{1, 0}}}
-	wrapped := WithDimCap(inner, 100) // cap > actual dim
+// TestWithDimCap_shortVectorErrors guards #458: when the model emits fewer dims
+// than the configured cap, the cap can't be satisfied. Silently normalising the
+// short vector and tagging it "model@<cap>" hides a model-dim change from
+// EnsureEmbedModel, so Embed must fail loud instead.
+func TestWithDimCap_shortVectorErrors(t *testing.T) {
+	inner := &stubEmbedder{model: "m", vecs: [][]float32{{1, 0}}} // emits 2 dims
+	wrapped := WithDimCap(inner, 1024)                            // cap > emitted dim
 
-	vecs, err := wrapped.Embed(context.Background(), []string{"x"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := wrapped.Embed(context.Background(), []string{"x"})
+	if err == nil {
+		t.Fatal("expected an error when model output is shorter than the dim cap")
 	}
-	if len(vecs[0]) != 2 {
-		t.Fatalf("dim = %d, want 2 (no expansion)", len(vecs[0]))
-	}
-	// {1,0} is already unit — should stay {1,0}.
-	if math.Abs(float64(vecs[0][0]-1)) > 1e-5 || math.Abs(float64(vecs[0][1])) > 1e-5 {
-		t.Errorf("unexpected normalised values: %v", vecs[0])
+	if !strings.Contains(err.Error(), "1024") || !strings.Contains(err.Error(), "2") {
+		t.Errorf("error should name cap (1024) and emitted dim (2): %v", err)
 	}
 }
