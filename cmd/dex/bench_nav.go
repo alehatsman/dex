@@ -148,10 +148,10 @@ func runBenchNav(ctx context.Context, args []string) {
 	mapSeeded := benchnav.ComputeMap(queries, cost, mapModel, *lane)
 	cmp := benchnav.Compare(noMap, mapSeeded)
 	cmp.Routing = benchnav.ComputeRouting(queries, routeModel, navRoutingBudgets, *lane)
-	if tasks, terr := buildBreadthTasks(ctx, st, em, *k); terr != nil {
+	if tasks, around, terr := buildBreadthTasks(ctx, st, em, *k, *l1budget); terr != nil {
 		fmt.Fprintf(os.Stderr, "dex bench nav: breadth lane unavailable (%v) — skipping\n", terr)
 	} else {
-		cmp.Breadth = benchnav.ComputeBreadth(tasks, *k, cost, breadthModel, *lane)
+		cmp.Breadth = benchnav.ComputeBreadth(tasks, *k, cost, breadthModel, around, *lane)
 	}
 	// Re-orientation lane (#351 phase 3): restore a session's working set after
 	// compaction via recap() vs re-exploration. Built purely from the no-map
@@ -350,20 +350,31 @@ const navBreadthMaxTasks = 25
 // enumerates them, whereas find() ranks by similarity, not adjacency. One find()
 // per seed (over its short name) populates the no-map lane's ranking. Seeds are
 // taken by descending neighbor-file count and capped to bound runtime.
-func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, k int) ([]benchnav.BreadthTask, error) {
+func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, k, l1budget int) ([]benchnav.BreadthTask, benchnav.AroundModel, error) {
 	nodes, err := st.GraphAllNodes(ctx)
 	if err != nil {
-		return nil, err
+		return nil, benchnav.AroundModel{}, err
 	}
 	idFile := make(map[string]string, len(nodes))
 	idQual := make(map[string]string, len(nodes))
 	isHub := make(map[string]bool, len(nodes))
+	// idSym carries the fields the exact (around) lane needs to render a seed's
+	// neighborhood the way `dex map --around` does (#356).
+	idSym := make(map[string]codemap.Symbol, len(nodes))
 	for _, n := range nodes {
 		if n.FilePath == "" {
 			continue
 		}
 		idFile[n.ID] = n.FilePath
 		idQual[n.ID] = n.QualifiedName
+		idSym[n.ID] = codemap.Symbol{
+			QualifiedName: n.QualifiedName,
+			Kind:          n.Kind,
+			Pkg:           n.PackagePath,
+			Path:          n.FilePath,
+			Line:          n.StartLine,
+			PageRank:      n.PageRank,
+		}
 		if n.Kind == "function" || n.Kind == "method" {
 			isHub[n.ID] = true
 		}
@@ -371,7 +382,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 
 	edges, err := st.GraphAllEdges(ctx)
 	if err != nil {
-		return nil, err
+		return nil, benchnav.AroundModel{}, err
 	}
 	// Undirected adjacency over node ids: callers ∪ callees.
 	adj := map[string]map[string]bool{}
@@ -390,6 +401,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 	}
 
 	type seedTask struct {
+		id    string
 		query string
 		label string
 		files []string
@@ -423,10 +435,10 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 			files = append(files, f)
 		}
 		sort.Strings(files)
-		seeds = append(seeds, seedTask{query: query, label: "neighborhood of " + qual, files: files})
+		seeds = append(seeds, seedTask{id: id, query: query, label: "neighborhood of " + qual, files: files})
 	}
 	if len(seeds) == 0 {
-		return nil, fmt.Errorf("no hub symbols with >= %d neighbor files", navBreadthMinNeighbors)
+		return nil, benchnav.AroundModel{}, fmt.Errorf("no hub symbols with >= %d neighbor files", navBreadthMinNeighbors)
 	}
 	// Largest neighbor sets first; deterministic tie-break by query.
 	sort.SliceStable(seeds, func(i, j int) bool {
@@ -440,6 +452,35 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 		seeds = seeds[:navBreadthMaxTasks]
 	}
 
+	// Exact (around) lane: render each seed's callers ∪ callees neighborhood the
+	// way `dex map --around <query>` does (#347), keyed by the task label so the
+	// breadth model reads coverage off the same budgeted text the agent sees.
+	// Built from the same edge set the targets were derived from, so the region
+	// IS the neighborhood — coverage is bounded only by the L1 token budget.
+	aroundText := make(map[string]string, len(seeds))
+	aroundTok := make(map[string]int, len(seeds))
+	for _, sd := range seeds {
+		syms := make([]codemap.Symbol, 0, len(adj[sd.id]))
+		for nb := range adj[sd.id] {
+			if s, ok := idSym[nb]; ok {
+				syms = append(syms, s)
+			}
+		}
+		if len(syms) == 0 {
+			continue
+		}
+		text := codemap.RenderAround(mcp.AroundTitle(sd.query), syms, l1budget)
+		aroundText[sd.label] = text
+		aroundTok[sd.label] = tokens.Count(text)
+	}
+	around := benchnav.AroundModel{Region: func(task string) (string, int, bool) {
+		text, ok := aroundText[task]
+		if !ok {
+			return "", 0, false
+		}
+		return text, aroundTok[task], true
+	}}
+
 	// One synthetic golden query per seed, run through the SAME retrieval path
 	// the no-map lane uses, to get each task's find() ranking. Look results back
 	// up by query (unique by construction) so order assumptions don't matter.
@@ -451,7 +492,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 	}
 	results, err := eval.RunWithRewrite(ctx, em, st, gs, k, nil)
 	if err != nil {
-		return nil, err
+		return nil, benchnav.AroundModel{}, err
 	}
 	tasks := make([]benchnav.BreadthTask, 0, len(results))
 	for _, r := range results {
@@ -465,7 +506,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 			Ranked:  r.RankedFiles,
 		})
 	}
-	return tasks, nil
+	return tasks, around, nil
 }
 
 // navReorientSessionSize is how many consecutive golden queries form one

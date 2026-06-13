@@ -34,12 +34,28 @@ type BreadthModel struct {
 	Cluster  func(path string) (id, l1Tokens int, found bool)
 }
 
-// BreadthResult is one task's outcome under both lanes. Coverage is the fraction
+// AroundModel prices the EXACT-neighborhood variant: `map --around <seed>`
+// renders the seed's callers ∪ callees region directly (issue #347), so — unlike
+// the community lane, which routes each target through its global Louvain cluster
+// and misses neighbors that landed in a different community — coverage is the
+// neighborhood by construction, bounded only by the L1 token budget. Region
+// returns, for a task, the single around-render's text (so coverage is read off
+// the same truncation the agent sees, via the same substring test the community
+// lane uses) and its token cost; ok is false when the seed has no graph edges to
+// render. The cost is always one call. A zero-value AroundModel (nil Region)
+// disables the exact lane, leaving the no-map/community report untouched.
+type AroundModel struct {
+	Region func(task string) (text string, tokens int, ok bool)
+}
+
+// BreadthResult is one task's outcome under the lanes. Coverage is the fraction
 // of the target set each lane ENUMERATES; tokens/calls is the discovery cost —
 // the listing the agent reads to surface the set (find's ranked paths vs the
-// map's L0+L1). File reads are deliberately excluded: opening the located files
-// is a downstream step both lanes share, and charging it buries the enumeration
-// signal under file size (the package-breadth pilot, #351 ph2, showed this).
+// map's L0+L1 vs the around region). File reads are deliberately excluded:
+// opening the located files is a downstream step every lane shares, and charging
+// it buries the enumeration signal under file size (the package-breadth pilot,
+// #351 ph2, showed this). Exact* fields are populated only when an AroundModel is
+// supplied and the seed has edges (HasExact).
 type BreadthResult struct {
 	Task    string `json:"task"`
 	Targets int    `json:"targets"`
@@ -53,13 +69,22 @@ type BreadthResult struct {
 	MapCoverage float64 `json:"map_coverage"`
 	MapCalls    int     `json:"map_calls"`
 	MapTokens   int     `json:"map_tokens"`
+
+	HasExact      bool    `json:"has_exact,omitempty"`
+	ExactFound    int     `json:"exact_found,omitempty"`
+	ExactCoverage float64 `json:"exact_coverage,omitempty"`
+	ExactCalls    int     `json:"exact_calls,omitempty"`
+	ExactTokens   int     `json:"exact_tokens,omitempty"`
 }
 
 // BreadthReport aggregates the breadth lane over a task set. Means are taken over
 // all tasks (every task has a target set, so there is no "unreached" skew like the
 // first-touch lane's both-reached intersection). Coverage delta is positive when
 // the map enumerates more of the target set; token delta is negative when the map
-// is the cheaper way to discover it.
+// is the cheaper way to discover it. The Exact* aggregates and their deltas are
+// present only when an AroundModel was supplied (HasExact); the exact-vs-map
+// deltas are #356's headline: does rendering the neighborhood directly beat
+// routing through global communities?
 type BreadthReport struct {
 	Lane     string `json:"lane"`
 	NumTasks int    `json:"num_tasks"`
@@ -76,18 +101,28 @@ type BreadthReport struct {
 	MeanNoMapCalls float64 `json:"mean_no_map_calls"`
 	MeanMapCalls   float64 `json:"mean_map_calls"`
 
+	HasExact                bool    `json:"has_exact,omitempty"`
+	NumExact                int     `json:"num_exact,omitempty"`
+	MeanExactCoverage       float64 `json:"mean_exact_coverage,omitempty"`
+	DeltaExactVsMapCoverage float64 `json:"delta_exact_vs_map_coverage,omitempty"` // exact - map; positive = direct render enumerates more
+	MeanExactTokens         float64 `json:"mean_exact_tokens,omitempty"`
+	DeltaExactVsMapTokens   float64 `json:"delta_exact_vs_map_tokens,omitempty"` // exact - map; negative = around cheaper than community zooms
+	MeanExactCalls          float64 `json:"mean_exact_calls,omitempty"`
+
 	Results []BreadthResult `json:"results"`
 }
 
-// ComputeBreadth runs both deterministic lanes over the breadth tasks. k bounds
+// ComputeBreadth runs the deterministic lanes over the breadth tasks. k bounds
 // how deep the no-map lane scans the ranked list. This is a DISCOVERY metric:
 // each lane is charged only for the listing it reads to enumerate the set — the
-// no-map find envelope vs the map's L0 + covering-cluster L1s — never for opening
-// the located files (a shared downstream step). cost.FindEnvelope prices the
-// no-map listing; cost.Read is unused here by design.
-func ComputeBreadth(tasks []BreadthTask, k int, cost CostModel, m BreadthModel, lane string) BreadthReport {
+// no-map find envelope, the map's L0 + covering-cluster L1s, and the exact
+// around-region render — never for opening the located files (a shared downstream
+// step). cost.FindEnvelope prices the no-map listing; cost.Read is unused here by
+// design. A zero-value AroundModel disables the exact lane.
+func ComputeBreadth(tasks []BreadthTask, k int, cost CostModel, m BreadthModel, around AroundModel, lane string) BreadthReport {
 	rep := BreadthReport{Lane: lane, NumTasks: len(tasks), K: k}
 	var nmCov, mCov, nmTok, mTok, nmCalls, mCalls []float64
+	var exCov, exTok, exCalls, exMapCovPaired, exMapTokPaired []float64
 
 	for _, t := range tasks {
 		gold := make(map[string]bool, len(t.Targets))
@@ -114,9 +149,9 @@ func ComputeBreadth(tasks []BreadthTask, k int, cost CostModel, m BreadthModel, 
 		res.NoMapTokens = cost.FindEnvelope(t.Ranked)
 		res.NoMapCalls = 1
 
-		// map lane: one L0, zoom each DISTINCT cluster naming a target, read the
-		// L1 listing. Shared clusters are zoomed once; the listing enumerates the
-		// region's members for free (no file opens).
+		// map (community) lane: one L0, zoom each DISTINCT cluster naming a target,
+		// read the L1 listing. Shared clusters are zoomed once; the listing
+		// enumerates the region's members for free (no file opens).
 		zoomed := map[int]bool{}
 		done := make(map[string]bool, total)
 		var mFound int
@@ -144,6 +179,29 @@ func ComputeBreadth(tasks []BreadthTask, k int, cost CostModel, m BreadthModel, 
 			res.NoMapCoverage = float64(res.NoMapFound) / float64(total)
 			res.MapCoverage = float64(res.MapFound) / float64(total)
 		}
+
+		// exact (around) lane: one `map --around <seed>` render — the neighborhood
+		// by construction. Coverage honors L1 truncation (a target absent from the
+		// budgeted text is a real miss), at a flat one-call cost. Skipped when no
+		// AroundModel is wired or the seed has no edges to render.
+		if around.Region != nil {
+			if text, tok, ok := around.Region(t.Task); ok {
+				var ef int
+				for g := range gold {
+					if strings.Contains(text, g) {
+						ef++
+					}
+				}
+				res.HasExact = true
+				res.ExactFound = ef
+				res.ExactTokens = tok
+				res.ExactCalls = 1
+				if total > 0 {
+					res.ExactCoverage = float64(ef) / float64(total)
+				}
+			}
+		}
+
 		rep.Results = append(rep.Results, res)
 
 		nmCov = append(nmCov, res.NoMapCoverage)
@@ -152,6 +210,16 @@ func ComputeBreadth(tasks []BreadthTask, k int, cost CostModel, m BreadthModel, 
 		mTok = append(mTok, float64(res.MapTokens))
 		nmCalls = append(nmCalls, float64(res.NoMapCalls))
 		mCalls = append(mCalls, float64(res.MapCalls))
+
+		if res.HasExact {
+			exCov = append(exCov, res.ExactCoverage)
+			exTok = append(exTok, float64(res.ExactTokens))
+			exCalls = append(exCalls, float64(res.ExactCalls))
+			// Pair the community-lane figures only over the tasks the exact lane
+			// also scored, so the exact-vs-map deltas compare like with like.
+			exMapCovPaired = append(exMapCovPaired, res.MapCoverage)
+			exMapTokPaired = append(exMapTokPaired, float64(res.MapTokens))
+		}
 	}
 
 	rep.MeanNoMapCoverage = meanFloat(nmCov)
@@ -162,6 +230,16 @@ func ComputeBreadth(tasks []BreadthTask, k int, cost CostModel, m BreadthModel, 
 	rep.DeltaTokens = rep.MeanMapTokens - rep.MeanNoMapTokens
 	rep.MeanNoMapCalls = meanFloat(nmCalls)
 	rep.MeanMapCalls = meanFloat(mCalls)
+
+	if len(exCov) > 0 {
+		rep.HasExact = true
+		rep.NumExact = len(exCov)
+		rep.MeanExactCoverage = meanFloat(exCov)
+		rep.MeanExactTokens = meanFloat(exTok)
+		rep.MeanExactCalls = meanFloat(exCalls)
+		rep.DeltaExactVsMapCoverage = rep.MeanExactCoverage - meanFloat(exMapCovPaired)
+		rep.DeltaExactVsMapTokens = rep.MeanExactTokens - meanFloat(exMapTokPaired)
+	}
 	return rep
 }
 
@@ -187,9 +265,27 @@ func (r BreadthReport) Markdown() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## breadth-task lane (%s) — neighborhood enumeration, map vs find\n\n", r.Lane)
 	fmt.Fprintf(&b, "Enumerate a hub symbol's call-graph neighborhood (callers ∪ callees). No-map\n")
-	fmt.Fprintf(&b, "scans the find() ranking to k=%d; map zooms the covering clusters. Discovery\n", r.K)
-	fmt.Fprintf(&b, "cost only (listing read, not file opens). The regime the map should win —\n")
-	fmt.Fprintf(&b, "structural breadth, not the first-touch the #349 verdict tested.\n\n")
+	fmt.Fprintf(&b, "scans the find() ranking to k=%d; map zooms the covering Louvain clusters.\n", r.K)
+	if r.HasExact {
+		fmt.Fprintf(&b, "Exact renders `map --around <seed>` — the neighborhood directly (#347/#356).\n")
+	}
+	fmt.Fprintf(&b, "Discovery cost only (listing read, not file opens). The regime the map should\n")
+	fmt.Fprintf(&b, "win — structural breadth, not the first-touch the #349 verdict tested.\n\n")
+
+	if r.HasExact {
+		fmt.Fprintf(&b, "| metric | no-map | map (community) | exact (around) |\n|---|---|---|---|\n")
+		fmt.Fprintf(&b, "| mean coverage | %.1f%% | %.1f%% | %.1f%% |\n",
+			r.MeanNoMapCoverage*100, r.MeanMapCoverage*100, r.MeanExactCoverage*100)
+		fmt.Fprintf(&b, "| mean tokens | %.0f | %.0f | %.0f |\n",
+			r.MeanNoMapTokens, r.MeanMapTokens, r.MeanExactTokens)
+		fmt.Fprintf(&b, "| mean calls | %.2f | %.2f | %.2f |\n",
+			r.MeanNoMapCalls, r.MeanMapCalls, r.MeanExactCalls)
+		fmt.Fprintf(&b, "\nexact − community: %+.1f%% coverage, %+.0f tokens (over %d seeds with edges).\n",
+			r.DeltaExactVsMapCoverage*100, r.DeltaExactVsMapTokens, r.NumExact)
+		fmt.Fprintf(&b, "\n%d breadth tasks.\n", r.NumTasks)
+		return b.String()
+	}
+
 	fmt.Fprintf(&b, "| metric | no-map | map | delta |\n|---|---|---|---|\n")
 	fmt.Fprintf(&b, "| mean coverage | %.1f%% | %.1f%% | %+.1f%% |\n",
 		r.MeanNoMapCoverage*100, r.MeanMapCoverage*100, r.DeltaCoverage*100)
@@ -204,6 +300,8 @@ func (r BreadthReport) Markdown() string {
 // is a FLOOR (the map must keep enumerating at least as much of each target set),
 // and the map's coverage advantage over find may not erode — breadth is the
 // regime the map is supposed to win, so ceding ground here is the failure to catch.
+// When the reference carries an exact lane, the exact coverage is held to its own
+// floor and the exact-over-community advantage (#356's headline) may not erode.
 // absTol is an absolute fraction (e.g. 0.02 = 2 points).
 func (r BreadthReport) Regressions(ref BreadthReport, absTol float64) []Regression {
 	var regs []Regression
@@ -220,6 +318,22 @@ func (r BreadthReport) Regressions(ref BreadthReport, absTol float64) []Regressi
 			Was:    ref.DeltaCoverage,
 			Now:    r.DeltaCoverage,
 		})
+	}
+	if ref.HasExact && r.HasExact {
+		if ref.MeanExactCoverage-r.MeanExactCoverage > absTol {
+			regs = append(regs, Regression{
+				Metric: "breadth_exact_coverage",
+				Was:    ref.MeanExactCoverage,
+				Now:    r.MeanExactCoverage,
+			})
+		}
+		if ref.DeltaExactVsMapCoverage-r.DeltaExactVsMapCoverage > absTol {
+			regs = append(regs, Regression{
+				Metric: "breadth_exact_vs_map_advantage",
+				Was:    ref.DeltaExactVsMapCoverage,
+				Now:    r.DeltaExactVsMapCoverage,
+			})
+		}
 	}
 	return regs
 }
