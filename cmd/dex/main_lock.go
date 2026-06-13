@@ -1,0 +1,91 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/alehatsman/dex/internal/lock"
+	"github.com/alehatsman/dex/internal/proj"
+)
+
+func acquireProjectLock(ctx context.Context, p *proj.Project, cmdName, phase string, wait, breakLock bool) (*lock.Lock, error) {
+	host, _ := os.Hostname()
+	h := lock.Holder{
+		PID:     os.Getpid(),
+		Host:    host,
+		Command: cmdName,
+		Phase:   phase,
+		Started: time.Now(),
+	}
+	if breakLock {
+		return lock.Steal(p.LockPath, h)
+	}
+	if wait {
+		return lock.AcquireWait(ctx, p.LockPath, h)
+	}
+	l, err := lock.Acquire(p.LockPath, h)
+	if err == nil {
+		return l, nil
+	}
+	if !errors.Is(err, lock.ErrLocked) {
+		return nil, err
+	}
+	holder, _ := lock.ReadHolder(p.LockPath)
+	fmt.Fprintf(os.Stderr, "another dex indexer is running on %s%s\n", p.Root, describeHolder(holder))
+	fmt.Fprintln(os.Stderr, "  pass --wait to block, or --break-lock if the holder is gone")
+	return nil, nil
+}
+
+// describeHolder formats a parenthetical for the contention message.
+// Returns "" when no holder info is available.
+func describeHolder(h *lock.Holder) string {
+	if h == nil {
+		return ""
+	}
+	var parts []string
+	if h.PID != 0 {
+		parts = append(parts, fmt.Sprintf("pid %d", h.PID))
+	}
+	if h.Command != "" {
+		parts = append(parts, fmt.Sprintf("cmd=%s", h.Command))
+	}
+	if h.Phase != "" {
+		parts = append(parts, fmt.Sprintf("phase=%s", h.Phase))
+	}
+	if !h.Started.IsZero() {
+		parts = append(parts, fmt.Sprintf("for %s", time.Since(h.Started).Round(time.Second)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
+}
+
+// clearCacheKeepLock removes everything inside p.CacheDir except the
+// lock file. Used by `reindex` so the indexer lock can be acquired
+// before the destructive sweep without removing the lockfile under
+// our own feet.
+func clearCacheKeepLock(p *proj.Project) error {
+	entries, err := os.ReadDir(p.CacheDir)
+	if err != nil {
+		return err
+	}
+	lockBase := filepath.Base(p.LockPath)
+	for _, e := range entries {
+		if e.Name() == lockBase {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(p.CacheDir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cmdIndexDispatch peels off the `status` subcommand before
+// falling through to `cmdIndex` (which expects a single path arg).
