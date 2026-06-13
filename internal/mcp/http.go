@@ -251,23 +251,23 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
 	authed.HandleFunc("POST /v1/shell", s.handleShell())
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/find", s.handleSearch(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/lookup", s.handleFindSymbol(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/grep", s.handleSearchGrep(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/read", s.handleSummarize(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/ls", s.handleFileTree(opts.Projects))
-	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", s.handlePackageGraph(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/deps", s.handleGraphDeps(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/callers", s.handleGraphCallers(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/callees", s.handleGraphCallees(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/impact", s.handleGraphImpact(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/routes", s.handleGraphRoutes(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/smells", s.handleGraphSmells(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/path", s.handleGraphPath(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/diff", s.handleGraphDiff(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/clusters", s.handleGraphCommunities(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/notes", s.handleKnowledge(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/session", s.handleSession(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/find", jsonHandler(opts.Projects, func(in *SearchInput, r string) { in.ProjectRoot = r }, s.Search))
+	authed.HandleFunc("POST /v1/projects/{id}/lookup", jsonHandler(opts.Projects, func(in *FindSymbolInput, r string) { in.ProjectRoot = r }, s.FindSymbol))
+	authed.HandleFunc("POST /v1/projects/{id}/grep", jsonHandler(opts.Projects, func(in *SearchGrepInput, r string) { in.ProjectRoot = r }, s.SearchGrep))
+	authed.HandleFunc("POST /v1/projects/{id}/read", jsonHandler(opts.Projects, func(in *SummarizeInput, r string) { in.ProjectRoot = r }, s.Summarize))
+	authed.HandleFunc("POST /v1/projects/{id}/ls", jsonHandler(opts.Projects, func(in *SearchTreeInput, r string) { in.ProjectRoot = r }, s.SearchTree))
+	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", jsonHandler(opts.Projects, func(in *PackageGraphInput, r string) { in.ProjectRoot = r }, s.PackageGraph))
+	authed.HandleFunc("POST /v1/projects/{id}/deps", jsonHandler(opts.Projects, func(in *GraphDepsInput, r string) { in.ProjectRoot = r }, s.GraphDeps))
+	authed.HandleFunc("POST /v1/projects/{id}/callers", jsonHandler(opts.Projects, func(in *CallEdgeInput, r string) { in.ProjectRoot = r }, s.GraphCallers))
+	authed.HandleFunc("POST /v1/projects/{id}/callees", jsonHandler(opts.Projects, func(in *CallEdgeInput, r string) { in.ProjectRoot = r }, s.GraphCallees))
+	authed.HandleFunc("POST /v1/projects/{id}/impact", jsonHandler(opts.Projects, func(in *ImpactInput, r string) { in.ProjectRoot = r }, s.GraphImpact))
+	authed.HandleFunc("POST /v1/projects/{id}/routes", jsonHandler(opts.Projects, func(in *RoutesInput, r string) { in.ProjectRoot = r }, s.Routes))
+	authed.HandleFunc("POST /v1/projects/{id}/smells", jsonHandler(opts.Projects, func(in *SmellsInput, r string) { in.ProjectRoot = r }, s.Smells))
+	authed.HandleFunc("POST /v1/projects/{id}/path", jsonHandler(opts.Projects, func(in *PathInput, r string) { in.ProjectRoot = r }, s.GraphPath))
+	authed.HandleFunc("POST /v1/projects/{id}/diff", jsonHandler(opts.Projects, func(in *DiffInput, r string) { in.ProjectRoot = r }, s.GraphDiff))
+	authed.HandleFunc("POST /v1/projects/{id}/clusters", jsonHandler(opts.Projects, func(in *CommunitiesInput, r string) { in.ProjectRoot = r }, s.GraphCommunities))
+	authed.HandleFunc("POST /v1/projects/{id}/notes", jsonHandler(opts.Projects, func(in *KnowledgeInput, r string) { in.ProjectRoot = r }, s.Knowledge))
+	authed.HandleFunc("POST /v1/projects/{id}/session", jsonHandler(opts.Projects, func(in *SessionInput, r string) { in.ProjectRoot = r }, s.Session))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:
@@ -507,74 +507,6 @@ func jsonHandler[In, Out any](
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
-}
-
-func (s *Server) handleSearch(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *SearchInput, root string) { in.ProjectRoot = root }, s.Search)
-}
-
-func (s *Server) handleFindSymbol(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *FindSymbolInput, root string) { in.ProjectRoot = root }, s.FindSymbol)
-}
-
-func (s *Server) handleGraphDeps(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *GraphDepsInput, root string) { in.ProjectRoot = root }, s.GraphDeps)
-}
-
-func (s *Server) handlePackageGraph(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *PackageGraphInput, root string) { in.ProjectRoot = root }, s.PackageGraph)
-}
-
-func (s *Server) handleGraphCallers(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *CallEdgeInput, root string) { in.ProjectRoot = root }, s.GraphCallers)
-}
-
-func (s *Server) handleGraphCallees(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *CallEdgeInput, root string) { in.ProjectRoot = root }, s.GraphCallees)
-}
-
-func (s *Server) handleSummarize(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *SummarizeInput, root string) { in.ProjectRoot = root }, s.Summarize)
-}
-
-func (s *Server) handleGraphImpact(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *ImpactInput, root string) { in.ProjectRoot = root }, s.GraphImpact)
-}
-
-func (s *Server) handleGraphRoutes(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *RoutesInput, root string) { in.ProjectRoot = root }, s.Routes)
-}
-
-func (s *Server) handleGraphSmells(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *SmellsInput, root string) { in.ProjectRoot = root }, s.Smells)
-}
-
-func (s *Server) handleGraphPath(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *PathInput, root string) { in.ProjectRoot = root }, s.GraphPath)
-}
-
-func (s *Server) handleGraphDiff(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *DiffInput, root string) { in.ProjectRoot = root }, s.GraphDiff)
-}
-
-func (s *Server) handleGraphCommunities(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *CommunitiesInput, root string) { in.ProjectRoot = root }, s.GraphCommunities)
-}
-
-func (s *Server) handleKnowledge(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *KnowledgeInput, root string) { in.ProjectRoot = root }, s.Knowledge)
-}
-
-func (s *Server) handleSession(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *SessionInput, root string) { in.ProjectRoot = root }, s.Session)
-}
-
-func (s *Server) handleFileTree(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *SearchTreeInput, root string) { in.ProjectRoot = root }, s.SearchTree)
-}
-
-func (s *Server) handleSearchGrep(projects map[string]string) http.HandlerFunc {
-	return jsonHandler(projects, func(in *SearchGrepInput, root string) { in.ProjectRoot = root }, s.SearchGrep)
 }
 
 func (s *Server) handleShell() http.HandlerFunc {
