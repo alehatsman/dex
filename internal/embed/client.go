@@ -54,7 +54,17 @@ type Client struct {
 	// concurrent requests (vLLM, TEI, Ollama, …). The HTTP transport is
 	// sized for this — see New().
 	Concurrency int
-	HTTP        *http.Client
+	// MaxRetries bounds how many times a single batch is retried after a
+	// *transient* failure (network error, HTTP 5xx, or 429) before giving
+	// up. A single transient blip (brief server restart, connection reset,
+	// rate-limit spike) would otherwise abort the whole indexing pass. 0 =
+	// no retry. Deterministic failures (4xx, decode errors, malformed
+	// responses) are never retried. Set by NewWithConcurrency.
+	MaxRetries int
+	// RetryBaseDelay is the first backoff interval; it doubles each attempt
+	// (RetryBaseDelay, 2×, 4×, …). Backoff sleeps honor context cancellation.
+	RetryBaseDelay time.Duration
+	HTTP           *http.Client
 }
 
 // New builds a client. baseURL is the server root (e.g.
@@ -94,11 +104,13 @@ func NewWithConcurrency(baseURL, model string, batch, concurrency int, timeout t
 	tr.MaxIdleConnsPerHost = concurrency * 2
 	tr.MaxConnsPerHost = concurrency * 2
 	return &Client{
-		BaseURL:     strings.TrimSuffix(baseURL, "/"),
-		Model:       model,
-		Batch:       batch,
-		Concurrency: concurrency,
-		HTTP:        &http.Client{Timeout: timeout, Transport: tr},
+		BaseURL:        strings.TrimSuffix(baseURL, "/"),
+		Model:          model,
+		Batch:          batch,
+		Concurrency:    concurrency,
+		MaxRetries:     3,
+		RetryBaseDelay: 250 * time.Millisecond,
+		HTTP:           &http.Client{Timeout: timeout, Transport: tr},
 	}
 }
 
@@ -221,43 +233,76 @@ func validateVectors(vecs [][]float32) error {
 	return nil
 }
 
+// embedBatch sends one batch, retrying up to c.MaxRetries times on a transient
+// failure (network error, HTTP 5xx, or 429) with exponential backoff. A single
+// transient blip would otherwise abort the entire indexing pass. Deterministic
+// failures (4xx, decode/parse errors) return immediately — retrying them only
+// wastes time. Backoff sleeps stop early on context cancellation.
 func (c *Client) embedBatch(ctx context.Context, inputs []string) ([][]float32, error) {
+	for attempt := 0; ; attempt++ {
+		out, retryable, err := c.embedBatchOnce(ctx, inputs)
+		if err == nil {
+			return out, nil
+		}
+		if !retryable || attempt >= c.MaxRetries {
+			return nil, err
+		}
+		// Exponential backoff: RetryBaseDelay, 2×, 4×, … honoring ctx.
+		delay := c.RetryBaseDelay << attempt
+		t := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return nil, ctx.Err()
+		case <-t.C:
+		}
+	}
+}
+
+// embedBatchOnce performs a single embed request. The bool reports whether a
+// non-nil error is transient (safe to retry): network-layer failures and HTTP
+// 5xx/429. 4xx and response-parsing errors are deterministic and not retried.
+func (c *Client) embedBatchOnce(ctx context.Context, inputs []string) ([][]float32, bool, error) {
 	body, err := json.Marshal(embedRequest{Model: c.Model, Input: inputs})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/embeddings", bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		// Network-layer failure (conn refused/reset, timeout): transient.
+		return nil, true, fmt.Errorf("%w: %v", ErrUnreachable, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("embed: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))
+		// 5xx (server-side) and 429 (rate limit) are transient; 4xx is a
+		// client-side error that will fail identically on retry.
+		retryable := resp.StatusCode/100 == 5 || resp.StatusCode == http.StatusTooManyRequests
+		return nil, retryable, fmt.Errorf("embed: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))
 	}
 	var parsed embedResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("embed: decode: %w", err)
+		return nil, false, fmt.Errorf("embed: decode: %w", err)
 	}
 	if parsed.Error != nil {
-		return nil, fmt.Errorf("embed: server error: %s", parsed.Error.Message)
+		return nil, false, fmt.Errorf("embed: server error: %s", parsed.Error.Message)
 	}
 	out := make([][]float32, len(parsed.Data))
 	for _, d := range parsed.Data {
 		if d.Index < 0 || d.Index >= len(out) {
-			return nil, fmt.Errorf("embed: bogus index %d in response", d.Index)
+			return nil, false, fmt.Errorf("embed: bogus index %d in response", d.Index)
 		}
 		if out[d.Index] != nil {
-			return nil, fmt.Errorf("embed: duplicate index %d in response", d.Index)
+			return nil, false, fmt.Errorf("embed: duplicate index %d in response", d.Index)
 		}
 		out[d.Index] = d.Embedding
 	}
-	return out, nil
+	return out, false, nil
 }
 
 // Health does a cheap reachability check via GET /v1/models — a metadata

@@ -93,6 +93,7 @@ func TestEmbedBatchingHonored(t *testing.T) {
 
 func TestEmbedUnreachable(t *testing.T) {
 	c := New(closedURL(t), "fake", 4, 200*time.Millisecond)
+	c.MaxRetries = 0 // this test checks single-attempt error surfacing, not retry
 	_, err := c.Embed(context.Background(), []string{"x"})
 	if !errors.Is(err, ErrUnreachable) {
 		t.Errorf("expected ErrUnreachable, got %v", err)
@@ -105,6 +106,7 @@ func TestEmbedServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := New(srv.URL, "fake", 4, 2*time.Second)
+	c.MaxRetries = 0 // retry behavior is covered separately; assert error surfacing
 	_, err := c.Embed(context.Background(), []string{"x"})
 	if err == nil || !strings.Contains(err.Error(), "503") {
 		t.Errorf("expected http 503 error, got %v", err)
@@ -124,6 +126,12 @@ func TestNewDefaults(t *testing.T) {
 	}
 	if c.Concurrency != 1 {
 		t.Errorf("Concurrency default = %d, want 1 (sequential)", c.Concurrency)
+	}
+	if c.MaxRetries != 3 {
+		t.Errorf("MaxRetries default = %d, want 3", c.MaxRetries)
+	}
+	if c.RetryBaseDelay <= 0 {
+		t.Errorf("RetryBaseDelay default = %s, want > 0", c.RetryBaseDelay)
 	}
 }
 
@@ -212,12 +220,85 @@ func TestEmbedConcurrentError(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 	c := NewWithConcurrency(srv.URL, "fake", 1, 4, 5*time.Second)
+	c.MaxRetries = 0 // assert error propagation through the dispatcher, not retry
 	_, err := c.Embed(context.Background(), []string{"a", "b", "c", "d"})
 	if err == nil {
 		t.Fatal("expected error from failing batch, got nil")
 	}
 	if !strings.Contains(err.Error(), "500") {
 		t.Errorf("expected http 500 error, got %v", err)
+	}
+}
+
+// TestEmbedRetriesTransient guards #436: a transient 5xx must be retried with
+// backoff rather than aborting the batch. The handler fails twice with 503
+// then succeeds; Embed should return vectors after exactly 3 calls.
+func TestEmbedRetriesTransient(t *testing.T) {
+	var calls atomic.Int32
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) <= 2 {
+			http.Error(w, "restarting", http.StatusServiceUnavailable)
+			return
+		}
+		ok(4).ServeHTTP(w, r)
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	c := New(srv.URL, "fake", 4, 5*time.Second)
+	c.RetryBaseDelay = time.Millisecond // keep the test fast
+	vecs, err := c.Embed(context.Background(), []string{"x"})
+	if err != nil {
+		t.Fatalf("expected success after retries, got %v", err)
+	}
+	if len(vecs) != 1 || len(vecs[0]) != 4 {
+		t.Fatalf("unexpected result shape: %v", vecs)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("call count = %d, want 3 (2 failures + 1 success)", got)
+	}
+}
+
+// TestEmbedRetryExhaustion guards #436: a persistent 5xx is retried MaxRetries
+// times then surfaces the error (MaxRetries+1 total attempts).
+func TestEmbedRetryExhaustion(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "fake", 4, 5*time.Second)
+	c.MaxRetries = 2
+	c.RetryBaseDelay = time.Millisecond
+	_, err := c.Embed(context.Background(), []string{"x"})
+	if err == nil || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("expected http 502 error after retries, got %v", err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("call count = %d, want 3 (1 + 2 retries)", got)
+	}
+}
+
+// TestEmbedNoRetryOn4xx guards #436: a 4xx is deterministic and must NOT be
+// retried — one attempt only.
+func TestEmbedNoRetryOn4xx(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "bad model", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "fake", 4, 5*time.Second)
+	c.RetryBaseDelay = time.Millisecond
+	_, err := c.Embed(context.Background(), []string{"x"})
+	if err == nil || !strings.Contains(err.Error(), "400") {
+		t.Fatalf("expected http 400 error, got %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("call count = %d, want 1 (4xx must not retry)", got)
 	}
 }
 
