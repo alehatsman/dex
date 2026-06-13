@@ -13,6 +13,8 @@ package mcp
 // GET  /status                     — global health + indexed projects
 // POST /shell                      — body: ShellInput
 // POST /projects/{id}/ask          — body: ContextInput
+// POST /projects/{id}/map          — body: MapInput
+// POST /projects/{id}/trace        — body: TraceInput
 // POST /projects/{id}/find         — body: SearchInput
 // POST /projects/{id}/lookup       — body: FindSymbolInput
 // POST /projects/{id}/grep         — body: SearchGrepInput
@@ -252,6 +254,8 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
 	authed.HandleFunc("POST /v1/shell", s.handleShell())
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
+	authed.HandleFunc("POST /v1/projects/{id}/map", jsonHandler(opts.Projects, func(in *MapInput, r string) { in.ProjectRoot = r }, s.Map))
+	authed.HandleFunc("POST /v1/projects/{id}/trace", jsonHandler(opts.Projects, func(in *TraceInput, r string) { in.ProjectRoot = r }, s.Trace))
 	authed.HandleFunc("POST /v1/projects/{id}/find", jsonHandler(opts.Projects, func(in *SearchInput, r string) { in.ProjectRoot = r }, s.Search))
 	authed.HandleFunc("POST /v1/projects/{id}/lookup", jsonHandler(opts.Projects, func(in *FindSymbolInput, r string) { in.ProjectRoot = r }, s.FindSymbol))
 	authed.HandleFunc("POST /v1/projects/{id}/grep", jsonHandler(opts.Projects, func(in *SearchGrepInput, r string) { in.ProjectRoot = r }, s.SearchGrep))

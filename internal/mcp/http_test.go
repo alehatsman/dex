@@ -290,6 +290,48 @@ func TestHTTPProjectIDOverridesBody(t *testing.T) {
 	}
 }
 
+// TestHTTPMapTraceRoutesRegistered confirms the composed default verbs
+// `map` and `trace` are reachable over REST (parity with the stdio MCP
+// surface), not just the low-level graph lanes. A registered project with
+// no index reaches the handler and returns 200 with a status body — a
+// missing route would 404 instead.
+func TestHTTPMapTraceRoutesRegistered(t *testing.T) {
+	srv := stubServer(t)
+	dir := t.TempDir()
+	registry, err := BuildProjectRegistry([]string{dir})
+	if err != nil {
+		t.Fatalf("BuildProjectRegistry: %v", err)
+	}
+	var id string
+	for k := range registry {
+		id = k
+		break
+	}
+	ts := startTestHTTPServer(t, srv, RunHTTPOptions{Projects: registry})
+
+	cases := []struct {
+		route string
+		body  map[string]any
+	}{
+		{"map", map[string]any{}},
+		{"trace", map[string]any{"symbol": "Foo", "direction": "callers"}},
+	}
+	for _, tc := range cases {
+		body, _ := json.Marshal(tc.body)
+		resp, err := http.Post(ts.URL+"/v1/projects/"+id+"/"+tc.route,
+			"application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST /%s: %v", tc.route, err)
+		}
+		func() {
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("/%s status=%d, want 200 (route should be registered)", tc.route, resp.StatusCode)
+			}
+		}()
+	}
+}
+
 // TestHTTPBadJSONReturns400 confirms a malformed JSON body produces
 // a 400 with a useful error message rather than a 500.
 func TestHTTPBadJSONReturns400(t *testing.T) {

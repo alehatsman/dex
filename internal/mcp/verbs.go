@@ -64,6 +64,14 @@ func mapHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, MapIn
 	}
 }
 
+// Map runs the map verb for callers without an SDK request — the REST `/map`
+// route. It composes over the local *Server exactly like the stdio `map` tool,
+// so both transports agree.
+func (s *Server) Map(ctx context.Context, in MapInput) (MapOutput, error) {
+	_, out, err := mapVerb(ctx, s, nil, in)
+	return out, err
+}
+
 // mapVerb composes the existing community projection (the `clusters` lane) with
 // the codemap renderer — no model is called. It mirrors the assembly in
 // `dex map` (cmd/dex/map.go) so the MCP verb and the CLI agree.
@@ -181,6 +189,14 @@ func traceHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, Tra
 	return func(ctx context.Context, req *sdk.CallToolRequest, in TraceInput) (*sdk.CallToolResult, TraceOutput, error) {
 		return traceVerb(ctx, h, req, in)
 	}
+}
+
+// Trace runs the trace verb for callers without an SDK request — the REST
+// `/trace` route. It composes over the local *Server exactly like the stdio
+// `trace` tool, so both transports agree.
+func (s *Server) Trace(ctx context.Context, in TraceInput) (TraceOutput, error) {
+	_, out, err := traceVerb(ctx, s, nil, in)
+	return out, err
 }
 
 // traceVerb dispatches a trace call to the underlying graph handler for the
