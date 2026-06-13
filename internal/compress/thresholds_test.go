@@ -97,6 +97,63 @@ func TestDropLowEntropyLines(t *testing.T) {
 			t.Errorf("threshold 0.0: got %d lines, want %d", len(out), len(lines))
 		}
 	})
+
+	t.Run("declaration signatures floored regardless of entropy (#456)", func(t *testing.T) {
+		// Near-duplicate signatures: at an impossibly-high threshold every
+		// line scores below it, so without the declaration floor the second,
+		// third, ... signatures would be dropped on novelty grounds even
+		// though each is a distinct declaration.
+		lines := []string{
+			"func getUserByID(id int) (*User, error) {",
+			"func getUserByName(name string) (*User, error) {",
+			"func getUserByEmail(email string) (*User, error) {",
+			"    total += 1", // non-declaration low-entropy line: expected to drop
+		}
+		out := dropLowEntropyLines(lines, 99.0)
+		kept := strings.Join(out, "\n")
+		for _, sig := range lines[:3] {
+			if !strings.Contains(kept, sig) {
+				t.Errorf("declaration floor: expected %q to survive, got:\n%s", sig, kept)
+			}
+		}
+		if strings.Contains(kept, "total += 1") {
+			t.Errorf("non-declaration line should still drop at threshold 99.0, got:\n%s", kept)
+		}
+	})
+}
+
+func TestIsDeclarationLine(t *testing.T) {
+	decls := []string{
+		"func foo() {",
+		"func (r *Repo) Save() error {",
+		"  def parse(self):",         // indented Python
+		"    pub fn render(&self) {", // Rust with visibility modifier
+		"export class Widget {",      // TS modifier
+		"export default class App {", // stacked modifiers
+		"async def fetch():",         // async modifier
+		"public interface Service {", // Java
+		"type Config struct {",
+		"impl Display for Point {",
+	}
+	for _, l := range decls {
+		if !isDeclarationLine(l) {
+			t.Errorf("isDeclarationLine(%q) = false, want true", l)
+		}
+	}
+
+	nonDecls := []string{
+		"x := compute(a, b)",
+		"    total += 1",
+		"return nil, err",
+		"// func in a comment",
+		"functioning = true", // not "function "
+		"",
+	}
+	for _, l := range nonDecls {
+		if isDeclarationLine(l) {
+			t.Errorf("isDeclarationLine(%q) = true, want false", l)
+		}
+	}
 }
 
 func TestAggressiveCompressLangThresholds(t *testing.T) {

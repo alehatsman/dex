@@ -60,8 +60,11 @@ func thresholdsFor(ext string) compressionThresholds {
 }
 
 // dropLowEntropyLines filters lines below threshold using per-line entropy
-// scoring. Blank lines are always preserved. No quality gate is applied —
-// AggressiveCompress uses SafeguardRatio as the safety net.
+// scoring. Blank lines are always preserved, and declaration-signature lines
+// are floored (kept regardless of entropy) so a distinct func/type/class
+// signature is never dropped on novelty grounds — mirroring the anchor floor
+// dropLowEntropyLinesStrict gets from lineHasAnchor (#456). No quality gate is
+// applied — AggressiveCompress uses SafeguardRatio as the safety net.
 func dropLowEntropyLines(lines []string, threshold float64) []string {
 	lineTg := make([]map[string]struct{}, len(lines))
 	for i, line := range lines {
@@ -75,8 +78,9 @@ func dropLowEntropyLines(lines []string, threshold float64) []string {
 			out = append(out, line)
 			continue
 		}
-		score := lineScore(line, seen, windowTrigrams(lineTg, i))
-		if score >= threshold {
+		keep := isDeclarationLine(line) ||
+			lineScore(line, seen, windowTrigrams(lineTg, i)) >= threshold
+		if keep {
 			out = append(out, line)
 			for tg := range lineTg[i] {
 				seen[tg] = struct{}{}
@@ -84,6 +88,52 @@ func dropLowEntropyLines(lines []string, threshold float64) []string {
 		}
 	}
 	return out
+}
+
+// declKeywords are leading keywords marking a distinct declaration whose
+// signature must survive the relaxed entropy pass even when it textually
+// resembles an earlier kept line. Kept deliberately keyword-based: languages
+// whose member declarations carry no keyword (e.g. Java methods) are not
+// specially floored here, but their signatures usually carry a PascalCase or
+// qualified anchor token that already scores above threshold.
+var declKeywords = []string{
+	"func ", "func(", // Go (incl. methods: "func (r R) Name")
+	"def ", // Python / Ruby
+	"fn ",  // Rust
+	"class ", "struct ", "enum ", "trait ", "impl ", "interface ",
+	"type ", "function ",
+}
+
+// declModifiers are visibility/qualifier keywords peeled off the front before
+// the keyword check, so "pub fn", "export class", "async def", and
+// "export default class" still register as declarations.
+var declModifiers = []string{
+	"pub ", "export ", "default ", "async ",
+	"public ", "private ", "protected ", "abstract ", "final ", "static ",
+}
+
+// isDeclarationLine reports whether line begins a declaration signature after
+// trimming indentation and peeling leading visibility/qualifier modifiers.
+func isDeclarationLine(line string) bool {
+	s := strings.TrimSpace(line)
+	for {
+		peeled := false
+		for _, m := range declModifiers {
+			if strings.HasPrefix(s, m) {
+				s = s[len(m):]
+				peeled = true
+			}
+		}
+		if !peeled {
+			break
+		}
+	}
+	for _, kw := range declKeywords {
+		if strings.HasPrefix(s, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // dropLowEntropyLinesStrict is dropLowEntropyLines that never drops a line
