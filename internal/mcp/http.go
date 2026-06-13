@@ -58,6 +58,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"time"
 
@@ -341,7 +342,7 @@ func recoverMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				logger.Error("panic in handler", "path", r.URL.Path, "method", r.Method, "rec", rec)
+				logger.Error("panic in handler", "path", r.URL.Path, "method", r.Method, "rec", rec, "stack", string(debug.Stack()))
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 		}()
