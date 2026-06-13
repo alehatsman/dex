@@ -191,6 +191,21 @@ func (s *Store) GraphPruneUnseen(ctx context.Context, cutoff time.Time) (nodes, 
 	return nodes, edges, nil
 }
 
+// GraphMaxEpoch returns the maximum last_seen_at value across all graph_nodes
+// and graph_edges rows, as a UnixNano int64. Returns 0 if the graph is empty.
+// Used as a cheap cache-validity stamp: if the value changes, the graph view
+// must be reloaded.
+func (s *Store) GraphMaxEpoch(ctx context.Context) (int64, error) {
+	var epoch int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(m), 0) FROM (
+			SELECT MAX(last_seen_at) AS m FROM graph_nodes
+			UNION ALL
+			SELECT MAX(last_seen_at) AS m FROM graph_edges
+		)`).Scan(&epoch)
+	return epoch, err
+}
+
 // GraphStats reports the current graph_nodes / graph_edges row counts.
 func (s *Store) GraphStats(ctx context.Context) (nodes, edges int64, err error) {
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_nodes`).Scan(&nodes); err != nil {

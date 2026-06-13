@@ -88,7 +88,7 @@ func (s *Server) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in Graph
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, GraphDepsOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -216,7 +216,7 @@ func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in Pa
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, PackageGraphOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -432,7 +432,7 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, CallEdgeOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -708,7 +708,7 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, ImpactOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -903,7 +903,7 @@ func (s *Server) docEdges(ctx context.Context, in DocLinkInput, backlinks bool) 
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, DocLinkOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -1105,7 +1105,7 @@ func (s *Server) graphTags(ctx context.Context, _ *sdk.CallToolRequest, in TagIn
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, TagOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -1327,7 +1327,7 @@ func (s *Server) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in Cyc
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, CyclesOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -1458,7 +1458,7 @@ func (s *Server) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathI
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, PathOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
@@ -1666,7 +1666,7 @@ func (s *Server) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffI
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, DiffOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}

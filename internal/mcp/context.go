@@ -356,7 +356,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 
 	// Load the graph view once per request. Nil view = no graph
 	// indexed; intents that need it will note this in `avoid`.
-	graphView, _ := loadGraphView(ctx, st)
+	graphView, _ := s.cachedLoadGraphView(ctx, st, p.DBPath)
 
 	// Query-side expansion (#252) — opt-in, failure-soft. One small-model
 	// call turns the question into extra retrieval terms fanned across the

@@ -167,6 +167,11 @@ type Server struct {
 
 	// answerCache is the bounded per-server cache for synthesized answers.
 	answerCache answerCache
+
+	// graphViewByPath caches the last loadGraphView result per project DB path.
+	// Keyed by DBPath; value is *cachedGraphView. Invalidated when the graph's
+	// max last_seen_at epoch changes.
+	graphViewByPath sync.Map // string → *cachedGraphView
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from

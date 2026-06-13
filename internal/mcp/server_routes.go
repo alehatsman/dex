@@ -55,7 +55,7 @@ func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesIn
 	}
 	defer func() { _ = st.Close() }()
 
-	view, err := loadGraphView(ctx, st)
+	view, err := s.cachedLoadGraphView(ctx, st, p.DBPath)
 	if err != nil {
 		return nil, RoutesOutput{Status: "error", Hint: fmt.Sprintf("load graph: %v", err)}, nil
 	}
