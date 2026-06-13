@@ -172,6 +172,10 @@ type Server struct {
 	// Keyed by DBPath; value is *cachedGraphView. Invalidated when the graph's
 	// max last_seen_at epoch changes.
 	graphViewByPath sync.Map // string → *cachedGraphView
+
+	// multiScaleByPath caches the last BuildMultiScale result per project DB path.
+	// Keyed by DBPath; value is *cachedMultiScale. Invalidated when last_indexed_at changes.
+	multiScaleByPath sync.Map // string → *cachedMultiScale
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from
@@ -789,7 +793,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// Silently skips on build failure — multi-scale is best-effort.
 	qt := store.ClassifyQueryType(in.Query)
 	if qt != store.QueryTypeSymbol {
-		if idx, idxErr := st.BuildMultiScale(ctx); idxErr == nil && idx != nil {
+		if idx, idxErr := s.cachedBuildMultiScale(ctx, st, p.DBPath); idxErr == nil && idx != nil {
 			queryToks := store.TokeniseQuery(in.Query)
 			var candidatePaths []string
 			switch qt {
