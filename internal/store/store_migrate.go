@@ -460,11 +460,58 @@ func (s *Store) migrateGraphNodeVec(ctx context.Context) error {
 	return nil
 }
 
-// migrateChunkContext adds context_text to chunks and updates the FTS5
-// triggers to index context_text || content (Contextual BM25).
+// chunkFTSContentExpr builds the SQL expression for a chunk's FTS `content`
+// document: the Contextual-BM25 prefix (context_text + newline, when present)
+// followed by the chunk body.
+//
+// Path tokens are deliberately NOT folded in here. chunks_fts has a dedicated
+// `path` column whose unicode61 tokenizer already splits "internal/auth_handler.go"
+// into "internal","auth","handler","go", and scoreBM25 searches it unqualified
+// at weight 2.0 — so path query terms are already covered. Folding the same
+// tokens into `content` (as an earlier cut did) only double-counts them and
+// skews BM25; see #433 (closed wont-fix).
+//
+// Because chunks_fts is an external-content table, every site that writes to
+// it — the INSERT/DELETE/UPDATE triggers and the rebuild's INSERT…SELECT —
+// must emit the byte-identical document, or a DELETE won't match what was
+// indexed and the FTS index silently drifts (#432). Generating all of them
+// from this one helper guarantees that. `ref` is the row alias ("new"/"old"
+// inside a trigger) or "" for a bare-column SELECT.
+func chunkFTSContentExpr(ref string) string {
+	col := func(name string) string {
+		if ref == "" {
+			return name
+		}
+		return ref + "." + name
+	}
+	context, content := col("context_text"), col("content")
+	return fmt.Sprintf(
+		`CASE WHEN %[1]s IS NOT NULL AND %[1]s != '' `+
+			`THEN %[1]s || CHAR(10) || %[2]s ELSE %[2]s END`,
+		context, content)
+}
+
+// migrateChunkContext adds context_text to chunks and (re)builds the FTS5
+// triggers so each chunk's BM25 document is the Contextual-BM25 text (see
+// chunkFTSContentExpr).
+//
+// This runs under the chunk_fts_content_v2 flag rather than the original
+// chunk_context_added so it also heals indexes built by the buggy first cut,
+// which swapped in the context_text triggers WITHOUT rebuilding the index.
+// Those indexes still hold the prior fts_path_enrich documents (content +
+// folded path tokens), so a later DELETE — whose trigger now emits only
+// context||content — fails to remove the path-token postings, orphaning them:
+// external-content drift (#432). The rebuild below re-indexes every existing
+// row through the current expression, healing the drift and dropping the now
+// redundant in-content path tokens (the `path` column still covers them, #433).
+//
+// The rebuild is a delete-all + INSERT…SELECT with the document expression,
+// NOT the FTS5 'rebuild' command: 'rebuild' re-reads the raw chunks columns
+// and would index plain content, discarding the context_text prefix the
+// triggers apply and re-introducing a mismatch.
 func (s *Store) migrateChunkContext(ctx context.Context) error {
 	var done string
-	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='chunk_context_added'`).Scan(&done)
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='chunk_fts_content_v2'`).Scan(&done)
 	if done == "1" {
 		return nil
 	}
@@ -474,8 +521,8 @@ func (s *Store) migrateChunkContext(ctx context.Context) error {
 		!strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("migrateChunkContext: add context_text: %w", err)
 	}
-	// Recreate FTS5 triggers so they index context_text || content.
-	// DROP first because CREATE TRIGGER IF NOT EXISTS won't replace them.
+	// Recreate FTS5 triggers. DROP first because CREATE TRIGGER IF NOT EXISTS
+	// won't replace an existing (possibly older-shape) trigger.
 	for _, drop := range []string{
 		`DROP TRIGGER IF EXISTS chunks_ai`,
 		`DROP TRIGGER IF EXISTS chunks_ad`,
@@ -485,44 +532,41 @@ func (s *Store) migrateChunkContext(ctx context.Context) error {
 			return fmt.Errorf("migrateChunkContext: drop trigger: %w", err)
 		}
 	}
+	newDoc, oldDoc := chunkFTSContentExpr("new"), chunkFTSContentExpr("old")
 	for _, trig := range []string{
-		`CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
 		   INSERT INTO chunks_fts(rowid, content, path, kind)
-		   VALUES (new.id,
-		           CASE WHEN new.context_text IS NOT NULL AND new.context_text != ''
-		                THEN new.context_text || CHAR(10) || new.content
-		                ELSE new.content END,
-		           new.path, new.kind);
-		 END`,
-		`CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+		   VALUES (new.id, %s, new.path, new.kind);
+		 END`, newDoc),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
 		   INSERT INTO chunks_fts(chunks_fts, rowid, content, path, kind)
-		   VALUES ('delete', old.id,
-		           CASE WHEN old.context_text IS NOT NULL AND old.context_text != ''
-		                THEN old.context_text || CHAR(10) || old.content
-		                ELSE old.content END,
-		           old.path, old.kind);
-		 END`,
-		`CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+		   VALUES ('delete', old.id, %s, old.path, old.kind);
+		 END`, oldDoc),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
 		   INSERT INTO chunks_fts(chunks_fts, rowid, content, path, kind)
-		   VALUES ('delete', old.id,
-		           CASE WHEN old.context_text IS NOT NULL AND old.context_text != ''
-		                THEN old.context_text || CHAR(10) || old.content
-		                ELSE old.content END,
-		           old.path, old.kind);
+		   VALUES ('delete', old.id, %s, old.path, old.kind);
 		   INSERT INTO chunks_fts(rowid, content, path, kind)
-		   VALUES (new.id,
-		           CASE WHEN new.context_text IS NOT NULL AND new.context_text != ''
-		                THEN new.context_text || CHAR(10) || new.content
-		                ELSE new.content END,
-		           new.path, new.kind);
-		 END`,
+		   VALUES (new.id, %s, new.path, new.kind);
+		 END`, oldDoc, newDoc),
 	} {
 		if _, err := s.db.ExecContext(ctx, trig); err != nil {
 			return fmt.Errorf("migrateChunkContext: create trigger: %w", err)
 		}
 	}
+	// Rebuild the FTS index so existing rows carry the enriched document and
+	// match what the DELETE triggers now emit. delete-all + repopulate (see
+	// the doc comment for why not 'rebuild').
 	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO meta(key, value) VALUES('chunk_context_added', '1')
+		`INSERT INTO chunks_fts(chunks_fts) VALUES('delete-all')`); err != nil {
+		return fmt.Errorf("migrateChunkContext: delete-all: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		`INSERT INTO chunks_fts(rowid, content, path, kind)
+		 SELECT id, %s, path, kind FROM chunks`, chunkFTSContentExpr(""))); err != nil {
+		return fmt.Errorf("migrateChunkContext: repopulate: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key, value) VALUES('chunk_fts_content_v2', '1')
 		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
 		return fmt.Errorf("migrateChunkContext: flag: %w", err)
 	}

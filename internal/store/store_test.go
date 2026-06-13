@@ -1111,7 +1111,7 @@ func TestMigrateChunkContextRunsIndependently(t *testing.T) {
 		t.Fatalf("seed co_access flag: %v", err)
 	}
 	if _, err := st.db.ExecContext(ctx,
-		`DELETE FROM meta WHERE key='chunk_context_added'`); err != nil {
+		`DELETE FROM meta WHERE key='chunk_fts_content_v2'`); err != nil {
 		t.Fatalf("clear chunk_context flag: %v", err)
 	}
 
@@ -1123,7 +1123,7 @@ func TestMigrateChunkContextRunsIndependently(t *testing.T) {
 	// flag absent (Scan -> ErrNoRows); with independent invocation it is set.
 	var done string
 	if err := st.db.QueryRowContext(ctx,
-		`SELECT value FROM meta WHERE key='chunk_context_added'`).Scan(&done); err != nil {
+		`SELECT value FROM meta WHERE key='chunk_fts_content_v2'`).Scan(&done); err != nil {
 		t.Fatalf("chunk_context migration was skipped (read flag): %v", err)
 	}
 	if done != "1" {
