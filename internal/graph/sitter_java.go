@@ -282,7 +282,14 @@ func (e *javaExtractor) addMethod(
 			return
 		}
 	}
-	qn := className + "." + methodName
+	// Disambiguate overloads by parameter-type signature: Java allows
+	// methods (and constructors) that share a name but differ in
+	// parameters, e.g. format(String) vs format(int). The node key must
+	// include the signature or the second overload clobbers the first,
+	// collapsing them to one node and losing its contains/has_method edges
+	// and call targets (#444).
+	bareQN := className + "." + methodName
+	qn := bareQN + "(" + javaParamSig(n, src) + ")"
 	id := NodeID("", pkg, NodeMethod, qn)
 	startLine := lineOfPoint(n.StartPoint().Row)
 	endLine := lineOfPoint(n.EndPoint().Row)
@@ -303,6 +310,13 @@ func (e *javaExtractor) addMethod(
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
 		e.symbols[pkg][qn] = id
+		// Java call resolution has no type inference (resolveCall keys on
+		// the bare class.method), so also register the bare name as a
+		// best-effort resolution target. First overload wins, keeping the
+		// mapping stable across runs.
+		if _, ok := e.symbols[pkg][bareQN]; !ok {
+			e.symbols[pkg][bareQN] = id
+		}
 	}
 	e.edges = append(e.edges, Edge{
 		ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
@@ -327,6 +341,34 @@ func (e *javaExtractor) addMethod(
 	if body := n.ChildByFieldName("body"); body != nil {
 		e.collectCalls(body, src, id, pkg, className, filePath)
 	}
+}
+
+// javaParamSig returns the comma-joined parameter type list of a method or
+// constructor declaration (e.g. "String,int", "" for no params). It is used
+// to disambiguate overloads in the node key (#444). A spread parameter's
+// type is suffixed with "..." so f(int...) and f(int) stay distinct.
+func javaParamSig(n *sitter.Node, src []byte) string {
+	params := n.ChildByFieldName("parameters")
+	if params == nil {
+		return ""
+	}
+	var types []string
+	for i := 0; i < int(params.NamedChildCount()); i++ {
+		p := params.NamedChild(i)
+		switch p.Type() {
+		case "formal_parameter", "spread_parameter":
+			t := p.ChildByFieldName("type")
+			if t == nil {
+				continue
+			}
+			typ := strings.Join(strings.Fields(nodeText(t, src)), " ")
+			if p.Type() == "spread_parameter" {
+				typ += "..."
+			}
+			types = append(types, typ)
+		}
+	}
+	return strings.Join(types, ",")
 }
 
 // ---- import parsing --------------------------------------------------------

@@ -52,27 +52,45 @@ func TestJavaExtractorFixture(t *testing.T) {
 	}
 
 	// ---- Methods ----
-	type m struct{ pkg, cls, name string }
+	// Node keys carry the parameter-type signature so overloads stay
+	// distinct (#444): format(String) and format(int) are two nodes.
+	type m struct{ pkg, qn string }
 	for _, c := range []m{
-		{appPkg, "Main", "run"},
-		{appPkg, "Main", "helper"},
-		{appPkg, "Handler", "<init>"}, // constructor
-		{appPkg, "Handler", "greet"},
-		{appPkg, "Handler", "format"},
-		{utilPkg, "Text", "upper"},
-		{utilPkg, "Text", "lower"},
+		{appPkg, "Main.run()"},
+		{appPkg, "Main.helper()"},
+		{appPkg, "Handler.<init>(String)"}, // constructor
+		{appPkg, "Handler.greet()"},
+		{appPkg, "Handler.format(String)"},
+		{appPkg, "Handler.format(int)"}, // overload — distinct node
+		{utilPkg, "Text.upper(String)"},
+		{utilPkg, "Text.lower(String)"},
 	} {
-		id := NodeID("", c.pkg, NodeMethod, c.cls+"."+c.name)
+		id := NodeID("", c.pkg, NodeMethod, c.qn)
 		if findByID(res.Nodes, id) == nil {
-			t.Errorf("missing method %s::%s.%s; methods=%v",
-				c.pkg, c.cls, c.name, nodesOfKindWithPkg(res.Nodes, NodeMethod))
+			t.Errorf("missing method %s::%s; methods=%v",
+				c.pkg, c.qn, nodesOfKindWithPkg(res.Nodes, NodeMethod))
+		}
+	}
+
+	// ---- Overloads are distinct nodes, both attached to the class (#444) ----
+	formatStrID := NodeID("", appPkg, NodeMethod, "Handler.format(String)")
+	formatIntID := NodeID("", appPkg, NodeMethod, "Handler.format(int)")
+	if formatStrID == formatIntID {
+		t.Fatal("overload node ids collided — signature not in key")
+	}
+	for _, fid := range []string{formatStrID, formatIntID} {
+		if findByID(res.Nodes, fid) == nil {
+			t.Errorf("overload node %s missing — overloads collapsed", fid)
+		}
+		if findEdge(res.Edges, EdgeHasMethod, handlerClsID, fid) == nil {
+			t.Errorf("missing has_method Handler → %s", fid)
 		}
 	}
 
 	// ---- has_method edges ----
-	greetID := NodeID("", appPkg, NodeMethod, "Handler.greet")
+	greetID := NodeID("", appPkg, NodeMethod, "Handler.greet()")
 	if findEdge(res.Edges, EdgeHasMethod, handlerClsID, greetID) == nil {
-		t.Errorf("missing has_method Handler → Handler.greet")
+		t.Errorf("missing has_method Handler → Handler.greet()")
 	}
 
 	// ---- Package-level imports edge ----
@@ -83,10 +101,12 @@ func TestJavaExtractorFixture(t *testing.T) {
 	}
 
 	// ---- Calls ----
-	mainRunID := NodeID("", appPkg, NodeMethod, "Main.run")
-	helperID := NodeID("", appPkg, NodeMethod, "Main.helper")
-	upperID := NodeID("", utilPkg, NodeMethod, "Text.upper")
-	formatID := NodeID("", appPkg, NodeMethod, "Handler.format")
+	mainRunID := NodeID("", appPkg, NodeMethod, "Main.run()")
+	helperID := NodeID("", appPkg, NodeMethod, "Main.helper()")
+	upperID := NodeID("", utilPkg, NodeMethod, "Text.upper(String)")
+	// Unsignatured `this.format(...)` resolves to the first-declared
+	// overload via the bare-name symbol entry — format(String) here.
+	formatID := formatStrID
 
 	calls := []struct {
 		name     string

@@ -14,4 +14,8 @@ public class Handler {
     public String format(String x) {
         return "Hello, " + x;
     }
+
+    public String format(int x) {
+        return format("#" + x);
+    }
 }
