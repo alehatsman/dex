@@ -96,9 +96,12 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 		if prefix != "" {
 			searchRoot = filepath.Join(p.Root, prefix)
 		}
-		_ = filepath.Walk(searchRoot, func(path string, info os.FileInfo, walkErr error) error {
+		if err := filepath.Walk(searchRoot, func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
-				return nil
+				if path == searchRoot {
+					return walkErr // propagate root-level errors (e.g. path doesn't exist)
+				}
+				return nil // skip inaccessible subdirectories
 			}
 			if info.IsDir() {
 				switch info.Name() {
@@ -112,7 +115,9 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 			}
 			filePaths = append(filePaths, path)
 			return nil
-		})
+		}); err != nil {
+			return nil, SearchGrepOutput{Status: "not-found", Hint: fmt.Sprintf("cannot walk %s: %v", searchRoot, err)}, nil
+		}
 	}
 
 	// Narrow the candidate set using the trigram index before reading files.
