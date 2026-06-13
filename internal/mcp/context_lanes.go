@@ -15,7 +15,7 @@ import (
 // runSymbolLane runs search_symbol for each detected identifier and
 // returns deduplicated symbol hits plus a set of file paths the lane
 // touched (used by pickSuggestedReads). At most `k` hits returned.
-func (s *Server) runSymbolLane(ctx context.Context, st *store.Store, cand intentCandidates, k int) ([]SymbolHit, map[string]struct{}) {
+func (s *Server) runSymbolLane(ctx context.Context, st store.Searcher, cand intentCandidates, k int) ([]SymbolHit, map[string]struct{}) {
 	if len(cand.identifiers) == 0 {
 		return nil, nil
 	}
@@ -76,7 +76,7 @@ func (s *Server) runSymbolLane(ctx context.Context, st *store.Store, cand intent
 // widen the lexical leg for free, while a HyDE passage shifts only the
 // embedded vector. Returns (hits, embedUnreachable). When embedUnreachable
 // is true hits is nil and the caller should surface the failure.
-func (s *Server) runSemanticLane(ctx context.Context, st *store.Store, embedText, ftsText string, k int) ([]SemHit, bool) {
+func (s *Server) runSemanticLane(ctx context.Context, st store.Searcher, embedText, ftsText string, k int) ([]SemHit, bool) {
 	em := s.EmbedClient
 	if em == nil {
 		// Lean profile (DEX_EMBED_ENGINE=none): no embedder wired. Report the

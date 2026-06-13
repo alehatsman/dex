@@ -475,7 +475,7 @@ func noLaneHits(embedFailed, leanNoEmbedder bool, out *ContextOutput) bool {
 // symbolNearMiss returns a hint string when the question is a symbol_lookup
 // with no exact hits. It scans chunks for substring candidates so the agent
 // gets names without a follow-up tool call.
-func symbolNearMiss(ctx context.Context, st *store.Store, intent string, candidates intentCandidates) string {
+func symbolNearMiss(ctx context.Context, st store.Searcher, intent string, candidates intentCandidates) string {
 	if intent != IntentSymbolLookup || len(candidates.identifiers) == 0 {
 		return ""
 	}
