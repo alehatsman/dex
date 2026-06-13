@@ -27,9 +27,35 @@ var singleTokenRefs = []string{
 // SymbolMap replaces high-ROI identifiers with short single-token refs to
 // reduce token count on verbose source files read in aggressive mode.
 type SymbolMap struct {
-	// entries sorted longest-first to prevent partial-match conflicts
-	// ("handleRequestError" replaced before "handleRequest").
+	// entries sorted longest-first so the §MAP legend lists longer
+	// identifiers before any shorter prefix they contain.
 	entries []symEntry
+	// re matches any registered identifier as a whole word: \b(id|id|…)\b.
+	// nil when there are no entries (Apply is then a no-op).
+	re *regexp.Regexp
+	// byIdent maps a matched identifier back to its ref.
+	byIdent map[string]string
+}
+
+// newSymbolMap is the single constructor for a non-empty map: it precompiles
+// the whole-word match regex and the ident→ref lookup from already-sorted
+// entries, so Apply never rebuilds them per call.
+func newSymbolMap(entries []symEntry) SymbolMap {
+	if len(entries) == 0 {
+		return SymbolMap{}
+	}
+	byIdent := make(map[string]string, len(entries))
+	alts := make([]string, len(entries))
+	for i, e := range entries {
+		byIdent[e.ident] = e.ref
+		alts[i] = regexp.QuoteMeta(e.ident)
+	}
+	// \b word boundaries make this a whole-word replace: a registered ident
+	// that is a substring of a longer identifier (parseConfig within
+	// parseConfigFile) is left untouched, matching the ROI model — which
+	// counts parseConfigFile as its own token, not as a parseConfig hit.
+	re := regexp.MustCompile(`\b(?:` + strings.Join(alts, "|") + `)\b`)
+	return SymbolMap{entries: entries, re: re, byIdent: byIdent}
 }
 
 type symEntry struct {
@@ -83,7 +109,7 @@ func BuildSymbolMap(content string) SymbolMap {
 		return entries[i].ident < entries[j].ident
 	})
 
-	return SymbolMap{entries: entries}
+	return newSymbolMap(entries)
 }
 
 // Empty returns true when the map has no entries (Apply is a no-op).
@@ -106,17 +132,22 @@ func (sm SymbolMap) Legend() string {
 	return sb.String()
 }
 
-// Apply replaces each registered identifier in content with its ref.
-// Entries are processed longest-first so longer identifiers win over
-// their shorter prefixes.
+// Apply replaces each registered identifier in content with its ref, matching
+// whole words only: an occurrence is rewritten when it is delimited by ASCII
+// word boundaries, so a registered ident embedded in a longer identifier
+// (parseConfig inside parseConfigFile) is left intact. This keeps Apply in
+// step with the ROI model in countIdentifiers, which counts whole-word
+// identifier tokens.
 func (sm SymbolMap) Apply(content string) string {
 	if sm.Empty() {
 		return content
 	}
-	for _, e := range sm.entries {
-		content = strings.ReplaceAll(content, e.ident, e.ref)
-	}
-	return content
+	return sm.re.ReplaceAllStringFunc(content, func(m string) string {
+		if ref, ok := sm.byIdent[m]; ok {
+			return ref
+		}
+		return m
+	})
 }
 
 // ApplyWithLegend returns Legend() + "\n" + Apply(content), or content

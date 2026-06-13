@@ -97,6 +97,36 @@ func TestBuildSymbolMap_LongestFirst(t *testing.T) {
 	}
 }
 
+func TestApply_WholeWordOnly(t *testing.T) {
+	// #447: parseConfig is frequent and registers; parseConfigFile appears
+	// once (below ROI) so it is NOT registered. The registered parseConfig
+	// embedded inside the longer parseConfigFile must NOT be rewritten — a
+	// substring replace would corrupt it into "<ref>File". This keeps Apply
+	// in step with the ROI model, which counts parseConfigFile as its own
+	// token, never as a parseConfig occurrence.
+	var sb strings.Builder
+	for i := 0; i < 12; i++ {
+		sb.WriteString("parseConfig\nhandleRequest\nvalidateInput\n")
+	}
+	sb.WriteString("parseConfigFile\n") // single occurrence → unregistered
+	content := sb.String()
+
+	sm := BuildSymbolMap(content)
+	if sm.Empty() {
+		t.Fatal("expected non-empty map for three frequent identifiers")
+	}
+	applied := sm.Apply(content)
+
+	// The unregistered longer identifier must survive whole and intact.
+	if !strings.Contains(applied, "parseConfigFile") {
+		t.Errorf("parseConfigFile (unregistered) was mangled by substring replace; output:\n%s", applied)
+	}
+	// Standalone parseConfig occurrences must still be replaced.
+	if strings.Contains(applied, "\nparseConfig\n") {
+		t.Error("standalone parseConfig should have been replaced with its ref")
+	}
+}
+
 func TestSymROI_ShortIdent(t *testing.T) {
 	if _, ok := symROI("short", 100); ok {
 		t.Error("identifier shorter than 6 chars must not register")
