@@ -6,11 +6,17 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// reValidRef matches the characters legal in a git ref. It intentionally
+// excludes '-' at the start (which git would interpret as a flag) and all
+// characters that have no meaning in ref names.
+var reValidRef = regexp.MustCompile(`^[a-zA-Z0-9~^:./_@{}-]+$`)
 
 // ─── tool: graph_diff ─────────────────────────────────────────────────────
 
@@ -50,6 +56,10 @@ func (s *Server) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffI
 	ref := strings.TrimSpace(in.Ref)
 	if ref == "" {
 		ref = "HEAD~1"
+	}
+	if !reValidRef.MatchString(ref) {
+		return nil, DiffOutput{Status: "error",
+			Hint: fmt.Sprintf("invalid ref %q — only alphanumeric, ~^:./_@{}- characters allowed", ref)}, nil
 	}
 	maxDepth := in.MaxDepth
 	if maxDepth <= 0 {
@@ -134,10 +144,10 @@ func gitDiffFiles(root, ref string) ([]string, error) {
 		c.Dir = root
 		return c
 	}
-	out, err := mkCmd("diff", "--name-only", ref, "HEAD").Output()
+	out, err := mkCmd("diff", "--name-only", "--end-of-options", ref, "HEAD").Output()
 	if err != nil {
 		// Try without HEAD in case HEAD == ref (initial commit, detached HEAD)
-		if out2, err2 := mkCmd("diff", "--name-only", ref).Output(); err2 == nil {
+		if out2, err2 := mkCmd("diff", "--name-only", "--end-of-options", ref).Output(); err2 == nil {
 			out = out2
 		} else {
 			return nil, err
