@@ -247,5 +247,11 @@ func CompressBazelQuery(lines []string) []string {
 	if len(lines) <= 30 {
 		return lines
 	}
-	return append(lines[:20], fmt.Sprintf("… +%d more results", len(lines)-20))
+	// Build a fresh slice rather than append(lines[:20], …): lines[:20]
+	// keeps lines' backing array (cap ≥ len(lines)), so the append would
+	// overwrite lines[20] in place — mutating the caller's input and
+	// returning a slice that aliases it (#454).
+	out := make([]string, 0, 21)
+	out = append(out, lines[:20]...)
+	return append(out, fmt.Sprintf("… +%d more results", len(lines)-20))
 }
