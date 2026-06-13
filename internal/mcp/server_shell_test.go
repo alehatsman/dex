@@ -458,6 +458,43 @@ func TestCompressGoTest(t *testing.T) {
 	}
 }
 
+// TestCompressGoTest_FailureDiagnostics guards #451: on a failing run the
+// compressor must keep the *reason* (t.Errorf/t.Fatalf output and testify's
+// diagnostic block), not just the FAIL header/summary — dropping it forces an
+// uncompressed re-run on the one output that matters.
+func TestCompressGoTest_FailureDiagnostics(t *testing.T) {
+	fakeOutput := strings.Join([]string{
+		"=== RUN   TestFoo",
+		"--- FAIL: TestFoo (0.00s)",
+		"    foo_test.go:42: got 4, want 3",
+		"=== RUN   TestBar",
+		"--- FAIL: TestBar (0.00s)",
+		"    Error Trace:	bar_test.go:17",
+		"    Error:      	Not equal:",
+		"                	expected: 3",
+		"                	actual  : 4",
+		"    Test:       	TestBar",
+		"FAIL",
+		"exit status 1",
+		"FAIL\tgithub.com/example/pkg\t0.006s",
+	}, "\n")
+	compressed, _, _ := CompressText(fakeOutput, "go test ./...", 0)
+
+	for _, want := range []string{
+		"got 4, want 3", // t.Errorf detail
+		"expected: 3",   // testify diff
+		"actual : 4",    // testify diff (whitespace collapsed by the pipeline)
+		"--- FAIL: TestFoo",
+	} {
+		if !strings.Contains(compressed, want) {
+			t.Errorf("failure diagnostic %q dropped from compressed output:\n%s", want, compressed)
+		}
+	}
+	if strings.Contains(compressed, "=== RUN") {
+		t.Error("=== RUN lines should still be stripped")
+	}
+}
+
 // ── playwright ────────────────────────────────────────────────────────────────
 
 func TestCompressPlaywright_Summary(t *testing.T) {
