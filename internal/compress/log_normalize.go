@@ -9,11 +9,10 @@ import (
 // ── normalizers ───────────────────────────────────────────────────────────────
 
 var (
-	reTS       = regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?`)
-	reHex      = regexp.MustCompile(`\b[0-9a-f]{32,}\b`)
-	reUUID     = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
-	reLogLevel = regexp.MustCompile(`(?i)\b(DEBUG|INFO|WARN|WARNING|ERROR|FATAL|TRACE|NOTICE)\b\s*`)
-	reSep      = regexp.MustCompile(`[-_]{3,}`)
+	reTS   = regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?`)
+	reHex  = regexp.MustCompile(`\b[0-9a-f]{32,}\b`)
+	reUUID = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	reSep  = regexp.MustCompile(`[-_]{3,}`)
 )
 
 func NormalizeTimestamps(s string) string { return reTS.ReplaceAllString(s, "[TS]") }
@@ -21,12 +20,17 @@ func NormalizeHashes(s string) string     { return reHex.ReplaceAllString(s, "[H
 func NormalizeUUIDs(s string) string      { return reUUID.ReplaceAllString(s, "[UUID]") }
 
 // NormalizeLineForDedup normalizes a log line for dedup comparison:
-// timestamps → [TS], UUIDs → [UUID], hex hashes → [HASH], log-level tokens stripped.
+// timestamps → [TS], UUIDs → [UUID], hex hashes → [HASH].
+//
+// The log-level token is deliberately NOT stripped: severity is signal, not
+// per-line noise. Stripping it made "INFO connection failed" and "ERROR
+// connection failed" normalize identically, so dedup dropped the ERROR line
+// (or mislabeled it as INFO in a run count). TS/UUID/HASH stripping already
+// collapses genuine repeated spam, which is almost always at a single level.
 func NormalizeLineForDedup(s string) string {
 	s = NormalizeTimestamps(s)
 	s = NormalizeUUIDs(s)
 	s = NormalizeHashes(s)
-	s = reLogLevel.ReplaceAllString(s, "")
 	s = strings.TrimSpace(s)
 	return s
 }

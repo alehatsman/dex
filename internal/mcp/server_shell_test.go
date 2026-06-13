@@ -221,19 +221,19 @@ func TestNormalizeLineForDedup(t *testing.T) {
 		want string
 	}{
 		{
-			// timestamp → [TS], log level stripped
+			// timestamp → [TS]; log level retained (severity is signal, #464)
 			"2024-01-01T10:00:00Z INFO request started",
-			"[TS] request started",
+			"[TS] INFO request started",
 		},
 		{
-			// UUID → [UUID], log level stripped
+			// UUID → [UUID]; log level retained (#464)
 			"INFO  req 550e8400-e29b-41d4-a716-446655440000 started",
-			"req [UUID] started",
+			"INFO  req [UUID] started",
 		},
 		{
-			// bare hex hash → [HASH], log level stripped
+			// bare hex hash → [HASH]; log level retained (#464)
 			"ERROR connection failed: abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
-			"connection failed: [HASH]",
+			"ERROR connection failed: [HASH]",
 		},
 	}
 	for _, c := range cases {
