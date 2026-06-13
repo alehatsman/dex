@@ -12,16 +12,15 @@ import (
 // AgentInput is the request schema for the agent coordination bus tool.
 type AgentInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string `json:"action"                 jsonschema:"announce | post | read | list | diary | recall_diary | diaries"`
+	Action      string `json:"action"                 jsonschema:"announce | post | read | list | diary | recall_diary | list_diaries"`
 	AgentID     string `json:"agent_id,omitempty"     jsonschema:"agent identifier (required for announce, post, diary, recall_diary)"`
 	Role        string `json:"role,omitempty"         jsonschema:"agent role description (used with announce)"`
 	Topic       string `json:"topic,omitempty"        jsonschema:"message topic/channel — groups related findings (used with post and read)"`
-	Category    string `json:"category,omitempty"     jsonschema:"semantic kind label — e.g. finding | plan | error | note (used with post and read); entry type for diary: discovery | decision | blocker | progress | insight"`
-	Query       string `json:"query,omitempty"        jsonschema:"full-text search query over message bodies (used with read; powered by FTS5)"`
-	Body        string `json:"body,omitempty"         jsonschema:"message body (required for post)"`
-	Content     string `json:"content,omitempty"      jsonschema:"diary entry content (required for diary)"`
-	SinceID     int64  `json:"since_id,omitempty"     jsonschema:"return messages with id > since_id for incremental polling (used with read)"`
-	Limit       int    `json:"limit,omitempty"        jsonschema:"max messages to return (default 50, max 200; used with read)"`
+	Category    string `json:"category,omitempty"     jsonschema:"bus message kind (post/read): finding | plan | error | note; diary entry kind (diary): discovery | decision | blocker | progress | insight — defaults to insight"`
+	Query       string `json:"query,omitempty"        jsonschema:"full-text search query over message bodies (used with read; powered by FTS5); when set, results are sorted by relevance rank instead of chronological id order"`
+	Body        string `json:"body,omitempty"         jsonschema:"message text — required for post (bus message body) and diary (diary entry content)"`
+	SinceID     int64  `json:"since_id,omitempty"     jsonschema:"return messages with id > since_id for incremental polling (used with read; applies before relevance ranking when query is also set)"`
+	Limit       int    `json:"limit,omitempty"        jsonschema:"max messages to return (default 50, max 200; used with read and recall_diary)"`
 }
 
 // AgentEntry is one registered agent in the bus.
@@ -61,14 +60,14 @@ func (s *Server) agent(ctx context.Context, _ *sdk.CallToolRequest, in AgentInpu
 		if in.AgentID == "" {
 			return nil, AgentOutput{Status: "error", Hint: "agent_id is required for diary"}, nil
 		}
-		if in.Content == "" {
-			return nil, AgentOutput{Status: "error", Hint: "content is required for diary"}, nil
+		if in.Body == "" {
+			return nil, AgentOutput{Status: "error", Hint: "body is required for diary"}, nil
 		}
 		cat := in.Category
 		if cat == "" {
 			cat = "insight"
 		}
-		entry, err := DiaryAppend(s.IndexDir, in.AgentID, cat, in.Content)
+		entry, err := DiaryAppend(s.IndexDir, in.AgentID, cat, in.Body)
 		if err != nil {
 			return nil, AgentOutput{Status: "error", Hint: fmt.Sprintf("diary write: %v", err)}, nil
 		}
@@ -88,7 +87,7 @@ func (s *Server) agent(ctx context.Context, _ *sdk.CallToolRequest, in AgentInpu
 		}
 		return nil, AgentOutput{Status: "ok", DiaryEntries: entries}, nil
 
-	case "diaries":
+	case "list_diaries":
 		list, err := DiaryList(s.IndexDir)
 		if err != nil {
 			return nil, AgentOutput{Status: "error", Hint: fmt.Sprintf("diary list: %v", err)}, nil
@@ -174,7 +173,7 @@ func (s *Server) agent(ctx context.Context, _ *sdk.CallToolRequest, in AgentInpu
 	default:
 		return nil, AgentOutput{
 			Status: "error",
-			Hint:   fmt.Sprintf("unknown action %q — want: announce | post | read | list | diary | recall_diary | diaries", in.Action),
+			Hint:   fmt.Sprintf("unknown action %q — want: announce | post | read | list | diary | recall_diary | list_diaries", in.Action),
 		}, nil
 	}
 }
