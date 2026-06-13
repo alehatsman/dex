@@ -111,10 +111,17 @@ func (s *Server) prefetch(ctx context.Context, _ *sdk.CallToolRequest, in Prefet
 		}, nil
 	}
 
-	// Score by task-keyword overlap when task is given.
-	if in.Task != "" {
-		neighbors = reorderByTaskRelevance(neighbors, in.Task)
+	// Score by session recency and task-keyword overlap.
+	// Session files are fetched best-effort; failure is non-fatal (falls back
+	// to task-only ordering).
+	var sessionFiles map[string]struct{}
+	if ss, ok, err := st.SessionGet(ctx); err == nil && ok {
+		sessionFiles = make(map[string]struct{}, len(ss.Files))
+		for _, f := range ss.Files {
+			sessionFiles[f.Path] = struct{}{}
+		}
 	}
+	neighbors = reorderByRecencyAndTask(neighbors, seeds, sessionFiles, in.Task)
 	if len(neighbors) > maxFiles {
 		neighbors = neighbors[:maxFiles]
 	}
@@ -176,39 +183,70 @@ func resolveSeedPaths(root string, rawPaths []string) (seeds, skipped []string) 
 	return seeds, skipped
 }
 
-// reorderByTaskRelevance moves files whose path components overlap with task
-// keywords to the front. Simple heuristic — no embedding required.
-func reorderByTaskRelevance(paths []string, task string) []string {
+// reorderByRecencyAndTask orders paths by a combined score:
+//
+//	score = recencyWeight + taskScore
+//	  recencyWeight: 2 for seed files, 1 for session-touched files, 0 otherwise
+//	  taskScore:     1 if any path segment matches a task keyword, 0 otherwise
+//
+// Seeds always surface first (recencyWeight=2 ensures no task mismatch can
+// demote them below a task-relevant cold file). Session files come next, then
+// cold files. Within each tier the original SpreadActivation order (activation
+// energy) is preserved via a stable sort.
+// sessionFiles and task may be nil/empty — the function degrades gracefully.
+func reorderByRecencyAndTask(paths []string, seeds []string, sessionFiles map[string]struct{}, task string) []string {
+	seedSet := make(map[string]struct{}, len(seeds))
+	for _, s := range seeds {
+		seedSet[s] = struct{}{}
+	}
+
 	taskWords := make(map[string]struct{})
 	for _, w := range strings.Fields(strings.ToLower(task)) {
 		if len(w) >= 3 {
 			taskWords[w] = struct{}{}
 		}
 	}
-	if len(taskWords) == 0 {
-		return paths
-	}
-	score := func(p string) int {
-		s := 0
+
+	taskScore := func(p string) int {
 		for _, seg := range strings.FieldsFunc(strings.ToLower(p), func(r rune) bool {
 			return r == '/' || r == '_' || r == '.' || r == '-'
 		}) {
 			if _, ok := taskWords[seg]; ok {
-				s++
+				return 1
 			}
 		}
-		return s
+		return 0
 	}
-	// Stable partition: scored paths first, then unscored, order preserved within each group.
-	var hi, lo []string
-	for _, p := range paths {
-		if score(p) > 0 {
-			hi = append(hi, p)
-		} else {
-			lo = append(lo, p)
+
+	score := func(p string) int {
+		recency := 0
+		if _, ok := seedSet[p]; ok {
+			recency = 2
+		} else if _, ok := sessionFiles[p]; ok {
+			recency = 1
 		}
+		return recency + taskScore(p)
 	}
-	return append(hi, lo...)
+
+	// Stable sort: highest combined score first, original order preserved within ties.
+	out := make([]string, len(paths))
+	copy(out, paths)
+	// Bucket sort over score range [0, 3] — avoids allocating a sort.Slice closure
+	// with a closure over the score map and preserves stability cheaply.
+	buckets := [4][]string{}
+	for _, p := range out {
+		s := score(p)
+		if s > 3 {
+			s = 3
+		}
+		buckets[s] = append(buckets[s], p)
+	}
+	idx := 0
+	for b := 3; b >= 0; b-- {
+		copy(out[idx:], buckets[b])
+		idx += len(buckets[b])
+	}
+	return out
 }
 
 // pickMode selects read fidelity based on remaining budget ratio.
