@@ -482,9 +482,15 @@ func (e *javaExtractor) collectCalls(
 	body *sitter.Node, src []byte,
 	callerID, callerPkg, callerCls, filePath string,
 ) {
-	var walk func(*sitter.Node)
-	walk = func(n *sitter.Node) {
-		if n == nil {
+	// Bound recursion depth: this walk descends every named node in a
+	// method body, so a pathologically nested expression (generated code,
+	// adversarial input) could otherwise drive the Go stack arbitrarily
+	// deep. The file-size cap (maxParseFileSize) is the primary guard; this
+	// is defense-in-depth. Real Java nests far below the limit, so honest
+	// code is never truncated (#443).
+	var walk func(*sitter.Node, int)
+	walk = func(n *sitter.Node, depth int) {
+		if n == nil || depth > maxASTWalkDepth {
 			return
 		}
 		switch n.Type() {
@@ -518,10 +524,10 @@ func (e *javaExtractor) collectCalls(
 			}
 		}
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			walk(n.NamedChild(i))
+			walk(n.NamedChild(i), depth+1)
 		}
 	}
-	walk(body)
+	walk(body, 0)
 }
 
 func classifyJavaInvocation(n *sitter.Node, src []byte) javaCallee {

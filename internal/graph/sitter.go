@@ -174,6 +174,19 @@ func initDefaultRegistry() {
 	})
 }
 
+// maxParseFileSize bounds the size of a file the graph extractor will read
+// and parse. Files above it are skipped with a warning — they are almost
+// always generated bundles or minified blobs, not hand-written source, and
+// parsing them spikes memory and drives the AST walk arbitrarily deep. Set
+// to match the index pass's default file cap (1 MB).
+const maxParseFileSize = 1 << 20
+
+// maxASTWalkDepth bounds how deep a recursive AST traversal will descend
+// before giving up on a subtree. It exists to stop adversarial/generated
+// nesting from overflowing the Go stack; honest source nests orders of
+// magnitude below it, so it never truncates real code (#443).
+const maxASTWalkDepth = 4000
+
 // ExtractSitter is the main entry point. Walks projectRoot with the
 // shared ignore matcher, parses each file matching a registered
 // extension with the right tree-sitter grammar, and dispatches to the
@@ -254,6 +267,17 @@ func ExtractSitterWith(ctx context.Context, projectRoot string, reg *Registry) (
 		ext := strings.ToLower(filepath.Ext(rel))
 		idx, ok := extByName[ext]
 		if !ok {
+			return nil
+		}
+
+		// Skip oversized files before reading or parsing them. Generated
+		// bundles and minified blobs can be tens of MB; parsing them spikes
+		// memory and drives the AST walk arbitrarily deep. Checked via
+		// d.Info() so we never read the file into memory (#443).
+		if info, infoErr := d.Info(); infoErr == nil && info.Size() > maxParseFileSize {
+			res.Warnings = append(res.Warnings,
+				fmt.Sprintf("graph: skip %s: %d bytes exceeds %d-byte parse cap",
+					filepath.ToSlash(rel), info.Size(), int64(maxParseFileSize)))
 			return nil
 		}
 
