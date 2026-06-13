@@ -30,9 +30,16 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	lines := strings.Split(strings.TrimRight(stripped, "\n"), "\n")
 	originalLines = len(lines)
 
+	// Uniform secret redaction (#461): scrub credential values at this single
+	// chokepoint so the policy is identical for every command type — not just
+	// `env`. Runs before the early-returns below so tiny outputs and auth-flow
+	// device-code/token text are redacted too. Behavior-preserving for
+	// non-secret lines (same count/order, byte-identical content).
+	lines = compress.RedactSecrets(lines)
+
 	// Skip compression for tiny outputs and auth flows.
 	if originalLines < minCompressLines || containsAuthFlow(stripped) {
-		return output, originalLines, originalLines
+		return strings.Join(lines, "\n"), originalLines, originalLines
 	}
 
 	cmd := strings.ToLower(strings.TrimSpace(command))
@@ -53,7 +60,7 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 
 	// shorter_only guard: never emit a result that's longer than the original.
 	if len(out) >= originalLines {
-		return output, originalLines, originalLines
+		return strings.Join(lines, "\n"), originalLines, originalLines
 	}
 
 	// Over-compression guard: >95% token reduction on small output is almost
@@ -61,7 +68,7 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	origTok := compress.EstimateTokens(stripped)
 	if origTok > 100 && origTok < 2000 {
 		if float64(compress.EstimateTokens(strings.Join(out, "\n")))/float64(origTok) < 0.05 {
-			return output, originalLines, originalLines
+			return strings.Join(lines, "\n"), originalLines, originalLines
 		}
 	}
 

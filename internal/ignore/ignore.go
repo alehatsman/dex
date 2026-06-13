@@ -429,6 +429,19 @@ func LooksLikeSecret(data []byte) bool {
 	return false
 }
 
+// RedactSecretTokens replaces every span in s that matches a well-known secret
+// pattern (the same set LooksLikeSecret checks) with "***", leaving the rest of
+// s intact. Unlike LooksLikeSecret it masks the matched token in place rather
+// than reporting a whole-blob verdict, so a single recognizable token in a log
+// line, SQL row, or auth-flow message can be redacted without dropping the
+// surrounding context. Returns s unchanged when no pattern matches.
+func RedactSecretTokens(s string) string {
+	for _, re := range secretPatterns {
+		s = re.ReplaceAllString(s, "***")
+	}
+	return s
+}
+
 // LooksBinary returns true if data contains a NUL byte in the first 8 KB.
 // Cheap heuristic to skip binary files that slipped through the extension
 // filter (e.g. a `.yml` that's actually a packed binary).
