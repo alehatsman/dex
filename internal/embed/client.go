@@ -148,6 +148,9 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 			}
 			copy(out[start:end], got)
 		}
+		if err := validateVectors(out); err != nil {
+			return nil, err
+		}
 		return out, nil
 	}
 	eg, egctx := errgroup.WithContext(ctx)
@@ -173,7 +176,49 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+	if err := validateVectors(out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// validateVectors rejects corrupt embeddings before they reach the store.
+// EnsureEmbedModel guards only the model-name string recorded in meta, and
+// the per-batch length check counts vectors without inspecting them — so a
+// server quietly serving a truncated/different model, returning an empty
+// "embedding":[] for one item, or repeating an `index` (leaving another
+// slot nil) would otherwise write zero/wrong-width vectors into the index
+// and silently degrade cosine search until a manual reindex (#435).
+//
+// The HTTP backend has no externally configured dimension (unlike the ONNX
+// engine's DEX_ONNX_DIM), so width is validated for self-consistency: every
+// vector in the response must share one non-zero width, and none may be
+// uniformly zero. Non-finite components need no check here — encoding/json
+// rejects out-of-range numbers at decode and JSON has no NaN/Inf literal,
+// so they can never reach this point.
+func validateVectors(vecs [][]float32) error {
+	dim := 0
+	for i, v := range vecs {
+		if len(v) == 0 {
+			return fmt.Errorf("embed: missing or empty vector at index %d", i)
+		}
+		if dim == 0 {
+			dim = len(v)
+		} else if len(v) != dim {
+			return fmt.Errorf("embed: inconsistent vector width at index %d: got %d, want %d", i, len(v), dim)
+		}
+		allZero := true
+		for _, f := range v {
+			if f != 0 {
+				allZero = false
+				break
+			}
+		}
+		if allZero {
+			return fmt.Errorf("embed: all-zero vector at index %d", i)
+		}
+	}
+	return nil
 }
 
 func (c *Client) embedBatch(ctx context.Context, inputs []string) ([][]float32, error) {
@@ -206,6 +251,9 @@ func (c *Client) embedBatch(ctx context.Context, inputs []string) ([][]float32, 
 	for _, d := range parsed.Data {
 		if d.Index < 0 || d.Index >= len(out) {
 			return nil, fmt.Errorf("embed: bogus index %d in response", d.Index)
+		}
+		if out[d.Index] != nil {
+			return nil, fmt.Errorf("embed: duplicate index %d in response", d.Index)
 		}
 		out[d.Index] = d.Embedding
 	}

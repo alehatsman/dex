@@ -220,3 +220,105 @@ func TestEmbedConcurrentError(t *testing.T) {
 		t.Errorf("expected http 500 error, got %v", err)
 	}
 }
+
+// embedItem mirrors one element of an OpenAI-style embeddings response.
+type embedItem struct {
+	Embedding []float32 `json:"embedding"`
+	Index     int       `json:"index"`
+}
+
+// faultyEmbedServer returns dim-wide vectors for each input, then lets the
+// test mutate the response items to inject the corruption under test.
+func faultyEmbedServer(dim int, mutate func([]embedItem) []embedItem) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body req
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		items := make([]embedItem, 0, len(body.Input))
+		for i := range body.Input {
+			v := make([]float32, dim)
+			for j := range v {
+				v[j] = float32(i + j + 1) // non-zero so "all-zero" is a deliberate fault
+			}
+			items = append(items, embedItem{Index: i, Embedding: v})
+		}
+		if mutate != nil {
+			items = mutate(items)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(struct {
+			Data  []embedItem `json:"data"`
+			Model string      `json:"model"`
+		}{Data: items, Model: body.Model})
+	})
+}
+
+// TestEmbedRejectsCorruptVectors guards #435: malformed vectors must error out
+// rather than be silently written to the index. EnsureEmbedModel only checks
+// the model-name string, and the per-batch length check counts vectors without
+// inspecting them, so without this validation a misbehaving server corrupts
+// cosine search until a manual reindex.
+func TestEmbedRejectsCorruptVectors(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func([]embedItem) []embedItem
+		want   string
+	}{
+		{"empty vector", func(it []embedItem) []embedItem { it[1].Embedding = []float32{}; return it }, "empty"},
+		{"short vector", func(it []embedItem) []embedItem { it[1].Embedding = it[1].Embedding[:2]; return it }, "width"},
+		{"all-zero vector", func(it []embedItem) []embedItem {
+			for j := range it[1].Embedding {
+				it[1].Embedding[j] = 0
+			}
+			return it
+		}, "all-zero"},
+		{"duplicate index", func(it []embedItem) []embedItem { it[2].Index = 0; return it }, "duplicate index"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(faultyEmbedServer(8, tc.mutate))
+			defer srv.Close()
+			c := New(srv.URL, "fake", 8, 5*time.Second) // batch >= inputs: single batch
+			_, err := c.Embed(context.Background(), []string{"a", "b", "c", "d"})
+			if err == nil {
+				t.Fatalf("expected error for %s, got nil", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q does not contain %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+// TestEmbedRejectsCrossBatchWidthMismatch forces multiple concurrent batches
+// (batchSize 1) where the server serves a wider vector for one input. No
+// single batch is internally inconsistent, so only the final whole-result
+// validation can catch it (#435).
+func TestEmbedRejectsCrossBatchWidthMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body req
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		dim := 8
+		if len(body.Input) > 0 && strings.Contains(body.Input[0], "wide") {
+			dim = 16
+		}
+		items := make([]embedItem, 0, len(body.Input))
+		for i := range body.Input {
+			v := make([]float32, dim)
+			for j := range v {
+				v[j] = float32(i + j + 1)
+			}
+			items = append(items, embedItem{Index: i, Embedding: v})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(struct {
+			Data  []embedItem `json:"data"`
+			Model string      `json:"model"`
+		}{Data: items, Model: body.Model})
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "fake", 1, 5*time.Second) // one batch per input → concurrent path
+	_, err := c.Embed(context.Background(), []string{"a", "wide", "c"})
+	if err == nil || !strings.Contains(err.Error(), "width") {
+		t.Fatalf("expected cross-batch width-mismatch error, got %v", err)
+	}
+}
