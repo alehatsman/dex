@@ -1131,20 +1131,12 @@ func (s *Store) spreadActivation(ctx context.Context, seeds []SeedFile, n int) (
 	return results, nil
 }
 
-// FuseSpreadingActivation expands the hit set using spreading activation.
-// When queryVec is non-nil and node_vecs is populated, seeds come from the
-// top-k symbol KNN matches for the query vector (query→symbol→BFS). This
-// finds structurally-coupled files regardless of whether primary semantic
-// hits include the target. Falls back to primary-hit file seeds when
-// node_vecs is empty or KNN returns nothing. Silently returns primary hits
-// unchanged on any store failure — graph proximity is best-effort.
-func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVec []float32, n int) []Hit {
-	if len(hits) == 0 {
-		return hits
-	}
-
-	// Build seed set: session-recent files (weight 1.0) + top semantic hits
-	// (weight proportional to score). Dedup by path; first write wins.
+// activationSeeds builds the spreading-activation seed set: session-recent
+// files (weight 1.0) blended with their co-access neighbors (0.8×), then the
+// primary semantic hits weighted proportional to score. Dedup by path, first
+// write wins. Extracted from FuseSpreadingActivation to keep that method under
+// the cyclomatic cap once the graph-off guard (#470) is added.
+func (s *Store) activationSeeds(ctx context.Context, hits []Hit) []SeedFile {
 	seeds := make([]SeedFile, 0, 16)
 	seen := make(map[string]struct{}, 16)
 
@@ -1189,6 +1181,28 @@ func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVe
 			seen[h.Path] = struct{}{}
 		}
 	}
+	return seeds
+}
+
+// FuseSpreadingActivation expands the hit set using spreading activation.
+// When queryVec is non-nil and node_vecs is populated, seeds come from the
+// top-k symbol KNN matches for the query vector (query→symbol→BFS). This
+// finds structurally-coupled files regardless of whether primary semantic
+// hits include the target. Falls back to primary-hit file seeds when
+// node_vecs is empty or KNN returns nothing. Silently returns primary hits
+// unchanged on any store failure — graph proximity is best-effort.
+func (s *Store) FuseSpreadingActivation(ctx context.Context, hits []Hit, queryVec []float32, n int) []Hit {
+	if len(hits) == 0 {
+		return hits
+	}
+	// Lane held out (graph-off ablation, #470): return the primary hits
+	// unchanged. This is the true "lane off" the weight can't express —
+	// GraphLaneWeight = 0 is the "unset → use default 1.0" sentinel.
+	if s.opts.GraphLaneDisabled {
+		return hits
+	}
+
+	seeds := s.activationSeeds(ctx, hits)
 
 	activated, err := s.spreadActivation(ctx, seeds, 15)
 	if err != nil {

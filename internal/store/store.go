@@ -142,6 +142,14 @@ type GraphOptions struct {
 	// DEX_GRAPH_WEIGHT. Useful range: 1–4; at 2× a 1-hop neighbor (γ=0.6)
 	// contributes 1.2× the RRF score of a primary hit at the same rank.
 	GraphLaneWeight float32
+
+	// GraphLaneDisabled holds the graph lane out of fusion entirely —
+	// FuseSpreadingActivation returns the primary hits unchanged. This is the
+	// true "lane off" switch the weight cannot express: GraphLaneWeight = 0 is
+	// the "unset → use default 1.0" sentinel, so it can't zero the lane. The
+	// graph-sweep eval (#470) sets this to measure the lane's marginal NDCG/
+	// Recall delta vs graph-off. Not env-wired; ablation/test use only.
+	GraphLaneDisabled bool
 }
 
 // RerankOptions configures the optional cross-encoder reranking stage.

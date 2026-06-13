@@ -57,6 +57,9 @@ Flags:
   --check path     compare against a reference report JSON; exit 1 on regression
   --alpha-sweep   sweep FusionLinear α from 0.1 to 1.0 in 0.1 steps, printing
                    a table with the RRF baseline. Use to tune DEX_FUSION_ALPHA.
+  --graph-sweep   sweep GraphLaneWeight (off, 0.5…2.0) at the calibrated fusion
+                   default; prints per-weight ΔNDCG/ΔRecall vs graph-off (#470).
+                   Run with --mode structural/blast-radius for a real signal.
   --emit-calibration path  with --alpha-sweep: write the winning config to the
                    named calibration.yml (run from the dex repo, commit the diff)
 
@@ -80,6 +83,7 @@ func runEval(ctx context.Context, args []string) error {
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
 	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+symbol+graph, zero-inference) | onnx (in-process ONNX, requires env vars)")
 	alphaSweep := fs.Bool("alpha-sweep", false, "sweep FusionLinear α from 0.1 to 1.0 and print a comparison table with RRF as baseline")
+	graphSweep := fs.Bool("graph-sweep", false, "sweep GraphLaneWeight (off, 0.5…2.0) at the calibrated fusion default and print per-weight NDCG/Recall deltas vs graph-off — the GraphLaneWeight ablation (#470)")
 	emitCalib := fs.String("emit-calibration", "", "with --alpha-sweep: write the winning config to this calibration.yml path (run from the dex repo; commit the diff)")
 	expand := fs.String("expand", "off", "query-side expansion to A/B (#252): off | on | full. Requires DEX_EXPAND_MODEL.")
 
@@ -156,9 +160,21 @@ func runEval(ctx context.Context, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
+	if *alphaSweep && *graphSweep {
+		return fmt.Errorf("dex bench eval: --alpha-sweep and --graph-sweep are mutually exclusive")
+	}
 	if *alphaSweep {
 		if err := runAlphaSweep(ctx, p, em, gs, *k, *emitCalib); err != nil {
 			return fmt.Errorf("dex bench eval: alpha sweep: %w", err)
+		}
+		return nil
+	}
+	if *graphSweep {
+		if *emitCalib != "" {
+			return fmt.Errorf("dex bench eval: --emit-calibration is not supported with --graph-sweep (graph-lane removal is a separate decision, see #470)")
+		}
+		if err := runGraphSweep(ctx, p, em, gs, *k); err != nil {
+			return fmt.Errorf("dex bench eval: graph sweep: %w", err)
 		}
 		return nil
 	}
@@ -341,6 +357,107 @@ func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs e
 		fmt.Sprintf("alpha-sweep winner %q: NDCG@%d=%.4f Recall@%d=%.4f MRR=%.4f over %d queries (head %s)",
 			rows[best].label, k, rows[best].rep.MeanNDCG, k, rows[best].rep.MeanRecall, rows[best].rep.MRR,
 			len(gs.Queries), shortHash(gs.Head)))
+}
+
+// runGraphSweep measures the graph-proximity lane's marginal contribution: it
+// opens the store with the lane held out (graph-off baseline) and then at a
+// range of GraphLaneWeight values, all at the calibrated fusion default, and
+// prints NDCG/Recall/MRR with ΔNDCG/ΔRecall vs the graph-off baseline. This is
+// the GraphLaneWeight ablation (#470): if every weight row sits within ε of the
+// baseline, the lane is inert at the current rerank pool and the weight knob is
+// a no-op worth removing (a separate decision). The graph lane is exercised
+// best by structural / blast-radius golden sets, so run with the matching
+// --mode for a meaningful signal.
+func runGraphSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs eval.GoldenSet, k int) error {
+	type row struct {
+		label  string
+		weight float32 // 0 marks the graph-off baseline
+		rep    eval.Report
+	}
+
+	run := func(label string, opts store.Options) (row, error) {
+		st, err := store.OpenWith(ctx, p.DBPath, opts)
+		if err != nil {
+			return row{}, fmt.Errorf("%s: %w", label, err)
+		}
+		defer func() { _ = st.Close() }()
+		results, err := eval.Run(ctx, em, st, gs, k)
+		if err != nil {
+			return row{}, fmt.Errorf("%s: %w", label, err)
+		}
+		return row{label: label, weight: opts.GraphLaneWeight, rep: eval.Compute(results, k)}, nil
+	}
+
+	// Baseline: graph lane held out entirely (the true zero the weight can't express).
+	off := storeOpts()
+	off.GraphLaneDisabled = true
+	baseline, err := run("off (baseline)", off)
+	if err != nil {
+		return err
+	}
+	rows := []row{baseline}
+
+	calibrated := store.CalibratedDefaults().GraphLaneWeight
+	weights := []float32{0.5, 1.0, 1.5, 2.0}
+	fmt.Fprintf(os.Stderr, "graph sweep: off done; running weights %v at the calibrated fusion default\n", weights)
+	for _, w := range weights {
+		opts := storeOpts()
+		opts.GraphLaneDisabled = false
+		opts.GraphLaneWeight = w
+		label := fmt.Sprintf("weight=%.1f", w)
+		if w == calibrated {
+			label += " (default)"
+		}
+		r, err := run(label, opts)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, r)
+		fmt.Fprintf(os.Stderr, "graph sweep: %s done\n", label)
+	}
+
+	// Winner = highest mean NDCG@k among the weighted rows (skip the baseline).
+	best := 1
+	for i := 1; i < len(rows); i++ {
+		if rows[i].rep.MeanNDCG > rows[best].rep.MeanNDCG {
+			best = i
+		}
+	}
+
+	// Print comparison table with deltas vs the graph-off baseline.
+	base := baseline.rep
+	fmt.Printf("\n%-20s  %8s  %8s  %8s  %8s  %8s\n", "graph lane", "NDCG@k", "Recall@k", "MRR", "ΔNDCG", "ΔRecall")
+	fmt.Printf("%-20s  %8s  %8s  %8s  %8s  %8s\n",
+		"--------------------", "--------", "--------", "--------", "--------", "--------")
+	for i, r := range rows {
+		marker := ""
+		if i == best {
+			marker = "  <- winner"
+		}
+		if i == 0 { // baseline row: no delta against itself
+			fmt.Printf("%-20s  %8.4f  %8.4f  %8.4f  %8s  %8s\n",
+				r.label, r.rep.MeanNDCG, r.rep.MeanRecall, r.rep.MRR, "—", "—")
+			continue
+		}
+		fmt.Printf("%-20s  %8.4f  %8.4f  %8.4f  %+8.4f  %+8.4f%s\n",
+			r.label, r.rep.MeanNDCG, r.rep.MeanRecall, r.rep.MRR,
+			r.rep.MeanNDCG-base.MeanNDCG, r.rep.MeanRecall-base.MeanRecall, marker)
+	}
+
+	// Verdict: is the best weight materially better than graph-off?
+	const eps = 0.005 // ~0.5pt — below this the lane isn't earning its weight knob
+	dNDCG := rows[best].rep.MeanNDCG - base.MeanNDCG
+	dRecall := rows[best].rep.MeanRecall - base.MeanRecall
+	if dNDCG < eps && dRecall < eps {
+		fmt.Printf("\nverdict: graph lane INERT — best weight (%s) gains only ΔNDCG=%+.4f ΔRecall=%+.4f over graph-off (ε=%.3f).\n",
+			rows[best].label, dNDCG, dRecall, eps)
+		fmt.Printf("         GraphLaneWeight is a no-op at this rerank pool; consider removing it (separate decision, see #470).\n")
+	} else {
+		fmt.Printf("\nverdict: graph lane CONTRIBUTES — best weight (%s) gains ΔNDCG=%+.4f ΔRecall=%+.4f over graph-off (ε=%.3f).\n",
+			rows[best].label, dNDCG, dRecall, eps)
+		fmt.Printf("         calibrate GraphLaneWeight=%.1f in calibration.yml if this holds across the corpus.\n", rows[best].weight)
+	}
+	return nil
 }
 
 // emitCalibration writes the swept winner back to the calibration artifact at
