@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alehatsman/dex/internal/compress"
 	dexctx "github.com/alehatsman/dex/internal/ctx"
 	"github.com/alehatsman/dex/internal/heatmap"
 	"github.com/alehatsman/dex/internal/store"
@@ -414,44 +413,4 @@ func formatDuration(d time.Duration) string {
 func (s *Server) sessionHeatmap(cacheDir string) (*sdk.CallToolResult, SessionOutput, error) {
 	hm := heatmap.Load(cacheDir)
 	return nil, SessionOutput{Status: "ok", Content: hm.Format(15)}, nil
-}
-
-// FeedbackInput is the input for the ctx_feedback MCP tool.
-type FeedbackInput struct {
-	ProjectRoot     string  `json:"project_root,omitempty"      jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Intent          string  `json:"intent"                      jsonschema:"current task intent: read | search | refactor | generate | test | debug | review"`
-	OutputRatio     float64 `json:"output_ratio"                jsonschema:"LLM output tokens divided by context tokens for this turn (0.0–1.0+); values below 0.05 indicate the context was unhelpful"`
-	CtxReadLastMode string  `json:"ctx_read_last_mode,omitempty" jsonschema:"the read mode used on the last file read this turn (full|signatures|map|aggressive); omit if no read was called"`
-}
-
-// FeedbackOutput is the result of ctx_feedback.
-type FeedbackOutput struct {
-	Status string `json:"status"` // "ok" | "error"
-	Hint   string `json:"hint,omitempty"`
-}
-
-// feedback handles the ctx_feedback MCP tool. It records an output-ratio
-// observation into the per-project adaptive policy so future file_view
-// mode selections can avoid modes that consistently produce thin output.
-// Feedback is the public HTTP-callable wrapper for the ctx_feedback tool.
-func (s *Server) Feedback(ctx context.Context, in FeedbackInput) (FeedbackOutput, error) {
-	_, out, err := s.feedback(ctx, nil, in)
-	return out, err
-}
-
-func (s *Server) feedback(_ context.Context, _ *sdk.CallToolRequest, in FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
-	if hint != "" {
-		return nil, FeedbackOutput{Status: "error", Hint: hint}, nil
-	}
-	if in.Intent == "" {
-		return nil, FeedbackOutput{Status: "error", Hint: "intent is required"}, nil
-	}
-	if in.CtxReadLastMode == "" {
-		// No file_view was called this turn — nothing to record.
-		return nil, FeedbackOutput{Status: "ok"}, nil
-	}
-	pt := compress.LoadPolicy(p.CacheDir)
-	pt.RecordFeedback(in.Intent, in.CtxReadLastMode, in.OutputRatio)
-	return nil, FeedbackOutput{Status: "ok"}, nil
 }

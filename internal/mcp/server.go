@@ -485,11 +485,6 @@ func (s *Server) Related(ctx context.Context, in RelatedInput) (RelatedOutput, e
 	return out, err
 }
 
-func (s *Server) FindRelated(ctx context.Context, in FindRelatedInput) (FindRelatedOutput, error) {
-	_, out, err := s.findRelated(ctx, nil, in)
-	return out, err
-}
-
 func (s *Server) Summarize(ctx context.Context, in SummarizeInput) (SummarizeOutput, error) {
 	_, out, err := s.summarize(ctx, nil, in)
 	return out, err
@@ -500,16 +495,6 @@ func (s *Server) Status(ctx context.Context) (StatusOutput, error) {
 	return out, err
 }
 
-func (s *Server) Nav(ctx context.Context) (NavOutput, error) {
-	_, out, err := s.nav(ctx, nil, NavInput{})
-	return out, err
-}
-
-func (s *Server) CompressOutput(ctx context.Context, in CompressInput) (CompressOutput, error) {
-	_, out, err := s.compressOutput(ctx, nil, in)
-	return out, err
-}
-
 func (s *Server) Knowledge(ctx context.Context, in KnowledgeInput) (KnowledgeOutput, error) {
 	_, out, err := s.knowledge(ctx, nil, in)
 	return out, err
@@ -517,21 +502,6 @@ func (s *Server) Knowledge(ctx context.Context, in KnowledgeInput) (KnowledgeOut
 
 func (s *Server) Session(ctx context.Context, in SessionInput) (SessionOutput, error) {
 	_, out, err := s.session(ctx, nil, in)
-	return out, err
-}
-
-func (s *Server) Agent(ctx context.Context, in AgentInput) (AgentOutput, error) {
-	_, out, err := s.agent(ctx, nil, in)
-	return out, err
-}
-
-func (s *Server) Share(ctx context.Context, in ShareInput) (ShareOutput, error) {
-	_, out, err := s.share(ctx, nil, in)
-	return out, err
-}
-
-func (s *Server) CtxPack(ctx context.Context, in PackInput) (PackOutput, error) {
-	_, out, err := s.ctxPack(ctx, nil, in)
 	return out, err
 }
 
@@ -678,7 +648,6 @@ type toolSurface interface {
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
 	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
 	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
-	findRelated(context.Context, *sdk.CallToolRequest, FindRelatedInput) (*sdk.CallToolResult, FindRelatedOutput, error)
 	graphDeps(context.Context, *sdk.CallToolRequest, GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error)
 	graphCallers(context.Context, *sdk.CallToolRequest, CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error)
 	graphCallees(context.Context, *sdk.CallToolRequest, CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error)
@@ -690,26 +659,15 @@ type toolSurface interface {
 	graphPath(context.Context, *sdk.CallToolRequest, PathInput) (*sdk.CallToolResult, PathOutput, error)
 	graphDiff(context.Context, *sdk.CallToolRequest, DiffInput) (*sdk.CallToolResult, DiffOutput, error)
 	graphCommunities(context.Context, *sdk.CallToolRequest, CommunitiesInput) (*sdk.CallToolResult, CommunitiesOutput, error)
-	overview(context.Context, *sdk.CallToolRequest, OverviewInput) (*sdk.CallToolResult, OverviewOutput, error)
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
 	searchGrep(context.Context, *sdk.CallToolRequest, SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error)
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
-	compressOutput(context.Context, *sdk.CallToolRequest, CompressInput) (*sdk.CallToolResult, CompressOutput, error)
 	shellRun(context.Context, *sdk.CallToolRequest, ShellInput) (*sdk.CallToolResult, ShellOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
-	compose(context.Context, *sdk.CallToolRequest, ComposeInput) (*sdk.CallToolResult, ComposeOutput, error)
-	specVerify(context.Context, *sdk.CallToolRequest, SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error)
-	agent(context.Context, *sdk.CallToolRequest, AgentInput) (*sdk.CallToolResult, AgentOutput, error)
-	share(context.Context, *sdk.CallToolRequest, ShareInput) (*sdk.CallToolResult, ShareOutput, error)
-	ctxPack(context.Context, *sdk.CallToolRequest, PackInput) (*sdk.CallToolResult, PackOutput, error)
-	nav(context.Context, *sdk.CallToolRequest, NavInput) (*sdk.CallToolResult, NavOutput, error)
-	feedback(context.Context, *sdk.CallToolRequest, FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error)
-	prefetch(context.Context, *sdk.CallToolRequest, PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error)
-	workspaceSearch(context.Context, *sdk.CallToolRequest, WorkspaceSearchInput) (*sdk.CallToolResult, WorkspaceSearchOutput, error)
 }
 
 // addTool registers h on srv with a panic recovery guard. A handler panic is

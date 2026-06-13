@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/embed"
-	"github.com/alehatsman/dex/internal/proj"
-	"github.com/alehatsman/dex/internal/store"
 )
 
 // closedURL returns an http:// URL pointing at a port guaranteed to refuse
@@ -42,32 +40,6 @@ func degradedServer(t *testing.T, projDir, cacheDir string) (*Server, string) {
 	return s, root
 }
 
-// anchorChunk finds a (path, line) that resolves to a real indexed chunk, so
-// find_related reaches its embed call rather than short-circuiting on a missing
-// anchor.
-func anchorChunk(t *testing.T, dbPath string) (string, int) {
-	t.Helper()
-	ctx := context.Background()
-	st, err := store.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	files, err := st.CodeFilePaths(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for path, maxLine := range files {
-		for line := 1; line <= maxLine; line++ {
-			if _, err := st.ChunkAt(ctx, path, line); err == nil {
-				return path, line
-			}
-		}
-	}
-	t.Fatal("no indexed chunk found to anchor find_related")
-	return "", 0
-}
-
 // TestDegradeEmbedBackendDown locks the serve/search-time graceful-degradation
 // contract (issue #175): when the embedding backend is unreachable, the
 // embedding-dependent tools return status "embedding-service-unreachable" with
@@ -93,41 +65,6 @@ func TestDegradeEmbedBackendDown(t *testing.T) {
 		}
 		if out.Status != "embedding-service-unreachable" {
 			t.Errorf("search status = %q, want embedding-service-unreachable", out.Status)
-		}
-	})
-
-	t.Run("compose", func(t *testing.T) {
-		_, out, err := s.compose(ctx, nil, ComposeInput{Query: "authenticate token", ProjectRoot: root})
-		if err != nil {
-			t.Fatalf("compose returned hard error on embed outage: %v", err)
-		}
-		if out.Status != "embedding-service-unreachable" {
-			t.Errorf("compose status = %q, want embedding-service-unreachable", out.Status)
-		}
-	})
-
-	t.Run("overview", func(t *testing.T) {
-		_, out, err := s.overview(ctx, nil, OverviewInput{Task: "understand authentication", ProjectRoot: root})
-		if err != nil {
-			t.Fatalf("overview returned hard error on embed outage: %v", err)
-		}
-		if out.Status != "embedding-service-unreachable" {
-			t.Errorf("overview status = %q, want embedding-service-unreachable", out.Status)
-		}
-	})
-
-	t.Run("find_related", func(t *testing.T) {
-		p, err := proj.Resolve(root, cacheDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		path, line := anchorChunk(t, p.DBPath)
-		_, out, ferr := s.findRelated(ctx, nil, FindRelatedInput{FilePath: path, Line: line, ProjectRoot: root})
-		if ferr != nil {
-			t.Fatalf("find_related returned hard error on embed outage: %v", ferr)
-		}
-		if out.Status != "embedding-service-unreachable" {
-			t.Errorf("find_related status = %q, want embedding-service-unreachable", out.Status)
 		}
 	})
 

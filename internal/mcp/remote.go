@@ -198,13 +198,6 @@ func (rc *remoteClient) related(ctx context.Context, _ *sdk.CallToolRequest, in 
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/neighbors"), in, &out)
 	return nil, out, err
 }
-
-func (rc *remoteClient) findRelated(ctx context.Context, _ *sdk.CallToolRequest, in FindRelatedInput) (*sdk.CallToolResult, FindRelatedOutput, error) {
-	var out FindRelatedOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/similar"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error) {
 	var out GraphDepsOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/deps"), in, &out)
@@ -276,25 +269,11 @@ func (rc *remoteClient) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, 
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/grep"), in, &out)
 	return nil, out, err
 }
-
-func (rc *remoteClient) compressOutput(ctx context.Context, _ *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
-	var out CompressOutput
-	err := rc.do(ctx, http.MethodPost, rc.base+"/v1/compress", in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
 	var out ShellOutput
 	err := rc.do(ctx, http.MethodPost, rc.base+"/v1/shell", in, &out)
 	return nil, out, err
 }
-
-func (rc *remoteClient) overview(ctx context.Context, _ *sdk.CallToolRequest, in OverviewInput) (*sdk.CallToolResult, OverviewOutput, error) {
-	var out OverviewOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/view/overview"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	var out SmellsOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/smells"), in, &out)
@@ -307,12 +286,6 @@ func (rc *remoteClient) routes(ctx context.Context, _ *sdk.CallToolRequest, in R
 	return nil, out, err
 }
 
-func (rc *remoteClient) compose(ctx context.Context, _ *sdk.CallToolRequest, in ComposeInput) (*sdk.CallToolResult, ComposeOutput, error) {
-	var out ComposeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/context"), in, &out)
-	return nil, out, err
-}
-
 // status maps to the daemon-global GET /v1/status (not project-scoped), so it
 // ignores the bound project id and sends no body — mirroring handleStatus.
 func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
@@ -320,55 +293,6 @@ func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ St
 	err := rc.do(ctx, http.MethodGet, rc.base+"/v1/status", nil, &out)
 	return nil, out, err
 }
-
-func (rc *remoteClient) specVerify(ctx context.Context, _ *sdk.CallToolRequest, in SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error) {
-	var out SpecVerifyOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/spec/check"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) agent(ctx context.Context, _ *sdk.CallToolRequest, in AgentInput) (*sdk.CallToolResult, AgentOutput, error) {
-	var out AgentOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/agent"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) share(ctx context.Context, _ *sdk.CallToolRequest, in ShareInput) (*sdk.CallToolResult, ShareOutput, error) {
-	var out ShareOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/share"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) ctxPack(ctx context.Context, _ *sdk.CallToolRequest, in PackInput) (*sdk.CallToolResult, PackOutput, error) {
-	var out PackOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/pack"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) nav(ctx context.Context, _ *sdk.CallToolRequest, _ NavInput) (*sdk.CallToolResult, NavOutput, error) {
-	var out NavOutput
-	err := rc.do(ctx, http.MethodGet, rc.base+"/v1/nav", nil, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) feedback(ctx context.Context, _ *sdk.CallToolRequest, in FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error) {
-	var out FeedbackOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/feedback"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) prefetch(ctx context.Context, _ *sdk.CallToolRequest, in PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error) {
-	var out PrefetchOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/prefetch"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) workspaceSearch(ctx context.Context, _ *sdk.CallToolRequest, in WorkspaceSearchInput) (*sdk.CallToolResult, WorkspaceSearchOutput, error) {
-	var out WorkspaceSearchOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/search/workspace"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
 	var out CyclesOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/cycles"), in, &out)

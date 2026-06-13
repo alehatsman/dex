@@ -51,12 +51,6 @@ func (p projectScoped) related(ctx context.Context, req *sdk.CallToolRequest, in
 	in.ProjectRoot = p.root
 	return p.s.related(ctx, req, in)
 }
-
-func (p projectScoped) findRelated(ctx context.Context, req *sdk.CallToolRequest, in FindRelatedInput) (*sdk.CallToolResult, FindRelatedOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.findRelated(ctx, req, in)
-}
-
 func (p projectScoped) graphDeps(ctx context.Context, req *sdk.CallToolRequest, in GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.graphDeps(ctx, req, in)
@@ -96,12 +90,6 @@ func (p projectScoped) summarize(ctx context.Context, req *sdk.CallToolRequest, 
 	in.ProjectRoot = p.root
 	return p.s.summarize(ctx, req, in)
 }
-
-func (p projectScoped) overview(ctx context.Context, req *sdk.CallToolRequest, in OverviewInput) (*sdk.CallToolResult, OverviewOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.overview(ctx, req, in)
-}
-
 func (p projectScoped) smells(ctx context.Context, req *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.smells(ctx, req, in)
@@ -132,18 +120,9 @@ func (p projectScoped) searchGrep(ctx context.Context, req *sdk.CallToolRequest,
 	return p.s.searchGrep(ctx, req, in)
 }
 
-func (p projectScoped) compressOutput(ctx context.Context, req *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
-	return p.s.compressOutput(ctx, req, in)
-}
-
 // shellRun is not project-scoped; the cwd in ShellInput governs the working directory.
 func (p projectScoped) shellRun(ctx context.Context, req *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
 	return p.s.shellRun(ctx, req, in)
-}
-
-func (p projectScoped) compose(ctx context.Context, req *sdk.CallToolRequest, in ComposeInput) (*sdk.CallToolResult, ComposeOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.compose(ctx, req, in)
 }
 
 // status is daemon-global (not project-scoped), so the bound root is ignored
@@ -151,47 +130,6 @@ func (p projectScoped) compose(ctx context.Context, req *sdk.CallToolRequest, in
 func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
 	return p.s.status(ctx, req, in)
 }
-
-func (p projectScoped) specVerify(ctx context.Context, req *sdk.CallToolRequest, in SpecVerifyInput) (*sdk.CallToolResult, SpecVerifyOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.specVerify(ctx, req, in)
-}
-
-func (p projectScoped) agent(ctx context.Context, req *sdk.CallToolRequest, in AgentInput) (*sdk.CallToolResult, AgentOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.agent(ctx, req, in)
-}
-
-func (p projectScoped) share(ctx context.Context, req *sdk.CallToolRequest, in ShareInput) (*sdk.CallToolResult, ShareOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.share(ctx, req, in)
-}
-
-func (p projectScoped) ctxPack(ctx context.Context, req *sdk.CallToolRequest, in PackInput) (*sdk.CallToolResult, PackOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.ctxPack(ctx, req, in)
-}
-
-// nav is daemon-global (not project-scoped); bound root is ignored.
-func (p projectScoped) nav(ctx context.Context, req *sdk.CallToolRequest, in NavInput) (*sdk.CallToolResult, NavOutput, error) {
-	return p.s.nav(ctx, req, in)
-}
-
-func (p projectScoped) feedback(ctx context.Context, req *sdk.CallToolRequest, in FeedbackInput) (*sdk.CallToolResult, FeedbackOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.feedback(ctx, req, in)
-}
-
-func (p projectScoped) prefetch(ctx context.Context, req *sdk.CallToolRequest, in PrefetchInput) (*sdk.CallToolResult, PrefetchOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.prefetch(ctx, req, in)
-}
-
-func (p projectScoped) workspaceSearch(ctx context.Context, req *sdk.CallToolRequest, in WorkspaceSearchInput) (*sdk.CallToolResult, WorkspaceSearchOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.workspaceSearch(ctx, req, in)
-}
-
 func (p projectScoped) graphCycles(ctx context.Context, req *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.graphCycles(ctx, req, in)

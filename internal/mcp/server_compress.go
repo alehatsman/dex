@@ -1,28 +1,11 @@
 package mcp
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
-	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-type CompressInput struct {
-	Output      string  `json:"output"                 jsonschema:"raw command output to compress"`
-	Command     string  `json:"command,omitempty"      jsonschema:"command name hint (e.g. 'go test', 'git log', 'npm install') — selects compression patterns"`
-	MaxLines    int     `json:"max_lines,omitempty"    jsonschema:"hard cap on output lines (default 200)"`
-	TargetRatio float64 `json:"target_ratio,omitempty" jsonschema:"optional output/input token ratio target in (0,1) — e.g. 0.4 means compress to 40% of original; uses information-bottleneck binary search; applied after pattern passes"`
-}
-
-type CompressOutput struct {
-	Status        string `json:"status"`
-	Compressed    string `json:"compressed"`
-	OriginalLines int    `json:"original_lines"`
-	OutputLines   int    `json:"output_lines"`
-	SavedPct      int    `json:"saved_pct"`
-}
 
 // minCompressLines is the minimum number of lines required before any pattern
 // runs — tiny outputs gain nothing and can only be made worse.
@@ -292,33 +275,4 @@ func dispatchDefault(lines []string) []string {
 		return dedupd
 	}
 	return compress.CompressGeneric(lines)
-}
-
-func (s *Server) compressOutput(_ context.Context, _ *sdk.CallToolRequest, in CompressInput) (*sdk.CallToolResult, CompressOutput, error) {
-	if in.Output == "" {
-		return nil, CompressOutput{Status: "ok", Compressed: ""}, nil
-	}
-	text, original, outLines := CompressText(in.Output, in.Command, in.MaxLines)
-
-	// Information-bottleneck pass: binary-search entropy threshold to hit the
-	// caller's target ratio. Applied after pattern passes so the IB search
-	// operates on already-compressed output.
-	if in.TargetRatio > 0 && in.TargetRatio < 1 {
-		if ib := compress.CompressIB(text, in.TargetRatio); ib != text {
-			text = ib
-			outLines = len(strings.Split(text, "\n"))
-		}
-	}
-
-	saved := 0
-	if original > 0 {
-		saved = (original - outLines) * 100 / original
-	}
-	return nil, CompressOutput{
-		Status:        "ok",
-		Compressed:    text,
-		OriginalLines: original,
-		OutputLines:   outLines,
-		SavedPct:      saved,
-	}, nil
 }

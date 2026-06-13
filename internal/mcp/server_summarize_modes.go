@@ -278,3 +278,83 @@ func graphRelatedHint(ctx context.Context, st *store.Store, relPath string) stri
 	}
 	return "\n# Related (call graph): " + strings.Join(neighbors, ", ") + "\n"
 }
+
+// inlineTaskSymbol appends the body of the symbol most relevant to the active
+// session task (if any) to content, so a task-focused read surfaces the code
+// that matters even under a compressed mode. Moved here from the removed
+// server_compose.go (#429) — it is the only live consumer.
+func inlineTaskSymbol(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, content string) string {
+	sess, ok, err := st.SessionGet(ctx)
+	if err != nil || !ok || sess.Task == "" {
+		return content
+	}
+	queryTokens := tokenizeWords(sess.Task)
+	if len(queryTokens) == 0 {
+		return content
+	}
+	var bestSym store.GraphSymbol
+	bestScore := 0
+	for _, sym := range syms {
+		if sc := symbolQueryScore(queryTokens, sym); sc > bestScore {
+			bestScore = sc
+			bestSym = sym
+		}
+	}
+	if bestScore == 0 || data == nil {
+		return content
+	}
+	endLine := bestSym.EndLine
+	if endLine-bestSym.StartLine > 60 {
+		endLine = bestSym.StartLine + 59
+	}
+	body, sLine, eLine := sliceLines(data, bestSym.StartLine, endLine)
+	if len(body) == 0 {
+		return content
+	}
+	return content + fmt.Sprintf("\n# Task-relevant: %s %s (lines %d-%d)\n```\n%s```\n",
+		bestSym.Kind, bestSym.QualifiedName, sLine, eLine, string(body))
+}
+
+// symbol's qualified name tokens. 0 means no overlap.
+func symbolQueryScore(queryTokens []string, sym store.GraphSymbol) int {
+	symTokens := tokenizeWords(sym.QualifiedName)
+	score := 0
+	for _, qt := range queryTokens {
+		for _, st := range symTokens {
+			if qt == st {
+				score++
+			}
+		}
+	}
+	return score
+}
+
+// tokenizeWords splits text into lowercase tokens (length > 2) breaking on
+// non-alphanumeric characters and camelCase boundaries.
+func tokenizeWords(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			cur.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			if cur.Len() > 2 {
+				tokens = append(tokens, cur.String())
+			}
+			cur.Reset()
+			cur.WriteRune(r + 32) // toLower
+		case r >= '0' && r <= '9':
+			cur.WriteRune(r)
+		default:
+			if cur.Len() > 2 {
+				tokens = append(tokens, cur.String())
+			}
+			cur.Reset()
+		}
+	}
+	if cur.Len() > 2 {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens
+}
