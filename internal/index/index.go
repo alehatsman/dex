@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -327,8 +328,18 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		existing := existingBatch[sf.rel]
 		seen += len(sf.chunks)
 
+		// content_sha1 is position-independent so a chunk that only shifts
+		// lines is not re-embedded. That makes byte-identical chunks in one
+		// file collide on UNIQUE(path, content_sha1) and silently drop all but
+		// the last (#434). Disambiguate repeats with a per-file ordinal folded
+		// into the SHA; the first occurrence keeps the plain content hash so
+		// non-duplicate chunks (the overwhelming majority) are unaffected.
+		dupCount := make(map[string]int, len(sf.chunks))
+
 		for _, c := range sf.chunks {
-			sha := chunkSHA(c.Content)
+			base := chunkSHA(c.Content)
+			sha := dedupSHA(base, dupCount[base])
+			dupCount[base]++
 			if existing[sha] {
 				if err := ix.Store.TouchSeen(ctx, sf.rel, sha, c.Name, c.StartLine, c.EndLine, startTime); err != nil {
 					return err
@@ -449,5 +460,17 @@ func (ix *Indexer) embedAndUpsertBatch(ctx context.Context, batch []pending, sta
 
 func chunkSHA(content string) string {
 	h := sha1.Sum([]byte(content))
+	return hex.EncodeToString(h[:])
+}
+
+// dedupSHA disambiguates byte-identical chunks within a single file. The first
+// occurrence (ordinal 0) returns the plain content hash so the common case is
+// unchanged; later occurrences mix the ordinal into the digest so each gets a
+// distinct content_sha1 and survives UPSERT under UNIQUE(path, content_sha1).
+func dedupSHA(base string, ordinal int) string {
+	if ordinal == 0 {
+		return base
+	}
+	h := sha1.Sum([]byte(base + "\x00" + strconv.Itoa(ordinal)))
 	return hex.EncodeToString(h[:])
 }

@@ -199,6 +199,77 @@ func Beta() string { return "beta" }
 	}
 }
 
+// TestDuplicateContentChunksSurvive guards #434: two byte-identical chunks in
+// one file used to collide on UNIQUE(path, content_sha1) and silently drop all
+// but the last. The per-file dedup ordinal must give each a distinct
+// content_sha1 so both survive indexing.
+func TestDuplicateContentChunksSurvive(t *testing.T) {
+	srv := fakeEmbedServer(t)
+	defer srv.Close()
+
+	// indexDupSHAs builds a fresh index of a Go file holding n byte-identical
+	// Dup() declarations and returns how many distinct content_sha1 rows the
+	// store kept for it. Fresh projects (separate temp dirs) avoid any mtime
+	// fast-path / prune interplay — each call exercises the chunk path cleanly.
+	indexDupSHAs := func(n int) int {
+		t.Helper()
+		projDir := t.TempDir()
+		cacheDir := t.TempDir()
+		writeIndexAll(t, projDir)
+
+		body := "package main\n"
+		// Byte-identical source text — won't compile, but the indexer chunks
+		// text, not a typechecked program, so the n chunks hash identically.
+		for i := 0; i < n; i++ {
+			body += "\nfunc Dup() string { return \"x\" }\n"
+		}
+		writeFile(t, filepath.Join(projDir, "dup.go"), body)
+
+		ctx := context.Background()
+		p, err := proj.Resolve(projDir, cacheDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.EnsureCacheDir(); err != nil {
+			t.Fatal(err)
+		}
+		st, err := store.Open(ctx, p.DBPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+		ig, err := ignore.New(p.Root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		em := embed.New(srv.URL, "fake", 8, 10*time.Second)
+		ix := New(p, st, em, ig, Options{Verbose: false})
+		if err := ix.Run(ctx); err != nil {
+			t.Fatalf("Run (n=%d): %v", n, err)
+		}
+		shas, err := st.ExistingSHAsBatch(ctx, []string{"dup.go"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(shas["dup.go"])
+	}
+
+	// Before #434's fix, byte-identical chunks collided on
+	// UNIQUE(path, content_sha1) and all but the last were silently dropped on
+	// UPSERT — so the distinct count would flatline regardless of n. With the
+	// per-file dedup ordinal each duplicate gets a distinct content_sha1, so
+	// the count must rise one-for-one with each added identical declaration.
+	base := indexDupSHAs(1)
+	if base < 1 {
+		t.Fatalf("baseline indexed no chunks for dup.go")
+	}
+	for _, n := range []int{2, 3, 5} {
+		if got, want := indexDupSHAs(n), base+(n-1); got != want {
+			t.Errorf("n=%d identical chunks: got %d distinct content_sha1, want %d (baseline %d + %d duplicates)", n, got, want, base, n-1)
+		}
+	}
+}
+
 // TestNewlyIgnoredEviction makes sure that adding a path to
 // .dexignore (or .gitignore) between runs evicts the chunks that
 // were previously indexed under that path. Without explicit eviction
