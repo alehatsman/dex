@@ -50,6 +50,14 @@ const (
 	rgTimeout            = 2 * time.Second
 )
 
+// Enricher holds the static context shared across all enrichment legs for
+// a single contextRouter request. Methods on Enricher replace the former
+// package-level functions that required projectRoot to be threaded through
+// every call.
+type Enricher struct {
+	projectRoot string
+}
+
 // refCapsFor returns (perSymbol, total) reference caps for the given
 // request k. Floors at the original defaults so a caller passing the
 // default k=8 sees no behavior change; ceilings keep rg work bounded
@@ -75,14 +83,14 @@ func clampInt(v, lo, hi int) int {
 // enrichSymbolsSigDoc fills Signature and Doc on each SymbolHit in
 // place. Each symbol costs one bounded file read. Symbols with empty
 // Path or StartLine=0 are skipped silently.
-func enrichSymbolsSigDoc(projectRoot string, syms []SymbolHit) {
+func (e *Enricher) enrichSymbolsSigDoc(syms []SymbolHit) {
 	for i := range syms {
 		if syms[i].Path == "" || syms[i].StartLine <= 0 {
 			continue
 		}
 		abs := syms[i].Path
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(projectRoot, abs)
+			abs = filepath.Join(e.projectRoot, abs)
 		}
 		sig, doc := readSignatureAndDoc(abs, syms[i].StartLine, bareSymbolName(syms[i].QualifiedName))
 		syms[i].Signature = sig
@@ -460,7 +468,7 @@ func looksLikeDeclaration(line string) bool {
 // never recurses and never opens files beyond os.Stat to confirm
 // existence. Returns paths relative to projectRoot when possible so
 // they match the format used elsewhere in the bundle.
-func pairSiblingTests(projectRoot, relPath string) []string {
+func (e *Enricher) pairSiblingTests(relPath string) []string {
 	if relPath == "" {
 		return nil
 	}
@@ -499,7 +507,7 @@ func pairSiblingTests(projectRoot, relPath string) []string {
 	var out []string
 	for _, c := range candidates {
 		rel := filepath.Join(dir, c)
-		abs := filepath.Join(projectRoot, rel)
+		abs := filepath.Join(e.projectRoot, rel)
 		if _, err := os.Stat(abs); err == nil {
 			out = append(out, rel)
 		}
@@ -517,7 +525,7 @@ var nearestDocFiles = []string{"CLAUDE.md", "doc.go", "README.md"}
 // projectRoot, returning the first doc file it finds. Returns "" if
 // none. Cap on traversal: stops at projectRoot or at depth 10 (defends
 // against pathological project layouts).
-func findNearestDoc(projectRoot, relPath string) string {
+func (e *Enricher) findNearestDoc(relPath string) string {
 	if relPath == "" {
 		return ""
 	}
@@ -525,7 +533,7 @@ func findNearestDoc(projectRoot, relPath string) string {
 	for range 10 {
 		for _, name := range nearestDocFiles {
 			candidate := filepath.Join(dir, name)
-			abs := filepath.Join(projectRoot, candidate)
+			abs := filepath.Join(e.projectRoot, candidate)
 			if _, err := os.Stat(abs); err == nil {
 				// Don't return relPath itself — if the suggested read IS
 				// the README, skipping it as a sibling doc is correct.
@@ -553,7 +561,7 @@ func findNearestDoc(projectRoot, relPath string) string {
 //
 // If `rg` isn't on PATH or all invocations fail, returns nil — the
 // caller still has the deferred-graph `avoid` line to fall back on.
-func runReferencesLane(ctx context.Context, projectRoot string, k int, symbols []SymbolHit) []RefHit {
+func (e *Enricher) runReferencesLane(ctx context.Context, k int, symbols []SymbolHit) []RefHit {
 	if _, err := exec.LookPath("rg"); err != nil {
 		return nil
 	}
@@ -570,7 +578,7 @@ func runReferencesLane(ctx context.Context, projectRoot string, k int, symbols [
 		if bare == "" {
 			continue
 		}
-		hits := ripgrepSymbol(ctx, projectRoot, bare, perSymCap, sym, seen)
+		hits := e.ripgrepSymbol(ctx, bare, perSymCap, sym, seen)
 		// Per-symbol cap before moving to the next, so a hot symbol
 		// can't starve the others.
 		if len(hits) > perSymCap {
@@ -599,7 +607,7 @@ func bareSymbolName(qualified string) string {
 // parses its `path:line:text` output into RefHits, skipping the
 // definition line. Single subprocess, bounded by rgTimeout. perSymCap
 // caps per-file matches via rg's --max-count.
-func ripgrepSymbol(ctx context.Context, projectRoot, symbol string, perSymCap int, defSym SymbolHit, seen map[string]struct{}) []RefHit {
+func (e *Enricher) ripgrepSymbol(ctx context.Context, symbol string, perSymCap int, defSym SymbolHit, seen map[string]struct{}) []RefHit {
 	cctx, cancel := context.WithTimeout(ctx, rgTimeout)
 	defer cancel()
 
@@ -613,7 +621,7 @@ func ripgrepSymbol(ctx context.Context, projectRoot, symbol string, perSymCap in
 		"--color=never",
 		"--line-number",
 		"-e", symbol,
-		projectRoot,
+		e.projectRoot,
 	)
 	stdout, err := cmd.Output()
 	if err != nil {
@@ -622,7 +630,7 @@ func ripgrepSymbol(ctx context.Context, projectRoot, symbol string, perSymCap in
 	}
 
 	var out []RefHit
-	defAbs := filepath.Join(projectRoot, defSym.Path)
+	defAbs := filepath.Join(e.projectRoot, defSym.Path)
 	sc := bufio.NewScanner(strings.NewReader(string(stdout)))
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -638,7 +646,7 @@ func ripgrepSymbol(ctx context.Context, projectRoot, symbol string, perSymCap in
 		}
 		// Normalize to project-relative path for consistency with the
 		// rest of the bundle.
-		rel, err := filepath.Rel(projectRoot, path)
+		rel, err := filepath.Rel(e.projectRoot, path)
 		if err == nil && !strings.HasPrefix(rel, "..") {
 			path = rel
 		}
@@ -680,7 +688,7 @@ func parseRipgrepLine(s string) (path string, line int, text string, ok bool) {
 // enrichBlame populates LastCommit / LastAuthor on the meta for each
 // path. One `git log -1` subprocess per path, bounded by blameTimeout
 // individually. If `git` isn't available, returns silently.
-func enrichBlame(ctx context.Context, projectRoot string, paths []string, meta map[string]*PathMeta) {
+func (e *Enricher) enrichBlame(ctx context.Context, paths []string, meta map[string]*PathMeta) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return
 	}
@@ -688,7 +696,7 @@ func enrichBlame(ctx context.Context, projectRoot string, paths []string, meta m
 		cctx, cancel := context.WithTimeout(ctx, blameTimeout)
 		// %h|%ad|%an|%s with date=short keeps the field compact.
 		cmd := exec.CommandContext(cctx, "git",
-			"-C", projectRoot,
+			"-C", e.projectRoot,
 			"log", "-1",
 			"--format=%h|%ad|%an|%s",
 			"--date=short",
@@ -718,9 +726,9 @@ func enrichBlame(ctx context.Context, projectRoot string, paths []string, meta m
 
 // codeownersPath returns the first CODEOWNERS file that exists in the
 // standard locations, or "".
-func codeownersPath(projectRoot string) string {
+func (e *Enricher) codeownersPath() string {
 	for _, rel := range []string{"CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"} {
-		abs := filepath.Join(projectRoot, rel)
+		abs := filepath.Join(e.projectRoot, rel)
 		if _, err := os.Stat(abs); err == nil {
 			return abs
 		}
@@ -737,8 +745,8 @@ type codeownersRule struct {
 }
 
 // loadCodeowners parses the CODEOWNERS file. Returns nil if missing.
-func loadCodeowners(projectRoot string) []codeownersRule {
-	abs := codeownersPath(projectRoot)
+func (e *Enricher) loadCodeowners() []codeownersRule {
+	abs := e.codeownersPath()
 	if abs == "" {
 		return nil
 	}
@@ -795,8 +803,8 @@ func matchOwners(rules []codeownersRule, relPath string) []string {
 }
 
 // enrichOwners fills Owners on meta from a parsed CODEOWNERS file.
-func enrichOwners(projectRoot string, paths []string, meta map[string]*PathMeta) {
-	rules := loadCodeowners(projectRoot)
+func (e *Enricher) enrichOwners(paths []string, meta map[string]*PathMeta) {
+	rules := e.loadCodeowners()
 	if rules == nil {
 		return
 	}
@@ -815,14 +823,14 @@ func enrichOwners(projectRoot string, paths []string, meta map[string]*PathMeta)
 // enrichBuildTags scans the first ~20 lines of each Go file for a
 // //go:build (or legacy // +build) line and the `package` clause.
 // No-op for non-.go paths.
-func enrichBuildTags(projectRoot string, paths []string, meta map[string]*PathMeta) {
+func (e *Enricher) enrichBuildTags(paths []string, meta map[string]*PathMeta) {
 	for _, p := range paths {
 		if filepath.Ext(p) != ".go" {
 			continue
 		}
 		abs := p
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(projectRoot, p)
+			abs = filepath.Join(e.projectRoot, p)
 		}
 		tags, pkg := readBuildTagsAndPackage(abs)
 		if tags == "" && pkg == "" {
@@ -899,10 +907,10 @@ func uniquePaths(reads []SuggestedRead, syms []SymbolHit) []string {
 // fields empty rather than propagating errors. `k` is the request's
 // per-lane cap; passed through to the references lane so wider
 // requests get proportionally wider reference lists.
-func enrich(ctx context.Context, projectRoot, intent string, k int, out *ContextOutput) {
+func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *ContextOutput) {
 	// Symbol-level enrichment is always on when we have symbol hits.
 	if len(out.Symbols) > 0 {
-		enrichSymbolsSigDoc(projectRoot, out.Symbols)
+		e.enrichSymbolsSigDoc(out.Symbols)
 	}
 
 	paths := uniquePaths(out.SuggestedReads, out.Symbols)
@@ -914,8 +922,8 @@ func enrich(ctx context.Context, projectRoot, intent string, k int, out *Context
 
 	// Always-on path heuristics.
 	for _, p := range paths {
-		tests := pairSiblingTests(projectRoot, p)
-		nearest := findNearestDoc(projectRoot, p)
+		tests := e.pairSiblingTests(p)
+		nearest := e.findNearestDoc(p)
 		if len(tests) == 0 && nearest == "" {
 			continue
 		}
@@ -926,13 +934,13 @@ func enrich(ctx context.Context, projectRoot, intent string, k int, out *Context
 
 	// editing_context: blame + owners.
 	if intent == IntentEditingContext {
-		enrichBlame(ctx, projectRoot, paths, meta)
-		enrichOwners(projectRoot, paths, meta)
+		e.enrichBlame(ctx, paths, meta)
+		e.enrichOwners(paths, meta)
 	}
 
 	// editing_context, architecture, package_topology: build tags + pkg.
 	if intent == IntentEditingContext || intent == IntentArchitecture || intent == IntentPackageTopology {
-		enrichBuildTags(projectRoot, paths, meta)
+		e.enrichBuildTags(paths, meta)
 	}
 
 	if len(meta) > 0 {
@@ -944,6 +952,6 @@ func enrich(ctx context.Context, projectRoot, intent string, k int, out *Context
 
 	// References: callers/callees with at least one symbol hit.
 	if (intent == IntentCallers || intent == IntentCallees) && len(out.Symbols) > 0 {
-		out.References = runReferencesLane(ctx, projectRoot, k, out.Symbols)
+		out.References = e.runReferencesLane(ctx, k, out.Symbols)
 	}
 }

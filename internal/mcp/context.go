@@ -403,7 +403,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits)
 		out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
 	}
-	enrich(ctx, p.Root, intent, k, &out)
+	(&Enricher{projectRoot: p.Root}).Enrich(ctx, intent, k, &out)
 	topSem := maxSemanticScore(out.SemanticHits)
 	var graphEdgeCount int
 	if out.Graph != nil {

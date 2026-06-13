@@ -34,7 +34,7 @@ func TestPairSiblingTests(t *testing.T) {
 		{"unknown.cpp", nil}, // unsupported extension
 	}
 	for _, tc := range cases {
-		got := pairSiblingTests(root, tc.path)
+		got := (&Enricher{projectRoot: root}).pairSiblingTests(tc.path)
 		if len(got) != len(tc.want) {
 			t.Errorf("pairSiblingTests(%q) = %v, want %v", tc.path, got, tc.want)
 			continue
@@ -56,20 +56,20 @@ func TestFindNearestDoc(t *testing.T) {
 	writeFile(t, filepath.Join(root, "internal", "CLAUDE.md"), "# claude\n")
 
 	// CLAUDE.md at internal/ wins over README.md at root.
-	got := findNearestDoc(root, "internal/deep/pkg/code.go")
+	got := (&Enricher{projectRoot: root}).findNearestDoc("internal/deep/pkg/code.go")
 	if got != "internal/CLAUDE.md" {
 		t.Errorf("got %q, want internal/CLAUDE.md", got)
 	}
 
 	// A file at the top level falls back to root README.md.
 	writeFile(t, filepath.Join(root, "top.go"), "package x\n")
-	got = findNearestDoc(root, "top.go")
+	got = (&Enricher{projectRoot: root}).findNearestDoc("top.go")
 	if got != "README.md" {
 		t.Errorf("got %q, want README.md", got)
 	}
 
 	// The README itself shouldn't be returned as its own nearest doc.
-	got = findNearestDoc(root, "README.md")
+	got = (&Enricher{projectRoot: root}).findNearestDoc("README.md")
 	if got == "README.md" {
 		t.Error("findNearestDoc should not return the file itself")
 	}
@@ -563,7 +563,7 @@ func TestEnrichEditingContext(t *testing.T) {
 		SuggestedReads: []SuggestedRead{{Path: "pkg/core.go", StartLine: 6, EndLine: 6}},
 		Symbols:        []SymbolHit{{QualifiedName: "Run", Path: "pkg/core.go", StartLine: 6, EndLine: 6}},
 	}
-	enrich(context.Background(), root, IntentEditingContext, 8, out)
+	(&Enricher{projectRoot: root}).Enrich(context.Background(), IntentEditingContext, 8, out)
 
 	if out.Symbols[0].Signature == "" {
 		t.Error("symbol signature should be populated")
@@ -608,7 +608,7 @@ func TestEnrichBehaviorSearchOmitsHeavyLegs(t *testing.T) {
 		SuggestedReads: []SuggestedRead{{Path: "x.go", StartLine: 3, EndLine: 3}},
 		Symbols:        []SymbolHit{{QualifiedName: "F", Path: "x.go", StartLine: 3, EndLine: 3}},
 	}
-	enrich(context.Background(), root, IntentBehaviorSearch, 8, out)
+	(&Enricher{projectRoot: root}).Enrich(context.Background(), IntentBehaviorSearch, 8, out)
 
 	meta, ok := out.Annotations["x.go"]
 	if !ok {
@@ -662,7 +662,7 @@ func TestRunReferencesLaneCapsScaleWithK(t *testing.T) {
 
 	// With a single symbol the per-symbol cap dominates (the total cap
 	// never kicks in). At k=8: perSymCap=clamp(8*3,20,60)=24.
-	got8 := runReferencesLane(context.Background(), root, 8, []SymbolHit{def})
+	got8 := (&Enricher{projectRoot: root}).runReferencesLane(context.Background(), 8, []SymbolHit{def})
 	wantPerSym8, _ := refCapsFor(8)
 	if len(got8) != wantPerSym8 {
 		t.Errorf("k=8 produced %d refs, want %d (per-symbol cap)", len(got8), wantPerSym8)
@@ -670,7 +670,7 @@ func TestRunReferencesLaneCapsScaleWithK(t *testing.T) {
 
 	// At k=30: perSymCap=60, total=100; the fixture has only 50 usages
 	// so all 50 surface. The point of the test is k=30 > k=8.
-	got30 := runReferencesLane(context.Background(), root, 30, []SymbolHit{def})
+	got30 := (&Enricher{projectRoot: root}).runReferencesLane(context.Background(), 30, []SymbolHit{def})
 	if len(got30) <= len(got8) {
 		t.Errorf("k=30 yielded %d refs, k=8 yielded %d; expected wider cap to surface more usages",
 			len(got30), len(got8))
