@@ -10,17 +10,24 @@ import (
 var (
 	rePytestSummary = &lazyRe{pattern: `=+\s+(\d+) (failed|passed|error)`}
 	rePytestFailed  = &lazyRe{pattern: `^FAILED\s+`}
+	// Assertion / traceback detail: pytest prints the failing source line with a
+	// `>` marker and the error itself with an `E` marker, both at column 0.
+	rePytestDetail = &lazyRe{pattern: `^[E>]\s`}
 )
 
 func CompressPytest(lines []string) []string {
 	var summaryLine string
 	var failures []string
+	var details []string
 	for _, l := range lines {
 		if rePytestSummary.MatchString(l) {
 			summaryLine = strings.TrimSpace(l)
 		}
 		if rePytestFailed.MatchString(l) {
 			failures = append(failures, strings.TrimSpace(l))
+		}
+		if rePytestDetail.MatchString(l) {
+			details = append(details, l)
 		}
 	}
 	if summaryLine == "" {
@@ -33,6 +40,16 @@ func CompressPytest(lines []string) []string {
 			break
 		}
 		out = append(out, "  "+f)
+	}
+	// Keep the assertion/traceback detail so the failure reason survives, not just
+	// the FAILED count (#452). Bounded so a pathological dump can't blow the budget.
+	const maxDetail = 30
+	for i, d := range details {
+		if i >= maxDetail {
+			out = append(out, fmt.Sprintf("  … +%d more detail lines", len(details)-maxDetail))
+			break
+		}
+		out = append(out, d)
 	}
 	return out
 }
