@@ -34,6 +34,20 @@ and edges (`calls`, `imports`, doc `links`/`wikilinks`/`tags`), join them to
 chunk rows, then compute PageRank + degree centrality over `calls` edges.
 `--graph=off` skips it; `--graph=only` skips the chunk passes.
 
+> **Known limitation (v1): edge resolution is language-tiered.** Go `calls`
+> edges are *type-resolved* via `go/packages` + `go/types`, so method and
+> receiver calls (`x.M()`, interface dispatch) bind to the exact target. The
+> other languages are name-resolved by the tree-sitter extractors with no type
+> info: same-file and import-table calls resolve, but receiver/method calls on
+> typed values (Python `x.method()`, Rust `value.method()`, Java calls on typed
+> receivers) are best-effort and frequently dropped. The effect compounds in the
+> `calls` graph: Go nodes accrue more edges from better resolution, which
+> systematically skews PageRank/betweenness centrality and Louvain clusters
+> toward Go symbols in polyglot repos — an artifact of resolution accuracy, not
+> real importance. Treat cross-language centrality and cluster rankings as
+> approximate. Improving receiver resolution for the non-Go extractors is future
+> work.
+
 The embedding dimension is fixed for the life of an index — changing the
 embedding model requires `dex reindex`.
 
