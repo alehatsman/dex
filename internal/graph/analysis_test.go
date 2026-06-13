@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -171,5 +172,32 @@ func TestPageRankEmpty(t *testing.T) {
 	pr := PageRank(nil, nil)
 	if len(pr) != 0 {
 		t.Errorf("got %d entries, want 0", len(pr))
+	}
+}
+
+// TestLouvainCommunitiesDeterministicOnTies guards #441: the best-community
+// search must break gain ties deterministically. The graph below is a
+// symmetric barbell — two equal triangles joined by a single bridge node
+// "x" connected once to each side — so x's modularity gain for joining
+// either community is exactly equal. With the old map-order iteration over
+// candidate communities, the winning side was decided by Go's randomized
+// map ranging, so identical inputs produced different community_id /
+// clusters output across runs. The fix iterates candidates in sorted key
+// order. Run many times (Go randomizes map iteration per range) and require
+// every partition to match the first.
+func TestLouvainCommunitiesDeterministicOnTies(t *testing.T) {
+	nodes := nodesOf("a0", "a1", "a2", "b0", "b1", "b2", "x")
+	edges := callEdges(
+		"a0", "a1", "a1", "a2", "a2", "a0", // triangle A
+		"b0", "b1", "b1", "b2", "b2", "b0", // triangle B
+		"x", "a0", "x", "b0", // bridge, equal to each side
+	)
+
+	want := LouvainCommunities(nodes, edges).Communities
+	for i := 1; i < 64; i++ {
+		got := LouvainCommunities(nodes, edges).Communities
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Louvain partition non-deterministic across runs:\n run0  = %v\n run%-3d= %v", want, i, got)
+		}
 	}
 }

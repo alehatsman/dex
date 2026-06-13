@@ -362,10 +362,22 @@ func LouvainCommunities(nodes []Node, edges []Edge) CommunityResult {
 
 			bestGain := 0.0
 			bestComm := ci
-			for cj, kij := range kc {
+			// Iterate candidate communities in sorted key order. Go map
+			// iteration is randomized, and the tie test below lets the
+			// first-seen gain within the 1e-10 margin win — so a random
+			// order makes the chosen partition (and thus community_id /
+			// clusters output) vary between identical indexings. Sorting
+			// the keys makes the winner deterministic on ties (#441).
+			cjs := make([]int, 0, len(kc))
+			for cj := range kc {
+				cjs = append(cjs, cj)
+			}
+			sort.Ints(cjs)
+			for _, cj := range cjs {
 				if cj == ci {
 					continue
 				}
+				kij := kc[cj]
 				// ΔQ = [kij - ki*commWeight[cj]/m2] / (m2/2)
 				// Simplified (drop the /m2 scaling since it's constant):
 				gain := kij - ki*commWeight[cj]/m2
