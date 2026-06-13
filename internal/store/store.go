@@ -1653,9 +1653,13 @@ func rrfWeights(qt queryType) (bm25W, denseW float32) {
 // per-file diversity via Options.MaxHitsPerFile. The canonical local quality
 // rerank (noise/definition/coherence/MMR) is applied exactly once, here.
 //
-// The graph-proximity lane is applied when a session exists: graph-adjacent
-// files of recently-touched session files are fused at 0.5× RRF weight before
-// reranking, matching the lane in search_semantic.
+// Graph expansion runs BEFORE the cross-encoder rerank so graph-boosted
+// semantic hits (files in the semantic pool that are also graph-adjacent) get
+// the benefit of the extra RRF score. However, pure graph-only hits — files
+// that are NOT in the original semantic pool — are excluded from the reranker
+// and appended as breadth-only tail additions. This prevents the content-aware
+// cross-encoder (which gained real text for graph hits after #361) from
+// promoting graph-only files above true semantic gold files. (#394)
 func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string, k int) ([]Hit, error) {
 	// Over-fetch to give the graph-fuse and rerank stages headroom.
 	candidateK := k * 5
@@ -1666,11 +1670,36 @@ func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string
 	if err != nil || len(hits) == 0 {
 		return hits, err
 	}
+
+	// Record semantic-origin paths so we can separate them from pure graph
+	// additions after the expansion step.
+	semanticPaths := make(map[string]struct{}, len(hits))
+	for i := range hits {
+		semanticPaths[hits[i].Path] = struct{}{}
+	}
+
+	// Graph expansion: boosts semantic hits that are also graph-adjacent and
+	// adds graph-only neighbors for breadth.
 	hits = s.FuseSpreadingActivation(ctx, hits, queryVec, candidateK)
-	hits, err = s.RerankFused(ctx, queryText, hits, k)
+
+	// Split merged pool: semantic-origin hits go to the cross-encoder; pure
+	// graph-only hits are held aside to avoid cross-encoder crowding. (#394)
+	rerankPool := hits[:0:0]
+	var graphTail []Hit
+	for _, h := range hits {
+		if _, ok := semanticPaths[h.Path]; ok {
+			rerankPool = append(rerankPool, h)
+		} else {
+			graphTail = append(graphTail, h)
+		}
+	}
+
+	rerankPool, err = s.RerankFused(ctx, queryText, rerankPool, k)
 	if err != nil {
 		return nil, err
 	}
+
+	hits = append(rerankPool, graphTail...)
 	if s.opts.MaxHitsPerFile > 0 {
 		hits = diversify(hits, s.opts.MaxHitsPerFile)
 	}

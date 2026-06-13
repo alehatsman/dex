@@ -3,12 +3,12 @@
     "lane": "full",
     "k": 10,
     "num_queries": 304,
-    "num_reached": 240,
-    "reach_rate": 0.7894736842105263,
-    "mean_calls": 3.025,
+    "num_reached": 219,
+    "reach_rate": 0.7203947368421053,
+    "mean_calls": 3.146118721461187,
     "median_calls": 2,
-    "mean_tokens": 21139.7125,
-    "median_tokens": 14766.5,
+    "mean_tokens": 19189.34703196347,
+    "median_tokens": 9721,
     "results": [
       {
         "query": "maintenance mode stub — dex mcp --maintenance",
@@ -22,14 +22,14 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26662
+        "tokens": 26661
       },
       {
         "query": "use GET /v1/models for Health() instead of live inference",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 4796
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 7099
       },
       {
         "query": "add 'dex knowledge add|query|rm' verb",
@@ -50,147 +50,147 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2176
+        "tokens": 2174
       },
       {
         "query": "delta re-read on changed files (#217)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30244
+        "tokens": 30290
       },
       {
         "query": "promote graph_* rows to canonical rulesContent, bump to v2 (#245)",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 7251
+        "tokens": 7250
       },
       {
         "query": "richer summary progress reporting in dex index status",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26651
+        "tokens": 26653
       },
       {
         "query": "detect stale/drifted Claude routing rules (#244)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 4996
+        "tokens": 5010
       },
       {
         "query": "fix if-return revive in store.migrate (#243)",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27156
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 64884
       },
       {
         "query": "clear golangci-lint full-gate failures (#243)",
         "reached": true,
-        "first_gold_rank": 6,
-        "calls": 7,
-        "tokens": 34623
+        "first_gold_rank": 8,
+        "calls": 9,
+        "tokens": 57456
       },
       {
         "query": "extract migrateCoAccessEdges to reduce cyclop delta",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27156
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 55261
       },
       {
         "query": "suppress gosec G202 on CoAccessNeighbors query build",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1743
+        "tokens": 1746
       },
       {
         "query": "accumulate dirty dirs across batches in IdleSummaryDrainer",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 89063
+        "tokens": 94728
       },
       {
         "query": "mini-batch embed in runPackageJobs (#226)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 49667
+        "tokens": 51253
       },
       {
         "query": "prefetch grounding + git subjects before workers (#224)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 29484
+        "tokens": 31067
       },
       {
         "query": "pipelined embed — producer-consumer in DrainPendingSummariesBatch (#221)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 54301
+        "tokens": 56090
       },
       {
         "query": "dirty-dir incremental cascade (#222)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 26690
+        "tokens": 27048
       },
       {
         "query": "raise default SummaryConcurrency 4→8 for dual-GPU setups (issue #228)",
         "reached": true,
-        "first_gold_rank": 6,
-        "calls": 7,
-        "tokens": 40825
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 64077
       },
       {
         "query": "parallelize fetchRepoGrounding (issue #227)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 29842
+        "tokens": 33997
       },
       {
         "query": "use Search not SearchFused; SearchFused returns full pool (k×5, min 30), inflating retrieved tokens and recall",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 102063
+        "tokens": 76788
       },
       {
         "query": "dataset path lookup by project root; fix flag parsing; add reference baseline",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1623
+        "tokens": 1627
       },
       {
         "query": "graph_path (shortest-path BFS) + graph_diff (blast-radius) (#212)",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 10676
+        "tokens": 10675
       },
       {
         "query": "add package comment; replace sha1 with fnv for ContentSHA",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 91632
+        "tokens": 69468
       },
       {
         "query": "wrap stdio tool handlers with panic recovery guard (#207)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30253
+        "tokens": 30299
       },
       {
         "query": "skeleton-first reads with on-demand body expansion (#206)",
@@ -204,21 +204,21 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30248
+        "tokens": 30295
       },
       {
         "query": "add TestSetDefaultFamily",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 59896
+        "tokens": 59452
       },
       {
         "query": "target_model profile dimension (#204)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1632
+        "tokens": 1636
       },
       {
         "query": "agent diaries — persistent per-agent structured log (#156)",
@@ -232,14 +232,14 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 27143
+        "tokens": 1440
       },
       {
         "query": "semantic chunk grouping with attention bridges for file_view (#105)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3215
+        "tokens": 3210
       },
       {
         "query": "context profiles (DEX_PROFILE)",
@@ -253,21 +253,21 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 925
+        "tokens": 923
       },
       {
         "query": "index git commits as searchable chunks (phase 3)",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 28296
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 29133
       },
       {
         "query": "augment file summary prompts with recent commit context",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 69669
+        "tokens": 81472
       },
       {
         "query": "include commit subject in blame enrichment for editing_context",
@@ -281,14 +281,14 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30249
+        "tokens": 30293
       },
       {
         "query": "add 21 shell-output compression patterns from lean-ctx",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 20625
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 15785
       },
       {
         "query": "expand tree-sitter structural chunking to 6 new languages (#153)",
@@ -300,9 +300,9 @@
       {
         "query": "add qwen3-embedding to priority list, verify liveness in DetectOllama",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 6409
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2074
       },
       {
         "query": "session SLO monitoring — warn/throttle/block on token/tool thresholds",
@@ -314,226 +314,226 @@
       {
         "query": "graph-proximity lane in search_similar (findRelated) handler",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 38535
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 47434
       },
       {
         "query": "extract drainItem to reduce DrainPendingSummariesBatch cyclomatic complexity",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 83373
+        "tokens": 83414
       },
       {
         "query": "errcheck prior.Close + remove unused fuseWithGraphNeighbors",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 43068
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 30303
       },
       {
         "query": "add MCP server instructions + dex setup command",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26654
+        "tokens": 30290
       },
       {
         "query": "spreading activation for graph-neighborhood relevance (#92)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 12876
+        "tokens": 12881
       },
       {
         "query": "add --dry-run flag to dex index",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26652
+        "tokens": 26654
       },
       {
         "query": "extract pluggable Embedder interface from concrete embed.Client",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2152
+        "tokens": 2150
       },
       {
         "query": "restore rerank cache on the fused path (#191)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 27151
+        "tokens": 1393
       },
       {
         "query": "emit incremental progress during dex index",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3992
+        "tokens": 26654
       },
       {
         "query": "lock ask/file_view degradation when chat backend is down",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 77082
+        "tokens": 77123
       },
       {
         "query": "wire graph-proximity lane into Store.Search (#145)",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 37401
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 12885
       },
       {
         "query": "summary coverage %, --json stale flag, embed mismatch detection",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 30221
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26656
       },
       {
         "query": "lock index-time partial embed failure — batch survival + resume",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 49872
+        "tokens": 50914
       },
       {
         "query": "cap drain generation window for incremental persistence (#140)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 50111
+        "tokens": 28854
       },
       {
         "query": "deterministic breaker cooldown via injectable clock",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1175
+        "tokens": 1177
       },
       {
         "query": "reindex now enqueues deferred summaries by default",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26651
+        "tokens": 26652
       },
       {
         "query": "switch symmap to 1-token Greek-letter refs (#173)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1519
+        "tokens": 1521
       },
       {
         "query": "default embed model from index meta to prevent dim mismatch",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 56859
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 29277
       },
       {
         "query": "lock serve/search-time degradation when embed backend is down",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 73301
+        "tokens": 73346
       },
       {
         "query": "raise definition boost 1.5x-\u003e3x, gated on an orphan-boost fix (#146)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3255
+        "tokens": 3254
       },
       {
         "query": "add playwright, cypress, next build, vite build patterns (#172)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14752
+        "tokens": 14939
       },
       {
         "query": "enhance log dedup with UUID and log-level normalization (#171)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14764
+        "tokens": 14948
       },
       {
         "query": "unify the two post-RRF rerankers into one canonical path (#144)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 27155
+        "tokens": 27153
       },
       {
         "query": "per-session file access heatmap — hot/cold file tracking",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1993
+        "tokens": 4549
       },
       {
         "query": "ROI-based identifier symbol map for aggressive file_view",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1520
+        "tokens": 1523
       },
       {
         "query": "add --json shorthand to dex index status",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26654
+        "tokens": 26655
       },
       {
         "query": "cross-file TF-IDF codebook for multi-file file_view",
         "reached": true,
         "first_gold_rank": 3,
         "calls": 4,
-        "tokens": 8992
+        "tokens": 8994
       },
       {
         "query": "BPE-validated safe token reductions in aggressive mode (#103)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 743
+        "tokens": 1025
       },
       {
         "query": "SPLADE-style static term expansion for BM25 (#87)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1430
+        "tokens": 1429
       },
       {
         "query": "context window ledger — budget action for ctx_session (#136)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 489
+        "tokens": 493
       },
       {
         "query": "RAM-resident trigram index for search_grep candidate narrowing",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1714
+        "tokens": 1713
       },
       {
         "query": "expanded noise penalty tiers in rerankLocal (#85)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 66100
+        "tokens": 40596
       },
       {
         "query": "per-language adaptive compression thresholds (#101)",
@@ -547,42 +547,42 @@
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 2154
+        "tokens": 2152
       },
       {
         "query": "query-type-adaptive RRF weights (Symbol/NL/Architecture) (#86)",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27149
+        "first_gold_rank": 7,
+        "calls": 8,
+        "tokens": 43043
       },
       {
         "query": "handle missing root — delete index by hash when dir is gone (#138)",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 5466
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26653
       },
       {
         "query": "Shannon entropy + quality gate for terse pipeline (#89)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3015
+        "tokens": 3014
       },
       {
         "query": "task_aware_compress — intent routing for file_view (#130)",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 2370
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 5534
       },
       {
         "query": "language + path_glob filters for search_semantic (#133)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30248
+        "tokens": 30293
       },
       {
         "query": "AggressiveCompress + LightweightCleanup for file_view (#128)",
@@ -596,7 +596,7 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 4395
+        "tokens": 4394
       },
       {
         "query": "terse engine Layer 1-3 — function-word stripping, abbreviations, zero-unique dedup (#116)",
@@ -610,28 +610,28 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1557
+        "tokens": 1560
       },
       {
         "query": "block-aware log dedup for CI/CD and service logs (#90)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14754
+        "tokens": 14943
       },
       {
         "query": "deps_cmd — dependency manifest summarization for file_view + ctx_shell (#125)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3014
+        "tokens": 3012
       },
       {
         "query": "verbatimCompact — timestamp normalization, hash normalization, boilerplate stripping, consecutive dedup (#129)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14758
+        "tokens": 14940
       },
       {
         "query": "output policy gate — verbatim classification + test runner + build error bypass (#123, #81, #82)",
@@ -645,35 +645,35 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14755
+        "tokens": 14944
       },
       {
         "query": "bounce tracker + budget-aware view downgrade (#98 #106)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1078
+        "tokens": 1079
       },
       {
         "query": "BM25 CamelCase query expansion + path enrichment (#95 #110)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1428
+        "tokens": 1427
       },
       {
         "query": "compact +N:/-N: diff format for git diff output (#131)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14762
+        "tokens": 14946
       },
       {
         "query": "add Tier C tool aliases in CompressText dispatch (#126)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14757
+        "tokens": 14941
       },
       {
         "query": "mask credentials in ctx_shell output (#127)",
@@ -685,65 +685,65 @@
       {
         "query": "ANSI strip, shorter_only guard, auth-flow bypass, min-size gate",
         "reached": true,
-        "first_gold_rank": 6,
-        "calls": 7,
-        "tokens": 28182
+        "first_gold_rank": 7,
+        "calls": 8,
+        "tokens": 27159
       },
       {
         "query": "noise penalties, MMR diversity, session graph proximity (#112 #113 #118)",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27147
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 5016
       },
       {
         "query": "suppress errcheck on temp file close",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 88369
+        "tokens": 102081
       },
       {
         "query": "gofmt cmd/dex (pre-existing whitespace issues)",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 4396
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 5958
       },
       {
         "query": "dex doctor — one-shot setup diagnostic command",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 6305
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 4391
       },
       {
         "query": "normalize ad-hoc slog keys + finalize canonical attr set",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 47425
+        "tokens": 46603
       },
       {
         "query": "ctx_nav — mount /v1/nav on main mux; read tier from env",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1835
+        "tokens": 1837
       },
       {
         "query": "subsystem tags at construction + observability doc",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 71987
+        "tokens": 68402
       },
       {
         "query": "end-to-end watcher pipeline preserves summaries",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 70235
+        "tokens": 72863
       },
       {
         "query": "graceful startup without ollama — degrade, auto-start, clear errors (#67)",
@@ -764,7 +764,7 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2674
+        "tokens": 2672
       },
       {
         "query": "consolidate DEX_* env vars into .dex/config.toml",
@@ -776,16 +776,16 @@
       {
         "query": "unify tool naming to category-prefix scheme (#68)",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 33674
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 58473
       },
       {
         "query": "fail loud on silent/misleading empty results (audit #73)",
         "reached": true,
-        "first_gold_rank": 10,
-        "calls": 11,
-        "tokens": 109804
+        "first_gold_rank": 8,
+        "calls": 9,
+        "tokens": 105502
       },
       {
         "query": "passively alias 17 more tool-driver commands",
@@ -799,56 +799,56 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30252
+        "tokens": 30300
       },
       {
         "query": "add 'index status --format text|json'",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26658
+        "tokens": 26660
       },
       {
         "query": "use exclude-only matcher so subdir compaction ignores opt-in include list",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3946
+        "tokens": 3944
       },
       {
         "query": "document spec_verify response shape — results key, not items",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 71896
+        "tokens": 68409
       },
       {
         "query": "clarify knowledge confidence field requires float 0.0–1.0",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 9741
+        "tokens": 9721
       },
       {
         "query": "document DEX_TOOLS and warn on mistyped DEX_TOOL_TIER",
         "reached": true,
-        "first_gold_rank": 6,
-        "calls": 7,
-        "tokens": 69012
+        "first_gold_rank": 8,
+        "calls": 9,
+        "tokens": 72682
       },
       {
         "query": "file_tree returns not-found for non-existent path",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1456
+        "tokens": 1459
       },
       {
         "query": "resolve graph_neighbors by line range, not exact start_line",
-        "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 35393
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 88625
       },
       {
         "query": "standardize timing log fields to duration_ms",
@@ -862,161 +862,161 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 5002
+        "tokens": 5015
       },
       {
         "query": "add dex hook rewrite (Bash) + widen redirect matcher",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 5001
+        "tokens": 5015
       },
       {
         "query": "Claude Code hook + plugin support (dex hook inject/redirect/observe)",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 7040
+        "tokens": 7055
       },
       {
         "query": "skip git worktree checkouts during indexing",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3997
+        "tokens": 3996
       },
       {
         "query": "file_view lines:N-M past EOF returns error with line count hint",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 33547
+        "tokens": 33593
       },
       {
         "query": "sessionAutoFile skip goroutine when DB absent — prevents TempDir race under -race",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30252
+        "tokens": 30300
       },
       {
         "query": "add etag unchanged coverage for stdio transport (lines mode)",
         "reached": true,
         "first_gold_rank": 9,
         "calls": 10,
-        "tokens": 70204
+        "tokens": 70448
       },
       {
         "query": "etag readCache dead on stdio transport",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30254
+        "tokens": 30299
       },
       {
         "query": "fix two stale assertions in internal/mcp",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 98326
+        "tokens": 111887
       },
       {
         "query": "session metrics — duration, file_count, note_count in get response",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 4542
+        "tokens": 4549
       },
       {
         "query": "add compact text field to file_tree output",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 2746
+        "tokens": 2745
       },
       {
         "query": "fix exported-field marker + session auto-tracking on file_view",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30255
+        "tokens": 30300
       },
       {
         "query": "remove package-level deps from signatures mode output",
         "reached": true,
         "first_gold_rank": 9,
         "calls": 10,
-        "tokens": 94763
+        "tokens": 94821
       },
       {
         "query": "file_view fallback, compact signatures, overview task hints",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3358
+        "tokens": 3361
       },
       {
         "query": "ctx_shell output policy — passthrough, verbatim, auth-flow protection",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 5926
+        "tokens": 5925
       },
       {
         "query": "add 8 compression patterns — grep, find, eslint, ruff, mypy, pytest, tsc, log_dedup",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14763
+        "tokens": 14946
       },
       {
         "query": "session-aware etag caching for view_summarize re-reads",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30251
+        "tokens": 30296
       },
       {
         "query": "file_view batch mode — paths[] reads up to 10 files in one round trip",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30252
+        "tokens": 30299
       },
       {
         "query": "knowledge action=consolidate — LLM-distills session notes into stored facts",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3884
+        "tokens": 3886
       },
       {
         "query": "knowledge revision tracking — increment revision_count on re-add, surface in list",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 5914
+        "tokens": 5896
       },
       {
         "query": "expose all MCP tools on the REST API surface",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 36116
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 67067
       },
       {
         "query": "add spec_verify tests; update mcp-server spec",
         "reached": true,
-        "first_gold_rank": 9,
-        "calls": 10,
-        "tokens": 56306
+        "first_gold_rank": 10,
+        "calls": 11,
+        "tokens": 58645
       },
       {
         "query": "add spec_verify tool at TierPower",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 6322
+        "tokens": 6321
       },
       {
         "query": "N17 cold-start partial overview when index is empty",
@@ -1030,14 +1030,14 @@
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 65813
+        "tokens": 77940
       },
       {
         "query": "adopt 7 lean-ctx features into dex",
         "reached": true,
-        "first_gold_rank": 9,
-        "calls": 10,
-        "tokens": 84978
+        "first_gold_rank": 10,
+        "calls": 11,
+        "tokens": 100734
       },
       {
         "query": "skip \u003cthink\u003e assistant prefill for plain chat / ollama",
@@ -1056,16 +1056,16 @@
       {
         "query": "G11+G12 ollama model auto-pull and VRAM-aware batch sizing",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 28978
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 26651
       },
       {
         "query": "G5 compress_output tool — shell output compression",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 20619
+        "tokens": 20809
       },
       {
         "query": "auto-detect ollama chat model; surface both embed+chat in index_status (G9)",
@@ -1079,203 +1079,203 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30249
+        "tokens": 30294
       },
       {
         "query": "surface ollama discovery in index_status (G8)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2072
+        "tokens": 2075
       },
       {
         "query": "auto-detect ollama for local embedding",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 7005
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2075
       },
       {
         "query": "tiered read fidelity for view_summarize",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 56849
+        "tokens": 56896
       },
       {
         "query": "fuse symbol lane into search_semantic via RRF",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 73788
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 46742
       },
       {
         "query": "native streamable-HTTP MCP transport (#49)",
         "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 46134
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 2753
       },
       {
         "query": "remote stdio shim — dex mcp --remote proxies to dex serve (#48)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26655
+        "tokens": 26656
       },
       {
         "query": "expose is_main on package-graph nodes",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 18219
+        "tokens": 18223
       },
       {
         "query": "commit package summaries incrementally so the cascade is resumable (#33)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 70348
+        "tokens": 80395
       },
       {
         "query": "doc-graph PageRank/centrality (#16, slice C)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3575
+        "tokens": 3574
       },
       {
         "query": "markdown embeds + tags (#16, slice B part 1)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 5262
+        "tokens": 5260
       },
       {
         "query": "resolve docs by nodesByPath so root-level docs resolve",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 18216
+        "tokens": 18221
       },
       {
         "query": "markdown doc graph — links/wikilinks extractor (#16, slice A)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3797
+        "tokens": 3798
       },
       {
         "query": "eager-watch the --project registry at boot",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 6489
+        "tokens": 6439
       },
       {
         "query": "resolve Python relative imports against the parent package (#95)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 7255
+        "tokens": 7230
       },
       {
         "query": "reset centrality for surviving nodes when calls vanish (#93)",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 7311
+        "tokens": 7308
       },
       {
         "query": "surface pending-count errors; share package-summary plan",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 85693
+        "tokens": 85922
       },
       {
         "query": "return true top-k from callEdges; fix inline budget accounting",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 23169
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 18231
       },
       {
         "query": "serialize first-write vec dim init",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27154
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 63626
       },
       {
         "query": "conserve PageRank mass; surface JSONL close errors; drop dead TS code",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3573
+        "tokens": 3575
       },
       {
         "query": "graph/packages returns Go package nodes only (#24)",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 25510
+        "tokens": 25516
       },
       {
         "query": "GET /graph/packages — whole package import DAG + centrality (#23)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 18218
+        "tokens": 18223
       },
       {
         "query": "collapse duplicated project-tool HTTP handlers",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 6495
+        "tokens": 6445
       },
       {
         "query": "satisfy errcheck in answerCacheKey hash write",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2491
+        "tokens": 2525
       },
       {
         "query": "make home-dir guard test hermetic (pin HOME)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 60167
+        "tokens": 57841
       },
       {
         "query": "synthesize grounded answers + thin MCP surface to ask-only",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 16181
+        "tokens": 16178
       },
       {
         "query": "drop unused pkgGrounding.empty",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 71312
+        "tokens": 71453
       },
       {
         "query": "enumerate-by-kind summaries endpoint",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 30455
+        "first_gold_rank": 9,
+        "calls": 10,
+        "tokens": 74899
       },
       {
         "query": "prune orphaned package summaries on delete (#4)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 97015
+        "tokens": 84026
       },
       {
         "query": "skip generated/aggregated trash in DefaultPatterns",
@@ -1289,42 +1289,42 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26654
+        "tokens": 26655
       },
       {
         "query": "redesign `dex index status` output",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26652
+        "tokens": 26655
       },
       {
         "query": "HTTP transport for the same MCP primitives",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 6494
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 9131
       },
       {
         "query": "Java tree-sitter extractor",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 6035
+        "tokens": 6020
       },
       {
         "query": "Rust tree-sitter extractor (fn/struct/enum/trait/impl)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 7445
+        "tokens": 7423
       },
       {
         "query": "multi-language extractor framework (no extractors yet)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2952
+        "tokens": 3027
       },
       {
         "query": "rename .dex-ignore → .dexignore + add benchmark/results to project ignore",
@@ -1338,84 +1338,84 @@
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 84994
+        "tokens": 86403
       },
       {
         "query": "GC stale package_summary/repo_summary rows on upsert",
-        "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 76216
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 87301
       },
       {
         "query": "dedupe by latest last_seen_at in SummariesByKindWithMeta",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27156
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 79125
       },
       {
         "query": "lower repo_summary input cap from 40 → 15",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 105281
+        "tokens": 103071
       },
       {
         "query": "version repo_summary cache key so prompt iterations invalidate",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 71620
+        "tokens": 71700
       },
       {
         "query": "give summarizeRepo positive direction + explicit anti-markdown",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 58470
+        "tokens": 58515
       },
       {
         "query": "cap summarizeRepo input at top-40 packages by centrality",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 68687
+        "tokens": 67680
       },
       {
         "query": "tighten summarizeRepo prompt + bump cap to 4096",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 72959
+        "tokens": 72691
       },
       {
         "query": "raise summarizeRepo MaxTokens 1200 → 2400",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 74423
+        "tokens": 86691
       },
       {
         "query": "production-focused summaries + interface-dispatch centrality",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 5952
+        "first_gold_rank": 5,
+        "calls": 6,
+        "tokens": 11978
       },
       {
         "query": "demote non-architectural file_summary chunks",
-        "reached": true,
-        "first_gold_rank": 10,
+        "reached": false,
+        "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 124331
+        "tokens": 87788
       },
       {
         "query": "anchor architecture rollup on PageRank, not semHits",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 5005
+        "tokens": 5004
       },
       {
         "query": "tighten retrieval regression harness for readability",
@@ -1436,70 +1436,70 @@
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 52201
+        "tokens": 54832
       },
       {
         "query": "central path-tag rule table + import-extractor registry",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1791
+        "tokens": 1790
       },
       {
         "query": "honour ctx.Done between Pass 1 worker tasks and embed batches",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 4000
+        "tokens": 4004
       },
       {
         "query": "pending-summaries backpressure + visible queue health",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30255
+        "tokens": 30300
       },
       {
         "query": "Unicode-aware FTS tokenization + AND/OR mode knob",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27153
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 20893
       },
       {
         "query": "record embed model in meta, refuse silent swap",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27149
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 50539
       },
       {
         "query": "order modules by PageRank, not alphabetically",
         "reached": true,
-        "first_gold_rank": 3,
-        "calls": 4,
-        "tokens": 34542
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 31045
       },
       {
         "query": "--module renders one section to stdout",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 86785
+        "tokens": 85518
       },
       {
         "query": "--dry-run reports bytes and estimated tokens",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 81738
+        "tokens": 82035
       },
       {
         "query": "--stdout flag prints rendered guide without writing",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 59312
+        "tokens": 62958
       },
       {
         "query": "acquire per-project flock in cmdWatch",
@@ -1513,84 +1513,84 @@
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 21052
+        "tokens": 25873
       },
       {
         "query": "preserve package_summary + repo_summary across PruneUnseen",
-        "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 76501
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 70634
       },
       {
         "query": "lock package_summary output to single prose paragraph",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 91382
+        "tokens": 79097
       },
       {
         "query": "detect already-stored truncated summaries",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 92873
+        "tokens": 67472
       },
       {
         "query": "note that --full also bumps the manifest",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 78659
+        "tokens": 81412
       },
       {
         "query": "default output to LLM_GUIDE.md (was .txt)",
-        "reached": false,
-        "first_gold_rank": 0,
-        "calls": 11,
-        "tokens": 38645
+        "reached": true,
+        "first_gold_rank": 7,
+        "calls": 8,
+        "tokens": 40442
       },
       {
         "query": "add table of contents below Overview",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 34073
+        "tokens": 22353
       },
       {
         "query": "cap Exported API at top 10 by centrality",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 54068
+        "tokens": 64895
       },
       {
         "query": "H3 headers for renderer sections, not bold",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 66249
+        "tokens": 65296
       },
       {
         "query": "drop redundant (root) module when Overview exists",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 73130
+        "tokens": 69912
       },
       {
         "query": "filter testdata/ directories from module list",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 75904
+        "tokens": 87542
       },
       {
         "query": "polish — portability, hallucination guards, tests, docs",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 28062
+        "tokens": 27779
       },
       {
         "query": "default path to cwd; quickstart; nuke guardrails",
@@ -1601,66 +1601,66 @@
       },
       {
         "query": "ground module sections in graph + centrality data",
-        "reached": false,
-        "first_gold_rank": 0,
-        "calls": 11,
-        "tokens": 77795
+        "reached": true,
+        "first_gold_rank": 8,
+        "calls": 9,
+        "tokens": 51749
       },
       {
         "query": "replace Taskfile.yml with tasks.yml driven by mooncake",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 19344
+        "tokens": 23600
       },
       {
         "query": "auto-drain pending summaries when the watcher is idle",
         "reached": true,
         "first_gold_rank": 5,
         "calls": 6,
-        "tokens": 43069
+        "tokens": 43114
       },
       {
         "query": "OnIdle hook fires after quiet window post-flush",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2458
+        "tokens": 2456
       },
       {
         "query": "split drainer into bounded batch + cascade helpers",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 55463
+        "tokens": 59683
       },
       {
         "query": "cross-process lock prevents concurrent indexers on same project",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 26656
+        "tokens": 1138
       },
       {
         "query": "inline summary content in semantic_hits text render",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 18643
+        "tokens": 18648
       },
       {
         "query": "defer summaries by default, log phases, ground prompts",
         "reached": true,
         "first_gold_rank": 10,
         "calls": 11,
-        "tokens": 72271
+        "tokens": 72316
       },
       {
         "query": "PageRank tiebreaker for architecture/package_topology suggested_reads",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 32920
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 5011
       },
       {
         "query": "skip raw test source in semantic_hits inlining for non-editing intents",
@@ -1672,86 +1672,86 @@
       {
         "query": "mirror MCP tool surface as subcommand groups",
         "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 66935
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 60323
       },
       {
         "query": "plumb role hint into ask's SymbolHit",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14770
+        "tokens": 14771
       },
       {
         "query": "extract Go `calls` edges via go/types",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 7365
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 25517
       },
       {
         "query": "prefetch more inline content in mcsearch_context",
         "reached": true,
         "first_gold_rank": 2,
         "calls": 3,
-        "tokens": 17034
+        "tokens": 32558
       },
       {
         "query": "drainer + `mcsearch summarize` subcommand (Layer 3 phase 3)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 79681
+        "tokens": 80747
       },
       {
         "query": "--summarize-defer queues into pending_summaries (Layer 3 phase 2)",
         "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 39313
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 37890
       },
       {
         "query": "pending_summaries table + queue helpers (Layer 3 phase 1)",
-        "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 76992
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 69930
       },
       {
         "query": "parallelize summary chat calls across files",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 91197
+        "tokens": 85524
       },
       {
         "query": "keep mtime fast-path under --summarize",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27156
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 34238
       },
       {
         "query": "parallelize Pass 1 read+chunk",
         "reached": true,
-        "first_gold_rank": 3,
-        "calls": 4,
-        "tokens": 27999
+        "first_gold_rank": 4,
+        "calls": 5,
+        "tokens": 40818
       },
       {
         "query": "parallel batch dispatch for /v1/embeddings",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 2139
+        "tokens": 2144
       },
       {
         "query": "replace brute-force slab with sqlite-vec vec0 backend",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27147
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 23652
       },
       {
         "query": "startsWithName accepts bash function declarations",
@@ -1765,14 +1765,14 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 8029
+        "tokens": 8027
       },
       {
         "query": "TouchSeen refreshes start_line/end_line on position drift",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27151
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 49558
       },
       {
         "query": "startsWithName rejects call sites",
@@ -1784,51 +1784,51 @@
       {
         "query": "demote testdata/ fixtures in symbol lane",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 15624
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 32006
       },
       {
         "query": "symbol_lookup signals ambiguity when multiple paths match",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 14773
+        "first_gold_rank": 9,
+        "calls": 10,
+        "tokens": 45094
       },
       {
         "query": "extract name from Go type_declaration",
         "reached": true,
-        "first_gold_rank": 3,
-        "calls": 4,
-        "tokens": 23915
+        "first_gold_rank": 2,
+        "calls": 3,
+        "tokens": 16711
       },
       {
         "query": "readSignatureAndDoc accepts field-shape lines",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 8024
+        "tokens": 8026
       },
       {
         "query": "FindSymbol falls back to graph_nodes for fields/types",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27153
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 69462
       },
       {
         "query": "iter 2-4 — four more router papercuts",
         "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 54584
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 24128
       },
       {
         "query": "iter 1 — adjacent-fn signature mixup + max not first score",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14774
+        "tokens": 14776
       },
       {
         "query": "extract YAML import refs; skip Go phase without go.mod",
@@ -1842,35 +1842,35 @@
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 46576
+        "tokens": 45829
       },
       {
         "query": "add implements edges using go/types checker",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 7365
+        "tokens": 7367
       },
       {
         "query": "add repo summary + drill-down guidance to complete issue #1",
-        "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 44959
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 47719
       },
       {
         "query": "add hierarchical summary index with package summaries",
-        "reached": true,
-        "first_gold_rank": 3,
-        "calls": 4,
-        "tokens": 59259
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 75924
       },
       {
         "query": "resolve all golangci-lint issues",
         "reached": true,
         "first_gold_rank": 9,
         "calls": 10,
-        "tokens": 59185
+        "tokens": 59369
       },
       {
         "query": "enrich mcsearch_context bundle with intent-gated static legs",
@@ -1884,259 +1884,259 @@
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14770
+        "tokens": 14771
       },
       {
         "query": "inline suggested_reads content with intent-scaled caps",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14770
+        "tokens": 14771
       },
       {
         "query": "ensureCache slice-bounds panic on indexes with \u003e1024 chunks",
-        "reached": true,
-        "first_gold_rank": 7,
-        "calls": 8,
-        "tokens": 88956
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 80179
       },
       {
         "query": "editing-context regex, code-preference bias, compact graph IDs",
         "reached": true,
-        "first_gold_rank": 6,
-        "calls": 7,
-        "tokens": 16204
+        "first_gold_rank": 8,
+        "calls": 9,
+        "tokens": 25527
       },
       {
         "query": "integrate graph layer 1 into mcsearch_context",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14769
+        "tokens": 14768
       },
       {
         "query": "add mcsearch_context router (issue #5)",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 14771
+        "tokens": 14774
       },
       {
         "query": "batch ExistingSHAs queries — N per-file queries → 1 round-trip",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3994
+        "tokens": 3997
       },
       {
         "query": "Phase 4 allocation micro-optimizations",
-        "reached": true,
-        "first_gold_rank": 8,
-        "calls": 9,
-        "tokens": 51891
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 63909
       },
       {
         "query": "concurrency, race fix, ctx threading",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 36673
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 34069
       },
       {
         "query": "backfill name column in TouchSeen so re-index populates names",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27159
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 46815
       },
       {
         "query": "fix all golangci-lint issues surfaced by new .golangci.yml",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 62572
+        "tokens": 62770
       },
       {
         "query": "add git hooks (pre-commit → ci:fast, pre-push → ci)",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 39101
+        "tokens": 39299
       },
       {
         "query": "find_symbol + related_chunks MCP tools; parent context; path diversity; exclude filter",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 31268
+        "first_gold_rank": 1,
+        "calls": 2,
+        "tokens": 30295
       },
       {
         "query": "remove ask_codebase and generate_code tools; compact README",
         "reached": true,
         "first_gold_rank": 3,
         "calls": 4,
-        "tokens": 33680
+        "tokens": 33725
       },
       {
         "query": "index+store: make -summarize work on already-indexed projects; auto-invalidate stale cache",
-        "reached": true,
-        "first_gold_rank": 10,
+        "reached": false,
+        "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 102969
+        "tokens": 77964
       },
       {
         "query": "stamp identifier name into EmbedText for structural chunks",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 9356
+        "tokens": 9357
       },
       {
         "query": "fix six code-review issues across store, mcp, rerank",
         "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27154
+        "first_gold_rank": 9,
+        "calls": 10,
+        "tokens": 89936
       },
       {
         "query": "decoder-style ChatReranker for Qwen3-Reranker-4B via vLLM",
         "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 5036
+        "first_gold_rank": 3,
+        "calls": 4,
+        "tokens": 31635
       },
       {
         "query": "per-chunk LLM summaries for structural code entities",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 85866
+        "tokens": 60536
       },
       {
         "query": "add context compression and speculative local draft pipelines",
         "reached": true,
         "first_gold_rank": 7,
         "calls": 8,
-        "tokens": 42918
+        "tokens": 57021
       },
       {
         "query": "switch client path /v1/rerank → /rerank",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 1390
+        "tokens": 1393
       },
       {
         "query": "ask_codebase prompt + ignore package doc — surface full filter chain",
         "reached": true,
-        "first_gold_rank": 6,
-        "calls": 7,
-        "tokens": 65475
+        "first_gold_rank": 8,
+        "calls": 9,
+        "tokens": 69192
       },
       {
         "query": "exclude LICENSE / COPYING / NOTICE / AUTHORS family from index",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3940
+        "tokens": 3939
       },
       {
         "query": "summarize_path prompt — file-kind agnostic framing",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 30251
+        "tokens": 30298
       },
       {
         "query": "rerank spec, summarize",
         "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 43233
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 49176
       },
       {
         "query": "mcsearch reindex [\u003cpath\u003e|--all] + user-local install path",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 76818
+        "tokens": 76863
       },
       {
         "query": "indexability guard — refuse /, $HOME, system dirs + allowlist",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 967
+        "tokens": 968
       },
       {
         "query": "generate_code — RAG-grounded code generation via /v1/chat/completions",
         "reached": true,
-        "first_gold_rank": 8,
-        "calls": 9,
-        "tokens": 68504
+        "first_gold_rank": 9,
+        "calls": 10,
+        "tokens": 46553
       },
       {
         "query": "down-weight free-form window chunks in BM25 ranking",
-        "reached": true,
-        "first_gold_rank": 1,
-        "calls": 2,
-        "tokens": 27145
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 53542
       },
       {
         "query": "hybrid search — BM25 + semantic via Reciprocal Rank Fusion",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 36557
+        "first_gold_rank": 10,
+        "calls": 11,
+        "tokens": 77363
       },
       {
         "query": "MCSEARCH_DISABLE_VEC_CACHE escape hatch + honest perf in README",
-        "reached": true,
-        "first_gold_rank": 2,
-        "calls": 3,
-        "tokens": 27915
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 24717
       },
       {
         "query": "don't skip test files that contain literal secret patterns",
         "reached": true,
         "first_gold_rank": 1,
         "calls": 2,
-        "tokens": 3945
+        "tokens": 3947
       },
       {
         "query": "in-RAM vector cache for Search (5–8× faster, 100–180× fewer allocs)",
-        "reached": true,
-        "first_gold_rank": 5,
-        "calls": 6,
-        "tokens": 66898
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 49329
       },
       {
         "query": "medium-severity UX, perf, and correctness from QA pass",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 22772
+        "tokens": 23312
       },
       {
         "query": "high-severity correctness bugs from QA pass",
         "reached": false,
         "first_gold_rank": 0,
         "calls": 11,
-        "tokens": 48071
+        "tokens": 48649
       },
       {
         "query": "clone for worktrees, Dockerfile, nanosecond prune cutoff",
-        "reached": true,
-        "first_gold_rank": 3,
-        "calls": 4,
-        "tokens": 56289
+        "reached": false,
+        "first_gold_rank": 0,
+        "calls": 11,
+        "tokens": 70027
       },
       {
         "query": "mcsearch watch — fsnotify-driven auto-reindex",
         "reached": true,
-        "first_gold_rank": 4,
-        "calls": 5,
-        "tokens": 13000
+        "first_gold_rank": 6,
+        "calls": 7,
+        "tokens": 15002
       }
     ]
   },
@@ -2148,7 +2148,7 @@
     "reach_rate": 0.5657894736842105,
     "mean_calls": 3,
     "median_calls": 3,
-    "mean_tokens": 22667.78488372093,
+    "mean_tokens": 22677.581395348836,
     "median_tokens": 27749,
     "results": [
       {
@@ -2198,7 +2198,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "promote graph_* rows to canonical rulesContent, bump to v2 (#245)",
@@ -2219,7 +2219,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 5596
+        "tokens": 5610
       },
       {
         "query": "fix if-return revive in store.migrate (#243)",
@@ -2331,21 +2331,21 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "skeleton-first reads with on-demand body expansion (#206)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "prompt-cache-aware context layout for batch file_view (#205)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "add TestSetDefaultFamily",
@@ -2366,7 +2366,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "ContextBus — category field + FTS5 on agent_messages (#148)",
@@ -2380,14 +2380,14 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "context profiles (DEX_PROFILE)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "attention-model layout for evidence assembly (DEX_ATTENTION_LAYOUT)",
@@ -2450,14 +2450,14 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "graph-proximity lane in search_similar (findRelated) handler",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "extract drainItem to reduce DrainPendingSummariesBatch cyclomatic complexity",
@@ -2485,7 +2485,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 13473
+        "tokens": 13480
       },
       {
         "query": "add --dry-run flag to dex index",
@@ -2527,7 +2527,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 13473
+        "tokens": 13480
       },
       {
         "query": "summary coverage %, --json stale flag, embed mismatch detection",
@@ -2618,7 +2618,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "ROI-based identifier symbol map for aggressive file_view",
@@ -2639,7 +2639,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "BPE-validated safe token reductions in aggressive mode (#103)",
@@ -2660,21 +2660,21 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "RAM-resident trigram index for search_grep candidate narrowing",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "expanded noise penalty tiers in rerankLocal (#85)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "per-language adaptive compression thresholds (#101)",
@@ -2716,21 +2716,21 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "language + path_glob filters for search_semantic (#133)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "AggressiveCompress + LightweightCleanup for file_view (#128)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "check ~/.claude.json for MCP registration",
@@ -2751,7 +2751,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "block-aware log dedup for CI/CD and service logs (#90)",
@@ -2765,7 +2765,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "verbatimCompact — timestamp normalization, hash normalization, boilerplate stripping, consecutive dedup (#129)",
@@ -2793,7 +2793,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "BM25 CamelCase query expansion + path enrichment (#95 #110)",
@@ -2849,7 +2849,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 5596
+        "tokens": 5610
       },
       {
         "query": "dex doctor — one-shot setup diagnostic command",
@@ -2870,14 +2870,14 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "subsystem tags at construction + observability doc",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "end-to-end watcher pipeline preserves summaries",
@@ -2919,7 +2919,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "fail loud on silent/misleading empty results (audit #73)",
@@ -2940,7 +2940,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "add 'index status --format text|json'",
@@ -2961,7 +2961,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "clarify knowledge confidence field requires float 0.0–1.0",
@@ -2975,7 +2975,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "file_tree returns not-found for non-existent path",
@@ -2996,28 +2996,28 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "redirect hook renders graph signatures, not CompressText",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 5596
+        "tokens": 5610
       },
       {
         "query": "add dex hook rewrite (Bash) + widen redirect matcher",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 5596
+        "tokens": 5610
       },
       {
         "query": "Claude Code hook + plugin support (dex hook inject/redirect/observe)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 5596
+        "tokens": 5610
       },
       {
         "query": "skip git worktree checkouts during indexing",
@@ -3031,14 +3031,14 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "sessionAutoFile skip goroutine when DB absent — prevents TempDir race under -race",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "add etag unchanged coverage for stdio transport (lines mode)",
@@ -3052,7 +3052,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "fix two stale assertions in internal/mcp",
@@ -3080,21 +3080,21 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "remove package-level deps from signatures mode output",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "file_view fallback, compact signatures, overview task hints",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "ctx_shell output policy — passthrough, verbatim, auth-flow protection",
@@ -3115,14 +3115,14 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "file_view batch mode — paths[] reads up to 10 files in one round trip",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "knowledge action=consolidate — LLM-distills session notes into stored facts",
@@ -3178,7 +3178,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 13473
+        "tokens": 13480
       },
       {
         "query": "skip \u003cthink\u003e assistant prefill for plain chat / ollama",
@@ -3227,7 +3227,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "auto-detect ollama for local embedding",
@@ -3241,21 +3241,21 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 13473
+        "tokens": 13480
       },
       {
         "query": "fuse symbol lane into search_semantic via RRF",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "native streamable-HTTP MCP transport (#49)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "remote stdio shim — dex mcp --remote proxies to dex serve (#48)",
@@ -3283,21 +3283,21 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 18807
+        "tokens": 18813
       },
       {
         "query": "markdown embeds + tags (#16, slice B part 1)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 18807
+        "tokens": 18813
       },
       {
         "query": "resolve docs by nodesByPath so root-level docs resolve",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 18807
+        "tokens": 18813
       },
       {
         "query": "markdown doc graph — links/wikilinks extractor (#16, slice A)",
@@ -3311,7 +3311,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "resolve Python relative imports against the parent package (#95)",
@@ -3339,7 +3339,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 18807
+        "tokens": 18813
       },
       {
         "query": "serialize first-write vec dim init",
@@ -3360,21 +3360,21 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 18807
+        "tokens": 18813
       },
       {
         "query": "GET /graph/packages — whole package import DAG + centrality (#23)",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "collapse duplicated project-tool HTTP handlers",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "satisfy errcheck in answerCacheKey hash write",
@@ -3395,7 +3395,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "drop unused pkgGrounding.empty",
@@ -3409,7 +3409,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "prune orphaned package summaries on delete (#4)",
@@ -3444,7 +3444,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 7006
+        "tokens": 6956
       },
       {
         "query": "Java tree-sitter extractor",
@@ -3619,7 +3619,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 13473
+        "tokens": 13480
       },
       {
         "query": "--module renders one section to stdout",
@@ -3731,7 +3731,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 13473
+        "tokens": 13480
       },
       {
         "query": "default path to cwd; quickstart; nuke guardrails",
@@ -3745,7 +3745,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 13473
+        "tokens": 13480
       },
       {
         "query": "replace Taskfile.yml with tasks.yml driven by mooncake",
@@ -3815,7 +3815,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 18807
+        "tokens": 18813
       },
       {
         "query": "plumb role hint into ask's SymbolHit",
@@ -3836,7 +3836,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "drainer + `mcsearch summarize` subcommand (Layer 3 phase 3)",
@@ -4025,14 +4025,14 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "inline suggested_reads content with intent-scaled caps",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "ensureCache slice-bounds panic on indexes with \u003e1024 chunks",
@@ -4060,7 +4060,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "batch ExistingSHAs queries — N per-file queries → 1 round-trip",
@@ -4116,7 +4116,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "index+store: make -summarize work on already-indexed projects; auto-invalidate stale cache",
@@ -4158,7 +4158,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "switch client path /v1/rerank → /rerank",
@@ -4186,14 +4186,14 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "rerank spec, summarize",
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "mcsearch reindex [\u003cpath\u003e|--all] + user-local install path",
@@ -4214,7 +4214,7 @@
         "reached": true,
         "first_gold_rank": 0,
         "calls": 3,
-        "tokens": 30847
+        "tokens": 30892
       },
       {
         "query": "down-weight free-form window chunks in BM25 ranking",
@@ -4281,13 +4281,13 @@
       }
     ]
   },
-  "both_reached": 160,
-  "no_map_mean_calls_both": 3.05625,
+  "both_reached": 140,
+  "no_map_mean_calls_both": 3.2,
   "map_mean_calls_both": 3,
-  "no_map_mean_tokens_both": 24684.95,
-  "map_mean_tokens_both": 22721.7125,
-  "delta_mean_calls": -0.05624999999999991,
-  "delta_mean_tokens": -1963.2374999999993,
+  "no_map_mean_tokens_both": 22717.157142857144,
+  "map_mean_tokens_both": 21909.735714285714,
+  "delta_mean_calls": -0.20000000000000018,
+  "delta_mean_tokens": -807.4214285714297,
   "routing": {
     "lane": "full",
     "points": [
@@ -4306,20 +4306,20 @@
       {
         "budget": 300,
         "queries": 304,
-        "routed": 199,
-        "accuracy": 0.6546052631578947
+        "routed": 196,
+        "accuracy": 0.6447368421052632
       },
       {
         "budget": 600,
         "queries": 304,
-        "routed": 226,
-        "accuracy": 0.743421052631579
+        "routed": 229,
+        "accuracy": 0.7532894736842105
       },
       {
         "budget": 1200,
         "queries": 304,
-        "routed": 229,
-        "accuracy": 0.7532894736842105
+        "routed": 230,
+        "accuracy": 0.756578947368421
       }
     ]
   },
@@ -4327,29 +4327,29 @@
     "lane": "full",
     "num_tasks": 25,
     "k": 10,
-    "mean_no_map_coverage": 0.2060832109067403,
+    "mean_no_map_coverage": 0.20161934144287083,
     "mean_map_coverage": 0.2231146957617546,
-    "delta_coverage": 0.017031484855014295,
-    "mean_no_map_tokens": 70.12,
+    "delta_coverage": 0.021495354318883775,
+    "mean_no_map_tokens": 71,
     "mean_map_tokens": 636.28,
-    "delta_tokens": 566.16,
+    "delta_tokens": 565.28,
     "mean_no_map_calls": 1,
     "mean_map_calls": 1.96,
     "has_exact": true,
     "num_exact": 25,
     "mean_exact_coverage": 0.9940000000000001,
     "delta_exact_vs_map_coverage": 0.7708853042382455,
-    "mean_exact_tokens": 586.4,
-    "delta_exact_vs_map_tokens": -49.879999999999995,
+    "mean_exact_tokens": 581.56,
+    "delta_exact_vs_map_tokens": -54.72000000000003,
     "mean_exact_calls": 1,
     "results": [
       {
         "task": "neighborhood of (*Store).Close",
         "targets": 26,
-        "no_map_found": 1,
-        "no_map_coverage": 0.038461538461538464,
+        "no_map_found": 2,
+        "no_map_coverage": 0.07692307692307693,
         "no_map_calls": 1,
-        "no_map_tokens": 69,
+        "no_map_tokens": 68,
         "map_found": 5,
         "map_coverage": 0.19230769230769232,
         "map_calls": 2,
@@ -4363,10 +4363,10 @@
       {
         "task": "neighborhood of OpenWith",
         "targets": 22,
-        "no_map_found": 2,
-        "no_map_coverage": 0.09090909090909091,
+        "no_map_found": 3,
+        "no_map_coverage": 0.13636363636363635,
         "no_map_calls": 1,
-        "no_map_tokens": 68,
+        "no_map_tokens": 69,
         "map_found": 3,
         "map_coverage": 0.13636363636363635,
         "map_calls": 2,
@@ -4400,7 +4400,7 @@
         "no_map_found": 0,
         "no_map_coverage": 0,
         "no_map_calls": 1,
-        "no_map_tokens": 100,
+        "no_map_tokens": 108,
         "map_found": 2,
         "map_coverage": 0.1111111111111111,
         "map_calls": 2,
@@ -4434,7 +4434,7 @@
         "no_map_found": 5,
         "no_map_coverage": 0.3333333333333333,
         "no_map_calls": 1,
-        "no_map_tokens": 67,
+        "no_map_tokens": 68,
         "map_found": 1,
         "map_coverage": 0.06666666666666667,
         "map_calls": 2,
@@ -4451,7 +4451,7 @@
         "no_map_found": 3,
         "no_map_coverage": 0.21428571428571427,
         "no_map_calls": 1,
-        "no_map_tokens": 70,
+        "no_map_tokens": 69,
         "map_found": 5,
         "map_coverage": 0.35714285714285715,
         "map_calls": 3,
@@ -4482,10 +4482,10 @@
       {
         "task": "neighborhood of (Embedder).Embed",
         "targets": 13,
-        "no_map_found": 2,
-        "no_map_coverage": 0.15384615384615385,
+        "no_map_found": 1,
+        "no_map_coverage": 0.07692307692307693,
         "no_map_calls": 1,
-        "no_map_tokens": 69,
+        "no_map_tokens": 72,
         "map_found": 2,
         "map_coverage": 0.15384615384615385,
         "map_calls": 2,
@@ -4499,10 +4499,10 @@
       {
         "task": "neighborhood of (*Server).search",
         "targets": 13,
-        "no_map_found": 1,
-        "no_map_coverage": 0.07692307692307693,
+        "no_map_found": 0,
+        "no_map_coverage": 0,
         "no_map_calls": 1,
-        "no_map_tokens": 61,
+        "no_map_tokens": 64,
         "map_found": 3,
         "map_coverage": 0.23076923076923078,
         "map_calls": 2,
@@ -4511,13 +4511,13 @@
         "exact_found": 13,
         "exact_coverage": 1,
         "exact_calls": 1,
-        "exact_tokens": 746
+        "exact_tokens": 747
       },
       {
         "task": "neighborhood of indexDir",
         "targets": 12,
-        "no_map_found": 1,
-        "no_map_coverage": 0.08333333333333333,
+        "no_map_found": 2,
+        "no_map_coverage": 0.16666666666666666,
         "no_map_calls": 1,
         "no_map_tokens": 67,
         "map_found": 2,
@@ -4536,7 +4536,7 @@
         "no_map_found": 1,
         "no_map_coverage": 0.09090909090909091,
         "no_map_calls": 1,
-        "no_map_tokens": 67,
+        "no_map_tokens": 69,
         "map_found": 1,
         "map_coverage": 0.09090909090909091,
         "map_calls": 2,
@@ -4565,12 +4565,29 @@
         "exact_tokens": 475
       },
       {
+        "task": "neighborhood of NodeID",
+        "targets": 10,
+        "no_map_found": 6,
+        "no_map_coverage": 0.6,
+        "no_map_calls": 1,
+        "no_map_tokens": 75,
+        "map_found": 0,
+        "map_coverage": 0,
+        "map_calls": 1,
+        "map_tokens": 149,
+        "has_exact": true,
+        "exact_found": 10,
+        "exact_coverage": 1,
+        "exact_calls": 1,
+        "exact_tokens": 734
+      },
+      {
         "task": "neighborhood of (*Store).Search",
         "targets": 10,
         "no_map_found": 1,
         "no_map_coverage": 0.1,
         "no_map_calls": 1,
-        "no_map_tokens": 68,
+        "no_map_tokens": 73,
         "map_found": 2,
         "map_coverage": 0.2,
         "map_calls": 2,
@@ -4601,10 +4618,10 @@
       {
         "task": "neighborhood of runBenchNav",
         "targets": 10,
-        "no_map_found": 4,
-        "no_map_coverage": 0.4,
+        "no_map_found": 3,
+        "no_map_coverage": 0.3,
         "no_map_calls": 1,
-        "no_map_tokens": 78,
+        "no_map_tokens": 79,
         "map_found": 2,
         "map_coverage": 0.2,
         "map_calls": 2,
@@ -4616,12 +4633,12 @@
         "exact_tokens": 515
       },
       {
-        "task": "neighborhood of NodeID",
+        "task": "neighborhood of EdgeID",
         "targets": 9,
-        "no_map_found": 5,
-        "no_map_coverage": 0.5555555555555556,
+        "no_map_found": 4,
+        "no_map_coverage": 0.4444444444444444,
         "no_map_calls": 1,
-        "no_map_tokens": 75,
+        "no_map_tokens": 70,
         "map_found": 0,
         "map_coverage": 0,
         "map_calls": 1,
@@ -4630,13 +4647,13 @@
         "exact_found": 9,
         "exact_coverage": 1,
         "exact_calls": 1,
-        "exact_tokens": 787
+        "exact_tokens": 734
       },
       {
         "task": "neighborhood of cmdIndex",
         "targets": 9,
-        "no_map_found": 1,
-        "no_map_coverage": 0.1111111111111111,
+        "no_map_found": 2,
+        "no_map_coverage": 0.2222222222222222,
         "no_map_calls": 1,
         "no_map_tokens": 66,
         "map_found": 4,
@@ -4664,7 +4681,7 @@
         "exact_found": 9,
         "exact_coverage": 1,
         "exact_calls": 1,
-        "exact_tokens": 415
+        "exact_tokens": 416
       },
       {
         "task": "neighborhood of newEmbedClient",
@@ -4672,7 +4689,7 @@
         "no_map_found": 3,
         "no_map_coverage": 0.3333333333333333,
         "no_map_calls": 1,
-        "no_map_tokens": 67,
+        "no_map_tokens": 66,
         "map_found": 1,
         "map_coverage": 0.1111111111111111,
         "map_calls": 2,
@@ -4689,7 +4706,7 @@
         "no_map_found": 2,
         "no_map_coverage": 0.2222222222222222,
         "no_map_calls": 1,
-        "no_map_tokens": 72,
+        "no_map_tokens": 73,
         "map_found": 4,
         "map_coverage": 0.4444444444444444,
         "map_calls": 2,
@@ -4699,23 +4716,6 @@
         "exact_coverage": 1,
         "exact_calls": 1,
         "exact_tokens": 349
-      },
-      {
-        "task": "neighborhood of EdgeID",
-        "targets": 8,
-        "no_map_found": 4,
-        "no_map_coverage": 0.5,
-        "no_map_calls": 1,
-        "no_map_tokens": 71,
-        "map_found": 0,
-        "map_coverage": 0,
-        "map_calls": 1,
-        "map_tokens": 149,
-        "has_exact": true,
-        "exact_found": 8,
-        "exact_coverage": 1,
-        "exact_calls": 1,
-        "exact_tokens": 804
       },
       {
         "task": "neighborhood of New",
@@ -4740,7 +4740,7 @@
         "no_map_found": 1,
         "no_map_coverage": 0.125,
         "no_map_calls": 1,
-        "no_map_tokens": 65,
+        "no_map_tokens": 64,
         "map_found": 4,
         "map_coverage": 0.5,
         "map_calls": 2,
@@ -4754,10 +4754,10 @@
       {
         "task": "neighborhood of (*Server).compose",
         "targets": 8,
-        "no_map_found": 2,
-        "no_map_coverage": 0.25,
+        "no_map_found": 1,
+        "no_map_coverage": 0.125,
         "no_map_calls": 1,
-        "no_map_tokens": 72,
+        "no_map_tokens": 74,
         "map_found": 5,
         "map_coverage": 0.625,
         "map_calls": 2,
@@ -4772,49 +4772,49 @@
   },
   "reorient": {
     "lane": "full",
-    "num_sessions": 60,
+    "num_sessions": 59,
     "k": 10,
     "recap_budget": 4000,
     "mean_reexplore_coverage": 1,
     "mean_recap_coverage": 1,
     "delta_coverage": 0,
-    "mean_reexplore_tokens": 138774.55,
-    "mean_recap_tokens": 1861.2833333333333,
-    "delta_tokens": -136913.26666666666,
-    "mean_reexplore_calls": 18.483333333333334,
+    "mean_reexplore_tokens": 116900,
+    "mean_recap_tokens": 1658.8983050847457,
+    "delta_tokens": -115241.10169491525,
+    "mean_reexplore_calls": 17.35593220338983,
     "mean_recap_calls": 1,
     "results": [
       {
         "task": "session 1 (queries 1-5)",
-        "working": 7,
-        "reexplore_found": 7,
+        "working": 6,
+        "reexplore_found": 6,
         "reexplore_coverage": 1,
-        "reexplore_calls": 20,
-        "reexplore_tokens": 134369,
-        "recap_found": 7,
+        "reexplore_calls": 16,
+        "reexplore_tokens": 121730,
+        "recap_found": 6,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1050
+        "recap_tokens": 901
       },
       {
         "task": "session 2 (queries 6-10)",
-        "working": 8,
-        "reexplore_found": 8,
+        "working": 7,
+        "reexplore_found": 7,
         "reexplore_coverage": 1,
-        "reexplore_calls": 20,
-        "reexplore_tokens": 151697,
-        "recap_found": 8,
+        "reexplore_calls": 17,
+        "reexplore_tokens": 116728,
+        "recap_found": 7,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2802
+        "recap_tokens": 2107
       },
       {
         "task": "session 3 (queries 11-15)",
         "working": 3,
         "reexplore_found": 3,
         "reexplore_coverage": 1,
-        "reexplore_calls": 13,
-        "reexplore_tokens": 90678,
+        "reexplore_calls": 18,
+        "reexplore_tokens": 124086,
         "recap_found": 3,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -4826,7 +4826,7 @@
         "reexplore_found": 2,
         "reexplore_coverage": 1,
         "reexplore_calls": 8,
-        "reexplore_tokens": 67421,
+        "reexplore_tokens": 67462,
         "recap_found": 2,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -4838,83 +4838,83 @@
         "reexplore_found": 4,
         "reexplore_coverage": 1,
         "reexplore_calls": 7,
-        "reexplore_tokens": 60633,
+        "reexplore_tokens": 60687,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2744
+        "recap_tokens": 2748
       },
       {
         "task": "session 6 (queries 26-30)",
         "working": 4,
         "reexplore_found": 4,
         "reexplore_coverage": 1,
-        "reexplore_calls": 18,
-        "reexplore_tokens": 137754,
+        "reexplore_calls": 17,
+        "reexplore_tokens": 114714,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1699
+        "recap_tokens": 1706
       },
       {
         "task": "session 7 (queries 31-35)",
-        "working": 8,
-        "reexplore_found": 8,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 22,
-        "reexplore_tokens": 53028,
-        "recap_found": 8,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 1349
-      },
-      {
-        "task": "session 8 (queries 36-40)",
         "working": 7,
         "reexplore_found": 7,
         "reexplore_coverage": 1,
-        "reexplore_calls": 25,
-        "reexplore_tokens": 211937,
+        "reexplore_calls": 16,
+        "reexplore_tokens": 19417,
         "recap_found": 7,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 3323
+        "recap_tokens": 671
+      },
+      {
+        "task": "session 8 (queries 36-40)",
+        "working": 6,
+        "reexplore_found": 6,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 13,
+        "reexplore_tokens": 106056,
+        "recap_found": 6,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 2628
       },
       {
         "task": "session 9 (queries 41-45)",
         "working": 5,
         "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 16,
-        "reexplore_tokens": 117885,
+        "reexplore_calls": 14,
+        "reexplore_tokens": 122494,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2221
+        "recap_tokens": 2225
       },
       {
         "task": "session 10 (queries 46-50)",
         "working": 5,
         "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 15,
-        "reexplore_tokens": 151973,
+        "reexplore_calls": 22,
+        "reexplore_tokens": 190276,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2707
+        "recap_tokens": 2711
       },
       {
         "task": "session 11 (queries 51-55)",
         "working": 4,
         "reexplore_found": 4,
         "reexplore_coverage": 1,
-        "reexplore_calls": 14,
-        "reexplore_tokens": 126692,
+        "reexplore_calls": 9,
+        "reexplore_tokens": 71525,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1245
+        "recap_tokens": 1348
       },
       {
         "task": "session 12 (queries 56-60)",
@@ -4922,7 +4922,7 @@
         "reexplore_found": 3,
         "reexplore_coverage": 1,
         "reexplore_calls": 6,
-        "reexplore_tokens": 29345,
+        "reexplore_tokens": 29350,
         "recap_found": 3,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -4933,8 +4933,8 @@
         "working": 4,
         "reexplore_found": 4,
         "reexplore_coverage": 1,
-        "reexplore_calls": 12,
-        "reexplore_tokens": 116719,
+        "reexplore_calls": 15,
+        "reexplore_tokens": 140466,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -4942,35 +4942,35 @@
       },
       {
         "task": "session 14 (queries 66-70)",
-        "working": 7,
-        "reexplore_found": 7,
+        "working": 8,
+        "reexplore_found": 8,
         "reexplore_coverage": 1,
-        "reexplore_calls": 25,
-        "reexplore_tokens": 188107,
-        "recap_found": 7,
+        "reexplore_calls": 23,
+        "reexplore_tokens": 149552,
+        "recap_found": 8,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2797
+        "recap_tokens": 3055
       },
       {
         "task": "session 15 (queries 71-75)",
-        "working": 7,
-        "reexplore_found": 7,
+        "working": 6,
+        "reexplore_found": 6,
         "reexplore_coverage": 1,
-        "reexplore_calls": 22,
-        "reexplore_tokens": 135524,
-        "recap_found": 7,
+        "reexplore_calls": 10,
+        "reexplore_tokens": 39372,
+        "recap_found": 6,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2615
+        "recap_tokens": 1930
       },
       {
         "task": "session 16 (queries 76-80)",
         "working": 8,
         "reexplore_found": 8,
         "reexplore_coverage": 1,
-        "reexplore_calls": 26,
-        "reexplore_tokens": 153495,
+        "reexplore_calls": 32,
+        "reexplore_tokens": 143970,
         "recap_found": 8,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -4981,12 +4981,12 @@
         "working": 5,
         "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 22,
-        "reexplore_tokens": 146443,
+        "reexplore_calls": 20,
+        "reexplore_tokens": 133446,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1975
+        "recap_tokens": 1979
       },
       {
         "task": "session 18 (queries 86-90)",
@@ -4994,83 +4994,83 @@
         "reexplore_found": 5,
         "reexplore_coverage": 1,
         "reexplore_calls": 16,
-        "reexplore_tokens": 107462,
+        "reexplore_tokens": 107879,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1982
+        "recap_tokens": 1986
       },
       {
         "task": "session 19 (queries 91-95)",
-        "working": 5,
-        "reexplore_found": 5,
+        "working": 4,
+        "reexplore_found": 4,
         "reexplore_coverage": 1,
-        "reexplore_calls": 19,
-        "reexplore_tokens": 150316,
-        "recap_found": 5,
+        "reexplore_calls": 13,
+        "reexplore_tokens": 87276,
+        "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2502
+        "recap_tokens": 1807
       },
       {
         "task": "session 20 (queries 96-100)",
-        "working": 8,
-        "reexplore_found": 8,
+        "working": 7,
+        "reexplore_found": 7,
         "reexplore_coverage": 1,
-        "reexplore_calls": 29,
-        "reexplore_tokens": 146901,
-        "recap_found": 8,
+        "reexplore_calls": 24,
+        "reexplore_tokens": 103184,
+        "recap_found": 7,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1729
+        "recap_tokens": 1030
       },
       {
         "task": "session 21 (queries 101-105)",
         "working": 5,
         "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 10,
-        "reexplore_tokens": 78349,
+        "reexplore_calls": 9,
+        "reexplore_tokens": 74033,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2215
+        "recap_tokens": 2219
       },
       {
         "task": "session 22 (queries 106-110)",
         "working": 5,
         "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 27,
-        "reexplore_tokens": 177464,
+        "reexplore_calls": 30,
+        "reexplore_tokens": 202261,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1892
+        "recap_tokens": 1896
       },
       {
         "task": "session 23 (queries 111-115)",
         "working": 6,
         "reexplore_found": 6,
         "reexplore_coverage": 1,
-        "reexplore_calls": 25,
-        "reexplore_tokens": 247131,
+        "reexplore_calls": 24,
+        "reexplore_tokens": 255926,
         "recap_found": 6,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2095
+        "recap_tokens": 2099
       },
       {
         "task": "session 24 (queries 116-120)",
-        "working": 4,
-        "reexplore_found": 4,
+        "working": 3,
+        "reexplore_found": 3,
         "reexplore_coverage": 1,
-        "reexplore_calls": 15,
-        "reexplore_tokens": 115602,
-        "recap_found": 4,
+        "reexplore_calls": 14,
+        "reexplore_tokens": 83862,
+        "recap_found": 3,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2467
+        "recap_tokens": 1772
       },
       {
         "task": "session 25 (queries 121-125)",
@@ -5078,7 +5078,7 @@
         "reexplore_found": 5,
         "reexplore_coverage": 1,
         "reexplore_calls": 22,
-        "reexplore_tokens": 113110,
+        "reexplore_tokens": 113285,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -5090,23 +5090,23 @@
         "reexplore_found": 2,
         "reexplore_coverage": 1,
         "reexplore_calls": 17,
-        "reexplore_tokens": 164257,
+        "reexplore_tokens": 164640,
         "recap_found": 2,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1436
+        "recap_tokens": 1440
       },
       {
         "task": "session 27 (queries 131-135)",
-        "working": 6,
-        "reexplore_found": 6,
+        "working": 5,
+        "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 29,
-        "reexplore_tokens": 214990,
-        "recap_found": 6,
+        "reexplore_calls": 23,
+        "reexplore_tokens": 173688,
+        "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2196
+        "recap_tokens": 2056
       },
       {
         "task": "session 28 (queries 136-140)",
@@ -5114,67 +5114,67 @@
         "reexplore_found": 4,
         "reexplore_coverage": 1,
         "reexplore_calls": 10,
-        "reexplore_tokens": 85076,
+        "reexplore_tokens": 85352,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2036
+        "recap_tokens": 2040
       },
       {
         "task": "session 29 (queries 141-145)",
-        "working": 10,
-        "reexplore_found": 10,
+        "working": 8,
+        "reexplore_found": 8,
         "reexplore_coverage": 1,
-        "reexplore_calls": 34,
-        "reexplore_tokens": 226439,
-        "recap_found": 10,
+        "reexplore_calls": 33,
+        "reexplore_tokens": 194467,
+        "recap_found": 8,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 3916
+        "recap_tokens": 2912
       },
       {
         "task": "session 30 (queries 146-150)",
-        "working": 6,
-        "reexplore_found": 6,
+        "working": 7,
+        "reexplore_found": 7,
         "reexplore_coverage": 1,
-        "reexplore_calls": 24,
-        "reexplore_tokens": 160497,
-        "recap_found": 6,
+        "reexplore_calls": 34,
+        "reexplore_tokens": 200045,
+        "recap_found": 7,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2036
+        "recap_tokens": 2147
       },
       {
         "task": "session 31 (queries 151-155)",
         "working": 6,
         "reexplore_found": 6,
         "reexplore_coverage": 1,
-        "reexplore_calls": 37,
-        "reexplore_tokens": 222267,
+        "reexplore_calls": 34,
+        "reexplore_tokens": 217493,
         "recap_found": 6,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2278
+        "recap_tokens": 2282
       },
       {
         "task": "session 32 (queries 156-160)",
-        "working": 5,
-        "reexplore_found": 5,
+        "working": 6,
+        "reexplore_found": 6,
         "reexplore_coverage": 1,
-        "reexplore_calls": 20,
-        "reexplore_tokens": 227999,
-        "recap_found": 5,
+        "reexplore_calls": 22,
+        "reexplore_tokens": 246000,
+        "recap_found": 6,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 3493
+        "recap_tokens": 3751
       },
       {
         "task": "session 33 (queries 161-165)",
         "working": 4,
         "reexplore_found": 4,
         "reexplore_coverage": 1,
-        "reexplore_calls": 14,
-        "reexplore_tokens": 99570,
+        "reexplore_calls": 13,
+        "reexplore_tokens": 75517,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -5185,8 +5185,8 @@
         "working": 7,
         "reexplore_found": 7,
         "reexplore_coverage": 1,
-        "reexplore_calls": 19,
-        "reexplore_tokens": 103820,
+        "reexplore_calls": 20,
+        "reexplore_tokens": 107730,
         "recap_found": 7,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -5194,27 +5194,27 @@
       },
       {
         "task": "session 35 (queries 171-175)",
-        "working": 6,
-        "reexplore_found": 6,
+        "working": 5,
+        "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 16,
-        "reexplore_tokens": 104959,
-        "recap_found": 6,
+        "reexplore_calls": 19,
+        "reexplore_tokens": 101552,
+        "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2706
+        "recap_tokens": 2007
       },
       {
         "task": "session 36 (queries 176-180)",
         "working": 4,
         "reexplore_found": 4,
         "reexplore_coverage": 1,
-        "reexplore_calls": 11,
-        "reexplore_tokens": 85158,
+        "reexplore_calls": 18,
+        "reexplore_tokens": 129713,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2820
+        "recap_tokens": 2845
       },
       {
         "task": "session 37 (queries 181-185)",
@@ -5222,7 +5222,7 @@
         "reexplore_found": 5,
         "reexplore_coverage": 1,
         "reexplore_calls": 22,
-        "reexplore_tokens": 211795,
+        "reexplore_tokens": 185200,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
@@ -5230,66 +5230,54 @@
       },
       {
         "task": "session 38 (queries 186-190)",
-        "working": 7,
-        "reexplore_found": 7,
+        "working": 6,
+        "reexplore_found": 6,
         "reexplore_coverage": 1,
-        "reexplore_calls": 32,
-        "reexplore_tokens": 155153,
-        "recap_found": 7,
+        "reexplore_calls": 21,
+        "reexplore_tokens": 93819,
+        "recap_found": 6,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 1139
+        "recap_tokens": 1135
       },
       {
-        "task": "session 39 (queries 191-195)",
+        "task": "session 39 (queries 196-200)",
         "working": 1,
         "reexplore_found": 1,
         "reexplore_coverage": 1,
-        "reexplore_calls": 8,
-        "reexplore_tokens": 103372,
+        "reexplore_calls": 6,
+        "reexplore_tokens": 11978,
         "recap_found": 1,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 699
+        "recap_tokens": 85
       },
       {
-        "task": "session 40 (queries 196-200)",
-        "working": 2,
-        "reexplore_found": 2,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 14,
-        "reexplore_tokens": 130283,
-        "recap_found": 2,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 727
-      },
-      {
-        "task": "session 41 (queries 201-205)",
+        "task": "session 40 (queries 201-205)",
         "working": 4,
         "reexplore_found": 4,
         "reexplore_coverage": 1,
         "reexplore_calls": 6,
-        "reexplore_tokens": 22352,
+        "reexplore_tokens": 22350,
         "recap_found": 4,
         "recap_coverage": 1,
         "recap_calls": 1,
         "recap_tokens": 1069
       },
       {
-        "task": "session 42 (queries 206-210)",
-        "working": 4,
-        "reexplore_found": 4,
+        "task": "session 41 (queries 206-210)",
+        "working": 3,
+        "reexplore_found": 3,
         "reexplore_coverage": 1,
-        "reexplore_calls": 12,
-        "reexplore_tokens": 123099,
-        "recap_found": 4,
+        "reexplore_calls": 7,
+        "reexplore_tokens": 65349,
+        "recap_found": 3,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 3036
+        "recap_tokens": 2341
       },
       {
-        "task": "session 43 (queries 211-215)",
+        "task": "session 42 (queries 211-215)",
         "working": 1,
         "reexplore_found": 1,
         "reexplore_coverage": 1,
@@ -5301,208 +5289,208 @@
         "recap_tokens": 294
       },
       {
-        "task": "session 44 (queries 216-220)",
+        "task": "session 43 (queries 216-220)",
         "working": 1,
         "reexplore_found": 1,
         "reexplore_coverage": 1,
-        "reexplore_calls": 6,
-        "reexplore_tokens": 76501,
+        "reexplore_calls": 8,
+        "reexplore_tokens": 40442,
         "recap_found": 1,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 699
+        "recap_tokens": 294
       },
       {
-        "task": "session 45 (queries 226-230)",
-        "working": 2,
-        "reexplore_found": 2,
+        "task": "session 44 (queries 226-230)",
+        "working": 3,
+        "reexplore_found": 3,
         "reexplore_coverage": 1,
-        "reexplore_calls": 13,
-        "reexplore_tokens": 108983,
-        "recap_found": 2,
+        "reexplore_calls": 22,
+        "reexplore_tokens": 160757,
+        "recap_found": 3,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 371
+        "recap_tokens": 1173
       },
       {
-        "task": "session 46 (queries 231-235)",
+        "task": "session 45 (queries 231-235)",
         "working": 6,
         "reexplore_found": 6,
         "reexplore_coverage": 1,
-        "reexplore_calls": 30,
-        "reexplore_tokens": 204425,
+        "reexplore_calls": 32,
+        "reexplore_tokens": 210832,
         "recap_found": 6,
         "recap_coverage": 1,
         "recap_calls": 1,
         "recap_tokens": 791
       },
       {
-        "task": "session 47 (queries 236-240)",
+        "task": "session 46 (queries 236-240)",
         "working": 5,
         "reexplore_found": 5,
         "reexplore_coverage": 1,
-        "reexplore_calls": 18,
-        "reexplore_tokens": 163582,
+        "reexplore_calls": 21,
+        "reexplore_tokens": 173116,
         "recap_found": 5,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 2792
+        "recap_tokens": 2796
       },
       {
-        "task": "session 48 (queries 241-245)",
-        "working": 4,
-        "reexplore_found": 4,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 15,
-        "reexplore_tokens": 163526,
-        "recap_found": 4,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 2876
-      },
-      {
-        "task": "session 49 (queries 246-250)",
-        "working": 4,
-        "reexplore_found": 4,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 14,
-        "reexplore_tokens": 126596,
-        "recap_found": 4,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 1107
-      },
-      {
-        "task": "session 50 (queries 251-255)",
-        "working": 4,
-        "reexplore_found": 4,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 17,
-        "reexplore_tokens": 111377,
-        "recap_found": 4,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 1513
-      },
-      {
-        "task": "session 51 (queries 256-260)",
-        "working": 4,
-        "reexplore_found": 4,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 25,
-        "reexplore_tokens": 214647,
-        "recap_found": 4,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 1693
-      },
-      {
-        "task": "session 52 (queries 261-265)",
-        "working": 5,
-        "reexplore_found": 5,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 20,
-        "reexplore_tokens": 164159,
-        "recap_found": 5,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 1783
-      },
-      {
-        "task": "session 53 (queries 266-270)",
-        "working": 4,
-        "reexplore_found": 4,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 32,
-        "reexplore_tokens": 282940,
-        "recap_found": 4,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 2937
-      },
-      {
-        "task": "session 54 (queries 271-275)",
-        "working": 5,
-        "reexplore_found": 5,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 28,
-        "reexplore_tokens": 199234,
-        "recap_found": 5,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 3210
-      },
-      {
-        "task": "session 55 (queries 276-280)",
-        "working": 2,
-        "reexplore_found": 2,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 10,
-        "reexplore_tokens": 95100,
-        "recap_found": 2,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 2129
-      },
-      {
-        "task": "session 56 (queries 281-285)",
-        "working": 5,
-        "reexplore_found": 5,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 26,
-        "reexplore_tokens": 213783,
-        "recap_found": 5,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 2615
-      },
-      {
-        "task": "session 57 (queries 286-290)",
+        "task": "session 47 (queries 241-245)",
         "working": 3,
         "reexplore_found": 3,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 19,
-        "reexplore_tokens": 113723,
-        "recap_found": 3,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 1653
-      },
-      {
-        "task": "session 58 (queries 291-295)",
-        "working": 3,
-        "reexplore_found": 3,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 20,
-        "reexplore_tokens": 145145,
-        "recap_found": 3,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 1636
-      },
-      {
-        "task": "session 59 (queries 296-300)",
-        "working": 3,
-        "reexplore_found": 3,
-        "reexplore_coverage": 1,
-        "reexplore_calls": 26,
-        "reexplore_tokens": 195684,
-        "recap_found": 3,
-        "recap_coverage": 1,
-        "recap_calls": 1,
-        "recap_tokens": 876
-      },
-      {
-        "task": "session 60 (queries 301-304)",
-        "working": 2,
-        "reexplore_found": 2,
         "reexplore_coverage": 1,
         "reexplore_calls": 9,
-        "reexplore_tokens": 69289,
-        "recap_found": 2,
+        "reexplore_tokens": 85156,
+        "recap_found": 3,
         "recap_coverage": 1,
         "recap_calls": 1,
-        "recap_tokens": 827
+        "recap_tokens": 2181
+      },
+      {
+        "task": "session 48 (queries 246-250)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 12,
+        "reexplore_tokens": 85231,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 408
+      },
+      {
+        "task": "session 49 (queries 251-255)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 22,
+        "reexplore_tokens": 111353,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 814
+      },
+      {
+        "task": "session 50 (queries 256-260)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 18,
+        "reexplore_tokens": 121248,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 994
+      },
+      {
+        "task": "session 51 (queries 261-265)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 14,
+        "reexplore_tokens": 64842,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 442
+      },
+      {
+        "task": "session 52 (queries 266-270)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 24,
+        "reexplore_tokens": 193572,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 2242
+      },
+      {
+        "task": "session 53 (queries 271-275)",
+        "working": 4,
+        "reexplore_found": 4,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 18,
+        "reexplore_tokens": 96013,
+        "recap_found": 4,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 2515
+      },
+      {
+        "task": "session 54 (queries 276-280)",
+        "working": 1,
+        "reexplore_found": 1,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 6,
+        "reexplore_tokens": 64364,
+        "recap_found": 1,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 1434
+      },
+      {
+        "task": "session 55 (queries 281-285)",
+        "working": 5,
+        "reexplore_found": 5,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 24,
+        "reexplore_tokens": 175382,
+        "recap_found": 5,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 2619
+      },
+      {
+        "task": "session 56 (queries 286-290)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 21,
+        "reexplore_tokens": 131545,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 1657
+      },
+      {
+        "task": "session 57 (queries 291-295)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 22,
+        "reexplore_tokens": 157227,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 1675
+      },
+      {
+        "task": "session 58 (queries 296-300)",
+        "working": 3,
+        "reexplore_found": 3,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 22,
+        "reexplore_tokens": 130430,
+        "recap_found": 3,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 1611
+      },
+      {
+        "task": "session 59 (queries 301-304)",
+        "working": 1,
+        "reexplore_found": 1,
+        "reexplore_coverage": 1,
+        "reexplore_calls": 7,
+        "reexplore_tokens": 15002,
+        "recap_found": 1,
+        "recap_coverage": 1,
+        "recap_calls": 1,
+        "recap_tokens": 128
       }
     ]
   }
