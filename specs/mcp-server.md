@@ -49,21 +49,26 @@ service clients are the http-api spec's.
   are registered only when the backend they need is available:
   - The always-on lane (registered even with no embedder or chat model) is
     `ask`, `grep`, `ls`, and `shell`.
-  - The graph/symbol/analysis lane (`lookup`, `deps`, `callers`, `callees`,
-    `impact`, `routes`, `smells`, `path`, `diff`, `clusters`, `status`, `notes`,
-    `session`) is registered whenever a non-weak model surface is in effect.
+  - The default verb lane (non-weak model) adds `map`, `trace`, `impact`, and
+    `read` — the everyday navigation + reading verbs.
   - `find` (semantic search) is registered only WHEN a query-time embedder is
     wired (`embedAvailable`); with `DEX_EMBED_ENGINE=none` (the lean profile) it
     is omitted and retrieval degrades to BM25 (`grep`) + symbol + graph + file
     lanes — `ask` stays and routes to the non-semantic lanes.
-  - `read` (chat-backed file summarization) is registered only WHEN a chat model
-    is wired (`chatAvailable`).
+  - `read` is always registered (its structural modes — `full` raw content,
+    `signatures`, `skeleton`, `map`, `lines:N-M` — need no chat model). Only
+    `read mode=summary` (the LLM digest) needs a chat model; when none is wired
+    it returns `status=needs-chat` rather than being hidden.
+  - The power lane (`lookup`, `deps`, `callers`, `callees`, `path`, `diff`,
+    `clusters`, `routes`, `smells`, `status`, `notes`, `session`) is gated behind
+    `DEX_EXPERT` — the default verbs above cover everyday work, so the stdio
+    surface stays small unless an operator opts into the full set.
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
-  This yields a flat surface of up to 19 tools, named for their purpose with no
-  category prefix: `ask`, `find`, `lookup`, `deps`, `callers`, `callees`,
-  `impact`, `path`, `diff`, `clusters`, `routes`, `smells`, `status`, `notes`,
-  `session`, `read`, `shell`, `ls`, `grep`.
+  This yields a flat, prefix-free surface of up to 21 tools: the default
+  `ask`, `find`, `map`, `trace`, `impact`, `read`, `grep`, `ls`, `shell` plus
+  the `DEX_EXPERT` power lane `lookup`, `deps`, `callers`, `callees`, `path`,
+  `diff`, `clusters`, `routes`, `smells`, `status`, `notes`, `session`.
 - WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing
   (`path:line`) prose answer grounded in the evidence bundle; WHEN the chat leg
   is unreachable the answer is omitted and the caller falls back to the evidence
@@ -180,8 +185,8 @@ service clients are the http-api spec's.
 - [x] `ask` leads the surface; composes lanes + synthesizes cited answer when a chat model is wired
 - [x] `ask` with an empty question → session-start orientation (intent `orient`): deterministic L0+L1 codemap in `map`, byte-stable, single-sourced with `dex orient`/`dex map`; degrades to a `no-graph`/`no-index` hint, never an error (#348 / #316 story 6)
 - [x] Single `registerTools` path wires the surface for stdio, remote shim, and HTTP-MCP — no name/schema drift
-- [x] Capability-derived exposure (#283/#290): `find` gated on `embedAvailable`, `read` on `chatAvailable`; weak model → only `ask`/`grep`/`ls`/`shell`
-- [x] Flat, prefix-free surface of up to 19 tools (no `DEX_TOOLS` tiers)
+- [x] Capability-derived exposure (#283/#290): `find` gated on `embedAvailable`; `read` always registered (structural modes need no chat; `mode=summary` returns `needs-chat` when no chat model); power lane gated on `DEX_EXPERT`; weak model → only `ask`/`grep`/`ls`/`shell`
+- [x] Flat, prefix-free surface of up to 21 tools (#427): default `ask`/`find`/`map`/`trace`/`impact`/`read`/`grep`/`ls`/`shell` + `DEX_EXPERT` power lane (no `DEX_TOOLS` tiers)
 - [x] `read mode=map` returns a structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
 - [x] `read paths[]` batch: max 10 files, same mode, concatenated `## path` output; path-traversal check per entry; etag/delta/skeleton modes
 - [x] `read` path traversal rejected (must resolve inside project root); files over 64 KB truncated

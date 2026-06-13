@@ -8,7 +8,7 @@ self-hosted embedding lane (hybrid RRF + cross-encoder rerank) when you want
 semantic search. Source never leaves your machine.
 
 ```console
-$ dex search semantic ./ "where is filesystem event debouncing handled"
+$ dex find ./ "where is filesystem event debouncing handled"
 ─── #1 markDirty  internal/watch/watch.go:60-71  (method_declaration)
 ```
 
@@ -69,8 +69,8 @@ want.
 # query
 dex ask <path> "..."                       # primary entry point (use BEFORE grep)
 dex orient [<path>]                        # session-start L0+L1 codemap (--l0/--l1/--format); = ask("")
-dex search semantic <path> "..."           # hybrid top-k chunks
-dex search symbol   <path> <name>          # exact identifier lookup
+dex find <path> "..."                       # hybrid top-k chunks
+dex lookup <path> <name>                    # exact identifier lookup
 dex graph neighbors <path> <file> <line>   # vector neighbours of a chunk
 dex graph deps      <path> [--file|--package]
 dex graph callers   <path> <name>          # incoming calls
@@ -147,7 +147,7 @@ to call a tool. All fail open (3 s timeout, errors pass through untouched):
 | Hook             | Event           | Effect                                                      |
 | ---------------- | --------------- | ----------------------------------------------------------- |
 | `inject`         | UserPromptSubmit| Prepend `ask` context to every prompt (skips < 4 words)     |
-| `rewrite`        | PreToolUse/Bash | Rewrite `rg`/`grep -r` to `dex search semantic`            |
+| `rewrite`        | PreToolUse/Bash | Rewrite `rg`/`grep -r` to `dex find`            |
 | `redirect`       | PreToolUse/Read | Redirect reads of indexed files > 400 lines to signatures view |
 | `observe`        | PostToolUse/Stop| Append `{ts, tool_name, tokens}` to hooks.jsonl            |
 

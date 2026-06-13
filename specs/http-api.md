@@ -43,19 +43,19 @@ tool interface for Claude is the mcp-server spec's.
   bare `:port` all-interfaces form), `dex serve` refuses to start — an
   unauthenticated public listener is rejected at startup.
 - WHERE liveness is unauthenticated, `GET /v1/healthz` and `GET /v1/version`
-  answer without a token; `GET /v1/nav` (tool-routing guide, not project-scoped) is
-  also unauthenticated; all other routes are authenticated.
+  answer without a token; all other routes are authenticated.
 - WHEN a client lists the served projects, `GET /v1/projects` returns each id with
   its root; `GET /v1/status` returns global endpoint health plus per-project index
-  stats (chunk/file counts, last-indexed, pending summaries).
-- WHEN a client queries a project, the per-project routes mirror the dex tools:
-  `POST .../ask`, `POST .../search/{semantic,symbol,context,grep}`,
-  `POST .../graph/{neighbors,deps,callers,callees,links,backlinks,tags,impact,routes,smells,cycles,path,diff,communities}`,
-  `GET .../graph/packages`, `GET .../summaries`, `POST .../file/{view,tree}`,
-  `POST .../spec/check`, `POST .../view/overview`,
-  `POST .../knowledge`, `POST .../session`, `POST .../feedback`, and `POST .../shell`.
-  `GET /v1/nav` is a global (non-project-scoped) route that returns the dex
-  tool-routing guide for the active server configuration.
+  stats (chunk/file counts, last-indexed).
+- WHEN a client queries a project, the per-project routes are flat and share the
+  MCP tool names: `POST .../ask`, `.../map`, `.../trace`, `.../find`,
+  `.../lookup`, `.../grep`, `.../read`, `.../ls`, `.../deps`, `.../callers`,
+  `.../callees`, `.../impact`, `.../routes`, `.../smells`, `.../path`,
+  `.../diff`, `.../clusters`, `.../notes`, `.../session`, plus
+  `GET .../graph/packages` and the global `POST /v1/shell`.
+- WHERE `DEX_EXPERT` trims the **stdio** MCP surface to the default verbs, the
+  REST surface is unaffected: `dex serve` always exposes the full route set
+  above. `DEX_EXPERT` is a stdio tool-count ergonomics knob, not a REST gate.
 - WHEN a handler returns a tool result, the same structured `status` the stdio
   tools use (`ok`/`no-index`/`embedding-service-unreachable`/`no-graph`/
   `not-found`/`error`) is carried in the JSON body with HTTP 200; a malformed
@@ -97,9 +97,9 @@ tool interface for Claude is the mcp-server spec's.
 - [x] `{id}` URL scoping; unknown id 404, body project field overridden server-side
 - [x] Bearer auth (`DEX_SERVE_TOKEN`), constant-time; 401 on missing/bad token
 - [x] No-token + non-loopback bind refused at startup
-- [x] Unauthenticated `healthz`/`version`/`GET /v1/nav`; authed projects/status/per-project tool routes
-- [x] Per-project routes mirror all MCP tools (ask/search/{semantic,symbol,context,grep}/graph/{neighbors,deps,callers,callees,links,backlinks,tags,impact,routes,smells,cycles,path,diff,communities}/file/{view,tree}/spec/check/view/overview/knowledge/session/feedback/shell); structured status in body
-- [x] `GET /v1/nav` global route — tool-routing guide for the active tier; no project scoping; unauthenticated
+- [x] Unauthenticated `healthz`/`version`; authed projects/status/per-project tool routes
+- [x] Per-project routes share the MCP tool names, flat (ask/map/trace/find/lookup/grep/read/ls/deps/callers/callees/impact/routes/smells/path/diff/clusters/notes/session + graph/packages + global shell); structured status in body
+- [x] `DEX_EXPERT` trims only the stdio MCP surface; the REST route set is always full (#427)
 - [x] Body size cap, access log, panic→500, bounded graceful shutdown
 - [x] Eager per-project watcher at startup (idempotent with lazy path)
 - [x] Native HTTP-MCP transport for direct `claude` attach — streamable handler at `/v1/projects/{id}/mcp` (dex #49)
