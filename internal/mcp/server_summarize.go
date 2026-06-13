@@ -3,19 +3,14 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/compress"
-	"github.com/alehatsman/dex/internal/heatmap"
 	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
@@ -81,14 +76,27 @@ type SummarizeOutput struct {
 // alongside the system prompt and the summary itself.
 const maxSummarizeBytes = 64 * 1024
 
-func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) { //nolint:cyclop
+// summarizeWork holds the resolved parameters for a single-file summarize call,
+// shared across mode-specific helpers.
+type summarizeWork struct {
+	ctx        context.Context
+	req        *sdk.CallToolRequest
+	in         SummarizeInput
+	p          *proj.Project
+	data       []byte
+	realTarget string
+	relTarget  string
+	sessionID  string
+	etag       string
+	bt         *bounceTracker
+	out        SummarizeOutput
+}
+
+func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	out := SummarizeOutput{}
 
-	// Expansion handle (#344): decode it to a concrete path + line range that
-	// supersedes any path/paths/lines the caller also passed. A token that fails
-	// to decode is rejected here (status="bad-handle") so a hallucinated handle
-	// never reaches the filesystem. Existence of the decoded path is enforced
-	// downstream by the normal path resolution + stat below.
+	// Expansion handle (#344): decode to concrete path + line range, superseding
+	// any path/paths/lines the caller also passed.
 	if h := strings.TrimSpace(in.Handle); h != "" {
 		path, start, end, ok := DecodeHandle(h)
 		if !ok {
@@ -98,54 +106,13 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		in.StartLine = start
 		in.EndLine = end
 		in.Paths = nil
-		// #355 F2: a handle encodes an exact range to read. Pin a lines: mode so
-		// the profile/task resolution below can't downgrade to a whole-file
-		// compressed view (signatures/map/aggressive/skeleton) that silently
-		// drops the range — only the `full` and `lines:` branches honor the
-		// decoded StartLine/EndLine. A lines: pin is chat-independent (unlike
-		// `full`, which the lean profile downgrades back to `map`, re-dropping
-		// the range) and returns exactly the requested slice. An explicit caller
-		// mode still wins: the handle supersedes path/lines, not a deliberate
-		// mode choice.
 		if strings.TrimSpace(in.Mode) == "" {
 			in.Mode = fmt.Sprintf("lines:%d-%d", start, end)
 		}
 	}
 
-	mode := strings.ToLower(strings.TrimSpace(in.Mode))
-	if mode == "" {
-		// Apply profile default_mode when no explicit mode was passed.
-		if in.ProjectRoot != "" {
-			if prof := profiles.Active(in.ProjectRoot); prof.Read.DefaultMode != "" {
-				mode = prof.Read.DefaultMode
-			}
-		}
-		if mode == "" {
-			mode = "full"
-		}
-	}
-	isFull := mode == "full"
+	mode, isFull := s.summarizeResolveMode(in)
 
-	// Task-aware mode selection (#130): when the caller declares a task and
-	// hasn't forced a specific mode, override to the most appropriate compression.
-	// Generate/Test → aggressive (no LLM, comments stripped); others stay as-is.
-	if in.Task != "" && mode == "full" {
-		if override := compress.TaskToMode(in.Task); override != "" {
-			// Adaptive policy (#109): if this (intent, mode) pair has been penalized
-			// by prior output-ratio feedback, downgrade to a less lossy mode.
-			if p2, h2 := s.resolveProject(in.ProjectRoot); h2 == "" {
-				pt := compress.LoadPolicy(p2.CacheDir)
-				override = pt.ChooseMode(compress.IntentFromTask(in.Task), override)
-			}
-			mode = override
-			isFull = false
-		}
-	}
-
-	if isFull && s.ChatClient == nil {
-		mode = "map"
-		isFull = false
-	}
 	if len(in.Paths) > 0 {
 		return s.summarizeBatch(ctx, in)
 	}
@@ -172,7 +139,6 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		tr := s.sloFor(p.Root)
 		tr.RecordToolCall()
 		if tr.ConsumeThrottle() && mode == "full" {
-			// Throttle: downgrade full→signatures to reduce token output.
 			mode = "signatures"
 			isFull = false
 		}
@@ -186,126 +152,32 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Model = s.ChatClient.ModelName()
 	}
 
-	// Resolve path under the project root. Reject anything that
-	// escapes it (so an MCP caller can't read /etc/passwd by passing
-	// "/etc/passwd" or "../../etc/passwd").
-	target := in.Path
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(p.Root, target)
-	}
-	realTarget, err := filepath.EvalSymlinks(target)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("file does not exist: %s", target)}, nil
-		}
-		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("resolve path: %v", err)}, nil
-	}
-	relTarget, err := filepath.Rel(p.Root, realTarget)
-	if err != nil || strings.HasPrefix(relTarget, "..") || relTarget == ".." {
-		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("path %s is outside project root %s", target, p.Root)}, nil
-	}
-	// Heatmap recording (#108): on every successful file_view, record the
-	// access and compression savings. Fires after the function returns so
-	// out.Bytes and out.Status are final. Best-effort — never blocks the read.
-	cacheDir := p.CacheDir
-	sloTracker := s.sloFor(p.Root)
-	defer func() {
-		if out.Status != "ok" {
-			return
-		}
-		hm := heatmap.Load(cacheDir)
-		origTok := out.Bytes / 4
-		compTok := len(out.Content) / 4
-		saved := origTok - compTok
-		if saved < 0 {
-			saved = 0
-		}
-		hm.RecordAccess(relTarget, origTok, saved)
-		_ = hm.Save(cacheDir)
-
-		// SLO: record output tokens and append any warn annotations.
-		sloTracker.RecordTokens(len(out.Content) / 4)
-		if ann := sloAnnotation(sloTracker.Check()); ann != "" {
-			if out.Hint == "" {
-				out.Hint = ann
-			} else {
-				out.Hint += " " + ann
-			}
-		}
-	}()
-	fi, err := os.Stat(realTarget)
-	if err != nil {
-		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("stat: %v", err)}, nil
-	}
-	if fi.IsDir() {
-		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("%s is a directory — pass a file path", relTarget)}, nil
+	realTarget, relTarget, data, etag, earlyOut, done := s.summarizeReadFile(p, in.Path)
+	if done {
+		earlyOut.Project = out.Project
+		return nil, earlyOut, nil
 	}
 	out.Path = relTarget
 
-	data, err := os.ReadFile(realTarget)
-	if err != nil {
-		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("read: %v", err)}, nil
-	}
+	cacheDir := p.CacheDir
+	sloTracker := s.sloFor(p.Root)
+	defer s.recordSummarizeMetrics(cacheDir, sloTracker, relTarget, &out)
 
-	h := sha256.Sum256(data)
-	etag := hex.EncodeToString(h[:])[:16]
-
-	sessionID := "stdio" // fallback: stdio transport returns "" from ID()
-	if req != nil && req.Session != nil {
-		if id := req.Session.ID(); id != "" {
-			sessionID = id
-		}
+	sessionID, earlyOut, done := s.summarizeCheckCached(req, in, relTarget, etag, isFull, data, out)
+	if done {
+		return nil, earlyOut, nil
 	}
-	if in.Etag != "" && in.Etag == etag && s.readCacheCheck(sessionID, relTarget, etag) {
-		return nil, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, nil
-	}
-
-	// Delta re-read (#217): file changed since last delivery — try a compact unified diff.
-	// Skip when the caller is expanding a body handle (handled below) or mode=full with
-	// a live chat client (LLM summary; diff of raw bytes != diff of two summaries).
-	if in.Expand == "" && !(isFull && s.ChatClient != nil) {
-		if prevData, ok := s.readCacheGetContent(sessionID, relTarget); ok {
-			if delta, worth := computeLineDelta(prevData, data); worth {
-				out.Status = "delta"
-				out.Etag = etag
-				out.Bytes = len(data)
-				out.Content = delta
-				s.readCacheMark(sessionID, relTarget, etag)
-				s.readCacheSetContent(sessionID, relTarget, data)
-				return nil, out, nil
-			}
-		}
-	}
-	// Store raw bytes so future changed re-reads can produce a delta.
 	defer func() {
 		if out.Status == "ok" {
 			s.readCacheSetContent(sessionID, relTarget, data)
 		}
 	}()
 
-	// Body handle expansion (#206): @B<n> handle from a prior skeleton-mode read.
-	if in.Expand != "" {
-		h, ok := s.lookupBodyHandle(sessionID, in.Expand)
-		if !ok {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("unknown handle %q — issue a skeleton-mode read first", in.Expand)}, nil
-		}
-		if h.etag != etag {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("file has changed since handle %q was issued — re-read with mode=skeleton", in.Expand)}, nil
-		}
-		slice, sliceStart, sliceEnd := sliceLines(data, h.startLine, h.endLine)
-		out.Status = "ok"
-		out.Etag = etag
-		out.StartLine = sliceStart
-		out.EndLine = sliceEnd
-		out.Bytes = len(slice)
-		out.Content = string(slice)
-		out.Hint = fmt.Sprintf("body expansion of %s (lines %d-%d)", in.Expand, sliceStart, sliceEnd)
-		s.readCacheMark(sessionID, relTarget, etag)
-		return nil, out, nil
+	if earlyOut, done = s.summarizeExpandHandle(in, data, etag, sessionID, relTarget, out); done {
+		return nil, earlyOut, nil
 	}
 
-	// Bounce detection (#98): if this file was recently delivered compressed
-	// and the agent is re-requesting it, escalate to full mode.
+	// Bounce detection (#98): re-escalate to full on repeated compressed reads.
 	bt := s.bt()
 	bt.recordRead(sessionID, relTarget)
 	if bt.shouldForceFull(sessionID, relTarget) && mode != "full" {
@@ -313,15 +185,12 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		isFull = mode == "full" && s.ChatClient != nil
 	}
 
-	// Budget-aware downgrade (#106): auto-select the richest mode that fits
-	// within the caller's remaining context budget. No-op when BudgetTokens=0.
+	// Budget-aware downgrade (#106): auto-select richest mode within budget.
 	if in.BudgetTokens > 0 && !isFull {
-		fileTokens := len(data) / 4 // ~4 bytes per token (rough approximation)
-		mode = selectAffordableMode(mode, fileTokens, in.BudgetTokens)
+		mode = selectAffordableMode(mode, len(data)/4, in.BudgetTokens)
 	}
 
-	// Dependency manifest shortcut (#125): for package.json, go.mod, Cargo.toml,
-	// etc. return a compact summary directly — 10-50× token reduction.
+	// Dependency manifest shortcut (#125): compact summary for package.json etc.
 	if compress.IsDepsFilename(filepath.Base(realTarget)) && mode != "full" {
 		if summary, ok := compress.CompressDepsFile(relTarget, data); ok {
 			out.Status = "ok"
@@ -333,228 +202,24 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		}
 	}
 
+	w := summarizeWork{
+		ctx: ctx, req: req, in: in, p: p, data: data,
+		realTarget: realTarget, relTarget: relTarget,
+		sessionID: sessionID, etag: etag, bt: bt, out: out,
+	}
 	switch {
 	case strings.HasPrefix(mode, "lines:"):
-		rest := strings.TrimPrefix(mode, "lines:")
-		start, end, ok := parseLinesRange(rest)
-		if !ok {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("invalid lines mode %q — expected lines:N-M (e.g. lines:10-40)", in.Mode)}, nil
-		}
-		slice, sliceStart, sliceEnd := sliceLines(data, start, end)
-		if sliceStart > sliceEnd {
-			fileLines := chunk.LineCount(data)
-			return nil, SummarizeOutput{
-				Status: "error",
-				Hint:   fmt.Sprintf("line range %d-%d is past EOF (file has %d lines)", start, end, fileLines),
-			}, nil
-		}
-		out.StartLine = sliceStart
-		out.EndLine = sliceEnd
-		out.Bytes = len(slice)
-		out.Status = "ok"
-		out.Etag = etag
-		out.Content = string(slice)
-		s.readCacheMark(sessionID, relTarget, etag)
-		s.sessionAutoFile(p.DBPath, relTarget)
-		return nil, out, nil
-
+		return s.summarizeModeLines(w, mode)
 	case mode == "signatures":
-		st, err := s.openStore(p.DBPath)
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
-		}
-		syms, err := st.SymbolsByFile(ctx, relTarget)
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
-		}
-		if len(syms) == 0 {
-			out.Status = "ok"
-			out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
-			return nil, out, nil
-		}
-		content := formatSignatures(data, syms, relTarget, nil)
-		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
-			content += related
-		}
-		// N16: inline best task-relevant symbol body when a session task is declared.
-		content = inlineTaskSymbol(ctx, st, data, syms, content)
-		out.Status = "ok"
-		out.Etag = etag
-		out.Content = content
-		out.Bytes = len(content)
-		s.readCacheMark(sessionID, relTarget, etag)
-		bt.recordCompressed(sessionID, relTarget)
-		s.sessionAutoFile(p.DBPath, relTarget)
-		return nil, out, nil
-
+		return s.summarizeModeSignatures(w)
 	case mode == "map":
-		// N14: non-code files get a pure-Go structural outline; no index needed.
-		if content, ok := compress.NonCodeMap(relTarget, data); ok {
-			out.Status = "ok"
-			out.Etag = etag
-			out.Content = content
-			out.Bytes = len(content)
-			s.readCacheMark(sessionID, relTarget, etag)
-			return nil, out, nil
-		}
-		st, err := s.openStore(p.DBPath)
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
-		}
-		syms, err := st.SymbolsByFile(ctx, relTarget)
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
-		}
-		imports, err := st.ImportsForFile(ctx, relTarget)
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("import query: %v", err)}, nil
-		}
-		if len(syms) == 0 && len(imports) == 0 {
-			out.Status = "ok"
-			out.Hint = "no indexed data for this file — run `dex index` first or use mode=full"
-			return nil, out, nil
-		}
-		content := formatMap(relTarget, syms, imports)
-		if related := graphRelatedHint(ctx, st, relTarget); related != "" {
-			content += related
-		}
-		// N16: inline best task-relevant symbol body when a session task is declared.
-		if len(syms) > 0 {
-			content = inlineTaskSymbol(ctx, st, data, syms, content)
-		}
-		out.Status = "ok"
-		out.Etag = etag
-		out.Content = content
-		out.Bytes = len(content)
-		s.readCacheMark(sessionID, relTarget, etag)
-		bt.recordCompressed(sessionID, relTarget)
-		s.sessionAutoFile(p.DBPath, relTarget)
-		return nil, out, nil
-
+		return s.summarizeModeMap(w)
 	case mode == "aggressive":
-		ext := filepath.Ext(realTarget)
-		// Weak target_model profiles get the anchor-verbatim floor (#291).
-		strict := profiles.Active(p.Root).StrictAnchors()
-		content := compress.CompressCode(string(data), ext, strict)
-		// Semantic chunk reordering (#105): when a task is provided, reorder
-		// compressed content so the most task-relevant blocks appear first.
-		if in.Task != "" {
-			content = applySemanticChunkOrder(content, in.Task)
-		}
-		out.Status = "ok"
-		out.Etag = etag
-		out.Content = content
-		out.Bytes = len(content)
-		origLines := bytes.Count(data, []byte("\n")) + 1
-		compLines := strings.Count(content, "\n") + 1
-		if origLines > compLines {
-			out.Hint = fmt.Sprintf("aggressive: %d → %d lines (%.0f%% reduction)",
-				origLines, compLines, float64(origLines-compLines)*100/float64(origLines))
-		}
-		s.readCacheMark(sessionID, relTarget, etag)
-		bt.recordCompressed(sessionID, relTarget)
-		s.sessionAutoFile(p.DBPath, relTarget)
-		return nil, out, nil
-
+		return s.summarizeModeAggressive(w)
 	case mode == "skeleton":
-		// Skeleton mode (#206): exported type declarations in full; exported
-		// function/method bodies replaced with @B<n> handles; unexported omitted.
-		// Falls back to signatures when the index has no symbols.
-		st, err := s.openStore(p.DBPath)
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
-		}
-		syms, err := st.SymbolsByFile(ctx, relTarget)
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("symbol query: %v", err)}, nil
-		}
-		if len(syms) == 0 {
-			out.Status = "ok"
-			out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
-			return nil, out, nil
-		}
-		scopes := make([]compress.BodyScope, 0, len(syms))
-		for _, sym := range syms {
-			exported := len(sym.Name) > 0 && sym.Name[0] >= 'A' && sym.Name[0] <= 'Z'
-			scopes = append(scopes, compress.BodyScope{
-				Name:      sym.QualifiedName,
-				Kind:      sym.Kind,
-				Exported:  exported,
-				StartLine: sym.StartLine,
-				EndLine:   sym.EndLine,
-			})
-		}
-		res := compress.SkeletonPass(data, relTarget, scopes)
-		s.registerBodyHandles(sessionID, relTarget, etag, res.Bodies)
-		out.Status = "ok"
-		out.Etag = etag
-		out.Content = res.Text
-		out.Bytes = len(res.Text)
-		s.readCacheMark(sessionID, relTarget, etag)
-		bt.recordCompressed(sessionID, relTarget)
-		s.sessionAutoFile(p.DBPath, relTarget)
-		return nil, out, nil
-
-	default: // full
-		slice, sliceStart, sliceEnd := sliceLines(data, in.StartLine, in.EndLine)
-		out.StartLine = sliceStart
-		out.EndLine = sliceEnd
-		if len(slice) > maxSummarizeBytes {
-			slice = slice[:maxSummarizeBytes]
-			out.Truncated = true
-		}
-		out.Bytes = len(slice)
-
-		if lineCount := bytes.Count(data, []byte("\n")) + 1; lineCount > 250 {
-			out.Hint = fmt.Sprintf("⚠ Large file (%d lines): pass mode=skeleton, mode=signatures, or mode=map to reduce tokens.", lineCount)
-		}
-
-		system := buildSummarizeSystem(in.Focus)
-		cleaned := compress.LightweightCleanup(string(slice))
-		userContent := fmt.Sprintf("FILE: %s (lines %d-%d)\n\n```\n%s\n```",
-			relTarget, sliceStart, sliceEnd, cleaned)
-
-		chatMsgs := []chat.Message{
-			{Role: "system", Content: system},
-			{Role: "user", Content: userContent},
-		}
-		chatOpts := chat.Options{Temperature: in.Temperature, MaxTokens: in.MaxTokens}
-		var resp chat.Response
-		if req != nil && req.Session != nil {
-			sess := req.Session
-			resp, err = s.ChatClient.GenerateStream(ctx, chatMsgs, chatOpts, func(tok string) {
-				_ = sess.Log(ctx, &sdk.LoggingMessageParams{
-					Level:  "debug",
-					Logger: "dex/file_view",
-					Data:   tok,
-				})
-			})
-		} else {
-			resp, err = s.ChatClient.Generate(ctx, chatMsgs, chatOpts)
-		}
-		if err != nil {
-			hint := fmt.Sprintf("chat error (%v) — showing raw content", err)
-			if errors.Is(err, chat.ErrUnreachable) {
-				hint = "chat service offline — showing raw content"
-			}
-			out.Status = "ok"
-			out.Etag = etag
-			out.Content = string(slice)
-			out.Hint = hint
-			s.readCacheMark(sessionID, relTarget, etag)
-			return nil, out, nil
-		}
-
-		out.Status = "ok"
-		out.Etag = etag
-		out.Content = resp.Content
-		out.FinishReason = resp.FinishReason
-		if resp.Model != "" {
-			out.Model = resp.Model
-		}
-		s.readCacheMark(sessionID, relTarget, etag)
-		s.activityRecord(p.Root, 1)
-		return nil, out, nil
+		return s.summarizeModeSkeleton(w)
+	default:
+		return s.summarizeModeFull(w)
 	}
 }
 
@@ -729,17 +394,6 @@ func parseLinesRange(s string) (start, end int, ok bool) {
 		return 0, 0, false
 	}
 	return n, m, true
-}
-
-// graphRelatedHint returns a compact "Related (call graph): ..." line
-// listing files graph-adjacent to relPath, or "" when the graph is absent
-// or has no neighbors. Never fails — graph errors are silently swallowed.
-func graphRelatedHint(ctx context.Context, st *store.Store, relPath string) string {
-	neighbors, err := st.GraphNeighborFiles(ctx, []string{relPath}, 8)
-	if err != nil || len(neighbors) == 0 {
-		return ""
-	}
-	return "\n# Related (call graph): " + strings.Join(neighbors, ", ") + "\n"
 }
 
 // formatSignatures produces a compact symbol index for a file.
