@@ -125,7 +125,13 @@ func BuildNgramCodebook(content string) NgramCodebook {
 		entries[i] = ngramEntry{
 			pattern: c.pattern,
 			ref:     ngramRef(i),
-			re:      regexp.MustCompile(strings.Join(quoted, `\s+`)),
+			// Join with [ \t]+ (within-line whitespace), not \s+: \s
+			// matches \n, which would let Apply replace a token sequence
+			// spanning a line boundary and swallow the newline, merging
+			// two source lines onto one ref. Frequencies are counted
+			// per line (BuildNgramCodebook splits on \n first), so Apply
+			// must match only the within-line spans that were counted (#449).
+			re: regexp.MustCompile(strings.Join(quoted, `[ \t]+`)),
 		}
 	}
 	return NgramCodebook{entries: entries}

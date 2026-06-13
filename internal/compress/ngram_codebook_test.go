@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -50,6 +51,34 @@ func TestNgramCodebook_BigramDetected(t *testing.T) {
 	full := cb.ApplyWithLegend(content)
 	if !strings.Contains(full, "©MAP:") {
 		t.Error("ApplyWithLegend must include ©MAP: legend")
+	}
+}
+
+func TestNgramCodebook_DoesNotCollapseAcrossNewline(t *testing.T) {
+	// "handleRequest processEvent" is a frequent within-line bigram → it
+	// registers (a second frequent bigram clears the ≥2-candidate gate, and
+	// the varying third token keeps any trigram below ROI). The same two
+	// tokens also occur split across a newline ("…handleRequest" then
+	// "processEvent…"). Apply must not bridge the newline and merge those two
+	// lines onto one ref: frequencies are counted per line, so the cross-line
+	// pair was never counted (#449).
+	var lines []string
+	for i := 0; i < 30; i++ {
+		lines = append(lines,
+			fmt.Sprintf("handleRequest processEvent a%d", i),
+			fmt.Sprintf("validateInput serializeOutput b%d", i))
+	}
+	lines = append(lines, "alpha handleRequest", "processEvent beta")
+	content := strings.Join(lines, "\n")
+
+	cb := BuildNgramCodebook(content)
+	if cb.Empty() {
+		t.Fatal("expected a non-empty codebook for the repeated bigrams")
+	}
+	applied := cb.Apply(content)
+
+	if !strings.Contains(applied, "handleRequest\nprocessEvent") {
+		t.Errorf("bigram split across a newline was collapsed (newline swallowed); output:\n%s", applied)
 	}
 }
 
