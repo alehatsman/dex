@@ -1,4 +1,4 @@
-package benchcompress
+package compress
 
 import (
 	"encoding/json"

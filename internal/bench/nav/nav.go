@@ -1,4 +1,4 @@
-// Package benchnav implements the navigation benchmark lane (epic #316,
+// Package nav implements the navigation benchmark lane (epic #316,
 // story 7): the RULER that gates the explore stories. It measures how much
 // work an agent spends to first touch a gold file, under a deterministic,
 // zero-inference navigation policy.
@@ -13,7 +13,7 @@
 // The package is intentionally decoupled from the retrieval stack: callers
 // adapt their ranked results into Query values and supply a CostModel, so the
 // policy is unit-testable with no index, embedder, or GPU.
-package benchnav
+package nav
 
 import (
 	"encoding/json"

@@ -1,8 +1,8 @@
-// Package benchperf provides an offline deterministic pipeline performance
+// Package perf provides an offline deterministic pipeline performance
 // benchmark. All timed paths use synthetic data (no live embed/chat/rerank
 // calls) so the bench runs with zero GPU and zero network — gateable on any
 // box. GPU/network paths are report-only and stubbed with a TODO marker.
-package benchperf
+package perf
 
 import (
 	"context"

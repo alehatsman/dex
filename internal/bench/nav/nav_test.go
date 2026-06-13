@@ -1,4 +1,4 @@
-package benchnav
+package nav
 
 import "testing"
 

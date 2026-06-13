@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/locomo"
+	"github.com/alehatsman/dex/internal/eval/locomo"
 )
 
 const locomoUsage = `Usage: dex bench locomo <project-path> [flags]

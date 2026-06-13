@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/corpus"
+	"github.com/alehatsman/dex/internal/eval/corpus"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 	"golang.org/x/sync/errgroup"
@@ -180,7 +180,7 @@ func runCorpus(ctx context.Context, args []string) error {
 
 // runCorpusRepo fetches, indexes (if needed), and scores one repo. Indexing and
 // store/embed wiring mirror runEval (cmd/dex/eval.go); the eval orchestration
-// lives in internal/corpus.RunRepo.
+// lives in internal/eval/corpus.RunRepo.
 func runCorpusRepo(ctx context.Context, base, cacheRoot, manifestDir string, spec corpus.RepoSpec, k int, smoke bool) ([]corpus.LabeledReport, error) {
 	dir, err := corpus.Ensure(ctx, spec, cacheRoot)
 	if err != nil {

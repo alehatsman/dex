@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/alehatsman/dex/internal/benchperf"
+	"github.com/alehatsman/dex/internal/bench/perf"
 )
 
 const benchPerfUsage = `Usage: dex bench perf [flags]
@@ -51,18 +51,18 @@ func runBenchPerf(_ context.Context, args []string) error {
 		return err
 	}
 
-	opts := benchperf.Opts{
+	opts := perf.Opts{
 		Iterations: *iters,
 		Dim:        *dim,
 	}
 
 	fmt.Fprintln(os.Stderr, "dex bench perf: running local-compute suite (no GPU/network)...")
-	results, err := benchperf.Run(opts)
+	results, err := perf.Run(opts)
 	if err != nil {
 		return fmt.Errorf("dex bench perf: %w", err)
 	}
 
-	rep := benchperf.Report{Dim: *dim, Results: results}
+	rep := perf.Report{Dim: *dim, Results: results}
 
 	switch *outputFmt {
 	case "json":
@@ -84,7 +84,7 @@ func runBenchPerf(_ context.Context, args []string) error {
 		}
 	}
 	if cp != "" {
-		if err := benchperf.CheckRegression(rep, cp); err != nil {
+		if err := perf.CheckRegression(rep, cp); err != nil {
 			return fmt.Errorf("dex bench perf: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench perf: regression check passed")

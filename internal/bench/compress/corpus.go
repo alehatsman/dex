@@ -1,8 +1,8 @@
-// Package benchcompress provides an offline deterministic benchmark for the
+// Package compress provides an offline deterministic benchmark for the
 // compress engine: ratio, anchor preservation, extractive fidelity, and
 // round-trip correctness for lossless passes. Zero inference — no embed or
 // chat calls at runtime.
-package benchcompress
+package compress
 
 // Sample is a single benchmark fixture: a representative block of content, a
 // set of anchor tokens that must survive compression verbatim, and a set of

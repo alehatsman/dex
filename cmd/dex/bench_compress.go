@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/alehatsman/dex/internal/benchcompress"
+	"github.com/alehatsman/dex/internal/bench/compress"
 	"github.com/alehatsman/dex/internal/tokens"
 )
 
@@ -56,13 +56,13 @@ func runBenchCompress(_ context.Context, args []string) error {
 	tokens.SetDefaultFamily(family)
 
 	// Run all samples.
-	var sampleResults []benchcompress.SampleResult
-	for _, s := range benchcompress.BuiltinCorpus {
-		sr := benchcompress.RunSample(s, family)
+	var sampleResults []compress.SampleResult
+	for _, s := range compress.BuiltinCorpus {
+		sr := compress.RunSample(s, family)
 		sampleResults = append(sampleResults, sr)
 	}
 
-	rep := benchcompress.Aggregate(sampleResults, family.String())
+	rep := compress.Aggregate(sampleResults, family.String())
 
 	switch *outputFmt {
 	case "json":
@@ -84,7 +84,7 @@ func runBenchCompress(_ context.Context, args []string) error {
 		}
 	}
 	if cp != "" {
-		if err := benchcompress.CheckRegression(rep, cp); err != nil {
+		if err := compress.CheckRegression(rep, cp); err != nil {
 			return fmt.Errorf("dex bench compress: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench compress: regression check passed")

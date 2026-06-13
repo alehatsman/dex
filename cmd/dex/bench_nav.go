@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/benchnav"
+	"github.com/alehatsman/dex/internal/bench/nav"
 	"github.com/alehatsman/dex/internal/codemap"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/eval"
@@ -123,9 +123,9 @@ func runBenchNav(ctx context.Context, args []string) error {
 		return fmt.Errorf("dex bench nav: run: %w", err)
 	}
 
-	queries := make([]benchnav.Query, 0, len(results))
+	queries := make([]nav.Query, 0, len(results))
 	for _, r := range results {
-		queries = append(queries, benchnav.Query{
+		queries = append(queries, nav.Query{
 			Query:    r.Query,
 			Ranked:   r.RankedFiles,
 			Relevant: r.Relevant,
@@ -133,7 +133,7 @@ func runBenchNav(ctx context.Context, args []string) error {
 	}
 
 	cost := navCostModel(p.Root)
-	noMap := benchnav.Compute(queries, *k, cost, *lane)
+	noMap := nav.Compute(queries, *k, cost, *lane)
 
 	// Phase B: seed navigation with `dex map`. Build the same L0/L1 the agent
 	// would see by default, then measure the map-vs-no-map delta. If the graph has
@@ -143,13 +143,13 @@ func runBenchNav(ctx context.Context, args []string) error {
 		fmt.Fprintf(os.Stderr, "dex bench nav: map lane unavailable (%v) — reporting no-map only\n", mapErr)
 		return emitNavReport(noMap, *outputFmt)
 	}
-	mapSeeded := benchnav.ComputeMap(queries, cost, mapModel, *lane)
-	cmp := benchnav.Compare(noMap, mapSeeded)
-	cmp.Routing = benchnav.ComputeRouting(queries, routeModel, navRoutingBudgets, *lane)
+	mapSeeded := nav.ComputeMap(queries, cost, mapModel, *lane)
+	cmp := nav.Compare(noMap, mapSeeded)
+	cmp.Routing = nav.ComputeRouting(queries, routeModel, navRoutingBudgets, *lane)
 	if tasks, around, terr := buildBreadthTasks(ctx, st, em, *k, *l1budget); terr != nil {
 		fmt.Fprintf(os.Stderr, "dex bench nav: breadth lane unavailable (%v) — skipping\n", terr)
 	} else {
-		cmp.Breadth = benchnav.ComputeBreadth(tasks, *k, cost, breadthModel, around, *lane)
+		cmp.Breadth = nav.ComputeBreadth(tasks, *k, cost, breadthModel, around, *lane)
 	}
 	// Re-orientation lane (#351 phase 3): restore a session's working set after
 	// compaction via recap() vs re-exploration. Built purely from the no-map
@@ -161,7 +161,7 @@ func runBenchNav(ctx context.Context, args []string) error {
 	} else {
 		fmt.Fprintf(os.Stderr, "dex bench nav: reorient lane — %d sessions of %d queries, recap budget %d tokens\n",
 			len(rtasks), navReorientSessionSize, navReorientRecapBudget)
-		cmp.Reorient = benchnav.ComputeReorient(rtasks, *k, cost, rm, *lane)
+		cmp.Reorient = nav.ComputeReorient(rtasks, *k, cost, rm, *lane)
 	}
 
 	switch *outputFmt {
@@ -197,7 +197,7 @@ func runBenchNav(ctx context.Context, args []string) error {
 
 // emitNavReport prints a single no-map report (the fallback when the map lane
 // is unavailable), preserving the pre-Phase-B output shape.
-func emitNavReport(rep benchnav.Report, format string) error {
+func emitNavReport(rep nav.Report, format string) error {
 	if format == "json" {
 		out, err := rep.JSON()
 		if err != nil {
@@ -216,22 +216,22 @@ func emitNavReport(rep benchnav.Report, format string) error {
 // Locate reports whether a gold file is named in an L0-shown cluster's rendered
 // L1 (so budget truncation is honored exactly as the agent sees it) and that
 // zoom's token cost.
-func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, routingBudgets []int) (benchnav.MapModel, benchnav.RoutingModel, benchnav.BreadthModel, error) {
+func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, routingBudgets []int) (nav.MapModel, nav.RoutingModel, nav.BreadthModel, error) {
 	base, err := indexDir()
 	if err != nil {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, err
+		return nav.MapModel{}, nav.RoutingModel{}, nav.BreadthModel{}, err
 	}
 	s, _ := newServerFromEnv(base)
 	out, err := s.GraphCommunities(ctx, mcp.CommunitiesInput{MinMembers: 3, TopK: 25, ProjectRoot: root})
 	if err != nil {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, err
+		return nav.MapModel{}, nav.RoutingModel{}, nav.BreadthModel{}, err
 	}
 	if out.Status != "ok" {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, fmt.Errorf("graph communities status %q", out.Status)
+		return nav.MapModel{}, nav.RoutingModel{}, nav.BreadthModel{}, fmt.Errorf("graph communities status %q", out.Status)
 	}
 	clusters := adaptCommunities(out.Communities)
 	if len(clusters) == 0 {
-		return benchnav.MapModel{}, benchnav.RoutingModel{}, benchnav.BreadthModel{}, fmt.Errorf("no clusters in graph")
+		return nav.MapModel{}, nav.RoutingModel{}, nav.BreadthModel{}, fmt.Errorf("no clusters in graph")
 	}
 
 	// Pre-render the L1 of each L0-shown cluster once; Locate scans these texts.
@@ -246,7 +246,7 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, 
 		shown = append(shown, shownL1{id: c.ID, text: txt, tokens: tokens.Count(txt)})
 	}
 	l0tokens := tokens.Count(codemap.RenderL0(clusters, l0budget))
-	mapModel := benchnav.MapModel{
+	mapModel := nav.MapModel{
 		L0Tokens: l0tokens,
 		Locate: func(path string) (int, bool) {
 			best, found := 0, false
@@ -273,7 +273,7 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, 
 		}
 		routable[b] = set
 	}
-	routeModel := benchnav.RoutingModel{
+	routeModel := nav.RoutingModel{
 		Routable: func(path string, budget int) bool {
 			return routable[budget][path]
 		},
@@ -283,7 +283,7 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, 
 	// the cheapest L0-shown cluster whose rendered L1 names a path (honoring L1
 	// truncation, like Locate) plus that cluster's id, so distinct zooms are
 	// charged once when a task's targets share a region.
-	breadthModel := benchnav.BreadthModel{
+	breadthModel := nav.BreadthModel{
 		L0Tokens: l0tokens,
 		Cluster: func(path string) (int, int, bool) {
 			id, best, found := 0, 0, false
@@ -302,9 +302,9 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, 
 // the token count of the file's content at the project root (memoized — gold
 // files recur across queries); the find envelope is modeled as the token count
 // of the ranked path list the agent scans before opening anything.
-func navCostModel(root string) benchnav.CostModel {
+func navCostModel(root string) nav.CostModel {
 	cache := make(map[string]int)
-	return benchnav.CostModel{
+	return nav.CostModel{
 		Read: func(path string) int {
 			if n, ok := cache[path]; ok {
 				return n
@@ -322,8 +322,8 @@ func navCostModel(root string) benchnav.CostModel {
 	}
 }
 
-func loadNavComparison(path string) (benchnav.Comparison, error) {
-	var cmp benchnav.Comparison
+func loadNavComparison(path string) (nav.Comparison, error) {
+	var cmp nav.Comparison
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return cmp, err
@@ -347,10 +347,10 @@ const navBreadthMaxTasks = 25
 // enumerates them, whereas find() ranks by similarity, not adjacency. One find()
 // per seed (over its short name) populates the no-map lane's ranking. Seeds are
 // taken by descending neighbor-file count and capped to bound runtime.
-func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, k, l1budget int) ([]benchnav.BreadthTask, benchnav.AroundModel, error) {
+func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, k, l1budget int) ([]nav.BreadthTask, nav.AroundModel, error) {
 	nodes, err := st.GraphAllNodes(ctx)
 	if err != nil {
-		return nil, benchnav.AroundModel{}, err
+		return nil, nav.AroundModel{}, err
 	}
 	idFile := make(map[string]string, len(nodes))
 	idQual := make(map[string]string, len(nodes))
@@ -379,7 +379,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 
 	edges, err := st.GraphAllEdges(ctx)
 	if err != nil {
-		return nil, benchnav.AroundModel{}, err
+		return nil, nav.AroundModel{}, err
 	}
 	// Undirected adjacency over node ids: callers ∪ callees.
 	adj := map[string]map[string]bool{}
@@ -435,7 +435,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 		seeds = append(seeds, seedTask{id: id, query: query, label: "neighborhood of " + qual, files: files})
 	}
 	if len(seeds) == 0 {
-		return nil, benchnav.AroundModel{}, fmt.Errorf("no hub symbols with >= %d neighbor files", navBreadthMinNeighbors)
+		return nil, nav.AroundModel{}, fmt.Errorf("no hub symbols with >= %d neighbor files", navBreadthMinNeighbors)
 	}
 	// Largest neighbor sets first; deterministic tie-break by query.
 	sort.SliceStable(seeds, func(i, j int) bool {
@@ -470,7 +470,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 		aroundText[sd.label] = text
 		aroundTok[sd.label] = tokens.Count(text)
 	}
-	around := benchnav.AroundModel{Region: func(task string) (string, int, bool) {
+	around := nav.AroundModel{Region: func(task string) (string, int, bool) {
 		text, ok := aroundText[task]
 		if !ok {
 			return "", 0, false
@@ -489,15 +489,15 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 	}
 	results, err := eval.RunWithRewrite(ctx, em, st, gs, k, nil)
 	if err != nil {
-		return nil, benchnav.AroundModel{}, err
+		return nil, nav.AroundModel{}, err
 	}
-	tasks := make([]benchnav.BreadthTask, 0, len(results))
+	tasks := make([]nav.BreadthTask, 0, len(results))
 	for _, r := range results {
 		sd, ok := byQuery[r.Query]
 		if !ok {
 			continue
 		}
-		tasks = append(tasks, benchnav.BreadthTask{
+		tasks = append(tasks, nav.BreadthTask{
 			Task:    sd.label,
 			Targets: sd.files,
 			Ranked:  r.RankedFiles,
@@ -523,8 +523,8 @@ const (
 // i.e. what the agent had open before compaction. No extra retrieval: it is a
 // pure transform of the queries the no-map lane already ranked. Sessions whose
 // working set is empty (no gold reachable across the bucket) are dropped.
-func buildReorientTasks(queries []benchnav.Query, k int) []benchnav.ReorientTask {
-	var tasks []benchnav.ReorientTask
+func buildReorientTasks(queries []nav.Query, k int) []nav.ReorientTask {
+	var tasks []nav.ReorientTask
 	for start := 0; start < len(queries); start += navReorientSessionSize {
 		end := start + navReorientSessionSize
 		if end > len(queries) {
@@ -532,7 +532,7 @@ func buildReorientTasks(queries []benchnav.Query, k int) []benchnav.ReorientTask
 		}
 		seen := map[string]bool{}
 		var working []string
-		var rqs []benchnav.ReorientQuery
+		var rqs []nav.ReorientQuery
 		for _, q := range queries[start:end] {
 			depth := k
 			if len(q.Ranked) < depth {
@@ -557,12 +557,12 @@ func buildReorientTasks(queries []benchnav.Query, k int) []benchnav.ReorientTask
 			if len(gold) == 0 {
 				continue // this find() re-surfaces nothing the agent had kept
 			}
-			rqs = append(rqs, benchnav.ReorientQuery{Ranked: q.Ranked, Gold: gold})
+			rqs = append(rqs, nav.ReorientQuery{Ranked: q.Ranked, Gold: gold})
 		}
 		if len(working) == 0 {
 			continue
 		}
-		tasks = append(tasks, benchnav.ReorientTask{
+		tasks = append(tasks, nav.ReorientTask{
 			Task:    fmt.Sprintf("session %d (queries %d-%d)", len(tasks)+1, start+1, end),
 			Working: working,
 			Queries: rqs,
@@ -578,10 +578,10 @@ func buildReorientTasks(queries []benchnav.Query, k int) []benchnav.ReorientTask
 // recap() now renders (the session `recap` action, internal/mcp/server_session.go
 // recapEntryText) — the gate measures what ships — mirroring how the map/breadth
 // lanes model their verb without the live stack.
-func buildRecapModel(ctx context.Context, st *store.Store) (benchnav.ReorientModel, error) {
+func buildRecapModel(ctx context.Context, st *store.Store) (nav.ReorientModel, error) {
 	nodes, err := st.GraphAllNodes(ctx)
 	if err != nil {
-		return benchnav.ReorientModel{}, err
+		return nav.ReorientModel{}, err
 	}
 	symbols := map[string][]string{}
 	for _, n := range nodes {
@@ -599,5 +599,5 @@ func buildRecapModel(ctx context.Context, st *store.Store) (benchnav.ReorientMod
 		}
 		return tokens.Count(b.String())
 	}
-	return benchnav.ReorientModel{RecapBudget: navReorientRecapBudget, Entry: entry}, nil
+	return nav.ReorientModel{RecapBudget: navReorientRecapBudget, Entry: entry}, nil
 }

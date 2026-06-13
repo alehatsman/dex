@@ -1,4 +1,4 @@
-package benchperf
+package perf
 
 import (
 	"encoding/json"
