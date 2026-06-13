@@ -1,3 +1,4 @@
+// Package source provides utilities for reading source files and extracting imports.
 package source
 
 import (
