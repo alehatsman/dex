@@ -47,6 +47,11 @@ func runBenchCompress(_ context.Context, args []string) {
 	_ = fs.Parse(args)
 
 	family := tokens.Detect(*tokenizerName)
+	// Align the package-level accounting + token-reduction gating (#292) with
+	// the requested tokenizer, so the aggressive pass exercises rule
+	// eligibility under this encoder — the per-tokenizer Pareto the bench
+	// reports. Counting elsewhere uses the explicit family passed to RunSample.
+	tokens.SetDefaultFamily(family)
 
 	// Run all samples.
 	var sampleResults []benchcompress.SampleResult

@@ -241,6 +241,12 @@ func SetDefaultFamily(f Family) {
 	defaultMu.Unlock()
 }
 
+// ActiveFamily reports the family currently backing the package-level Count
+// (DefaultFamily until overridden via SetDefaultFamily). Callers that gate
+// behaviour on the active tokenizer — e.g. token-reduction rule eligibility —
+// read it here rather than loading a second tokenizer path.
+func ActiveFamily() Family { return def().Family() }
+
 // Count returns the token count of s using the default family (o200k_base
 // unless overridden via SetDefaultFamily).
 func Count(s string) int { return def().Count(s) }

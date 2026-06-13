@@ -22,9 +22,12 @@ func TestApplyTokenReductions_Global(t *testing.T) {
 			want: "items.map(x=>x.id)",
 		},
 		{
-			name: "triple blank lines collapsed",
+			// "\n\n\n" and "\n\n" tokenize to the same count, so the #292 gate
+			// suppresses this rule (no real reduction). Blank-line collapsing in
+			// the aggressive pipeline is handled separately by normalizeBlankLines.
+			name: "triple blank lines (token-neutral, gated off #292)",
 			in:   "a\n\n\nb",
-			want: "a\n\nb",
+			want: "a\n\n\nb",
 		},
 		{
 			name: "no change when already minimal",
@@ -111,34 +114,38 @@ func TestApplyTokenReductions_JSTS(t *testing.T) {
 		want string
 	}{
 		{
-			name: "function keyword",
+			// "function " and "fn " tokenize to the same count under o200k (the
+			// test's active family), so the #292 gate suppresses the swap.
+			name: "function keyword (token-neutral, gated off #292)",
 			in:   "export function greet(name: string) {}",
 			ext:  ".ts",
-			want: "export fn greet(name: string) {}",
+			want: "export function greet(name: string) {}",
 		},
 		{
-			name: "boolean type",
+			// "boolean" and "bool" are both a single token — no real reduction.
+			name: "boolean type (token-neutral, gated off #292)",
 			in:   "let x: boolean = true;",
 			ext:  ".ts",
-			want: "let x: bool = true;",
+			want: "let x: boolean = true;",
 		},
 		{
+			// "export default " (3 tok) → "export " (2 tok): a real reduction, fires.
 			name: "export default",
 			in:   "export default class Foo {}",
 			ext:  ".js",
 			want: "export class Foo {}",
 		},
 		{
-			name: "tsx extension",
+			name: "tsx extension (function gated off #292)",
 			in:   "function App(): JSX.Element {}",
 			ext:  ".tsx",
-			want: "fn App(): JSX.Element {}",
+			want: "function App(): JSX.Element {}",
 		},
 		{
-			name: "jsx extension",
+			name: "jsx extension (function gated off #292)",
 			in:   "function render() {}",
 			ext:  ".jsx",
-			want: "fn render() {}",
+			want: "function render() {}",
 		},
 		{
 			name: "not applied to go files",
