@@ -1,9 +1,11 @@
 // Package proxy is the loopback Anthropic API pass-through (epic #232).
 //
 // It sits between Claude Code and the Anthropic API at ANTHROPIC_BASE_URL,
-// running each /v1/messages request through two deterministic passes:
-//  1. PruneRequestBody — rewrites old tool_result blocks outside keep_recent.
-//  2. CompressRequestBody — entropy + terse compression on all tool_results.
+// running each /v1/messages request through deterministic passes that leave
+// tool_result CONTENT untouched — the model always sees verbatim tool output:
+//  1. PruneRequestBody — rewrites old tool_result blocks (outside keep_recent)
+//     to compact re-read stubs; recent results pass through verbatim (#357).
+//  2. tool-description compression + cache-breakpoint alignment.
 //
 // Token counts are measured before and after, accumulated in Stats, and
 // exposed via GET /stats (JSON Snapshot). Run dex proxy --stats to fetch it.
@@ -196,12 +198,6 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			if prunedBytes > 0 {
 				current = pruned
 				paths = append(paths, "prune")
-			}
-
-			compressed, compressedBytes := CompressRequestBody(current)
-			if compressedBytes > 0 {
-				current = compressed
-				paths = append(paths, "compress")
 			}
 
 			// Tool-description compression runs before cache alignment so the

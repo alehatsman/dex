@@ -3,7 +3,7 @@ package main
 // `dex proxy` — loopback Anthropic API pass-through (epic #232).
 //
 // Sits between Claude Code and the Anthropic API at ANTHROPIC_BASE_URL and
-// runs each /v1/messages request through history pruning and tool_result
+// runs each /v1/messages request through history pruning and tool-description
 // compression before forwarding. SSE streaming passes through unbuffered.
 //
 //	export ANTHROPIC_BASE_URL=http://127.0.0.1:8788
@@ -38,7 +38,7 @@ import (
 func cmdProxy(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("proxy", flag.ContinueOnError)
 	setHelp(fs,
-		"Loopback Anthropic API pass-through with history pruning and tool_result compression.",
+		"Loopback Anthropic API pass-through with history pruning and tool-description compression.",
 		"dex proxy [--addr 127.0.0.1:8788] [--upstream https://api.anthropic.com] [--stats]",
 		`dex proxy`,
 		`dex proxy --addr 127.0.0.1:9000`,

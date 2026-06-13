@@ -207,7 +207,7 @@ func TestFailOpenMalformedBody(t *testing.T) {
 		t.Errorf("malformed body not forwarded verbatim: got %q", gotBody)
 	}
 	// Malformed body still gets a per-request metrics log; pass=passthrough
-	// since prune/compress both fail-open on non-JSON.
+	// since prune fails open on non-JSON.
 	if !strings.Contains(logs.String(), "dex proxy request") {
 		t.Errorf("expected per-request metrics log even for malformed body, got:\n%s", logs.String())
 	}

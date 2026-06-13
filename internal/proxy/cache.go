@@ -18,8 +18,8 @@ import (
 // turns. The volatile tail (the most-recent messages, which change every turn)
 // is left uncached.
 //
-// ORDERING (#237 interplay): this pass MUST run AFTER PruneRequestBody and
-// CompressRequestBody. Pruning rewrites old tool_results in the stable region;
+// ORDERING (#237 interplay): this pass MUST run AFTER PruneRequestBody.
+// Pruning rewrites old tool_results in the stable region;
 // if breakpoints were placed before pruning they would sit on bytes that prune
 // then changes, busting the very cache they mark. Placed after pruning, the
 // marked prefix is the deterministic post-pruned region: turn N caches it, turn
