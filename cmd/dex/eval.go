@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/eval"
@@ -56,6 +57,8 @@ Flags:
   --check path     compare against a reference report JSON; exit 1 on regression
   --alpha-sweep   sweep FusionLinear α from 0.1 to 1.0 in 0.1 steps, printing
                    a table with the RRF baseline. Use to tune DEX_FUSION_ALPHA.
+  --emit-calibration path  with --alpha-sweep: write the winning config to the
+                   named calibration.yml (run from the dex repo, commit the diff)
 
 Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
              DEX_FUSION_MODE=linear  select convex-combination score fusion.
@@ -77,6 +80,7 @@ func runEval(ctx context.Context, args []string) error {
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
 	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+symbol+graph, zero-inference) | onnx (in-process ONNX, requires env vars)")
 	alphaSweep := fs.Bool("alpha-sweep", false, "sweep FusionLinear α from 0.1 to 1.0 and print a comparison table with RRF as baseline")
+	emitCalib := fs.String("emit-calibration", "", "with --alpha-sweep: write the winning config to this calibration.yml path (run from the dex repo; commit the diff)")
 	expand := fs.String("expand", "off", "query-side expansion to A/B (#252): off | on | full. Requires DEX_EXPAND_MODEL.")
 
 	// Project path is the first non-flag arg; allow flags after it.
@@ -153,10 +157,13 @@ func runEval(ctx context.Context, args []string) error {
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
 	if *alphaSweep {
-		if err := runAlphaSweep(ctx, p, em, gs, *k); err != nil {
+		if err := runAlphaSweep(ctx, p, em, gs, *k, *emitCalib); err != nil {
 			return fmt.Errorf("dex bench eval: alpha sweep: %w", err)
 		}
 		return nil
+	}
+	if *emitCalib != "" {
+		return fmt.Errorf("dex bench eval: --emit-calibration requires --alpha-sweep")
 	}
 
 	var rw eval.Rewrite
@@ -261,9 +268,11 @@ func evalEmbedForLane(lane, model string) (embed.Embedder, error) {
 // runAlphaSweep opens the store once per configuration (RRF baseline + FusionLinear
 // at α = 0.1, 0.2, …, 1.0) and prints a comparison table so the operator can pick
 // the best FusionAlpha value before setting DEX_FUSION_MODE=linear in production.
-func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs eval.GoldenSet, k int) error {
+func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs eval.GoldenSet, k int, emitPath string) error {
 	type row struct {
 		label string
+		mode  store.FusionMode
+		alpha float32
 		rep   eval.Report
 	}
 
@@ -277,7 +286,7 @@ func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs e
 		if err != nil {
 			return row{}, fmt.Errorf("%s: %w", label, err)
 		}
-		return row{label: label, rep: eval.Compute(results, k)}, nil
+		return row{label: label, mode: opts.FusionMode, alpha: opts.FusionAlpha, rep: eval.Compute(results, k)}, nil
 	}
 
 	base := storeOpts()
@@ -305,13 +314,57 @@ func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs e
 		fmt.Fprintf(os.Stderr, "alpha sweep: %s done\n", label)
 	}
 
-	// Print comparison table.
+	// Winner = highest mean NDCG@k (ties keep the earlier, simpler config).
+	best := 0
+	for i, row := range rows {
+		if row.rep.MeanNDCG > rows[best].rep.MeanNDCG {
+			best = i
+		}
+	}
+
+	// Print comparison table; mark the winner.
 	fmt.Printf("\n%-20s  %8s  %8s  %8s\n", "mode", "NDCG@k", "Recall@k", "MRR")
 	fmt.Printf("%-20s  %8s  %8s  %8s\n", "--------------------", "--------", "--------", "--------")
-	for _, row := range rows {
-		fmt.Printf("%-20s  %8.4f  %8.4f  %8.4f\n",
-			row.label, row.rep.MeanNDCG, row.rep.MeanRecall, row.rep.MRR)
+	for i, row := range rows {
+		marker := ""
+		if i == best {
+			marker = "  <- winner"
+		}
+		fmt.Printf("%-20s  %8.4f  %8.4f  %8.4f%s\n",
+			row.label, row.rep.MeanNDCG, row.rep.MeanRecall, row.rep.MRR, marker)
 	}
+
+	if emitPath == "" {
+		return nil
+	}
+	return emitCalibration(emitPath, rows[best].mode, rows[best].alpha,
+		fmt.Sprintf("alpha-sweep winner %q: NDCG@%d=%.4f Recall@%d=%.4f MRR=%.4f over %d queries (head %s)",
+			rows[best].label, k, rows[best].rep.MeanNDCG, k, rows[best].rep.MeanRecall, rows[best].rep.MRR,
+			len(gs.Queries), shortHash(gs.Head)))
+}
+
+// emitCalibration writes the swept winner back to the calibration artifact at
+// path. Only the swept dimensions (fusion mode + alpha) come from the run; the
+// other lanes keep the current calibrated values, so the file stays complete.
+func emitCalibration(path string, mode store.FusionMode, alpha float32, metric string) error {
+	c := store.CalibratedDefaults() // preserve rrfK / graph / rerank lanes
+	c.FusionMode = store.FusionModeString(mode)
+	if mode == store.FusionLinear {
+		c.FusionAlpha = alpha
+	}
+	c.Provenance.Source = "dex eval --alpha-sweep --emit-calibration"
+	c.Provenance.Date = time.Now().UTC().Format("2006-01-02")
+	c.Provenance.Metric = metric
+
+	out, err := store.MarshalCalibration(c)
+	if err != nil {
+		return fmt.Errorf("emit calibration: %w", err)
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		return fmt.Errorf("emit calibration: write %s: %w", path, err)
+	}
+	fmt.Fprintf(os.Stderr, "dex bench eval: wrote calibration to %s (mode=%s alpha=%.2f) — review & commit the diff\n",
+		path, c.FusionMode, c.FusionAlpha)
 	return nil
 }
 

@@ -111,3 +111,38 @@ func ParseFusionMode(s string) (FusionMode, bool) {
 		return FusionRRF, false
 	}
 }
+
+// FusionModeString is the inverse of ParseFusionMode — the canonical lowercase
+// token for a FusionMode, suitable for writing back into the calibration artifact.
+func FusionModeString(m FusionMode) string {
+	if m == FusionLinear {
+		return "linear"
+	}
+	return "rrf"
+}
+
+// calibrationHeader is prepended to a regenerated artifact so the instructional
+// preamble survives a `--emit-calibration` rewrite (yaml.Marshal drops comments).
+const calibrationHeader = `# Calibrated retrieval-fusion defaults.
+#
+# These values are DATA, not source — the product of ` + "`dex eval --alpha-sweep`" + `
+# runs over the retrieval corpus. Regenerate with
+#   dex eval --alpha-sweep --emit-calibration
+# and commit the diff; do not hand-edit values without a corresponding eval run.
+#
+# Env vars still override per-process: DEX_FUSION_MODE, DEX_FUSION_ALPHA,
+# DEX_GRAPH_GAMMA, DEX_GRAPH_HOP_CAP, DEX_GRAPH_WEIGHT, DEX_RERANK_POOL.
+# Precedence: env  >  this artifact  >  built-in fallback.
+
+`
+
+// MarshalCalibration renders a Calibration as the artifact bytes (instructional
+// header + YAML). It is the single writer used by ` + "`dex eval --emit-calibration`" + `
+// so regeneration stays in lockstep with the parse path.
+func MarshalCalibration(c Calibration) ([]byte, error) {
+	body, err := yaml.Marshal(c)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(calibrationHeader), body...), nil
+}

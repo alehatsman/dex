@@ -79,6 +79,32 @@ rerank_pool: -10
 	}
 }
 
+// TestMarshalCalibrationRoundTrips guards the regen path: bytes written by
+// `dex eval --emit-calibration` must parse back to the same config.
+func TestMarshalCalibrationRoundTrips(t *testing.T) {
+	in := builtinCalibration
+	in.FusionMode = "rrf"
+	in.FusionAlpha = 0.5
+	in.Provenance.Source = "test"
+	raw, err := MarshalCalibration(in)
+	if err != nil {
+		t.Fatalf("MarshalCalibration: %v", err)
+	}
+	got := loadCalibration(raw)
+	if got != in {
+		t.Errorf("round-trip mismatch:\n got  %+v\n want %+v", got, in)
+	}
+}
+
+func TestFusionModeStringRoundTrips(t *testing.T) {
+	for _, m := range []FusionMode{FusionLinear, FusionRRF} {
+		got, ok := ParseFusionMode(FusionModeString(m))
+		if !ok || got != m {
+			t.Errorf("FusionModeString/ParseFusionMode round-trip for %v: got (%v,%v)", m, got, ok)
+		}
+	}
+}
+
 func TestParseFusionMode(t *testing.T) {
 	cases := []struct {
 		in   string
