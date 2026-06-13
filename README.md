@@ -1,28 +1,50 @@
 # dex
 
 Local semantic code intel for AI agents. Indexes a repo over MCP: tree-sitter
-chunks → self-hosted embeddings → SQLite (vectors + BM25 FTS) with hybrid RRF
-retrieval, optional cross-encoder rerank, and a call graph (type-resolved for Go;
-AST-based for TypeScript, JavaScript, Python, Java, Rust).
-Source never leaves your machine.
+chunks → SQLite (BM25 full-text + symbol table + call graph, type-resolved for
+Go; AST-based for TypeScript, JavaScript, Python, Java, Rust). Runs with **zero
+inference stack** — no GPU, no embedding server — and adds an optional
+self-hosted embedding lane (hybrid RRF + cross-encoder rerank) when you want
+semantic search. Source never leaves your machine.
 
 ```console
 $ dex search semantic ./ "where is filesystem event debouncing handled"
 ─── #1 markDirty  internal/watch/watch.go:60-71  (method_declaration)
 ```
 
-## Quick start
+## Quick start — zero inference stack
+
+No GPU, no embedding server, nothing to pull. `DEX_EMBED_ENGINE=none` builds a
+BM25 + symbol + call-graph index and `ask` runs on those lanes:
 
 ```bash
 git clone https://github.com/alehatsman/dex.git && cd dex
 mooncake task install   # → ~/bin; safe to re-run while dex is live
 
-dex index ./            # build the index (chunks + Go graph)
+export DEX_EMBED_ENGINE=none          # lean: no embedder wired
+dex index ./                          # BM25 + symbols + Go call graph
 dex ask ./ "where is filesystem event debouncing handled?"
 ```
 
-Requires CGO (tree-sitter + sqlite-vec) and `-tags sqlite_fts5` (BM25). Use
-`mooncake task install` or `tasks.yml` — they pass both. Direct `go
+This lean form captures **~94% of full-stack retrieval quality at zero
+inference cost** (NDCG@10 0.539 vs 0.572 — see
+[docs/lean-profile.md](docs/lean-profile.md)). The embedding-backed tools are
+simply not advertised when no embedder is wired (#283).
+
+### Add the semantic lane (optional)
+
+Point dex at any OpenAI-compatible embedding endpoint (e.g. a local ollama) for
+hybrid semantic + lexical retrieval — or run the embedder in-process on CPU
+with `-tags onnx`, no GPU required ([docs/lean-profile.md](docs/lean-profile.md)):
+
+```bash
+unset DEX_EMBED_ENGINE                 # back to the embedding lane
+export DEX_EMBED_URL=http://127.0.0.1:11434   # your OpenAI-compatible endpoint
+dex reindex ./
+```
+
+**Build requirements:** CGO (tree-sitter + sqlite-vec) and `-tags sqlite_fts5`
+(BM25). `mooncake task install` and `tasks.yml` pass both. Direct `go
 build`/`go install`? Add `-tags sqlite_fts5`, `CGO_ENABLED=1`, and a C
 toolchain on `PATH`.
 
