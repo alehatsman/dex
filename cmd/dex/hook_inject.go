@@ -58,9 +58,9 @@ func hookInject(ctx context.Context) error {
 
 	s, _ := newServerFromEnv(base)
 	_, out, err := s.ContextRouter(tctx, mcp.ContextInput{
-		Project:  p.Root,
-		Question: payload.Prompt,
-		K:        6,
+		ProjectRoot: p.Root,
+		Question:    payload.Prompt,
+		K:           6,
 		// NoInline=true: inject only paths + reasons, not raw content.
 		// The content would bloat every turn; Claude can Read the files.
 		NoInline: true,

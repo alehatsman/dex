@@ -254,8 +254,8 @@ func TestHTTPProjectIDOverridesBody(t *testing.T) {
 
 	// POST /v1/projects/{id}/ask with a malicious project in the body.
 	body, _ := json.Marshal(map[string]string{
-		"question": "where is the watcher?",
-		"project":  "/etc",
+		"question":     "where is the watcher?",
+		"project_root": "/etc",
 	})
 	resp, err := http.Post(ts.URL+"/v1/projects/"+id+"/ask",
 		"application/json", bytes.NewReader(body))

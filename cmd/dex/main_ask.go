@@ -58,11 +58,11 @@ func cmdAsk(ctx context.Context, args []string) error {
 	s, _ := newServerFromEnv(base)
 	t0 := time.Now()
 	_, out, err := s.ContextRouter(ctx, mcp.ContextInput{
-		Project:  p.Root,
-		Question: question,
-		Intent:   *intent,
-		K:        *k,
-		NoInline: *noInline,
+		ProjectRoot: p.Root,
+		Question:    question,
+		Intent:      *intent,
+		K:           *k,
+		NoInline:    *noInline,
 	})
 	elapsed := time.Since(t0)
 	if err != nil {

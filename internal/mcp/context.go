@@ -77,12 +77,12 @@ var (
 // ─── tool: ask ────────────────────────────────────────────────────────────
 
 type ContextInput struct {
-	Project  string `json:"project,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Question string `json:"question" jsonschema:"free-text question about the codebase (e.g. 'where is filesystem event debouncing handled?', 'how does indexing work?', 'callers of (*Store).Search')"`
-	Intent   string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context (default: auto)"`
-	K        int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
-	NoInline bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
-	Expand   string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	Question    string `json:"question" jsonschema:"free-text question about the codebase (e.g. 'where is filesystem event debouncing handled?', 'how does indexing work?', 'callers of (*Store).Search')"`
+	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context (default: auto)"`
+	K           int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
+	NoInline    bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
+	Expand      string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
 }
 
 // SemHit is a semantic-search result reduced to the wire shape the
@@ -298,7 +298,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 		// (#348 / #316 story 6). No inference, byte-stable, cache-friendly.
 		return s.orientResponse(ctx, in)
 	}
-	p, hint := s.resolveProject(in.Project)
+	p, hint := s.resolveProject(in.ProjectRoot)
 	if hint != "" {
 		return nil, ContextOutput{Status: "error", Hint: hint}, nil
 	}

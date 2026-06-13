@@ -797,8 +797,8 @@ func TestContextRouterInlinesByDefault(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "where do we greet users",
-		Project:  root,
+		Question:    "where do we greet users",
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -822,9 +822,9 @@ func TestContextRouterNoInline(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "where do we greet users",
-		Project:  root,
-		NoInline: true,
+		Question:    "where do we greet users",
+		ProjectRoot: root,
+		NoInline:    true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -951,8 +951,8 @@ func TestRunSymbolLaneDemotesFixtures(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "Store",
-		Project:  root,
+		Question:    "Store",
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1183,8 +1183,8 @@ func TestContextRouterBehaviorSearch(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "where do we greet users",
-		Project:  root,
+		Question:    "where do we greet users",
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1222,8 +1222,8 @@ func TestContextRouterSymbolLookup(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "Greet",
-		Project:  root,
+		Question:    "Greet",
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1262,8 +1262,8 @@ func TestContextRouterCallersAvoid(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "callers of Search",
-		Project:  root,
+		Question:    "callers of Search",
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1315,8 +1315,8 @@ func TestContextRouterTruncatedReadFlagsNextAction(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "Long", // exact symbol match → symbol_lookup
-		Project:  root,
+		Question:    "Long", // exact symbol match → symbol_lookup
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1347,8 +1347,8 @@ func TestContextRouterSymbolLookupMissNearMissCandidates(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "Index", // bare identifier; no exact match
-		Project:  root,
+		Question:    "Index", // bare identifier; no exact match
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1376,8 +1376,8 @@ func TestContextRouterNoIndex(t *testing.T) {
 
 	s := newServer(srv.URL, cacheDir)
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "anything",
-		Project:  projDir,
+		Question:    "anything",
+		ProjectRoot: projDir,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1393,7 +1393,7 @@ func TestContextRouterNoIndex(t *testing.T) {
 // never the old "question is empty" error.
 func TestContextRouterEmptyQuestionOrients(t *testing.T) {
 	s := newServer("http://127.0.0.1:0", t.TempDir())
-	_, out, err := s.ContextRouter(context.Background(), ContextInput{Project: t.TempDir()})
+	_, out, err := s.ContextRouter(context.Background(), ContextInput{ProjectRoot: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1445,7 +1445,7 @@ func TestContextRouterEmptyQuestionRendersMap(t *testing.T) {
 	st.Close()
 
 	s := newServer(srv.URL, cacheDir)
-	_, out, err := s.ContextRouter(ctx, ContextInput{Project: root})
+	_, out, err := s.ContextRouter(ctx, ContextInput{ProjectRoot: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1554,8 +1554,8 @@ func TestContextRouterGraphSymbolLookup(t *testing.T) {
 
 	s := newServer(srv.URL, cacheDir)
 	_, out, err := s.ContextRouter(ctx, ContextInput{
-		Question: "Search",
-		Project:  root,
+		Question:    "Search",
+		ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1612,9 +1612,9 @@ func TestContextRouterKBudget(t *testing.T) {
 	s := newServer(srv.URL, cacheDir)
 
 	_, out, err := s.ContextRouter(context.Background(), ContextInput{
-		Question: "function",
-		Project:  root,
-		K:        2,
+		Question:    "function",
+		ProjectRoot: root,
+		K:           2,
 	})
 	if err != nil {
 		t.Fatal(err)

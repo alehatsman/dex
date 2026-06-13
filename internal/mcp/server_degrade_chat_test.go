@@ -58,7 +58,7 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 	t.Run("nil chat client", func(t *testing.T) {
 
 		s := chatDownServer(t, cacheDir, nil)
-		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, Project: projRoot})
+		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, ProjectRoot: projRoot})
 		if err != nil {
 			t.Fatalf("ask returned hard error with nil chat: %v", err)
 		}
@@ -72,7 +72,7 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 
 		// Closed port → chat.ErrUnreachable from Generate.
 		s := chatDownServer(t, cacheDir, chat.New(closedURL(t), "fake", 200*time.Millisecond))
-		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, Project: projRoot})
+		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, ProjectRoot: projRoot})
 		if err != nil {
 			t.Fatalf("ask returned hard error with unreachable chat: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 		chatSrv := fakeChat(t, "Authenticate validates a bearer token (auth.go).")
 		defer chatSrv.Close()
 		s := chatDownServer(t, cacheDir, chat.New(chatSrv.URL, "fake", 5*time.Second))
-		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, Project: projRoot})
+		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, ProjectRoot: projRoot})
 		if err != nil {
 			t.Fatalf("ask errored with healthy chat: %v", err)
 		}

@@ -470,7 +470,7 @@ func (s *Server) handleAsk(projects map[string]string) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
-		in.Project = root
+		in.ProjectRoot = root
 		_, out, err := s.ContextRouter(r.Context(), in)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

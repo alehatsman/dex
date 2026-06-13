@@ -33,7 +33,7 @@ type projectScoped struct {
 }
 
 func (p projectScoped) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
-	in.Project = p.root
+	in.ProjectRoot = p.root
 	return p.s.contextRouter(ctx, req, in)
 }
 
