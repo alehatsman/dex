@@ -253,7 +253,7 @@ func (e *onnxEmbedder) poolNormalize(out *ort.Tensor[float32], maskList [][]int6
 		} else {
 			var count float32
 			for j := 0; j < maxLen; j++ {
-				if maskList[i][j] == 0 {
+				if j >= len(maskList[i]) || maskList[i][j] == 0 {
 					continue
 				}
 				count++
