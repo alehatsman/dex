@@ -79,15 +79,63 @@ func TestApply_PreservesIndent(t *testing.T) {
 	}
 	cb := BuildCodebook(files)
 	if cb.Empty() {
-		t.Skip("codebook empty — indented line not matched (expected if trimming strips indent)")
+		t.Fatal("expected indented line to be matched (#450: df is keyed indent-free)")
 	}
-	// If it was matched, the indent must be preserved.
+	// The legend value must be indent-free; Apply re-adds the line's own indent.
+	if !strings.Contains(cb.Legend(), "§0="+line) {
+		t.Errorf("legend value should be indent-free: %q", cb.Legend())
+	}
 	applied := cb.Apply(files[0])
 	for _, l := range strings.Split(applied, "\n") {
 		if strings.Contains(l, "§") && !strings.HasPrefix(l, "\t") {
 			t.Errorf("indent lost in line %q", l)
 		}
 	}
+	// Round-trip must reproduce the original exactly — no doubled indent (#450).
+	if got := expandCodebook(cb, applied); got != files[0] {
+		t.Errorf("round-trip mismatch:\n got: %q\nwant: %q", got, files[0])
+	}
+}
+
+// TestBuildCodebook_IndentInsensitiveDedup guards #450: the same logical line at
+// different indents across files must collapse to ONE codebook entry (so common
+// boilerplate isn't lost below the ≥3-file threshold) and round-trip exactly.
+func TestBuildCodebook_IndentInsensitiveDedup(t *testing.T) {
+	line := `import "github.com/example/project/internal/store"`
+	files := []string{
+		line + "\nfunc A() {}",          // no indent
+		"\t" + line + "\nfunc B() {}",   // tab indent
+		"\t\t" + line + "\nfunc C() {}", // double-tab indent
+	}
+	cb := BuildCodebook(files)
+	if cb.Empty() {
+		t.Fatal("expected one entry: same line at different indents must dedup")
+	}
+	if len(cb.entries) != 1 {
+		t.Fatalf("expected exactly 1 codebook entry, got %d", len(cb.entries))
+	}
+	for i, f := range files {
+		if got := expandCodebook(cb, cb.Apply(f)); got != f {
+			t.Errorf("file %d round-trip mismatch:\n got: %q\nwant: %q", i, got, f)
+		}
+	}
+}
+
+// expandCodebook is the inverse of Apply: it replaces each "<indent>§N" with
+// "<indent><entry-line>", used only to assert exact round-trips in tests.
+func expandCodebook(cb Codebook, applied string) string {
+	lines := strings.Split(applied, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		for _, e := range cb.entries {
+			if trimmed == e.ref {
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				lines[i] = indent + e.line
+				break
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func TestApply_LegendFormat(t *testing.T) {

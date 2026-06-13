@@ -10,7 +10,9 @@ import (
 // reducing token cost when the same boilerplate (imports, error patterns,
 // license lines) appears in 3+ files.
 type Codebook struct {
-	// entries are sorted longest-first to avoid partial-match conflicts.
+	// entries are ordered most-frequent-first (then lexicographically) for
+	// deterministic §N assignment. Apply matches whole trimmed lines exactly,
+	// so entry order does not affect correctness.
 	entries []codebookEntry
 }
 
@@ -42,8 +44,11 @@ func BuildCodebook(files []string) Codebook {
 	for _, f := range files {
 		seen := make(map[string]bool)
 		for _, line := range strings.Split(f, "\n") {
-			line = strings.TrimRight(line, " \t")
-			if len(strings.TrimSpace(line)) < 8 {
+			// Key on the fully-trimmed line so dedup is indent-insensitive and
+			// the stored §N value is indent-free — matching Apply, which re-adds
+			// each line's own indent ahead of the ref.
+			line = strings.TrimSpace(line)
+			if len(line) < 8 {
 				// Skip very short lines — not worth encoding.
 				continue
 			}
@@ -82,11 +87,6 @@ func BuildCodebook(files []string) Codebook {
 		candidates = candidates[:50]
 	}
 
-	// Sort longest-first to prevent partial-match conflicts during Apply.
-	sort.Slice(candidates, func(i, j int) bool {
-		return len(candidates[i].line) > len(candidates[j].line)
-	})
-
 	entries := make([]codebookEntry, len(candidates))
 	for i, c := range candidates {
 		entries[i] = codebookEntry{line: c.line, ref: fmt.Sprintf("§%d", i)}
@@ -123,10 +123,12 @@ func (cb Codebook) Apply(text string) string {
 	}
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		trimmed := strings.TrimRight(line, " \t")
+		// Match on the fully-trimmed line — entries are keyed indent-free.
+		trimmed := strings.TrimSpace(line)
 		for _, e := range cb.entries {
 			if trimmed == e.line {
-				// Preserve leading whitespace (indent).
+				// Re-add this line's own leading whitespace (indent) ahead of
+				// the ref so expansion reproduces the original exactly.
 				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 				lines[i] = indent + e.ref
 				break
