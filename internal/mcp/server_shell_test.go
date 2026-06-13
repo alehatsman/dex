@@ -552,6 +552,27 @@ func TestCompressCypress(t *testing.T) {
 	}
 }
 
+// TestCompressPlaywright_UnrecognizedFormat guards #453: when no count and no
+// failure line is parsed (unknown reporter, version drift, localized output),
+// the compressor must fall through to the original lines rather than emit a
+// confident, false "0 passed" summary.
+func TestCompressPlaywright_UnrecognizedFormat(t *testing.T) {
+	lines := []string{
+		"Test run started",
+		"  spec/login.spec.ts ............ ✔",
+		"  spec/checkout.spec.ts ........ ✔",
+		"All specs completed without recognizable summary.",
+	}
+	out := compress.CompressPlaywright("playwright test", lines)
+	joined := strings.Join(out, "\n")
+	if strings.Contains(joined, "0 passed") {
+		t.Fatalf("must not synthesize a misleading '0 passed' summary:\n%s", joined)
+	}
+	if strings.Join(out, "\n") != strings.Join(lines, "\n") {
+		t.Fatalf("expected passthrough of original output, got:\n%s", joined)
+	}
+}
+
 // ── next build ────────────────────────────────────────────────────────────────
 
 func TestCompressNextBuild_Routes(t *testing.T) {

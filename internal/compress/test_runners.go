@@ -99,6 +99,15 @@ func CompressPlaywright(cmd string, lines []string) []string {
 	}
 
 	_ = cmd
+	// Fallback: if we recognized nothing — no pass/fail/skip count and no
+	// failing-test lines — don't emit a synthetic, misleading "0 passed".
+	// Return the original output so an unrecognized reporter format (version
+	// drift, a different Playwright/Cypress/Jest reporter, localized output)
+	// isn't silently misreported as a clean run. Matches every other
+	// compressor's `if len(out)==0 { return lines }` guard.
+	if passed == 0 && failed == 0 && skipped == 0 && len(failedTests) == 0 {
+		return lines
+	}
 	summary := fmt.Sprintf("%d passed", passed)
 	if failed > 0 {
 		summary += fmt.Sprintf(", %d failed", failed)
