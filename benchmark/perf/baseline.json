@@ -3,104 +3,104 @@
   "results": [
     {
       "name": "compress/aggressive",
-      "p50_ns": 781849,
-      "p95_ns": 2165202,
-      "p99_ns": 2656361,
+      "p50_ns": 755844,
+      "p95_ns": 1762885,
+      "p99_ns": 2184426,
       "iterations": 100
     },
     {
       "name": "compress/entropy",
-      "p50_ns": 677633,
-      "p95_ns": 1354421,
-      "p99_ns": 1561876,
+      "p50_ns": 661764,
+      "p95_ns": 1427033,
+      "p99_ns": 1696306,
       "iterations": 100
     },
     {
       "name": "compress/terse",
-      "p50_ns": 29416,
-      "p95_ns": 58649,
-      "p99_ns": 436118,
+      "p50_ns": 19930,
+      "p95_ns": 28190,
+      "p99_ns": 48960,
       "iterations": 100
     },
     {
       "name": "compress/ib",
-      "p50_ns": 78785,
-      "p95_ns": 99788,
-      "p99_ns": 131104,
+      "p50_ns": 639884,
+      "p95_ns": 865585,
+      "p99_ns": 1393057,
       "iterations": 100
     },
     {
       "name": "compress/codebook",
       "p50_ns": 20,
-      "p95_ns": 21,
-      "p99_ns": 21,
+      "p95_ns": 20,
+      "p99_ns": 20,
       "iterations": 100
     },
     {
       "name": "compress/ngram_codebook",
-      "p50_ns": 105503,
-      "p95_ns": 302523,
-      "p99_ns": 560546,
+      "p50_ns": 99360,
+      "p95_ns": 257011,
+      "p99_ns": 333432,
       "iterations": 100
     },
     {
       "name": "compress/symmap",
-      "p50_ns": 41682,
-      "p95_ns": 62725,
-      "p99_ns": 79399,
+      "p50_ns": 40700,
+      "p95_ns": 42491,
+      "p99_ns": 62200,
       "iterations": 100
     },
     {
       "name": "knn/1000x1024",
       "corpus_size": 1000,
       "dim": 1024,
-      "p50_ns": 914006,
-      "p95_ns": 1028229,
-      "p99_ns": 2034327,
+      "p50_ns": 879415,
+      "p95_ns": 981146,
+      "p99_ns": 2169832,
       "iterations": 100
     },
     {
       "name": "knn/5000x1024",
       "corpus_size": 5000,
       "dim": 1024,
-      "p50_ns": 4912953,
-      "p95_ns": 5879102,
-      "p99_ns": 6285306,
+      "p50_ns": 4153093,
+      "p95_ns": 4660057,
+      "p99_ns": 5099464,
       "iterations": 100
     },
     {
       "name": "knn/20000x1024",
       "corpus_size": 20000,
       "dim": 1024,
-      "p50_ns": 19351929,
-      "p95_ns": 21862524,
-      "p99_ns": 27957699,
+      "p50_ns": 14410374,
+      "p95_ns": 15005594,
+      "p99_ns": 15730524,
       "iterations": 100
     },
     {
       "name": "knn/50000x1024",
       "corpus_size": 50000,
       "dim": 1024,
-      "p50_ns": 35705609,
-      "p95_ns": 50931875,
-      "p99_ns": 86657903,
+      "p50_ns": 32902336,
+      "p95_ns": 35762302,
+      "p99_ns": 38690391,
       "iterations": 100
     },
     {
       "name": "knn/100000x1024",
       "corpus_size": 100000,
       "dim": 1024,
-      "p50_ns": 68072617,
-      "p95_ns": 232953262,
-      "p99_ns": 270273884,
+      "p50_ns": 64568996,
+      "p95_ns": 68426012,
+      "p99_ns": 69848260,
       "iterations": 100
     },
     {
       "name": "bm25/5k",
       "corpus_size": 5000,
-      "p50_ns": 118332,
-      "p95_ns": 167224,
-      "p99_ns": 334559,
+      "p50_ns": 103370,
+      "p95_ns": 159870,
+      "p99_ns": 225091,
       "iterations": 100
     },
     {
@@ -111,7 +111,7 @@
       "p95_ns": 0,
       "p99_ns": 0,
       "iterations": 0,
-      "storage_bytes": 9216000
+      "storage_bytes": 9228288
     },
     {
       "name": "storage/5000x1024",
@@ -121,7 +121,7 @@
       "p95_ns": 0,
       "p99_ns": 0,
       "iterations": 0,
-      "storage_bytes": 45084672
+      "storage_bytes": 45096960
     },
     {
       "name": "storage/20000x1024",
@@ -131,7 +131,7 @@
       "p95_ns": 0,
       "p99_ns": 0,
       "iterations": 0,
-      "storage_bytes": 179593216
+      "storage_bytes": 179605504
     }
   ]
 }

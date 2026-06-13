@@ -32,8 +32,8 @@
         {
           "pass": "ib",
           "tokens_in": 352,
-          "tokens_out": 272,
-          "ratio": 0.7727272727272727,
+          "tokens_out": 345,
+          "ratio": 0.9801136363636364,
           "anchor_pct": 0.7142857142857143,
           "extract_fidelity": 1
         },
@@ -97,8 +97,8 @@
         {
           "pass": "ib",
           "tokens_in": 216,
-          "tokens_out": 214,
-          "ratio": 0.9907407407407407,
+          "tokens_out": 216,
+          "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 0.5
         },
@@ -162,9 +162,9 @@
         {
           "pass": "ib",
           "tokens_in": 213,
-          "tokens_out": 171,
-          "ratio": 0.8028169014084507,
-          "anchor_pct": 0.8,
+          "tokens_out": 213,
+          "ratio": 1,
+          "anchor_pct": 1,
           "extract_fidelity": 1
         },
         {
@@ -202,15 +202,15 @@
       "passes": [
         {
           "pass": "aggressive",
-          "tokens_in": 237,
-          "tokens_out": 237,
+          "tokens_in": 234,
+          "tokens_out": 234,
           "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 1
         },
         {
           "pass": "entropy",
-          "tokens_in": 237,
+          "tokens_in": 234,
           "tokens_out": 0,
           "ratio": 0,
           "anchor_pct": 0,
@@ -218,24 +218,24 @@
         },
         {
           "pass": "terse",
-          "tokens_in": 237,
-          "tokens_out": 237,
+          "tokens_in": 234,
+          "tokens_out": 234,
           "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 1
         },
         {
           "pass": "ib",
-          "tokens_in": 237,
-          "tokens_out": 207,
-          "ratio": 0.8734177215189873,
+          "tokens_in": 234,
+          "tokens_out": 234,
+          "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 1
         },
         {
           "pass": "codebook",
-          "tokens_in": 237,
-          "tokens_out": 237,
+          "tokens_in": 234,
+          "tokens_out": 234,
           "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 1,
@@ -243,8 +243,8 @@
         },
         {
           "pass": "ngram_codebook",
-          "tokens_in": 237,
-          "tokens_out": 237,
+          "tokens_in": 234,
+          "tokens_out": 234,
           "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 1,
@@ -252,8 +252,8 @@
         },
         {
           "pass": "symmap",
-          "tokens_in": 237,
-          "tokens_out": 237,
+          "tokens_in": 234,
+          "tokens_out": 234,
           "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 1,
@@ -283,8 +283,8 @@
     },
     {
       "pass": "ib",
-      "mean_ratio": 0.8599256590988629,
-      "mean_anchor_pct": 0.8785714285714286,
+      "mean_ratio": 0.9950284090909091,
+      "mean_anchor_pct": 0.9285714285714286,
       "mean_extract_fidelity": 0.875
     },
     {
