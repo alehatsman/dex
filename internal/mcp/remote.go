@@ -55,10 +55,11 @@ type RemoteProject struct {
 // HTTP request that marshals the shared Input struct and decodes the shared
 // Output struct.
 type remoteClient struct {
-	base      string // BaseURL, trailing slash trimmed
-	token     string
-	projectID string
-	http      *http.Client
+	noopSurface        // fallback for tools not yet proxied to remote
+	base        string // BaseURL, trailing slash trimmed
+	token       string
+	projectID   string
+	http        *http.Client
 }
 
 // RunStdioRemote runs an MCP server on stdio whose tool handlers proxy to a

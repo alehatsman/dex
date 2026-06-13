@@ -10,7 +10,7 @@ import (
 // maintenanceClient returns a non-nil error containing "maintenance" and
 // returns immediately (no blocking).
 func TestMaintenanceClientAllMethods(t *testing.T) {
-	mc := &maintenanceClient{reason: "test"}
+	mc := &maintenanceClient{noopSurface: noopSurface{unavailMsg: maintenanceMsg("test")}}
 	ctx := context.Background()
 
 	assertMaintenance := func(name string, err error) {
