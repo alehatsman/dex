@@ -15,6 +15,7 @@ import (
 	"github.com/alehatsman/dex/internal/rerank"
 )
 
+// Hit is one search result.
 type Hit struct {
 	Path      string
 	Kind      string

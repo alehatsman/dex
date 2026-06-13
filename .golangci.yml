@@ -92,7 +92,7 @@ linters:
 
       # defer rows/stmt/db.Close() and deferred store handle closes — idiomatic
       # SQL and SQLite patterns; errors in deferred cleanup are unactionable.
-      - path: internal/store/(store|store_graph)\.go
+      - path: internal/store/store.*\.go
         linters: [errcheck]
         text: "Error return value of `(rows|stmt|db)\\.Close` is not checked"
 
@@ -156,10 +156,10 @@ linters:
         linters: [gosec]
         text: "G(505|401)"
 
-      # G202: SQL string concatenation in store_graph.go — same
-      # justification as store.go above: query strings are built from
-      # controlled internal inputs (placeholder counts), not user data.
-      - path: internal/store/store_graph\.go
+      # G202: SQL string concatenation in store_graph.go and store_search.go —
+      # same justification as store.go above: query strings are built from
+      # controlled internal inputs (placeholder counts, column names), not user data.
+      - path: internal/store/store_(graph|search)\.go
         linters: [gosec]
         text: "G202"
 

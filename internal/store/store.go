@@ -275,13 +275,6 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-// migrate runs the ordered list of idempotent schema statements. Its
-// cyclomatic complexity comes from the flat sequence of CREATE/ALTER
-// migrations, not from branching logic — splitting it would scatter the
-// schema across helpers without reducing real complexity, so cyclop is
-// suppressed here (mirrors the index.Run / main dispatch exclusions).
-//
-//nolint:cyclop // sequential schema migrations; extraction adds indirection, not clarity
 type Stats struct {
 	Chunks    int
 	Files     int
@@ -721,5 +714,3 @@ func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, `_`, `\_`)
 	return s
 }
-
-// Hit is one search result.
