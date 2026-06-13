@@ -25,7 +25,11 @@ func (s *Server) cachedLoadGraphView(ctx context.Context, st *store.Store, dbPat
 	}
 
 	v, _ := s.graphViewByPath.LoadOrStore(dbPath, &cachedGraphView{})
-	cv := v.(*cachedGraphView)
+	cv, ok := v.(*cachedGraphView)
+	if !ok {
+		view, err := loadGraphView(ctx, st)
+		return view, err
+	}
 
 	cv.mu.Lock()
 	defer cv.mu.Unlock()
