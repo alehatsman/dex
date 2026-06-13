@@ -97,14 +97,23 @@ func CompressPip(lines []string) []string {
 // ── poetry ────────────────────────────────────────────────────────────────────
 
 var (
-	rePoetryInstalling = regexp.MustCompile(`(?i)Installing\s+\S+`)
-	rePoetryUpdating   = regexp.MustCompile(`(?i)Updating\s+\S+`)
-	rePoetryPercentBar = regexp.MustCompile(`\d+%`)
+	// poetry progress lines are "  • Installing foo (1.0)" /
+	// "  • Updating bar (1.0 -> 2.0)" — anchor to the leading bullet so an
+	// arbitrary "Installing" / "Updating" substring elsewhere isn't dropped.
+	rePoetryProgress = regexp.MustCompile(`(?i)^\s*[•·*\-]\s+(Installing|Updating)\s`)
+	// poetry appends a status after the colon ("  • Installing foo (1.0):
+	// Failed"); a line reporting Failed/Error is a diagnostic, never noise.
+	rePoetryStatusFail = regexp.MustCompile(`(?i):\s*(failed|error)`)
+	// progress-bar percentages lead the line ("  42%"), not an arbitrary
+	// "12%" mention inside a diagnostic message.
+	rePoetryPercentBar = regexp.MustCompile(`^\s*\d+%`)
 )
 
 func IsPoetryDownloadNoise(l string) bool {
-	return rePoetryInstalling.MatchString(l) || rePoetryUpdating.MatchString(l) ||
-		rePoetryPercentBar.MatchString(l)
+	if rePoetryStatusFail.MatchString(l) {
+		return false // keep failure headers even on a progress-shaped line
+	}
+	return rePoetryProgress.MatchString(l) || rePoetryPercentBar.MatchString(l)
 }
 
 func CompressPoetry(cmd string, lines []string) []string {
