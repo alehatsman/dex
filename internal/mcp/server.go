@@ -708,7 +708,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 	}
 }
 
-func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) { //nolint:cyclop
+func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	out := SearchOutput{Hits: []SearchHit{}}
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, SearchOutput{Status: "error", Hint: "query is empty — pass a natural-language description or code fragment"}, nil
@@ -730,29 +730,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 
-	k := in.K
-	if k <= 0 {
-		k = 8
-	}
-	if k > 30 {
-		k = 30
-	}
-	// Profile max_files caps k when set.
-	if prof := profiles.Active(p.Root); prof.Budget.MaxFiles > 0 && k > prof.Budget.MaxFiles {
-		k = prof.Budget.MaxFiles
-	}
-	// When language or path filters are active, over-fetch so post-filter
-	// trimming still returns k results. candidateK = clamp(k*10, 50, 500).
-	candidateK := k
-	if len(in.Languages) > 0 || in.PathGlob != "" {
-		candidateK = k * 10
-		if candidateK < 50 {
-			candidateK = 50
-		}
-		if candidateK > 500 {
-			candidateK = 500
-		}
-	}
+	k, candidateK := clampSearchK(in, p.Root)
 
 	em := s.EmbedClient
 	vecs, err := em.Embed(ctx, []string{in.Query})
@@ -789,31 +767,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 
-	// Multi-scale routing: for NL and Architecture queries, build the in-RAM
-	// TF-IDF index and restrict the candidate set to structurally-relevant
-	// files before reranking. Symbol queries bypass this (BM25 wins directly).
-	// Silently skips on build failure — multi-scale is best-effort.
-	qt := store.ClassifyQueryType(in.Query)
-	if qt != store.QueryTypeSymbol {
-		if idx, idxErr := s.cachedBuildMultiScale(ctx, st, p.DBPath); idxErr == nil && idx != nil {
-			queryToks := store.TokeniseQuery(in.Query)
-			var candidatePaths []string
-			switch qt {
-			case store.QueryTypeArchitecture:
-				dirs := idx.SearchMacro(queryToks, 3)
-				candidatePaths = idx.ExpandToFiles(dirs)
-				// If macro returned too few, fall back to meso.
-				if len(candidatePaths) < 5 {
-					candidatePaths = append(candidatePaths, idx.SearchMeso(queryToks, 10)...)
-				}
-			case store.QueryTypeNL:
-				candidatePaths = idx.SearchMeso(queryToks, 8)
-			}
-			if len(candidatePaths) >= 3 {
-				hits = store.FilterByPaths(hits, candidatePaths)
-			}
-		}
-	}
+	hits = s.applyMultiScaleFilter(ctx, st, p.DBPath, in.Query, hits)
 
 	// Symbol leg: extract identifier tokens from the query, look them up
 	// by exact name, and RRF-fuse with the semantic results. Runs in the
@@ -1114,6 +1068,63 @@ func matchGlob(pattern, path string) bool {
 // filterHits applies optional language (by extension) and path_glob filters,
 // then trims to at most limit results. When exts and glob are both empty
 // the slice is trimmed to limit unchanged.
+// clampSearchK returns the effective k and candidateK from the search input.
+// candidateK is inflated when language or path filters are active so post-filter
+// trimming still returns k results.
+func clampSearchK(in SearchInput, projectRoot string) (k, candidateK int) {
+	k = in.K
+	if k <= 0 {
+		k = 8
+	}
+	if k > 30 {
+		k = 30
+	}
+	if prof := profiles.Active(projectRoot); prof.Budget.MaxFiles > 0 && k > prof.Budget.MaxFiles {
+		k = prof.Budget.MaxFiles
+	}
+	candidateK = k
+	if len(in.Languages) > 0 || in.PathGlob != "" {
+		candidateK = k * 10
+		if candidateK < 50 {
+			candidateK = 50
+		}
+		if candidateK > 500 {
+			candidateK = 500
+		}
+	}
+	return k, candidateK
+}
+
+// applyMultiScaleFilter restricts hits to the structurally-relevant files for
+// NL and Architecture queries using the in-RAM TF-IDF index. Symbol queries
+// and multi-scale build failures are passed through unchanged.
+func (s *Server) applyMultiScaleFilter(ctx context.Context, st *store.Store, dbPath, query string, hits []store.Hit) []store.Hit {
+	qt := store.ClassifyQueryType(query)
+	if qt == store.QueryTypeSymbol {
+		return hits
+	}
+	idx, idxErr := s.cachedBuildMultiScale(ctx, st, dbPath)
+	if idxErr != nil || idx == nil {
+		return hits
+	}
+	queryToks := store.TokeniseQuery(query)
+	var candidatePaths []string
+	switch qt {
+	case store.QueryTypeArchitecture:
+		dirs := idx.SearchMacro(queryToks, 3)
+		candidatePaths = idx.ExpandToFiles(dirs)
+		if len(candidatePaths) < 5 {
+			candidatePaths = append(candidatePaths, idx.SearchMeso(queryToks, 10)...)
+		}
+	case store.QueryTypeNL:
+		candidatePaths = idx.SearchMeso(queryToks, 8)
+	}
+	if len(candidatePaths) >= 3 {
+		return store.FilterByPaths(hits, candidatePaths)
+	}
+	return hits
+}
+
 func filterHits(hits []store.Hit, exts []string, glob string, limit int) []store.Hit {
 	if len(exts) == 0 && glob == "" {
 		if len(hits) > limit {
