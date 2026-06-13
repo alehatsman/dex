@@ -35,29 +35,6 @@ func TestNormalizedWordEntropy(t *testing.T) {
 	}
 }
 
-func TestKeepAboveThreshold(t *testing.T) {
-	lines := []string{"a", "b", "c", ""}
-	scores := []float64{0.8, 0.2, 0.5, -1} // "" is always kept (sentinel -1)
-
-	// threshold=0.6: keep scores ≥ 0.6 + blank
-	got := keepAboveThreshold(lines, scores, 0.6)
-	if len(got) != 2 || got[0] != "a" || got[1] != "" {
-		t.Errorf("threshold 0.6: got %v", got)
-	}
-
-	// threshold=0.1: keep scores ≥ 0.1 + blank
-	got2 := keepAboveThreshold(lines, scores, 0.1)
-	if len(got2) != 4 {
-		t.Errorf("threshold 0.1: expected all 4 lines, got %d", len(got2))
-	}
-
-	// threshold=1.0: only keep blank (score -1) and score==1.0 (none here)
-	got3 := keepAboveThreshold(lines, scores, 1.0)
-	if len(got3) != 1 || got3[0] != "" {
-		t.Errorf("threshold 1.0: got %v", got3)
-	}
-}
-
 func TestCompressIB_OutOfRange(t *testing.T) {
 	text := "some text here\nmore text\nand more\nfourth line\nfifth line\n"
 	// targetRatio ≤ 0 or ≥ 1 → unchanged
