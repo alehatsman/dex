@@ -104,26 +104,24 @@ tasks:
 
   # Kept local: dex-specific deploy (copy to ~/.local/bin + restart instances).
   install:
-    desc: Build, install dex to all deploy paths (~/bin + ~/.local/bin) and restart running instances
+    desc: Build, install dex to ~/.local/bin and restart running instances
     steps:
       - shell: go mod download
       - shell: |
           # sqlite-vec and go-tree-sitter/lua emit macOS-only deprecation/null-char warnings from C code we don't control
           [ "$(uname -s)" = "Darwin" ] && export CGO_CFLAGS="-Wno-deprecated-declarations -Wno-null-character"
           go build -trimpath -tags '{{ GO_TAGS }}' -ldflags "-s -w" -o {{ BIN }} ./cmd/dex
-      - name: copy binary and restart running instances
+      - name: install binary and ensure ~/bin symlink
         shell: |
-          # dex runs from multiple locations: ~/bin (dev PATH) and ~/.local/bin
-          # (the systemd user units dex-serve / dex-watch@ and the `dex mcp`
-          # stdio server Claude Code spawns). Install to every path so a rebuild
-          # can't leave a daemon running a stale binary (#353).
-          INSTALL_PATHS="${INSTALL_PATHS:-$HOME/bin $HOME/.local/bin}"
-          for p in $INSTALL_PATHS; do
-            mkdir -p "$p"
-            cp {{ BIN }} "$p/{{ BIN }}.new"
-            mv -f "$p/{{ BIN }}.new" "$p/{{ BIN }}"
-            echo "✓ Installed $p/{{ BIN }}"
-          done
+          mkdir -p "$HOME/.local/bin" "$HOME/bin"
+          cp {{ BIN }} "$HOME/.local/bin/{{ BIN }}.new"
+          mv -f "$HOME/.local/bin/{{ BIN }}.new" "$HOME/.local/bin/{{ BIN }}"
+          echo "✓ Installed $HOME/.local/bin/{{ BIN }}"
+          # ~/bin/dex is a symlink to the canonical binary; create/repair if needed
+          if [ ! -L "$HOME/bin/{{ BIN }}" ] || [ "$(readlink "$HOME/bin/{{ BIN }}")" != "$HOME/.local/bin/{{ BIN }}" ]; then
+            ln -sf "$HOME/.local/bin/{{ BIN }}" "$HOME/bin/{{ BIN }}"
+            echo "✓ Symlinked $HOME/bin/{{ BIN }} -> $HOME/.local/bin/{{ BIN }}"
+          fi
           count=$(pgrep -x dex | wc -l | tr -d ' ')
           if [ "$count" -gt 0 ]; then
             pkill -x dex || true
