@@ -294,7 +294,7 @@ func (s *Server) ContextRouter(ctx context.Context, in ContextInput) (*sdk.CallT
 	return s.contextRouter(ctx, nil, in)
 }
 
-func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) { //nolint:cyclop
+func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
 	if strings.TrimSpace(in.Question) == "" {
 		// Empty question = session-start orientation: return the deterministic
 		// L0+L1 map so the agent names the right cluster before any find()
@@ -387,49 +387,13 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	}
 	out.SemanticHits = semHits
 
-	if len(out.Symbols) == 0 && len(out.SemanticHits) == 0 {
-		if embedFailed {
-			if leanNoEmbedder {
-				out.Status = "lean-no-embedder"
-				out.Hint = "lean profile (DEX_EMBED_ENGINE=none): no semantic lane — use lookup, grep, or the trace/impact graph tools."
-			} else {
-				out.Status = "embedding-service-unreachable"
-				out.Hint = "the local embedding service is offline — fall back to grep / Glob / ripgrep for this query."
-			}
-			return nil, out, nil
-		}
-		out.Status = "ok"
-		out.Hint = "no matches; try broader phrasing or a more specific identifier."
-		out.NextAction = "Try rephrasing the question with concrete keywords from the codebase, or fall back to grep."
+	if noLaneHits(embedFailed, leanNoEmbedder, &out) {
 		return nil, out, nil
 	}
 
-	// Near-miss surface for symbol_lookup whiffs: when the user
-	// clearly asked for an identifier (intent is symbol_lookup AND we
-	// extracted identifier candidates) but the symbols lane found
-	// nothing, scan the chunks table for substring matches and surface
-	// them in the hint. Mirrors search_symbol's behavior so the agent
-	// gets candidate names without a follow-up tool call.
-	if intent == IntentSymbolLookup && len(out.Symbols) == 0 && len(candidates.identifiers) > 0 {
-		var cands []string
-		for _, id := range candidates.identifiers {
-			bare := id
-			if i := strings.LastIndex(bare, "."); i >= 0 {
-				bare = bare[i+1:]
-			}
-			names, err := st.FindSymbolCandidates(ctx, bare, 5)
-			if err != nil {
-				continue
-			}
-			cands = append(cands, names...)
-			if len(cands) >= 5 {
-				cands = cands[:5]
-				break
-			}
-		}
-		if len(cands) > 0 {
-			out.Hint = "no exact symbol match — did you mean: " + strings.Join(cands, ", ") + "?"
-		}
+	// Near-miss surface for symbol_lookup whiffs.
+	if hint := symbolNearMiss(ctx, st, intent, candidates); hint != "" {
+		out.Hint = hint
 	}
 
 	enrichGraph(&out, intent, graphView, out.SemanticHits, out.Symbols)
@@ -470,24 +434,8 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	}
 	// Loop detection: check after evidence is assembled so a block still
 	// fires even when the question changes but the search pattern repeats.
-	ldLevel, ldHint := s.ld().Check("ask", argsKey(in.Question), true)
-	if ldLevel == ThrottleBlock {
-		out.Status = "loop-blocked"
-		out.Hint = ldHint
-		out.SemanticHits = nil
-		out.Symbols = nil
+	if blocked := s.applyLoopThrottle(in.Question, &out); blocked {
 		return nil, out, nil
-	}
-	if ldLevel == ThrottleReduce {
-		if len(out.SemanticHits) > 3 {
-			out.SemanticHits = out.SemanticHits[:3]
-		}
-		if len(out.Symbols) > 3 {
-			out.Symbols = out.Symbols[:3]
-		}
-		out.Hint = ldHint + " [reduced]"
-	} else if ldHint != "" && out.Hint == "" {
-		out.Hint = ldHint
 	}
 
 	s.synthesizeAnswer(ctx, session, intent, in.Question, &out)
@@ -503,6 +451,82 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	// already holds.
 	s.applySeenContext(sessionKey(req), &out)
 	return nil, out, nil
+}
+
+// noLaneHits sets out.Status/Hint and returns true when both retrieval lanes
+// returned nothing. The caller should return immediately on true.
+func noLaneHits(embedFailed, leanNoEmbedder bool, out *ContextOutput) bool {
+	if len(out.Symbols) > 0 || len(out.SemanticHits) > 0 {
+		return false
+	}
+	if embedFailed {
+		if leanNoEmbedder {
+			out.Status = "lean-no-embedder"
+			out.Hint = "lean profile (DEX_EMBED_ENGINE=none): no semantic lane — use lookup, grep, or the trace/impact graph tools."
+		} else {
+			out.Status = "embedding-service-unreachable"
+			out.Hint = "the local embedding service is offline — fall back to grep / Glob / ripgrep for this query."
+		}
+		return true
+	}
+	out.Status = "ok"
+	out.Hint = "no matches; try broader phrasing or a more specific identifier."
+	out.NextAction = "Try rephrasing the question with concrete keywords from the codebase, or fall back to grep."
+	return true
+}
+
+// symbolNearMiss returns a hint string when the question is a symbol_lookup
+// with no exact hits. It scans chunks for substring candidates so the agent
+// gets names without a follow-up tool call.
+func symbolNearMiss(ctx context.Context, st *store.Store, intent string, candidates intentCandidates) string {
+	if intent != IntentSymbolLookup || len(candidates.identifiers) == 0 {
+		return ""
+	}
+	var cands []string
+	for _, id := range candidates.identifiers {
+		bare := id
+		if i := strings.LastIndex(bare, "."); i >= 0 {
+			bare = bare[i+1:]
+		}
+		names, err := st.FindSymbolCandidates(ctx, bare, 5)
+		if err != nil {
+			continue
+		}
+		cands = append(cands, names...)
+		if len(cands) >= 5 {
+			cands = cands[:5]
+			break
+		}
+	}
+	if len(cands) == 0 {
+		return ""
+	}
+	return "no exact symbol match — did you mean: " + strings.Join(cands, ", ") + "?"
+}
+
+// applyLoopThrottle applies loop-detection throttling. It returns true when
+// the call is blocked (caller should return early with out unchanged).
+func (s *Server) applyLoopThrottle(question string, out *ContextOutput) bool {
+	ldLevel, ldHint := s.ld().Check("ask", argsKey(question), true)
+	if ldLevel == ThrottleBlock {
+		out.Status = "loop-blocked"
+		out.Hint = ldHint
+		out.SemanticHits = nil
+		out.Symbols = nil
+		return true
+	}
+	if ldLevel == ThrottleReduce {
+		if len(out.SemanticHits) > 3 {
+			out.SemanticHits = out.SemanticHits[:3]
+		}
+		if len(out.Symbols) > 3 {
+			out.Symbols = out.Symbols[:3]
+		}
+		out.Hint = ldHint + " [reduced]"
+	} else if ldHint != "" && out.Hint == "" {
+		out.Hint = ldHint
+	}
+	return false
 }
 
 // ─── intent classification ────────────────────────────────────────────────
