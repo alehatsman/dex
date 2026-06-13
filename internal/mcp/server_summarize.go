@@ -194,20 +194,10 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return
 	}
 
-	// Bounce detection (#98): re-escalate on repeated compressed reads — give
-	// the agent the complete view (LLM summary when a chat model is wired,
-	// else the raw full file).
+	// Bounce detection (#98): re-escalate on repeated compressed reads.
 	bt := s.bt()
 	bt.recordRead(sessionID, relTarget)
-	if bt.shouldForceFull(sessionID, relTarget) && mode != "summary" && mode != "full" {
-		if s.ChatClient != nil {
-			mode = "summary"
-			isLLM = true
-		} else {
-			mode = "full"
-			isLLM = false
-		}
-	}
+	mode, isLLM = s.escalateOnBounce(bt, sessionID, relTarget, mode, isLLM)
 
 	// Budget-aware downgrade (#106): auto-select richest mode within budget.
 	// Skips the LLM summary (its output is already small); raw full is the
