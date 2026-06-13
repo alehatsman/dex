@@ -1,6 +1,7 @@
 package benchcompress
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
@@ -196,9 +197,18 @@ func parseLegend(compressed string) (rev map[string]string, body string) {
 }
 
 // applyReverseMap replaces each key in rev with its value across body.
+//
+// Map iteration order is random, and keys share a prefix (§1 is a prefix of
+// §10). Replacing §1 first would corrupt §10 → "<val-of-1>0". Substitute
+// longest key first so no key can match inside another (#448).
 func applyReverseMap(body string, rev map[string]string) string {
-	for k, v := range rev {
-		body = strings.ReplaceAll(body, k, v)
+	keys := make([]string, 0, len(rev))
+	for k := range rev {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
+	for _, k := range keys {
+		body = strings.ReplaceAll(body, k, rev[k])
 	}
 	return body
 }
