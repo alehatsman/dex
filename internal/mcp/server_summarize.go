@@ -92,8 +92,7 @@ type summarizeWork struct {
 	out        SummarizeOutput
 }
 
-func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
-	out := SummarizeOutput{}
+func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (result *sdk.CallToolResult, out SummarizeOutput, err error) {
 
 	// Expansion handle (#344): decode to concrete path + line range, superseding
 	// any path/paths/lines the caller also passed.
@@ -152,10 +151,16 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		out.Model = s.ChatClient.ModelName()
 	}
 
-	realTarget, relTarget, data, etag, earlyOut, done := s.summarizeReadFile(p, in.Path)
+	var realTarget, relTarget string
+	var data []byte
+	var etag string
+	var earlyOut SummarizeOutput
+	var done bool
+	realTarget, relTarget, data, etag, earlyOut, done = s.summarizeReadFile(p, in.Path)
 	if done {
-		earlyOut.Project = out.Project
-		return nil, earlyOut, nil
+		out = earlyOut
+		out.Project = p.Root
+		return
 	}
 	out.Path = relTarget
 
@@ -163,9 +168,11 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	sloTracker := s.sloFor(p.Root)
 	defer s.recordSummarizeMetrics(cacheDir, sloTracker, relTarget, &out)
 
-	sessionID, earlyOut, done := s.summarizeCheckCached(req, in, relTarget, etag, isFull, data, out)
+	var sessionID string
+	sessionID, earlyOut, done = s.summarizeCheckCached(req, in, relTarget, etag, isFull, data, out)
 	if done {
-		return nil, earlyOut, nil
+		out = earlyOut
+		return
 	}
 	defer func() {
 		if out.Status == "ok" {
@@ -174,7 +181,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	}()
 
 	if earlyOut, done = s.summarizeExpandHandle(in, data, etag, sessionID, relTarget, out); done {
-		return nil, earlyOut, nil
+		out = earlyOut
+		return
 	}
 
 	// Bounce detection (#98): re-escalate to full on repeated compressed reads.
@@ -209,18 +217,19 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	}
 	switch {
 	case strings.HasPrefix(mode, "lines:"):
-		return s.summarizeModeLines(w, mode)
+		result, out, err = s.summarizeModeLines(w, mode)
 	case mode == "signatures":
-		return s.summarizeModeSignatures(w)
+		result, out, err = s.summarizeModeSignatures(w)
 	case mode == "map":
-		return s.summarizeModeMap(w)
+		result, out, err = s.summarizeModeMap(w)
 	case mode == "aggressive":
-		return s.summarizeModeAggressive(w)
+		result, out, err = s.summarizeModeAggressive(w)
 	case mode == "skeleton":
-		return s.summarizeModeSkeleton(w)
+		result, out, err = s.summarizeModeSkeleton(w)
 	default:
-		return s.summarizeModeFull(w)
+		result, out, err = s.summarizeModeFull(w)
 	}
+	return
 }
 
 // summarizeBatch handles file_view when paths[] is provided.
