@@ -43,6 +43,8 @@ type MapInput struct {
 	MinMembers  int    `json:"min_members,omitempty" jsonschema:"min cluster size to consider (default 3)"`
 	K           int    `json:"k,omitempty" jsonschema:"max clusters to scan (default 50)"`
 	TopK        int    `json:"top_k,omitempty" jsonschema:"max symbols pulled per cluster (default 25)"`
+	Around      string `json:"around,omitempty" jsonschema:"render a task-focused region around this symbol — its callers ∪ callees — instead of the repo overview; mutually exclusive with cluster and around_diff"`
+	AroundDiff  string `json:"around_diff,omitempty" jsonschema:"render the blast radius of a git diff: the ref to diff against (e.g. 'HEAD~1'); mutually exclusive with cluster and around"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 }
 
@@ -51,7 +53,7 @@ type MapInput struct {
 type MapOutput struct {
 	Status string `json:"status"` // "ok" | "no-index" | "no-graph" | "not-found" | "error"
 	Hint   string `json:"hint,omitempty"`
-	Zoom   string `json:"zoom,omitempty"` // "l0" | "l1"
+	Zoom   string `json:"zoom,omitempty"` // "l0" | "l1" | "around"
 	Map    string `json:"map,omitempty"`
 }
 
@@ -66,6 +68,21 @@ func mapHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, MapIn
 // the codemap renderer — no model is called. It mirrors the assembly in
 // `dex map` (cmd/dex/map.go) so the MCP verb and the CLI agree.
 func mapVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in MapInput) (*sdk.CallToolResult, MapOutput, error) {
+	// #347 story 5: task-conditioned region. `around`/`around_diff` render the
+	// call-graph neighborhood of a symbol or the blast radius of a diff instead
+	// of the Louvain L0/L1 overview, so they branch off before the community
+	// projection. The two are mutually exclusive with each other and with
+	// `cluster` (which zooms a community, a different notion of region).
+	if in.Around != "" || in.AroundDiff != "" {
+		if in.Around != "" && in.AroundDiff != "" {
+			return nil, MapOutput{Status: "error", Hint: "around and around_diff are mutually exclusive — pass one"}, nil
+		}
+		if in.Cluster != nil {
+			return nil, MapOutput{Status: "error", Hint: "around cannot be combined with cluster — cluster zooms a Louvain community; around renders a call-graph or diff region"}, nil
+		}
+		return mapAround(ctx, h, req, in)
+	}
+
 	minMembers, k, topK := in.MinMembers, in.K, in.TopK
 	if minMembers == 0 {
 		minMembers = 3

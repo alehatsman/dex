@@ -171,16 +171,35 @@ func l0Line(c Cluster) string {
 // ordered by aggregate PageRank), symbols listed best-first with kind and
 // file:line, greedily fit to budget tokens.
 func RenderL1(c Cluster, budget int) string {
+	return renderGrouped(fmt.Sprintf("cluster #%d — %s", c.ID, dominantPkg(c.Symbols)), c.Symbols, c.size(), budget)
+}
+
+// RenderAround renders a task-focused region (issue #347, story 5): symbols
+// assembled from a query's call-graph neighborhood (callers ∪ callees) or a
+// diff's blast radius rather than from a Louvain community. Grouping is
+// identical to RenderL1 so the view is familiar; the header carries the
+// region's provenance (the seed symbol or the diff ref) instead of a cluster
+// id, and size is the literal member count.
+func RenderAround(title string, syms []Symbol, budget int) string {
+	return renderGrouped(title, syms, len(syms), budget)
+}
+
+// renderGrouped renders a symbol set grouped by package — packages ordered by
+// aggregate PageRank, symbols best-first within each — greedily fit to budget
+// (DefaultL1Budget when budget <= 0). It backs both RenderL1 (a Louvain
+// cluster) and RenderAround (a task-focused region); title is the
+// "# <title> (<size> symbols)" header.
+func renderGrouped(title string, symbols []Symbol, size, budget int) string {
 	if budget <= 0 {
 		budget = DefaultL1Budget
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# cluster #%d — %s (%d symbols)\n\n", c.ID, dominantPkg(c.Symbols), c.size())
+	fmt.Fprintf(&b, "# %s (%d symbols)\n\n", title, size)
 
 	// Group symbols by package, preserving best-first order within each.
 	order := []string{}
 	byPkg := map[string][]Symbol{}
-	for _, s := range c.Symbols {
+	for _, s := range symbols {
 		pkg := s.Pkg
 		if pkg == "" {
 			pkg = "(unknown)"

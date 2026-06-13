@@ -21,10 +21,12 @@ import (
 func cmdMap(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("map", flag.ContinueOnError)
 	setHelp(fs,
-		"Deterministic repo orientation map: top clusters (L0) or one cluster in detail (L1).",
-		"dex map [--cluster <id>] [--budget <tokens>] [flags] [<path>]")
+		"Deterministic repo orientation map: top clusters (L0), one cluster in detail (L1), or a task-focused region (--around / --around-diff).",
+		"dex map [--cluster <id>] [--around <symbol>] [--around-diff <ref>] [--budget <tokens>] [flags] [<path>]")
 	cluster := fs.Int("cluster", -1, "zoom into one cluster by id (L1); omit for the repo overview (L0)")
-	budget := fs.Int("budget", 0, "token budget (default 150 for L0, 1000 for L1)")
+	around := fs.String("around", "", "render the region around a symbol — its callers ∪ callees — instead of the overview")
+	aroundDiff := fs.String("around-diff", "", "render the blast radius of a git diff (the ref to diff against, e.g. HEAD~1)")
+	budget := fs.Int("budget", 0, "token budget (default 150 for L0, 1000 for L1/region)")
 	minMembers := fs.Int("min-members", 3, "min cluster size to consider")
 	k := fs.Int("k", 50, "max clusters to scan")
 	topK := fs.Int("top-k", 25, "max symbols pulled per cluster")
@@ -46,6 +48,20 @@ func cmdMap(ctx context.Context, args []string) error {
 		return err
 	}
 	s, _ := newServerFromEnv(base)
+
+	// #347 story 5: task-focused region. --around / --around-diff render the
+	// call-graph neighborhood of a symbol or a diff's blast radius instead of
+	// the Louvain overview; mutually exclusive with each other and --cluster.
+	if *around != "" || *aroundDiff != "" {
+		if *around != "" && *aroundDiff != "" {
+			return fmt.Errorf("--around and --around-diff are mutually exclusive — pass one")
+		}
+		if *cluster >= 0 {
+			return fmt.Errorf("--around cannot be combined with --cluster")
+		}
+		return cmdMapAround(ctx, s, p.Root, *around, *aroundDiff, *budget, *format)
+	}
+
 	out, err := s.GraphCommunities(ctx, mcp.CommunitiesInput{
 		MinMembers:  *minMembers,
 		K:           *k,
@@ -56,11 +72,7 @@ func cmdMap(ctx context.Context, args []string) error {
 		return err
 	}
 	if out.Status != "ok" {
-		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
-		if out.Hint != "" {
-			fmt.Fprintf(os.Stderr, "hint: %s\n", out.Hint)
-		}
-		return nil
+		return reportMapStatus(out.Status, out.Hint)
 	}
 
 	clusters := adaptCommunities(out.Communities)
@@ -132,4 +144,66 @@ func clusterWeight(c codemap.Cluster) float64 {
 		w += s.PageRank
 	}
 	return w
+}
+
+// cmdMapAround renders a task-focused region (issue #347, story 5): the
+// call-graph neighborhood of a symbol (--around) or the blast radius of a diff
+// (--around-diff). It mirrors the MCP map verb, reusing the same exported
+// region adapters so the two surfaces stay identical.
+func cmdMapAround(ctx context.Context, s *mcp.Server, root, around, aroundDiff string, budget int, format string) error {
+	var title string
+	var syms []codemap.Symbol
+
+	if aroundDiff != "" {
+		d, err := s.GraphDiff(ctx, mcp.DiffInput{Ref: aroundDiff, ProjectRoot: root})
+		if err != nil {
+			return err
+		}
+		if d.Status != "ok" {
+			return reportMapStatus(d.Status, d.Hint)
+		}
+		ref := d.Ref
+		if ref == "" {
+			ref = aroundDiff
+		}
+		title, syms = mcp.DiffTitle(ref), mcp.DiffSymbols(d)
+	} else {
+		cin := mcp.CallEdgeInput{Name: around, ProjectRoot: root}
+		callers, err := s.GraphCallers(ctx, cin)
+		if err != nil {
+			return err
+		}
+		callees, err := s.GraphCallees(ctx, cin)
+		if err != nil {
+			return err
+		}
+		for _, st := range []mcp.CallEdgeOutput{callers, callees} {
+			if st.Status != "ok" && st.Status != "not-found" {
+				return reportMapStatus(st.Status, st.Hint)
+			}
+		}
+		if callers.Status == "not-found" && callees.Status == "not-found" {
+			return reportMapStatus("not-found", fmt.Sprintf("symbol %q not found in the call graph", around))
+		}
+		title, syms = mcp.AroundTitle(around), mcp.AroundSymbols(callers, callees)
+	}
+
+	if format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{"zoom": "around", "title": title, "symbols": syms})
+	}
+	fmt.Print(codemap.RenderAround(title, syms, budget))
+	return nil
+}
+
+// reportMapStatus prints a non-ok backend status (and hint) to stderr and
+// returns nil — a missing index or empty graph is a user condition, not a CLI
+// error. Shared by the L0/L1 and region paths.
+func reportMapStatus(status, hint string) error {
+	fmt.Fprintf(os.Stderr, "status: %s\n", status)
+	if hint != "" {
+		fmt.Fprintf(os.Stderr, "hint: %s\n", hint)
+	}
+	return nil
 }
