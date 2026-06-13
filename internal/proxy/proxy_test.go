@@ -462,6 +462,47 @@ func TestPruneIntegration(t *testing.T) {
 	}
 }
 
+// TestRecentToolResultUntouched verifies that a tool_result inside the recent
+// window is forwarded verbatim — its content must not be pruned or altered.
+func TestRecentToolResultUntouched(t *testing.T) {
+	var upstreamBody string
+	up := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		upstreamBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{}`)
+	})
+	front, _ := newTestProxy(t, up)
+
+	// A single tool_use + tool_result pair — well within keep_recent=10.
+	bigContent := strings.Repeat("unique marker line\n", 30) // > 200 chars, distinct
+	body, err := json.Marshal(map[string]any{
+		"model": "claude-sonnet-4-6",
+		"messages": []any{
+			map[string]any{"role": "assistant", "content": []any{
+				map[string]any{"type": "tool_use", "id": "tid1", "name": "Read", "input": map[string]any{}},
+			}},
+			map[string]any{"role": "user", "content": []any{
+				map[string]any{"type": "tool_result", "tool_use_id": "tid1", "content": bigContent},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	resp, err := http.Post(front.URL+"/v1/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+
+	// Content must be present verbatim in the forwarded request.
+	if !strings.Contains(upstreamBody, "unique marker line") {
+		t.Errorf("recent tool_result content was pruned; upstream body:\n%s", upstreamBody)
+	}
+}
+
 // TestCacheBreakpointIntegration drives a large multi-turn request through the
 // full forward path and asserts the proxy (a) injects cache_control breakpoints
 // on the stable prefix it forwards upstream, (b) caps them at maxBreakpoints,
