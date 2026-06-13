@@ -1,4 +1,4 @@
-package mcp
+package source
 
 import (
 	"bufio"
@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-// readLineRange returns the 1-indexed [start, end] line slice of a
+// ReadLineRange returns the 1-indexed [start, end] line slice of a
 // file, clipped at maxLines and maxBytes. truncated reports whether
 // either cap fired before reaching end.
-func readLineRange(path string, start, end, maxLines, maxBytes int) (string, bool, error) {
+func ReadLineRange(path string, start, end, maxLines, maxBytes int) (string, bool, error) {
 	if maxLines <= 0 || maxBytes <= 0 {
 		return "", false, nil
 	}
@@ -70,23 +70,23 @@ func readLineRange(path string, start, end, maxLines, maxBytes int) (string, boo
 // returns the contiguous import block as a single string (newlines
 // preserved).
 var importExtractors = map[string]func([]string) string{
-	".go":  extractGoImports,
+	".go":  ExtractGoImports,
 	".py":  extractPrefixImports([]string{"import ", "from "}),
 	".pyi": extractPrefixImports([]string{"import ", "from "}),
-	".ts":  extractJSImports,
-	".tsx": extractJSImports,
-	".js":  extractJSImports,
-	".jsx": extractJSImports,
-	".mjs": extractJSImports,
-	".cjs": extractJSImports,
+	".ts":  ExtractJSImports,
+	".tsx": ExtractJSImports,
+	".js":  ExtractJSImports,
+	".jsx": ExtractJSImports,
+	".mjs": ExtractJSImports,
+	".cjs": ExtractJSImports,
 	".rs":  extractPrefixImports([]string{"use "}),
 }
 
-// extractImports reads the first 200 lines of absPath and returns the
+// ExtractImports reads the first 200 lines of absPath and returns the
 // file's contiguous import block, or "" when no extractor matches the
 // extension. Used by the inline-content pipeline to surface a callee's
 // dependency surface alongside its summary.
-func extractImports(absPath string) string {
+func ExtractImports(absPath string) string {
 	lines, err := readFirstNLines(absPath, 200)
 	if err != nil || len(lines) == 0 {
 		return ""
@@ -118,11 +118,11 @@ func readFirstNLines(path string, n int) ([]string, error) {
 	return out, nil
 }
 
-// extractGoImports captures `import (...)` blocks and consecutive
+// ExtractGoImports captures `import (...)` blocks and consecutive
 // single-line `import "..."` statements. Go is the only language with
 // a block form, so it gets its own extractor instead of the prefix
 // helper below.
-func extractGoImports(lines []string) string {
+func ExtractGoImports(lines []string) string {
 	var out []string
 	inBlock := false
 	for _, l := range lines {
@@ -192,12 +192,12 @@ func extractPrefixImports(prefixes []string) func([]string) string {
 	}
 }
 
-// extractJSImports captures top-of-file ES `import ... from "..."`
+// ExtractJSImports captures top-of-file ES `import ... from "..."`
 // statements and CommonJS `require("...")` lines. Distinct from the
 // generic prefix helper because the start-of-line shape varies
 // (`import {`, `import *`, `import "`, …) and `require` may appear
 // after an LHS assignment.
-func extractJSImports(lines []string) string {
+func ExtractJSImports(lines []string) string {
 	var out []string
 	started := false
 	for _, l := range lines {

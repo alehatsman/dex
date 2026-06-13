@@ -1,6 +1,6 @@
-package mcp
+package compress
 
-// nonCodeMap — token-efficient structural outlines for non-code files.
+// NonCodeMap — token-efficient structural outlines for non-code files.
 // Pure Go, no LLM, no index required.  Invoked by view_summarize mode=map
 // before the graph-symbol path so Markdown/JSON/YAML/TOML/lock files get
 // useful output instead of "no indexed data".
@@ -13,9 +13,9 @@ import (
 	"strings"
 )
 
-// nonCodeMap returns a structural outline of the file if the extension/name
+// NonCodeMap returns a structural outline of the file if the extension/name
 // is recognised. Returns ("", false) for code files or unknown types.
-func nonCodeMap(relPath string, data []byte) (string, bool) {
+func NonCodeMap(relPath string, data []byte) (string, bool) {
 	base := filepath.Base(relPath)
 	ext := strings.ToLower(filepath.Ext(relPath))
 

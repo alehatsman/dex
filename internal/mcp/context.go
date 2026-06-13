@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/source"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -1259,7 +1260,7 @@ func (in *inliner) fetch(path string, start, end int) (string, bool, bool) {
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(in.projectRoot, abs)
 	}
-	content, truncated, err := readLineRange(abs, start, end, in.caps.maxLinesPerRead, perBytes)
+	content, truncated, err := source.ReadLineRange(abs, start, end, in.caps.maxLinesPerRead, perBytes)
 	if err != nil {
 		return "", false, false
 	}
@@ -1330,7 +1331,7 @@ func (in *inliner) fillImports(reads []SuggestedRead) {
 		if !filepath.IsAbs(abs) {
 			abs = filepath.Join(in.projectRoot, abs)
 		}
-		imps := extractImports(abs)
+		imps := source.ExtractImports(abs)
 		if imps == "" {
 			continue
 		}
@@ -1409,6 +1410,6 @@ func (in *inliner) fillSemanticHits(sem []SemHit) {
 	}
 }
 
-// Per-language import extractors (extractImports, extractGoImports,
-// extractJSImports, the prefix-based helper) and file-line helpers
-// (readFirstNLines, readLineRange) live in imports.go.
+// Per-language import extractors (source.ExtractImports, source.ExtractGoImports,
+// source.ExtractJSImports, the prefix-based helper) and file-line helpers
+// (readFirstNLines, source.ReadLineRange) live in internal/source/imports.go.

@@ -1767,8 +1767,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 	// Dependency manifest shortcut (#125): for package.json, go.mod, Cargo.toml,
 	// etc. return a compact summary directly — 10-50× token reduction.
-	if isDepsFilename(filepath.Base(realTarget)) && mode != "full" {
-		if summary, ok := compressDepsFile(relTarget, data); ok {
+	if compress.IsDepsFilename(filepath.Base(realTarget)) && mode != "full" {
+		if summary, ok := compress.CompressDepsFile(relTarget, data); ok {
 			out.Status = "ok"
 			out.Etag = etag
 			out.Bytes = len(data)
@@ -1834,7 +1834,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 	case mode == "map":
 		// N14: non-code files get a pure-Go structural outline; no index needed.
-		if content, ok := nonCodeMap(relTarget, data); ok {
+		if content, ok := compress.NonCodeMap(relTarget, data); ok {
 			out.Status = "ok"
 			out.Etag = etag
 			out.Content = content

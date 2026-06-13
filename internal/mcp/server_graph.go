@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/source"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -567,7 +568,7 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 		if !filepath.IsAbs(abs) {
 			abs = filepath.Join(p.Root, abs)
 		}
-		content, truncated, err := readLineRange(abs, out.Hits[i].StartLine, out.Hits[i].EndLine, maxHitLines, maxHitBytes)
+		content, truncated, err := source.ReadLineRange(abs, out.Hits[i].StartLine, out.Hits[i].EndLine, maxHitLines, maxHitBytes)
 		if err == nil {
 			out.Hits[i].Content = content
 			out.Hits[i].Truncated = truncated

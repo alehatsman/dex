@@ -1,11 +1,11 @@
-package mcp
+package compress
 
 import (
 	"strings"
 	"testing"
 )
 
-// ─── depsFileArg ──────────────────────────────────────────────────────────────
+// ─── DepsFileArg ──────────────────────────────────────────────────────────────
 
 func TestDepsFileArg(t *testing.T) {
 	cases := []struct{ cmd, want string }{
@@ -16,13 +16,13 @@ func TestDepsFileArg(t *testing.T) {
 		{"head -n 20 Cargo.toml", "Cargo.toml"},
 	}
 	for _, c := range cases {
-		if got := depsFileArg(c.cmd); got != c.want {
-			t.Errorf("depsFileArg(%q) = %q, want %q", c.cmd, got, c.want)
+		if got := DepsFileArg(c.cmd); got != c.want {
+			t.Errorf("DepsFileArg(%q) = %q, want %q", c.cmd, got, c.want)
 		}
 	}
 }
 
-// ─── isDepsFilename ───────────────────────────────────────────────────────────
+// ─── IsDepsFilename ───────────────────────────────────────────────────────────
 
 func TestIsDepsFilename(t *testing.T) {
 	yes := []string{
@@ -33,19 +33,19 @@ func TestIsDepsFilename(t *testing.T) {
 		"pnpm-lock.yaml", "bun.lockb",
 	}
 	for _, name := range yes {
-		if !isDepsFilename(name) {
-			t.Errorf("isDepsFilename(%q) = false, want true", name)
+		if !IsDepsFilename(name) {
+			t.Errorf("IsDepsFilename(%q) = false, want true", name)
 		}
 	}
 	no := []string{"main.go", "README.md", "Dockerfile", "setup.py", ""}
 	for _, name := range no {
-		if isDepsFilename(name) {
-			t.Errorf("isDepsFilename(%q) = true, want false", name)
+		if IsDepsFilename(name) {
+			t.Errorf("IsDepsFilename(%q) = true, want false", name)
 		}
 	}
 }
 
-// ─── compressGoMod ────────────────────────────────────────────────────────────
+// ─── CompressGoMod ────────────────────────────────────────────────────────────
 
 func TestCompressGoMod(t *testing.T) {
 	gomod := `module github.com/example/myapp
@@ -57,9 +57,9 @@ require (
 	github.com/baz/qux v0.9.0 // indirect
 )
 `
-	out, ok := compressGoMod([]byte(gomod))
+	out, ok := CompressGoMod([]byte(gomod))
 	if !ok {
-		t.Fatal("compressGoMod returned ok=false")
+		t.Fatal("CompressGoMod returned ok=false")
 	}
 	if !strings.Contains(out, "myapp") {
 		t.Errorf("output missing module name: %q", out)
@@ -76,7 +76,7 @@ require (
 }
 
 func TestCompressGoModMissingModule(t *testing.T) {
-	_, ok := compressGoMod([]byte("go 1.21\n"))
+	_, ok := CompressGoMod([]byte("go 1.21\n"))
 	if ok {
 		t.Error("expected ok=false when module line missing")
 	}
@@ -87,16 +87,16 @@ func TestCompressGoModSingleLineRequire(t *testing.T) {
 
 require github.com/single/dep v1.0.0
 `
-	out, ok := compressGoMod([]byte(gomod))
+	out, ok := CompressGoMod([]byte(gomod))
 	if !ok {
-		t.Fatal("compressGoMod returned ok=false")
+		t.Fatal("CompressGoMod returned ok=false")
 	}
 	if !strings.Contains(out, "single/dep") {
 		t.Errorf("single-line require not parsed: %q", out)
 	}
 }
 
-// ─── compressPkgJSON ──────────────────────────────────────────────────────────
+// ─── CompressPkgJSON ──────────────────────────────────────────────────────────
 
 func TestCompressPkgJSON(t *testing.T) {
 	data := `{
@@ -106,9 +106,9 @@ func TestCompressPkgJSON(t *testing.T) {
   "devDependencies": { "jest": "^29.0.0" },
   "scripts": { "build": "tsc", "test": "jest" }
 }`
-	out, ok := compressPkgJSON([]byte(data))
+	out, ok := CompressPkgJSON([]byte(data))
 	if !ok {
-		t.Fatal("compressPkgJSON returned ok=false")
+		t.Fatal("CompressPkgJSON returned ok=false")
 	}
 	if !strings.Contains(out, "my-app") {
 		t.Errorf("missing package name: %q", out)
@@ -122,13 +122,13 @@ func TestCompressPkgJSON(t *testing.T) {
 }
 
 func TestCompressPkgJSONInvalid(t *testing.T) {
-	_, ok := compressPkgJSON([]byte("not json"))
+	_, ok := CompressPkgJSON([]byte("not json"))
 	if ok {
 		t.Error("expected ok=false for invalid JSON")
 	}
 }
 
-// ─── compressCargoToml ────────────────────────────────────────────────────────
+// ─── CompressCargoToml ────────────────────────────────────────────────────────
 
 func TestCompressCargoToml(t *testing.T) {
 	data := `[package]
@@ -142,9 +142,9 @@ tokio = { version = "1", features = ["full"] }
 [dev-dependencies]
 mockall = "0.11"
 `
-	out, ok := compressCargoToml([]byte(data))
+	out, ok := CompressCargoToml([]byte(data))
 	if !ok {
-		t.Fatal("compressCargoToml returned ok=false")
+		t.Fatal("CompressCargoToml returned ok=false")
 	}
 	if !strings.Contains(out, "mycrate") {
 		t.Errorf("missing crate name: %q", out)
@@ -158,13 +158,13 @@ mockall = "0.11"
 }
 
 func TestCompressCargoTomlMissingName(t *testing.T) {
-	_, ok := compressCargoToml([]byte("[dependencies]\nfoo = \"1.0\"\n"))
+	_, ok := CompressCargoToml([]byte("[dependencies]\nfoo = \"1.0\"\n"))
 	if ok {
 		t.Error("expected ok=false when crate name missing")
 	}
 }
 
-// ─── compressRequirementsTxt ──────────────────────────────────────────────────
+// ─── CompressRequirementsTxt ──────────────────────────────────────────────────
 
 func TestCompressRequirementsTxt(t *testing.T) {
 	data := `requests==2.31.0
@@ -173,9 +173,9 @@ flask>=2.0.0
 pytest==7.4.0  # dev
 -r other.txt
 `
-	out, ok := compressRequirementsTxt("requirements.txt", []byte(data))
+	out, ok := CompressRequirementsTxt("requirements.txt", []byte(data))
 	if !ok {
-		t.Fatal("compressRequirementsTxt returned ok=false")
+		t.Fatal("CompressRequirementsTxt returned ok=false")
 	}
 	if !strings.Contains(out, "requests") {
 		t.Errorf("missing requests: %q", out)
@@ -186,13 +186,13 @@ pytest==7.4.0  # dev
 }
 
 func TestCompressRequirementsTxtEmpty(t *testing.T) {
-	_, ok := compressRequirementsTxt("requirements.txt", []byte("# only comments\n"))
+	_, ok := CompressRequirementsTxt("requirements.txt", []byte("# only comments\n"))
 	if ok {
 		t.Error("expected ok=false for requirements with no packages")
 	}
 }
 
-// ─── compressPyprojectToml ────────────────────────────────────────────────────
+// ─── CompressPyprojectToml ────────────────────────────────────────────────────
 
 func TestCompressPyprojectToml(t *testing.T) {
 	// project name from [project], deps from [tool.poetry.dependencies].
@@ -207,9 +207,9 @@ click = "^8.0"
 [tool.poetry.dev-dependencies]
 pytest = "^7.0"
 `
-	out, ok := compressPyprojectToml([]byte(data))
+	out, ok := CompressPyprojectToml([]byte(data))
 	if !ok {
-		t.Fatal("compressPyprojectToml returned ok=false")
+		t.Fatal("CompressPyprojectToml returned ok=false")
 	}
 	if !strings.Contains(out, "mypackage") {
 		t.Errorf("missing project name: %q", out)
@@ -221,13 +221,13 @@ pytest = "^7.0"
 
 func TestCompressPyprojectTomlMissingName(t *testing.T) {
 	// ok=false only when both name and deps are empty.
-	_, ok := compressPyprojectToml([]byte("[project]\n"))
+	_, ok := CompressPyprojectToml([]byte("[project]\n"))
 	if ok {
 		t.Error("expected ok=false when both name and deps are absent")
 	}
 }
 
-// ─── compressGemfile ──────────────────────────────────────────────────────────
+// ─── CompressGemfile ──────────────────────────────────────────────────────────
 
 func TestCompressGemfile(t *testing.T) {
 	data := `source 'https://rubygems.org'
@@ -240,9 +240,9 @@ group :development, :test do
   gem 'factory_bot_rails'
 end
 `
-	out, ok := compressGemfile([]byte(data))
+	out, ok := CompressGemfile([]byte(data))
 	if !ok {
-		t.Fatal("compressGemfile returned ok=false")
+		t.Fatal("CompressGemfile returned ok=false")
 	}
 	if !strings.Contains(out, "rails") {
 		t.Errorf("missing gem rails: %q", out)
@@ -253,13 +253,13 @@ end
 }
 
 func TestCompressGemfileEmpty(t *testing.T) {
-	_, ok := compressGemfile([]byte("source 'https://rubygems.org'\n"))
+	_, ok := CompressGemfile([]byte("source 'https://rubygems.org'\n"))
 	if ok {
 		t.Error("expected ok=false when no gems declared")
 	}
 }
 
-// ─── compressDepsFile (dispatch) ──────────────────────────────────────────────
+// ─── CompressDepsFile (dispatch) ──────────────────────────────────────────────
 
 func TestCompressDepsFileDispatch(t *testing.T) {
 	cases := []struct {
@@ -290,18 +290,18 @@ func TestCompressDepsFileDispatch(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		out, ok := compressDepsFile(c.path, []byte(c.data))
+		out, ok := CompressDepsFile(c.path, []byte(c.data))
 		if ok != c.wantOK {
-			t.Errorf("compressDepsFile(%q): ok=%v, want %v (out=%q)", c.path, ok, c.wantOK, out)
+			t.Errorf("CompressDepsFile(%q): ok=%v, want %v (out=%q)", c.path, ok, c.wantOK, out)
 			continue
 		}
 		if c.contain != "" && !strings.Contains(out, c.contain) {
-			t.Errorf("compressDepsFile(%q) output missing %q: %q", c.path, c.contain, out)
+			t.Errorf("CompressDepsFile(%q) output missing %q: %q", c.path, c.contain, out)
 		}
 	}
 }
 
-// ─── shortPkg ─────────────────────────────────────────────────────────────────
+// ─── ShortPkg ─────────────────────────────────────────────────────────────────
 
 func TestShortPkg(t *testing.T) {
 	cases := []struct{ pkg, want string }{
@@ -311,8 +311,8 @@ func TestShortPkg(t *testing.T) {
 		{"two/parts", "two/parts"},
 	}
 	for _, c := range cases {
-		if got := shortPkg(c.pkg); got != c.want {
-			t.Errorf("shortPkg(%q) = %q, want %q", c.pkg, got, c.want)
+		if got := ShortPkg(c.pkg); got != c.want {
+			t.Errorf("ShortPkg(%q) = %q, want %q", c.pkg, got, c.want)
 		}
 	}
 }

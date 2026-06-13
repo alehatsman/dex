@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/compress"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
@@ -155,7 +156,7 @@ func (s *Server) compose(ctx context.Context, _ *sdk.CallToolRequest, in Compose
 		var sigs string
 		if len(syms) > 0 {
 			sigs = formatSignatures(data, syms, f.path, nil)
-		} else if content, ok := nonCodeMap(f.path, data); ok {
+		} else if content, ok := compress.NonCodeMap(f.path, data); ok {
 			sigs = content
 		}
 		out.Files = append(out.Files, ComposeFile{

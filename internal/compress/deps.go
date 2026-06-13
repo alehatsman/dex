@@ -1,4 +1,4 @@
-package mcp
+package compress
 
 import (
 	"encoding/json"
@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// depsFileArg extracts the filename argument from `cat file.json`-style commands.
-func depsFileArg(cmd string) string {
+// DepsFileArg extracts the filename argument from `cat file.json`-style commands.
+func DepsFileArg(cmd string) string {
 	parts := strings.Fields(cmd)
 	if len(parts) < 2 {
 		return ""
@@ -16,8 +16,8 @@ func depsFileArg(cmd string) string {
 	return filepath.Base(parts[len(parts)-1])
 }
 
-// isDepsFilename returns true for known dependency manifest file names.
-func isDepsFilename(base string) bool {
+// IsDepsFilename returns true for known dependency manifest file names.
+func IsDepsFilename(base string) bool {
 	switch base {
 	case "package.json", "go.mod", "go.sum", "Cargo.toml", "Cargo.lock",
 		"requirements.txt", "requirements-dev.txt", "pyproject.toml",
@@ -29,23 +29,23 @@ func isDepsFilename(base string) bool {
 	return false
 }
 
-// compressDepsFile returns a compact summary for known dependency manifests.
+// CompressDepsFile returns a compact summary for known dependency manifests.
 // Returns ("", false) when the file is not a recognised manifest.
-func compressDepsFile(path string, data []byte) (string, bool) {
+func CompressDepsFile(path string, data []byte) (string, bool) {
 	base := filepath.Base(path)
 	switch base {
 	case "package.json":
-		return compressPkgJSON(data)
+		return CompressPkgJSON(data)
 	case "go.mod":
-		return compressGoMod(data)
+		return CompressGoMod(data)
 	case "Cargo.toml":
-		return compressCargoToml(data)
+		return CompressCargoToml(data)
 	case "requirements.txt", "requirements-dev.txt":
-		return compressRequirementsTxt(base, data)
+		return CompressRequirementsTxt(base, data)
 	case "pyproject.toml":
-		return compressPyprojectToml(data)
+		return CompressPyprojectToml(data)
 	case "Gemfile":
-		return compressGemfile(data)
+		return CompressGemfile(data)
 	default:
 		return "", false
 	}
@@ -62,7 +62,7 @@ type pkgJSON struct {
 	Scripts          map[string]string `json:"scripts"`
 }
 
-func compressPkgJSON(data []byte) (string, bool) {
+func CompressPkgJSON(data []byte) (string, bool) {
 	var p pkgJSON
 	if err := json.Unmarshal(data, &p); err != nil {
 		return "", false
@@ -90,7 +90,7 @@ func compressPkgJSON(data []byte) (string, bool) {
 
 // ── go.mod ───────────────────────────────────────────────────────────────────
 
-func compressGoMod(data []byte) (string, bool) {
+func CompressGoMod(data []byte) (string, bool) {
 	lines := strings.Split(string(data), "\n")
 	var module, goVer string
 	var deps, indirect []string
@@ -110,7 +110,7 @@ func compressGoMod(data []byte) (string, bool) {
 			// "github.com/foo/bar v1.2.3 // indirect"
 			parts := strings.Fields(t)
 			if len(parts) >= 2 {
-				pkg := shortPkg(parts[0])
+				pkg := ShortPkg(parts[0])
 				isIndirect := len(parts) >= 4 && parts[2] == "//" && parts[3] == "indirect"
 				if isIndirect {
 					indirect = append(indirect, pkg)
@@ -123,7 +123,7 @@ func compressGoMod(data []byte) (string, bool) {
 			rest := strings.TrimPrefix(t, "require ")
 			parts := strings.Fields(rest)
 			if len(parts) >= 2 {
-				deps = append(deps, shortPkg(parts[0]))
+				deps = append(deps, ShortPkg(parts[0]))
 			}
 		}
 	}
@@ -146,8 +146,8 @@ func compressGoMod(data []byte) (string, bool) {
 	return strings.TrimRight(b.String(), "\n"), true
 }
 
-// shortPkg returns the last two path segments of a Go module path.
-func shortPkg(pkg string) string {
+// ShortPkg returns the last two path segments of a Go module path.
+func ShortPkg(pkg string) string {
 	parts := strings.Split(pkg, "/")
 	if len(parts) <= 2 {
 		return pkg
@@ -157,7 +157,7 @@ func shortPkg(pkg string) string {
 
 // ── Cargo.toml ───────────────────────────────────────────────────────────────
 
-func compressCargoToml(data []byte) (string, bool) {
+func CompressCargoToml(data []byte) (string, bool) {
 	lines := strings.Split(string(data), "\n")
 	var name, version string
 	var deps, devDeps []string
@@ -227,7 +227,7 @@ func tomlStringVal(line string) string {
 
 // ── requirements.txt ─────────────────────────────────────────────────────────
 
-func compressRequirementsTxt(base string, data []byte) (string, bool) {
+func CompressRequirementsTxt(base string, data []byte) (string, bool) {
 	lines := strings.Split(string(data), "\n")
 	var pkgs []string
 	for _, l := range lines {
@@ -249,7 +249,7 @@ func compressRequirementsTxt(base string, data []byte) (string, bool) {
 
 // ── pyproject.toml ───────────────────────────────────────────────────────────
 
-func compressPyprojectToml(data []byte) (string, bool) {
+func CompressPyprojectToml(data []byte) (string, bool) {
 	lines := strings.Split(string(data), "\n")
 	var name, version string
 	var deps, devDeps []string
@@ -321,7 +321,7 @@ func compressPyprojectToml(data []byte) (string, bool) {
 
 // ── Gemfile ──────────────────────────────────────────────────────────────────
 
-func compressGemfile(data []byte) (string, bool) {
+func CompressGemfile(data []byte) (string, bool) {
 	lines := strings.Split(string(data), "\n")
 	var gems []string
 	for _, l := range lines {
