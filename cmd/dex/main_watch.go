@@ -21,6 +21,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 	verbose := fs.Bool("v", false, "verbose")
 	force := fs.Bool("force", false, "bypass protected-path and git-tree guards")
 	debounce := fs.Duration("debounce", 500*time.Millisecond, "quiet window before re-indexing")
+	maxDelay := fs.Duration("max-delay", 5*time.Second, "max time a continuous burst of saves can defer a re-index (negative disables the cap)")
 	waitLock := fs.Bool("wait", false, "if another dex indexer is running on this project, wait for it to finish instead of skipping")
 	breakLock := fs.Bool("break-lock", false, "discard an existing project lockfile (use only when the prior holder is gone)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
@@ -87,6 +88,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 	}
 	wOpts := watch.Options{
 		Debounce:   *debounce,
+		MaxDelay:   *maxDelay,
 		Verbose:    *verbose,
 		Logger:     logger,
 		AfterIndex: afterIndex,

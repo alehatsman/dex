@@ -56,6 +56,7 @@ var allEnvVars = []envVar{
 	// watch — the dex watch / MCP auto-watcher fs-event indexer.
 	{"DEX_MCP_AUTOWATCH", "1", "MCP server spawns a per-project watcher on first request to keep the index fresh. Set off|0 to disable.", "watch", true},
 	{"DEX_WATCH_DEBOUNCE", "500ms", "Quiet window before the MCP auto-watcher re-indexes after a burst of fs events.", "watch", false},
+	{"DEX_WATCH_MAX_DELAY", "5s", "Cap on how long a never-quiet stream of saves can defer a re-index; once the burst's first event is older than this, the next event flushes. Negative disables.", "watch", false},
 
 	// tuning — hidden unless --all. Most installs leave these alone.
 	{"DEX_EMBED_DIM", "0", "Truncate embedding vectors to this many dimensions and re-normalise (Matryoshka truncation). 0 = use full model output. Requires `dex reindex` after changing.", "tuning", false},

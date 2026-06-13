@@ -68,6 +68,9 @@ type AutoWatchConfig struct {
 	// Debounce is the quiet window between fs events before re-indexing
 	// (default 500ms).
 	Debounce time.Duration
+	// MaxDelay caps how long a never-quiet stream of saves can defer a
+	// re-index (default 5s; negative disables). See watch.Options.MaxDelay.
+	MaxDelay time.Duration
 	// IndexConcurrency caps Pass 1 worker count (default 0 = GOMAXPROCS).
 	IndexConcurrency int
 	// Logger receives spawn/teardown messages; nil = io.Discard.
@@ -594,6 +597,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 
 	wOpts := watch.Options{
 		Debounce: s.AutoWatch.Debounce,
+		MaxDelay: s.AutoWatch.MaxDelay,
 		Logger:   logger,
 		// Refresh the graph lane after each chunk reindex so call-graph
 		// queries (callers/callees/impact/path) stay as fresh as semantic

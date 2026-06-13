@@ -1,16 +1,19 @@
 package watch
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +23,7 @@ import (
 	"github.com/alehatsman/dex/internal/index"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
+	"github.com/fsnotify/fsnotify"
 )
 
 func fakeEmbedServer(t *testing.T) *httptest.Server {
@@ -356,4 +360,123 @@ func TestWatchIdleReArm(t *testing.T) {
 
 	cancel()
 	<-done
+}
+
+// TestWatchMaxDelayCap verifies the burst max-delay ceiling (#437): a
+// never-quiet stream of saves must not starve indexing. With a Debounce
+// far longer than the write window but a short MaxDelay, the cap forces
+// a flush mid-burst — without it the timer would reset on every save and
+// never fire while writes continue.
+func TestWatchMaxDelayCap(t *testing.T) {
+	srv := fakeEmbedServer(t)
+	defer srv.Close()
+
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+	_ = os.WriteFile(filepath.Join(projDir, "seed.go"),
+		[]byte("package main\nfunc Seed() {}\n"), 0o644)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, _ := proj.Resolve(projDir, cacheDir)
+	_ = p.EnsureCacheDir()
+	st, _ := store.Open(ctx, p.DBPath)
+	defer st.Close()
+	ig, _ := ignore.New(p.Root)
+	em := embed.New(srv.URL, "fake", 8, 5*time.Second)
+	ix := index.New(p, st, em, ig, index.Options{})
+	// Debounce alone would never fire during the ~1.2s write window;
+	// only the MaxDelay cap can force a flush while writes continue.
+	w := New(ix, ig, p.Root, Options{
+		Debounce: 3 * time.Second,
+		MaxDelay: 200 * time.Millisecond,
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	// Wait for the initial pass so we have a stable baseline (seed only).
+	for range 100 {
+		if stats, _ := st.Stats(ctx); stats.Files >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Drive a continuous burst: a new file every 15ms for ~1.2s. This
+	// keeps resetting the debounce timer the whole time.
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		for i := range 80 {
+			_ = os.WriteFile(filepath.Join(projDir, fmt.Sprintf("burst%d.go", i)),
+				fmt.Appendf(nil, "package main\nfunc B%d() {}\n", i), 0o644)
+			time.Sleep(15 * time.Millisecond)
+		}
+	}()
+
+	// A flush must land while the burst is still in flight. Give it up to
+	// 1s — comfortably less than the 1.2s write window and well under the
+	// 3s debounce that would otherwise gate the first flush.
+	flushed := false
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if stats, _ := st.Stats(ctx); stats.Files >= 2 {
+			flushed = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	<-writeDone
+	cancel()
+	<-done
+
+	if !flushed {
+		t.Fatal("watcher never flushed mid-burst: max-delay cap did not fire")
+	}
+}
+
+// TestAddWatchesSurfacesFailures verifies that a failed watch
+// registration is surfaced as a visible (non-verbose) warning (#440):
+// before the fix, drops were logged only under Verbose, so exhausted
+// subtrees went silently unwatched. A closed fsnotify watcher makes
+// every Add fail, standing in for the inotify limit (ENOSPC) in CI.
+func TestAddWatchesSurfacesFailures(t *testing.T) {
+	projDir := t.TempDir()
+	sub := filepath.Join(projDir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ig, _ := ignore.New(projDir)
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	// Verbose is false on purpose: the warning must surface regardless.
+	w := &Watcher{root: projDir, ig: ig, opts: Options{Logger: logger}}
+
+	fw, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fw.Close() // every subsequent Add now fails.
+
+	// Walk the subdir (rel != ".") so the failure hits the dropped-count
+	// branch rather than the fatal root-add path.
+	if err := w.addWatches(fw, sub); err != nil {
+		t.Fatalf("addWatches returned fatal err: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "WARN") {
+		t.Errorf("expected a WARN-level log, got: %q", out)
+	}
+	if !strings.Contains(out, "could not be watched") && !strings.Contains(out, "watch limit") {
+		t.Errorf("expected a visible unwatched-subtree warning, got: %q", out)
+	}
+	if !strings.Contains(out, "dropped=1") {
+		t.Errorf("expected dropped count in warning, got: %q", out)
+	}
 }

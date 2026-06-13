@@ -143,7 +143,8 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 // autoWatchConfigFromEnv reads DEX_MCP_AUTOWATCH to build a config for the
 // MCP server's lazy per-project watchers. Default: enabled. Each watcher
 // refreshes the chunk and graph lanes on change (see runWatcher's
-// AfterIndex hook); the debounce window is DEX_WATCH_DEBOUNCE.
+// AfterIndex hook); the debounce window is DEX_WATCH_DEBOUNCE and the
+// burst max-delay cap is DEX_WATCH_MAX_DELAY.
 func autoWatchConfigFromEnv() mcp.AutoWatchConfig {
 	enabled := envBool("DEX_MCP_AUTOWATCH", true)
 	if !enabled {
@@ -152,6 +153,7 @@ func autoWatchConfigFromEnv() mcp.AutoWatchConfig {
 	return mcp.AutoWatchConfig{
 		Enabled:  true,
 		Debounce: envDuration("DEX_WATCH_DEBOUNCE", 500*time.Millisecond),
+		MaxDelay: envDuration("DEX_WATCH_MAX_DELAY", 5*time.Second),
 		Logger:   cliLogger(),
 	}
 }

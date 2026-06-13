@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -29,6 +30,13 @@ import (
 
 type Options struct {
 	Debounce time.Duration // quiet window before re-indexing; default 500ms
+	// MaxDelay caps how long a continuous burst of events can defer a
+	// flush. Each event resets the Debounce timer, so a process that
+	// saves without pause (autosave, formatter-on-keystroke, a generator
+	// loop) could starve indexing indefinitely. Once the oldest unflushed
+	// event is older than MaxDelay, the next event flushes regardless of
+	// continuing activity. Default 5s; a negative value disables the cap.
+	MaxDelay time.Duration
 	Verbose  bool
 	Logger   *slog.Logger // destination for log output; nil = io.Discard
 	// AfterIndex, if non-nil, is invoked after each successful indexer
@@ -60,8 +68,9 @@ type Watcher struct {
 	opts    Options
 
 	mu         sync.Mutex
-	dirty      bool // events have arrived since the last successful flush
-	running    bool // a flush goroutine is currently running
+	dirty      bool      // events have arrived since the last successful flush
+	burstStart time.Time // when the current undrained burst's first event arrived
+	running    bool      // a flush goroutine is currently running
 	timer      *time.Timer
 	idleTimer  *time.Timer        // armed after a clean flush; nil otherwise
 	idleCancel context.CancelFunc // cancels the in-flight OnIdle, if any
@@ -70,6 +79,9 @@ type Watcher struct {
 func New(idx *index.Indexer, ig *ignore.Matcher, root string, opt Options) *Watcher {
 	if opt.Debounce <= 0 {
 		opt.Debounce = 500 * time.Millisecond
+	}
+	if opt.MaxDelay == 0 {
+		opt.MaxDelay = 5 * time.Second
 	}
 	if opt.Logger == nil {
 		opt.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -153,6 +165,10 @@ func (w *Watcher) handle(ctx context.Context, fw *fsnotify.Watcher, ev fsnotify.
 func (w *Watcher) markDirty(ctx context.Context) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if !w.dirty {
+		// First event of a fresh burst — start the max-delay clock.
+		w.burstStart = time.Now()
+	}
 	w.dirty = true
 	if w.idleTimer != nil {
 		w.idleTimer.Stop()
@@ -165,7 +181,19 @@ func (w *Watcher) markDirty(ctx context.Context) {
 	if w.timer != nil {
 		w.timer.Stop()
 	}
-	w.timer = time.AfterFunc(w.opts.Debounce, func() { w.flush(ctx) })
+	delay := w.opts.Debounce
+	// Cap the deferral so a never-quiet stream of saves can't starve
+	// indexing: clamp the timer to whatever's left of the MaxDelay
+	// budget measured from the burst's first event (#437).
+	if w.opts.MaxDelay > 0 {
+		if remaining := time.Until(w.burstStart.Add(w.opts.MaxDelay)); remaining < delay {
+			delay = remaining
+			if delay < 0 {
+				delay = 0
+			}
+		}
+	}
+	w.timer = time.AfterFunc(delay, func() { w.flush(ctx) })
 }
 
 func (w *Watcher) flush(ctx context.Context) {
@@ -271,8 +299,15 @@ func (w *Watcher) runIdle(ctx context.Context) {
 }
 
 // addWatches registers fw on dir and all of its non-ignored subdirectories.
+//
+// A failed registration leaves that subtree silently unwatched: incremental
+// indexing stops covering it until the next full pass. The common cause is
+// inotify exhaustion (ENOSPC: the per-user fs.inotify.max_user_watches limit),
+// so any drop is surfaced as a visible warning — not a verbose-only line —
+// with the dropped count and a hint on how to raise the limit (#440).
 func (w *Watcher) addWatches(fw *fsnotify.Watcher, dir string) error {
-	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	var dropped, limitHit int
+	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -287,10 +322,24 @@ func (w *Watcher) addWatches(fw *fsnotify.Watcher, dir string) error {
 			return filepath.SkipDir
 		}
 		if err := fw.Add(path); err != nil {
+			dropped++
+			if errors.Is(err, syscall.ENOSPC) {
+				limitHit++
+			}
 			if w.opts.Verbose {
 				w.opts.Logger.Warn("fw.Add failed", "path", path, "err", err)
 			}
 		}
 		return nil
 	})
+	if dropped > 0 {
+		if limitHit > 0 {
+			w.opts.Logger.Warn("inotify watch limit reached — these subtrees will NOT be watched; incremental indexing will miss their changes. Raise the limit, e.g. `sudo sysctl -w fs.inotify.max_user_watches=524288`, then restart the watcher",
+				"dropped", dropped, logx.Path(dir))
+		} else {
+			w.opts.Logger.Warn("some directories could not be watched — incremental indexing will miss their changes",
+				"dropped", dropped, logx.Path(dir))
+		}
+	}
+	return walkErr
 }
