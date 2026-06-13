@@ -63,7 +63,11 @@ func CompressMySQLTable(lines []string) []string {
 	if previewEnd > len(lines) {
 		previewEnd = len(lines)
 	}
-	out := lines[:previewEnd]
+	// Copy before append: lines[:previewEnd] keeps lines' backing array
+	// (cap > previewEnd here), so appending the summary would overwrite
+	// lines[previewEnd] in place and return a slice aliased to the caller's
+	// input (#459, follow-up to #454).
+	out := append([]string(nil), lines[:previewEnd]...)
 	return append(out, fmt.Sprintf("... (%d rows total)", rowCount))
 }
 
@@ -151,7 +155,8 @@ func CompressPsqlTable(lines []string) []string {
 	if previewEnd > len(lines) {
 		previewEnd = len(lines)
 	}
-	out := lines[:previewEnd]
+	// Copy before append — see CompressMySQLTable above (#459).
+	out := append([]string(nil), lines[:previewEnd]...)
 	return append(out, "... "+countStr)
 }
 
