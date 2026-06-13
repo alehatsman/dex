@@ -808,7 +808,6 @@ func CompressMypy(lines []string) []string {
 var (
 	rePytestSummary = &lazyRe{pattern: `=+\s+(\d+) (failed|passed|error)`}
 	rePytestFailed  = &lazyRe{pattern: `^FAILED\s+`}
-	rePytestPassed  = &lazyRe{pattern: `^PASSED\s+`}
 )
 
 func CompressPytest(lines []string) []string {
