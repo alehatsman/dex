@@ -45,8 +45,6 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 )
 
-func init() { Register(newRustExtractor) }
-
 func newRustExtractor() Extractor {
 	return &rustExtractor{
 		nodeIDs:     map[string]struct{}{},

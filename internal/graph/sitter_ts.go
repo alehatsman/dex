@@ -40,8 +40,6 @@ import (
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
-func init() { Register(newTSExtractor) }
-
 func newTSExtractor() Extractor {
 	return &tsExtractor{jstsBase: jstsBase{
 		lang:        "typescript",

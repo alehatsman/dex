@@ -28,8 +28,6 @@ import (
 	"github.com/smacker/go-tree-sitter/javascript"
 )
 
-func init() { Register(newJSExtractor) }
-
 func newJSExtractor() Extractor {
 	return &jsExtractor{jstsBase: jstsBase{
 		lang:        "javascript",

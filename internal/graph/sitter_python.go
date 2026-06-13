@@ -27,8 +27,6 @@ import (
 	"github.com/smacker/go-tree-sitter/python"
 )
 
-func init() { Register(newPythonExtractor) }
-
 // newPythonExtractor returns a fresh extractor instance. The framework
 // builds one per Run so accumulator state is isolated.
 func newPythonExtractor() Extractor {

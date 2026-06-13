@@ -33,8 +33,6 @@ import (
 	"github.com/smacker/go-tree-sitter/java"
 )
 
-func init() { Register(newJavaExtractor) }
-
 func newJavaExtractor() Extractor {
 	return &javaExtractor{
 		nodeIDs:     map[string]struct{}{},

@@ -144,24 +144,44 @@ func (r *Registry) Extensions() []string {
 	return out
 }
 
-// DefaultRegistry is the package-level registry. Per-language files
-// (sitter_python.go, sitter_ts.go, …) call Register from init.
-var DefaultRegistry = NewRegistry()
+// DefaultExtractors returns the canonical set of language extractors.
+// Callers can pass a subset to NewRegistry for hermetic, single-language
+// extraction (useful in tests).
+func DefaultExtractors() []ExtractorFactory {
+	return []ExtractorFactory{
+		newPythonExtractor,
+		newTSExtractor,
+		newJSExtractor,
+		newRustExtractor,
+		newJavaExtractor,
+	}
+}
 
-// Register installs f in DefaultRegistry. Per-language extractors call
-// this from their own init() — see the database/sql driver pattern.
-func Register(f ExtractorFactory) { DefaultRegistry.Register(f) }
+// DefaultRegistry is the package-level registry, lazily populated on
+// first call to ExtractSitter via defaultOnce. External callers that
+// access DefaultRegistry directly before calling ExtractSitter should
+// call initDefaultRegistry() first.
+var (
+	DefaultRegistry     = NewRegistry()
+	defaultRegistryOnce sync.Once
+)
+
+func initDefaultRegistry() {
+	defaultRegistryOnce.Do(func() {
+		for _, f := range DefaultExtractors() {
+			DefaultRegistry.Register(f)
+		}
+	})
+}
 
 // ExtractSitter is the main entry point. Walks projectRoot with the
 // shared ignore matcher, parses each file matching a registered
 // extension with the right tree-sitter grammar, and dispatches to the
-// extractor. Returns an empty ExtractResult when no extractors are
-// registered (the default state until per-language files land).
-//
-// Per-file parse failures and per-extractor warnings surface in
-// res.Warnings; they do not abort the pass. Only context cancellation
-// and a top-level walker error are returned as `err`.
+// extractor. Per-file parse failures and per-extractor warnings surface
+// in res.Warnings; they do not abort the pass. Only context cancellation
+// and a top-level walker error are returned as err.
 func ExtractSitter(ctx context.Context, projectRoot string) (*ExtractResult, error) {
+	initDefaultRegistry()
 	return ExtractSitterWith(ctx, projectRoot, DefaultRegistry)
 }
 
