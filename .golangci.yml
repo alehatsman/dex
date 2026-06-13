@@ -102,7 +102,7 @@ linters:
 
       # defer st.Close() — mcp server and cmd store handles; best-effort
       # close in hot path and error paths; original error is what matters.
-      - path: internal/mcp/server\.go
+      - path: internal/mcp/server.*\.go
         linters: [errcheck]
         text: "Error return value of `st\\.Close` is not checked"
 
