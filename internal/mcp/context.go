@@ -19,59 +19,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-// ─── intent vocabulary (issue #5) ─────────────────────────────────────────
-
-const (
-	IntentAuto            = "auto"
-	IntentBehaviorSearch  = "behavior_search"
-	IntentSymbolLookup    = "symbol_lookup"
-	IntentCallers         = "callers"
-	IntentCallees         = "callees"
-	IntentArchitecture    = "architecture"
-	IntentPackageTopology = "package_topology"
-	IntentEditingContext  = "editing_context"
-)
-
-var validIntents = map[string]struct{}{
-	IntentAuto: {}, IntentBehaviorSearch: {}, IntentSymbolLookup: {},
-	IntentCallers: {}, IntentCallees: {}, IntentArchitecture: {},
-	IntentPackageTopology: {}, IntentEditingContext: {},
-}
-
-// Identifier detection patterns. Conservative — false positives are
-// cheap (we just run search_symbol and get nothing) but false negatives
-// mean we miss the structural fast path.
-var (
-	// (*Type).Method or Type.Method — receiver-qualified Go-style names.
-	reQualifiedSymbol = regexp.MustCompile(`\(\*?[A-Z][A-Za-z0-9_]*\)\.[A-Za-z_][A-Za-z0-9_]*|\b[A-Z][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\b`)
-	// Bare PascalCase identifier of length ≥ 3 (skip "I", "Go", noise).
-	reBarePascal = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]{2,}\b`)
-	// camelCase — lowercase start with an internal uppercase transition
-	// (e.g. `inlineContent`, `markDirty`). Required for Go unexported
-	// identifiers; the uppercase transition keeps plain English words
-	// out (no English word has a mid-word capital).
-	reCamel = regexp.MustCompile(`\b[a-z][a-z0-9]*[A-Z][A-Za-z0-9_]*\b`)
-	// snake_case_with_underscores — at least one underscore so we don't
-	// flag plain words.
-	reSnake = regexp.MustCompile(`\b[a-z][a-z0-9_]*_[a-z0-9_]+\b`)
-
-	// Intent keyword regexes for auto routing.
-	reCallers      = regexp.MustCompile(`\b(callers?|who calls|what calls|called by|usage of|usages of|references? to|where is .* used|where is .* called)\b`)
-	reCallees      = regexp.MustCompile(`\b(callees?|what does .* call|calls from|outgoing calls|dependencies of)\b`)
-	reArchitecture = regexp.MustCompile(`\b(architecture|how does .* work|overview|big picture|design of|walk me through|how is .* organized)\b`)
-	rePackages     = regexp.MustCompile(`\b(packages?|modules?|topology|dependency graph|import graph|package layout)\b`)
-	// `change` / `update` deliberately omitted — they fire on questions
-	// like "when X changes" or "update the timestamp on Y" that are
-	// really behavior_search, not editing_context.
-	reEditing = regexp.MustCompile(`\b(edit|modify|refactor|rename|extend|fix|patch|implement|add)\b`)
 )
 
 // ─── tool: ask ────────────────────────────────────────────────────────────
@@ -303,7 +256,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 		return nil, ContextOutput{Status: "error", Hint: hint}, nil
 	}
 
-	intent, candidates := resolveIntent(in)
+	intent, candidates := retrieve.ResolveIntent(in.Question, in.Intent)
 	out := ContextOutput{Project: p.Root, Intent: intent}
 
 	if _, err := os.Stat(p.DBPath); err != nil {
@@ -362,7 +315,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	// pays the GPU call.
 	exp := s.expandQuery(ctx, in.Question, resolveExpandMode(in.Expand, s.ExpandMode))
 	if !exp.empty() {
-		candidates.identifiers = appendExpansionIdentifiers(candidates.identifiers, exp.Identifiers)
+		candidates.Identifiers = appendExpansionIdentifiers(candidates.Identifiers, exp.Identifiers)
 		out.Expanded = true
 	}
 
@@ -475,12 +428,12 @@ func noLaneHits(embedFailed, leanNoEmbedder bool, out *ContextOutput) bool {
 // symbolNearMiss returns a hint string when the question is a symbol_lookup
 // with no exact hits. It scans chunks for substring candidates so the agent
 // gets names without a follow-up tool call.
-func symbolNearMiss(ctx context.Context, st store.Searcher, intent string, candidates intentCandidates) string {
-	if intent != IntentSymbolLookup || len(candidates.identifiers) == 0 {
+func symbolNearMiss(ctx context.Context, st store.Searcher, intent string, candidates retrieve.IntentCandidates) string {
+	if intent != retrieve.IntentSymbolLookup || len(candidates.Identifiers) == 0 {
 		return ""
 	}
 	var cands []string
-	for _, id := range candidates.identifiers {
+	for _, id := range candidates.Identifiers {
 		bare := id
 		if i := strings.LastIndex(bare, "."); i >= 0 {
 			bare = bare[i+1:]

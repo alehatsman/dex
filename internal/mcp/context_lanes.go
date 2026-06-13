@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -15,14 +16,14 @@ import (
 // runSymbolLane runs search_symbol for each detected identifier and
 // returns deduplicated symbol hits plus a set of file paths the lane
 // touched (used by pickSuggestedReads). At most `k` hits returned.
-func (s *Server) runSymbolLane(ctx context.Context, st store.Searcher, cand intentCandidates, k int) ([]SymbolHit, map[string]struct{}) {
-	if len(cand.identifiers) == 0 {
+func (s *Server) runSymbolLane(ctx context.Context, st store.Searcher, cand retrieve.IntentCandidates, k int) ([]SymbolHit, map[string]struct{}) {
+	if len(cand.Identifiers) == 0 {
 		return nil, nil
 	}
 	paths := map[string]struct{}{}
 	seen := map[string]struct{}{}
 	var out []SymbolHit
-	for _, id := range cand.identifiers {
+	for _, id := range cand.Identifiers {
 		// search_symbol expects the bare name; strip a "(*T)." prefix.
 		bare := id
 		if i := strings.LastIndex(bare, "."); i >= 0 {

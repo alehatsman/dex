@@ -13,6 +13,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/profiles"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -139,7 +140,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// by exact name, and RRF-fuse with the semantic results. Runs in the
 	// same request with no extra embedding round-trip — FindSymbol is a
 	// pure SQL index scan.
-	idents := extractIdentifiers(in.Query)
+	idents := retrieve.ExtractIdentifiers(in.Query)
 	if len(idents) > 0 {
 		symPool := candidateK * 3
 		if symPool < 15 {

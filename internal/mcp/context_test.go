@@ -13,103 +13,9 @@ import (
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
-
-// ─── resolveIntent ────────────────────────────────────────────────────────
-
-func TestResolveIntent(t *testing.T) {
-	cases := []struct {
-		name string
-		in   ContextInput
-		want string
-	}{
-		// Explicit Intent wins.
-		{"explicit callers", ContextInput{Intent: IntentCallers, Question: "fix the bug"}, IntentCallers},
-		{"explicit upper", ContextInput{Intent: "ARCHITECTURE", Question: "fix the bug"}, IntentArchitecture},
-		{"explicit auto falls through", ContextInput{Intent: "auto", Question: "fix the rerank pool"}, IntentEditingContext},
-		{"invalid intent falls through", ContextInput{Intent: "frobnicate", Question: "callers of Foo"}, IntentCallers},
-
-		// Keyword regex.
-		{"callers", ContextInput{Question: "callers of (*Store).Search"}, IntentCallers},
-		{"who calls", ContextInput{Question: "who calls Search"}, IntentCallers},
-		{"callees", ContextInput{Question: "what does Search call"}, IntentCallees},
-		{"architecture", ContextInput{Question: "how does indexing work"}, IntentArchitecture},
-		{"overview", ContextInput{Question: "give me an overview of the indexer"}, IntentArchitecture},
-		{"packages", ContextInput{Question: "show the package topology"}, IntentPackageTopology},
-		{"editing", ContextInput{Question: "fix the rerank pool overflow"}, IntentEditingContext},
-
-		// Bare identifier query → symbol_lookup.
-		{"bare qualified", ContextInput{Question: "(*Store).Search"}, IntentSymbolLookup},
-		{"bare pascal", ContextInput{Question: "OpenWith"}, IntentSymbolLookup},
-		{"bare camel", ContextInput{Question: "inlineContent"}, IntentSymbolLookup},
-
-		// Default: behavior_search.
-		{"plain question", ContextInput{Question: "where do we open the SQLite store"}, IntentBehaviorSearch},
-
-		// Priority: callers beats editing when both present.
-		{"callers beats editing", ContextInput{Question: "fix the callers of Search"}, IntentCallers},
-
-		// change/update no longer trigger editing_context — they're too
-		// noisy on questions like "when X changes" / "update the timestamp".
-		{"change is behavior_search", ContextInput{Question: "where does the cache invalidate when chunks change"}, IntentBehaviorSearch},
-		{"update is behavior_search", ContextInput{Question: "what triggers an update to last_indexed"}, IntentBehaviorSearch},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, _ := resolveIntent(tc.in)
-			if got != tc.want {
-				t.Errorf("resolveIntent(%+v) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-// ─── extractIdentifiers ───────────────────────────────────────────────────
-
-func TestExtractIdentifiers(t *testing.T) {
-	cases := []struct {
-		in   string
-		want []string
-	}{
-		{"callers of (*Store).Search", []string{"(*Store).Search"}},
-		{"where is OpenWith defined", []string{"OpenWith"}},
-		{"the user_role table and old_users column", []string{"user_role", "old_users"}},
-		{"plain english only", nil},
-		{"a Foo Bar duplicate Foo", []string{"Foo", "Bar"}},
-		// camelCase — Go unexported names should be picked up.
-		{"inlineContent", []string{"inlineContent"}},
-		{"where is markDirty called", []string{"markDirty"}},
-		// A camelCase token inside a qualified form must not double-add
-		// (the qualified span masks sub-token matches).
-		{"(*Store).searchRaw", []string{"(*Store).searchRaw"}},
-		// Single-word lowercase fallback — `rerank` is a valid Go
-		// identifier (unexported method on (*Store)) that matches none
-		// of the regex passes. The fallback should pick it up.
-		{"rerank", []string{"rerank"}},
-		{"index", []string{"index"}},
-		// Multi-word lowercase phrases should NOT trigger the fallback —
-		// "plain english only" is correctly treated as natural language.
-		{"plain english only", nil},
-		// Too short (1-2 chars) doesn't qualify for the fallback.
-		{"go", nil},
-		// Punctuation/whitespace in single-word case → not an identifier.
-		{"go!", nil},
-	}
-	for _, tc := range cases {
-		t.Run(tc.in, func(t *testing.T) {
-			got := extractIdentifiers(tc.in)
-			if len(got) != len(tc.want) {
-				t.Fatalf("got %v, want %v", got, tc.want)
-			}
-			for i := range got {
-				if got[i] != tc.want[i] {
-					t.Errorf("idx %d: got %q, want %q (full: %v)", i, got[i], tc.want[i], got)
-				}
-			}
-		})
-	}
-}
 
 // ─── pickSuggestedReads ───────────────────────────────────────────────────
 
@@ -118,7 +24,7 @@ func TestPickSuggestedReadsSymbolIntent(t *testing.T) {
 		{QualifiedName: "Foo", Path: "a.go", StartLine: 10, EndLine: 20},
 		{QualifiedName: "Bar", Path: "b.go", StartLine: 5, EndLine: 15},
 	}
-	got := pickSuggestedReads(IntentSymbolLookup, nil, syms, nil, nil)
+	got := pickSuggestedReads(retrieve.IntentSymbolLookup, nil, syms, nil, nil)
 	if len(got) != 2 || got[0].Path != "a.go" || got[1].Path != "b.go" {
 		t.Fatalf("got %+v", got)
 	}
@@ -136,7 +42,7 @@ func TestPickSuggestedReadsCrossLaneBias(t *testing.T) {
 	}
 	symbolPaths := map[string]struct{}{"b.go": {}}
 
-	got := pickSuggestedReads(IntentBehaviorSearch, sem, nil, symbolPaths, nil)
+	got := pickSuggestedReads(retrieve.IntentBehaviorSearch, sem, nil, symbolPaths, nil)
 	if len(got) != 2 {
 		t.Fatalf("got %+v", got)
 	}
@@ -156,19 +62,19 @@ func TestPickSuggestedReadsDocScoreWinsForBehavior(t *testing.T) {
 		{Path: "README.md", Score: 0.66},
 		{Path: "internal/store/store.go", Score: 0.51},
 	}
-	got := pickSuggestedReads(IntentBehaviorSearch, sem, nil, nil, nil)
+	got := pickSuggestedReads(retrieve.IntentBehaviorSearch, sem, nil, nil, nil)
 	if len(got) == 0 || got[0].Path != "README.md" {
 		t.Errorf("behavior_search: higher-scoring doc should win; got %+v", got)
 	}
 
 	// Architecture — same: README wins by score.
-	gotArch := pickSuggestedReads(IntentArchitecture, sem, nil, nil, nil)
+	gotArch := pickSuggestedReads(retrieve.IntentArchitecture, sem, nil, nil, nil)
 	if len(gotArch) == 0 || gotArch[0].Path != "README.md" {
 		t.Errorf("architecture should keep README on top; got %+v", gotArch)
 	}
 
 	// Other code-oriented intents still apply the tiebreaker.
-	gotEdit := pickSuggestedReads(IntentEditingContext, sem, nil, nil, nil)
+	gotEdit := pickSuggestedReads(retrieve.IntentEditingContext, sem, nil, nil, nil)
 	if len(gotEdit) == 0 || gotEdit[0].Path != "internal/store/store.go" {
 		t.Errorf("editing_context should prefer .go over README tiebreaker; got %+v", gotEdit)
 	}
@@ -182,11 +88,11 @@ func TestPickSuggestedReadsCodePreferredOverBuildFiles(t *testing.T) {
 		{Path: "Taskfile.yml", Score: 0.66},
 		{Path: "internal/mcp/server.go", Score: 0.40},
 	}
-	got := pickSuggestedReads(IntentEditingContext, sem, nil, nil, nil)
+	got := pickSuggestedReads(retrieve.IntentEditingContext, sem, nil, nil, nil)
 	if len(got) == 0 || got[0].Path != "internal/mcp/server.go" {
 		t.Errorf("editing_context should prefer .go over Taskfile.yml; got %+v", got)
 	}
-	gotArch := pickSuggestedReads(IntentArchitecture, sem, nil, nil, nil)
+	gotArch := pickSuggestedReads(retrieve.IntentArchitecture, sem, nil, nil, nil)
 	if len(gotArch) == 0 || gotArch[0].Path != "Taskfile.yml" {
 		t.Errorf("architecture should leave score order intact; got %+v", gotArch)
 	}
@@ -216,7 +122,7 @@ func TestPickSuggestedReadsPageRankTiebreaker(t *testing.T) {
 			{Path: "ordinary.go", StartLine: 1, EndLine: 10, Score: 0.58},
 			{Path: "hub.go", StartLine: 1, EndLine: 10, Score: 0.55},
 		}
-		got := pickSuggestedReads(IntentArchitecture, sem, nil, nil, view)
+		got := pickSuggestedReads(retrieve.IntentArchitecture, sem, nil, nil, view)
 		if len(got) == 0 || got[0].Path != "hub.go" {
 			t.Errorf("PageRank should flip ordering within score bucket; got %+v", got)
 		}
@@ -229,7 +135,7 @@ func TestPickSuggestedReadsPageRankTiebreaker(t *testing.T) {
 			{Path: "ordinary.go", StartLine: 1, EndLine: 10, Score: 0.70},
 			{Path: "hub.go", StartLine: 1, EndLine: 10, Score: 0.50},
 		}
-		got := pickSuggestedReads(IntentArchitecture, sem, nil, nil, view)
+		got := pickSuggestedReads(retrieve.IntentArchitecture, sem, nil, nil, view)
 		if len(got) == 0 || got[0].Path != "ordinary.go" {
 			t.Errorf("score-bucket gap should keep ordinary.go on top; got %+v", got)
 		}
@@ -240,7 +146,7 @@ func TestPickSuggestedReadsPageRankTiebreaker(t *testing.T) {
 			{Path: "ordinary.go", StartLine: 1, EndLine: 10, Score: 0.58},
 			{Path: "hub.go", StartLine: 1, EndLine: 10, Score: 0.55},
 		}
-		got := pickSuggestedReads(IntentPackageTopology, sem, nil, nil, view)
+		got := pickSuggestedReads(retrieve.IntentPackageTopology, sem, nil, nil, view)
 		if len(got) == 0 || got[0].Path != "hub.go" {
 			t.Errorf("package_topology should also reorder by PageRank; got %+v", got)
 		}
@@ -251,7 +157,7 @@ func TestPickSuggestedReadsPageRankTiebreaker(t *testing.T) {
 			{Path: "ordinary.go", StartLine: 1, EndLine: 10, Score: 0.58},
 			{Path: "hub.go", StartLine: 1, EndLine: 10, Score: 0.55},
 		}
-		got := pickSuggestedReads(IntentBehaviorSearch, sem, nil, nil, view)
+		got := pickSuggestedReads(retrieve.IntentBehaviorSearch, sem, nil, nil, view)
 		if len(got) == 0 || got[0].Path != "ordinary.go" {
 			t.Errorf("behavior_search should keep score order regardless of PageRank; got %+v", got)
 		}
@@ -265,7 +171,7 @@ func TestPickSuggestedReadsPageRankTiebreaker(t *testing.T) {
 			{Path: "ordinary.go", StartLine: 1, EndLine: 10, Score: 0.58},
 			{Path: "hub.go", StartLine: 1, EndLine: 10, Score: 0.55},
 		}
-		got := pickSuggestedReads(IntentArchitecture, sem, nil, nil, nil)
+		got := pickSuggestedReads(retrieve.IntentArchitecture, sem, nil, nil, nil)
 		if len(got) == 0 || got[0].Path != "ordinary.go" {
 			t.Errorf("nil view should fall back to score order; got %+v", got)
 		}
@@ -366,7 +272,7 @@ func TestEnrichGraphCaps(t *testing.T) {
 			view.NodesByPath[n.FilePath] = append(view.NodesByPath[n.FilePath], n)
 		}
 		out := &ContextOutput{}
-		enrichGraph(out, IntentArchitecture, view, []SemHit{{Path: "bigpkg/bigpkg.go"}}, nil)
+		enrichGraph(out, retrieve.IntentArchitecture, view, []SemHit{{Path: "bigpkg/bigpkg.go"}}, nil)
 		if got := len(out.Graph.Nodes); got > maxGraphNodes {
 			t.Errorf("got %d nodes, want ≤ %d", got, maxGraphNodes)
 		}
@@ -401,7 +307,7 @@ func TestEnrichGraphCaps(t *testing.T) {
 			view.EdgesByDst[dstID] = append(view.EdgesByDst[dstID], e)
 		}
 		out := &ContextOutput{}
-		enrichGraph(out, IntentPackageTopology, view, []SemHit{{Path: "src/src.go"}}, nil)
+		enrichGraph(out, retrieve.IntentPackageTopology, view, []SemHit{{Path: "src/src.go"}}, nil)
 		if got := len(out.Graph.Edges); got > maxGraphEdges {
 			t.Errorf("got %d edges, want ≤ %d", got, maxGraphEdges)
 		}
@@ -450,7 +356,7 @@ func TestArchitectureAnchorsOnPageRank(t *testing.T) {
 	}
 	// semHits point only at a doc file — no graph nodes there.
 	out := &ContextOutput{}
-	enrichGraph(out, IntentArchitecture, view, []SemHit{{Path: "README.md"}}, nil)
+	enrichGraph(out, retrieve.IntentArchitecture, view, []SemHit{{Path: "README.md"}}, nil)
 	if out.Graph == nil {
 		t.Fatal("expected graph rollup anchored on PageRank when semHits are docs")
 	}
@@ -495,7 +401,7 @@ func TestArchitectureAnchorAugmentedBySemHits(t *testing.T) {
 		view.NodesByPath[n.FilePath] = append(view.NodesByPath[n.FilePath], n)
 	}
 	out := &ContextOutput{}
-	enrichGraph(out, IntentArchitecture, view, []SemHit{{Path: "leaf/leaf.go"}}, nil)
+	enrichGraph(out, retrieve.IntentArchitecture, view, []SemHit{{Path: "leaf/leaf.go"}}, nil)
 	if out.Graph == nil {
 		t.Fatal("expected graph rollup")
 	}
@@ -519,7 +425,7 @@ func TestInlineSuggestedReadsBasic(t *testing.T) {
 		"line 1\nline 2\nline 3\nline 4\nline 5\n")
 
 	reads := []SuggestedRead{{Path: "f.go", StartLine: 2, EndLine: 4, Reason: "x"}}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
 
 	want := "line 2\nline 3\nline 4\n"
 	if reads[0].Content != want {
@@ -541,7 +447,7 @@ func TestInlineSuggestedReadsPerReadLineCap(t *testing.T) {
 	writeFile(t, filepath.Join(root, "big.go"), b.String())
 
 	reads := []SuggestedRead{{Path: "big.go", StartLine: 1, EndLine: 200}}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
 
 	if !reads[0].Truncated {
 		t.Error("want truncated=true when range exceeds per-read cap")
@@ -579,7 +485,7 @@ func TestInlineSuggestedReadsTotalByteBudget(t *testing.T) {
 		{Path: "e.go", StartLine: 1, EndLine: 30},
 		{Path: "f.go", StartLine: 1, EndLine: 30},
 	}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
 
 	total := 0
 	for _, r := range reads {
@@ -604,7 +510,7 @@ func TestInlineContentSemanticHitsAlsoFilled(t *testing.T) {
 		{Path: "a.go", StartLine: 1, EndLine: 3},
 		{Path: "b.go", StartLine: 1, EndLine: 3},
 	}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, sem)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, sem)
 
 	if sem[0].Content == "" {
 		t.Error("semantic_hits[0] should be filled (cache-hit from suggested_reads)")
@@ -630,7 +536,7 @@ func TestInlineContentSharedBudgetDoesNotDoubleCharge(t *testing.T) {
 		{Path: "shared.go", StartLine: 1, EndLine: 3},
 		{Path: "other.go", StartLine: 1, EndLine: 3},
 	}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, sem)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, sem)
 
 	if reads[0].Content == "" || sem[0].Content == "" || sem[1].Content == "" {
 		t.Errorf("expected all three to be filled; got reads=%q sem0=%q sem1=%q",
@@ -657,7 +563,7 @@ func TestInlineContentScoreFloorOnLowSignalQueries(t *testing.T) {
 		{Path: "weaker.go", StartLine: 1, EndLine: 3, Score: 0.38}, // < noiseFloorScore → suppressed
 		// 0.41 is above the floor — would also be inlined.
 	}
-	inlineContent(root, IntentBehaviorSearch, nil, nil, sem)
+	inlineContent(root, retrieve.IntentBehaviorSearch, nil, nil, sem)
 	if sem[0].Content == "" {
 		t.Error("top hit (score 0.42) should still inline — only sub-floor hits are suppressed")
 	}
@@ -671,7 +577,7 @@ func TestInlineContentScoreFloorOnLowSignalQueries(t *testing.T) {
 		{Path: "strong.go", StartLine: 1, EndLine: 3, Score: 0.80},
 		{Path: "weaker.go", StartLine: 1, EndLine: 3, Score: 0.38},
 	}
-	inlineContent(root, IntentBehaviorSearch, nil, nil, sem2)
+	inlineContent(root, retrieve.IntentBehaviorSearch, nil, nil, sem2)
 	if sem2[1].Content == "" {
 		t.Error("low-score companion to a strong top should still inline (floor only fires on no-signal queries)")
 	}
@@ -680,7 +586,7 @@ func TestInlineContentScoreFloorOnLowSignalQueries(t *testing.T) {
 func TestInlineSuggestedReadsMissingFileGraceful(t *testing.T) {
 	root := t.TempDir()
 	reads := []SuggestedRead{{Path: "does-not-exist.go", StartLine: 1, EndLine: 5}}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, nil) // must not panic
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil) // must not panic
 	if reads[0].Content != "" {
 		t.Errorf("missing file should leave content empty, got %q", reads[0].Content)
 	}
@@ -697,7 +603,7 @@ func TestInlineContentFillsSymbolBodyForSymbolLookup(t *testing.T) {
 	syms := []SymbolHit{
 		{QualifiedName: "Alpha", Path: "a.go", StartLine: 3, EndLine: 5},
 	}
-	inlineContent(root, IntentSymbolLookup, nil, syms, nil)
+	inlineContent(root, retrieve.IntentSymbolLookup, nil, syms, nil)
 	if syms[0].Body == "" {
 		t.Fatal("symbol body should be inlined for symbol_lookup intent")
 	}
@@ -735,7 +641,7 @@ func TestInlineContentFillsImportsForGoFile(t *testing.T) {
 		// Reads a function far from the import block (StartLine > 5).
 		{Path: "deep/foo.go", StartLine: 20, EndLine: 22, Reason: "test"},
 	}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
 	if reads[0].Imports == "" {
 		t.Fatal("Go imports should be inlined for a read starting away from the top")
 	}
@@ -754,7 +660,7 @@ func TestInlineContentSkipsImportsWhenReadCoversTop(t *testing.T) {
 		// StartLine=1 → the read already includes the import line.
 		{Path: "foo.go", StartLine: 1, EndLine: 5, Reason: "test"},
 	}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
 	if reads[0].Imports != "" {
 		t.Errorf("Imports should be omitted when the read already covers the top; got %q", reads[0].Imports)
 	}
@@ -766,7 +672,7 @@ func TestInlineContentSkipsImportsForUnknownLanguage(t *testing.T) {
 	reads := []SuggestedRead{
 		{Path: "foo.txt", StartLine: 20, EndLine: 22, Reason: "test"},
 	}
-	inlineContent(root, IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
 	if reads[0].Imports != "" {
 		t.Errorf("unknown language should produce empty Imports; got %q", reads[0].Imports)
 	}
@@ -781,7 +687,7 @@ func TestInlineContentSkipsSymbolBodyForOtherIntents(t *testing.T) {
 	}
 	// behavior_search should NOT fill bodies — signature+doc are
 	// considered sufficient and we save budget for semantic_hits.
-	inlineContent(root, IntentBehaviorSearch, nil, syms, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, nil, syms, nil)
 	if syms[0].Body != "" {
 		t.Errorf("non-symbol_lookup intent should leave Body empty; got %q", syms[0].Body)
 	}
@@ -872,7 +778,7 @@ func TestInlineContentSkipsTestSourceForNonEditing(t *testing.T) {
 
 	t.Run("behavior_search drops test content", func(t *testing.T) {
 		sem := mkHits()
-		inlineContent(projDir, IntentBehaviorSearch, nil, nil, sem)
+		inlineContent(projDir, retrieve.IntentBehaviorSearch, nil, nil, sem)
 		if sem[0].Content == "" {
 			t.Errorf("impl greet.go should be inlined; got empty")
 		}
@@ -883,7 +789,7 @@ func TestInlineContentSkipsTestSourceForNonEditing(t *testing.T) {
 
 	t.Run("architecture drops test content", func(t *testing.T) {
 		sem := mkHits()
-		inlineContent(projDir, IntentArchitecture, nil, nil, sem)
+		inlineContent(projDir, retrieve.IntentArchitecture, nil, nil, sem)
 		if sem[1].Content != "" {
 			t.Errorf("architecture: test should be path-only; got %d bytes", len(sem[1].Content))
 		}
@@ -891,7 +797,7 @@ func TestInlineContentSkipsTestSourceForNonEditing(t *testing.T) {
 
 	t.Run("editing_context keeps test content", func(t *testing.T) {
 		sem := mkHits()
-		inlineContent(projDir, IntentEditingContext, nil, nil, sem)
+		inlineContent(projDir, retrieve.IntentEditingContext, nil, nil, sem)
 		if sem[1].Content == "" {
 			t.Errorf("editing_context: sibling test should be inlined; got empty")
 		}
@@ -979,7 +885,7 @@ func TestPickSuggestedReadsFiltersRollupSummaries(t *testing.T) {
 		{Path: ".", Kind: "repo_summary", Score: 0.90},
 		{Path: "internal/store/store.go", StartLine: 100, EndLine: 150, Kind: "method_declaration", Score: 0.85},
 	}
-	got := pickSuggestedReads(IntentArchitecture, sem, nil, nil, nil)
+	got := pickSuggestedReads(retrieve.IntentArchitecture, sem, nil, nil, nil)
 	for _, r := range got {
 		if r.Path == "internal/index" || r.Path == "." {
 			t.Errorf("rollup-summary path %q leaked into suggested_reads", r.Path)
@@ -1003,7 +909,7 @@ func TestPickSuggestedReadsArchitectureCap(t *testing.T) {
 		{Path: "c.go", Score: 0.7}, {Path: "d.go", Score: 0.6},
 		{Path: "e.go", Score: 0.5}, {Path: "f.go", Score: 0.4},
 	}
-	got := pickSuggestedReads(IntentArchitecture, sem, nil, nil, nil)
+	got := pickSuggestedReads(retrieve.IntentArchitecture, sem, nil, nil, nil)
 	// Exploration intents widen to 5 reads so the initial bundle gives
 	// the caller a real cross-file picture.
 	if len(got) != 5 {
@@ -1012,10 +918,10 @@ func TestPickSuggestedReadsArchitectureCap(t *testing.T) {
 }
 
 func TestInlineCapsFor(t *testing.T) {
-	exploration := []string{IntentArchitecture, IntentPackageTopology}
+	exploration := []string{retrieve.IntentArchitecture, retrieve.IntentPackageTopology}
 	targeted := []string{
-		IntentBehaviorSearch, IntentSymbolLookup, IntentCallers,
-		IntentCallees, IntentEditingContext,
+		retrieve.IntentBehaviorSearch, retrieve.IntentSymbolLookup, retrieve.IntentCallers,
+		retrieve.IntentCallees, retrieve.IntentEditingContext,
 	}
 	for _, intent := range exploration {
 		c := inlineCapsFor(intent)
@@ -1045,11 +951,11 @@ func TestInlineSuggestedReadsExplorationDenser(t *testing.T) {
 	writeFile(t, filepath.Join(root, "big.go"), b.String())
 
 	targeted := []SuggestedRead{{Path: "big.go", StartLine: 1, EndLine: 200}}
-	inlineContent(root, IntentBehaviorSearch, targeted, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, targeted, nil, nil)
 	targetedLines := strings.Count(targeted[0].Content, "\n")
 
 	exploration := []SuggestedRead{{Path: "big.go", StartLine: 1, EndLine: 200}}
-	inlineContent(root, IntentArchitecture, exploration, nil, nil)
+	inlineContent(root, retrieve.IntentArchitecture, exploration, nil, nil)
 	explorationLines := strings.Count(exploration[0].Content, "\n")
 
 	if !(explorationLines > targetedLines) {
@@ -1076,10 +982,10 @@ func TestBuildNextAction(t *testing.T) {
 		hasBlame   bool
 		want       string // substring match
 	}{
-		{IntentSymbolLookup, reads, syms, 0.8, 0, 0, false, "Read x.go lines 10-30"},
+		{retrieve.IntentSymbolLookup, reads, syms, 0.8, 0, 0, false, "Read x.go lines 10-30"},
 		// symbol_lookup ambiguous: 3 symbols across 3 distinct paths —
 		// next_action must signal the count, not say "the definition".
-		{IntentSymbolLookup, reads, []SymbolHit{
+		{retrieve.IntentSymbolLookup, reads, []SymbolHit{
 			{QualifiedName: "Options", Path: "a.go"},
 			{QualifiedName: "Options", Path: "b.go"},
 			{QualifiedName: "Options", Path: "c.go"},
@@ -1087,38 +993,38 @@ func TestBuildNextAction(t *testing.T) {
 		// symbol_lookup with NO symbols but a strong semantic hit:
 		// next_action must not claim "the definition" — that lied
 		// when the symbol genuinely wasn't found. Soft fallback.
-		{IntentSymbolLookup, reads, nil, 0.8, 0, 0, false, "No exact symbol match"},
-		{IntentEditingContext, reads, syms, 0.8, 0, 0, false, "before editing"},
-		{IntentBehaviorSearch, reads, syms, 0.8, 0, 0, false, "ground your answer"},
-		{IntentArchitecture, reads, syms, 0.8, 0, 0, false, "structural overview"},
+		{retrieve.IntentSymbolLookup, reads, nil, 0.8, 0, 0, false, "No exact symbol match"},
+		{retrieve.IntentEditingContext, reads, syms, 0.8, 0, 0, false, "before editing"},
+		{retrieve.IntentBehaviorSearch, reads, syms, 0.8, 0, 0, false, "ground your answer"},
+		{retrieve.IntentArchitecture, reads, syms, 0.8, 0, 0, false, "structural overview"},
 		// callers with graph edges: directive points at the graph lane.
-		{IntentCallers, nil, syms, 0.8, 4, 0, false, "4 callers edges"},
+		{retrieve.IntentCallers, nil, syms, 0.8, 4, 0, false, "4 callers edges"},
 		// singular fallback for "1 edge".
-		{IntentCallers, nil, syms, 0.8, 1, 0, false, "1 callers edge"},
+		{retrieve.IntentCallers, nil, syms, 0.8, 1, 0, false, "1 callers edge"},
 		// callers without graph edges but with rg-backed references.
-		{IntentCallers, nil, syms, 0.8, 0, 3, false, "3 call sites"},
-		{IntentCallers, nil, syms, 0.8, 0, 1, false, "1 call site"},
+		{retrieve.IntentCallers, nil, syms, 0.8, 0, 3, false, "3 call sites"},
+		{retrieve.IntentCallers, nil, syms, 0.8, 0, 1, false, "1 call site"},
 		// callers with neither: soft "start from the symbol" line.
-		{IntentCallers, nil, syms, 0.8, 0, 0, false, "No callers found"},
-		{IntentSymbolLookup, nil, nil, 0, 0, 0, false, "Rephrase"},
+		{retrieve.IntentCallers, nil, syms, 0.8, 0, 0, false, "No callers found"},
+		{retrieve.IntentSymbolLookup, nil, nil, 0, 0, 0, false, "Rephrase"},
 		// Low-confidence: no symbols and top semantic score below the
 		// threshold should route to the "weak match" branch instead of
 		// confidently pointing at a noise hit.
-		{IntentBehaviorSearch, reads, nil, 0.30, 0, 0, false, "Top semantic match is weak"},
+		{retrieve.IntentBehaviorSearch, reads, nil, 0.30, 0, 0, false, "Top semantic match is weak"},
 		// Symbols present — confidence comes from the structural lane,
 		// so the low-score branch must NOT trigger.
-		{IntentBehaviorSearch, reads, syms, 0.30, 0, 0, false, "ground your answer"},
+		{retrieve.IntentBehaviorSearch, reads, syms, 0.30, 0, 0, false, "ground your answer"},
 		// package_topology with graph edges populated: weak-score branch
 		// must NOT fire — the graph IS the payload. Expect the graph
 		// directive, not the rephrase fallback.
-		{IntentPackageTopology, reads, nil, 0.30, 47, 0, false, "graph.edges"},
-		{IntentPackageTopology, reads, nil, 0.30, 47, 0, false, "47 imports"},
+		{retrieve.IntentPackageTopology, reads, nil, 0.30, 47, 0, false, "graph.edges"},
+		{retrieve.IntentPackageTopology, reads, nil, 0.30, 47, 0, false, "47 imports"},
 		// editing_context with blame annotations: weak-score branch
 		// must NOT fire — point at the primary site.
-		{IntentEditingContext, reads, nil, 0.30, 0, 0, true, "before editing"},
+		{retrieve.IntentEditingContext, reads, nil, 0.30, 0, 0, true, "before editing"},
 		// package_topology with empty graph still routes to weak-match
 		// fallback when scores are low (the genuine no-signal case).
-		{IntentPackageTopology, reads, nil, 0.30, 0, 0, false, "Top semantic match is weak"},
+		{retrieve.IntentPackageTopology, reads, nil, 0.30, 0, 0, false, "Top semantic match is weak"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.intent+" "+tc.want, func(t *testing.T) {
@@ -1142,17 +1048,17 @@ func TestBuildAvoid(t *testing.T) {
 		graphIndexed bool
 		want         string
 	}{
-		{"callers warns non-Go fallback", IntentCallers, sem, syms, true, "`calls` edges are Go-only"},
-		{"callers without graph still warns", IntentCallers, sem, syms, false, "`calls` edges are Go-only"},
-		{"symbol_lookup without graph nudges to index", IntentSymbolLookup, sem, syms, false, "Run `dex index"},
-		{"symbol_lookup with graph: don't grep", IntentSymbolLookup, sem, syms, true, "Do not grep"},
-		{"behavior + both lanes", IntentBehaviorSearch, sem, syms, true, "Do not grep for the identifier"},
-		{"behavior + symbols only", IntentBehaviorSearch, nil, syms, true, "Do not grep for the identifier"},
-		{"behavior + semantic only", IntentBehaviorSearch, sem, nil, true, "Do not read entire files"},
-		{"behavior + nothing", IntentBehaviorSearch, nil, nil, true, ""},
+		{"callers warns non-Go fallback", retrieve.IntentCallers, sem, syms, true, "`calls` edges are Go-only"},
+		{"callers without graph still warns", retrieve.IntentCallers, sem, syms, false, "`calls` edges are Go-only"},
+		{"symbol_lookup without graph nudges to index", retrieve.IntentSymbolLookup, sem, syms, false, "Run `dex index"},
+		{"symbol_lookup with graph: don't grep", retrieve.IntentSymbolLookup, sem, syms, true, "Do not grep"},
+		{"behavior + both lanes", retrieve.IntentBehaviorSearch, sem, syms, true, "Do not grep for the identifier"},
+		{"behavior + symbols only", retrieve.IntentBehaviorSearch, nil, syms, true, "Do not grep for the identifier"},
+		{"behavior + semantic only", retrieve.IntentBehaviorSearch, sem, nil, true, "Do not read entire files"},
+		{"behavior + nothing", retrieve.IntentBehaviorSearch, nil, nil, true, ""},
 		// behavior_search without graph now also gets the index nag —
 		// graph enrichment runs on every intent.
-		{"behavior without graph nudges to index", IntentBehaviorSearch, sem, syms, false, "Run `dex index"},
+		{"behavior without graph nudges to index", retrieve.IntentBehaviorSearch, sem, syms, false, "Run `dex index"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1193,7 +1099,7 @@ func TestContextRouterBehaviorSearch(t *testing.T) {
 	if out.Status != "ok" {
 		t.Fatalf("status=%s hint=%s", out.Status, out.Hint)
 	}
-	if out.Intent != IntentBehaviorSearch {
+	if out.Intent != retrieve.IntentBehaviorSearch {
 		t.Errorf("intent=%s, want behavior_search", out.Intent)
 	}
 	if len(out.SemanticHits) == 0 {
@@ -1232,7 +1138,7 @@ func TestContextRouterSymbolLookup(t *testing.T) {
 	if out.Status != "ok" {
 		t.Fatalf("status=%s hint=%s", out.Status, out.Hint)
 	}
-	if out.Intent != IntentSymbolLookup {
+	if out.Intent != retrieve.IntentSymbolLookup {
 		t.Errorf("intent=%s, want symbol_lookup", out.Intent)
 	}
 	if len(out.Symbols) == 0 {
@@ -1269,7 +1175,7 @@ func TestContextRouterCallersAvoid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Intent != IntentCallers {
+	if out.Intent != retrieve.IntentCallers {
 		t.Errorf("intent=%s, want callers", out.Intent)
 	}
 	// avoid branches on whether the references lane resolved usages.
@@ -1354,7 +1260,7 @@ func TestContextRouterSymbolLookupMissNearMissCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Intent != IntentSymbolLookup {
+	if out.Intent != retrieve.IntentSymbolLookup {
 		t.Errorf("intent=%s, want symbol_lookup", out.Intent)
 	}
 	if len(out.Symbols) != 0 {

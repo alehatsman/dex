@@ -3,6 +3,8 @@ package mcp
 import (
 	"fmt"
 	"strings"
+
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 // ─── next_action / avoid (prose) ──────────────────────────────────────────
@@ -44,9 +46,9 @@ func buildNextAction(intent string, reads []SuggestedRead, symbols []SymbolHit, 
 	// or an intent-specific structural payload.
 	intentPayloadStrong := false
 	switch intent {
-	case IntentPackageTopology, IntentArchitecture:
+	case retrieve.IntentPackageTopology, retrieve.IntentArchitecture:
 		intentPayloadStrong = graphEdgeCount > 0
-	case IntentEditingContext:
+	case retrieve.IntentEditingContext:
 		intentPayloadStrong = hasBlame
 	}
 	weakSemantic := topSemScore > 0 && topSemScore < lowConfidenceScore
@@ -54,7 +56,7 @@ func buildNextAction(intent string, reads []SuggestedRead, symbols []SymbolHit, 
 		return "Top semantic match is weak — rephrase with concrete keywords or fall back to grep."
 	}
 	switch intent {
-	case IntentSymbolLookup:
+	case retrieve.IntentSymbolLookup:
 		// Only claim "the definition" when a symbol actually matched —
 		// reads[0] without symbols is a semantic neighbor, not the
 		// definition the user asked about.
@@ -74,9 +76,9 @@ func buildNextAction(intent string, reads []SuggestedRead, symbols []SymbolHit, 
 			return fmt.Sprintf("No exact symbol match — the closest semantic neighbor is %s lines %d-%d. Verify there before assuming the identifier exists.",
 				reads[0].Path, reads[0].StartLine, reads[0].EndLine)
 		}
-	case IntentCallers, IntentCallees:
+	case retrieve.IntentCallers, retrieve.IntentCallees:
 		rel := "callers"
-		if intent == IntentCallees {
+		if intent == retrieve.IntentCallees {
 			rel = "callees"
 		}
 		// Prefer the precise graph lane when it resolved calls edges.
@@ -100,18 +102,18 @@ func buildNextAction(intent string, reads []SuggestedRead, symbols []SymbolHit, 
 			return fmt.Sprintf("No %s found via graph or refs — start from %s (%s) and confirm the symbol is actually used.",
 				rel, symbols[0].Path, symbols[0].QualifiedName)
 		}
-	case IntentPackageTopology:
+	case retrieve.IntentPackageTopology:
 		if graphEdgeCount > 0 {
 			return fmt.Sprintf("Read the `graph.edges` list (%d imports) to see package dependencies, then call with intent=symbol_lookup on a specific package to drill in.", graphEdgeCount)
 		}
 		if len(reads) > 0 {
 			return readsSkimDirective(reads)
 		}
-	case IntentArchitecture:
+	case retrieve.IntentArchitecture:
 		if len(reads) > 0 {
 			return readsSkimDirective(reads)
 		}
-	case IntentEditingContext:
+	case retrieve.IntentEditingContext:
 		if len(reads) > 0 {
 			return fmt.Sprintf("Read %s lines %d-%d before editing — this is the primary site.", reads[0].Path, reads[0].StartLine, reads[0].EndLine)
 		}
@@ -174,7 +176,7 @@ func hasBlameAnnotations(anns map[string]PathMeta) bool {
 // shifts from "verify with grep" to "do not re-grep, the list is
 // here."
 func buildAvoid(intent string, semHits []SemHit, symbols []SymbolHit, graphIndexed, hasRefs bool) string {
-	if intent == IntentCallers || intent == IntentCallees {
+	if intent == retrieve.IntentCallers || intent == retrieve.IntentCallees {
 		if hasRefs {
 			return "Do not grep for the identifier — the `references` field already lists call sites. For Go this comes from the static graph; for other languages it's a ripgrep-backed lexical list (verify edge cases by reading the snippets)."
 		}
@@ -187,9 +189,9 @@ func buildAvoid(intent string, semHits []SemHit, symbols []SymbolHit, graphIndex
 	// the failure mode to discourage is breadth (enumerating files,
 	// re-deriving the topology) rather than depth (reading whole files).
 	switch intent {
-	case IntentArchitecture:
+	case retrieve.IntentArchitecture:
 		return "Do not enumerate the file tree — the graph nodes and suggested reads ARE the structural overview. Start there before broader exploration."
-	case IntentPackageTopology:
+	case retrieve.IntentPackageTopology:
 		return "Do not infer imports by grepping — the graph edges encode them. Use the topology, don't rebuild it."
 	}
 	if len(symbols) > 0 && len(semHits) > 0 {

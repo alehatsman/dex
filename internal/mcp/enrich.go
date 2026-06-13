@@ -31,6 +31,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 // ─── budgets ─────────────────────────────────────────────────────────────
@@ -914,7 +916,7 @@ func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *Contex
 	}
 
 	paths := uniquePaths(out.SuggestedReads, out.Symbols)
-	if len(paths) == 0 && (intent != IntentCallers && intent != IntentCallees) {
+	if len(paths) == 0 && (intent != retrieve.IntentCallers && intent != retrieve.IntentCallees) {
 		return
 	}
 
@@ -933,13 +935,13 @@ func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *Contex
 	}
 
 	// editing_context: blame + owners.
-	if intent == IntentEditingContext {
+	if intent == retrieve.IntentEditingContext {
 		e.enrichBlame(ctx, paths, meta)
 		e.enrichOwners(paths, meta)
 	}
 
 	// editing_context, architecture, package_topology: build tags + pkg.
-	if intent == IntentEditingContext || intent == IntentArchitecture || intent == IntentPackageTopology {
+	if intent == retrieve.IntentEditingContext || intent == retrieve.IntentArchitecture || intent == retrieve.IntentPackageTopology {
 		e.enrichBuildTags(paths, meta)
 	}
 
@@ -951,7 +953,7 @@ func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *Contex
 	}
 
 	// References: callers/callees with at least one symbol hit.
-	if (intent == IntentCallers || intent == IntentCallees) && len(out.Symbols) > 0 {
+	if (intent == retrieve.IntentCallers || intent == retrieve.IntentCallees) && len(out.Symbols) > 0 {
 		out.References = e.runReferencesLane(ctx, k, out.Symbols)
 	}
 }

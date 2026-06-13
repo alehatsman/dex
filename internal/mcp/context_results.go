@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/alehatsman/dex/internal/graphquery"
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 // ─── suggested_reads ──────────────────────────────────────────────────────
@@ -25,12 +26,12 @@ import (
 func pickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, symbolPaths map[string]struct{}, view *graphquery.View) []SuggestedRead {
 	maxReads := 2
 	switch intent {
-	case IntentArchitecture, IntentPackageTopology:
+	case retrieve.IntentArchitecture, retrieve.IntentPackageTopology:
 		// Exploration intents — the caller is forming a mental model,
 		// so a denser bundle (more files, more lines, see
 		// inlineCapsFor) pays off more than a slim one.
 		maxReads = 5
-	case IntentSymbolLookup, IntentCallers, IntentCallees:
+	case retrieve.IntentSymbolLookup, retrieve.IntentCallers, retrieve.IntentCallees:
 		maxReads = 2
 	}
 
@@ -38,7 +39,7 @@ func pickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, sy
 	out := make([]SuggestedRead, 0, maxReads)
 
 	// Pass 1: symbol definitions for symbol-driven intents.
-	if intent == IntentSymbolLookup || intent == IntentCallers || intent == IntentCallees {
+	if intent == retrieve.IntentSymbolLookup || intent == retrieve.IntentCallers || intent == retrieve.IntentCallees {
 		for _, sym := range symbols {
 			if sym.Path == "" || seen[sym.Path] {
 				continue
@@ -64,13 +65,13 @@ func pickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, sy
 	// are exceptions — for the former the README often IS the right
 	// read; for the latter a spec/behavior doc may be the best answer
 	// (e.g. specs/watch.md for "how does watch work?").
-	preferCode := intent != IntentArchitecture && intent != IntentBehaviorSearch
+	preferCode := intent != retrieve.IntentArchitecture && intent != retrieve.IntentBehaviorSearch
 	// usesCentrality intents bucket their scores into 0.05-wide bins and
 	// break ties by PageRank — so a structural hub beats a near-tied
 	// non-hub. Limited to architecture/package_topology where "which
 	// file holds the system together" matters more than a small cosine
 	// edge. Other intents keep the strict score ordering.
-	usesCentrality := intent == IntentArchitecture || intent == IntentPackageTopology
+	usesCentrality := intent == retrieve.IntentArchitecture || intent == retrieve.IntentPackageTopology
 	type ranked struct {
 		hit       SemHit
 		crossLane bool

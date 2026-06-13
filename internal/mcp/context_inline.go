@@ -3,6 +3,7 @@ package mcp
 import (
 	"path/filepath"
 
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/source"
 )
 
@@ -21,7 +22,7 @@ type inlineCaps struct {
 
 func inlineCapsFor(intent string) inlineCaps {
 	switch intent {
-	case IntentArchitecture, IntentPackageTopology:
+	case retrieve.IntentArchitecture, retrieve.IntentPackageTopology:
 		return inlineCaps{maxLinesPerRead: 120, maxBytesPerRead: 8 * 1024, totalBytesCap: 40 * 1024}
 	default:
 		// Targeted intents (behavior_search / symbol_lookup / callers /
@@ -58,7 +59,7 @@ func inlineContent(projectRoot, intent string, reads []SuggestedRead, syms []Sym
 	in.budget = in.caps.totalBytesCap
 	in.fillReads(reads)
 	in.fillImports(reads)
-	if intent == IntentSymbolLookup {
+	if intent == retrieve.IntentSymbolLookup {
 		in.fillSymbolBodies(syms)
 	}
 	in.fillSemanticHits(sem)
@@ -193,7 +194,7 @@ func (in *inliner) fillImports(reads []SuggestedRead) {
 }
 
 // fillSymbolBodies fills Body on every matched symbol. Only invoked
-// for IntentSymbolLookup: "what does X do" is the canonical case
+// for retrieve.IntentSymbolLookup: "what does X do" is the canonical case
 // where the agent reads the body next, so inlining eliminates an
 // otherwise certain follow-up Read.
 func (in *inliner) fillSymbolBodies(syms []SymbolHit) {
@@ -244,7 +245,7 @@ func (in *inliner) fillSemanticHits(sem []SemHit) {
 		if suppressLowScore && sem[i].Score < noiseFloorScore {
 			continue
 		}
-		if in.intent != IntentEditingContext && isTestPath(sem[i].Path) {
+		if in.intent != retrieve.IntentEditingContext && isTestPath(sem[i].Path) {
 			continue
 		}
 		content, truncated, charged := in.fetch(sem[i].Path, sem[i].StartLine, sem[i].EndLine)

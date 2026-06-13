@@ -30,6 +30,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 // enrichGraph populates GraphResult based on the resolved intent.
@@ -257,19 +258,19 @@ func (e *graphEnricher) packageTopology() {
 // dump an entire package's function list as graph noise).
 func (e *graphEnricher) runForIntent(intent string) {
 	switch intent {
-	case IntentSymbolLookup, IntentEditingContext:
+	case retrieve.IntentSymbolLookup, retrieve.IntentEditingContext:
 		e.symbolNeighborhood()
-	case IntentCallers:
+	case retrieve.IntentCallers:
 		e.callsExpansion("dst")
 		if len(e.gr.Nodes) == 0 {
 			e.symbolNeighborhood()
 		}
-	case IntentCallees:
+	case retrieve.IntentCallees:
 		e.callsExpansion("src")
 		if len(e.gr.Nodes) == 0 {
 			e.symbolNeighborhood()
 		}
-	case IntentArchitecture:
+	case retrieve.IntentArchitecture:
 		// Anchor on the project's structurally central packages so the
 		// rollup stays useful even when the semantic lane skews to docs
 		// and surfaces only one Go file by accident. PageRank-derived
@@ -281,9 +282,9 @@ func (e *graphEnricher) runForIntent(intent string) {
 			pkgs[pkg] = struct{}{}
 		}
 		e.packageRollup(pkgs)
-	case IntentPackageTopology:
+	case retrieve.IntentPackageTopology:
 		e.packageTopology()
-	case IntentBehaviorSearch:
+	case retrieve.IntentBehaviorSearch:
 		// For behavioral questions the symbol neighborhood is the right
 		// anchor. Package rollup is intentionally omitted: if semantic
 		// hits are noisy (e.g. a help-text blob in main.go), rollup

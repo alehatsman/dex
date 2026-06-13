@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 // ─── pairSiblingTests ────────────────────────────────────────────────────
@@ -563,7 +565,7 @@ func TestEnrichEditingContext(t *testing.T) {
 		SuggestedReads: []SuggestedRead{{Path: "pkg/core.go", StartLine: 6, EndLine: 6}},
 		Symbols:        []SymbolHit{{QualifiedName: "Run", Path: "pkg/core.go", StartLine: 6, EndLine: 6}},
 	}
-	(&Enricher{projectRoot: root}).Enrich(context.Background(), IntentEditingContext, 8, out)
+	(&Enricher{projectRoot: root}).Enrich(context.Background(), retrieve.IntentEditingContext, 8, out)
 
 	if out.Symbols[0].Signature == "" {
 		t.Error("symbol signature should be populated")
@@ -608,7 +610,7 @@ func TestEnrichBehaviorSearchOmitsHeavyLegs(t *testing.T) {
 		SuggestedReads: []SuggestedRead{{Path: "x.go", StartLine: 3, EndLine: 3}},
 		Symbols:        []SymbolHit{{QualifiedName: "F", Path: "x.go", StartLine: 3, EndLine: 3}},
 	}
-	(&Enricher{projectRoot: root}).Enrich(context.Background(), IntentBehaviorSearch, 8, out)
+	(&Enricher{projectRoot: root}).Enrich(context.Background(), retrieve.IntentBehaviorSearch, 8, out)
 
 	meta, ok := out.Annotations["x.go"]
 	if !ok {
