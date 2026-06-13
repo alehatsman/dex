@@ -49,12 +49,12 @@ directory. Requires a live embed endpoint (DEX_EMBED_URL / ollama) — like
 // per-query DEX_EVAL_CONCURRENCY fan-out already keeps each repo busy.
 const maxCorpusJobs = 4
 
-func runCorpus(ctx context.Context, args []string) {
+func runCorpus(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] != "run" {
 		fmt.Fprint(os.Stderr, corpusUsage)
-		os.Exit(1)
+		return flag.ErrHelp
 	}
-	fs := flag.NewFlagSet("bench corpus run", flag.ExitOnError)
+	fs := flag.NewFlagSet("bench corpus run", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, corpusUsage) }
 	manifestPath := fs.String("manifest", filepath.Join("benchmark", "corpus", "repos.yml"), "corpus manifest YAML")
 	reposFlag := fs.String("repos", "", "comma-separated repo names to run (default: all)")
@@ -64,12 +64,13 @@ func runCorpus(ctx context.Context, args []string) {
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "baseline report JSON to check for per-cell regression")
 	jobs := fs.Int("jobs", 0, "repos to score concurrently (0 = auto, capped at maxCorpusJobs)")
-	_ = fs.Parse(args[1:])
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
 
 	base, err := indexDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench corpus: index dir: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench corpus: index dir: %w", err)
 	}
 	cacheRoot := *cacheFlag
 	if cacheRoot == "" {
@@ -78,17 +79,14 @@ func runCorpus(ctx context.Context, args []string) {
 
 	absManifest, err := filepath.Abs(*manifestPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench corpus: resolve manifest path: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench corpus: resolve manifest path: %w", err)
 	}
 	m, err := corpus.LoadManifest(absManifest)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench corpus: load manifest: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench corpus: load manifest: %w", err)
 	}
 	if err := m.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench corpus: invalid manifest: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench corpus: invalid manifest: %w", err)
 	}
 	manifestDir := filepath.Dir(absManifest)
 	want := repoFilter(*reposFlag)
@@ -135,8 +133,7 @@ func runCorpus(ctx context.Context, args []string) {
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench corpus: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench corpus: %w", err)
 	}
 
 	var allCells []corpus.LabeledReport
@@ -144,8 +141,7 @@ func runCorpus(ctx context.Context, args []string) {
 		allCells = append(allCells, cells...)
 	}
 	if len(allCells) == 0 {
-		fmt.Fprintln(os.Stderr, "dex bench corpus: no cells scored (check --repos / manifest)")
-		os.Exit(1)
+		return fmt.Errorf("dex bench corpus: no cells scored (check --repos / manifest)")
 	}
 
 	rep := corpus.Compute(allCells, *k)
@@ -153,8 +149,7 @@ func runCorpus(ctx context.Context, args []string) {
 	case "json":
 		out, err := rep.JSON()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench corpus: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench corpus: marshal: %w", err)
 		}
 		fmt.Println(string(out))
 	default:
@@ -164,13 +159,11 @@ func runCorpus(ctx context.Context, args []string) {
 	if *checkPath != "" {
 		data, err := os.ReadFile(*checkPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench corpus: read baseline: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench corpus: read baseline: %w", err)
 		}
 		ref, err := corpus.LoadReport(data)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench corpus: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench corpus: %w", err)
 		}
 		const tol = 0.02
 		regs := rep.Regressions(ref, tol)
@@ -178,11 +171,11 @@ func runCorpus(ctx context.Context, args []string) {
 			for _, r := range regs {
 				fmt.Fprintf(os.Stderr, "  %s\n", r.String())
 			}
-			fmt.Fprintf(os.Stderr, "dex bench corpus: regression check failed (%d cell(s), tol %.2f)\n", len(regs), tol)
-			os.Exit(1)
+			return fmt.Errorf("dex bench corpus: regression check failed (%d cell(s), tol %.2f)", len(regs), tol)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench corpus: regression check passed")
 	}
+	return nil
 }
 
 // runCorpusRepo fetches, indexes (if needed), and scores one repo. Indexing and

@@ -36,15 +36,17 @@ What it does NOT measure:
   - compression of content types not represented in the built-in corpus
 `
 
-func runBenchCompress(_ context.Context, args []string) {
-	fs := flag.NewFlagSet("bench compress", flag.ExitOnError)
+func runBenchCompress(_ context.Context, args []string) error {
+	fs := flag.NewFlagSet("bench compress", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, benchCompressUsage) }
 
 	tokenizerName := fs.String("tokenizer", "o200k_base", "tokenizer family: o200k_base|cl100k_base|llama")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "baseline JSON for regression check")
 
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	family := tokens.Detect(*tokenizerName)
 	// Align the package-level accounting + token-reduction gating (#292) with
@@ -66,8 +68,7 @@ func runBenchCompress(_ context.Context, args []string) {
 	case "json":
 		out, err := rep.JSON()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench compress: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench compress: marshal: %w", err)
 		}
 		fmt.Println(string(out))
 	default:
@@ -84,9 +85,9 @@ func runBenchCompress(_ context.Context, args []string) {
 	}
 	if cp != "" {
 		if err := benchcompress.CheckRegression(rep, cp); err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench compress: regression check failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench compress: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench compress: regression check passed")
 	}
+	return nil
 }

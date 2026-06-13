@@ -27,34 +27,33 @@ Flags:
 Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
 `
 
-func runBench(ctx context.Context, args []string) {
+func runBench(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprintln(os.Stderr, "Usage: dex bench <subcommand> [flags]\n\nSubcommands:\n  locomo    LoCoMo memory-recall benchmark\n  eval      offline code-retrieval eval (this repo's git history)\n  corpus    multi-repo retrieval eval (pinned real repos)\n  compress  offline compression benchmark (ratio/anchor%/fidelity)\n  perf      local-compute pipeline performance benchmark\n  nav       navigation cost: calls+tokens to first gold-file touch")
-		os.Exit(1)
+		return flag.ErrHelp
 	}
 	sub := args[0]
 	rest := args[1:]
 	switch sub {
 	case "locomo":
-		runLocomo(ctx, rest)
+		return runLocomo(ctx, rest)
 	case "eval":
-		runEval(ctx, rest)
+		return runEval(ctx, rest)
 	case "corpus":
-		runCorpus(ctx, rest)
+		return runCorpus(ctx, rest)
 	case "compress":
-		runBenchCompress(ctx, rest)
+		return runBenchCompress(ctx, rest)
 	case "perf":
-		runBenchPerf(ctx, rest)
+		return runBenchPerf(ctx, rest)
 	case "nav":
-		runBenchNav(ctx, rest)
+		return runBenchNav(ctx, rest)
 	default:
-		fmt.Fprintf(os.Stderr, "dex bench: unknown subcommand %q\n", sub)
-		os.Exit(1)
+		return fmt.Errorf("dex bench: unknown subcommand %q", sub)
 	}
 }
 
-func runLocomo(ctx context.Context, args []string) {
-	fs := flag.NewFlagSet("bench locomo", flag.ExitOnError)
+func runLocomo(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("bench locomo", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, locomoUsage) }
 
 	datasetPath := fs.String("dataset", "", "NDJSON dataset file (default: bundled reference.ndjson)")
@@ -75,9 +74,11 @@ func runLocomo(ctx context.Context, args []string) {
 	}
 	if projectPath == "" {
 		fs.Usage()
-		os.Exit(1)
+		return flag.ErrHelp
 	}
-	_ = fs.Parse(flagArgs)
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
 
 	// Resolve dataset path. Search order:
 	// 1. --dataset flag (explicit)
@@ -94,18 +95,15 @@ func runLocomo(ctx context.Context, args []string) {
 		}
 	}
 	if dsPath == "" {
-		fmt.Fprintln(os.Stderr, "dex bench locomo: dataset not found; pass --dataset <path>")
-		os.Exit(1)
+		return fmt.Errorf("dex bench locomo: dataset not found; pass --dataset <path>")
 	}
 
 	d, err := locomo.LoadFile(dsPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench locomo: load dataset %q: %v\n", dsPath, err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench locomo: load dataset %q: %w", dsPath, err)
 	}
 	if len(d.Conversations) == 0 {
-		fmt.Fprintln(os.Stderr, "dex bench locomo: dataset is empty")
-		os.Exit(1)
+		return fmt.Errorf("dex bench locomo: dataset is empty")
 	}
 	fmt.Fprintf(os.Stderr, "dex bench locomo: %d conversations, %d turns, %d questions\n",
 		len(d.Conversations), d.TotalTurns(), len(d.Questions()))
@@ -116,8 +114,7 @@ func runLocomo(ctx context.Context, args []string) {
 
 	results, err := locomo.Run(ctx, em, d, *k)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench locomo: run: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench locomo: run: %w", err)
 	}
 
 	rep := locomo.Compute(results, *k)
@@ -126,8 +123,7 @@ func runLocomo(ctx context.Context, args []string) {
 	case "json":
 		out, err := rep.JSON()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench locomo: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench locomo: marshal: %w", err)
 		}
 		fmt.Println(string(out))
 	default:
@@ -136,11 +132,11 @@ func runLocomo(ctx context.Context, args []string) {
 
 	if *checkPath != "" {
 		if err := checkRegression(rep, *checkPath); err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench locomo: regression check failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench locomo: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench locomo: regression check passed")
 	}
+	return nil
 }
 
 // checkRegression loads a reference report from refPath and fails if the

@@ -62,8 +62,8 @@ Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexin
              DEX_FUSION_ALPHA=0.5    dense weight for FusionLinear (0 < α ≤ 1).
 `
 
-func runEval(ctx context.Context, args []string) {
-	fs := flag.NewFlagSet("bench eval", flag.ExitOnError)
+func runEval(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("bench eval", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, evalUsage) }
 
 	gen := fs.Bool("gen", false, "regenerate golden set from git history and exit")
@@ -91,20 +91,20 @@ func runEval(ctx context.Context, args []string) {
 	}
 	if projectPath == "" {
 		fs.Usage()
-		os.Exit(1)
+		return flag.ErrHelp
 	}
-	_ = fs.Parse(flagArgs)
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
 
 	p, err := resolveEvalProject(projectPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench eval: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench eval: %w", err)
 	}
 
 	validModes := map[string]bool{"git-history": true, "blast-radius": true, "structural": true, "orphan": true}
 	if !validModes[*mode] {
-		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --mode %q (want git-history|blast-radius|structural|orphan)\n", *mode)
-		os.Exit(1)
+		return fmt.Errorf("dex bench eval: unknown --mode %q (want git-history|blast-radius|structural|orphan)", *mode)
 	}
 
 	gPath := *goldenPath
@@ -141,52 +141,48 @@ func runEval(ctx context.Context, args []string) {
 			gs, err = eval.Generate(ctx, p.Root, opts)
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench eval: generate: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench eval: generate: %w", err)
 		}
 		if err := gs.Save(gPath); err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench eval: save golden set: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench eval: save golden set: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "dex bench eval: wrote %d queries to %s (head %s)\n",
 			len(gs.Queries), gPath, shortHash(gs.Head))
-		return
+		return nil
 	}
 
 	gs, err := eval.LoadGolden(gPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench eval: load golden set: %v\n  (generate one with: dex bench eval %s --gen)\n", err, projectPath)
-		os.Exit(1)
+		return fmt.Errorf("dex bench eval: load golden set: %w\n  (generate one with: dex bench eval %s --gen)", err, projectPath)
 	}
 	if len(gs.Queries) == 0 {
-		fmt.Fprintln(os.Stderr, "dex bench eval: golden set is empty")
-		os.Exit(1)
+		return fmt.Errorf("dex bench eval: golden set is empty")
 	}
 
 	if _, err := os.Stat(p.DBPath); err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench eval: no index for %s — run `dex index %s` first\n", p.Root, p.Root)
-		os.Exit(1)
+		return fmt.Errorf("dex bench eval: no index for %s — run `dex index %s` first", p.Root, p.Root)
 	}
 	st, err := store.OpenWith(ctx, p.DBPath, storeOpts())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench eval: open store: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench eval: open store: %w", err)
 	}
 	defer func() { _ = st.Close() }()
 
 	// Use the index-recorded embed model so the query vectors match the
 	// indexed chunk vectors (dimension + semantics).
 	stats, _ := st.Stats(ctx)
-	em := evalEmbedForLane(*lane, stats.EmbedModel)
+	em, err := evalEmbedForLane(*lane, stats.EmbedModel)
+	if err != nil {
+		return err
+	}
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
 	if *alphaSweep {
 		if err := runAlphaSweep(ctx, p, em, gs, *k); err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench eval: alpha sweep: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench eval: alpha sweep: %w", err)
 		}
-		return
+		return nil
 	}
 
 	var rw eval.Rewrite
@@ -204,8 +200,7 @@ func runEval(ctx context.Context, args []string) {
 	}
 	results, err := eval.RunWithRewrite(ctx, em, st, gs, *k, rw)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench eval: run: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench eval: run: %w", err)
 	}
 	rep := eval.Compute(results, *k)
 
@@ -213,8 +208,7 @@ func runEval(ctx context.Context, args []string) {
 	case "json":
 		out, err := rep.JSON()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench eval: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench eval: marshal: %w", err)
 		}
 		fmt.Println(string(out))
 	default:
@@ -223,11 +217,11 @@ func runEval(ctx context.Context, args []string) {
 
 	if *checkPath != "" {
 		if err := checkEvalRegression(rep, *checkPath); err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench eval: regression check failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench eval: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench eval: regression check passed")
 	}
+	return nil
 }
 
 // resolveEvalProject resolves the project path to its index identity.
@@ -269,26 +263,24 @@ func shortHash(h string) string {
 	return h
 }
 
-// evalEmbedForLane constructs the embedder for the given lane, printing a note
-// and calling os.Exit for unsupported configurations.
-func evalEmbedForLane(lane, model string) embed.Embedder {
+// evalEmbedForLane constructs the embedder for the given lane. Returns an
+// error for unsupported configurations.
+func evalEmbedForLane(lane, model string) (embed.Embedder, error) {
 	switch strings.ToLower(lane) {
 	case "bm25":
 		fmt.Fprintln(os.Stderr, "dex bench eval: --lane bm25 — BM25+symbol+graph only (zero-inference)")
-		return nil
+		return nil, nil
 	case "onnx":
 		if os.Getenv("DEX_ONNX_MODEL") == "" || os.Getenv("DEX_ONNXRUNTIME_LIB") == "" {
 			fmt.Fprintln(os.Stderr, "dex bench eval: --lane onnx skipped — DEX_ONNX_MODEL/DEX_ONNXRUNTIME_LIB not set")
-			os.Exit(0)
+			return nil, flag.ErrHelp // exit 0 — not an error, just skip
 		}
 		_ = os.Setenv("DEX_EMBED_ENGINE", "onnx")
-		return newEmbedClient("")
+		return newEmbedClient(""), nil
 	case "full", "":
-		return newEmbedClient(model)
+		return newEmbedClient(model), nil
 	default:
-		fmt.Fprintf(os.Stderr, "dex bench eval: unknown --lane %q (want full|bm25|onnx)\n", lane)
-		os.Exit(1)
-		return nil
+		return nil, fmt.Errorf("dex bench eval: unknown --lane %q (want full|bm25|onnx)", lane)
 	}
 }
 

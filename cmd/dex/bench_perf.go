@@ -38,8 +38,8 @@ What it does NOT measure:
   - cold startup latency (requires a full dex binary invocation; use 'time dex ask')
 `
 
-func runBenchPerf(_ context.Context, args []string) {
-	fs := flag.NewFlagSet("bench perf", flag.ExitOnError)
+func runBenchPerf(_ context.Context, args []string) error {
+	fs := flag.NewFlagSet("bench perf", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, benchPerfUsage) }
 
 	iters := fs.Int("iters", 100, "timed repetitions per target")
@@ -47,7 +47,9 @@ func runBenchPerf(_ context.Context, args []string) {
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "baseline JSON for regression check")
 
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	opts := benchperf.Opts{
 		Iterations: *iters,
@@ -57,8 +59,7 @@ func runBenchPerf(_ context.Context, args []string) {
 	fmt.Fprintln(os.Stderr, "dex bench perf: running local-compute suite (no GPU/network)...")
 	results, err := benchperf.Run(opts)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench perf: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench perf: %w", err)
 	}
 
 	rep := benchperf.Report{Dim: *dim, Results: results}
@@ -67,8 +68,7 @@ func runBenchPerf(_ context.Context, args []string) {
 	case "json":
 		out, err := rep.JSON()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench perf: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench perf: marshal: %w", err)
 		}
 		fmt.Println(string(out))
 	default:
@@ -85,9 +85,9 @@ func runBenchPerf(_ context.Context, args []string) {
 	}
 	if cp != "" {
 		if err := benchperf.CheckRegression(rep, cp); err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench perf: regression check failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench perf: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench perf: regression check passed")
 	}
+	return nil
 }

@@ -54,8 +54,8 @@ Env: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
 // must lift. Accuracy is monotonic non-decreasing across this sweep.
 var navRoutingBudgets = []int{75, 150, 300, 600, 1200}
 
-func runBenchNav(ctx context.Context, args []string) {
-	fs := flag.NewFlagSet("bench nav", flag.ExitOnError)
+func runBenchNav(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("bench nav", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, benchNavUsage) }
 
 	goldenPath := fs.String("golden", "", "golden-set JSON path")
@@ -78,14 +78,15 @@ func runBenchNav(ctx context.Context, args []string) {
 	}
 	if projectPath == "" {
 		fs.Usage()
-		os.Exit(1)
+		return flag.ErrHelp
 	}
-	_ = fs.Parse(flagArgs)
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
 
 	p, err := resolveEvalProject(projectPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench nav: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench nav: %w", err)
 	}
 
 	gPath := *goldenPath
@@ -94,34 +95,32 @@ func runBenchNav(ctx context.Context, args []string) {
 	}
 	gs, err := eval.LoadGolden(gPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench nav: load golden set: %v\n (generate one with: dex bench eval %s --gen)\n", err, projectPath)
-		os.Exit(1)
+		return fmt.Errorf("dex bench nav: load golden set: %w\n  (generate one with: dex bench eval %s --gen)", err, projectPath)
 	}
 	if len(gs.Queries) == 0 {
-		fmt.Fprintln(os.Stderr, "dex bench nav: golden set is empty")
-		os.Exit(1)
+		return fmt.Errorf("dex bench nav: golden set is empty")
 	}
 
 	if _, err := os.Stat(p.DBPath); err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench nav: no index for %s — run `dex index %s` first\n", p.Root, p.Root)
-		os.Exit(1)
+		return fmt.Errorf("dex bench nav: no index for %s — run `dex index %s` first", p.Root, p.Root)
 	}
 	st, err := store.OpenWith(ctx, p.DBPath, storeOpts())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench nav: open store: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench nav: open store: %w", err)
 	}
 	defer func() { _ = st.Close() }()
 
 	stats, _ := st.Stats(ctx)
-	em := evalEmbedForLane(*lane, stats.EmbedModel)
+	em, err := evalEmbedForLane(*lane, stats.EmbedModel)
+	if err != nil {
+		return err
+	}
 
 	fmt.Fprintf(os.Stderr, "dex bench nav: %d queries, k=%d, lane=%s, index %s\n", len(gs.Queries), *k, *lane, p.DBPath)
 
 	results, err := eval.RunWithRewrite(ctx, em, st, gs, *k, nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dex bench nav: run: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("dex bench nav: run: %w", err)
 	}
 
 	queries := make([]benchnav.Query, 0, len(results))
@@ -142,8 +141,7 @@ func runBenchNav(ctx context.Context, args []string) {
 	mapModel, routeModel, breadthModel, mapErr := buildNavMapModel(ctx, p.Root, *l0budget, *l1budget, navRoutingBudgets)
 	if mapErr != nil {
 		fmt.Fprintf(os.Stderr, "dex bench nav: map lane unavailable (%v) — reporting no-map only\n", mapErr)
-		emitNavReport(noMap, *outputFmt)
-		return
+		return emitNavReport(noMap, *outputFmt)
 	}
 	mapSeeded := benchnav.ComputeMap(queries, cost, mapModel, *lane)
 	cmp := benchnav.Compare(noMap, mapSeeded)
@@ -170,8 +168,7 @@ func runBenchNav(ctx context.Context, args []string) {
 	case "json":
 		out, err := cmp.JSON()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench nav: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench nav: marshal: %w", err)
 		}
 		fmt.Println(string(out))
 	default:
@@ -181,8 +178,7 @@ func runBenchNav(ctx context.Context, args []string) {
 	if *checkPath != "" {
 		ref, err := loadNavComparison(*checkPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench nav: load --check report: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench nav: load --check report: %w", err)
 		}
 		// Each lane: reach may not fall >2 pts, mean calls/tokens may not rise >5%
 		// (map metrics prefixed map_); plus the map's token advantage may not erode.
@@ -192,25 +188,26 @@ func runBenchNav(ctx context.Context, args []string) {
 			for _, r := range regs {
 				fmt.Fprintf(os.Stderr, "  - %s\n", r)
 			}
-			os.Exit(1)
+			return fmt.Errorf("dex bench nav: regression check failed (%d regression(s))", len(regs))
 		}
 		fmt.Fprintln(os.Stderr, "dex bench nav: regression check passed")
 	}
+	return nil
 }
 
 // emitNavReport prints a single no-map report (the fallback when the map lane
 // is unavailable), preserving the pre-Phase-B output shape.
-func emitNavReport(rep benchnav.Report, format string) {
+func emitNavReport(rep benchnav.Report, format string) error {
 	if format == "json" {
 		out, err := rep.JSON()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "dex bench nav: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("dex bench nav: marshal: %w", err)
 		}
 		fmt.Println(string(out))
-		return
+		return nil
 	}
 	fmt.Print(rep.Markdown())
+	return nil
 }
 
 // buildNavMapModel constructs the orientation map the seeded policy navigates

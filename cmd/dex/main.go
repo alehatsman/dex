@@ -162,8 +162,7 @@ func main() {
 	case "completion":
 		err = cmdCompletion(args)
 	case "bench":
-		runBench(ctx, args)
-		return
+		err = runBench(ctx, args)
 	case "config":
 		err = cmdConfig(args)
 	case "version", "-V", "--version":
