@@ -2,8 +2,11 @@ package compress
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/alehatsman/dex/internal/ignore"
 )
 
 // ── ps / du / ping ────────────────────────────────────────────────────────────
@@ -343,9 +346,17 @@ func LsFormatSize(sizeStr string) string {
 // ── env filter ────────────────────────────────────────────────────────────────
 
 var envSensitivePatterns = []string{
-	"KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIALS",
-	"AUTH", "API_KEY", "PRIVATE", "CERT",
+	"KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "PASSPHRASE", "CREDENTIALS",
+	"AUTH", "API_KEY", "PRIVATE", "CERT", "DSN", "CONNECTION", "SALT",
+	"SESSION", "PEM", "SIGNING", "ENCRYPTION",
 }
+
+// envCredURLRe matches the credentials in a scheme://user:password@host URL
+// (postgres://, redis://, amqp://, mongodb://, …). The username may be empty
+// (redis://:pw@host). It captures the leading scheme://user: span and the
+// trailing @ so ReplaceAllString can redact only the password, keeping the
+// rest of the connection string useful (#460).
+var envCredURLRe = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://[^:/?#\s]*:)[^@/?#\s]+(@)`)
 
 func CompressEnvFilter(lines []string) []string {
 	if len(lines) == 0 {
@@ -370,11 +381,22 @@ func CompressEnvFilter(lines []string) []string {
 					break
 				}
 			}
+			// Mask by key name, then fall back to value-based detection so a
+			// secret under an innocuous key still gets redacted: a value that
+			// is itself a recognizable secret token (LooksLikeSecret), and the
+			// password inside a scheme://user:pass@host connection URL — e.g.
+			// DATABASE_URL=postgres://u:pw@h leaks pw despite a benign key
+			// (#460). Redaction runs before length truncation so a long
+			// secret can never be partially exposed by the [:40] cut.
 			displayVal := value
-			if isSensitive {
+			switch {
+			case isSensitive || ignore.LooksLikeSecret([]byte(value)):
 				displayVal = "***"
-			} else if len(value) > 80 {
-				displayVal = value[:40] + "..."
+			default:
+				displayVal = envCredURLRe.ReplaceAllString(value, "${1}***${2}")
+				if len(displayVal) > 80 {
+					displayVal = displayVal[:40] + "..."
+				}
 			}
 			entry := key + "=" + displayVal
 			prefix := key
