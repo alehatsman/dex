@@ -47,6 +47,7 @@ package mcp
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -378,32 +379,9 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
-// constantTimeEqual compares two strings without short-circuiting on
-// length differences. Pads/truncates to the longer side. Important
-// for bearer-token comparison so a timing attack can't probe length.
+// constantTimeEqual compares two strings in constant time using crypto/subtle.
 func constantTimeEqual(a, b string) bool {
-	if len(a) != len(b) {
-		// Still walk the same number of bytes to keep the timing
-		// flat. The result is forced false because lengths differ.
-		var x byte
-		for i := 0; i < max(len(a), len(b)); i++ {
-			var ai, bi byte
-			if i < len(a) {
-				ai = a[i]
-			}
-			if i < len(b) {
-				bi = b[i]
-			}
-			x |= ai ^ bi
-		}
-		_ = x
-		return false
-	}
-	var diff byte
-	for i := 0; i < len(a); i++ {
-		diff |= a[i] ^ b[i]
-	}
-	return diff == 0
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 // ─── shared handler helpers ─────────────────────────────────────────────────
