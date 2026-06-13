@@ -122,33 +122,7 @@ func runEval(ctx context.Context, args []string) error {
 	}
 
 	if *gen {
-		opts := eval.GenOpts{MaxCommits: *maxCommits, MaxFiles: *maxFiles}
-		var gs eval.GoldenSet
-		var err error
-		switch *mode {
-		case "blast-radius":
-			gs, err = eval.GenerateBlastRadius(ctx, p.Root, opts)
-		case "structural":
-			gs, err = eval.GenerateStructural(ctx, p.Root, opts)
-		case "orphan":
-			var ocounts eval.OrphanGenCounts
-			gs, ocounts, err = eval.GenerateOrphan(ctx, p.Root, eval.OrphanOpts{MaxFiles: *maxFiles, MaxPerKind: *maxPerKind})
-			if err == nil {
-				fmt.Fprintf(os.Stderr, "dex bench eval: orphan gen: imports=%d consts=%d vars=%d\n",
-					ocounts.Imports, ocounts.Consts, ocounts.Vars)
-			}
-		default:
-			gs, err = eval.Generate(ctx, p.Root, opts)
-		}
-		if err != nil {
-			return fmt.Errorf("dex bench eval: generate: %w", err)
-		}
-		if err := gs.Save(gPath); err != nil {
-			return fmt.Errorf("dex bench eval: save golden set: %w", err)
-		}
-		fmt.Fprintf(os.Stderr, "dex bench eval: wrote %d queries to %s (head %s)\n",
-			len(gs.Queries), gPath, shortHash(gs.Head))
-		return nil
+		return generateEvalGolden(ctx, p.Root, gPath, *mode, *maxCommits, *maxFiles, *maxPerKind)
 	}
 
 	gs, err := eval.LoadGolden(gPath)
@@ -338,5 +312,35 @@ func runAlphaSweep(ctx context.Context, p *proj.Project, em embed.Embedder, gs e
 		fmt.Printf("%-20s  %8.4f  %8.4f  %8.4f\n",
 			row.label, row.rep.MeanNDCG, row.rep.MeanRecall, row.rep.MRR)
 	}
+	return nil
+}
+
+func generateEvalGolden(ctx context.Context, root, gPath, mode string, maxCommits, maxFiles, maxPerKind int) error {
+	opts := eval.GenOpts{MaxCommits: maxCommits, MaxFiles: maxFiles}
+	var gs eval.GoldenSet
+	var err error
+	switch mode {
+	case "blast-radius":
+		gs, err = eval.GenerateBlastRadius(ctx, root, opts)
+	case "structural":
+		gs, err = eval.GenerateStructural(ctx, root, opts)
+	case "orphan":
+		var ocounts eval.OrphanGenCounts
+		gs, ocounts, err = eval.GenerateOrphan(ctx, root, eval.OrphanOpts{MaxFiles: maxFiles, MaxPerKind: maxPerKind})
+		if err == nil {
+			fmt.Fprintf(os.Stderr, "dex bench eval: orphan gen: imports=%d consts=%d vars=%d\n",
+				ocounts.Imports, ocounts.Consts, ocounts.Vars)
+		}
+	default:
+		gs, err = eval.Generate(ctx, root, opts)
+	}
+	if err != nil {
+		return fmt.Errorf("dex bench eval: generate: %w", err)
+	}
+	if err := gs.Save(gPath); err != nil {
+		return fmt.Errorf("dex bench eval: save golden set: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "dex bench eval: wrote %d queries to %s (head %s)\n",
+		len(gs.Queries), gPath, shortHash(gs.Head))
 	return nil
 }
