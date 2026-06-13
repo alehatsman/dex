@@ -13,18 +13,7 @@ import (
 	"github.com/alehatsman/dex/internal/chat"
 )
 
-// resetAnswerCache clears the package-level cache so tests don't bleed
-// into each other.
-func resetAnswerCache(t *testing.T) {
-	t.Helper()
-	answerCacheMu.Lock()
-	defer answerCacheMu.Unlock()
-	answerCacheData = make(map[string]string, answerCacheCap)
-	answerCacheOrder = answerCacheOrder[:0]
-}
-
 func TestSynthesizeAnswerPopulatesAnswer(t *testing.T) {
-	resetAnswerCache(t)
 	chatSrv := fakeChat(t, "The debounce lives in watch.go:42.")
 	defer chatSrv.Close()
 	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second)}
@@ -45,7 +34,7 @@ func TestSynthesizeAnswerPopulatesAnswer(t *testing.T) {
 }
 
 func TestSynthesizeAnswerNilChatClient(t *testing.T) {
-	resetAnswerCache(t)
+
 	s := &Server{} // no ChatClient
 	out := &ContextOutput{
 		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "x"}},
@@ -57,7 +46,7 @@ func TestSynthesizeAnswerNilChatClient(t *testing.T) {
 }
 
 func TestSynthesizeAnswerNoEvidence(t *testing.T) {
-	resetAnswerCache(t)
+
 	chatSrv := fakeChat(t, "should not be called")
 	defer chatSrv.Close()
 	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake", 5*time.Second)}
@@ -69,7 +58,7 @@ func TestSynthesizeAnswerNoEvidence(t *testing.T) {
 }
 
 func TestSynthesizeAnswerUnreachableDegrades(t *testing.T) {
-	resetAnswerCache(t)
+
 	// Point at a closed port so Generate returns ErrUnreachable.
 	s := &Server{ChatClient: chat.New(closedURL(t), "fake", 200*time.Millisecond)}
 	out := &ContextOutput{
@@ -89,7 +78,7 @@ func TestSynthesizeAnswerUnreachableDegrades(t *testing.T) {
 // TestSynthesizeAnswerCacheHit asserts identical evidence re-asks the
 // model only once: the second call is served from cache.
 func TestSynthesizeAnswerCacheHit(t *testing.T) {
-	resetAnswerCache(t)
+
 	var calls atomic.Int32
 	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -135,8 +124,9 @@ func TestBuildAnswerEvidenceOrderingAndBudget(t *testing.T) {
 }
 
 func TestAnswerCacheKeyDistinguishesFields(t *testing.T) {
-	k1 := answerCacheKey("q", "intent", "model", "evidence")
-	k2 := answerCacheKey("qi", "ntent", "model", "evidence") // same concat, different split
+	var c answerCache
+	k1 := c.key("q", "intent", "model", "evidence")
+	k2 := c.key("qi", "ntent", "model", "evidence") // same concat, different split
 	if k1 == k2 {
 		t.Error("cache key collided across field boundaries — length prefixing failed")
 	}

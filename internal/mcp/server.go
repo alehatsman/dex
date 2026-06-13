@@ -164,6 +164,9 @@ type Server struct {
 	// session, no persistence or GC.
 	seen   map[string]*seenState // sessionKey → ledger
 	seenMu sync.Mutex
+
+	// answerCache is the bounded per-server cache for synthesized answers.
+	answerCache answerCache
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from

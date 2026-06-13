@@ -62,8 +62,8 @@ func (s *Server) synthesizeAnswer(ctx context.Context, session *sdk.ServerSessio
 	}
 
 	model := s.ChatClient.ModelName()
-	key := answerCacheKey(question, intent, model, evidence)
-	if cached, ok := answerCacheGet(key); ok {
+	key := s.answerCache.key(question, intent, model, evidence)
+	if cached, ok := s.answerCache.get(key); ok {
 		out.Answer = cached
 		out.AnswerModel = model
 		return
@@ -104,7 +104,7 @@ func (s *Server) synthesizeAnswer(ctx context.Context, session *sdk.ServerSessio
 	}
 	out.Answer = ans
 	out.AnswerModel = model
-	answerCachePut(key, ans)
+	s.answerCache.put(key, ans)
 }
 
 const answerSystemPrompt = "You are a code-intelligence assistant answering a question about ONE specific " +
@@ -251,13 +251,15 @@ func buildAnswerEvidence(out *ContextOutput) string {
 
 const answerCacheCap = 256
 
-var (
-	answerCacheMu    sync.Mutex
-	answerCacheData  = make(map[string]string, answerCacheCap)
-	answerCacheOrder = make([]string, 0, answerCacheCap)
-)
+// answerCache is a bounded FIFO string→string cache held on the Server.
+// Zero value is usable; init() allocates the map on first put.
+type answerCache struct {
+	mu    sync.Mutex
+	data  map[string]string
+	order []string
+}
 
-func answerCacheKey(question, intent, model, evidence string) string {
+func (c *answerCache) key(question, intent, model, evidence string) string {
 	h := sha256.New()
 	// Length-prefix each field so concatenation can't collide across
 	// boundaries (e.g. "ab"+"c" vs "a"+"bc").
@@ -268,25 +270,28 @@ func answerCacheKey(question, intent, model, evidence string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func answerCacheGet(key string) (string, bool) {
-	answerCacheMu.Lock()
-	defer answerCacheMu.Unlock()
-	v, ok := answerCacheData[key]
+func (c *answerCache) get(key string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.data[key]
 	return v, ok
 }
 
-func answerCachePut(key, val string) {
-	answerCacheMu.Lock()
-	defer answerCacheMu.Unlock()
-	if _, exists := answerCacheData[key]; exists {
-		answerCacheData[key] = val
+func (c *answerCache) put(key, val string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.data == nil {
+		c.data = make(map[string]string, answerCacheCap)
+	}
+	if _, exists := c.data[key]; exists {
+		c.data[key] = val
 		return
 	}
-	if len(answerCacheOrder) >= answerCacheCap {
-		oldest := answerCacheOrder[0]
-		answerCacheOrder = answerCacheOrder[1:]
-		delete(answerCacheData, oldest)
+	if len(c.order) >= answerCacheCap {
+		oldest := c.order[0]
+		c.order = c.order[1:]
+		delete(c.data, oldest)
 	}
-	answerCacheData[key] = val
-	answerCacheOrder = append(answerCacheOrder, key)
+	c.data[key] = val
+	c.order = append(c.order, key)
 }
