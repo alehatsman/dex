@@ -827,7 +827,7 @@ func (s *Store) HitsForFiles(ctx context.Context, paths []string, k int) ([]Hit,
 
 		rows, err := s.db.QueryContext(ctx, `
 			SELECT c.path, c.kind, c.name, c.start_line, c.end_line,
-			       COALESCE(gn.pagerank, 0) AS pr
+			       COALESCE(gn.pagerank, 0) AS pr, c.content
 			FROM chunks c
 			LEFT JOIN graph_nodes gn ON gn.chunk_id = c.id
 			WHERE c.path IN (`+inPlaceholders(len(slice))+`)
@@ -852,7 +852,7 @@ func scanFileHits(rows *sql.Rows, out []Hit) ([]Hit, error) {
 	for rows.Next() {
 		var h Hit
 		var pr float64
-		if err := rows.Scan(&h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &pr); err != nil {
+		if err := rows.Scan(&h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &pr, &h.Content); err != nil {
 			return out, err
 		}
 		h.Score = float32(pr)
