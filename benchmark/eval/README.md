@@ -7,7 +7,7 @@ Recall@10, MRR**.
 
 > For the methodology — what this instrument does and does **not** measure
 > (its structural-neighbor blind spot), and how to A/B a change without fooling
-> yourself — see [`docs/retrieval-eval.md`](../../docs/retrieval-eval.md).
+> yourself — see [`docs/architecture.md`](../../docs/architecture.md) (Retrieval).
 
 ## How the golden set is built
 

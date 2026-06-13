@@ -7,7 +7,7 @@ across several languages — so retrieval tuning isn't overfit to dex's own Go
 codebase (#278, epic #246).
 
 > Methodology — what retrieval eval does and does **not** measure, and how to
-> A/B a change — is in [`../../docs/retrieval-eval.md`](../../docs/retrieval-eval.md).
+> A/B a change — is in [`../../docs/architecture.md`](../../docs/architecture.md) (Retrieval).
 
 ## How it works
 

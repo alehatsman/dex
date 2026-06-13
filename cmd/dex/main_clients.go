@@ -32,7 +32,7 @@ func newEmbedClient(indexModel string) embed.Embedder {
 		// tools (search_semantic/search_similar/search_context/ctx_overview/
 		// search_workspace) and ask degrades to the symbol + graph + BM25
 		// lanes. Explicit declaration, not a startup probe — deterministic
-		// under GPU contention. See docs/lean-profile.md.
+		// under GPU contention. See docs/deployment.md.
 		fmt.Fprintln(os.Stderr, "dex: DEX_EMBED_ENGINE=none — lean profile, no embedder (BM25 + symbol + graph only)")
 		return nil
 	}

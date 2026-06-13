@@ -77,3 +77,10 @@ agent's tool list small.
 Per-project settings live in `.dex/config.yml`; any `DEX_*` env var overrides
 them. Run `dex env` to print the effective configuration, `dex help` for the
 full command reference.
+
+## Docs
+
+- [architecture.md](docs/architecture.md) — how dex indexes and retrieves
+- [tools.md](docs/tools.md) — the tool/verb surface and response contract
+- [deployment.md](docs/deployment.md) — backends, profiles, model selection
+- [config.md](docs/config.md) — `.dex/config.yml` and `DEX_*` reference
