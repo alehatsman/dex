@@ -73,18 +73,6 @@ func (a AnchorSet) Anchors() []string { return a.anchors }
 // Empty reports whether the set has no anchors (strict passes are no-ops).
 func (a AnchorSet) Empty() bool { return len(a.anchors) == 0 }
 
-// blocksToken reports whether replacing tok would corrupt an anchor: tok is
-// itself an anchor, or tok is a substring of some anchor (so swapping it for a
-// ref would mutate that anchor in place).
-func (a AnchorSet) blocksToken(tok string) bool {
-	for _, anc := range a.anchors {
-		if tok == anc || strings.Contains(anc, tok) {
-			return true
-		}
-	}
-	return false
-}
-
 // blocksText reports whether substituting s would overlap an anchor in either
 // direction: s contains an anchor, or an anchor contains s. Used to keep
 // multi-token rules and n-gram patterns off anchor spans.
@@ -123,9 +111,15 @@ func (a AnchorSet) Missing(out string) []string {
 
 // AggressiveCompressStrict runs the same pipeline as AggressiveCompress but
 // guarantees every anchor token is byte-identical in the output. Used for weak
-// target_model profiles (see Profile.StrictAnchors). The four anchor-mutating
-// passes — entropy line-drop, token reductions, symbol map, n-gram codebook —
-// are each held off anchor spans, so the floor holds by construction.
+// target_model profiles (see Profile.StrictAnchors). The anchor-mutating
+// passes — entropy line-drop, token reductions, n-gram codebook — are each
+// held off anchor spans, so the floor holds by construction.
+//
+// The symbol-map pass is omitted entirely for strict (weak-model) targets: the
+// §MAP legend earns ~zero token savings (measured ratio-neutral, #293) while
+// its αN identifier handles are a comprehension hazard for the weak local
+// models that get the strict floor. Frontier models keep symmap via the
+// relaxed AggressiveCompress path.
 func AggressiveCompressStrict(content, ext string) string {
 	stripped := stripComments(strings.Split(content, "\n"), ext)
 	anchors := ExtractAnchors(strings.Join(stripped, "\n"))
@@ -142,8 +136,6 @@ func AggressiveCompressStrict(content, ext string) string {
 	lines = dropLowEntropyLinesStrict(lines, thresh.entropyFilterThreshold(), anchors)
 	compressed := applyTokenReductionsExcept(strings.Join(lines, "\n"), ext, anchors)
 	compressed = SafeguardRatio(content, compressed)
-	sm := BuildSymbolMap(compressed).excludeAnchors(anchors)
-	compressed = sm.ApplyWithLegend(compressed)
 	ncb := BuildNgramCodebook(compressed).excludeAnchors(anchors)
 	return ncb.ApplyWithLegend(compressed)
 }

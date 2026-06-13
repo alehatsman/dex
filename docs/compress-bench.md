@@ -38,13 +38,18 @@ frontier targets (Claude/GPT/Gemini). When true, the serving paths
 `compress.CompressCode(content, ext, strict=true)` →
 `compress.AggressiveCompressStrict`, which extracts an `AnchorSet` (paths with
 optional `:line`, dotted/`::` qualified identifiers, multi-segment PascalCase
-type names) from the comment-stripped source and holds each anchor off the four
+type names) from the comment-stripped source and holds each anchor off the
 mutating passes:
 
 - entropy line-drop never drops a line containing an anchor,
 - token reductions skip rules whose source overlaps an anchor,
-- the symbol map and n-gram codebook exclude entries that would rewrite or
-  delete an anchor span.
+- the n-gram codebook excludes entries that would rewrite or delete an anchor
+  span.
+
+The symbol-map pass is **omitted entirely** for strict targets (#293): the
+`§MAP` legend is measured ratio-neutral (no token savings) while its `αN`
+identifier handles are a comprehension hazard for the weak local models that
+get the strict floor. Removing it costs nothing and removes a failure mode.
 
 The floor holds by construction across every aggressiveness level — it is the
 hard floor that #163's adaptive ratio can never override. Frontier targets keep

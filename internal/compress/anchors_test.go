@@ -95,21 +95,39 @@ func TestStrictLineDropAcrossAggressivenessLevels(t *testing.T) {
 	}
 }
 
-// TestStrictExcludesAnchorsFromSubstitution verifies the symbol-map and n-gram
-// passes never rewrite an anchor token.
+// TestStrictExcludesAnchorsFromSubstitution verifies the n-gram codebook — the
+// remaining lossless legend pass on the strict path — never rewrites an anchor
+// token. (Symmap is omitted entirely for strict targets; see TestStrictOmitsSymbolMap.)
 func TestStrictExcludesAnchorsFromSubstitution(t *testing.T) {
 	anchors := ExtractAnchors(anchorSample)
 	body := strings.Join(stripComments(strings.Split(anchorSample, "\n"), ".go"), "\n")
 
-	sm := BuildSymbolMap(body).excludeAnchors(anchors)
-	out := sm.ApplyWithLegend(body)
-	if !strings.Contains(out, "SymbolMap") || !strings.Contains(out, "proj.Locate") {
-		t.Errorf("symbol map mutated an anchor:\n%s", out)
-	}
-
-	ncb := BuildNgramCodebook(out).excludeAnchors(anchors)
-	out = ncb.ApplyWithLegend(out)
+	ncb := BuildNgramCodebook(body).excludeAnchors(anchors)
+	out := ncb.ApplyWithLegend(body)
 	if miss := anchors.Missing(out); len(miss) > 0 {
 		t.Errorf("n-gram codebook mutated anchors %v:\n%s", miss, out)
+	}
+}
+
+// TestStrictOmitsSymbolMap asserts the strict (weak-model) path never emits a
+// §MAP legend — symmap is disabled for strict targets (#293). A synthetic
+// input that drives the relaxed path's symmap ROI gate must stay symmap-free
+// under strict compression.
+func TestStrictOmitsSymbolMap(t *testing.T) {
+	// Repeated long identifiers + an anchor, so the ROI gate would fire in the
+	// relaxed path yet anchors keep strict on its own (non-fallthrough) branch.
+	const src = `func processIncomingRequest(handlerRegistryManager string) {
+    handlerRegistryManager = transformIncomingPayload(handlerRegistryManager)
+    handlerRegistryManager = transformIncomingPayload(handlerRegistryManager)
+    handlerRegistryManager = transformIncomingPayload(handlerRegistryManager)
+    proj.Locate("internal/store/store.go:42")
+}
+`
+	if anchors := ExtractAnchors(src); anchors.Empty() {
+		t.Fatal("test sample produced no anchors; strict would fall through to relaxed")
+	}
+	strict := AggressiveCompressStrict(src, ".go")
+	if strings.Contains(strict, "§MAP") {
+		t.Errorf("strict output carries a §MAP legend; symmap must be off for weak targets:\n%s", strict)
 	}
 }
