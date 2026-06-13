@@ -52,7 +52,7 @@ func hookObserve() error {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, _ = f.Write(append(line, '\n'))
 	return nil
 }
