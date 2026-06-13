@@ -83,16 +83,8 @@ type AutoWatchConfig struct {
 }
 
 // Server holds everything the MCP handlers need.
-type Server struct {
-	EmbedClient  embed.Embedder
-	ChatClient   chat.Chatter         // optional — when nil, view_summarize is not registered
-	RerankClient rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through StoreOpts.Reranker
-	ExpandClient chat.Chatter         // optional — drives opt-in query-side expansion (#252); nil disables it
-	ExpandMode   string               // server default expand level (off|on|full) when a request omits it
-	IndexDir     string               // base dir holding per-project index folders
-	StoreOpts    store.Options        // applied to every Store opened by the server
-	AutoWatch    AutoWatchConfig      // lazy per-project watcher; zero value disables
-
+// watcherState tracks per-project watcher goroutines spawned by RunStdio.
+type watcherState struct {
 	// runCtx is set at the start of RunStdio and is used as the parent
 	// context for spawned watcher goroutines. nil for non-stdio usage
 	// (CLI helpers that build a Server for a single call) — ensureWatcher
@@ -105,58 +97,29 @@ type Server struct {
 	// watcherWG lets RunStdio wait for all watcher goroutines to drain
 	// before returning.
 	watcherWG sync.WaitGroup
+	// activityTracker accumulates per-project tool-call weights to surface
+	// a knowledge-nudge hint when the agent has done significant work but
+	// hasn't recorded any findings. Key: project root; value: *activityState.
+	activityTracker sync.Map
+}
 
+// sessionState tracks per-MCP-session bookkeeping.
+type sessionState struct {
 	// sessionWG tracks in-flight sessionAutoFile goroutines so callers can
 	// drain them. Tests use waitSessionWrites to avoid racing TempDir
 	// cleanup against background store writes.
 	sessionWG sync.WaitGroup
-
 	// searchThrottle tracks per-session repeated searches for the same
 	// (query, project) pair. After 4 identical searches a hint is added;
 	// after 7 a stronger warning fires. Resets after 5 minutes of idle.
 	searchThrottle   sync.Map // key: string → *throttleEntry
 	searchThrottleMu sync.Mutex
-
-	// readCache tracks which files each MCP session has already received,
-	// keyed by session ID then relative path. The value is the etag (content
-	// hash) at the time of delivery. Used by view_summarize to return
-	// status=unchanged on re-reads so the model can reuse context it already
-	// has instead of receiving the full content again.
-	readCache   map[string]map[string]string // sessionID → relPath → etag
-	readCacheMu sync.Mutex
-
-	// readContentCache stores the raw file bytes last delivered per (session,
-	// path). Used by the delta re-read path (#217): when a file changes between
-	// reads we diff the prior bytes against the new bytes and return a compact
-	// unified diff when it is smaller than deltaThreshold × full content.
-	readContentCache map[string]map[string][]byte // sessionID → relPath → raw bytes
-
-	// bounce detects "compression thrash": same file re-requested within
-	// bounceWindow after receiving a compressed view. shouldForceFull
-	// returns true on the second request and clears the flag (single-use).
-	bounce     *bounceTracker
-	bounceOnce sync.Once
-
-	// loop is the per-server loop detector. Lazily initialised by ld().
-	loop     *loopDetector
-	loopOnce sync.Once
-
-	// activityTracker accumulates per-project tool-call weights to surface
-	// a knowledge-nudge hint when the agent has done significant work but
-	// hasn't recorded any findings. Key: project root; value: *activityState.
-	activityTracker sync.Map
-
-	// tgCache holds per-(root,prefix,ext) RAM-resident trigram indices used
-	// by searchGrep to narrow candidate files before reading them.
-	tgCache trigramCache
-
 	// bodyHandles stores @B<n> expansion handles issued by skeleton-mode reads.
 	// Handles are scoped per session and expire when the session ends or the
 	// server restarts. Key: "@B<n>"; value: the file location to expand.
 	bodyHandles    map[string]map[string]bodyHandle // sessionID → "@B<n>" → handle
 	bodyHandlesMu  sync.Mutex
 	bodyHandlesSeq map[string]int // sessionID → next N
-
 	// seen is the cross-turn dedup ledger (#344): per session, the turn on which
 	// each locator (path:start-end) was first surfaced. A locator re-emitted on a
 	// later turn is marked "seen" and its content omitted, so we never resend
@@ -164,23 +127,66 @@ type Server struct {
 	// session, no persistence or GC.
 	seen   map[string]*seenState // sessionKey → ledger
 	seenMu sync.Mutex
+}
 
+// cacheState holds in-memory caches scoped to the server lifetime.
+type cacheState struct {
+	// readCache tracks which files each MCP session has already received,
+	// keyed by session ID then relative path. The value is the etag (content
+	// hash) at the time of delivery. Used by view_summarize to return
+	// status=unchanged on re-reads so the model can reuse context it already
+	// has instead of receiving the full content again.
+	readCache   map[string]map[string]string // sessionID → relPath → etag
+	readCacheMu sync.Mutex
+	// readContentCache stores the raw file bytes last delivered per (session,
+	// path). Used by the delta re-read path (#217): when a file changes between
+	// reads we diff the prior bytes against the new bytes and return a compact
+	// unified diff when it is smaller than deltaThreshold × full content.
+	readContentCache map[string]map[string][]byte // sessionID → relPath → raw bytes
 	// answerCache is the bounded per-server cache for synthesized answers.
 	answerCache answerCache
-
+	// tgCache holds per-(root,prefix,ext) RAM-resident trigram indices used
+	// by searchGrep to narrow candidate files before reading them.
+	tgCache trigramCache
 	// graphViewByPath caches the last loadGraphView result per project DB path.
 	// Keyed by DBPath; value is *cachedGraphView. Invalidated when the graph's
 	// max last_seen_at epoch changes.
 	graphViewByPath sync.Map // string → *cachedGraphView
-
 	// multiScaleByPath caches the last BuildMultiScale result per project DB path.
 	// Keyed by DBPath; value is *cachedMultiScale. Invalidated when last_indexed_at changes.
 	multiScaleByPath sync.Map // string → *cachedMultiScale
-
 	// storeByPath caches an opened *store.Store per project DB path.
 	// Keyed by DBPath; value is *cachedStore. The connection is opened once and
 	// never closed per-request — SQLite WAL mode supports concurrent readers.
 	storeByPath sync.Map // string → *cachedStore
+}
+
+// patternState detects anti-patterns (compression thrash, infinite loops).
+type patternState struct {
+	// bounce detects "compression thrash": same file re-requested within
+	// bounceWindow after receiving a compressed view. shouldForceFull
+	// returns true on the second request and clears the flag (single-use).
+	bounce     *bounceTracker
+	bounceOnce sync.Once
+	// loop is the per-server loop detector. Lazily initialised by ld().
+	loop     *loopDetector
+	loopOnce sync.Once
+}
+
+type Server struct {
+	EmbedClient  embed.Embedder
+	ChatClient   chat.Chatter         // optional — when nil, view_summarize is not registered
+	RerankClient rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through StoreOpts.Reranker
+	ExpandClient chat.Chatter         // optional — drives opt-in query-side expansion (#252); nil disables it
+	ExpandMode   string               // server default expand level (off|on|full) when a request omits it
+	IndexDir     string               // base dir holding per-project index folders
+	StoreOpts    store.Options        // applied to every Store opened by the server
+	AutoWatch    AutoWatchConfig      // lazy per-project watcher; zero value disables
+
+	watcherState // project watcher goroutines
+	sessionState // per-MCP-session tracking (throttle, dedup, body handles)
+	cacheState   // in-memory read/content/answer caches
+	patternState // loop and bounce-thrash detection
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from
