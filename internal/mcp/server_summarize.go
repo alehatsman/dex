@@ -380,6 +380,7 @@ func batchStableSet(ctx context.Context, projectRoot, indexDir string) map[strin
 	if err != nil {
 		return map[string]bool{}
 	}
+	defer st.Close()
 	ss, ok, err := st.SessionGet(ctx)
 	if err != nil || !ok {
 		return map[string]bool{}
