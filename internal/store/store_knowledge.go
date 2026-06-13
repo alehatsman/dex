@@ -575,11 +575,8 @@ func (s *Store) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGC
 			if jaccard(facts[i].words, facts[j].words) < cfg.JaccardMerge {
 				continue
 			}
-			// facts are confidence-desc within archetype, so i is the keeper.
+			// facts are confidence-desc within archetype, so i is always the keeper.
 			keeper, dup := &facts[i], &facts[j]
-			if dup.conf > keeper.conf {
-				keeper, dup = dup, keeper
-			}
 			if _, err := s.db.ExecContext(ctx,
 				`UPDATE knowledge_facts SET hit_count=hit_count+?, confidence=MAX(confidence, ?) WHERE id=?`,
 				dup.hits, dup.conf, keeper.id); err != nil {
