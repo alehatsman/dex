@@ -536,9 +536,10 @@ func buildReorientTasks(queries []benchnav.Query, k int) []benchnav.ReorientTask
 // buildRecapModel prices recap()'s digest from the graph: one working-set file
 // costs its path plus the symbol names it defines (a compressed signature
 // skeleton — restore WHERE you were, not the full file). Files with no graph
-// symbols fall back to the path line alone. This is the analytic stand-in for
-// #346 recap() until the verb ships, mirroring how the map/breadth lanes model
-// their verb without the live stack.
+// symbols fall back to the path line alone. This prices the same entry the live
+// recap() now renders (the session `recap` action, internal/mcp/server_session.go
+// recapEntryText) — the gate measures what ships — mirroring how the map/breadth
+// lanes model their verb without the live stack.
 func buildRecapModel(ctx context.Context, st *store.Store) (benchnav.ReorientModel, error) {
 	nodes, err := st.GraphAllNodes(ctx)
 	if err != nil {
