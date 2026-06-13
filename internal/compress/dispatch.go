@@ -2950,7 +2950,7 @@ func CompressEnvFilter(lines []string) []string {
 		if t == "" {
 			continue
 		}
-		if idx := strings.Index(t, "="); idx > 0 {
+		if idx := strings.Index(t, "="); idx > 0 { // idx>0 intentional: rejects "=VALUE" (empty key)
 			key := t[:idx]
 			value := t[idx+1:]
 			isSensitive := false
@@ -3074,9 +3074,8 @@ func ParseUint64(s string) uint64 {
 
 func ParseSizeField(s string) uint64 {
 	s = strings.TrimSpace(s)
-	if n, err := fmt.Sscanf(s, "%d", new(uint64)); n == 1 && err == nil {
-		var v uint64
-		_, _ = fmt.Sscanf(s, "%d", &v) // guarded by the check above
+	var v uint64
+	if _, err := fmt.Sscanf(s, "%d", &v); err == nil {
 		return v
 	}
 	if len(s) == 0 {
@@ -3094,7 +3093,6 @@ func ParseSizeField(s string) uint64 {
 	case 'G', 'g':
 		return uint64(base * 1024 * 1024 * 1024)
 	}
-	var v uint64
 	_, _ = fmt.Sscanf(s, "%d", &v) // best-effort: 0 on parse failure
 	return v
 }
