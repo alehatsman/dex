@@ -1423,8 +1423,13 @@ func (s *Store) CallerFiles(ctx context.Context, dstFiles []string, limit int) (
 	}
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT src_file FROM graph_edges
-		 WHERE dst_file IN (`+strings.Join(placeholders, ",")+`)
+		`SELECT DISTINCT sn.file_path
+		 FROM graph_edges ge
+		 JOIN graph_nodes sn ON sn.id = ge.src_id
+		 JOIN graph_nodes dn ON dn.id = ge.dst_id
+		 WHERE dn.file_path IN (`+strings.Join(placeholders, ",")+`)
+		   AND sn.file_path != ''
+		 ORDER BY sn.file_path
 		 LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
