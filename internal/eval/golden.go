@@ -25,6 +25,7 @@ type GoldenQuery struct {
 	Query         string   `json:"query"`            // query text (commit subject, or anchor code excerpt)
 	RelevantFiles []string `json:"relevant_files"`   // repo-relative paths, sorted
 	Anchor        string   `json:"anchor,omitempty"` // blast-radius: anchor file path, excluded from ranked results
+	Class         string   `json:"class,omitempty"`  // dependency-discoverability class G1/G2/G3 (#549); empty = auto-classify in nav-bench
 }
 
 // GoldenSet is a reproducible, committable collection of labeled queries

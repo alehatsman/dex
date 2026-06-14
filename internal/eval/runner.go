@@ -33,9 +33,10 @@ type QueryResult struct {
 	RankedFiles []string `json:"ranked_files"` // top unique files in rank order
 	NDCG        float64  `json:"ndcg"`
 	Recall      float64  `json:"recall"`
-	RecallPool  float64  `json:"recall_pool"` // recall@candidateK — pool-recall ceiling (see below)
-	RR          float64  `json:"rr"`          // reciprocal rank
-	Type        string   `json:"type"`        // store.ClassifyQueryType bucket: nl|symbol|architecture
+	RecallPool  float64  `json:"recall_pool"`     // recall@candidateK — pool-recall ceiling (see below)
+	RR          float64  `json:"rr"`              // reciprocal rank
+	Type        string   `json:"type"`            // store.ClassifyQueryType bucket: nl|symbol|architecture
+	Class       string   `json:"class,omitempty"` // dependency-discoverability class G1/G2/G3 carried from the golden query (#549)
 }
 
 // Run scores the live Search path against the golden set using an already
@@ -135,6 +136,7 @@ func RunWithRewrite(ctx context.Context, em embed.Embedder, st *store.Store, gs 
 				RecallPool:  RecallAtK(rankedPool, relevant, pool),
 				RR:          MRR(ranked, relevant),
 				Type:        store.ClassifyQueryType(q.Query),
+				Class:       q.Class,
 			}
 			return nil
 		})

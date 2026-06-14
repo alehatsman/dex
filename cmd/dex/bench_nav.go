@@ -65,6 +65,9 @@ func runBenchNav(ctx context.Context, args []string) error {
 	l1budget := fs.Int("l1-budget", 0, "map-lane L1 token budget per cluster (default 1000)")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
+	classify := fs.Bool("classify", true, "partition queries by dependency class G1/G2/G3 (#549): "+
+		"G1 reached by the no-map lane, G2 only by the map lane, G3 by neither (hidden). "+
+		"Use --lane=bm25 for strict CodeCompass keyword-findability. Golden `class` tags override.")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	var projectPath string
@@ -129,6 +132,7 @@ func runBenchNav(ctx context.Context, args []string) error {
 			Query:    r.Query,
 			Ranked:   r.RankedFiles,
 			Relevant: r.Relevant,
+			Class:    r.Class, // manual golden tag; auto-classified below when empty
 		})
 	}
 
@@ -141,9 +145,23 @@ func runBenchNav(ctx context.Context, args []string) error {
 	mapModel, routeModel, breadthModel, mapErr := buildNavMapModel(ctx, p.Root, *l0budget, *l1budget, navRoutingBudgets)
 	if mapErr != nil {
 		fmt.Fprintf(os.Stderr, "dex bench nav: map lane unavailable (%v) — reporting no-map only\n", mapErr)
+		if *classify {
+			// No graph reach available: queries split into G1 (lexically found)
+			// and G3 (hidden) only — G2 is unobservable without the map lane.
+			autoClassifyQueries(queries, navReachFlags(noMap), nil)
+			noMap = nav.Compute(queries, *k, cost, *lane)
+		}
 		return emitNavReport(noMap, *outputFmt)
 	}
 	mapSeeded := nav.ComputeMap(queries, cost, mapModel, *lane)
+	if *classify {
+		// Auto-classify for free from the reach we already computed: no-map reach
+		// is the lexical signal (G1), map-only reach is G2, neither is G3 (#549).
+		// Recompute both lanes so each report carries the per-class breakdown.
+		autoClassifyQueries(queries, navReachFlags(noMap), navReachFlags(mapSeeded))
+		noMap = nav.Compute(queries, *k, cost, *lane)
+		mapSeeded = nav.ComputeMap(queries, cost, mapModel, *lane)
+	}
 	cmp := nav.Compare(noMap, mapSeeded)
 	cmp.Routing = nav.ComputeRouting(queries, routeModel, navRoutingBudgets, *lane)
 	if tasks, around, terr := buildBreadthTasks(ctx, st, em, *k, *l1budget); terr != nil {
@@ -193,6 +211,32 @@ func runBenchNav(ctx context.Context, args []string) error {
 		fmt.Fprintln(os.Stderr, "dex bench nav: regression check passed")
 	}
 	return nil
+}
+
+// navReachFlags extracts per-query reach (1:1 with the report's queries) so a
+// lane's reach can seed dependency-class partitioning (#549).
+func navReachFlags(r nav.Report) []bool {
+	out := make([]bool, len(r.Results))
+	for i, res := range r.Results {
+		out[i] = res.Reached
+	}
+	return out
+}
+
+// autoClassifyQueries stamps an empty Class on each query from its lane reach
+// (#549): G1 if the no-map (lexical) lane reached the gold, else G2 if the map
+// lane did, else G3 (hidden — no static lane reaches it). Manual golden `class`
+// tags are left untouched. graphReached may be nil when the map lane is
+// unavailable, collapsing the partition to G1/G3.
+func autoClassifyQueries(queries []nav.Query, lexReached, graphReached []bool) {
+	for i := range queries {
+		if queries[i].Class != "" {
+			continue
+		}
+		lex := i < len(lexReached) && lexReached[i]
+		graph := i < len(graphReached) && graphReached[i]
+		queries[i].Class = nav.Classify(lex, graph)
+	}
 }
 
 // emitNavReport prints a single no-map report (the fallback when the map lane

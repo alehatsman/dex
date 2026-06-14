@@ -28,6 +28,52 @@ type Query struct {
 	Query    string   `json:"query"`
 	Ranked   []string `json:"ranked"`   // repo-relative paths, best-first
 	Relevant []string `json:"relevant"` // gold files; touching any one counts as reached
+	// Class buckets the query by dependency discoverability (CodeCompass G1/G2/G3,
+	// issue #549): G1 keyword-findable, G2 reachable only via the import/call
+	// graph, G3 hidden (no static lane reaches it — runtime wiring, DI, reflection,
+	// config-driven dispatch). Empty when unclassified; Compute then skips the
+	// per-class breakdown. See Classify.
+	Class string `json:"class,omitempty"`
+}
+
+// Dependency-discoverability classes (CodeCompass G1/G2/G3, #549). G3 is the
+// frontier: dependencies invisible to both lexical and static-graph retrieval.
+const (
+	ClassKeyword = "G1" // lexically findable (BM25 reaches the gold)
+	ClassGraph   = "G2" // reachable only via the import/call graph
+	ClassHidden  = "G3" // hidden: no static lane reaches it
+)
+
+// classOrder fixes the display/JSON ordering of per-class buckets so reports
+// are byte-stable. Unknown classes sort after the known three, alphabetically.
+var classOrder = map[string]int{ClassKeyword: 0, ClassGraph: 1, ClassHidden: 2}
+
+// Classify buckets a query by which lane first reaches its gold file. It is the
+// data-driven partition behind the per-class breakdown: a lexical (BM25) reach
+// is G1; a graph/map reach that lexical missed is G2; reached by neither is G3
+// — the hidden-dependency frontier whose static-lane reach-rate is ~0 by
+// construction (#549).
+func Classify(lexicalReached, graphReached bool) string {
+	switch {
+	case lexicalReached:
+		return ClassKeyword
+	case graphReached:
+		return ClassGraph
+	default:
+		return ClassHidden
+	}
+}
+
+// ClassStat is the per-class aggregate within a Report (#549). ReachRate is over
+// every query in the class; mean calls/tokens are over the REACHED ones only,
+// matching the Report-level convention.
+type ClassStat struct {
+	Class      string  `json:"class"`
+	NumQueries int     `json:"num_queries"`
+	NumReached int     `json:"num_reached"`
+	ReachRate  float64 `json:"reach_rate"`
+	MeanCalls  float64 `json:"mean_calls"`
+	MeanTokens float64 `json:"mean_tokens"`
 }
 
 // CostModel prices the two actions the policy takes. Read returns the tokens
@@ -63,6 +109,11 @@ type Report struct {
 	MeanTokens   float64     `json:"mean_tokens"`
 	MedianTokens float64     `json:"median_tokens"`
 	Results      []NavResult `json:"results"`
+	// ByClass breaks the aggregate down by dependency-discoverability class
+	// (#549), ordered G1, G2, G3. Empty when no query carries a Class. The G3
+	// bucket is the hidden-dependency instrument: its reach-rate quantifies the
+	// gap a static lane cannot close.
+	ByClass []ClassStat `json:"by_class,omitempty"`
 }
 
 // Compute runs the deterministic no-map navigation policy over the queries and
@@ -125,7 +176,69 @@ func Compute(queries []Query, k int, cost CostModel, lane string) Report {
 	}
 	rep.MeanCalls, rep.MedianCalls = meanMedian(callsReached)
 	rep.MeanTokens, rep.MedianTokens = meanMedian(tokensReached)
+	rep.ByClass = computeByClass(queries, rep.Results)
 	return rep
+}
+
+// computeByClass aggregates per dependency-discoverability class. results must
+// be 1:1 with queries in order (as Compute/ComputeMap emit them). Returns nil
+// when no query is classified, so an unclassified run renders exactly as before.
+func computeByClass(queries []Query, results []NavResult) []ClassStat {
+	type acc struct {
+		n, reached    int
+		calls, tokens []int
+	}
+	buckets := map[string]*acc{}
+	any := false
+	for i, q := range queries {
+		if q.Class == "" || i >= len(results) {
+			continue
+		}
+		any = true
+		a := buckets[q.Class]
+		if a == nil {
+			a = &acc{}
+			buckets[q.Class] = a
+		}
+		a.n++
+		if results[i].Reached {
+			a.reached++
+			a.calls = append(a.calls, results[i].Calls)
+			a.tokens = append(a.tokens, results[i].Tokens)
+		}
+	}
+	if !any {
+		return nil
+	}
+
+	classes := make([]string, 0, len(buckets))
+	for c := range buckets {
+		classes = append(classes, c)
+	}
+	sort.Slice(classes, func(i, j int) bool {
+		oi, iok := classOrder[classes[i]]
+		oj, jok := classOrder[classes[j]]
+		if iok != jok {
+			return iok // known classes before unknown
+		}
+		if iok && oi != oj {
+			return oi < oj
+		}
+		return classes[i] < classes[j]
+	})
+
+	stats := make([]ClassStat, 0, len(classes))
+	for _, c := range classes {
+		a := buckets[c]
+		s := ClassStat{Class: c, NumQueries: a.n, NumReached: a.reached}
+		if a.n > 0 {
+			s.ReachRate = float64(a.reached) / float64(a.n)
+		}
+		s.MeanCalls, _ = meanMedian(a.calls)
+		s.MeanTokens, _ = meanMedian(a.tokens)
+		stats = append(stats, s)
+	}
+	return stats
 }
 
 // meanMedian returns the arithmetic mean and median of xs (0,0 when empty).
@@ -165,6 +278,17 @@ func (r Report) Markdown() string {
 	fmt.Fprintf(&b, "| median calls to touch | %.1f |\n", r.MedianCalls)
 	fmt.Fprintf(&b, "| mean tokens to touch | %.0f |\n", r.MeanTokens)
 	fmt.Fprintf(&b, "| median tokens to touch | %.0f |\n", r.MedianTokens)
+	if len(r.ByClass) > 0 {
+		fmt.Fprintf(&b, "\n## By dependency class (G1 keyword / G2 graph / G3 hidden)\n\n")
+		fmt.Fprintf(&b, "| class | queries | reached | reach-rate | mean calls | mean tokens |\n")
+		fmt.Fprintf(&b, "|---|---|---|---|---|---|\n")
+		for _, s := range r.ByClass {
+			fmt.Fprintf(&b, "| %s | %d | %d | %.1f%% | %.2f | %.0f |\n",
+				s.Class, s.NumQueries, s.NumReached, s.ReachRate*100, s.MeanCalls, s.MeanTokens)
+		}
+		fmt.Fprintf(&b, "\nG3 = hidden dependencies (runtime wiring, DI, reflection, config-driven "+
+			"dispatch): no static lane reaches them, so a ~0%% reach-rate here is the gap, not a bug (#549).\n")
+	}
 	return b.String()
 }
 
@@ -258,6 +382,7 @@ func ComputeMap(queries []Query, cost CostModel, m MapModel, lane string) Report
 	}
 	rep.MeanCalls, rep.MedianCalls = meanMedian(callsReached)
 	rep.MeanTokens, rep.MedianTokens = meanMedian(tokensReached)
+	rep.ByClass = computeByClass(queries, rep.Results)
 	return rep
 }
 
