@@ -306,6 +306,54 @@ func TestPruneRemovedFile(t *testing.T) {
 	}
 }
 
+// TestRunSkipsPruneOnEmptyExtraction locks #529: a transiently-empty
+// extraction must NOT wipe the persisted graph. After populating the graph, a
+// second Run whose extraction yields 0 nodes+edges (here: an empty project dir
+// sharing the same store) must skip the destructive prune and leave the graph
+// intact, surfacing a warning instead.
+func TestRunSkipsPruneOnEmptyExtraction(t *testing.T) {
+	ctx := context.Background()
+	root := copyFixture(t, "simple")
+	st := openTestStore(t)
+	p := resolveTestProject(t, root)
+	gx := New(p, NewStoreAdapter(st), Options{})
+
+	if _, err := gx.Run(ctx); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	nodesBefore, edgesBefore, _ := st.GraphStats(ctx)
+	if nodesBefore == 0 {
+		t.Fatal("fixture produced no graph nodes; cannot exercise the prune guard")
+	}
+
+	// Second run against an empty project dir (0 extraction) on the SAME store,
+	// with a strictly later cutoff. Without the guard this prunes everything.
+	time.Sleep(2 * time.Millisecond)
+	emptyProj := resolveTestProject(t, t.TempDir())
+	gx2 := New(emptyProj, NewStoreAdapter(st), Options{})
+	stats, err := gx2.Run(ctx)
+	if err != nil {
+		t.Fatalf("empty run: %v", err)
+	}
+	if stats.NodesPruned != 0 {
+		t.Errorf("empty extraction pruned %d nodes; want 0 (guard must skip prune)", stats.NodesPruned)
+	}
+	nodesAfter, edgesAfter, _ := st.GraphStats(ctx)
+	if nodesAfter != nodesBefore || edgesAfter != edgesBefore {
+		t.Errorf("graph changed after empty extraction: nodes %d->%d, edges %d->%d",
+			nodesBefore, nodesAfter, edgesBefore, edgesAfter)
+	}
+	var warned bool
+	for _, w := range stats.Warnings {
+		if strings.Contains(w, "skipping prune") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("expected a 'skipping prune' warning, got %v", stats.Warnings)
+	}
+}
+
 func TestChunkLinkage(t *testing.T) {
 	root := copyFixture(t, "simple")
 	st := openTestStore(t)

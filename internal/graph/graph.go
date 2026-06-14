@@ -344,6 +344,26 @@ func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
 			"warnings", len(result.Warnings))
 	}
 
+	// Empty-extraction guard (#529): when no extractor produced a single node or
+	// edge, treat it as "no new information", never "delete everything". The
+	// unconditional upsert-then-prune-unseen below would otherwise wipe the
+	// ENTIRE persisted graph whenever extraction transiently yields nothing —
+	// e.g. ExtractGo resolves 0 packages under a concurrent checkout, index
+	// contention, a mid-rebase tree, or a momentarily-missing go.mod. Skip the
+	// destructive write entirely and keep the prior graph; warn so the cause is
+	// visible (#516). A genuinely empty repo has no prior graph to lose, so this
+	// is safe there too; a real "all source deleted" transition is rare and
+	// self-heals on the next non-empty index.
+	if len(result.Nodes) == 0 && len(result.Edges) == 0 {
+		warning := fmt.Sprintf("graph extraction produced 0 nodes and 0 edges (%d packages resolved) — keeping the existing graph and skipping prune; this is usually a transient checkout/contention issue or a missing go.mod, not an empty project", result.Packages)
+		g.log.Warn(warning)
+		return &Stats{
+			Packages: result.Packages,
+			Warnings: append(result.Warnings, warning),
+			Elapsed:  time.Since(t0),
+		}, nil
+	}
+
 	linked, err := linkChunks(ctx, g.store, result.Nodes)
 	if err != nil {
 		return nil, fmt.Errorf("link chunks: %w", err)
