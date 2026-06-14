@@ -24,6 +24,40 @@ var deadToolNames = []string{
 	"graph_callers", "graph_callees", "graph_deps", "graph_neighbors",
 }
 
+// goodParamSignatures are the tool mnemonics whose param names match the real
+// input schema. Each MUST appear verbatim in ServerInstructions().
+var goodParamSignatures = []string{
+	"find(query, path_glob)",   // SearchInput: query + path_glob (no "path")
+	"impact(name)",             // ImpactInput.Name
+	"read(path)",               // read takes path, not "file"
+	"trace(symbol, direction)", // already correct — pin it so it stays
+}
+
+// staleParamSignatures are the pre-#525 param drifts: prose that named params
+// the schema never had, so agents' first call failed. They MUST NOT reappear.
+// The trailing ')' keeps "find(query, path)" from matching "find(query, path_glob)".
+var staleParamSignatures = []string{
+	"find(query, path)",
+	"impact(symbol)",
+	"read(file)",
+}
+
+// TestServerInstructionsParamNamesMatchSchema guards #525: the param names in
+// the ServerInstructions() tool table must match the registered input schema.
+func TestServerInstructionsParamNamesMatchSchema(t *testing.T) {
+	instr := ServerInstructions()
+	for _, good := range goodParamSignatures {
+		if !strings.Contains(instr, good) {
+			t.Errorf("ServerInstructions() missing expected signature %q", good)
+		}
+	}
+	for _, stale := range staleParamSignatures {
+		if strings.Contains(instr, stale) {
+			t.Errorf("ServerInstructions() still shows stale param signature %q (drifted from schema)", stale)
+		}
+	}
+}
+
 // TestServerInstructionsMatchRegistry guards ServerInstructions() against
 // tool-name drift: every name it mentions must be advertised by the server,
 // and no removed name may linger.

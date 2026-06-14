@@ -40,10 +40,10 @@ func ServerInstructions() string {
 Tool mapping (use these instead):
 - ask(question)            instead of free-form reasoning about code structure
 - map()                    instead of guessing layout — orient first in an unfamiliar repo
-- find(query, path)        instead of Grep/rg for concept/intent searches
+- find(query, path_glob)   instead of Grep/rg for concept/intent searches
 - trace(symbol, direction) instead of manual cross-ref tracing (callers/callees/path)
-- impact(symbol)           instead of guessing an edit's blast radius
-- read(file)               instead of Read for large files (signatures + summaries)
+- impact(name)             instead of guessing an edit's blast radius
+- read(path)               instead of Read for large files (signatures + summaries)
 - shell(command)           instead of Bash for shell commands (compressed output)
 - grep(pattern)            instead of rg for exact regex matches
 
