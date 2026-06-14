@@ -30,10 +30,36 @@ func ParseLinesRange(s string) (start, end int, ok bool) {
 	return n, m, true
 }
 
-// FormatSignatures produces a compact symbol index for a file.
+// SignaturesView builds the mode=signatures view: a compact symbol index,
+// followed by a call-graph related-files hint and any task-relevant symbol
+// body. This is the whole recipe for the view — callers supply the file bytes
+// and indexed symbols (and a store for the graph/session lookups) and get the
+// composed text back.
+func SignaturesView(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, relPath string) string {
+	content := formatSignatures(data, syms, relPath, nil)
+	if related := graphRelatedHint(ctx, st, relPath); related != "" {
+		content += related
+	}
+	return inlineTaskSymbol(ctx, st, data, syms, content)
+}
+
+// MapView builds the mode=map view: imports + exported symbols, followed by a
+// related-files hint and (when symbols exist) any task-relevant symbol body.
+func MapView(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, imports []string, relPath string) string {
+	content := formatMap(relPath, syms, imports)
+	if related := graphRelatedHint(ctx, st, relPath); related != "" {
+		content += related
+	}
+	if len(syms) > 0 {
+		content = inlineTaskSymbol(ctx, st, data, syms, content)
+	}
+	return content
+}
+
+// formatSignatures produces a compact symbol index for a file.
 // Each exported symbol gets its declaration line; unexported symbols are
 // listed without source. Output is ~10× smaller than mode=full.
-func FormatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []string) string {
+func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []string) string {
 	srcLines := bytes.Split(bytes.TrimRight(src, "\n"), []byte("\n"))
 	totalLines := bytes.Count(src, []byte("\n")) + 1
 	var b strings.Builder
@@ -77,10 +103,10 @@ func FormatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []
 	return b.String()
 }
 
-// FormatMap produces a compact dependency map for a file: its package-level
+// formatMap produces a compact dependency map for a file: its package-level
 // imports and exported declarations, sourced from the index (no LLM, no file
 // read). Unexported symbols are omitted so the output mirrors the public API.
-func FormatMap(relPath string, syms []store.GraphSymbol, imports []string) string {
+func formatMap(relPath string, syms []store.GraphSymbol, imports []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "FILE: %s\n\n", relPath)
 	if len(imports) > 0 {
@@ -164,10 +190,10 @@ func BuildSystem(focus string) string {
 	return base
 }
 
-// GraphRelatedHint returns a compact "Related (call graph): ..." line
+// graphRelatedHint returns a compact "Related (call graph): ..." line
 // listing files graph-adjacent to relPath, or "" when the graph is absent
 // or has no neighbors. Never fails — graph errors are silently swallowed.
-func GraphRelatedHint(ctx context.Context, st *store.Store, relPath string) string {
+func graphRelatedHint(ctx context.Context, st *store.Store, relPath string) string {
 	neighbors, err := st.GraphNeighborFiles(ctx, []string{relPath}, 8)
 	if err != nil || len(neighbors) == 0 {
 		return ""
@@ -175,11 +201,11 @@ func GraphRelatedHint(ctx context.Context, st *store.Store, relPath string) stri
 	return "\n# Related (call graph): " + strings.Join(neighbors, ", ") + "\n"
 }
 
-// InlineTaskSymbol appends the body of the symbol most relevant to the active
+// inlineTaskSymbol appends the body of the symbol most relevant to the active
 // session task (if any) to content, so a task-focused read surfaces the code
 // that matters even under a compressed mode. Moved here from the removed
 // server_compose.go (#429) — it is the only live consumer.
-func InlineTaskSymbol(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, content string) string {
+func inlineTaskSymbol(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, content string) string {
 	sess, ok, err := st.SessionGet(ctx)
 	if err != nil || !ok || sess.Task == "" {
 		return content

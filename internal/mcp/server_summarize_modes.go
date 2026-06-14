@@ -56,11 +56,7 @@ func (s *Server) summarizeModeSignatures(w summarizeWork) (*sdk.CallToolResult, 
 		out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
 		return nil, out, nil
 	}
-	content := summarize.FormatSignatures(w.data, syms, w.relTarget, nil)
-	if related := summarize.GraphRelatedHint(w.ctx, st, w.relTarget); related != "" {
-		content += related
-	}
-	content = summarize.InlineTaskSymbol(w.ctx, st, w.data, syms, content)
+	content := summarize.SignaturesView(w.ctx, st, w.data, syms, w.relTarget)
 	out := w.out
 	out.Status = "ok"
 	out.Etag = w.etag
@@ -100,13 +96,7 @@ func (s *Server) summarizeModeMap(w summarizeWork) (*sdk.CallToolResult, Summari
 		out.Hint = "no indexed data for this file — run `dex index` first or use mode=full"
 		return nil, out, nil
 	}
-	content := summarize.FormatMap(w.relTarget, syms, imports)
-	if related := summarize.GraphRelatedHint(w.ctx, st, w.relTarget); related != "" {
-		content += related
-	}
-	if len(syms) > 0 {
-		content = summarize.InlineTaskSymbol(w.ctx, st, w.data, syms, content)
-	}
+	content := summarize.MapView(w.ctx, st, w.data, syms, imports, w.relTarget)
 	out := w.out
 	out.Status = "ok"
 	out.Etag = w.etag

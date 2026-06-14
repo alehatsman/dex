@@ -66,7 +66,7 @@ func TestFormatMap(t *testing.T) {
 		{Name: "Run", QualifiedName: "mcp.Server.Run", Kind: "method", FilePath: "server.go", StartLine: 100, EndLine: 120},
 	}
 	imports := []string{"context", "fmt", "os"}
-	got := FormatMap("server.go", syms, imports)
+	got := formatMap("server.go", syms, imports)
 	for _, want := range []string{
 		"FILE: server.go",
 		"IMPORTS:",
@@ -78,11 +78,11 @@ func TestFormatMap(t *testing.T) {
 		"method mcp.Server.Run",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("FormatMap missing %q\ngot:\n%s", want, got)
+			t.Errorf("formatMap missing %q\ngot:\n%s", want, got)
 		}
 	}
 	if strings.Contains(got, "unexported") {
-		t.Errorf("FormatMap leaked unexported symbol; got:\n%s", got)
+		t.Errorf("formatMap leaked unexported symbol; got:\n%s", got)
 	}
 }
 
@@ -92,7 +92,7 @@ func TestFormatSignatures(t *testing.T) {
 		{Name: "Foo", QualifiedName: "Foo", Kind: "function", FilePath: "f.go", StartLine: 3, EndLine: 5},
 		{Name: "Bar", QualifiedName: "Bar", Kind: "function", FilePath: "f.go", StartLine: 7, EndLine: 9},
 	}
-	got := FormatSignatures(src, syms, "f.go", nil)
+	got := formatSignatures(src, syms, "f.go", nil)
 	for _, want := range []string{
 		"f.go",
 		"(2 symbols)",
@@ -102,7 +102,7 @@ func TestFormatSignatures(t *testing.T) {
 		"func Bar(x int) int {",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("FormatSignatures output missing %q\ngot:\n%s", want, got)
+			t.Errorf("formatSignatures output missing %q\ngot:\n%s", want, got)
 		}
 	}
 }
