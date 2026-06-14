@@ -1,4 +1,4 @@
-package mcp
+package retrieve
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ func TestFuseWithSymbols_SemanticOnlyWhenNoSymbols(t *testing.T) {
 		{Path: "a.go", StartLine: 1, Score: 0.9},
 		{Path: "b.go", StartLine: 1, Score: 0.7},
 	}
-	out := fuseWithSymbols(sem, nil, 5)
+	out := FuseWithSymbols(sem, nil, 5)
 	if len(out) != 2 {
 		t.Fatalf("want 2 hits, got %d", len(out))
 	}
@@ -24,7 +24,7 @@ func TestFuseWithSymbols_SemanticOnlyWhenNoSymbols(t *testing.T) {
 func TestFuseWithSymbols_SymbolOnlyHitsGetScore1(t *testing.T) {
 	sem := []store.Hit{{Path: "a.go", StartLine: 1, Score: 0.9}}
 	sym := []store.Hit{{Path: "b.go", StartLine: 10, Score: 0}} // no cosine score
-	out := fuseWithSymbols(sem, sym, 5)
+	out := FuseWithSymbols(sem, sym, 5)
 	for _, h := range out {
 		if h.Path == "b.go" && h.Score != 1.0 {
 			t.Errorf("symbol-only hit should have Score=1.0, got %f", h.Score)
@@ -42,7 +42,7 @@ func TestFuseWithSymbols_OverlapBoostRank(t *testing.T) {
 		{Path: "c.go", StartLine: 5},
 		{Path: "b.go", StartLine: 1},
 	}
-	out := fuseWithSymbols(sem, sym, 5)
+	out := FuseWithSymbols(sem, sym, 5)
 	if len(out) == 0 {
 		t.Fatal("expected hits")
 	}
@@ -57,7 +57,7 @@ func TestFuseWithSymbols_OverlapBoostRank(t *testing.T) {
 func TestFuseWithSymbols_RRFScoreSet(t *testing.T) {
 	sem := []store.Hit{{Path: "a.go", StartLine: 1, Score: 0.9}}
 	sym := []store.Hit{{Path: "b.go", StartLine: 1}}
-	out := fuseWithSymbols(sem, sym, 5)
+	out := FuseWithSymbols(sem, sym, 5)
 	for _, h := range out {
 		if h.RRFScore == 0 {
 			t.Errorf("hit %s:%d should have non-zero RRFScore", h.Path, h.StartLine)
@@ -70,7 +70,7 @@ func TestFuseWithSymbols_TopN(t *testing.T) {
 	for i := range sem {
 		sem[i] = store.Hit{Path: "sem.go", StartLine: i + 1, Score: float32(10-i) / 10}
 	}
-	out := fuseWithSymbols(sem, nil, 3)
+	out := FuseWithSymbols(sem, nil, 3)
 	if len(out) != 3 {
 		t.Errorf("want 3 hits, got %d", len(out))
 	}
@@ -78,7 +78,7 @@ func TestFuseWithSymbols_TopN(t *testing.T) {
 
 func TestFuseWithSymbols_DeduplicatesByPathLine(t *testing.T) {
 	h := store.Hit{Path: "x.go", StartLine: 42, Score: 0.8}
-	out := fuseWithSymbols([]store.Hit{h}, []store.Hit{h}, 5)
+	out := FuseWithSymbols([]store.Hit{h}, []store.Hit{h}, 5)
 	count := 0
 	for _, r := range out {
 		if r.Path == "x.go" && r.StartLine == 42 {
