@@ -17,15 +17,40 @@ const (
 	DescModeLazy                         // first sentence only + ask hint (~85% savings)
 )
 
-// descriptionModeFromEnv reads DEX_DESCRIPTION_MODE (full|terse|lazy). Default: full.
+// descriptionModeFromEnv reads DEX_DESCRIPTION_MODE (full|terse|lazy).
+//
+// Default: terse (#547). Full tool descriptions sit in the tools array of every
+// turn, so the everyday surface ships compact; set DEX_DESCRIPTION_MODE=full to
+// opt back into verbose descriptions.
+//
+// Caveat (mirrors the proxy clamp in cmd/dex/proxy.go, #242): when
+// ENABLE_TOOL_SEARCH / tool_reference forwarding is active the agent relies on
+// full tool docs to pick tools, so any compacted mode is forced back to full.
 func descriptionModeFromEnv() DescriptionMode {
+	mode := DescModeTerse // default: compact (#547)
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEX_DESCRIPTION_MODE"))) {
+	case "full":
+		mode = DescModeFull
 	case "terse":
-		return DescModeTerse
+		mode = DescModeTerse
 	case "lazy":
-		return DescModeLazy
-	default:
+		mode = DescModeLazy
+	}
+	if mode != DescModeFull && toolSearchActive() {
 		return DescModeFull
+	}
+	return mode
+}
+
+// toolSearchActive reports whether ENABLE_TOOL_SEARCH is truthy. Tool-search /
+// tool_reference forwarding needs full tool docs for selection quality, so it
+// clamps any compacted description mode back to full. Mirrors envBool(_, false).
+func toolSearchActive() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ENABLE_TOOL_SEARCH"))) {
+	case "1", "on", "true", "yes":
+		return true
+	default:
+		return false
 	}
 }
 

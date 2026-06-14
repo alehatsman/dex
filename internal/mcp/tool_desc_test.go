@@ -67,14 +67,42 @@ func TestDescriptionModeFromEnv(t *testing.T) {
 		{"terse", DescModeTerse},
 		{"lazy", DescModeLazy},
 		{"TERSE", DescModeTerse},
-		{"", DescModeFull},
-		{"unknown", DescModeFull},
+		{"", DescModeTerse},        // default is terse (#547)
+		{"unknown", DescModeTerse}, // unrecognized falls back to the default
 	}
 	for _, c := range cases {
+		t.Setenv("ENABLE_TOOL_SEARCH", "") // isolate from host env
 		t.Setenv("DEX_DESCRIPTION_MODE", c.env)
 		got := descriptionModeFromEnv()
 		if got != c.want {
 			t.Errorf("env=%q: got %v, want %v", c.env, got, c.want)
 		}
+	}
+}
+
+// TestDescriptionModeToolSearchClamp verifies ENABLE_TOOL_SEARCH forces full
+// descriptions, since tool-search forwarding relies on full docs for selection.
+func TestDescriptionModeToolSearchClamp(t *testing.T) {
+	cases := []struct {
+		desc     string
+		descMode string
+		toolSrch string
+		want     DescriptionMode
+	}{
+		{"default clamped to full", "", "true", DescModeFull},
+		{"terse clamped to full", "terse", "1", DescModeFull},
+		{"lazy clamped to full", "lazy", "yes", DescModeFull},
+		{"explicit full stays full", "full", "true", DescModeFull},
+		{"terse honored when off", "terse", "false", DescModeTerse},
+		{"terse honored when unset", "terse", "", DescModeTerse},
+	}
+	for _, c := range cases {
+		t.Run(c.desc, func(t *testing.T) {
+			t.Setenv("DEX_DESCRIPTION_MODE", c.descMode)
+			t.Setenv("ENABLE_TOOL_SEARCH", c.toolSrch)
+			if got := descriptionModeFromEnv(); got != c.want {
+				t.Errorf("descMode=%q toolSearch=%q: got %v, want %v", c.descMode, c.toolSrch, got, c.want)
+			}
+		})
 	}
 }
