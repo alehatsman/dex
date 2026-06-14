@@ -273,8 +273,8 @@ func TestEnrichGraphCaps(t *testing.T) {
 		}
 		out := &ContextOutput{}
 		enrichGraph(out, retrieve.IntentArchitecture, view, []SemHit{{Path: "bigpkg/bigpkg.go"}}, nil)
-		if got := len(out.Graph.Nodes); got > maxGraphNodes {
-			t.Errorf("got %d nodes, want ≤ %d", got, maxGraphNodes)
+		if got := len(out.Graph.Nodes); got > retrieve.MaxGraphNodes {
+			t.Errorf("got %d nodes, want ≤ %d", got, retrieve.MaxGraphNodes)
 		}
 		if len(out.Graph.Nodes) == 0 {
 			t.Error("expected some nodes from package rollup")
@@ -308,8 +308,8 @@ func TestEnrichGraphCaps(t *testing.T) {
 		}
 		out := &ContextOutput{}
 		enrichGraph(out, retrieve.IntentPackageTopology, view, []SemHit{{Path: "src/src.go"}}, nil)
-		if got := len(out.Graph.Edges); got > maxGraphEdges {
-			t.Errorf("got %d edges, want ≤ %d", got, maxGraphEdges)
+		if got := len(out.Graph.Edges); got > retrieve.MaxGraphEdges {
+			t.Errorf("got %d edges, want ≤ %d", got, retrieve.MaxGraphEdges)
 		}
 		if len(out.Graph.Edges) == 0 {
 			t.Error("expected some edges from imports rollup")
@@ -347,7 +347,7 @@ func TestArchitectureAnchorsOnPageRank(t *testing.T) {
 	for _, s := range specs {
 		pkgNode := graphquery.Node{
 			ID: s.path + "::pkg", Kind: graph.NodePackage,
-			Name: pkgTail(s.path), PackagePath: s.path,
+			Name: retrieve.PkgTail(s.path), PackagePath: s.path,
 			FilePath: s.file, PageRank: s.pr,
 		}
 		view.NodesByID[pkgNode.ID] = pkgNode
@@ -1374,7 +1374,7 @@ func TestCompactID(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := compactID(tc.n); got != tc.want {
+			if got := retrieve.CompactID(tc.n); got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
