@@ -474,6 +474,145 @@
           "f1": 0
         }
       ]
+    },
+    {
+      "repo": "guava",
+      "lang": "java",
+      "set": "guava-java",
+      "probes": 6,
+      "unresolved": 0,
+      "macro_precision": 1,
+      "macro_recall": 0.9166666666666666,
+      "macro_f1": 0.9444444444444443,
+      "results": [
+        {
+          "probe": {
+            "symbol": "Strings.commonPrefix(CharSequence,CharSequence)",
+            "package": "com.google.common.base",
+            "direction": "callees",
+            "expected": [
+              "com.google.common.base.Preconditions.checkNotNull(T)",
+              "com.google.common.base.Strings.validSurrogatePairAt(CharSequence,int)"
+            ]
+          },
+          "got": [
+            "com.google.common.base.Preconditions.checkNotNull(T)",
+            "com.google.common.base.Strings.validSurrogatePairAt(CharSequence,int)"
+          ],
+          "resolved": true,
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "Strings.commonSuffix(CharSequence,CharSequence)",
+            "package": "com.google.common.base",
+            "direction": "callees",
+            "expected": [
+              "com.google.common.base.Preconditions.checkNotNull(T)",
+              "com.google.common.base.Strings.validSurrogatePairAt(CharSequence,int)"
+            ]
+          },
+          "got": [
+            "com.google.common.base.Preconditions.checkNotNull(T)",
+            "com.google.common.base.Strings.validSurrogatePairAt(CharSequence,int)"
+          ],
+          "resolved": true,
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "Strings.lenientFormat(String)",
+            "package": "com.google.common.base",
+            "direction": "callees",
+            "expected": [
+              "com.google.common.base.Strings.lenientToString(Object)"
+            ]
+          },
+          "got": [
+            "com.google.common.base.Strings.lenientToString(Object)"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "Absent.or(Supplier\u003c? extends T\u003e)",
+            "package": "com.google.common.base",
+            "direction": "callees",
+            "expected": [
+              "com.google.common.base.Preconditions.checkNotNull(T)",
+              "com.google.common.base.Supplier.get()"
+            ]
+          },
+          "got": [
+            "com.google.common.base.Preconditions.checkNotNull(T)"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1,
+          "recall": 0.5,
+          "f1": 0.6666666666666666
+        },
+        {
+          "probe": {
+            "symbol": "Strings.validSurrogatePairAt(CharSequence,int)",
+            "package": "com.google.common.base",
+            "direction": "callers",
+            "expected": [
+              "com.google.common.base.Strings.commonPrefix(CharSequence,CharSequence)",
+              "com.google.common.base.Strings.commonSuffix(CharSequence,CharSequence)"
+            ]
+          },
+          "got": [
+            "com.google.common.base.Strings.commonPrefix(CharSequence,CharSequence)",
+            "com.google.common.base.Strings.commonSuffix(CharSequence,CharSequence)"
+          ],
+          "resolved": true,
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "Strings.lenientToString(Object)",
+            "package": "com.google.common.base",
+            "direction": "callers",
+            "expected": [
+              "com.google.common.base.Strings.lenientFormat(String)"
+            ]
+          },
+          "got": [
+            "com.google.common.base.Strings.lenientFormat(String)"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        }
+      ]
     }
   ]
 }

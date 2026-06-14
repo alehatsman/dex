@@ -112,6 +112,7 @@ repos:
     # to this subdir (#285).
     index_subdir: guava/src/com/google/common
     query_sets: [queries/guava.json]
+    trace_sets: [../trace/guava-java.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }

@@ -1,0 +1,60 @@
+{
+  "repo": "guava",
+  "lang": "java",
+  "commit": "5c71d2a15435399fa62508d807d5cc83506f7496",
+  "note": "Hand-verified callers/callees of stable methods in com.google.common.base.{Strings,Absent}, read directly from source (not echoed from the graph). Indexed against the corpus index_subdir (guava/src/com/google/common), so package paths are subdir-rooted dotted names (com.google.common.base) — '.'-separated, no '/', so trace.peerKey keeps the full dotted path, e.g. com.google.common.base.Strings.validSurrogatePairAt(CharSequence,int). Java node names are OVERLOAD-AWARE full signatures; probes deliberately target single-overload-match edges to avoid labeling artifacts (the name-resolution extractor collapses a multi-arg checkArgument(...) call onto one representative overload node, checkArgument(boolean) — so overloaded targets are excluded from gold, NOT scored as misses). Scope = INTRA-REPO call targets only: JDK/std calls (StringBuilder, Math.min, String.*) have no graph node and are excluded. The cross-language signal probe is Absent.or(Supplier): it calls supplier.get() on a Supplier param — interface/instance dispatch on a typed local that the name-resolution extractor drops (Supplier.get() has zero resolved callers graph-wide), exactly what go/types resolves and #468 aims to recover. Guava's static-utility style otherwise resolves well (static-import + same-class calls), so recall is high like flask. Scored via: dex bench trace run --project <guava>/guava/src/com/google/common --gold benchmark/trace/guava-java.json",
+  "probes": [
+    {
+      "symbol": "Strings.commonPrefix(CharSequence,CharSequence)",
+      "package": "com.google.common.base",
+      "direction": "callees",
+      "expected": [
+        "com.google.common.base.Preconditions.checkNotNull(T)",
+        "com.google.common.base.Strings.validSurrogatePairAt(CharSequence,int)"
+      ]
+    },
+    {
+      "symbol": "Strings.commonSuffix(CharSequence,CharSequence)",
+      "package": "com.google.common.base",
+      "direction": "callees",
+      "expected": [
+        "com.google.common.base.Preconditions.checkNotNull(T)",
+        "com.google.common.base.Strings.validSurrogatePairAt(CharSequence,int)"
+      ]
+    },
+    {
+      "symbol": "Strings.lenientFormat(String)",
+      "package": "com.google.common.base",
+      "direction": "callees",
+      "expected": [
+        "com.google.common.base.Strings.lenientToString(Object)"
+      ]
+    },
+    {
+      "symbol": "Absent.or(Supplier<? extends T>)",
+      "package": "com.google.common.base",
+      "direction": "callees",
+      "expected": [
+        "com.google.common.base.Preconditions.checkNotNull(T)",
+        "com.google.common.base.Supplier.get()"
+      ]
+    },
+    {
+      "symbol": "Strings.validSurrogatePairAt(CharSequence,int)",
+      "package": "com.google.common.base",
+      "direction": "callers",
+      "expected": [
+        "com.google.common.base.Strings.commonPrefix(CharSequence,CharSequence)",
+        "com.google.common.base.Strings.commonSuffix(CharSequence,CharSequence)"
+      ]
+    },
+    {
+      "symbol": "Strings.lenientToString(Object)",
+      "package": "com.google.common.base",
+      "direction": "callers",
+      "expected": [
+        "com.google.common.base.Strings.lenientFormat(String)"
+      ]
+    }
+  ]
+}
