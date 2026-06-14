@@ -27,6 +27,19 @@ func validIntent(s string) bool {
 	return false
 }
 
+// validExpandMode accepts the query-side expansion levels (#252). The empty
+// string is valid and defers to the server default (DEX_EXPAND_MODE), matching
+// the MCP `ask` tool's expand field. Normalisation mirrors
+// retrieve.ResolveExpandMode (trim + case-fold) so `--expand=FULL` and
+// `--expand=" on "` resolve the same on the CLI as over MCP.
+func validExpandMode(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "on", "full":
+		return true
+	}
+	return false
+}
+
 // boolFlag duck-types the stdlib's unexported flag.boolFlag interface so
 // reorderFlags can tell standalone boolean flags (`-v`) from flags that
 // consume a value as the next token (`--rerank off`).

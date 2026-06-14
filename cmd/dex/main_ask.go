@@ -30,12 +30,16 @@ func cmdAsk(ctx context.Context, args []string) error {
 	format := fs.String("format", "text", "output format: text | json")
 	noInline := fs.Bool("no-inline", false, "skip inlining raw file contents into suggested_reads (stored chunk/file summaries are still emitted; use --format=json to inspect)")
 	maxContentBytes := fs.Int("max-content-bytes", 0, "truncate content display at N bytes (0 = no limit; applies to text output only)")
+	expand := fs.String("expand", "", "query-side expansion (#252): off|on|full (empty defers to DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL; otherwise a no-op.")
 	verbose := fs.Bool("v", false, "verbose: show wall-clock timing")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
 	if !validIntent(*intent) {
 		return fmt.Errorf("invalid --intent=%q (want one of: auto, behavior_search, symbol_lookup, callers, callees, architecture, package_topology, editing_context)", *intent)
+	}
+	if !validExpandMode(*expand) {
+		return fmt.Errorf("invalid --expand=%q (want off|on|full, or empty to use DEX_EXPAND_MODE)", *expand)
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) == 0 {
@@ -63,6 +67,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 		Intent:      *intent,
 		K:           *k,
 		NoInline:    *noInline,
+		Expand:      *expand,
 	})
 	elapsed := time.Since(t0)
 	if err != nil {
