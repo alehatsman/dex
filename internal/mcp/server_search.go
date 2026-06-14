@@ -106,7 +106,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 
-	k, candidateK := clampSearchK(in, p.Root)
+	k, candidateK, kHint := clampSearchK(in, p.Root)
 
 	em := s.EmbedClient
 	vecs, err := em.Embed(ctx, []string{in.Query})
@@ -254,7 +254,23 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			out.Hint += " " + ann
 		}
 	}
+	// Surface any k override last so it leads the hint and survives the
+	// branch-specific hint assignments above (#543).
+	out.Hint = prependHint(out.Hint, kHint)
 	return nil, out, nil
+}
+
+// prependHint puts lead in front of an existing hint (space-joined), returning
+// whichever is non-empty when one side is blank.
+func prependHint(existing, lead string) string {
+	switch {
+	case lead == "":
+		return existing
+	case existing == "":
+		return lead
+	default:
+		return lead + " " + existing
+	}
 }
 
 // collectSymbolHits runs FindSymbol for each identifier and returns a
@@ -421,10 +437,14 @@ func matchGlob(pattern, path string) bool {
 // filterHits applies optional language (by extension) and path_glob filters,
 // then trims to at most limit results. When exts and glob are both empty
 // the slice is trimmed to limit unchanged.
-// clampSearchK returns the effective k and candidateK from the search input.
+// clampSearchK returns the effective k and candidateK from the search input,
+// plus a kHint when the caller's explicit k was overridden so the adjustment
+// isn't silent (parity with the CLI's strict validation, #523/#543). An
+// omitted k (0) defaults silently; a negative k is reported as invalid; a k
+// that is capped (over the max 30 or a profile budget) is reported as capped.
 // candidateK is inflated when language or path filters are active so post-filter
 // trimming still returns k results.
-func clampSearchK(in SearchInput, projectRoot string) (k, candidateK int) {
+func clampSearchK(in SearchInput, projectRoot string) (k, candidateK int, kHint string) {
 	k = in.K
 	if k <= 0 {
 		k = 8
@@ -434,6 +454,12 @@ func clampSearchK(in SearchInput, projectRoot string) (k, candidateK int) {
 	}
 	if prof := profiles.Active(projectRoot); prof.Budget.MaxFiles > 0 && k > prof.Budget.MaxFiles {
 		k = prof.Budget.MaxFiles
+	}
+	switch {
+	case in.K < 0:
+		kHint = fmt.Sprintf("requested k=%d is invalid; using k=%d", in.K, k)
+	case in.K > 0 && k != in.K:
+		kHint = fmt.Sprintf("requested k=%d capped to k=%d (max 30)", in.K, k)
 	}
 	candidateK = k
 	if len(in.Languages) > 0 || in.PathGlob != "" {
@@ -445,7 +471,7 @@ func clampSearchK(in SearchInput, projectRoot string) (k, candidateK int) {
 			candidateK = 500
 		}
 	}
-	return k, candidateK
+	return k, candidateK, kHint
 }
 
 // applyMultiScaleFilter restricts hits to the structurally-relevant files for
