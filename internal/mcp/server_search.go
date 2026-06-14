@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -178,7 +179,12 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 
 	// Apply language and path_glob filters post-ranking, then trim to k.
 	exts := langToExtensions(in.Languages)
+	preFilterHits := hits
 	hits = filterHits(hits, exts, in.PathGlob, k)
+	// A filter that drops every ranked hit yields an empty result that looks
+	// identical to "the query matched nothing" — a typo'd language or glob is
+	// then indistinguishable from a real miss. Flag it (issue #512).
+	filteredToEmpty := len(hits) == 0 && len(preFilterHits) > 0 && (len(exts) > 0 || in.PathGlob != "")
 
 	// Loop detection: block/reduce/hint before building the response.
 	ldLevel, ldHint := s.ld().Check("find", throttle.ArgsKey(in.Query), true)
@@ -217,6 +223,13 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	if ldLevel == throttle.Reduce && len(out.Hits) > 5 {
 		out.Hits = out.Hits[:5]
 		out.Hint = ldHint + " [reduced: showing top 5]"
+	}
+
+	// When a language/path_glob filter is what emptied the result, the
+	// diagnostic takes precedence over softer nudges: it tells the caller
+	// the query did match, the filter just rejected everything (issue #512).
+	if filteredToEmpty && len(out.Hits) == 0 {
+		out.Hint = filterMissHint(in.Languages, exts, in.PathGlob, preFilterHits)
 	}
 
 	// Stamp expansion handles on the final hit set (#344) — after truncation
@@ -481,4 +494,46 @@ func filterHits(hits []store.Hit, exts []string, glob string, limit int) []store
 		}
 	}
 	return out
+}
+
+// filterMissHint explains why a language/path_glob filter produced no
+// results when the unfiltered ranking did have hits. It reports the
+// extensions actually present among the ranked hits so the caller can tell
+// a typo'd filter from a genuine miss (issue #512).
+func filterMissHint(langs, exts []string, glob string, preFilter []store.Hit) string {
+	present := make(map[string]bool)
+	for _, h := range preFilter {
+		if ext := strings.TrimPrefix(filepath.Ext(h.Path), "."); ext != "" {
+			present[ext] = true
+		}
+	}
+	availy := make([]string, 0, len(present))
+	for e := range present {
+		availy = append(availy, e)
+	}
+	sort.Strings(availy)
+
+	var parts []string
+	if len(exts) > 0 {
+		var missing []string
+		for _, e := range exts {
+			if !present[e] {
+				missing = append(missing, e)
+			}
+		}
+		if len(missing) > 0 {
+			parts = append(parts, fmt.Sprintf("languages filter %v matched none of the ranked hits (extensions present: %s)",
+				langs, strings.Join(availy, ", ")))
+		} else {
+			parts = append(parts, fmt.Sprintf("languages filter %v matched none of the ranked hits", langs))
+		}
+	}
+	if glob != "" {
+		parts = append(parts, fmt.Sprintf("path_glob %q matched none of the ranked hits", glob))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "; ") +
+		fmt.Sprintf(" — %d unfiltered hit(s) were dropped; relax or remove the filter.", len(preFilter))
 }
