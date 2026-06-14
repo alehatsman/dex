@@ -1,13 +1,13 @@
 package graph
 
 // Shared infrastructure for query-driven ("tags") graph extractors. A
-// tags extractor replaces a hand-rolled recursive descent with a single
+// tags extractor drives discovery from a single
 // tree-sitter query that enumerates every definition / call / import in
 // the file; scope (method-of-class, caller-of-call, nesting) is then
 // recovered by walking each matched node's ancestors. The per-language
 // resolution layer (import table / symbol table / resolveCall / Finalize)
 // is reused verbatim — tags-queries are name-resolved discovery only, so
-// the graph (and trace score) is identical to the walker's.
+// the graph is a pure function of the discovered definitions.
 //
 // This file holds the language-agnostic primitives: the query runner and
 // the ancestor-walk helpers used to reconstruct scope. Each language ships
@@ -40,7 +40,7 @@ func runTagsQuery(q *sitter.Query, root *sitter.Node, onCapture func(capture str
 }
 
 // hasAncestorOfType reports whether any ancestor of n has one of the given
-// node types. Used to reject definitions/calls the recursive walker would
+// node types. Used to reject definitions/calls a scope boundary would
 // never have reached (e.g. a def nested inside another function).
 func hasAncestorOfType(n *sitter.Node, types ...string) bool {
 	return firstAncestorOfType(n, types...) != nil

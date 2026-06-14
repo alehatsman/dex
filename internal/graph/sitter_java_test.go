@@ -13,7 +13,7 @@ import (
 func TestJavaExtractorFixture(t *testing.T) {
 	root := copyFixture(t, "java_simple")
 	reg := NewRegistry()
-	reg.Register(newJavaExtractor)
+	reg.Register(newJavaTagsExtractor)
 
 	res, err := ExtractSitterWith(context.Background(), root, reg)
 	if err != nil {

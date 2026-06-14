@@ -45,11 +45,9 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 )
 
-func newRustExtractor() Extractor { return newRustExtractorImpl() }
-
-// newRustExtractorImpl returns the concrete walker. The tags extractor
-// embeds it to reuse Init / Finalize / addFunction / addType / resolveCall
-// and the emit helpers.
+// newRustExtractorImpl returns the concrete resolver/emit base that the
+// tags extractor embeds to reuse Init / Finalize / addFunction / addType /
+// resolveCall and the emit helpers.
 func newRustExtractorImpl() *rustExtractor {
 	return &rustExtractor{
 		nodeIDs:     map[string]struct{}{},
@@ -122,19 +120,6 @@ func (e *rustExtractor) Init(_ context.Context, root string) error {
 	return nil
 }
 
-func (e *rustExtractor) ProcessFile(_ context.Context, in FileInput) error {
-	pkg := rustPackagePath(in.RelPath)
-	fileID := e.emitScaffold(in, pkg)
-
-	imports := &rustImportTable{fromImports: map[string]rustImport{}}
-	e.fileImports[in.RelPath] = imports
-
-	for i := 0; i < int(in.Root.NamedChildCount()); i++ {
-		e.processTopLevel(in.Root.NamedChild(i), in.Source, in.RelPath, pkg, fileID, imports)
-	}
-	return nil
-}
-
 // emitScaffold emits the package and file nodes and the package→file
 // contains edge, returning the file node ID. Shared with the tags extractor.
 func (e *rustExtractor) emitScaffold(in FileInput, pkg string) string {
@@ -189,36 +174,6 @@ func (e *rustExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, e
 		})
 	}
 	return e.nodes, e.edges, e.warnings, nil
-}
-
-// ---- top-level processing --------------------------------------------------
-
-func (e *rustExtractor) processTopLevel(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string, imports *rustImportTable,
-) {
-	if n == nil {
-		return
-	}
-	switch n.Type() {
-	case "function_item":
-		e.addFunction(n, src, filePath, pkg, fileID, "")
-	case "struct_item", "enum_item":
-		e.addType(n, src, filePath, pkg, fileID, NodeClass)
-	case "trait_item":
-		e.addTrait(n, src, filePath, pkg, fileID)
-	case "impl_item":
-		e.addImpl(n, src, filePath, pkg, fileID)
-	case "use_declaration":
-		e.parseUseDecl(n, src, filePath, pkg, fileID, imports)
-	case "mod_item":
-		// Inline submodule `mod foo { ... }` — first-cut skips. The
-		// declaration form `mod foo;` does emit an import edge so
-		// graph_deps still sees the dependency.
-		if n.ChildByFieldName("body") == nil {
-			e.emitModDecl(n, src, filePath, pkg, fileID)
-		}
-	}
 }
 
 // addFunction registers a top-level fn or a method inside an impl.
@@ -384,64 +339,11 @@ func (e *rustExtractor) emitTraitNode(
 	return name
 }
 
-// addTrait: NodeInterface so consumers can distinguish from
-// struct/enum. Trait methods are walked just like an impl's methods
-// but tagged on_interface in metadata.
-func (e *rustExtractor) addTrait(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	name := e.emitTraitNode(n, src, filePath, pkg, fileID)
-	if name == "" {
-		return
-	}
-
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil || child.Type() != "function_item" {
-			continue
-		}
-		// Methods inside a trait are signatures; some have bodies
-		// (default impls), some don't. addFunction handles both:
-		// it'll walk the body when present and skip when absent.
-		e.addFunction(child, src, filePath, pkg, fileID, name)
-	}
-}
-
-// addImpl walks an impl_item — extract receiver type name, then emit
-// each function_item child as a method on that type. The trait form
-// `impl Trait for Type` also emits an implements edge.
-func (e *rustExtractor) addImpl(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	receiverType := e.emitImplEdge(n, src, pkg)
-	if receiverType == "" {
-		return
-	}
-
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil || child.Type() != "function_item" {
-			continue
-		}
-		e.addFunction(child, src, filePath, pkg, fileID, receiverType)
-	}
-}
-
 // emitImplEdge resolves an impl's receiver type and, for the
 // `impl Trait for Type` form, emits the implements edge. It emits no
 // member nodes — the impl itself is not a graph node. Returns the
 // receiver type name, or "" if it cannot be resolved (in which case the
-// walker skips the impl's members entirely).
+// impl's members are skipped entirely).
 func (e *rustExtractor) emitImplEdge(n *sitter.Node, src []byte, pkg string) string {
 	typeNode := n.ChildByFieldName("type")
 	if typeNode == nil {

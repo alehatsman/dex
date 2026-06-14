@@ -27,12 +27,9 @@ import (
 	"github.com/smacker/go-tree-sitter/python"
 )
 
-// newPythonExtractor returns a fresh extractor instance. The framework
-// builds one per Run so accumulator state is isolated.
-func newPythonExtractor() Extractor { return newPythonExtractorImpl() }
-
-// newPythonExtractorImpl returns the concrete walker so the query-driven
-// tags front-end can embed it without a type assertion.
+// newPythonExtractorImpl returns the concrete resolver/emit base that the
+// query-driven tags front-end embeds. The framework builds one per Run so
+// accumulator state is isolated.
 func newPythonExtractorImpl() *pythonExtractor {
 	return &pythonExtractor{
 		nodeIDs:     map[string]struct{}{},
@@ -132,24 +129,9 @@ func (e *pythonExtractor) Init(_ context.Context, root string) error {
 	return nil
 }
 
-func (e *pythonExtractor) ProcessFile(_ context.Context, in FileInput) error {
-	pkg, fileID, imports := e.emitFileScaffold(in)
-
-	// Walk only the module's *named* top-level children. Comments and
-	// whitespace come through as anonymous nodes that we don't want
-	// to descend into.
-	root := in.Root
-	for i := 0; i < int(root.NamedChildCount()); i++ {
-		child := root.NamedChild(i)
-		e.processTopLevel(child, in.Source, in.RelPath, pkg, fileID, imports)
-	}
-	return nil
-}
-
 // emitFileScaffold emits the package + file nodes and the package→file
 // contains edge, and registers an empty import table for the file. It is
-// the shared per-file setup used by both the recursive walker
-// (ProcessFile) and the query-driven tags path.
+// the shared per-file setup for the query-driven tags path.
 func (e *pythonExtractor) emitFileScaffold(in FileInput) (pkg, fileID string, imports *pyImportTable) {
 	pkg = pythonPackagePath(in.RelPath)
 
@@ -218,64 +200,10 @@ func (e *pythonExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string,
 
 // ---- top-level processing --------------------------------------------------
 
-// processTopLevel handles one direct child of the module root. The
-// child is either a definition (function/class/decorated), an import
-// statement, or something we don't care about (assignment, if-block,
-// docstring expression). Imports are recorded into table; defs add
-// nodes/edges and recurse for nested defs + call sites inside their
-// bodies.
-func (e *pythonExtractor) processTopLevel(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string, imports *pyImportTable,
-) {
-	if n == nil {
-		return
-	}
-	kind := n.Type()
-	// decorated_definition wraps a function or class; unwrap once.
-	if kind == "decorated_definition" {
-		inner := n.ChildByFieldName("definition")
-		if inner != nil {
-			e.processTopLevel(inner, src, filePath, pkg, fileID, imports)
-		}
-		return
-	}
-	switch kind {
-	case "function_definition":
-		e.addFunction(n, src, filePath, pkg, fileID, "")
-	case "class_definition":
-		e.addClass(n, src, filePath, pkg, fileID)
-	case "import_statement":
-		e.parseImport(n, src, filePath, pkg, fileID, imports)
-	case "import_from_statement":
-		e.parseImportFrom(n, src, filePath, pkg, fileID, imports)
-	}
-}
-
-// addFunction registers a top-level function OR a class method. When
-// className is non-empty, the function is a method on that class and
-// has_method + class containment edges are also emitted.
-func (e *pythonExtractor) addFunction(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID, className string,
-) {
-	id := e.emitFunctionNode(n, src, filePath, pkg, fileID, className)
-	if id == "" {
-		return
-	}
-	// Collect call sites inside the body. The walker descends only
-	// into expressions, not into nested function defs, so a `def f()`
-	// inside `def g()` doesn't attribute its inner calls to g.
-	body := n.ChildByFieldName("body")
-	if body != nil {
-		e.collectCalls(body, src, id, pkg, className, filePath)
-	}
-}
-
 // emitFunctionNode emits the node/symbol/edge surface for a function or
 // method (file→contains; class→has_method when className is set) WITHOUT
 // descending into the body. It is the shared emission step used by both
-// the recursive walker (addFunction) and the query-driven tags path.
+// the query-driven tags path's function and method emission.
 // Returns the node ID, or "" when the def has no usable name.
 func (e *pythonExtractor) emitFunctionNode(
 	n *sitter.Node, src []byte,
@@ -349,48 +277,9 @@ func (e *pythonExtractor) emitFunctionNode(
 	return id
 }
 
-// addClass emits a class node + recurses into the body to pick up
-// methods. Nested classes are processed recursively as top-level
-// (their QN does not include the outer class — first cut).
-func (e *pythonExtractor) addClass(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	if e.emitClassNode(n, src, filePath, pkg, fileID) == "" {
-		return
-	}
-	name := nodeText(n.ChildByFieldName("name"), src)
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil {
-			continue
-		}
-		kind := child.Type()
-		if kind == "decorated_definition" {
-			inner := child.ChildByFieldName("definition")
-			if inner != nil {
-				child = inner
-				kind = inner.Type()
-			}
-		}
-		switch kind {
-		case "function_definition":
-			e.addFunction(child, src, filePath, pkg, fileID, name)
-		case "class_definition":
-			// Nested class — emit as a top-level class. Python allows
-			// it; the QN-without-outer is a first-cut simplification.
-			e.addClass(child, src, filePath, pkg, fileID)
-		}
-	}
-}
-
 // emitClassNode emits the class node, its symbol-table entry, and the
 // file→contains edge WITHOUT descending into the class body. Shared by
-// the recursive walker (addClass) and the query-driven tags path.
+// the query-driven tags path's class emission.
 // Returns the node ID, or "" when the class has no usable name.
 func (e *pythonExtractor) emitClassNode(
 	n *sitter.Node, src []byte,
@@ -658,45 +547,6 @@ func resolveImportModule(n *sitter.Node, src []byte, relativeBase string) string
 }
 
 // ---- call collection + resolution ------------------------------------------
-
-// collectCalls walks `body` and accumulates every `call` node into
-// pendingCalls. The walker stops at nested function/class definitions
-// (we don't attribute their inner calls to the enclosing function;
-// they get processed as their own nodes).
-func (e *pythonExtractor) collectCalls(
-	body *sitter.Node, src []byte,
-	callerID, callerPkg, callerCls, filePath string,
-) {
-	var walk func(*sitter.Node)
-	walk = func(n *sitter.Node) {
-		if n == nil {
-			return
-		}
-		switch n.Type() {
-		case "function_definition", "class_definition", "lambda":
-			return
-		case "call":
-			fn := n.ChildByFieldName("function")
-			if fn != nil {
-				expr := classifyCallee(fn, src)
-				if expr.kind != "skip" {
-					e.pendingCalls = append(e.pendingCalls, pyPendingCall{
-						callerID:   callerID,
-						callerPkg:  callerPkg,
-						callerCls:  callerCls,
-						calleeExpr: expr,
-						filePath:   filePath,
-						line:       lineOfPoint(n.StartPoint().Row),
-					})
-				}
-			}
-		}
-		for i := 0; i < int(n.NamedChildCount()); i++ {
-			walk(n.NamedChild(i))
-		}
-	}
-	walk(body)
-}
 
 // classifyCallee turns a tree-sitter `function` field into a
 // resolvable shape. Anything we can't normalize to identifier or

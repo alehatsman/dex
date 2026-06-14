@@ -55,10 +55,12 @@ func TestExtractSitterSkipsOversizedFiles(t *testing.T) {
 }
 
 // TestExtractSitterDeepNestingDoesNotOverflow feeds a Java method whose body
-// nests deeper than maxASTWalkDepth. Extraction must complete without a stack
-// overflow and still surface the enclosing method (#443).
+// nests thousands of levels deep. The query-driven extractor recovers scope
+// with iterative ancestor walks (no recursive descent), so extraction must
+// complete without a stack overflow and still surface the enclosing
+// method (#443).
 func TestExtractSitterDeepNestingDoesNotOverflow(t *testing.T) {
-	const depth = maxASTWalkDepth + 2000
+	const depth = 6000
 	expr := strings.Repeat("(", depth) + "1" + strings.Repeat(")", depth)
 	src := "package p;\nclass C {\n  int m() { return " + expr + "; }\n}\n"
 	if len(src) > maxParseFileSize {

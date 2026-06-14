@@ -14,7 +14,7 @@ import (
 func TestTSExtractorFixture(t *testing.T) {
 	root := copyFixture(t, "ts_simple")
 	reg := NewRegistry()
-	reg.Register(newTSExtractor)
+	reg.Register(newTSTagsExtractor)
 
 	res, err := ExtractSitterWith(context.Background(), root, reg)
 	if err != nil {

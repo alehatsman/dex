@@ -147,56 +147,21 @@ func (r *Registry) Extensions() []string {
 // DefaultExtractors returns the canonical set of language extractors.
 // Callers can pass a subset to NewRegistry for hermetic, single-language
 // extraction (useful in tests).
+//
+// Every tree-sitter language uses a query-driven (tags) extractor: one
+// tree-sitter query discovers the definitions / calls / imports, and a
+// per-language resolver (import table + resolveCall + Finalize) turns them
+// into the graph. The old recursive-descent walkers were retired in #498
+// once each tags extractor reached byte-identical whole-graph parity with
+// its walker (see benchmark/trace/baseline-corpus.json).
 func DefaultExtractors() []ExtractorFactory {
-	// DEX_GRAPH_TAGS selects the query-driven discovery front-end per
-	// language so it can be A/B'd against the walker. Default is
-	// unchanged (the hand-rolled walkers).
-	pyFactory := newPythonExtractor
-	if tagsLangEnabled("python") {
-		pyFactory = newPythonTagsExtractor
-	}
-	tsFactory := newTSExtractor
-	if tagsLangEnabled("typescript") {
-		tsFactory = newTSTagsExtractor
-	}
-	jsFactory := newJSExtractor
-	if tagsLangEnabled("javascript") {
-		jsFactory = newJSTagsExtractor
-	}
-	javaFactory := newJavaExtractor
-	if tagsLangEnabled("java") {
-		javaFactory = newJavaTagsExtractor
-	}
-	rustFactory := newRustExtractor
-	if tagsLangEnabled("rust") {
-		rustFactory = newRustTagsExtractor
-	}
 	return []ExtractorFactory{
-		pyFactory,
-		tsFactory,
-		jsFactory,
-		rustFactory,
-		javaFactory,
+		newPythonTagsExtractor,
+		newTSTagsExtractor,
+		newJSTagsExtractor,
+		newRustTagsExtractor,
+		newJavaTagsExtractor,
 	}
-}
-
-// tagsLangEnabled reports whether the query-driven (tags) extractor is
-// requested for lang via DEX_GRAPH_TAGS — a comma-separated list of
-// language names, or "1"/"all" for every supported language.
-func tagsLangEnabled(lang string) bool {
-	v := strings.TrimSpace(os.Getenv("DEX_GRAPH_TAGS"))
-	if v == "" {
-		return false
-	}
-	for _, tok := range strings.Split(v, ",") {
-		switch tok := strings.TrimSpace(tok); tok {
-		case "1", "all":
-			return true
-		case lang:
-			return true
-		}
-	}
-	return false
 }
 
 // DefaultRegistry is the package-level registry, lazily populated on
@@ -222,12 +187,6 @@ func initDefaultRegistry() {
 // parsing them spikes memory and drives the AST walk arbitrarily deep. Set
 // to match the index pass's default file cap (1 MB).
 const maxParseFileSize = 1 << 20
-
-// maxASTWalkDepth bounds how deep a recursive AST traversal will descend
-// before giving up on a subtree. It exists to stop adversarial/generated
-// nesting from overflowing the Go stack; honest source nests orders of
-// magnitude below it, so it never truncates real code (#443).
-const maxASTWalkDepth = 4000
 
 // ExtractSitter is the main entry point. Walks projectRoot with the
 // shared ignore matcher, parses each file matching a registered

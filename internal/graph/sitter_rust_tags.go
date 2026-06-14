@@ -9,21 +9,20 @@ import (
 )
 
 // Query-driven (tags) extractor for Rust. It replaces the recursive
-// descent of the rust walker with one tree-sitter query that enumerates
+// one tree-sitter query that enumerates
 // every item; scope is recovered by walking each match's ancestors. The
 // resolution layer (parseUseDecl / resolveCall / Finalize) and the emit
 // units (addFunction / addType, which include call collection) are reused
 // verbatim via an embedded *rustExtractor, so the graph is identical.
 //
-// The walker models only top-level items and does NOT descend into inline
-// modules (`mod foo { ... }`) — items inside them are invisible. The
-// ancestor walks below reproduce exactly that reachability:
+// Only top-level items are modelled, and inline modules
+// (`mod foo { ... }`) are NOT descended — items inside them are invisible.
+// The ancestor walks below enforce that reachability:
 //   - free functions      — function_item whose parent is the tree root
 //   - impl / trait methods — function_item in the declaration_list body of
 //     a TOP-LEVEL impl_item / trait_item (receiver = impl type / trait name)
 //   - struct / enum / trait / use / `mod foo;` — top-level only
-// Call attribution rides on addFunction's own collectCalls, so it is
-// byte-identical to the walker.
+// Call attribution rides on addFunction's own call collection.
 
 const rustTagsQuery = `
 (function_item) @function
@@ -45,7 +44,7 @@ func newRustTagsExtractor() Extractor {
 	return &rustTagsExtractor{rustExtractor: newRustExtractorImpl()}
 }
 
-func (e *rustTagsExtractor) Name() string               { return "rust-tags" }
+func (e *rustTagsExtractor) Name() string               { return "rust" }
 func (e *rustTagsExtractor) Language() *sitter.Language { return rust.GetLanguage() }
 func (e *rustTagsExtractor) Extensions() []string       { return []string{".rs"} }
 
@@ -135,7 +134,7 @@ func (e *rustTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 }
 
 // rustTopLevel reports whether n is a direct child of the tree root — the
-// definition of "top-level" the walker uses by iterating in.Root.NamedChild.
+// "top-level" = direct child of the tree root.
 func rustTopLevel(n *sitter.Node) bool {
 	return isTreeRoot(n.Parent())
 }
@@ -144,7 +143,7 @@ func rustTopLevel(n *sitter.Node) bool {
 // it is a graph node at all. A function is a node iff it is a free function
 // (direct child of the root) or a direct member of a TOP-LEVEL impl/trait
 // body. Functions nested in other functions, closures, or inline modules
-// are not nodes — exactly what the walker skips.
+// are not nodes.
 func (e *rustTagsExtractor) rustFnReceiver(fn *sitter.Node, src []byte) (string, bool) {
 	parent := fn.Parent()
 	if parent == nil {

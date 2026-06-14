@@ -31,22 +31,11 @@ package graph
 // Shared state and methods live in jstsBase (sitter_jsts.go).
 
 import (
-	"context"
-	"path"
 	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
-
-func newTSExtractor() Extractor {
-	return &tsExtractor{jstsBase: newJSTSBase("typescript")}
-}
-
-type tsExtractor struct {
-	jstsBase
-}
 
 // tsImportTable per-file: each local binding maps to either an
 // imported file (for `import * as X from './p'`) or a (file,
@@ -75,103 +64,6 @@ type tsPendingCall struct {
 	filePath   string
 	line       int
 }
-
-// ---- Extractor interface ---------------------------------------------------
-
-func (e *tsExtractor) Name() string               { return "typescript" }
-func (e *tsExtractor) Language() *sitter.Language { return typescript.GetLanguage() }
-func (e *tsExtractor) Extensions() []string       { return []string{".ts", ".tsx"} }
-
-func (e *tsExtractor) ProcessFile(_ context.Context, in FileInput) error {
-	pkg := tsPackagePath(in.RelPath)
-	e.knownFiles[pkg] = in.RelPath
-
-	pkgID := NodeID("", pkg, NodePackage, pkg)
-	e.addNode(Node{
-		ID:            pkgID,
-		Kind:          NodePackage,
-		Name:          path.Base(pkg),
-		QualifiedName: pkg,
-		PackagePath:   pkg,
-		Metadata:      map[string]any{"language": "typescript"},
-	})
-
-	fileID := NodeID("", pkg, NodeFile, in.RelPath)
-	e.addNode(Node{
-		ID:            fileID,
-		Kind:          NodeFile,
-		Name:          filepath.Base(in.RelPath),
-		QualifiedName: in.RelPath,
-		PackagePath:   pkg,
-		FilePath:      in.RelPath,
-		StartLine:     1,
-		EndLine:       lineOfPoint(in.Root.EndPoint().Row),
-		Metadata:      map[string]any{"language": "typescript"},
-	})
-	e.edges = append(e.edges, Edge{
-		ID:        EdgeID(pkgID, EdgeContains, fileID, in.RelPath, 1),
-		Kind:      EdgeContains,
-		SrcID:     pkgID,
-		DstID:     fileID,
-		FilePath:  in.RelPath,
-		StartLine: 1,
-		EndLine:   1,
-	})
-
-	imports := &tsImportTable{
-		modules:     map[string]string{},
-		fromImports: map[string]pyFromImport{},
-	}
-	e.fileImports[in.RelPath] = imports
-
-	for i := 0; i < int(in.Root.NamedChildCount()); i++ {
-		e.processTopLevel(in.Root.NamedChild(i), in.Source, in.RelPath, pkg, fileID, imports)
-	}
-	return nil
-}
-
-// ---- top-level processing --------------------------------------------------
-
-// processTopLevel handles one direct child of the module root.
-// export_statement is unwrapped to the underlying declaration so
-// `export function foo` and `function foo` produce the same node
-// shape; the export-ness is not currently tracked (consumers care
-// about the symbol's existence, not its visibility).
-func (e *tsExtractor) processTopLevel(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string, imports *tsImportTable,
-) {
-	if n == nil {
-		return
-	}
-	kind := n.Type()
-	if kind == "export_statement" {
-		// `export default ...` flows through the same path; the
-		// `default` identifier in the symbol table is what makes
-		// default-import resolution work.
-		if decl := n.ChildByFieldName("declaration"); decl != nil {
-			e.processTopLevel(decl, src, filePath, pkg, fileID, imports)
-			e.maybeMarkDefaultExport(decl, src, pkg)
-			return
-		}
-		// export { foo, bar } — re-exports; not modelled in first cut.
-		return
-	}
-	switch kind {
-	case "function_declaration":
-		e.addFunction(n, src, filePath, pkg, fileID, "")
-	case "class_declaration":
-		e.addClass(n, src, filePath, pkg, fileID)
-	case "interface_declaration":
-		e.addInterface(n, src, filePath, pkg, fileID)
-	case "lexical_declaration":
-		e.addLexicalDecl(n, src, filePath, pkg, fileID)
-	case "import_statement":
-		e.parseImportStatement(n, src, filePath, pkg, fileID, imports)
-	}
-}
-
-// ---- TS-specific declarations ---------------------------------------------
 
 // ---- helpers ---------------------------------------------------------------
 

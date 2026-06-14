@@ -12,7 +12,7 @@ import (
 func TestJSExtractorFixture(t *testing.T) {
 	root := copyFixture(t, "js_simple")
 	reg := NewRegistry()
-	reg.Register(newJSExtractor)
+	reg.Register(newJSTagsExtractor)
 
 	res, err := ExtractSitterWith(context.Background(), root, reg)
 	if err != nil {

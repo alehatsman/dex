@@ -19,7 +19,7 @@ import (
 func TestPythonExtractorFixture(t *testing.T) {
 	root := copyFixture(t, "python_simple")
 	reg := NewRegistry()
-	reg.Register(newPythonExtractor)
+	reg.Register(newPythonTagsExtractor)
 
 	res, err := ExtractSitterWith(context.Background(), root, reg)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestPythonExtractorFixture(t *testing.T) {
 func TestPythonRelativeImport(t *testing.T) {
 	root := copyFixture(t, "python_simple")
 	reg := NewRegistry()
-	reg.Register(newPythonExtractor)
+	reg.Register(newPythonTagsExtractor)
 
 	res, err := ExtractSitterWith(context.Background(), root, reg)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestPythonRelativeImportFromModule(t *testing.T) {
 	writeIndexAll(t, root)
 
 	reg := NewRegistry()
-	reg.Register(newPythonExtractor)
+	reg.Register(newPythonTagsExtractor)
 	res, err := ExtractSitterWith(context.Background(), root, reg)
 	if err != nil {
 		t.Fatalf("ExtractSitterWith: %v", err)

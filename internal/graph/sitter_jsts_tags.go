@@ -9,17 +9,14 @@ import (
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
-// Query-driven (tags) extractors for JavaScript and TypeScript. They
-// replace the recursive descent of the js/ts walkers with one tree-sitter
-// query that enumerates every definition / call / import; scope is
+// Query-driven (tags) extractors for JavaScript and TypeScript. One
+// tree-sitter query enumerates every definition / call / import; scope is
 // recovered by walking each match's ancestors. The resolution layer
-// (tsImportTable / resolveCall / Finalize, all on jstsBase) is reused
-// verbatim, so the graph is identical to the walker's.
+// (tsImportTable / resolveCall / Finalize, all on jstsBase) does the rest.
 //
 // The two languages share jstsBase and almost all logic; they differ only
 // in grammar, extensions, package-path rule, whether interfaces exist, and
-// whether `var` declarations bind arrow consts (js: yes, ts: no — matching
-// the walkers' processTopLevel).
+// whether `var` declarations bind arrow consts (js: yes, ts: no).
 
 const jsTagsQuery = `
 (function_declaration) @function
@@ -43,9 +40,10 @@ const tsTagsQuery = `
 (new_expression) @call
 `
 
-// jstsTagsExtractor is the query-driven counterpart to jsExtractor /
-// tsExtractor. It embeds jstsBase so Init / Finalize / resolveCall /
-// emit helpers / import parsing are inherited unchanged.
+// jstsTagsExtractor is the JavaScript / TypeScript graph extractor. It
+// embeds jstsBase — the resolver/emit base holding Init / Finalize /
+// resolveCall / the emit helpers / import parsing — and drives it from a
+// single tree-sitter query.
 type jstsTagsExtractor struct {
 	jstsBase
 	langName string
@@ -62,7 +60,7 @@ type jstsTagsExtractor struct {
 func newJSTagsExtractor() Extractor {
 	return &jstsTagsExtractor{
 		jstsBase:  newJSTSBase("javascript"),
-		langName:  "javascript-tags",
+		langName:  "javascript",
 		grammar:   javascript.GetLanguage(),
 		exts:      []string{".js", ".jsx"},
 		pkgPath:   jsPackagePath,
@@ -74,7 +72,7 @@ func newJSTagsExtractor() Extractor {
 func newTSTagsExtractor() Extractor {
 	return &jstsTagsExtractor{
 		jstsBase:  newJSTSBase("typescript"),
-		langName:  "typescript-tags",
+		langName:  "typescript",
 		grammar:   typescript.GetLanguage(),
 		exts:      []string{".ts", ".tsx"},
 		pkgPath:   tsPackagePath,
@@ -126,7 +124,7 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	})
 
 	// Imports — top-level only (direct program children), matching the
-	// walker's processTopLevel.
+	// top-level processing.
 	for _, n := range imps {
 		if !jstsDeclTopLevel(n) {
 			continue
@@ -135,7 +133,7 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	}
 
 	// Classes — reachable from the module through class/export nesting
-	// only (the walker descends module → class → class, never into
+	// only (module → class → class nesting, never into
 	// function bodies).
 	for _, n := range classes {
 		if !jstsClassReachable(n) {
@@ -181,20 +179,19 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		e.maybeMarkDefaultExport(n, in.Source, pkg)
 	}
 
-	// Calls — attributed to the enclosing node-function's body, mirroring
-	// collectCalls (stop at nested def/class; node-functions only; body
-	// subtree only).
+	// Calls — attributed to the enclosing node-function's body (stop at
+	// nested def/class; node-functions only; body subtree only).
 	for _, n := range calls {
 		e.collectQueryCall(n, in.Source, in.RelPath, pkg)
 	}
 	return nil
 }
 
-// collectQueryCall replicates collectCalls' attribution for a single call
+// collectQueryCall attributes a single call to its enclosing function
 // (call_expression / new_expression) discovered by the query.
 func (e *jstsTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePath, pkg string) {
 	// Nearest enclosing scope boundary. class_declaration is included so
-	// class-body field initializers (which the walker never collects) are
+	// class-body field initializers (which are never collected) are
 	// dropped, not attributed to an enclosing function.
 	boundary := firstAncestorOfType(n,
 		"function_declaration", "method_definition",
@@ -237,8 +234,8 @@ func (e *jstsTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePat
 }
 
 // jstsCallerInfo returns the node ID (and class, for methods) of a
-// function-like node IF it is a graph node — i.e. the walker would have
-// collected calls from its body. Returns ok=false otherwise.
+// function-like node IF it is a graph node whose body's calls are
+// collected. Returns ok=false otherwise.
 func (e *jstsTagsExtractor) jstsCallerInfo(fn *sitter.Node, src []byte, pkg string) (id, cls string, ok bool) {
 	switch fn.Type() {
 	case "function_declaration":
@@ -285,11 +282,10 @@ func (e *jstsTagsExtractor) jstsCallerInfo(fn *sitter.Node, src []byte, pkg stri
 // export_statement.
 //
 // "Top-level" is defined as "direct child of the root node", matching the
-// walker's processTopLevel, which iterates root.NamedChild. The root is
-// usually a program node, but on a malformed parse (e.g. a .tsx file run
-// through the non-JSX TypeScript grammar) the root is an ERROR node whose
-// children are the still-valid leading declarations; the walker captures
-// those, so the tags path must too.
+// "top-level" = direct child of the tree root. The root is usually a
+// program node, but on a malformed parse (e.g. a .tsx file run through the
+// non-JSX TypeScript grammar) the root is an ERROR node whose children are
+// the still-valid leading declarations; those are captured too.
 func jstsDeclTopLevel(n *sitter.Node) bool {
 	p := n.Parent()
 	if p == nil {
@@ -307,10 +303,10 @@ func isTreeRoot(n *sitter.Node) bool {
 	return n != nil && n.Parent() == nil
 }
 
-// jstsClassReachable reports whether the walker would have reached this
-// class: every ancestor up to the program must be a class/export/program
-// node (never a function, block, or statement). This mirrors addClass
-// recursing only module → class → nested class.
+// jstsClassReachable reports whether this class is reachable from the
+// module through class/export nesting only: every ancestor up to the
+// program must be a class/export/program node (never a function, block, or
+// statement) — i.e. module → class → nested class.
 func jstsClassReachable(classDecl *sitter.Node) bool {
 	for p := classDecl.Parent(); p != nil; p = p.Parent() {
 		switch p.Type() {
@@ -323,7 +319,7 @@ func jstsClassReachable(classDecl *sitter.Node) bool {
 		}
 	}
 	// Walked off the top through allowed nodes only (e.g. an ERROR root on
-	// a malformed parse) — the walker would have reached this class.
+	// a malformed parse) — the class is reachable.
 	return true
 }
 

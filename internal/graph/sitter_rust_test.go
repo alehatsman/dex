@@ -12,7 +12,7 @@ import (
 func TestRustExtractorFixture(t *testing.T) {
 	root := copyFixture(t, "rust_simple")
 	reg := NewRegistry()
-	reg.Register(newRustExtractor)
+	reg.Register(newRustTagsExtractor)
 
 	res, err := ExtractSitterWith(context.Background(), root, reg)
 	if err != nil {

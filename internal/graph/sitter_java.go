@@ -33,10 +33,9 @@ import (
 	"github.com/smacker/go-tree-sitter/java"
 )
 
-func newJavaExtractor() Extractor { return newJavaExtractorImpl() }
-
-// newJavaExtractorImpl returns the concrete walker. The tags extractor
-// embeds it to reuse Init / Finalize / resolveCall / the emit helpers.
+// newJavaExtractorImpl returns the concrete resolver/emit base that the
+// tags extractor embeds to reuse Init / Finalize / resolveCall / the emit
+// helpers.
 func newJavaExtractorImpl() *javaExtractor {
 	return &javaExtractor{
 		nodeIDs:     map[string]struct{}{},
@@ -113,26 +112,6 @@ func (e *javaExtractor) Init(_ context.Context, root string) error {
 	return nil
 }
 
-func (e *javaExtractor) ProcessFile(_ context.Context, in FileInput) error {
-	// First pass — find the package declaration. The declaration is
-	// always at the top of the file (Java grammar requires it), so a
-	// single-pass walk that visits package_declaration before any
-	// other top-level item is fine.
-	pkg := javaPackagePath(in.Root, in.Source, in.RelPath)
-	fileID := e.emitScaffold(in, pkg)
-
-	imports := &javaImportTable{
-		classes: map[string]javaClassImport{},
-		statics: map[string]javaStaticImport{},
-	}
-	e.fileImports[in.RelPath] = imports
-
-	for i := 0; i < int(in.Root.NamedChildCount()); i++ {
-		e.processTopLevel(in.Root.NamedChild(i), in.Source, in.RelPath, pkg, fileID, imports)
-	}
-	return nil
-}
-
 // emitScaffold emits the package and file nodes and the package→file
 // contains edge, returning the file node ID. Shared with the tags
 // extractor.
@@ -190,59 +169,6 @@ func (e *javaExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, e
 	return e.nodes, e.edges, e.warnings, nil
 }
 
-// ---- top-level processing --------------------------------------------------
-
-func (e *javaExtractor) processTopLevel(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string, imports *javaImportTable,
-) {
-	if n == nil {
-		return
-	}
-	switch n.Type() {
-	case "package_declaration":
-		// Already consumed by javaPackagePath; nothing else to do.
-	case "import_declaration":
-		e.parseImport(n, src, filePath, pkg, fileID, imports)
-	case "class_declaration", "record_declaration":
-		e.addClassLike(n, src, filePath, pkg, fileID, NodeClass)
-	case "interface_declaration":
-		e.addClassLike(n, src, filePath, pkg, fileID, NodeInterface)
-	case "enum_declaration":
-		e.addClassLike(n, src, filePath, pkg, fileID, NodeClass)
-	}
-}
-
-// addClassLike emits a class/interface/enum node and walks its body
-// for method_declaration + constructor_declaration. Nested types are
-// not modelled in first cut — their declarations are skipped.
-func (e *javaExtractor) addClassLike(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string, kind NodeKind,
-) {
-	name := e.emitClassLikeNode(n, src, filePath, pkg, fileID, kind)
-	if name == "" {
-		return
-	}
-
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil {
-			continue
-		}
-		switch child.Type() {
-		case "method_declaration":
-			e.addMethod(child, src, filePath, pkg, fileID, name, false)
-		case "constructor_declaration":
-			e.addMethod(child, src, filePath, pkg, fileID, name, true)
-		}
-	}
-}
-
 // emitClassLikeNode emits a class/interface/enum/record node plus its
 // contains edge and registers it in the symbol table. It performs no body
 // traversal — emitting the members is the caller's concern. Returns the
@@ -286,23 +212,6 @@ func (e *javaExtractor) emitClassLikeNode(
 		EndLine:   endLine,
 	})
 	return name
-}
-
-// addMethod registers a method or constructor on the given class and
-// collects the calls in its body. Constructors get the synthetic name
-// "<init>" to keep them distinguishable from regular methods named
-// after the class.
-func (e *javaExtractor) addMethod(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID, className string, isCtor bool,
-) {
-	id := e.emitMethodNode(n, src, filePath, pkg, fileID, className, isCtor)
-	if id == "" {
-		return
-	}
-	if body := n.ChildByFieldName("body"); body != nil {
-		e.collectCalls(body, src, id, pkg, className, filePath)
-	}
 }
 
 // emitMethodNode emits the method/constructor node plus its contains and
@@ -518,58 +427,6 @@ func (e *javaExtractor) emitJavaImportEdge(
 }
 
 // ---- call collection + resolution ------------------------------------------
-
-func (e *javaExtractor) collectCalls(
-	body *sitter.Node, src []byte,
-	callerID, callerPkg, callerCls, filePath string,
-) {
-	// Bound recursion depth: this walk descends every named node in a
-	// method body, so a pathologically nested expression (generated code,
-	// adversarial input) could otherwise drive the Go stack arbitrarily
-	// deep. The file-size cap (maxParseFileSize) is the primary guard; this
-	// is defense-in-depth. Real Java nests far below the limit, so honest
-	// code is never truncated (#443).
-	var walk func(*sitter.Node, int)
-	walk = func(n *sitter.Node, depth int) {
-		if n == nil || depth > maxASTWalkDepth {
-			return
-		}
-		switch n.Type() {
-		case "class_declaration", "interface_declaration",
-			"enum_declaration", "method_declaration",
-			"constructor_declaration", "lambda_expression":
-			return
-		case "method_invocation":
-			expr := classifyJavaInvocation(n, src)
-			if expr.kind != "skip" {
-				e.pendingCalls = append(e.pendingCalls, javaPendingCall{
-					callerID:   callerID,
-					callerPkg:  callerPkg,
-					callerCls:  callerCls,
-					calleeExpr: expr,
-					filePath:   filePath,
-					line:       lineOfPoint(n.StartPoint().Row),
-				})
-			}
-		case "object_creation_expression":
-			expr := classifyJavaNewExpr(n, src)
-			if expr.kind != "skip" {
-				e.pendingCalls = append(e.pendingCalls, javaPendingCall{
-					callerID:   callerID,
-					callerPkg:  callerPkg,
-					callerCls:  callerCls,
-					calleeExpr: expr,
-					filePath:   filePath,
-					line:       lineOfPoint(n.StartPoint().Row),
-				})
-			}
-		}
-		for i := 0; i < int(n.NamedChildCount()); i++ {
-			walk(n.NamedChild(i), depth+1)
-		}
-	}
-	walk(body, 0)
-}
 
 func classifyJavaInvocation(n *sitter.Node, src []byte) javaCallee {
 	nameNode := n.ChildByFieldName("name")

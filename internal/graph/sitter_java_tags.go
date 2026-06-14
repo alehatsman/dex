@@ -9,17 +9,15 @@ import (
 	"github.com/smacker/go-tree-sitter/java"
 )
 
-// Query-driven (tags) extractor for Java. It replaces the recursive
-// descent of the java walker with one tree-sitter query that enumerates
-// every type / method / constructor / import / call; scope is recovered
-// by walking each match's ancestors. The resolution layer (parseImport /
-// resolveCall / Finalize, all on javaExtractor) is reused verbatim, so
-// the graph is identical to the walker's.
+// Query-driven (tags) extractor for Java. One tree-sitter query
+// enumerates every type / method / constructor / import / call; scope is
+// recovered by walking each match's ancestors. The resolution layer
+// (parseImport / resolveCall / Finalize, all on the javaExtractor base)
+// does the rest.
 //
-// The walker models only top-level types and their direct members —
-// nested and local types, and the bodies of anonymous classes' methods,
-// are not graph nodes. The ancestor walks below reproduce exactly that
-// reachability so the two front-ends agree node-for-node and edge-for-edge.
+// The model is top-level types and their direct members only — nested and
+// local types, and the bodies of anonymous classes' methods, are not graph
+// nodes. The ancestor walks below enforce exactly that reachability.
 
 const javaTagsQuery = `
 (class_declaration) @class
@@ -45,7 +43,7 @@ func newJavaTagsExtractor() Extractor {
 	return &javaTagsExtractor{javaExtractor: newJavaExtractorImpl()}
 }
 
-func (e *javaTagsExtractor) Name() string               { return "java-tags" }
+func (e *javaTagsExtractor) Name() string               { return "java" }
 func (e *javaTagsExtractor) Language() *sitter.Language { return java.GetLanguage() }
 func (e *javaTagsExtractor) Extensions() []string       { return []string{".java"} }
 
@@ -89,8 +87,7 @@ func (e *javaTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		}
 	})
 
-	// Imports — top-level only (direct children of the root), matching the
-	// walker's processTopLevel.
+	// Imports — top-level only (direct children of the root).
 	for _, n := range imps {
 		if !javaTopLevel(n) {
 			continue
@@ -99,7 +96,7 @@ func (e *javaTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	}
 
 	// Top-level types. class / record / enum are NodeClass; interface is
-	// NodeInterface — exactly the processTopLevel mapping.
+	// NodeInterface.
 	for _, n := range classes {
 		if javaTopLevel(n) {
 			e.emitClassLikeNode(n, in.Source, in.RelPath, pkg, fileID, NodeClass)
@@ -123,7 +120,7 @@ func (e *javaTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 
 	// Methods and constructors — direct members of a top-level type. Emit in
 	// document order so the "first overload wins" bare-name registration in
-	// emitMethodNode matches the walker's per-class source-order traversal.
+	// emitMethodNode resolves overloads to the first declaration in source.
 	members := append(append([]*sitter.Node{}, methods...), ctors...)
 	sort.SliceStable(members, func(i, j int) bool {
 		return members[i].StartByte() < members[j].StartByte()
@@ -136,22 +133,21 @@ func (e *javaTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		e.emitMethodNode(n, in.Source, in.RelPath, pkg, fileID, className, n.Type() == "constructor_declaration")
 	}
 
-	// Calls — attributed to the enclosing method's body, mirroring
-	// collectCalls (stop at the nearest type/method/lambda boundary;
-	// top-level-type methods only; body subtree only).
+	// Calls — attributed to the enclosing method's body (nearest
+	// type/method/lambda boundary; top-level-type methods only; body
+	// subtree only).
 	for _, n := range calls {
 		e.collectQueryCall(n, in.Source, in.RelPath, pkg)
 	}
 	return nil
 }
 
-// collectQueryCall replicates collectCalls' attribution for a single call
-// (method_invocation / object_creation_expression) discovered by the query.
+// collectQueryCall attributes a single call (method_invocation /
+// object_creation_expression) to its enclosing method.
 func (e *javaTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePath, pkg string) {
-	// Nearest enclosing scope boundary — the same node types that make
-	// collectCalls' descent return. record_declaration is deliberately
-	// absent: collectCalls treats it (and anonymous-class class_body) as
-	// transparent, so calls in their field initializers attribute to the
+	// Nearest enclosing scope boundary. record_declaration is deliberately
+	// absent: a record body (like an anonymous-class class_body) is
+	// transparent, so calls in its field initializers attribute to the
 	// enclosing method.
 	boundary := firstAncestorOfType(n,
 		"class_declaration", "interface_declaration", "enum_declaration",
@@ -202,11 +198,10 @@ func (e *javaTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePat
 	})
 }
 
-// javaTopLevel reports whether n is a direct child of the tree root — the
-// definition of "top-level" the walker uses by iterating in.Root.NamedChild.
-// The root is normally a program node, but on a malformed parse it can be an
-// ERROR node whose children are the still-valid leading declarations; the
-// walker captures those, so the tags path must too.
+// javaTopLevel reports whether n is a direct child of the tree root. The
+// root is normally a program node, but on a malformed parse it can be an
+// ERROR node whose children are the still-valid leading declarations; those
+// are captured too.
 func javaTopLevel(n *sitter.Node) bool {
 	return isTreeRoot(n.Parent())
 }
@@ -214,16 +209,16 @@ func javaTopLevel(n *sitter.Node) bool {
 // javaMethodClass returns the enclosing class name for a method or
 // constructor that is a direct member of a TOP-LEVEL type, and ok=false
 // otherwise. Members nested in local/anonymous types, or inside an enum's
-// enum_body_declarations, fail the body-type or top-level checks — exactly
-// the declarations the walker's per-class body loop skips.
+// enum_body_declarations, fail the body-type or top-level checks and so are
+// not modelled.
 func (e *javaTagsExtractor) javaMethodClass(method *sitter.Node, src []byte) (string, bool) {
 	body := method.Parent()
 	if body == nil {
 		return "", false
 	}
 	// class_body covers class + record; interface_body covers interfaces.
-	// enum methods live in enum_body_declarations, which the walker never
-	// descends — excluded here by not matching either body type.
+	// enum methods live in enum_body_declarations, which is not descended
+	// — excluded here by not matching either body type.
 	if t := body.Type(); t != "class_body" && t != "interface_body" {
 		return "", false
 	}

@@ -8,12 +8,10 @@ import (
 )
 
 // pythonTagsQuery enumerates every definition, call, and import in one
-// tree-sitter pass. It replaces the recursive descent (processTopLevel /
-// addFunction / addClass / collectCalls); scope — method-of-class,
-// caller-of-call, nesting — is recovered afterwards by walking each
-// match's ancestors. This is the 468b pilot: discovery moves into a
-// query while the resolution layer (import table / symbol table /
-// resolveCall, via the embedded pythonExtractor) is reused verbatim.
+// tree-sitter pass. Scope — method-of-class, caller-of-call, nesting — is
+// recovered afterwards by walking each match's ancestors. Discovery lives
+// in this query; the resolution layer (import table / symbol table /
+// resolveCall, via the embedded pythonExtractor base) does the rest.
 const pythonTagsQuery = `
 (function_definition) @function
 (class_definition) @class
@@ -22,12 +20,12 @@ const pythonTagsQuery = `
 (import_from_statement) @import_from
 `
 
-// pythonTagsExtractor is the query-driven counterpart to pythonExtractor.
-// It embeds pythonExtractor so Init / Finalize / resolveCall / addNode /
-// emit helpers / import parsers are inherited unchanged — only discovery
-// (ProcessFile) is replaced. Node identity is content-addressed, so a
-// correct discovery pass yields a byte-identical graph and an identical
-// trace score; the win is "one query replaces a walker", not precision.
+// pythonTagsExtractor is the Python graph extractor. It embeds
+// pythonExtractor — the resolver/emit base holding Init / Finalize /
+// resolveCall / addNode / the emit helpers / import parsers — and drives
+// it from a single tree-sitter query instead of a recursive descent.
+// Node identity is content-addressed, so the graph is a pure function of
+// the discovered definitions and references.
 type pythonTagsExtractor struct {
 	*pythonExtractor
 	query *sitter.Query
@@ -37,10 +35,7 @@ func newPythonTagsExtractor() Extractor {
 	return &pythonTagsExtractor{pythonExtractor: newPythonExtractorImpl()}
 }
 
-// Name is distinct from the walker so the index's sitter_lang provenance
-// records which discovery front-end built the graph (A/B attribution).
-// Node/edge IDs are unaffected — they key off symbol names, not this.
-func (e *pythonTagsExtractor) Name() string { return "python-tags" }
+func (e *pythonTagsExtractor) Name() string { return "python" }
 
 func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	pkg, fileID, imports := e.emitFileScaffold(in)
@@ -54,7 +49,7 @@ func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error
 	}
 
 	// Bucket every capture by kind. Query traversal is whole-tree, so
-	// these lists are the flat equivalent of what the recursive walker
+	// these lists are the flat equivalent of what a recursive descent
 	// would have visited — scope is reconstructed below.
 	var funcs, classes, calls, imps []*sitter.Node
 	runTagsQuery(e.query, in.Root, func(capture string, n *sitter.Node) {
@@ -70,9 +65,9 @@ func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error
 		}
 	})
 
-	// Imports — only direct children of the module node. The walker
-	// processes top-level imports exclusively; imports inside if/try
-	// blocks or function bodies are intentionally not indexed.
+	// Imports — only direct children of the module node. Top-level imports
+	// exclusively; imports inside if/try blocks or function bodies are
+	// intentionally not indexed.
 	for _, n := range imps {
 		p := n.Parent()
 		if p == nil || p.Type() != "module" {
@@ -86,9 +81,9 @@ func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error
 		}
 	}
 
-	// Classes — emitted unless nested inside a function. The walker only
-	// descends module → class → class, so a class defined inside a
-	// function body is unreachable and never becomes a node.
+	// Classes — emitted unless nested inside a function. Reachability is
+	// module → class → class, so a class defined inside a function body is
+	// unreachable and never becomes a node.
 	for _, n := range classes {
 		if hasAncestorOfType(n, "function_definition") {
 			continue
@@ -109,23 +104,23 @@ func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error
 		e.emitFunctionNode(n, in.Source, in.RelPath, pkg, fileID, className)
 	}
 
-	// Calls — attributed to the enclosing node-function's body, mirroring
-	// collectCalls (stop at nested def / class / lambda; method bodies
-	// only; body subtree only, not params/decorators/defaults).
+	// Calls — attributed to the enclosing node-function's body (stop at
+	// nested def / class / lambda; method bodies only; body subtree only,
+	// not params/decorators/defaults).
 	for _, n := range calls {
 		e.collectQueryCall(n, in.Source, pkg, in.RelPath)
 	}
 	return nil
 }
 
-// collectQueryCall replicates collectCalls' attribution for a single call
+// collectQueryCall attributes a single call to its enclosing function
 // node discovered by the query. It records a pending call only when the
 // call sits directly in the body of a reachable function/method, with no
 // intervening nested def, class, or lambda — exactly the set the
-// recursive walker would have collected.
+// would be collected from a function body.
 func (e *pythonTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, pkg, filePath string) {
 	// Nearest enclosing scope boundary. A lambda or class boundary
-	// reached before any function means the walker never collected this
+	// reached before any function means we never collect this
 	// call (it stops at lambdas and only walks method bodies).
 	var fn *sitter.Node
 	for p := n.Parent(); p != nil; p = p.Parent() {
@@ -142,8 +137,8 @@ func (e *pythonTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, pkg, 
 	if fn == nil {
 		return // module-level call — never collected
 	}
-	// A function nested in another function is not a node, so the walker
-	// never ran collectCalls over its body.
+	// A function nested in another function is not a node, so its body's
+	// calls are never collected.
 	if hasAncestorOfType(fn, "function_definition") {
 		return
 	}

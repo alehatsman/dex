@@ -70,25 +70,9 @@ func (e *jstsBase) Finalize(_ context.Context) ([]Node, []Edge, []string, error)
 	return e.nodes, e.edges, e.warnings, nil
 }
 
-// addFunction registers a top-level function OR a class method.
-// Container symmetry with the Python extractor: when className is
-// non-empty the node gets `has_method` from the class.
-func (e *jstsBase) addFunction(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID, className string,
-) {
-	id := e.emitFunctionNode(n, src, filePath, pkg, fileID, className)
-	if id == "" {
-		return
-	}
-	if body := n.ChildByFieldName("body"); body != nil {
-		e.collectCalls(body, src, id, pkg, className, filePath)
-	}
-}
-
 // emitFunctionNode emits the node/symbol/edge surface for a function or
 // method (file→contains; class→has_method when className is set) WITHOUT
-// descending into the body. Shared by the recursive walker (addFunction)
+// descending into the body. Shared by the function/method emission
 // and the query-driven tags path. Returns the node ID, or "" when the
 // declaration has no usable name.
 func (e *jstsBase) emitFunctionNode(
@@ -157,38 +141,9 @@ func (e *jstsBase) emitFunctionNode(
 	return id
 }
 
-// addClass registers a class node and recurses into its body for
-// methods. Nested classes are treated as top-level; their QN doesn't
-// include the outer class (matches Python's first-cut).
-func (e *jstsBase) addClass(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	name := e.emitClassNode(n, src, filePath, pkg, fileID)
-	if name == "" {
-		return
-	}
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil {
-			continue
-		}
-		switch child.Type() {
-		case "method_definition":
-			e.addFunction(child, src, filePath, pkg, fileID, name)
-		case "class_declaration":
-			e.addClass(child, src, filePath, pkg, fileID)
-		}
-	}
-}
-
 // emitClassNode emits the class node, its symbol entry, and the
 // file→contains edge WITHOUT descending into the body. Shared by the
-// recursive walker (addClass) and the query-driven tags path. Returns the
+// query-driven tags path's class emission. Returns the
 // class name, or "" when the class has no usable name.
 func (e *jstsBase) emitClassNode(
 	n *sitter.Node, src []byte,
@@ -233,7 +188,7 @@ func (e *jstsBase) emitClassNode(
 
 // emitScaffold emits the package + file nodes and the package→file
 // contains edge, returning the file node ID. Shared by the recursive
-// walkers and the query-driven tags path.
+// query-driven tags path.
 func (e *jstsBase) emitScaffold(in FileInput, pkg string) string {
 	pkgID := NodeID("", pkg, NodePackage, pkg)
 	e.addNode(Node{
@@ -269,7 +224,7 @@ func (e *jstsBase) emitScaffold(in FileInput, pkg string) string {
 }
 
 // addInterface emits a TypeScript interface as a node (no body recursion).
-// Shared by the ts walker and the tags path.
+// Used for TypeScript interface declarations.
 func (e *jstsBase) addInterface(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID string,
@@ -379,27 +334,10 @@ func (e *jstsBase) parseImportStatement(
 	})
 }
 
-// addLexicalDecl handles `const foo = () => {}` and `const foo =
-// function(){}`. Other const forms (object/string literals) are
-// ignored — they're not callable in a graph-meaningful way. Multiple
-// declarators in one statement (`const a=…, b=…`) each emit their
-// own node.
-func (e *jstsBase) addLexicalDecl(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	for i := 0; i < int(n.NamedChildCount()); i++ {
-		id, body := e.emitArrowDeclarator(n, n.NamedChild(i), src, filePath, pkg, fileID)
-		if id != "" && body != nil {
-			e.collectCalls(body, src, id, pkg, "", filePath)
-		}
-	}
-}
-
 // emitArrowDeclarator emits an arrow/function-expression const node for a
 // single variable_declarator child of a lexical/variable declaration,
 // WITHOUT collecting calls. n is the declaration statement (used for the
-// node's start line, matching the walker). Returns the node ID and the
+// node's start line). Returns the node ID and the
 // function body (for the caller to walk), or ("", nil) when the
 // declarator isn't a function-like binding. Shared by addLexicalDecl and
 // the query-driven tags path.
@@ -535,60 +473,6 @@ func (e *jstsBase) processImportClause(
 			}
 		}
 	}
-}
-
-// collectCalls walks `body` for call_expression and new_expression,
-// stopping descent at nested function/class definitions.
-func (e *jstsBase) collectCalls(
-	body *sitter.Node, src []byte,
-	callerID, callerPkg, callerCls, filePath string,
-) {
-	var walk func(*sitter.Node)
-	walk = func(n *sitter.Node) {
-		if n == nil {
-			return
-		}
-		switch n.Type() {
-		case "function_declaration", "class_declaration",
-			"arrow_function", "function", "function_expression",
-			"method_definition":
-			return
-		case "call_expression":
-			fn := n.ChildByFieldName("function")
-			if fn != nil {
-				expr := classifyTSCallee(fn, src)
-				if expr.kind != "skip" {
-					e.pendingCalls = append(e.pendingCalls, tsPendingCall{
-						callerID:   callerID,
-						callerPkg:  callerPkg,
-						callerCls:  callerCls,
-						calleeExpr: expr,
-						filePath:   filePath,
-						line:       lineOfPoint(n.StartPoint().Row),
-					})
-				}
-			}
-		case "new_expression":
-			ctor := n.ChildByFieldName("constructor")
-			if ctor != nil {
-				expr := classifyTSCallee(ctor, src)
-				if expr.kind != "skip" {
-					e.pendingCalls = append(e.pendingCalls, tsPendingCall{
-						callerID:   callerID,
-						callerPkg:  callerPkg,
-						callerCls:  callerCls,
-						calleeExpr: expr,
-						filePath:   filePath,
-						line:       lineOfPoint(n.StartPoint().Row),
-					})
-				}
-			}
-		}
-		for i := 0; i < int(n.NamedChildCount()); i++ {
-			walk(n.NamedChild(i))
-		}
-	}
-	walk(body)
 }
 
 func (e *jstsBase) resolveCall(c tsPendingCall) string {
