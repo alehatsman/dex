@@ -54,6 +54,7 @@ repos:
     commit: 4649aa9700619f94cf9c66876e9549d83420e16c   # tag 14.1.1
     languages: [rust]
     query_sets: [queries/ripgrep.json]
+    trace_sets: [../trace/ripgrep-rust.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }

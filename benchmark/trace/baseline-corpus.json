@@ -152,6 +152,184 @@
           "f1": 1
         }
       ]
+    },
+    {
+      "repo": "ripgrep",
+      "lang": "rust",
+      "set": "ripgrep-rust",
+      "probes": 8,
+      "unresolved": 0,
+      "macro_precision": 1,
+      "macro_recall": 0.7916666666666666,
+      "macro_f1": 0.8541666666666666,
+      "results": [
+        {
+          "probe": {
+            "symbol": "parse_human_readable_size",
+            "package": "crates::cli::src::human",
+            "direction": "callees",
+            "expected": [
+              "crates::cli::src::human.ParseSizeError.format",
+              "crates::cli::src::human.ParseSizeError.int",
+              "crates::cli::src::human.ParseSizeError.overflow"
+            ]
+          },
+          "got": [
+            "crates::cli::src::human.ParseSizeError.format"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 2,
+          "precision": 1,
+          "recall": 0.3333333333333333,
+          "f1": 0.5
+        },
+        {
+          "probe": {
+            "symbol": "DecompressionMatcherBuilder.build",
+            "package": "crates::cli::src::decompress",
+            "direction": "callees",
+            "expected": [
+              "crates::cli::src::decompress.default_decompression_commands",
+              "crates::cli::src::process.CommandError.io"
+            ]
+          },
+          "got": [
+            "crates::cli::src::decompress.default_decompression_commands"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1,
+          "recall": 0.5,
+          "f1": 0.6666666666666666
+        },
+        {
+          "probe": {
+            "symbol": "DecompressionMatcher.new",
+            "package": "crates::cli::src::decompress",
+            "direction": "callees",
+            "expected": [
+              "crates::cli::src::decompress.DecompressionMatcherBuilder.new",
+              "crates::cli::src::decompress.DecompressionMatcherBuilder.build"
+            ]
+          },
+          "got": [
+            "crates::cli::src::decompress.DecompressionMatcherBuilder.new"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1,
+          "recall": 0.5,
+          "f1": 0.6666666666666666
+        },
+        {
+          "probe": {
+            "symbol": "DecompressionMatcherBuilder.try_associate",
+            "package": "crates::cli::src::decompress",
+            "direction": "callees",
+            "expected": [
+              "crates::cli::src::decompress.try_resolve_binary"
+            ]
+          },
+          "got": [
+            "crates::cli::src::decompress.try_resolve_binary"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "DecompressionMatcherBuilder.associate",
+            "package": "crates::cli::src::decompress",
+            "direction": "callees",
+            "expected": [
+              "crates::cli::src::decompress.DecompressionMatcherBuilder.try_associate"
+            ]
+          },
+          "got": [
+            "crates::cli::src::decompress.DecompressionMatcherBuilder.try_associate"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "try_resolve_binary",
+            "package": "crates::cli::src::decompress",
+            "direction": "callers",
+            "expected": [
+              "crates::cli::src::decompress.DecompressionMatcherBuilder.try_associate",
+              "crates::cli::src::decompress.resolve_binary"
+            ]
+          },
+          "got": [
+            "crates::cli::src::decompress.DecompressionMatcherBuilder.try_associate",
+            "crates::cli::src::decompress.resolve_binary"
+          ],
+          "resolved": true,
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "default_decompression_commands",
+            "package": "crates::cli::src::decompress",
+            "direction": "callers",
+            "expected": [
+              "crates::cli::src::decompress.DecompressionMatcherBuilder.build"
+            ]
+          },
+          "got": [
+            "crates::cli::src::decompress.DecompressionMatcherBuilder.build"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "ParseSizeError.format",
+            "package": "crates::cli::src::human",
+            "direction": "callers",
+            "expected": [
+              "crates::cli::src::human.parse_human_readable_size"
+            ]
+          },
+          "got": [
+            "crates::cli::src::human.parse_human_readable_size"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        }
+      ]
     }
   ]
 }
