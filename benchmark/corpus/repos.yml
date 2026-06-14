@@ -96,19 +96,19 @@ repos:
   # graph-lane co-change probe uniform coverage — it is the corpus regression
   # guard for #468 (cross-language symbol-graph parity).
   #
-  # These entries run gen-only until curated query_sets land: writing
-  # queries/<name>.json means read-verifying every relevant_files path at the
-  # pin (subdir-relative where index_subdir is set), which is the next step of
-  # #493, not this drop.
+  # Each entry carries a curated query set (queries/<name>.json) whose
+  # relevant_files were read-verified at the pin (subdir-relative where
+  # index_subdir is set), plus the three git-mined gen flavors.
 
   - name: guava
     url: https://github.com/google/guava
     commit: 5c71d2a15435399fa62508d807d5cc83506f7496   # tag v33.4.0
     languages: [java]
     # Bound the monorepo to the core library source; skips guava-tests,
-    # guava-gwt, and the android/ variant. A future query set's relevant_files
-    # are relative to this subdir (#285).
+    # guava-gwt, and the android/ variant. Curated relevant_files are relative
+    # to this subdir (#285).
     index_subdir: guava/src/com/google/common
+    query_sets: [queries/guava.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
@@ -119,6 +119,7 @@ repos:
     commit: 99b3c03b3284f5886f9ef9a4ef703d57373e61be   # tag 1.23
     languages: [cpp]
     # Small, clean C++ (db/, table/, util/, include/) — no index_subdir needed.
+    query_sets: [queries/leveldb.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
@@ -132,6 +133,7 @@ repos:
     # core (~150k LOC of .c/.h) and skips vendored deps/ (jemalloc, lua,
     # hiredis) that would otherwise dominate the index.
     index_subdir: src
+    query_sets: [queries/redis.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }

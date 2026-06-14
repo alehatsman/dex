@@ -1,0 +1,97 @@
+{
+  "repo": "leveldb",
+  "head": "99b3c03b3284f5886f9ef9a4ef703d57373e61be",
+  "gen_opts": { "max_commits": 0, "max_files": 0 },
+  "queries": [
+    {
+      "id": "leveldb-q01",
+      "query": "How does a Put/Write make room in the memtable and trigger a switch to a new memtable when it fills up?",
+      "relevant_files": ["db/db_impl.cc", "db/memtable.cc"]
+    },
+    {
+      "id": "leveldb-q02",
+      "query": "Where is the sharded LRU block cache implemented and how is it split into shards?",
+      "relevant_files": ["util/cache.cc", "include/leveldb/cache.h"]
+    },
+    {
+      "id": "leveldb-q03",
+      "query": "How is the bloom filter policy built and queried to skip blocks that cannot contain a key?",
+      "relevant_files": ["util/bloom.cc", "table/filter_block.cc", "include/leveldb/filter_policy.h"]
+    },
+    {
+      "id": "leveldb-q04",
+      "query": "How does leveldb pick which level and files to compact next?",
+      "relevant_files": ["db/version_set.cc", "db/db_impl.cc"]
+    },
+    {
+      "id": "leveldb-q05",
+      "query": "What is the on-disk SSTable format including the footer and block handles?",
+      "relevant_files": ["table/format.cc", "table/format.h"]
+    },
+    {
+      "id": "leveldb-q06",
+      "query": "How are entries inserted and looked up in the in-memory skiplist memtable?",
+      "relevant_files": ["db/memtable.cc", "db/skiplist.h"]
+    },
+    {
+      "id": "leveldb-q07",
+      "query": "How is the write-ahead log record framed on disk and read back, including block boundaries?",
+      "relevant_files": ["db/log_writer.cc", "db/log_reader.cc", "db/log_format.h"]
+    },
+    {
+      "id": "leveldb-q08",
+      "query": "How is an internal key encoded with the user key, sequence number, and value type?",
+      "relevant_files": ["db/dbformat.cc", "db/dbformat.h"]
+    },
+    {
+      "id": "leveldb-q09",
+      "query": "How are version edits serialized to and decoded from the MANIFEST file?",
+      "relevant_files": ["db/version_edit.cc"]
+    },
+    {
+      "id": "leveldb-q10",
+      "query": "How do snapshots pin a sequence number so older versions of keys stay readable?",
+      "relevant_files": ["db/snapshot.h", "db/db_impl.cc"]
+    },
+    {
+      "id": "leveldb-q11",
+      "query": "How does the block builder use shared key-prefix compression and restart points?",
+      "relevant_files": ["table/block_builder.cc", "table/block.cc"]
+    },
+    {
+      "id": "leveldb-q12",
+      "query": "How is a table file written out block by block by the table builder?",
+      "relevant_files": ["table/table_builder.cc", "include/leveldb/table_builder.h"]
+    },
+    {
+      "id": "leveldb-q13",
+      "query": "How does the database recover the memtable from the log files when it is opened?",
+      "relevant_files": ["db/db_impl.cc", "db/log_reader.cc"]
+    },
+    {
+      "id": "leveldb-q14",
+      "query": "Where are variable-length integers (varint) encoded and decoded?",
+      "relevant_files": ["util/coding.cc", "util/coding.h"]
+    },
+    {
+      "id": "leveldb-q15",
+      "query": "How are CRC32C checksums computed for block and log integrity?",
+      "relevant_files": ["util/crc32c.cc"]
+    },
+    {
+      "id": "leveldb-q16",
+      "query": "How does the default bytewise comparator order keys and how does the internal comparator wrap it?",
+      "relevant_files": ["util/comparator.cc", "db/dbformat.cc", "include/leveldb/comparator.h"]
+    },
+    {
+      "id": "leveldb-q17",
+      "query": "How is the POSIX environment abstraction implemented for file IO and background threads?",
+      "relevant_files": ["util/env_posix.cc", "include/leveldb/env.h"]
+    },
+    {
+      "id": "leveldb-q18",
+      "query": "How does the merging iterator combine sorted iterators across multiple levels and tables?",
+      "relevant_files": ["table/merger.cc", "db/version_set.cc"]
+    }
+  ]
+}

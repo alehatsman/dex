@@ -1,0 +1,102 @@
+{
+  "repo": "guava",
+  "head": "5c71d2a15435399fa62508d807d5cc83506f7496",
+  "gen_opts": { "max_commits": 0, "max_files": 0 },
+  "queries": [
+    {
+      "id": "guava-q01",
+      "query": "How are argument and state precondition checks like checkArgument and checkNotNull implemented?",
+      "relevant_files": ["base/Preconditions.java"]
+    },
+    {
+      "id": "guava-q02",
+      "query": "How is an immutable list built and what backs its storage?",
+      "relevant_files": ["collect/ImmutableList.java"]
+    },
+    {
+      "id": "guava-q03",
+      "query": "How does the Ordering comparator chain provide natural, reverse, and compound ordering?",
+      "relevant_files": ["collect/Ordering.java"]
+    },
+    {
+      "id": "guava-q04",
+      "query": "How does CacheBuilder configure expiration, maximum size, and eviction for a cache?",
+      "relevant_files": ["cache/CacheBuilder.java", "cache/LocalCache.java"]
+    },
+    {
+      "id": "guava-q05",
+      "query": "How is the segmented concurrent cache with reference entries implemented?",
+      "relevant_files": ["cache/LocalCache.java"]
+    },
+    {
+      "id": "guava-q06",
+      "query": "How does the bloom filter insert elements and test membership with multiple hash functions?",
+      "relevant_files": ["hash/BloomFilter.java"]
+    },
+    {
+      "id": "guava-q07",
+      "query": "Where are hash functions like murmur3 and the Hashing factory defined?",
+      "relevant_files": ["hash/Hashing.java"]
+    },
+    {
+      "id": "guava-q08",
+      "query": "How are byte streams copied and fully read into memory?",
+      "relevant_files": ["io/ByteStreams.java"]
+    },
+    {
+      "id": "guava-q09",
+      "query": "How do the Files utilities read, write, and copy file contents?",
+      "relevant_files": ["io/Files.java"]
+    },
+    {
+      "id": "guava-q10",
+      "query": "How are integer math operations with overflow checking like checkedAdd implemented?",
+      "relevant_files": ["math/IntMath.java"]
+    },
+    {
+      "id": "guava-q11",
+      "query": "How does a string get split into substrings with the Splitter, including on patterns and fixed length?",
+      "relevant_files": ["base/Splitter.java"]
+    },
+    {
+      "id": "guava-q12",
+      "query": "How is the Optional container that may or may not hold a non-null value implemented?",
+      "relevant_files": ["base/Optional.java"]
+    },
+    {
+      "id": "guava-q13",
+      "query": "How are IPv4 and IPv6 addresses parsed and formatted?",
+      "relevant_files": ["net/InetAddresses.java"]
+    },
+    {
+      "id": "guava-q14",
+      "query": "Where are primitive int helpers for parsing, comparing, and array conversion defined?",
+      "relevant_files": ["primitives/Ints.java"]
+    },
+    {
+      "id": "guava-q15",
+      "query": "How does the rate limiter smooth permit acquisition using a token-bucket warmup?",
+      "relevant_files": ["util/concurrent/RateLimiter.java"]
+    },
+    {
+      "id": "guava-q16",
+      "query": "How do the Futures utilities transform and combine ListenableFuture instances with callbacks?",
+      "relevant_files": ["util/concurrent/Futures.java", "util/concurrent/ListenableFuture.java"]
+    },
+    {
+      "id": "guava-q17",
+      "query": "How does TypeToken capture and resolve generic type information at runtime?",
+      "relevant_files": ["reflect/TypeToken.java"]
+    },
+    {
+      "id": "guava-q18",
+      "query": "What is the core graph interface for directed and undirected graphs?",
+      "relevant_files": ["graph/Graph.java"]
+    },
+    {
+      "id": "guava-q19",
+      "query": "How does the EventBus register subscribers and dispatch posted events to them?",
+      "relevant_files": ["eventbus/EventBus.java"]
+    }
+  ]
+}

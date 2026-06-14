@@ -1,0 +1,97 @@
+{
+  "repo": "redis",
+  "head": "a0a6f23d997b024689ba157916837f493a593a34",
+  "gen_opts": { "max_commits": 0, "max_files": 0 },
+  "queries": [
+    {
+      "id": "redis-q01",
+      "query": "Where is a client command looked up and dispatched, and where does the periodic serverCron run?",
+      "relevant_files": ["server.c"]
+    },
+    {
+      "id": "redis-q02",
+      "query": "How are client queries read from the socket, parsed, and how are replies buffered back?",
+      "relevant_files": ["networking.c"]
+    },
+    {
+      "id": "redis-q03",
+      "query": "How does the hash table do incremental rehashing when it grows?",
+      "relevant_files": ["dict.c"]
+    },
+    {
+      "id": "redis-q04",
+      "query": "How are Redis objects encoded (int, embstr, raw) and reference counted?",
+      "relevant_files": ["object.c"]
+    },
+    {
+      "id": "redis-q05",
+      "query": "How does a key lookup check for expiration and delete the key lazily on access?",
+      "relevant_files": ["db.c", "expire.c"]
+    },
+    {
+      "id": "redis-q06",
+      "query": "How does the active expiration cycle sample and evict expired keys in the background?",
+      "relevant_files": ["expire.c"]
+    },
+    {
+      "id": "redis-q07",
+      "query": "How is the dataset serialized to and loaded from an RDB snapshot file?",
+      "relevant_files": ["rdb.c"]
+    },
+    {
+      "id": "redis-q08",
+      "query": "How are write commands appended to the AOF and how is the AOF rewritten?",
+      "relevant_files": ["aof.c"]
+    },
+    {
+      "id": "redis-q09",
+      "query": "How does a master propagate its write stream to replicas and handle PSYNC?",
+      "relevant_files": ["replication.c"]
+    },
+    {
+      "id": "redis-q10",
+      "query": "How is the sorted set skiplist inserted into and ranked by score?",
+      "relevant_files": ["t_zset.c"]
+    },
+    {
+      "id": "redis-q11",
+      "query": "How are stream entries stored using a radix tree?",
+      "relevant_files": ["t_stream.c", "rax.c"]
+    },
+    {
+      "id": "redis-q12",
+      "query": "How does the listpack compact encoding store small aggregate values?",
+      "relevant_files": ["listpack.c"]
+    },
+    {
+      "id": "redis-q13",
+      "query": "How does quicklist back the list type as a linked list of listpacks?",
+      "relevant_files": ["quicklist.c"]
+    },
+    {
+      "id": "redis-q14",
+      "query": "Where is the event loop that polls file descriptors and fires time events?",
+      "relevant_files": ["ae.c"]
+    },
+    {
+      "id": "redis-q15",
+      "query": "How does the simple dynamic string (sds) grow and track its length and capacity?",
+      "relevant_files": ["sds.c"]
+    },
+    {
+      "id": "redis-q16",
+      "query": "How does maxmemory eviction choose keys using the LRU and LFU policies?",
+      "relevant_files": ["evict.c"]
+    },
+    {
+      "id": "redis-q17",
+      "query": "How is approximate cardinality counted with the HyperLogLog implementation?",
+      "relevant_files": ["hyperloglog.c"]
+    },
+    {
+      "id": "redis-q18",
+      "query": "How are cluster hash slots assigned and gossiped between nodes?",
+      "relevant_files": ["cluster_legacy.c", "cluster.c"]
+    }
+  ]
+}
