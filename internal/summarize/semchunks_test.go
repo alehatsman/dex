@@ -1,4 +1,4 @@
-package mcp
+package summarize
 
 import (
 	"strings"
@@ -91,7 +91,7 @@ func TestApplySemanticChunkOrder_fallbackOnFewChunks(t *testing.T) {
 	return
 }
 `
-	got := applySemanticChunkOrder(src, "foo bar baz")
+	got := SemanticChunkOrder(src, "foo bar baz")
 	if got != src {
 		t.Errorf("expected passthrough for short file, got reordered output")
 	}
@@ -109,7 +109,7 @@ func Baz() { os.Exit(0) }
 
 func Qux() {}
 `
-	got := applySemanticChunkOrder(src, "")
+	got := SemanticChunkOrder(src, "")
 	if got != src {
 		t.Errorf("expected passthrough when task is empty")
 	}
@@ -134,7 +134,7 @@ func Helper() {}
 
 func AnotherHelper() {}
 `
-	got := applySemanticChunkOrder(src, "load config from path")
+	got := SemanticChunkOrder(src, "load config from path")
 	// LoadConfig should appear before Unrelated in the output
 	loadIdx := strings.Index(got, "LoadConfig")
 	unrelatedIdx := strings.Index(got, "Unrelated")

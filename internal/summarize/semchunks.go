@@ -1,4 +1,4 @@
-package mcp
+package summarize
 
 import (
 	"strings"
@@ -263,11 +263,11 @@ func renderWithBridges(ordered []semChunk) string {
 	return sb.String()
 }
 
-// applySemanticChunkOrder is the public entry point. It detects chunks, scores
+// SemanticChunkOrder is the public entry point. It detects chunks, scores
 // them by task keyword overlap, and returns reordered content with bridges.
 // Falls back to the original content when fewer than 4 chunks are detected or
 // no task keywords are extracted.
-func applySemanticChunkOrder(content, task string) string {
+func SemanticChunkOrder(content, task string) string {
 	keywords := extractTaskKeywords(task)
 	chunks := detectSemanticChunks(content)
 	if len(chunks) < 4 || len(keywords) == 0 {

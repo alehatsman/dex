@@ -113,7 +113,7 @@ func (s *Server) summarizeModeAggressive(w summarizeWork) (*sdk.CallToolResult, 
 	strict := profiles.Active(w.p.Root).StrictAnchors()
 	content := compress.CompressCode(string(w.data), ext, strict)
 	if w.in.Task != "" {
-		content = applySemanticChunkOrder(content, w.in.Task)
+		content = summarize.SemanticChunkOrder(content, w.in.Task)
 	}
 	out := w.out
 	out.Status = "ok"
