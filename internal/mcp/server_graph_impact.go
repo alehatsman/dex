@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
@@ -18,6 +19,7 @@ type ImpactInput struct {
 	Name        string `json:"name" jsonschema:"symbol to analyse: bare ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.Server')"`
 	Package     string `json:"package,omitempty" jsonschema:"optional package path filter when the same name appears in multiple packages"`
 	MaxDepth    int    `json:"max_depth,omitempty" jsonschema:"BFS depth limit (default 3, max 5) — depth 1 = direct callers, depth 2 = their callers, etc."`
+	K           int    `json:"k,omitempty" jsonschema:"max nodes shown per depth (default 8, max 200) — the tail is summarised as a '+N more' line. Set high (e.g. 200) for the full PageRank-sorted list."`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 }
 
@@ -42,6 +44,17 @@ type ImpactOutput struct {
 	Total     int           `json:"total"`
 	Truncated bool          `json:"truncated,omitempty"`
 	Nodes     []ImpactNode  `json:"nodes,omitempty"`
+	// Elided is a per-depth "+N more at depth D" summary of nodes dropped
+	// by the per-depth K cap. Empty when nothing was elided. Same idea as
+	// codemap's "+N more" tail line: keep the head readable, summarise the
+	// rest instead of dumping it.
+	Elided []DepthElision `json:"elided,omitempty"`
+}
+
+// DepthElision summarises the PageRank tail dropped at one BFS depth.
+type DepthElision struct {
+	Depth int `json:"depth"`
+	More  int `json:"more"`
 }
 
 func (s *Server) GraphImpact(ctx context.Context, in ImpactInput) (ImpactOutput, error) {
@@ -104,13 +117,127 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 		})
 	}
 
-	const maxImpactNodes = 200
+	// Per-depth cap: ComputeImpact returns nodes sorted (depth asc, PageRank
+	// desc), so keeping the first k of each depth yields the top-k hubs at
+	// that level and the rest collapse into a "+N more at depth D" line. This
+	// mirrors codemap's "+N more" tail elision — a hub symbol with 90 callers
+	// no longer dumps 6-8KB of JSON into the context window.
+	k := in.K
+	if k <= 0 {
+		k = 8
+	}
+	if k > maxImpactNodes {
+		k = maxImpactNodes
+	}
+
 	nodes := graphquery.ComputeImpact(view, targets, maxDepth)
 	out.Total = len(nodes)
 	if len(nodes) > maxImpactNodes {
 		nodes = nodes[:maxImpactNodes]
 		out.Truncated = true
 	}
-	out.Nodes = impactNodesFrom(nodes)
+
+	kept, elided := capPerDepth(nodes, k)
+	out.Nodes = impactNodesFrom(kept)
+	out.Elided = elided
+
+	// #485: a bare total:0 on a live, exported symbol reads as "dead / safe to
+	// delete" — but exported methods are routinely dispatched via an interface
+	// or reflection (e.g. the MCP SDK calls tool handlers through toolSurface),
+	// which leaves no static `calls` edge. Distinguish "no static callers" from
+	// "truly dead" and, where possible, name the interface(s) it satisfies.
+	if out.Total == 0 {
+		if h := zeroCallerHint(view, targets); h != "" {
+			out.Hint = h
+		}
+	}
 	return nil, out, nil
+}
+
+const maxImpactNodes = 200
+
+// capPerDepth keeps at most k nodes per BFS depth (nodes must already be sorted
+// depth-asc, PageRank-desc) and reports the per-depth tail it dropped.
+func capPerDepth(nodes []graphquery.Reachable, k int) ([]graphquery.Reachable, []DepthElision) {
+	if k <= 0 {
+		return nodes, nil
+	}
+	kept := make([]graphquery.Reachable, 0, len(nodes))
+	perDepth := map[int]int{}
+	for _, n := range nodes {
+		perDepth[n.Depth]++
+		if perDepth[n.Depth] <= k {
+			kept = append(kept, n)
+		}
+	}
+	// Build elision lines in depth order from the per-depth counts.
+	var elided []DepthElision
+	seen := map[int]bool{}
+	for _, n := range nodes {
+		if seen[n.Depth] {
+			continue
+		}
+		seen[n.Depth] = true
+		if more := perDepth[n.Depth] - k; more > 0 {
+			elided = append(elided, DepthElision{Depth: n.Depth, More: more})
+		}
+	}
+	return kept, elided
+}
+
+// zeroCallerHint builds the #485 advisory for a symbol with no static callers.
+// An exported function/method with zero `calls` edges is not necessarily dead:
+// it may be reached only through an interface or reflection dispatch (the MCP
+// SDK invokes tool handlers via the toolSurface interface, leaving no static
+// edge). We name the interface(s) the receiver type implements when we can, so
+// the reader knows where to look instead of assuming "safe to delete".
+func zeroCallerHint(view *graphquery.View, targets []graphquery.Node) string {
+	for _, t := range targets {
+		if t.Kind != graph.NodeFunction && t.Kind != graph.NodeMethod {
+			continue
+		}
+		if !isExportedName(t.Name) {
+			continue
+		}
+		ifaces := implementedInterfaces(view, t.ID)
+		if len(ifaces) > 0 {
+			return fmt.Sprintf("0 static callers; %s satisfies interface(s) %s — likely invoked via interface/reflection dispatch (e.g. the MCP SDK). Check the interface implementors, not just static call edges.",
+				t.Name, strings.Join(ifaces, ", "))
+		}
+		return "0 static callers, but this is an exported symbol — it may be invoked via interface/reflection dispatch (e.g. the MCP SDK), not a static call edge. This is not proof the symbol is dead."
+	}
+	return ""
+}
+
+func isExportedName(name string) bool {
+	if name == "" {
+		return false
+	}
+	r := rune(name[0])
+	return r >= 'A' && r <= 'Z'
+}
+
+// implementedInterfaces returns the names of interfaces implemented by the type
+// that owns the given method node. It walks: method <-has_method- type
+// -implements-> interface. Returns nil for a non-method or an unattached type.
+func implementedInterfaces(view *graphquery.View, methodID string) []string {
+	var ifaces []string
+	seen := map[string]bool{}
+	for _, in := range view.EdgesByDst[methodID] {
+		if in.Kind != graph.EdgeHasMethod {
+			continue
+		}
+		typeID := in.SrcID
+		for _, out := range view.EdgesBySrc[typeID] {
+			if out.Kind != graph.EdgeImplements {
+				continue
+			}
+			if n, ok := view.NodesByID[out.DstID]; ok && n.Name != "" && !seen[n.Name] {
+				seen[n.Name] = true
+				ifaces = append(ifaces, n.Name)
+			}
+		}
+	}
+	sort.Strings(ifaces)
+	return ifaces
 }
