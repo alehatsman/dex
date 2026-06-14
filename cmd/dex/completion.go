@@ -153,7 +153,15 @@ __DEX_ZSH_ARG_BLOCKS__
     esac
 }
 
-_dex "$@"
+# Register the completer. Works both when this file is sourced
+# (source <(dex completion zsh)) and when it is dropped into $fpath as a
+# #compdef autoload file — in the latter case zsh invokes _dex directly, so
+# funcstack[1] is _dex and we run it; otherwise we bind it with compdef.
+if [ "$funcstack[1]" = "_dex" ]; then
+    _dex
+else
+    compdef _dex dex
+fi
 `
 
 // fishCompletionScript renders the fish script, injecting the command list,

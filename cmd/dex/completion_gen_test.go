@@ -88,3 +88,17 @@ func TestGeneratedCompletionsSyntax(t *testing.T) {
 		}
 	}
 }
+
+// TestZshCompletionRegisters guards against the #488 regression: the zsh script
+// must BIND the completer (compdef _dex dex), not EXECUTE it at source time
+// (`_dex "$@"`), which errors with "_arguments: can only be called from
+// completion function" and leaves `dex <TAB>` falling back to file completion.
+func TestZshCompletionRegisters(t *testing.T) {
+	s := zshCompletionScript()
+	if !strings.Contains(s, "compdef _dex dex") {
+		t.Error("zsh completion does not register the completer with `compdef _dex dex`")
+	}
+	if strings.Contains(s, `_dex "$@"`) {
+		t.Error(`zsh completion still calls _dex "$@" at source time (the #488 bug)`)
+	}
+}
