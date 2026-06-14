@@ -249,6 +249,9 @@ func TestHasFileWriteRedirect(t *testing.T) {
 		"echo hello > output.txt",
 		"printf 'data' >> log.txt",
 		"echo x > file",
+		"cmd 2>err.log",  // stderr to a real file is a write
+		"cmd 2>>err.log", // append to a real file
+		"cmd 1>out.txt",  // explicit fd to a file
 	}
 	allowed := []string{
 		"git status",
@@ -259,6 +262,13 @@ func TestHasFileWriteRedirect(t *testing.T) {
 		"cmd 2>/dev/null",
 		`grep ">" file.txt`,
 		"curl http://x.com > /dev/null",
+		// fd duplication/closing — not file writes (#507)
+		"cmd 2>&1",
+		"cmd 1>&2",
+		"cmd >&2",
+		"cmd 2>&-",
+		"cmd 2>&1 1>/dev/null",
+		"go test ./... 2>&1 | tail",
 	}
 	for _, cmd := range blocked {
 		if !hasFileWriteRedirect(cmd) {

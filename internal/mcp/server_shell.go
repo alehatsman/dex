@@ -458,16 +458,17 @@ func hasFileWriteRedirect(command string) bool {
 			if inSingle || inDouble {
 				continue
 			}
-			if i > 0 && b[i-1] == '2' {
-				continue
-			}
 			start := i + 1
 			if start < len(b) && b[start] == '>' {
-				start++
+				start++ // ">>" append
 			}
 			target := strings.TrimSpace(string(b[start:]))
 			target = strings.SplitN(target, " ", 2)[0]
-			if target == "/dev/null" || target == "" {
+			// Only a real filesystem target is a write (#507). Allow fd
+			// duplication/closing (2>&1, 1>&2, >&2, 2>&-) whose target starts
+			// with '&', the bit-bucket /dev/null, and a bare '>' with no target
+			// on this token (e.g. trailing pipe/operator handled elsewhere).
+			if target == "" || target == "/dev/null" || strings.HasPrefix(target, "&") {
 				continue
 			}
 			return true
