@@ -14,6 +14,7 @@ import (
 	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/slo"
+	"github.com/alehatsman/dex/internal/summarize"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -144,7 +145,7 @@ func (s *Server) summarizeExpandHandle(
 	if h.etag != etag {
 		return SummarizeOutput{Status: "error", Hint: fmt.Sprintf("file has changed since handle %q was issued — re-read with mode=skeleton", in.Expand)}, true
 	}
-	slice, sliceStart, sliceEnd := sliceLines(data, h.startLine, h.endLine)
+	slice, sliceStart, sliceEnd := summarize.SliceLines(data, h.startLine, h.endLine)
 	out.Status = "ok"
 	out.Etag = etag
 	out.StartLine = sliceStart

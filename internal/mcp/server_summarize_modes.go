@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -12,17 +11,17 @@ import (
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/compress"
 	"github.com/alehatsman/dex/internal/profiles"
-	"github.com/alehatsman/dex/internal/store"
+	"github.com/alehatsman/dex/internal/summarize"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func (s *Server) summarizeModeLines(w summarizeWork, mode string) (*sdk.CallToolResult, SummarizeOutput, error) {
 	rest := strings.TrimPrefix(mode, "lines:")
-	start, end, ok := parseLinesRange(rest)
+	start, end, ok := summarize.ParseLinesRange(rest)
 	if !ok {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("invalid lines mode %q — expected lines:N-M (e.g. lines:10-40)", w.in.Mode)}, nil
 	}
-	slice, sliceStart, sliceEnd := sliceLines(w.data, start, end)
+	slice, sliceStart, sliceEnd := summarize.SliceLines(w.data, start, end)
 	if sliceStart > sliceEnd {
 		fileLines := chunk.LineCount(w.data)
 		return nil, SummarizeOutput{
@@ -57,11 +56,11 @@ func (s *Server) summarizeModeSignatures(w summarizeWork) (*sdk.CallToolResult, 
 		out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
 		return nil, out, nil
 	}
-	content := formatSignatures(w.data, syms, w.relTarget, nil)
-	if related := graphRelatedHint(w.ctx, st, w.relTarget); related != "" {
+	content := summarize.FormatSignatures(w.data, syms, w.relTarget, nil)
+	if related := summarize.GraphRelatedHint(w.ctx, st, w.relTarget); related != "" {
 		content += related
 	}
-	content = inlineTaskSymbol(w.ctx, st, w.data, syms, content)
+	content = summarize.InlineTaskSymbol(w.ctx, st, w.data, syms, content)
 	out := w.out
 	out.Status = "ok"
 	out.Etag = w.etag
@@ -101,12 +100,12 @@ func (s *Server) summarizeModeMap(w summarizeWork) (*sdk.CallToolResult, Summari
 		out.Hint = "no indexed data for this file — run `dex index` first or use mode=full"
 		return nil, out, nil
 	}
-	content := formatMap(w.relTarget, syms, imports)
-	if related := graphRelatedHint(w.ctx, st, w.relTarget); related != "" {
+	content := summarize.FormatMap(w.relTarget, syms, imports)
+	if related := summarize.GraphRelatedHint(w.ctx, st, w.relTarget); related != "" {
 		content += related
 	}
 	if len(syms) > 0 {
-		content = inlineTaskSymbol(w.ctx, st, w.data, syms, content)
+		content = summarize.InlineTaskSymbol(w.ctx, st, w.data, syms, content)
 	}
 	out := w.out
 	out.Status = "ok"
@@ -186,7 +185,7 @@ func (s *Server) summarizeModeSkeleton(w summarizeWork) (*sdk.CallToolResult, Su
 // This is the `full` mode (the default): predictable, cheap, exact bytes.
 // StartLine/EndLine slice a sub-range; the whole file otherwise.
 func (s *Server) summarizeModeRaw(w summarizeWork) (*sdk.CallToolResult, SummarizeOutput, error) {
-	slice, sliceStart, sliceEnd := sliceLines(w.data, w.in.StartLine, w.in.EndLine)
+	slice, sliceStart, sliceEnd := summarize.SliceLines(w.data, w.in.StartLine, w.in.EndLine)
 	out := w.out
 	out.StartLine = sliceStart
 	out.EndLine = sliceEnd
@@ -209,7 +208,7 @@ func (s *Server) summarizeModeRaw(w summarizeWork) (*sdk.CallToolResult, Summari
 // slice to the chat model and returns the generated digest. On chat error it
 // degrades to raw content.
 func (s *Server) summarizeModeSummary(w summarizeWork) (*sdk.CallToolResult, SummarizeOutput, error) {
-	slice, sliceStart, sliceEnd := sliceLines(w.data, w.in.StartLine, w.in.EndLine)
+	slice, sliceStart, sliceEnd := summarize.SliceLines(w.data, w.in.StartLine, w.in.EndLine)
 	out := w.out
 	out.StartLine = sliceStart
 	out.EndLine = sliceEnd
@@ -219,7 +218,7 @@ func (s *Server) summarizeModeSummary(w summarizeWork) (*sdk.CallToolResult, Sum
 	}
 	out.Bytes = len(slice)
 
-	system := buildSummarizeSystem(w.in.Focus)
+	system := summarize.BuildSystem(w.in.Focus)
 	cleaned := compress.LightweightCleanup(string(slice))
 	userContent := fmt.Sprintf("FILE: %s (lines %d-%d)\n\n```\n%s\n```",
 		w.relTarget, sliceStart, sliceEnd, cleaned)
@@ -268,93 +267,5 @@ func (s *Server) summarizeModeSummary(w summarizeWork) (*sdk.CallToolResult, Sum
 	return nil, out, nil
 }
 
-// graphRelatedHint returns a compact "Related (call graph): ..." line
-// listing files graph-adjacent to relPath, or "" when the graph is absent
-// or has no neighbors. Never fails — graph errors are silently swallowed.
-func graphRelatedHint(ctx context.Context, st *store.Store, relPath string) string {
-	neighbors, err := st.GraphNeighborFiles(ctx, []string{relPath}, 8)
-	if err != nil || len(neighbors) == 0 {
-		return ""
-	}
-	return "\n# Related (call graph): " + strings.Join(neighbors, ", ") + "\n"
-}
-
-// inlineTaskSymbol appends the body of the symbol most relevant to the active
-// session task (if any) to content, so a task-focused read surfaces the code
-// that matters even under a compressed mode. Moved here from the removed
-// server_compose.go (#429) — it is the only live consumer.
-func inlineTaskSymbol(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, content string) string {
-	sess, ok, err := st.SessionGet(ctx)
-	if err != nil || !ok || sess.Task == "" {
-		return content
-	}
-	queryTokens := tokenizeWords(sess.Task)
-	if len(queryTokens) == 0 {
-		return content
-	}
-	var bestSym store.GraphSymbol
-	bestScore := 0
-	for _, sym := range syms {
-		if sc := symbolQueryScore(queryTokens, sym); sc > bestScore {
-			bestScore = sc
-			bestSym = sym
-		}
-	}
-	if bestScore == 0 || data == nil {
-		return content
-	}
-	endLine := bestSym.EndLine
-	if endLine-bestSym.StartLine > 60 {
-		endLine = bestSym.StartLine + 59
-	}
-	body, sLine, eLine := sliceLines(data, bestSym.StartLine, endLine)
-	if len(body) == 0 {
-		return content
-	}
-	return content + fmt.Sprintf("\n# Task-relevant: %s %s (lines %d-%d)\n```\n%s```\n",
-		bestSym.Kind, bestSym.QualifiedName, sLine, eLine, string(body))
-}
-
-// symbol's qualified name tokens. 0 means no overlap.
-func symbolQueryScore(queryTokens []string, sym store.GraphSymbol) int {
-	symTokens := tokenizeWords(sym.QualifiedName)
-	score := 0
-	for _, qt := range queryTokens {
-		for _, st := range symTokens {
-			if qt == st {
-				score++
-			}
-		}
-	}
-	return score
-}
-
-// tokenizeWords splits text into lowercase tokens (length > 2) breaking on
-// non-alphanumeric characters and camelCase boundaries.
-func tokenizeWords(s string) []string {
-	var tokens []string
-	var cur strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z':
-			cur.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			if cur.Len() > 2 {
-				tokens = append(tokens, cur.String())
-			}
-			cur.Reset()
-			cur.WriteRune(r + 32) // toLower
-		case r >= '0' && r <= '9':
-			cur.WriteRune(r)
-		default:
-			if cur.Len() > 2 {
-				tokens = append(tokens, cur.String())
-			}
-			cur.Reset()
-		}
-	}
-	if cur.Len() > 2 {
-		tokens = append(tokens, cur.String())
-	}
-	return tokens
-}
+// graphRelatedHint, inlineTaskSymbol, symbolQueryScore, and tokenizeWords
+// moved to internal/summarize (#472 step 3).

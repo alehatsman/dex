@@ -304,28 +304,6 @@ func TestSearchDefaultsToCwd(t *testing.T) {
 	}
 }
 
-func TestBuildSummarizeSystem(t *testing.T) {
-	base := buildSummarizeSystem("")
-	for _, want := range []string{
-		"file summarizer",  // file-kind agnostic, not "code summarizer"
-		"Makefiles",        // hint that non-code files have their own framing
-		"top-level keys",   // config files
-		"section headings", // docs
-	} {
-		if !strings.Contains(base, want) {
-			t.Errorf("base prompt missing %q", want)
-		}
-	}
-	if strings.Contains(base, "Focus specifically on") {
-		t.Errorf("empty focus should not inject a focus clause; got: %s", base)
-	}
-
-	withFocus := buildSummarizeSystem("  public API surface  ")
-	if !strings.Contains(withFocus, "Focus specifically on: public API surface.") {
-		t.Errorf("focus clause missing or untrimmed; got: %s", withFocus)
-	}
-}
-
 // stubReranker returns the docs in input order with descending
 // scores; enough to drive a non-zero RerankScore on every Hit.
 type stubReranker struct{}
@@ -738,36 +716,6 @@ func TestStartEagerWatchersNoopWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestParseLinesRange(t *testing.T) {
-	tests := []struct {
-		in        string
-		wantStart int
-		wantEnd   int
-		wantOK    bool
-	}{
-		{"10-40", 10, 40, true},
-		{"1-1", 1, 1, true},
-		{"1-100", 1, 100, true},
-		{"", 0, 0, false},
-		{"10", 0, 0, false},
-		{"40-10", 0, 0, false}, // end < start
-		{"0-10", 0, 0, false},  // start < 1
-		{"abc-10", 0, 0, false},
-		{"10-abc", 0, 0, false},
-		{"-10", 0, 0, false},
-	}
-	for _, tc := range tests {
-		s, e, ok := parseLinesRange(tc.in)
-		if ok != tc.wantOK {
-			t.Errorf("parseLinesRange(%q): ok=%v want %v", tc.in, ok, tc.wantOK)
-			continue
-		}
-		if ok && (s != tc.wantStart || e != tc.wantEnd) {
-			t.Errorf("parseLinesRange(%q): got %d-%d want %d-%d", tc.in, s, e, tc.wantStart, tc.wantEnd)
-		}
-	}
-}
-
 func TestSummarizeLinesMode(t *testing.T) {
 	projDir := t.TempDir()
 	cacheDir := t.TempDir()
@@ -938,54 +886,6 @@ func TestSummarizeMapModeNoIndex(t *testing.T) {
 	}
 	if out.Model != "" || out.Endpoint != "" {
 		t.Error("map mode must not touch chat client fields")
-	}
-}
-
-func TestFormatMap(t *testing.T) {
-	syms := []store.GraphSymbol{
-		{Name: "Server", QualifiedName: "mcp.Server", Kind: "struct", FilePath: "server.go", StartLine: 10, EndLine: 50},
-		{Name: "unexported", QualifiedName: "mcp.unexported", Kind: "struct", FilePath: "server.go", StartLine: 55, EndLine: 60},
-		{Name: "Run", QualifiedName: "mcp.Server.Run", Kind: "method", FilePath: "server.go", StartLine: 100, EndLine: 120},
-	}
-	imports := []string{"context", "fmt", "os"}
-	got := formatMap("server.go", syms, imports)
-	for _, want := range []string{
-		"FILE: server.go",
-		"IMPORTS:",
-		"  context",
-		"  fmt",
-		"  os",
-		"EXPORTS (2):",
-		"struct mcp.Server",
-		"method mcp.Server.Run",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("formatMap missing %q\ngot:\n%s", want, got)
-		}
-	}
-	if strings.Contains(got, "unexported") {
-		t.Errorf("formatMap leaked unexported symbol; got:\n%s", got)
-	}
-}
-
-func TestFormatSignatures(t *testing.T) {
-	src := []byte("package main\n\nfunc Foo() {\n\treturn\n}\n\nfunc Bar(x int) int {\n\treturn x\n}\n")
-	syms := []store.GraphSymbol{
-		{Name: "Foo", QualifiedName: "Foo", Kind: "function", FilePath: "f.go", StartLine: 3, EndLine: 5},
-		{Name: "Bar", QualifiedName: "Bar", Kind: "function", FilePath: "f.go", StartLine: 7, EndLine: 9},
-	}
-	got := formatSignatures(src, syms, "f.go", nil)
-	for _, want := range []string{
-		"f.go",
-		"(2 symbols)",
-		"⊛ Foo (lines 3-5)",
-		"func Foo()",
-		"⊛ Bar (lines 7-9)",
-		"func Bar(x int) int {",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("formatSignatures output missing %q\ngot:\n%s", want, got)
-		}
 	}
 }
 
