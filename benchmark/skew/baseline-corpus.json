@@ -1,0 +1,32 @@
+{
+  "cells": [
+    {
+      "repo": "gotify",
+      "report": {
+        "total_nodes": 485,
+        "total_pagerank": 0.4157412439145803,
+        "total_communities": 150,
+        "languages": [
+          {
+            "language": "go",
+            "node_count": 391,
+            "node_share": 0.8061855670103093,
+            "pagerank_mass": 0.3605384613650164,
+            "pagerank_share": 0.8672184120349001,
+            "skew_ratio": 1.0757057029077406,
+            "communities": 103
+          },
+          {
+            "language": "typescript",
+            "node_count": 94,
+            "node_share": 0.19381443298969073,
+            "pagerank_mass": 0.055202782549563865,
+            "pagerank_share": 0.13278158796509984,
+            "skew_ratio": 0.6850964910965257,
+            "communities": 47
+          }
+        ]
+      }
+    }
+  ]
+}

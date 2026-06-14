@@ -118,6 +118,20 @@ repos:
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
       structural:   { enabled: true, max_commits: 500, max_files: 5 }
 
+  # gotify — the polyglot cell for #468 gate-2 (cross-language centrality skew).
+  # A real Go backend (~135 .go) + TypeScript frontend (~67 .ts/.tsx) in one
+  # repo, so a single index holds both languages' call graphs. `skew: true`
+  # opts it into `dex bench skew`; it is intentionally NOT in the retrieval or
+  # trace lanes (no query_sets/trace_sets/gen) — skew is its only eval source,
+  # which keeps it cheap (graph-only index, GPU-free). Measures whether Go's
+  # type-resolved (dense) graph inflates its PageRank share over the
+  # name-resolved TS graph: the gate-2 distortion #499 was meant to fix.
+  - name: gotify
+    url: https://github.com/gotify/server
+    commit: 4fa74cea55137dc56bacda3fa7ff694f24b5efc0   # tag v2.9.1
+    languages: [go, ts]
+    skew: true
+
   - name: leveldb
     url: https://github.com/google/leveldb
     commit: 99b3c03b3284f5886f9ef9a4ef703d57373e61be   # tag 1.23

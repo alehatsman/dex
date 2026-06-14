@@ -62,6 +62,12 @@ type RepoSpec struct {
 	// cross-language trace eval (#468/#496).
 	TraceSets []string `yaml:"trace_sets"`
 
+	// Skew opts the repo into the cross-language centrality skew eval
+	// (`dex bench skew`, #468 gate-2). Meaningful only for polyglot repos —
+	// it reports each language's PageRank-mass share against its node-count
+	// share. Independent of QuerySets/TraceSets; graph-indexed --graph=only.
+	Skew bool `yaml:"skew"`
+
 	// Gen opts the repo into auto-generated golden sets in addition to (or
 	// instead of) curated query sets.
 	Gen GenConfig `yaml:"gen"`
@@ -120,8 +126,8 @@ func (m Manifest) Validate() error {
 		if len(r.Languages) == 0 {
 			return fmt.Errorf("%s: at least one language required", where)
 		}
-		if len(r.QuerySets) == 0 && !r.Gen.GitHistory.Enabled && !r.Gen.BlastRadius.Enabled && !r.Gen.Structural.Enabled {
-			return fmt.Errorf("%s: no query source (add a query_set or enable a gen flavor)", where)
+		if len(r.QuerySets) == 0 && !r.Gen.GitHistory.Enabled && !r.Gen.BlastRadius.Enabled && !r.Gen.Structural.Enabled && !r.Skew {
+			return fmt.Errorf("%s: no eval source (add a query_set, enable a gen flavor, or set skew: true)", where)
 		}
 	}
 	return nil

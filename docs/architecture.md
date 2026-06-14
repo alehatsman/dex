@@ -46,7 +46,11 @@ chunk rows, then compute PageRank + degree centrality over `calls` edges.
 > toward Go symbols in polyglot repos — an artifact of resolution accuracy, not
 > real importance. Treat cross-language centrality and cluster rankings as
 > approximate. Improving receiver resolution for the non-Go extractors is future
-> work.
+> work. This skew is now *measured*, not just asserted: `dex bench skew` reports
+> each language's PageRank-mass share against its node-count share over a
+> polyglot index (ratio > 1 = over-weighted). The pinned `gotify` corpus cell
+> baselines it at Go ≈ 1.08 vs TypeScript ≈ 0.69 — TS holds ~19% of the
+> call-graph nodes but only ~13% of the centrality mass.
 
 The embedding dimension is fixed for the life of an index — changing the
 embedding model requires `dex reindex`.
