@@ -17,7 +17,7 @@ type BodyScope struct {
 }
 
 // BodyEntry is a suppressed function/method body available for on-demand
-// expansion via file_view expand=@B<n>.
+// expansion via read expand=@B<n> (MCP tool name; file_view is internal).
 type BodyEntry struct {
 	N         int    // handle number matching @B<n> in the skeleton text
 	Name      string // qualified function/method name
@@ -115,7 +115,7 @@ func SkeletonPass(src []byte, path string, scopes []BodyScope) SkeletonResult {
 	}
 
 	if len(bodies) > 0 {
-		b.WriteString("// Expand: file_view path=<file> expand=@B<n>\n")
+		b.WriteString("// Expand: read path=<file> expand=@B<n>\n")
 	}
 
 	return SkeletonResult{Text: b.String(), Bodies: bodies}

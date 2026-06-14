@@ -32,6 +32,30 @@ func Add(a, b int) int {
 	}
 }
 
+// TestSkeletonPass_ExpandHintNamesRealTool guards #530: the expand hint must
+// name the real MCP tool `read`, not the nonexistent `file_view` — agents
+// copy this verbatim and a wrong tool name fails the call.
+func TestSkeletonPass_ExpandHintNamesRealTool(t *testing.T) {
+	src := []byte(`package foo
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+`)
+	scopes := []BodyScope{
+		{Name: "Add", Kind: "function", Exported: true, StartLine: 4, EndLine: 6},
+	}
+	res := SkeletonPass(src, "foo.go", scopes)
+
+	if strings.Contains(res.Text, "file_view") {
+		t.Errorf("expand hint still names nonexistent tool 'file_view':\n%s", res.Text)
+	}
+	if !strings.Contains(res.Text, "read path=") {
+		t.Errorf("expand hint should name the 'read' tool; got:\n%s", res.Text)
+	}
+}
+
 func TestSkeletonPass_ExportedStruct(t *testing.T) {
 	src := []byte(`package foo
 
