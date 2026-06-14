@@ -399,6 +399,11 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 
 	s.synthesizeAnswer(ctx, session, intent, in.Question, &out)
 
+	// next_action was built deterministically from suggested_reads[0] before
+	// the answer existed; realign it so it never points away from the file the
+	// answer leads with (#532).
+	reconcileNextActionWithAnswer(&out)
+
 	// Stamp expansion handles on every locator the bundle hands back (#344),
 	// after truncation so dropped hits don't get handles.
 	stampSemHandles(out.SemanticHits)
