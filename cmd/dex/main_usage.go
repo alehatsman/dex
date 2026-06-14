@@ -33,6 +33,9 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex trace  [<path>] <name>             call graph — --dir callers|callees|path
   dex impact [<path>] <name>             transitive blast-radius (callers, by depth)
   dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
+  dex grep   [<path>] <pattern>          exact RE2 regex search
+  dex ls     [<path>]                    indexed file tree + chunk counts
+  dex shell  <command...>                run a command with compressed output
 
 detail / power lanes:
   dex graph  <sub> [<path>] ...          deps/callers/callees/links/path/diff/clusters
