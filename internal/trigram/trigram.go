@@ -5,6 +5,7 @@ package trigram
 
 import (
 	"os"
+	"regexp/syntax"
 	"sort"
 	"strings"
 	"sync"
@@ -119,6 +120,14 @@ func (idx *Index) Stale() bool {
 // and true. When the query has no word-trigrams (pure regex metacharacter
 // pattern), it returns (nil, false) and the caller should use the full list.
 func (idx *Index) Narrow(query string) ([]string, bool) {
+	// A case-insensitive pattern (e.g. `(?i)Foo`) matches text the
+	// case-sensitive trigrams extracted here would never index, so narrowing
+	// would soundlessly drop real matches. Decline to narrow and let the
+	// caller full-scan instead (#541).
+	if patternFoldsCase(query) {
+		return nil, false
+	}
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -170,6 +179,32 @@ func (idx *Index) Narrow(query string) ([]string, bool) {
 
 // wordTrigrams extracts unique trigrams from [A-Za-z0-9_] runs in s.
 // Returns nil when no run of length ≥ 3 exists.
+// patternFoldsCase reports whether the RE2 pattern matches case-insensitively
+// anywhere — via a `(?i)` flag or an inline fold — so the trigram prefilter
+// can decline a query whose case-sensitive trigrams would be unsound. A
+// pattern that fails to parse is treated as non-folding: the caller has
+// already validated/compiled it, and a parse miss here just means no narrowing
+// is skipped.
+func patternFoldsCase(pattern string) bool {
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return false
+	}
+	return reFoldsCase(re)
+}
+
+func reFoldsCase(re *syntax.Regexp) bool {
+	if re.Flags&syntax.FoldCase != 0 {
+		return true
+	}
+	for _, sub := range re.Sub {
+		if reFoldsCase(sub) {
+			return true
+		}
+	}
+	return false
+}
+
 func wordTrigrams(s string) []uint32 {
 	seen := make(map[uint32]struct{})
 	var out []uint32

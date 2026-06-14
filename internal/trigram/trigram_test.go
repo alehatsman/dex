@@ -107,6 +107,34 @@ func TestBuildAndNarrow(t *testing.T) {
 			t.Errorf("b.go must be in candidates for 'doSomethingElse'")
 		}
 	})
+
+	t.Run("case-insensitive pattern declines to narrow", func(t *testing.T) {
+		// #541: case-sensitive trigrams ("SEARCHGREP") would soundlessly drop
+		// the real lowercase matches, so Narrow must decline (full scan).
+		if _, ok := idx.Narrow("(?i)searchGrep"); ok {
+			t.Error("Narrow must return ok=false for a (?i) pattern, not a case-sensitive prefilter")
+		}
+		// The matching case-sensitive query still narrows, confirming only the
+		// fold case is bypassed.
+		if _, ok := idx.Narrow("searchGrep"); !ok {
+			t.Error("case-sensitive query should still narrow")
+		}
+	})
+}
+
+func TestPatternFoldsCase(t *testing.T) {
+	folds := []string{"(?i)Foo", "(?i)search", "(?i)[a-z]+bar", "prefix(?i)x"}
+	for _, p := range folds {
+		if !patternFoldsCase(p) {
+			t.Errorf("patternFoldsCase(%q) = false, want true", p)
+		}
+	}
+	plain := []string{"Foo", "searchGrep", "[Ss]earch", `func \(s \*Store\)`, "(((", "a.*b"}
+	for _, p := range plain {
+		if patternFoldsCase(p) {
+			t.Errorf("patternFoldsCase(%q) = true, want false", p)
+		}
+	}
 }
 
 func TestIntersectSorted(t *testing.T) {
