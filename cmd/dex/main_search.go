@@ -34,6 +34,9 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
+	if *k < 1 {
+		return fmt.Errorf("invalid --k=%d (want a positive integer >= 1)", *k)
+	}
 	if *verbose {
 		*explain = true
 	}
@@ -162,6 +165,9 @@ func cmdSearchSymbol(ctx context.Context, args []string) error {
 	_ = fs.Bool("v", false, "verbose (accepted, currently no-op)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
+	}
+	if *k < 1 {
+		return fmt.Errorf("invalid --k=%d (want a positive integer >= 1)", *k)
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 1 {
