@@ -93,18 +93,9 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 	// Expansion handle (#344): decode to concrete path + line range, superseding
 	// any path/paths/lines the caller also passed.
-	if h := strings.TrimSpace(in.Handle); h != "" {
-		path, start, end, ok := DecodeHandle(h)
-		if !ok {
-			return nil, SummarizeOutput{Status: "bad-handle", Hint: "handle did not decode to a valid path:line range; re-run find/ask to get a fresh handle"}, nil
-		}
-		in.Path = path
-		in.StartLine = start
-		in.EndLine = end
-		in.Paths = nil
-		if strings.TrimSpace(in.Mode) == "" {
-			in.Mode = fmt.Sprintf("lines:%d-%d", start, end)
-		}
+	in, bad := applyExpansionHandle(in)
+	if bad != nil {
+		return nil, *bad, nil
 	}
 
 	mode, isLLM := s.summarizeResolveMode(in)
@@ -114,6 +105,17 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	// (#511); only auto-selected modes (profile default / task hint / budget
 	// downgrade, all of which leave in.Mode empty) may compact a manifest.
 	explicitMode := strings.TrimSpace(in.Mode) != ""
+
+	// An explicitly-requested mode the dispatch doesn't recognize must error
+	// loudly: the switch's default arm serves the full raw file, so a typo'd or
+	// CLI-only mode (e.g. "entropy") would silently blow the token budget (#528).
+	// Auto-selected modes come from trusted sources and are always valid.
+	if explicitMode && !validReadMode(mode) {
+		return nil, SummarizeOutput{
+			Status: "error",
+			Hint:   fmt.Sprintf("unrecognized read mode %q; valid: %s (use lines:N-M for a line range)", mode, strings.Join(ReadModes(), ", ")),
+		}, nil
+	}
 
 	if len(in.Paths) > 0 {
 		return s.summarizeBatch(ctx, in)
@@ -261,6 +263,47 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 // listed as a stand-in for the `lines:N-M` prefix family.
 func ReadModes() []string {
 	return []string{"full", "signatures", "skeleton", "map", "aggressive", "lines", "summary"}
+}
+
+// applyExpansionHandle decodes an in.Handle (#344) into a concrete path + line
+// range, superseding any path/paths/lines the caller also passed. It returns
+// the updated input, or a non-nil *SummarizeOutput when the handle is malformed
+// (the caller should return it as-is). A blank handle is a no-op.
+func applyExpansionHandle(in SummarizeInput) (SummarizeInput, *SummarizeOutput) {
+	h := strings.TrimSpace(in.Handle)
+	if h == "" {
+		return in, nil
+	}
+	path, start, end, ok := DecodeHandle(h)
+	if !ok {
+		return in, &SummarizeOutput{Status: "bad-handle", Hint: "handle did not decode to a valid path:line range; re-run find/ask to get a fresh handle"}
+	}
+	in.Path = path
+	in.StartLine = start
+	in.EndLine = end
+	in.Paths = nil
+	if strings.TrimSpace(in.Mode) == "" {
+		in.Mode = fmt.Sprintf("lines:%d-%d", start, end)
+	}
+	return in, nil
+}
+
+// validReadMode reports whether mode is one the Summarize dispatch actually
+// handles: an exact ReadModes() entry, the `lines:N-M` prefix family, or the
+// internal `handle` terminal (#487). It mirrors the dispatch switch so an
+// unrecognized explicit mode errors instead of silently hitting the default arm
+// (full raw file) and blowing the token budget (#528). The bare `lines`
+// stand-in is not itself dispatchable — only the `lines:` prefix is.
+func validReadMode(mode string) bool {
+	if strings.HasPrefix(mode, "lines:") || mode == "handle" {
+		return true
+	}
+	for _, m := range ReadModes() {
+		if m != "lines" && m == mode {
+			return true
+		}
+	}
+	return false
 }
 
 // summarizeBatch handles file_view when paths[] is provided.
