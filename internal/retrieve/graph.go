@@ -1,6 +1,7 @@
 package retrieve
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
@@ -166,16 +167,92 @@ func (e *graphEnricher) symbolNeighborhood() {
 	}
 }
 
-// packageRollup adds package + top-level type/function nodes for every
-// package in pkgs.
+// packageRollup adds, for every package in pkgs, the package node plus its
+// most structurally central type/function nodes.
+//
+// Two passes keep the rollup a balanced cross-section rather than letting the
+// first-iterated package monopolize the node budget (#537): pass 1 anchors
+// every package node so no anchor is starved, pass 2 fills each package's
+// members under a per-package cap, ranked by PageRank so central symbols win
+// the budget instead of alphabetically-first ones. Iteration order is sorted
+// for determinism (map ranging is random).
 func (e *graphEnricher) packageRollup(pkgs map[string]struct{}) {
+	if len(pkgs) == 0 {
+		return
+	}
+	ordered := make([]string, 0, len(pkgs))
 	for pkg := range pkgs {
+		ordered = append(ordered, pkg)
+	}
+	sort.Strings(ordered)
+
+	// Pass 1: anchor every package node first.
+	for _, pkg := range ordered {
 		for _, n := range e.view.NodesByPackage[pkg] {
-			switch n.Kind {
-			case graph.NodePackage, graph.NodeType, graph.NodeStruct, graph.NodeInterface, graph.NodeFunction:
+			if n.Kind == graph.NodePackage {
 				e.addNode(n)
 			}
 		}
+	}
+
+	// Pass 2: fill with each package's most central members.
+	perPkg := MaxGraphNodes / len(pkgs)
+	if perPkg < 1 {
+		perPkg = 1
+	}
+	for _, pkg := range ordered {
+		e.rollupMembers(pkg, perPkg)
+	}
+}
+
+// rollupMembers adds up to limit of pkg's type/function nodes, ranked by
+// PageRank (QualifiedName breaks ties for determinism).
+func (e *graphEnricher) rollupMembers(pkg string, limit int) {
+	var members []graphquery.Node
+	for _, n := range e.view.NodesByPackage[pkg] {
+		switch n.Kind {
+		case graph.NodeType, graph.NodeStruct, graph.NodeInterface, graph.NodeFunction:
+			members = append(members, n)
+		}
+	}
+	sort.SliceStable(members, func(i, j int) bool {
+		if members[i].PageRank != members[j].PageRank {
+			return members[i].PageRank > members[j].PageRank
+		}
+		return members[i].QualifiedName < members[j].QualifiedName
+	})
+	if len(members) > limit {
+		members = members[:limit]
+	}
+	for _, n := range members {
+		e.addNode(n)
+	}
+}
+
+// importEdgesAmong emits internal `imports` edges whose importing package is
+// in pkgs, so a package rollup carries real inter-package structure instead
+// of a flat, edgeless node list (#537). External (stdlib/third-party) imports
+// are skipped — only edges to a path that has its own package node in the
+// project are kept, keeping the topology about the project itself.
+func (e *graphEnricher) importEdgesAmong(pkgs map[string]struct{}) {
+	for _, ge := range e.view.EdgesByKind[graph.EdgeImports] {
+		src, ok := e.view.NodesByID[ge.SrcID]
+		if !ok || src.Kind != graph.NodePackage {
+			continue
+		}
+		if _, in := pkgs[src.PackagePath]; !in {
+			continue
+		}
+		dst, ok := e.view.NodesByID[ge.DstID]
+		if !ok || dst.Kind != graph.NodeImport {
+			continue
+		}
+		if len(e.view.NodesByPackage[dst.QualifiedName]) == 0 {
+			continue // external import — not part of the project topology
+		}
+		e.addNode(src)
+		e.addNode(dst)
+		e.addEdge(ge)
 	}
 }
 
@@ -275,6 +352,10 @@ func (e *graphEnricher) runForIntent(intent string) {
 			pkgs[pkg] = struct{}{}
 		}
 		e.packageRollup(pkgs)
+		// Emit the inter-package import edges so the architecture view shows
+		// real structure, not a flat node list — otherwise the `avoid` hint
+		// ("these nodes ARE the structural overview") would be a lie (#537).
+		e.importEdgesAmong(pkgs)
 	case IntentPackageTopology:
 		e.packageTopology()
 	case IntentBehaviorSearch:
