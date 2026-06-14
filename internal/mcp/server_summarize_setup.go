@@ -21,10 +21,15 @@ import (
 // escalateOnBounce re-escalates a compressed read to the complete view when the
 // bounce tracker detects the agent re-reading the same file (#98): the LLM
 // summary when a chat model is wired, else the raw full file. Already-complete
-// modes (full/summary) are left untouched.
+// modes (full/summary) are left untouched. `skeleton` is deterministic by
+// contract (no chat model), so it escalates to raw `full`, never an LLM summary
+// (#483).
 func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget, mode string, isLLM bool) (string, bool) {
 	if !bt.shouldForceFull(sessionID, relTarget) || mode == "summary" || mode == "full" {
 		return mode, isLLM
+	}
+	if mode == "skeleton" {
+		return "full", false
 	}
 	if s.ChatClient != nil {
 		return "summary", true
