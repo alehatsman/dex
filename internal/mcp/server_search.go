@@ -166,7 +166,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		out.Hint = fmt.Sprintf("rerank: %v", err)
 		return nil, out, nil
 	}
-	hits = ecsRerank(hits, extractTaskKWs(sessionTask))
+	hits = retrieve.RerankECS(hits, sessionTask)
 	s.activityRecord(p.Root, 1)
 
 	// Apply language and path_glob filters post-ranking, then trim to k.

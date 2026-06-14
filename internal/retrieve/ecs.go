@@ -1,4 +1,4 @@
-package mcp
+package retrieve
 
 import (
 	"strings"
@@ -6,8 +6,9 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// ecsRerank applies Entropic Context Shaping (ECS) scoring followed by
-// Marginal Information Gain (MIG) greedy selection to reorder hits.
+// RerankECS reorders hits for the given session task using Entropic Context
+// Shaping (ECS) scoring followed by Marginal Information Gain (MIG) greedy
+// selection.
 //
 // ECS composite score:
 //
@@ -17,14 +18,17 @@ import (
 // pick maximises relevance while minimising redundancy with already-selected
 // chunks (measured via Jaccard similarity on word tokens).
 //
-// When taskKWs is empty, task_relevance defaults to 0.5 (neutral) so
-// graph_centrality and info_density still shape the ranking.
+// The task string is tokenized internally into keywords; when it yields no
+// keywords, task_relevance defaults to 0.5 (neutral) so graph_centrality and
+// info_density still shape the ranking.
 //
 // No-op when len(hits) <= 1.
-func ecsRerank(hits []store.Hit, taskKWs []string) []store.Hit {
+func RerankECS(hits []store.Hit, task string) []store.Hit {
 	if len(hits) <= 1 {
 		return hits
 	}
+
+	taskKWs := taskKeywords(task)
 
 	// Compute max graph edges across all candidates for normalisation.
 	maxEdges := 1
@@ -167,9 +171,10 @@ func jaccardSim(a, b map[string]struct{}) float32 {
 	return float32(inter) / float32(union)
 }
 
-// extractTaskKWs tokenizes a session task string into lowercase keywords
-// (length ≥ 3, skipping common stop words).
-func extractTaskKWs(task string) []string {
+// taskKeywords tokenizes a session task string into lowercase keywords
+// (length ≥ 3, skipping common stop words). Calibrated for ECS task
+// relevance; kept private to retrieve.
+func taskKeywords(task string) []string {
 	stop := map[string]bool{
 		"the": true, "and": true, "for": true, "with": true,
 		"that": true, "this": true, "from": true, "are": true,

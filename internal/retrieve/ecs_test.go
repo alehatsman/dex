@@ -1,4 +1,4 @@
-package mcp
+package retrieve
 
 import (
 	"testing"
@@ -85,8 +85,8 @@ func TestJaccardSim(t *testing.T) {
 	}
 }
 
-func TestExtractTaskKWs(t *testing.T) {
-	kws := extractTaskKWs("Implement the loop detector for search tools")
+func TestTaskKeywords(t *testing.T) {
+	kws := taskKeywords("Implement the loop detector for search tools")
 	// "the" and "for" are stop words; everything else >= 3 chars passes
 	want := map[string]bool{"implement": true, "loop": true, "detector": true, "search": true, "tools": true}
 	if len(kws) != len(want) {
@@ -99,17 +99,17 @@ func TestExtractTaskKWs(t *testing.T) {
 	}
 }
 
-func TestECSRerank_Empty(t *testing.T) {
-	if got := ecsRerank(nil, nil); got != nil {
+func TestRerankECS_Empty(t *testing.T) {
+	if got := RerankECS(nil, ""); got != nil {
 		t.Error("nil input → nil output")
 	}
 	single := []store.Hit{{Path: "a.go", Content: "foo"}}
-	if got := ecsRerank(single, nil); len(got) != 1 {
+	if got := RerankECS(single, ""); len(got) != 1 {
 		t.Error("single hit → passthrough")
 	}
 }
 
-func TestECSRerank_Diversity(t *testing.T) {
+func TestRerankECS_Diversity(t *testing.T) {
 	// c.go matches task keywords → high ECS → promoted to 1st by ECS scoring.
 	// a.go and b.go share identical content (Jaccard=1); b.go loses on graph
 	// centrality, so it gets penalised by MIG redundancy and ranks last.
@@ -118,7 +118,7 @@ func TestECSRerank_Diversity(t *testing.T) {
 		{Path: "b.go", Content: "foo bar baz qux alpha beta gamma delta epsilon zeta", RRFScore: 0.8, InDegree: 1, OutDegree: 1},
 		{Path: "c.go", Content: "search loop detect throttle window fingerprint hash", RRFScore: 0.7, InDegree: 3, OutDegree: 3},
 	}
-	result := ecsRerank(hits, []string{"search", "loop"})
+	result := RerankECS(hits, "search loop")
 	if len(result) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(result))
 	}
