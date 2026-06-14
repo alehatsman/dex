@@ -23,7 +23,7 @@ func allDispatchNames() []string {
 // metaCommands are dispatched in main.go's switch but are not real verbs
 // (help/version aliases) — exempt from registry parity.
 var metaCommands = map[string]bool{
-	"-V": true, "--version": true, "-h": true, "--help": true, "help": true,
+	"-v": true, "-V": true, "--version": true, "-h": true, "--help": true, "help": true,
 }
 
 // dispatchCases extracts every string literal in a `case "x":` clause of the
@@ -79,6 +79,18 @@ func TestRegistryMatchesDispatch(t *testing.T) {
 	for cmd := range registered {
 		if !dispatched[cmd] {
 			t.Errorf("registry advertises %q but main.go never dispatches it", cmd)
+		}
+	}
+}
+
+// TestVersionFlagAliasesDispatch covers #505: every version alias — the bare
+// `version` verb and the -v/-V/--version flag forms — must be wired in the
+// top-level dispatch so `dex -v` prints the version instead of "unknown command".
+func TestVersionFlagAliasesDispatch(t *testing.T) {
+	dispatched := dispatchCases(t)
+	for _, alias := range []string{"version", "-v", "-V", "--version"} {
+		if !dispatched[alias] {
+			t.Errorf("top-level dispatch missing version alias %q", alias)
 		}
 	}
 }

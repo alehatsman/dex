@@ -153,7 +153,11 @@ func main() {
 		err = runBench(ctx, args)
 	case "config":
 		err = cmdConfig(args)
-	case "version", "-V", "--version":
+	case "version", "-V", "--version", "-v":
+		// -v/-V/--version as the top-level command map to `version` (#505).
+		// A bare `dex -v` is unambiguous here; the per-subcommand `-v`
+		// verbose flag (e.g. `dex find -v`) is parsed by each subcommand's
+		// own flagset and never reaches this switch.
 		fmt.Println(mcp.Version)
 		return
 	case "-h", "--help":
