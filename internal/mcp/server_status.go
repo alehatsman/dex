@@ -9,6 +9,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/rerank"
+	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -156,7 +157,12 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 				defer pwg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				st, err := s.openStore(path)
+				// Open an ephemeral handle, not the shared query cache:
+				// index_status scans every project on disk (including ones
+				// never queried), and closing a cached store would poison the
+				// handle reused by the watcher and all other handlers, leaving
+				// them with "sql: database is closed" until restart (#514).
+				st, err := store.OpenWith(ctx, path, s.StoreOpts)
 				if err != nil {
 					return
 				}
