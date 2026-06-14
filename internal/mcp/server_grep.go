@@ -155,10 +155,14 @@ outer:
 		}
 	}
 
-	ldLevel, ldHint := s.ld().Check("grep", throttle.ArgsKey(in.Pattern), true)
-	if ldLevel == throttle.Block {
-		return nil, SearchGrepOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
-	}
+	// grep is a deterministic local RE2 scan with no embedding/GPU/chat cost,
+	// so it is not search-class: it must not consume (or be blocked by) the
+	// shared search-group budget that protects find/ask (#513). The scan above
+	// has also already run by the time we get here, so blocking would save
+	// nothing and an empty loop-blocked payload is indistinguishable from a
+	// genuine no-matches result. Never suppress grep results — at most trim and
+	// surface the loop-detector hint as advisory guidance.
+	ldLevel, ldHint := s.ld().Check("grep", throttle.ArgsKey(in.Pattern), false)
 
 	status := "ok"
 	if len(matches) == 0 {
@@ -174,7 +178,7 @@ outer:
 	if truncated {
 		out.Hint = fmt.Sprintf("results capped at %d — narrow the pattern or path to see more", maxResults)
 	}
-	if ldLevel == throttle.Reduce && len(out.Matches) > 10 {
+	if (ldLevel == throttle.Reduce || ldLevel == throttle.Block) && len(out.Matches) > 10 {
 		out.Matches = out.Matches[:10]
 		out.Total = 10
 		out.Hint = ldHint + " [reduced: showing top 10]"
