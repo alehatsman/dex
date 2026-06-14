@@ -5,6 +5,11 @@
 //	dex completion bash    # bash (requires bash-completion)
 //	dex completion zsh     # zsh
 //	dex completion fish    # fish
+//
+// The scripts are GENERATED from the canonical verb registry (registry.go) by
+// the renderers in completion_gen.go — top-level command list, per-command
+// flags, choices, and subcommands all come from one place, so the three shells
+// cannot drift out of sync (#469, #482).
 package main
 
 import (
@@ -44,10 +49,15 @@ func cmdCompletion(args []string) error {
 	return nil
 }
 
-// bashCompletionScript renders the bash script with the command list injected
-// from the canonical registry (registry.go), so it can never drift.
+// bashCompletionScript renders the bash script, injecting the command list,
+// subcommand cases, and flag completions generated from the registry.
 func bashCompletionScript() string {
-	return strings.ReplaceAll(bashCompletionTemplate, "__DEX_TOP_COMMANDS__", strings.Join(completionCommands(), " "))
+	s := bashCompletionTemplate
+	s = strings.ReplaceAll(s, "__DEX_TOP_COMMANDS__", strings.Join(completionCommands(), " "))
+	s = strings.ReplaceAll(s, "__DEX_BASH_SUBCMDS__", bashSubcmdCases())
+	s = strings.ReplaceAll(s, "__DEX_BASH_FLAGVALS__", bashFlagValueCases())
+	s = strings.ReplaceAll(s, "__DEX_BASH_FLAGNAMES__", bashFlagNameCases())
+	return s
 }
 
 const bashCompletionTemplate = `# dex bash completion
@@ -74,31 +84,21 @@ _dex_completion() {
     # Depth-2: subcommands
     if [[ $COMP_CWORD -eq 2 ]]; then
         case $cmd in
-            graph)      COMPREPLY=($(compgen -W "neighbors deps packages callers callees links backlinks tags cycles path diff clusters export" -- "$cur")); return ;;
-            notes)      COMPREPLY=($(compgen -W "add query rm gc" -- "$cur")); return ;;
-            read)       COMPREPLY=($(compgen -W "--mode --start --end --focus --format" -- "$cur")); return ;;
-            index)      COMPREPLY=($(compgen -W "status" -- "$cur")); return ;;
-            hook)       COMPREPLY=($(compgen -W "inject rewrite redirect observe" -- "$cur")); return ;;
-            completion) COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur")); return ;;
-            config)     COMPREPLY=($(compgen -W "init" -- "$cur")); return ;;
+__DEX_BASH_SUBCMDS__
         esac
     fi
 
-    # Flag value completions
-    case $prev in
-        --intent)  COMPREPLY=($(compgen -W "auto behavior_search symbol_lookup callers callees architecture package_topology editing_context" -- "$cur")); return ;;
-        --format)  COMPREPLY=($(compgen -W "text json" -- "$cur")); return ;;
-        --graph)   COMPREPLY=($(compgen -W "on off only" -- "$cur")); return ;;
-        --rerank)  COMPREPLY=($(compgen -W "off" -- "$cur")); return ;;
+    # Flag-value completion (command-scoped: --flag val and --flag=val)
+    case $cmd in
+__DEX_BASH_FLAGVALS__
     esac
 
-    # --flag=value completions
-    case $cur in
-        --intent=*) COMPREPLY=($(compgen -W "auto behavior_search symbol_lookup callers callees architecture package_topology editing_context" -- "${cur#*=}")); COMPREPLY=("${COMPREPLY[@]/#/--intent=}"); return ;;
-        --format=*) COMPREPLY=($(compgen -W "text json" -- "${cur#*=}")); COMPREPLY=("${COMPREPLY[@]/#/--format=}"); return ;;
-        --graph=*)  COMPREPLY=($(compgen -W "on off only" -- "${cur#*=}")); COMPREPLY=("${COMPREPLY[@]/#/--graph=}"); return ;;
-        --*)        return ;;
-    esac
+    # Flag-name completion
+    if [[ $cur == -* ]]; then
+        case $cmd in
+__DEX_BASH_FLAGNAMES__
+        esac
+    fi
 
     # Path arg: directory completion
     COMPREPLY=($(compgen -d -- "$cur"))
@@ -106,14 +106,18 @@ _dex_completion() {
 complete -F _dex_completion dex
 `
 
-// zshCompletionScript renders the zsh script with the command list (and its
-// per-command descriptions) injected from the canonical registry (registry.go).
+// zshCompletionScript renders the zsh script, injecting the command list (with
+// per-command descriptions) and the per-command `_arguments` blocks generated
+// from the registry.
 func zshCompletionScript() string {
 	lines := make([]string, 0, len(verbs))
 	for _, entry := range zshCommandList() {
 		lines = append(lines, "        '"+entry+"'")
 	}
-	return strings.ReplaceAll(zshCompletionTemplate, "__DEX_TOP_COMMANDS_ZSH__", strings.Join(lines, "\n"))
+	s := zshCompletionTemplate
+	s = strings.ReplaceAll(s, "__DEX_TOP_COMMANDS_ZSH__", strings.Join(lines, "\n"))
+	s = strings.ReplaceAll(s, "__DEX_ZSH_ARG_BLOCKS__", zshArgBlocks())
+	return s
 }
 
 const zshCompletionTemplate = `#compdef dex
@@ -140,142 +144,7 @@ __DEX_TOP_COMMANDS_ZSH__
             ;;
         args)
             case $words[1] in
-                ask)
-                    _arguments \
-                        '--intent=[search strategy]:intent:(auto behavior_search symbol_lookup callers callees architecture package_topology editing_context)' \
-                        '--k=[max hits per lane]:n:' \
-                        '--format=[output format]:fmt:(text json)' \
-                        '--no-inline[skip inlining file contents]' \
-                        '--max-content-bytes=[truncation limit in bytes]:bytes:' \
-                        '-v[verbose: show timing]' \
-                        '*:path:_files -/'
-                    ;;
-                find)
-                    _arguments \
-                        '--k=[number of results]:n:' \
-                        '--format=[output format]:fmt:(text json)' \
-                        '--rerank=[disable rerank]:r:(off)' \
-                        '--explain[show per-chunk score breakdown]' \
-                        '--max-content-bytes=[truncation limit]:bytes:' \
-                        '-v[verbose]' \
-                        '*:path:_files -/'
-                    ;;
-                lookup)
-                    _arguments \
-                        '--k=[max results]:n:' \
-                        '--format=[output format]:fmt:(text json)' \
-                        '--max-content-bytes=[truncation limit]:bytes:' \
-                        '-v[verbose]' \
-                        '*:path:_files -/'
-                    ;;
-                read)
-                    _arguments \
-                        '--mode=[read mode]:mode:(full signatures aggressive entropy auto summary)' \
-                        '--start=[first line]:line:' \
-                        '--end=[last line]:line:' \
-                        '--focus=[summary steering hint]:focus:' \
-                        '--temperature=[summary sampling temperature]:t:' \
-                        '--max-tokens=[summary max tokens]:n:' \
-                        '--format=[output format]:fmt:(text json)' \
-                        '-v[verbose]' \
-                        '*:path:_files'
-                    ;;
-                graph)
-                    local -a sub
-                    sub=(
-                        'neighbors:vector neighbours of a chunk'
-                        'deps:imports edges for a file or package'
-                        'packages:whole internal package import DAG'
-                        'callers:incoming calls edges'
-                        'callees:outgoing calls edges'
-                        'links:markdown docs this doc links to'
-                        'backlinks:markdown docs that link to this doc'
-                        'tags:tag→docs or doc→tags'
-                        'export:dump nodes/edges as JSONL'
-                    )
-                    _arguments '1: :->sub' '*:: :->rest'
-                    case $state in
-                        sub) _describe 'subcommand' sub ;;
-                        rest)
-                            _arguments \
-                                '--k=[max results]:n:' \
-                                '--format=[output format]:fmt:(text json)' \
-                                '-v[verbose]' \
-                                '*:path:_files -/'
-                            ;;
-                    esac
-                    ;;
-                index)
-                    local -a sub
-                    sub=('status:endpoint health and project stats')
-                    _arguments '1: :->sub' '*:: :->rest'
-                    case $state in
-                        sub) _describe 'subcommand' sub ;;
-                        rest)
-                            _arguments \
-                                '--graph=[graph phase]:mode:(on off only)' \
-                                '--format=[output format]:fmt:(text json)' \
-                                '--dry-run[preview what would be indexed without writing]' \
-                                '-v[verbose]' \
-                                '--force[bypass guards]' \
-                                '--wait[wait for lock]' \
-                                '*:path:_files -/'
-                            ;;
-                    esac
-                    ;;
-                hook)
-                    local -a sub
-                    sub=(
-                        'inject:UserPromptSubmit hook — inject dex context'
-                        'rewrite:Bash hook — rewrite rg/grep to dex find'
-                        'redirect:Read/Grep hook — compress large files'
-                        'observe:PostToolUse/Stop hook — append event log'
-                    )
-                    _arguments '1: :->sub'
-                    [[ $state == sub ]] && _describe 'subcommand' sub
-                    ;;
-                completion)
-                    local -a shells
-                    shells=('bash' 'zsh' 'fish')
-                    _arguments '1: :->shell'
-                    [[ $state == shell ]] && _describe 'shell' shells
-                    ;;
-                env)
-                    _arguments \
-                        '--all[include tuning knobs]' \
-                        '--doc[include documentation strings]' \
-                        '-v[verbose (equivalent to --doc)]' \
-                        '--format=[output format]:fmt:(text json)'
-                    ;;
-                doctor)
-                    _arguments '-v[verbose]'
-                    ;;
-                setup)
-                    _arguments '--check[non-interactive: exit 0 if setup complete, 1 otherwise]'
-                    ;;
-                config)
-                    local -a sub
-                    sub=('init:scaffold .dex/config.yml with commented defaults')
-                    _arguments '1: :->sub' '*:: :->rest'
-                    case $state in
-                        sub) _describe 'subcommand' sub ;;
-                        rest)
-                            _arguments \
-                                '--force[overwrite existing file]' \
-                                '--full[include all tuning knobs]'
-                            ;;
-                    esac
-                    ;;
-                nuke)
-                    _arguments '--yes[skip confirmation]' '*:path:_files -/'
-                    ;;
-                watch)
-                    _arguments \
-                        '-v[verbose]' \
-                        '--debounce=[quiet window]:duration:' \
-                        '--force[bypass guards]' \
-                        '*:path:_files -/'
-                    ;;
+__DEX_ZSH_ARG_BLOCKS__
                 *)
                     _files -/
                     ;;
@@ -287,10 +156,15 @@ __DEX_TOP_COMMANDS_ZSH__
 _dex "$@"
 `
 
-// fishCompletionScript renders the fish script with the command list injected
-// from the canonical registry (registry.go).
+// fishCompletionScript renders the fish script, injecting the command list,
+// subcommand completions, and per-flag completions generated from the registry.
 func fishCompletionScript() string {
-	return strings.ReplaceAll(fishCompletionTemplate, "__DEX_TOP_COMMANDS__", strings.Join(completionCommands(), " "))
+	s := fishCompletionTemplate
+	s = strings.ReplaceAll(s, "__DEX_TOP_COMMANDS__", strings.Join(completionCommands(), " "))
+	s = strings.ReplaceAll(s, "__DEX_FISH_TOPCMDS__", fishTopCommands())
+	s = strings.ReplaceAll(s, "__DEX_FISH_SUBCMDS__", fishSubcmdCompletions())
+	s = strings.ReplaceAll(s, "__DEX_FISH_FLAGS__", fishFlagCompletions())
+	return s
 }
 
 const fishCompletionTemplate = `# dex fish completions
@@ -298,80 +172,10 @@ const fishCompletionTemplate = `# dex fish completions
 
 set -l top_cmds __DEX_TOP_COMMANDS__
 
-# Top-level commands
-complete -c dex -f -n 'not __fish_seen_subcommand_from $top_cmds' -a "$top_cmds"
+# Top-level commands (with descriptions)
+__DEX_FISH_TOPCMDS__
 
-# --- notes subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from notes; and not __fish_seen_subcommand_from add query rm gc' -a 'add query rm gc'
+__DEX_FISH_SUBCMDS__
 
-# --- graph subcommands ---
-set -l graph_sub neighbors deps packages callers callees links backlinks tags cycles path diff clusters export
-complete -c dex -f -n '__fish_seen_subcommand_from graph; and not __fish_seen_subcommand_from $graph_sub' -a "$graph_sub"
-
-# --- index subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from index; and not __fish_seen_subcommand_from status' -a 'status' -d 'endpoint health and project stats'
-
-# --- hook subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from hook; and not __fish_seen_subcommand_from inject rewrite redirect observe' -a 'inject' -d 'UserPromptSubmit hook'
-complete -c dex -f -n '__fish_seen_subcommand_from hook; and not __fish_seen_subcommand_from inject rewrite redirect observe' -a 'rewrite' -d 'Bash hook'
-complete -c dex -f -n '__fish_seen_subcommand_from hook; and not __fish_seen_subcommand_from inject rewrite redirect observe' -a 'redirect' -d 'Read/Grep hook'
-complete -c dex -f -n '__fish_seen_subcommand_from hook; and not __fish_seen_subcommand_from inject rewrite redirect observe' -a 'observe' -d 'PostToolUse/Stop hook'
-
-# --- completion subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from completion; and not __fish_seen_subcommand_from bash zsh fish' -a 'bash zsh fish'
-
-# --- config subcommands ---
-complete -c dex -f -n '__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from init' -a 'init' -d 'scaffold .dex/config.yml'
-
-# --- ask flags ---
-complete -c dex -n '__fish_seen_subcommand_from ask' -l intent -r -a 'auto behavior_search symbol_lookup callers callees architecture package_topology editing_context' -d 'search strategy'
-complete -c dex -n '__fish_seen_subcommand_from ask' -l format -r -a 'text json' -d 'output format'
-complete -c dex -n '__fish_seen_subcommand_from ask' -l k -r -d 'max hits per lane'
-complete -c dex -n '__fish_seen_subcommand_from ask' -l no-inline -d 'skip inlining file contents'
-complete -c dex -n '__fish_seen_subcommand_from ask' -l max-content-bytes -r -d 'truncation limit in bytes (0=no limit)'
-complete -c dex -n '__fish_seen_subcommand_from ask' -s v -d 'verbose: show timing'
-
-# --- find / lookup flags ---
-complete -c dex -n '__fish_seen_subcommand_from find lookup' -l format -r -a 'text json' -d 'output format'
-complete -c dex -n '__fish_seen_subcommand_from find lookup' -l k -r -d 'number of results'
-complete -c dex -n '__fish_seen_subcommand_from find' -l rerank -r -a 'off' -d 'disable rerank for this query'
-complete -c dex -n '__fish_seen_subcommand_from find' -l explain -d 'show per-chunk score breakdown'
-complete -c dex -n '__fish_seen_subcommand_from find lookup' -l max-content-bytes -r -d 'truncation limit in bytes (0=no limit)'
-complete -c dex -n '__fish_seen_subcommand_from find lookup' -s v -d 'verbose'
-
-# --- read flags ---
-complete -c dex -n '__fish_seen_subcommand_from read' -l mode -r -a 'full signatures aggressive entropy auto summary' -d 'read mode'
-complete -c dex -n '__fish_seen_subcommand_from read' -l format -r -a 'text json' -d 'output format'
-complete -c dex -n '__fish_seen_subcommand_from read' -l focus -r -d 'summary steering hint'
-
-# --- index flags ---
-complete -c dex -n '__fish_seen_subcommand_from index' -l graph -r -a 'on off only' -d 'graph phase mode'
-complete -c dex -n '__fish_seen_subcommand_from index' -l format -r -a 'text json' -d 'output format'
-complete -c dex -n '__fish_seen_subcommand_from index' -l dry-run -d 'preview without writing'
-complete -c dex -n '__fish_seen_subcommand_from index' -s v -d 'verbose'
-complete -c dex -n '__fish_seen_subcommand_from index' -l force -d 'bypass guards'
-complete -c dex -n '__fish_seen_subcommand_from index' -l wait -d 'wait for lock'
-
-# --- env flags ---
-complete -c dex -n '__fish_seen_subcommand_from env' -l all -d 'include tuning knobs'
-complete -c dex -n '__fish_seen_subcommand_from env' -l doc -d 'include documentation'
-complete -c dex -n '__fish_seen_subcommand_from env' -s v -d 'verbose (same as --doc)'
-complete -c dex -n '__fish_seen_subcommand_from env' -l format -r -a 'text json' -d 'output format'
-
-# --- doctor flags ---
-complete -c dex -n '__fish_seen_subcommand_from doctor' -s v -d 'verbose'
-
-# --- setup flags ---
-complete -c dex -n '__fish_seen_subcommand_from setup' -l check -d 'exit 0 if setup complete, 1 otherwise'
-
-# --- config init flags ---
-complete -c dex -n '__fish_seen_subcommand_from config' -l force -d 'overwrite existing file'
-complete -c dex -n '__fish_seen_subcommand_from config' -l full -d 'include all tuning knobs'
-
-# --- nuke flags ---
-complete -c dex -n '__fish_seen_subcommand_from nuke' -l yes -d 'skip confirmation'
-
-# --- watch flags ---
-complete -c dex -n '__fish_seen_subcommand_from watch' -s v -d 'verbose'
-complete -c dex -n '__fish_seen_subcommand_from watch' -l debounce -r -d 'quiet window before re-indexing'
+__DEX_FISH_FLAGS__
 `
