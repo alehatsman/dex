@@ -797,6 +797,21 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"Same name resolution as `trace`. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphImpact)
 
+		// notes is in the default lane (#548): persistent project memory is the
+		// highest-leverage saver of repeat exploration, and the read path (facts
+		// auto-injected into ask) is useless if the agent can never write. Needs
+		// no embedder or chat model.
+		addTool(srv, &sdk.Tool{
+			Name: "notes",
+			Description: td("Persistent project memory — record and recall facts, patterns, and gotchas that " +
+				"survive session resets and reconnects (no embedding required). " +
+				"Actions: add (store a fact with an archetype and confidence), " +
+				"list (recall top-k facts ordered by salience), delete (remove a fact by id). " +
+				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
+				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
+				"as knowledge_facts."),
+		}, h.knowledge)
+
 		if expert {
 			addTool(srv, &sdk.Tool{
 				Name:        "routes",
@@ -858,16 +873,6 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
 			}, h.status)
-
-			addTool(srv, &sdk.Tool{
-				Name: "notes",
-				Description: td("Manage persistent project knowledge — facts, patterns, and gotchas that survive " +
-					"session resets and reconnects. Actions: add (store a fact with an archetype and confidence), " +
-					"list (retrieve top-k facts ordered by salience), delete (remove a fact by id). " +
-					"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
-					"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
-					"as knowledge_facts. No embedding required."),
-			}, h.knowledge)
 
 			addTool(srv, &sdk.Tool{
 				Name: "session",

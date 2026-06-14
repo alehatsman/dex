@@ -18,7 +18,8 @@ cwd). Over MCP they are tools the agent calls directly.
 | `grep`   | Exact regex over indexed files | always |
 | `ls`     | File-tree listing | always |
 | `shell`  | Run a command, return compressed output | always |
-| `deps` `callers` `callees` `path` `diff` `clusters` `routes` `smells` `notes` `session` | Graph/analysis power lane | graph |
+| `notes`  | Persistent project memory: `add`/`list`/`delete` facts; high-salience ones auto-inject into `ask` | always |
+| `deps` `callers` `callees` `path` `diff` `clusters` `routes` `smells` `session` | Graph/analysis power lane | graph |
 
 ## Capability-derived exposure
 
@@ -26,11 +27,11 @@ A tool is registered only when the backend it needs is available, so the surface
 matches the deployment:
 
 - **Always on** (no models at all): `ask`, `grep`, `ls`, `shell`.
-- **Default verbs** (non-weak model): add `map`, `trace`, `impact`, `read`.
+- **Default verbs** (non-weak model): add `map`, `trace`, `impact`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
 - **Power lane** (`lookup`, `deps`, `callers`, `callees`, `path`, `diff`,
-  `clusters`, `routes`, `smells`, `notes`, `session`): behind `DEX_EXPERT=1`, to
+  `clusters`, `routes`, `smells`, `session`): behind `DEX_EXPERT=1`, to
   keep the everyday agent tool list small. (On the CLI every verb is always
   available.)
 - **Weak/local model detected**: only the always-on lane is exposed.

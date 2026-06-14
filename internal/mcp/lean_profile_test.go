@@ -26,6 +26,7 @@ var zeroInferenceTools = []string{
 	"map",
 	"trace",
 	"impact",
+	"notes", // persistent memory, no embedder needed; default lane since #548
 }
 
 func listToolNames(t *testing.T, srv *Server) map[string]bool {

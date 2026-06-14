@@ -9,13 +9,14 @@ import (
 // They must be absent from the default surface and present once expert is on.
 var powerTools = []string{
 	"lookup", "deps", "callers", "callees", "path",
-	"diff", "clusters", "routes", "smells", "status", "notes", "session",
+	"diff", "clusters", "routes", "smells", "status", "session",
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;
 // they don't need an embedder or chat model, so a lean stubServer advertises
-// them regardless of DEX_EXPERT.
-var defaultVerbs = []string{"map", "trace", "impact", "ask", "grep", "ls"}
+// them regardless of DEX_EXPERT. notes joined this lane in #548 — persistent
+// memory needs no models and is useless if the agent can't write it.
+var defaultVerbs = []string{"map", "trace", "impact", "ask", "grep", "ls", "notes"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off
