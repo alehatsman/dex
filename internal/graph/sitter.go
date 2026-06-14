@@ -167,11 +167,15 @@ func DefaultExtractors() []ExtractorFactory {
 	if tagsLangEnabled("java") {
 		javaFactory = newJavaTagsExtractor
 	}
+	rustFactory := newRustExtractor
+	if tagsLangEnabled("rust") {
+		rustFactory = newRustTagsExtractor
+	}
 	return []ExtractorFactory{
 		pyFactory,
 		tsFactory,
 		jsFactory,
-		newRustExtractor,
+		rustFactory,
 		javaFactory,
 	}
 }
