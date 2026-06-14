@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
@@ -77,6 +78,7 @@ type ProbeResult struct {
 type Report struct {
 	Repo           string        `json:"repo"`
 	Lang           string        `json:"lang"`
+	Set            string        `json:"set,omitempty"` // gold-set label (e.g. file basename) when a repo has several
 	Probes         int           `json:"probes"`
 	Unresolved     int           `json:"unresolved"`      // probes whose Symbol resolved to no node
 	MacroPrecision float64       `json:"macro_precision"` //
@@ -167,10 +169,7 @@ func peers(view *graphquery.View, targets []graphquery.Node, callers bool) []str
 			if !ok {
 				continue
 			}
-			qn := n.QualifiedName
-			if qn == "" {
-				qn = n.Name
-			}
+			qn := peerKey(n)
 			if !seen[qn] {
 				seen[qn] = true
 				out = append(out, qn)
@@ -178,6 +177,29 @@ func peers(view *graphquery.View, targets []graphquery.Node, callers bool) []str
 		}
 	}
 	return out
+}
+
+// peerKey is the comparison key for a peer node. dex's Go graph stores
+// QualifiedName as the BARE symbol name (package tracked separately), so a bare
+// key collides across packages and — fatally for a cross-language instrument —
+// across languages (every language has an `init`, `new`, `get`). We disambiguate
+// with the last segment of the package path: "trace.scoreProbe",
+// "graphquery.ResolveCallTargets". Nodes with no package path (e.g. the
+// synthetic test view) fall back to the bare qualified name, so gold authored
+// against single-package fixtures still reads naturally.
+func peerKey(n graphquery.Node) string {
+	name := n.QualifiedName
+	if name == "" {
+		name = n.Name
+	}
+	if n.PackagePath == "" {
+		return name
+	}
+	seg := n.PackagePath
+	if i := strings.LastIndex(seg, "/"); i >= 0 {
+		seg = seg[i+1:]
+	}
+	return seg + "." + name
 }
 
 // ratio returns num/den, or 1.0 for the vacuous case (whenTrue) where there is

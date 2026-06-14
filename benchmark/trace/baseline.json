@@ -1,0 +1,139 @@
+{
+  "cells": [
+    {
+      "repo": "dex",
+      "lang": "go",
+      "set": "dex-go",
+      "probes": 6,
+      "unresolved": 0,
+      "macro_precision": 1,
+      "macro_recall": 1,
+      "macro_f1": 1,
+      "results": [
+        {
+          "probe": {
+            "symbol": "Score",
+            "package": "github.com/alehatsman/dex/internal/eval/trace",
+            "direction": "callees",
+            "expected": [
+              "trace.scoreProbe"
+            ]
+          },
+          "got": [
+            "trace.scoreProbe"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "scoreProbe",
+            "direction": "callees",
+            "expected": [
+              "graphquery.ResolveCallTargets",
+              "trace.peers",
+              "trace.toSet",
+              "trace.ratio",
+              "trace.sortedKeys",
+              "trace.f1"
+            ]
+          },
+          "got": [
+            "graphquery.ResolveCallTargets",
+            "trace.f1",
+            "trace.peers",
+            "trace.ratio",
+            "trace.sortedKeys",
+            "trace.toSet"
+          ],
+          "resolved": true,
+          "tp": 6,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "peers",
+            "package": "github.com/alehatsman/dex/internal/eval/trace",
+            "direction": "callees",
+            "expected": [
+              "trace.peerKey"
+            ]
+          },
+          "got": [
+            "trace.peerKey"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "f1",
+            "package": "github.com/alehatsman/dex/internal/eval/trace",
+            "direction": "callees",
+            "expected": []
+          },
+          "got": [],
+          "resolved": true,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "scoreProbe",
+            "direction": "callers",
+            "expected": [
+              "trace.Score"
+            ]
+          },
+          "got": [
+            "trace.Score"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "peerKey",
+            "direction": "callers",
+            "expected": [
+              "trace.peers"
+            ]
+          },
+          "got": [
+            "trace.peers"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        }
+      ]
+    }
+  ]
+}

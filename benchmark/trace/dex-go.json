@@ -1,0 +1,48 @@
+{
+  "repo": "dex",
+  "lang": "go",
+  "commit": "self",
+  "note": "Hand-verified callers/callees of stable functions in internal/eval/trace, read directly from source (not echoed from the graph). Go is the type-resolved reference lane: this set locks in current Go trace precision as the #468 regression floor. Peer keys are <pkg-last-segment>.<name> (see trace.peerKey). Scored via: dex bench trace run --project . --gold benchmark/trace/dex-go.json",
+  "probes": [
+    {
+      "symbol": "Score",
+      "package": "github.com/alehatsman/dex/internal/eval/trace",
+      "direction": "callees",
+      "expected": ["trace.scoreProbe"]
+    },
+    {
+      "symbol": "scoreProbe",
+      "direction": "callees",
+      "expected": [
+        "graphquery.ResolveCallTargets",
+        "trace.peers",
+        "trace.toSet",
+        "trace.ratio",
+        "trace.sortedKeys",
+        "trace.f1"
+      ]
+    },
+    {
+      "symbol": "peers",
+      "package": "github.com/alehatsman/dex/internal/eval/trace",
+      "direction": "callees",
+      "expected": ["trace.peerKey"]
+    },
+    {
+      "symbol": "f1",
+      "package": "github.com/alehatsman/dex/internal/eval/trace",
+      "direction": "callees",
+      "expected": []
+    },
+    {
+      "symbol": "scoreProbe",
+      "direction": "callers",
+      "expected": ["trace.Score"]
+    },
+    {
+      "symbol": "peerKey",
+      "direction": "callers",
+      "expected": ["trace.peers"]
+    }
+  ]
+}

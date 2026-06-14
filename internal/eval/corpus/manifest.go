@@ -55,6 +55,13 @@ type RepoSpec struct {
 	// before scoring.
 	QuerySets []string `yaml:"query_sets"`
 
+	// TraceSets are dex-repo-relative paths to committed trace.Gold JSON files
+	// (hand-verified callers/callees probes). Consumed by `dex bench trace`,
+	// independent of the retrieval query sets above; the CLI resolves them to
+	// absolute paths before scoring. Empty means the repo is not in the
+	// cross-language trace eval (#468/#496).
+	TraceSets []string `yaml:"trace_sets"`
+
 	// Gen opts the repo into auto-generated golden sets in addition to (or
 	// instead of) curated query sets.
 	Gen GenConfig `yaml:"gen"`
