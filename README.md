@@ -35,6 +35,7 @@ dex setup                              # guided: checks backends, indexes, wires
 Or do it by hand:
 
 ```sh
+dex config init                        # scaffold .dex/config.yml (indexes the whole tree by default)
 dex index .                            # build the index (chunks + graph)
 claude mcp add --scope user dex -- dex mcp
 ```

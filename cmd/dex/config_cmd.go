@@ -72,6 +72,25 @@ func cmdConfigInit(args []string) error {
 	return nil
 }
 
+// scaffoldConfigIfAbsent writes a starter .dex/config.yml under dir when none
+// exists, so the indexer has an active include and `dex index .` works out of
+// the box. Returns the config path and whether it was created. A pre-existing
+// config is left untouched (created=false).
+func scaffoldConfigIfAbsent(dir string) (string, bool, error) {
+	cfgDir := filepath.Join(dir, ".dex")
+	cfgPath := filepath.Join(cfgDir, "config.yml")
+	if _, err := os.Stat(cfgPath); err == nil {
+		return cfgPath, false, nil
+	}
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		return cfgPath, false, fmt.Errorf("create .dex/: %w", err)
+	}
+	if err := os.WriteFile(cfgPath, []byte(buildConfigYAML(false)), 0o644); err != nil {
+		return cfgPath, false, fmt.Errorf("write %s: %w", cfgPath, err)
+	}
+	return cfgPath, true, nil
+}
+
 // buildConfigYAML generates the .dex/config.yml starter file.
 // When full=true, includes the tuning section with all knobs commented out.
 func buildConfigYAML(full bool) string {
@@ -119,13 +138,15 @@ func buildConfigYAML(full bool) string {
 	writeln("  chat:  " + effOrDefault("DEX_CHAT_MODEL", "qwen2.5-coder:14b"))
 	writeln("")
 
-	// index section (for ignore/include patterns)
-	writeln("# index: control which files are indexed (required — nothing is indexed without include)")
-	writeln("# index:")
-	writeln("#   include:")
-	writeln("#     - .            # index everything from project root")
-	writeln("#   exclude:         # additional paths to skip (on top of .gitignore)")
-	writeln("#     - vendor")
+	// index section — active by default so `dex index .` works out of the box.
+	// include is required (nothing is indexed without it); default to the
+	// project root and let the user scope it down. .gitignore is always honored.
+	writeln("# index: control which files are indexed (include is required)")
+	writeln("index:")
+	writeln("  include:")
+	writeln("    - \"**\"           # index the whole tree (edit to scope, e.g. cmd/, internal/)")
+	writeln("  # ignore:          # additional paths to skip (on top of .gitignore)")
+	writeln("  #   - vendor")
 	writeln("")
 
 	// Optional rerank (off by default)

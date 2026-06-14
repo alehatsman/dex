@@ -106,6 +106,13 @@ func cmdSetup(ctx context.Context, args []string) error {
 	if p, perr := proj.Resolve(wd, base); perr == nil {
 		if _, serr := os.Stat(p.DBPath); os.IsNotExist(serr) {
 			fmt.Printf("current project is not indexed: %s\n", wd)
+			// Ensure a config with an active include exists so the index step
+			// below (or a later `dex index .`) actually indexes something (#546).
+			if cfgPath, created, cerr := scaffoldConfigIfAbsent(wd); cerr != nil {
+				fmt.Fprintf(os.Stderr, "  could not scaffold config: %v\n", cerr)
+			} else if created {
+				fmt.Printf("  scaffolded %s (indexes the whole tree by default — edit to scope)\n", cfgPath)
+			}
 			if stdinIsTTY() {
 				fmt.Fprintf(os.Stderr, "  run `dex index .` now? [y/N] ")
 				reader := bufio.NewReader(os.Stdin)
