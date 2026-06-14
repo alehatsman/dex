@@ -109,6 +109,12 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 	mode, isLLM := s.summarizeResolveMode(in)
 
+	// Did the caller explicitly name a mode? An explicit request (incl. a
+	// lines:N-M range) must win over the dependency-manifest shortcut below
+	// (#511); only auto-selected modes (profile default / task hint / budget
+	// downgrade, all of which leave in.Mode empty) may compact a manifest.
+	explicitMode := strings.TrimSpace(in.Mode) != ""
+
 	if len(in.Paths) > 0 {
 		return s.summarizeBatch(ctx, in)
 	}
@@ -204,9 +210,10 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	}
 
 	// Dependency manifest shortcut (#125): compact summary for package.json etc.
-	// Honor an explicit raw-full or LLM-summary request; compact only the
-	// structural modes.
-	if compress.IsDepsFilename(filepath.Base(realTarget)) && mode != "full" && mode != "summary" {
+	// Honor an explicit raw-full or LLM-summary request, and honor any other
+	// explicitly-requested mode (e.g. lines:N-M, signatures) — the shortcut
+	// only applies when the structural mode was auto-selected (#511).
+	if !explicitMode && compress.IsDepsFilename(filepath.Base(realTarget)) && mode != "full" && mode != "summary" {
 		if summary, ok := compress.CompressDepsFile(relTarget, data); ok {
 			out.Status = "ok"
 			out.Etag = etag
