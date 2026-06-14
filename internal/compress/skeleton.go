@@ -85,7 +85,14 @@ func SkeletonPass(src []byte, path string, scopes []BodyScope) SkeletonResult {
 		lo := max(s.StartLine-1, 0)
 		hi := min(s.EndLine-1, len(srcLines)-1)
 
-		braceIdx := skeletonFindOpenBrace(srcLines, lo, hi)
+		braceIdx, hasBody := skeletonFindOpenBrace(srcLines, lo, hi)
+		// A declaration with no body brace (an interface method spec, or an
+		// asm/external func declaration) has nothing to expand: it was already
+		// rendered in full inside its type block, so a @B handle would just
+		// re-emit the signature line — a dead round-trip (#539). Skip it.
+		if !hasBody {
+			continue
+		}
 
 		// Emit lines before the brace line (multi-line signatures).
 		for i := lo; i < braceIdx && i < len(srcLines); i++ {
@@ -123,8 +130,10 @@ func SkeletonPass(src []byte, path string, scopes []BodyScope) SkeletonResult {
 
 // skeletonFindOpenBrace scans srcLines[startIdx..endIdx] (0-based, inclusive)
 // and returns the 0-based index of the line where the function body opens
-// (i.e. where brace depth goes 0→1). Returns startIdx if not found.
-func skeletonFindOpenBrace(srcLines [][]byte, startIdx, endIdx int) int {
+// (i.e. where brace depth goes 0→1) and true. When the range carries no body
+// brace at all (an interface method spec or a bodyless declaration), it
+// returns (startIdx, false).
+func skeletonFindOpenBrace(srcLines [][]byte, startIdx, endIdx int) (int, bool) {
 	depth := 0
 	for i := startIdx; i <= endIdx && i < len(srcLines); i++ {
 		line := srcLines[i]
@@ -150,12 +159,12 @@ func skeletonFindOpenBrace(srcLines [][]byte, startIdx, endIdx int) int {
 			if c == '{' {
 				depth++
 				if depth == 1 {
-					return i
+					return i, true
 				}
 			} else if c == '}' && depth > 0 {
 				depth--
 			}
 		}
 	}
-	return startIdx
+	return startIdx, false
 }

@@ -103,6 +103,39 @@ func helper() string {
 	}
 }
 
+// TestSkeletonPass_InterfaceMethodsNoDeadHandle is the regression for #539:
+// interface method specs have no body, so they must appear once — inside the
+// interface block — and never get a @B handle that would expand to just the
+// signature line already shown.
+func TestSkeletonPass_InterfaceMethodsNoDeadHandle(t *testing.T) {
+	src := []byte(`package foo
+
+type Reader interface {
+	Read(p []byte) (int, error)
+	Close() error
+}
+`)
+	scopes := []BodyScope{
+		{Name: "Reader", Kind: "interface", Exported: true, StartLine: 3, EndLine: 6},
+		{Name: "Read", Kind: "method", Exported: true, StartLine: 4, EndLine: 4},
+		{Name: "Close", Kind: "method", Exported: true, StartLine: 5, EndLine: 5},
+	}
+	res := SkeletonPass(src, "foo.go", scopes)
+
+	if !strings.Contains(res.Text, "type Reader interface") {
+		t.Errorf("interface should be shown in full; got:\n%s", res.Text)
+	}
+	if strings.Contains(res.Text, "@B") {
+		t.Errorf("interface method specs must not emit a body handle; got:\n%s", res.Text)
+	}
+	if len(res.Bodies) != 0 {
+		t.Errorf("want 0 body entries for bodyless method specs, got %d", len(res.Bodies))
+	}
+	if n := strings.Count(res.Text, "Read(p []byte)"); n != 1 {
+		t.Errorf("Read spec should appear exactly once, appeared %d times:\n%s", n, res.Text)
+	}
+}
+
 func TestSkeletonPass_MultiLineSig(t *testing.T) {
 	src := []byte(`package foo
 
@@ -134,24 +167,35 @@ func LongFunc(
 
 func TestSkeletonFindOpenBrace(t *testing.T) {
 	cases := []struct {
-		name  string
-		lines []string
-		want  int // 0-based index
+		name     string
+		lines    []string
+		want     int // 0-based index
+		wantBody bool
 	}{
 		{
-			name:  "brace on same line",
-			lines: []string{`func Foo() {`, `  return`, `}`},
-			want:  0,
+			name:     "brace on same line",
+			lines:    []string{`func Foo() {`, `  return`, `}`},
+			want:     0,
+			wantBody: true,
 		},
 		{
-			name:  "brace on separate line",
-			lines: []string{`func Bar(`, `  a int,`, `) error {`, `  return nil`, `}`},
-			want:  2,
+			name:     "brace on separate line",
+			lines:    []string{`func Bar(`, `  a int,`, `) error {`, `  return nil`, `}`},
+			want:     2,
+			wantBody: true,
 		},
 		{
-			name:  "skip string literal brace",
-			lines: []string{`func Foo(s string) {`, `  _ = "{"`, `}`},
-			want:  0,
+			name:     "skip string literal brace",
+			lines:    []string{`func Foo(s string) {`, `  _ = "{"`, `}`},
+			want:     0,
+			wantBody: true,
+		},
+		{
+			// #539: an interface method spec / bodyless declaration has no brace.
+			name:     "no body brace",
+			lines:    []string{`Read(p []byte) (int, error)`},
+			want:     0,
+			wantBody: false,
 		},
 	}
 	for _, c := range cases {
@@ -160,9 +204,9 @@ func TestSkeletonFindOpenBrace(t *testing.T) {
 			for i, l := range c.lines {
 				lines[i] = []byte(l)
 			}
-			got := skeletonFindOpenBrace(lines, 0, len(lines)-1)
-			if got != c.want {
-				t.Errorf("got %d, want %d", got, c.want)
+			got, gotBody := skeletonFindOpenBrace(lines, 0, len(lines)-1)
+			if got != c.want || gotBody != c.wantBody {
+				t.Errorf("got (%d, %v), want (%d, %v)", got, gotBody, c.want, c.wantBody)
 			}
 		})
 	}
