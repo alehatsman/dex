@@ -26,6 +26,7 @@ func usageConcise() {
 
 verbs (match the MCP tools — run "dex help all" for the full reference):
   dex map    [--cluster <id>] [<path>]   deterministic repo orientation map (L0/L1)
+  dex orient [<path>]                    fast first-touch orientation digest
   dex find   [<path>] <q...>             semantic + symbol search
   dex lookup [<path>] <name>             exact identifier lookup
   dex read   <file>                      read a file — default raw (no LLM); --mode for views/summary
@@ -109,6 +110,8 @@ query (the CLI verbs share the MCP tool names, #354/#427):
                                           Flags: --k
   dex graph export [<path>]          dump graph_nodes/graph_edges as JSONL
                                           Flags: --output=<dir>
+  dex map [--cluster <id>] [<path>]  deterministic repo orientation map (MCP: map)
+  dex orient [<path>]                fast first-touch orientation digest (MCP: orient)
   dex read <file>                    read a file (MCP: read). Modes:
                                           full (default; raw, no LLM), signatures,
                                           aggressive, entropy, auto, and summary
@@ -124,7 +127,8 @@ build / maintenance:
                                           AND the Go static graph. Flags: --graph=off
                                           skips graph, --graph=only refreshes just the
                                           graph layer. Other flags: -v, --force,
-                                          --dry-run, --format=text|json  dex generate <path> <prompt>       RAG: top-k chunks → chat endpoint
+                                          --dry-run, --format=text|json
+  dex generate <path> <prompt>       RAG: top-k chunks → chat endpoint
   dex env                            print effective env-var config with sources
                                           Flags: --all, --doc, -v, --format=text|json
   dex compact <path>                 concatenate indexable files under <path>
@@ -154,11 +158,13 @@ build / maintenance:
   dex clone  <src> <dst>             seed dst's index from src's (e.g. for a
                                           new git worktree); follow with
                                           `+"`dex index <dst>`"+` to reconcile
+  dex bench  <sub> [<path>]          benchmarks: eval|corpus|compress|perf|locomo
   dex mcp                            run as an MCP server over stdio
   dex serve [flags] --project <p>    run as an HTTP daemon (multi-project).
                                           Flags: --addr=:8080 (default loopback
                                           when no token), --project (repeatable).
                                           DEX_SERVE_TOKEN gates non-loopback.
+  dex proxy <path>                   MCP proxy — forward tools to a remote dex server
   dex hook inject                    Claude Code UserPromptSubmit hook:
                                           inject dex context before each turn.
   dex hook rewrite                   Claude Code PreToolUse(Bash) hook:

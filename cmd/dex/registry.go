@@ -1,0 +1,325 @@
+// Canonical command registry — the single source of truth for the CLI verb
+// surface. Usage text (main_usage.go) and the shell-completion scripts
+// (completion.go) are GENERATED from this table, so adding or renaming a
+// command happens in exactly one place and the three shells can no longer
+// drift out of sync (#469).
+//
+// The dispatch switch in main.go is kept honest by registry_test.go, which
+// asserts every dispatched command has a registry entry and vice versa.
+package main
+
+// verbGroup buckets a command for the `dex help` / `dex help all` layout.
+type verbGroup int
+
+const (
+	groupQuery  verbGroup = iota // the MCP-mirroring query verbs
+	groupGraph                   // graph / notes / index-status power lanes
+	groupBuild                   // build + maintenance commands
+	groupConfig                  // config / setup / introspection
+	groupHidden                  // dispatched but not advertised in help
+)
+
+// flagSpec describes one flag for completion + usage generation.
+type flagSpec struct {
+	name    string   // "--intent", "-v"
+	desc    string   // one-line description
+	arg     bool     // true if the flag takes a value
+	choices []string // value-completion set (empty = free-form)
+}
+
+// subSpec describes one subcommand of a verb (e.g. `graph callers`).
+type subSpec struct {
+	name string
+	desc string
+}
+
+// verbSpec is one top-level command.
+type verbSpec struct {
+	name     string
+	aliases  []string
+	group    verbGroup
+	args     string // positional-arg hint, e.g. "[<path>] <q...>"
+	summary  string // one-line description (zsh _describe, usage tables)
+	subs     []subSpec
+	flags    []flagSpec
+	noFiles  bool // true = no trailing path/file argument to complete
+	fileArgs bool // true = completes plain files (not just dirs) — e.g. read
+}
+
+// fmtChoices / fmtFormat reusable flag fragments.
+var (
+	flagFormat = flagSpec{name: "--format", desc: "output format", arg: true, choices: []string{"text", "json"}}
+	flagK      = flagSpec{name: "--k", desc: "max results", arg: true}
+	flagV      = flagSpec{name: "-v", desc: "verbose"}
+	flagMaxCB  = flagSpec{name: "--max-content-bytes", desc: "truncation limit in bytes (0=no limit)", arg: true}
+
+	intentChoices = []string{
+		"auto", "behavior_search", "symbol_lookup", "callers", "callees",
+		"architecture", "package_topology", "editing_context",
+	}
+	readModeChoices = []string{"full", "signatures", "aggressive", "entropy", "auto", "summary"}
+)
+
+// verbs is the canonical registry. Order within a group is the display order
+// in `dex help all`.
+var verbs = []verbSpec{
+	// ---- query verbs (mirror the MCP tool names, #354/#427) ----
+	{
+		name: "ask", group: groupQuery, args: "[<path>] <q...>",
+		summary: "one-shot router (semantic + symbol + graph)",
+		flags: []flagSpec{
+			{name: "--intent", desc: "search strategy", arg: true, choices: intentChoices},
+			flagK, flagFormat,
+			{name: "--no-inline", desc: "skip inlining file contents"},
+			flagMaxCB, flagV,
+		},
+	},
+	{
+		name: "find", group: groupQuery, args: "[<path>] <q...>",
+		summary: "hybrid semantic top-k search",
+		flags: []flagSpec{
+			flagK, flagFormat,
+			{name: "--rerank", desc: "disable rerank for this query", arg: true, choices: []string{"off"}},
+			{name: "--explain", desc: "show per-chunk score breakdown"},
+			flagMaxCB, flagV,
+		},
+	},
+	{
+		name: "lookup", group: groupQuery, args: "[<path>] <name>",
+		summary: "exact identifier lookup",
+		flags:   []flagSpec{flagK, flagFormat, flagMaxCB, flagV},
+	},
+	{
+		name: "read", group: groupQuery, args: "<file>", fileArgs: true,
+		summary: "read a file (--mode full|signatures|summary…)",
+		flags: []flagSpec{
+			{name: "--mode", desc: "read mode", arg: true, choices: readModeChoices},
+			{name: "--start", desc: "first line", arg: true},
+			{name: "--end", desc: "last line", arg: true},
+			{name: "--focus", desc: "summary steering hint", arg: true},
+			{name: "--temperature", desc: "summary sampling temperature", arg: true},
+			{name: "--max-tokens", desc: "summary max tokens", arg: true},
+			flagFormat, flagV,
+		},
+	},
+	{
+		name: "map", group: groupQuery, args: "[--cluster <id>] [<path>]",
+		summary: "deterministic repo orientation map",
+		flags:   []flagSpec{{name: "--cluster", desc: "focus a cluster id", arg: true}, flagFormat, flagV},
+	},
+	{
+		name: "orient", group: groupQuery, args: "[<path>]",
+		summary: "fast first-touch orientation digest",
+		flags:   []flagSpec{flagFormat, flagV},
+	},
+	{
+		name: "trace", group: groupQuery, args: "[<path>] <name>",
+		summary: "call-graph callers/callees/path",
+		flags: []flagSpec{
+			{name: "--dir", desc: "direction", arg: true, choices: []string{"callers", "callees", "path"}},
+			flagK, flagFormat, flagV,
+		},
+	},
+	{
+		name: "impact", group: groupQuery, args: "[<path>] <name>",
+		summary: "transitive caller blast-radius",
+		flags:   []flagSpec{flagK, flagFormat, flagV},
+	},
+
+	// ---- graph / notes / power lanes ----
+	{
+		name: "graph", group: groupGraph, args: "<sub> [<path>] …",
+		summary: "graph traversal",
+		subs: []subSpec{
+			{"neighbors", "vector neighbours of a chunk"},
+			{"deps", "imports edges for a file or package"},
+			{"packages", "whole internal package import DAG"},
+			{"callers", "incoming calls edges"},
+			{"callees", "outgoing calls edges"},
+			{"links", "markdown docs this doc links to"},
+			{"backlinks", "markdown docs that link to this doc"},
+			{"tags", "tag→docs or doc→tags"},
+			{"cycles", "import cycles"},
+			{"path", "shortest call/import path A→B"},
+			{"diff", "blast-radius of a git diff"},
+			{"clusters", "Louvain call-graph clusters"},
+			{"export", "dump nodes/edges as JSONL"},
+		},
+		flags: []flagSpec{flagK, flagFormat, flagV},
+	},
+	{
+		name: "notes", group: groupGraph, args: "add|query|rm|gc",
+		summary: "per-project notes",
+		subs: []subSpec{
+			{"add", "store a fact"},
+			{"query", "list top-k by salience"},
+			{"rm", "delete by id"},
+			{"gc", "decay + consolidate + evict"},
+		},
+		flags: []flagSpec{flagFormat},
+	},
+
+	// ---- build / maintenance ----
+	{
+		name: "index", aliases: []string{"idx"}, group: groupBuild, args: "<path>",
+		summary: "build or refresh the project index",
+		subs:    []subSpec{{"status", "endpoint health and project stats"}},
+		flags: []flagSpec{
+			{name: "--graph", desc: "graph phase mode", arg: true, choices: []string{"on", "off", "only"}},
+			flagFormat,
+			{name: "--dry-run", desc: "preview without writing"},
+			flagV,
+			{name: "--force", desc: "bypass guards"},
+			{name: "--wait", desc: "wait for lock"},
+		},
+	},
+	{
+		name: "generate", group: groupBuild, args: "<path> <prompt>",
+		summary: "RAG code generation",
+		flags:   []flagSpec{flagFormat, flagV},
+	},
+	{
+		name: "compact", aliases: []string{"bundle"}, group: groupBuild, args: "<path>",
+		summary: "concatenate indexable files for LLM prompts",
+		flags: []flagSpec{
+			{name: "--out", desc: "write to FILE", arg: true},
+			{name: "--max-bytes", desc: "byte budget", arg: true},
+			{name: "--strip", desc: "strip comments/blank lines"},
+		},
+	},
+	{
+		name: "compress", group: groupBuild, args: "<file|->",
+		summary: "compress a file or stdin through the dex engine (no LLM)",
+		flags: []flagSpec{
+			{name: "--mode", desc: "compression mode", arg: true, choices: []string{"auto", "aggressive", "entropy", "terse", "off"}},
+			{name: "--ext", desc: "language hint", arg: true},
+			{name: "--out", desc: "write to FILE", arg: true},
+			flagFormat,
+		},
+	},
+	{
+		name: "nuke", group: groupBuild, args: "<path>",
+		summary: "delete the on-disk index for a project",
+		flags:   []flagSpec{{name: "--yes", desc: "skip confirmation"}},
+	},
+	{
+		name: "reindex", group: groupBuild, args: "<path>|--all",
+		summary: "drop and re-embed from scratch",
+		flags:   []flagSpec{{name: "--all", desc: "every known project"}, {name: "--yes", desc: "skip confirmation"}},
+	},
+	{
+		name: "watch", group: groupBuild, args: "<path>",
+		summary: "keep the index fresh as files change",
+		flags: []flagSpec{
+			flagV,
+			{name: "--debounce", desc: "quiet window before re-indexing", arg: true},
+			{name: "--force", desc: "bypass guards"},
+		},
+	},
+	{
+		name: "clone", group: groupBuild, args: "<src> <dst>",
+		summary: "seed dst index from src (worktrees)",
+	},
+	{
+		name: "bench", group: groupBuild, args: "<sub> [<path>]",
+		summary: "benchmarks: eval|corpus|compress|perf|locomo",
+		subs: []subSpec{
+			{"eval", "retrieval eval against the golden set"},
+			{"corpus", "multi-repo retrieval eval"},
+			{"compress", "compression ratio/quality"},
+			{"perf", "indexing + query latency"},
+			{"locomo", "LoCoMo memory-recall benchmark"},
+		},
+	},
+	{
+		name: "hook", group: groupBuild, args: "inject|rewrite|redirect|observe",
+		summary: "Claude Code hook scripts",
+		subs: []subSpec{
+			{"inject", "UserPromptSubmit hook — inject dex context"},
+			{"rewrite", "Bash hook — rewrite rg/grep to dex find"},
+			{"redirect", "Read/Grep hook — compress large files"},
+			{"observe", "PostToolUse/Stop hook — append event log"},
+		},
+	},
+
+	// ---- config / setup / runtime ----
+	{
+		name: "mcp", group: groupConfig, summary: "run as an MCP server over stdio", noFiles: true,
+	},
+	{
+		name: "serve", group: groupConfig, args: "[flags] --project <p>",
+		summary: "run as an HTTP daemon (multi-project)",
+		flags: []flagSpec{
+			{name: "--addr", desc: "listen address", arg: true},
+			{name: "--project", desc: "project root (repeatable)", arg: true},
+		},
+	},
+	{
+		name: "proxy", group: groupConfig, args: "<path>",
+		summary: "MCP proxy — forward tools to a remote dex server",
+	},
+	{
+		name: "setup", group: groupConfig, summary: "guided first-run wizard", noFiles: true,
+		flags: []flagSpec{{name: "--check", desc: "exit 0 if setup complete, 1 otherwise"}},
+	},
+	{
+		name: "doctor", group: groupConfig, summary: "check the dex setup", noFiles: true,
+		flags: []flagSpec{flagV},
+	},
+	{
+		name: "config", group: groupConfig, args: "init",
+		summary: "manage .dex/config.yml",
+		subs:    []subSpec{{"init", "scaffold .dex/config.yml with commented defaults"}},
+		flags: []flagSpec{
+			{name: "--force", desc: "overwrite existing file"},
+			{name: "--full", desc: "include all tuning knobs"},
+		},
+	},
+	{
+		name: "env", group: groupConfig, summary: "print effective DEX_* configuration", noFiles: true,
+		flags: []flagSpec{
+			{name: "--all", desc: "include tuning knobs"},
+			{name: "--doc", desc: "include documentation"},
+			flagV, flagFormat,
+		},
+	},
+	{
+		name: "completion", group: groupConfig, args: "bash|zsh|fish",
+		summary: "output shell tab-completion script",
+		subs:    []subSpec{{"bash", ""}, {"zsh", ""}, {"fish", ""}},
+	},
+	{
+		name: "version", group: groupConfig, summary: "print the build version", noFiles: true,
+	},
+
+	// ---- hidden (dispatched, not advertised) ----
+	{name: "compress-stdin", group: groupHidden, summary: "compress stdin through dex patterns", noFiles: true},
+	{name: "shell-hook", group: groupHidden, summary: "print eval-able shell hook for passive compression", noFiles: true},
+}
+
+// completionCommands returns the advertised command names (canonical name
+// only, no aliases, excluding hidden plumbing) in registry order — the single
+// source for every shell's top-level command list.
+func completionCommands() []string {
+	out := make([]string, 0, len(verbs))
+	for _, v := range verbs {
+		if v.group == groupHidden {
+			continue
+		}
+		out = append(out, v.name)
+	}
+	return out
+}
+
+// zshCommandList renders the advertised verbs as zsh `_describe` entries
+// ('name:summary'), registry order.
+func zshCommandList() []string {
+	out := make([]string, 0, len(verbs))
+	for _, v := range verbs {
+		if v.group == groupHidden {
+			continue
+		}
+		out = append(out, v.name+":"+v.summary)
+	}
+	return out
+}

@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func cmdCompletion(args []string) error {
@@ -29,13 +30,13 @@ func cmdCompletion(args []string) error {
 	}
 	switch fs.Arg(0) {
 	case "bash":
-		fmt.Print(bashCompletionScript)
+		fmt.Print(bashCompletionScript())
 		fmt.Fprintln(os.Stderr, "# to install, add to ~/.bashrc:\n#   source <(dex completion bash)")
 	case "zsh":
-		fmt.Print(zshCompletionScript)
+		fmt.Print(zshCompletionScript())
 		fmt.Fprintln(os.Stderr, "# to install, add to ~/.zshrc:\n#   source <(dex completion zsh)")
 	case "fish":
-		fmt.Print(fishCompletionScript)
+		fmt.Print(fishCompletionScript())
 		fmt.Fprintln(os.Stderr, "# to install:\n#   dex completion fish > ~/.config/fish/completions/dex.fish")
 	default:
 		return fmt.Errorf("unknown shell %q (want bash | zsh | fish)", fs.Arg(0))
@@ -43,7 +44,13 @@ func cmdCompletion(args []string) error {
 	return nil
 }
 
-const bashCompletionScript = `# dex bash completion
+// bashCompletionScript renders the bash script with the command list injected
+// from the canonical registry (registry.go), so it can never drift.
+func bashCompletionScript() string {
+	return strings.ReplaceAll(bashCompletionTemplate, "__DEX_TOP_COMMANDS__", strings.Join(completionCommands(), " "))
+}
+
+const bashCompletionTemplate = `# dex bash completion
 # source <(dex completion bash)
 
 _dex_completion() {
@@ -54,7 +61,7 @@ _dex_completion() {
         prev="${COMP_WORDS[COMP_CWORD-1]}"
     }
 
-    local top_commands="ask find lookup read map trace impact graph notes index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config"
+    local top_commands="__DEX_TOP_COMMANDS__"
 
     # Depth-1: top-level command
     if [[ $COMP_CWORD -eq 1 ]]; then
@@ -99,7 +106,17 @@ _dex_completion() {
 complete -F _dex_completion dex
 `
 
-const zshCompletionScript = `#compdef dex
+// zshCompletionScript renders the zsh script with the command list (and its
+// per-command descriptions) injected from the canonical registry (registry.go).
+func zshCompletionScript() string {
+	lines := make([]string, 0, len(verbs))
+	for _, entry := range zshCommandList() {
+		lines = append(lines, "        '"+entry+"'")
+	}
+	return strings.ReplaceAll(zshCompletionTemplate, "__DEX_TOP_COMMANDS_ZSH__", strings.Join(lines, "\n"))
+}
+
+const zshCompletionTemplate = `#compdef dex
 # dex zsh completion
 # source <(dex completion zsh)
 
@@ -109,31 +126,7 @@ _dex() {
 
     local -a top_commands
     top_commands=(
-        'ask:one-shot router (semantic + symbol + graph)'
-        'find:hybrid semantic top-k search'
-        'lookup:exact identifier lookup'
-        'read:read a file (--mode full|signatures|summary…)'
-        'map:deterministic repo orientation map'
-        'trace:call-graph callers/callees/path'
-        'impact:transitive caller blast-radius'
-        'graph:graph traversal'
-        'notes:per-project notes'
-        'index:build or refresh the project index'
-        'generate:RAG code generation'
-        'env:print effective DEX_* configuration'
-        'compact:concatenate indexable files for LLM prompts'
-        'nuke:delete the on-disk index for a project'
-        'reindex:drop and re-embed from scratch'
-        'mcp:run as an MCP server over stdio'
-        'serve:run as an HTTP daemon (multi-project)'
-        'watch:keep the index fresh as files change'
-        'clone:seed dst index from src'
-        'hook:Claude Code hook scripts'
-        'doctor:check the dex setup'
-        'version:print the build version'
-        'completion:output shell tab-completion script'
-        'setup:guided first-run wizard'
-        'config:manage .dex/config.yml'
+__DEX_TOP_COMMANDS_ZSH__
     )
 
     _arguments -C \
@@ -294,10 +287,16 @@ _dex() {
 _dex "$@"
 `
 
-const fishCompletionScript = `# dex fish completions
+// fishCompletionScript renders the fish script with the command list injected
+// from the canonical registry (registry.go).
+func fishCompletionScript() string {
+	return strings.ReplaceAll(fishCompletionTemplate, "__DEX_TOP_COMMANDS__", strings.Join(completionCommands(), " "))
+}
+
+const fishCompletionTemplate = `# dex fish completions
 # dex completion fish > ~/.config/fish/completions/dex.fish
 
-set -l top_cmds ask find lookup read map trace impact graph notes index generate env compact nuke reindex mcp serve watch clone hook compress-stdin shell-hook doctor version completion setup config
+set -l top_cmds __DEX_TOP_COMMANDS__
 
 # Top-level commands
 complete -c dex -f -n 'not __fish_seen_subcommand_from $top_cmds' -a "$top_cmds"
