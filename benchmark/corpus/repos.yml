@@ -35,6 +35,7 @@ repos:
     query_sets: [queries/flask.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
       structural:   { enabled: true, max_commits: 500, max_files: 5 }
 
   - name: gin
@@ -53,8 +54,9 @@ repos:
     languages: [rust]
     query_sets: [queries/ripgrep.json]
     gen:
-      git_history: { enabled: true, max_commits: 500, max_files: 5 }
-      structural:  { enabled: true, max_commits: 500, max_files: 5 }
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
 
   - name: zod
     url: https://github.com/colinhacks/zod
@@ -62,8 +64,9 @@ repos:
     languages: [ts]
     query_sets: [queries/zod.json]
     gen:
-      git_history: { enabled: true, max_commits: 500, max_files: 5 }
-      structural:  { enabled: true, max_commits: 500, max_files: 5 }
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
 
   # react — flagship, large monorepo. Cost is bounded with index_subdir to a
   # single substantive package. NB: the public `packages/react-dom` is a thin
@@ -80,8 +83,9 @@ repos:
     gen:
       # gen honors index_subdir (#285): the generators scope git log to the
       # subdir and emit subdir-relative paths, so labels match the index.
-      git_history: { enabled: true, max_commits: 500, max_files: 5 }
-      structural:  { enabled: true, max_commits: 500, max_files: 5 }
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
 
   # ── #493 Phase 1: language + domain + scale coverage ─────────────────────
   # Closes the C-family / JVM gap (corpus was py/go/rust/ts/js only) and adds a
