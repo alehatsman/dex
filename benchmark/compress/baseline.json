@@ -81,10 +81,11 @@
         {
           "pass": "entropy",
           "tokens_in": 216,
-          "tokens_out": 0,
-          "ratio": 0,
-          "anchor_pct": 0,
-          "extract_fidelity": 0
+          "tokens_out": 216,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 0.5,
+          "declined": true
         },
         {
           "pass": "terse",
@@ -138,8 +139,8 @@
         {
           "pass": "aggressive",
           "tokens_in": 213,
-          "tokens_out": 199,
-          "ratio": 0.9342723004694836,
+          "tokens_out": 213,
+          "ratio": 1,
           "anchor_pct": 1,
           "extract_fidelity": 1
         },
@@ -211,10 +212,11 @@
         {
           "pass": "entropy",
           "tokens_in": 234,
-          "tokens_out": 0,
-          "ratio": 0,
-          "anchor_pct": 0,
-          "extract_fidelity": 0
+          "tokens_out": 234,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "declined": true
         },
         {
           "pass": "terse",
@@ -260,51 +262,314 @@
           "round_trip": true
         }
       ]
+    },
+    {
+      "sample": "large-test-log",
+      "kind": "log",
+      "passes": [
+        {
+          "pass": "aggressive",
+          "tokens_in": 1236,
+          "tokens_out": 1236,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "entropy",
+          "tokens_in": 1236,
+          "tokens_out": 1236,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "declined": true
+        },
+        {
+          "pass": "terse",
+          "tokens_in": 1236,
+          "tokens_out": 1236,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "ib",
+          "tokens_in": 1236,
+          "tokens_out": 1234,
+          "ratio": 0.9983818770226537,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "codebook",
+          "tokens_in": 1236,
+          "tokens_out": 1236,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        },
+        {
+          "pass": "ngram_codebook",
+          "tokens_in": 1236,
+          "tokens_out": 1236,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        },
+        {
+          "pass": "symmap",
+          "tokens_in": 1236,
+          "tokens_out": 1236,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        }
+      ]
+    },
+    {
+      "sample": "large-stacktrace",
+      "kind": "log",
+      "passes": [
+        {
+          "pass": "aggressive",
+          "tokens_in": 2123,
+          "tokens_out": 2123,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "entropy",
+          "tokens_in": 2123,
+          "tokens_out": 2123,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "declined": true
+        },
+        {
+          "pass": "terse",
+          "tokens_in": 2123,
+          "tokens_out": 2123,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "ib",
+          "tokens_in": 2123,
+          "tokens_out": 2123,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "codebook",
+          "tokens_in": 2123,
+          "tokens_out": 2123,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        },
+        {
+          "pass": "ngram_codebook",
+          "tokens_in": 2123,
+          "tokens_out": 2123,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        },
+        {
+          "pass": "symmap",
+          "tokens_in": 2123,
+          "tokens_out": 2123,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        }
+      ]
+    },
+    {
+      "sample": "large-diff",
+      "kind": "diff",
+      "passes": [
+        {
+          "pass": "aggressive",
+          "tokens_in": 1629,
+          "tokens_out": 1401,
+          "ratio": 0.860036832412523,
+          "anchor_pct": 0.5,
+          "extract_fidelity": 0
+        },
+        {
+          "pass": "entropy",
+          "tokens_in": 1629,
+          "tokens_out": 1509,
+          "ratio": 0.9263351749539595,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "terse",
+          "tokens_in": 1629,
+          "tokens_out": 1629,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "ib",
+          "tokens_in": 1629,
+          "tokens_out": 1596,
+          "ratio": 0.9797421731123389,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "codebook",
+          "tokens_in": 1629,
+          "tokens_out": 1629,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        },
+        {
+          "pass": "ngram_codebook",
+          "tokens_in": 1629,
+          "tokens_out": 1491,
+          "ratio": 0.9152854511970534,
+          "anchor_pct": 0.75,
+          "extract_fidelity": 0,
+          "round_trip": true
+        },
+        {
+          "pass": "symmap",
+          "tokens_in": 1629,
+          "tokens_out": 1640,
+          "ratio": 1.0067526089625538,
+          "anchor_pct": 0.75,
+          "extract_fidelity": 0.5,
+          "round_trip": true
+        }
+      ]
+    },
+    {
+      "sample": "large-source",
+      "kind": "code",
+      "passes": [
+        {
+          "pass": "aggressive",
+          "tokens_in": 3869,
+          "tokens_out": 2277,
+          "ratio": 0.5885241664512794,
+          "anchor_pct": 0.8,
+          "extract_fidelity": 0.5
+        },
+        {
+          "pass": "entropy",
+          "tokens_in": 3869,
+          "tokens_out": 3869,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "declined": true
+        },
+        {
+          "pass": "terse",
+          "tokens_in": 3869,
+          "tokens_out": 3869,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "ib",
+          "tokens_in": 3869,
+          "tokens_out": 3790,
+          "ratio": 0.9795812871543035,
+          "anchor_pct": 1,
+          "extract_fidelity": 1
+        },
+        {
+          "pass": "codebook",
+          "tokens_in": 3869,
+          "tokens_out": 3869,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        },
+        {
+          "pass": "ngram_codebook",
+          "tokens_in": 3869,
+          "tokens_out": 2948,
+          "ratio": 0.7619539932799173,
+          "anchor_pct": 0.8,
+          "extract_fidelity": 0.5,
+          "round_trip": true
+        },
+        {
+          "pass": "symmap",
+          "tokens_in": 3869,
+          "tokens_out": 3869,
+          "ratio": 1,
+          "anchor_pct": 1,
+          "extract_fidelity": 1,
+          "round_trip": true
+        }
+      ]
     }
   ],
   "summary": [
     {
       "pass": "aggressive",
-      "mean_ratio": 0.8969203478446436,
-      "mean_anchor_pct": 0.8928571428571428,
-      "mean_extract_fidelity": 0.875
+      "mean_ratio": 0.8877462612216116,
+      "mean_anchor_pct": 0.8589285714285714,
+      "mean_extract_fidelity": 0.75
     },
     {
       "pass": "entropy",
-      "mean_ratio": 0.4747385830132309,
-      "mean_anchor_pct": 0.4285714285714286,
-      "mean_extract_fidelity": 0.5
+      "mean_ratio": 0.9781611883758604,
+      "mean_anchor_pct": 0.9642857142857143,
+      "mean_extract_fidelity": 0.9375
     },
     {
       "pass": "terse",
-      "mean_ratio": 0.9726167929292929,
-      "mean_anchor_pct": 0.9285714285714286,
-      "mean_extract_fidelity": 0.875
+      "mean_ratio": 0.9863083964646464,
+      "mean_anchor_pct": 0.9642857142857143,
+      "mean_extract_fidelity": 0.9375
     },
     {
       "pass": "ib",
-      "mean_ratio": 0.9950284090909091,
-      "mean_anchor_pct": 0.9285714285714286,
-      "mean_extract_fidelity": 0.875
+      "mean_ratio": 0.9922273717066165,
+      "mean_anchor_pct": 0.9642857142857143,
+      "mean_extract_fidelity": 0.9375
     },
     {
       "pass": "codebook",
       "mean_ratio": 1,
-      "mean_anchor_pct": 0.9285714285714286,
-      "mean_extract_fidelity": 0.875,
+      "mean_anchor_pct": 0.9642857142857143,
+      "mean_extract_fidelity": 0.9375,
       "round_trip_ok": true
     },
     {
       "pass": "ngram_codebook",
-      "mean_ratio": 1,
-      "mean_anchor_pct": 0.9285714285714286,
-      "mean_extract_fidelity": 0.875,
+      "mean_ratio": 0.9596549305596214,
+      "mean_anchor_pct": 0.9080357142857143,
+      "mean_extract_fidelity": 0.75,
       "round_trip_ok": true
     },
     {
       "pass": "symmap",
-      "mean_ratio": 1,
-      "mean_anchor_pct": 0.9285714285714286,
+      "mean_ratio": 1.0008440761203192,
+      "mean_anchor_pct": 0.9330357142857143,
       "mean_extract_fidelity": 0.875,
       "round_trip_ok": true
     }

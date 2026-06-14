@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/bench/compress"
 	"github.com/alehatsman/dex/internal/tokens"
@@ -22,6 +23,12 @@ Two gate classes:
     round-trip == original (hard fail on reconstruction error).
   lossy passes (aggressive, entropy, terse, ib): gated on ratio +
     extractive-fidelity floor.
+
+In addition to the per-metric regression check (--check), an absolute,
+baseline-independent floor always runs: no pass may empty a non-trivial
+input, lossy passes must keep >=50% anchors/answer spans corpus-wide,
+lossless passes must round-trip, and the dictionary passes must trigger on
+the large samples. The gate fails on violation regardless of the baseline.
 
 Flags:
   --tokenizer name  tokenizer family: o200k_base | cl100k_base | llama
@@ -73,6 +80,14 @@ func runBenchCompress(_ context.Context, args []string) error {
 		fmt.Println(string(out))
 	default:
 		fmt.Print(rep.Markdown())
+	}
+
+	// Absolute floor: baseline-independent invariants (empty output on a
+	// non-trivial input, sub-floor lossy fidelity, lossless round-trip, dictionary
+	// passes never triggering). Runs unconditionally so a degenerate pass can
+	// never "pass forever" just because a baseline already recorded its numbers.
+	if viol := rep.AbsoluteViolations(); len(viol) > 0 {
+		return fmt.Errorf("dex bench compress: absolute floor violated: %s", strings.Join(viol, "; "))
 	}
 
 	// Resolve --check default.

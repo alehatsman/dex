@@ -151,6 +151,96 @@ func (r Report) Regressions(baseline Report, tol float64) []string {
 	return out
 }
 
+// Absolute floor thresholds — baseline-independent invariants enforced in
+// addition to the per-metric regression check. A pass can satisfy the baseline
+// and still be broken: emit empty output, destroy every answer span, or never
+// trigger at all (the original ratio-1.000 dictionary passes). These floors
+// fail the gate regardless of what the baseline blessed (#492).
+const (
+	// floorNonTrivialTokens marks an input large enough that emptying it, or
+	// shedding most of its content, is a defect rather than metric noise on a
+	// tiny snippet (where the entropy surprise metric legitimately degenerates).
+	floorNonTrivialTokens = 400
+	// floorAnchorPct / floorExtractFidelity: across the corpus a lossy pass must
+	// preserve at least half its anchor tokens and answer spans.
+	floorAnchorPct       = 0.5
+	floorExtractFidelity = 0.5
+	// floorDictTriggerRatio: the lossless dictionary passes must demonstrably pay
+	// off at volume — at least one non-trivial sample must compress to <= this.
+	// Guards the original finding that they sat ungated at ratio 1.000.
+	floorDictTriggerRatio = 0.90
+)
+
+// dictPasses are the lossless dictionary passes whose entire value is folding
+// repeated tokens; on a representative corpus at least one must actually fire.
+var dictPasses = map[string]bool{"codebook": true, "ngram_codebook": true, "symmap": true}
+
+// AbsoluteViolations returns baseline-independent floor violations. An empty
+// slice means the corpus satisfies every absolute invariant. This runs even
+// when no baseline exists, so a degenerate pass can never "pass forever" merely
+// because the baseline already recorded its broken numbers.
+func (r Report) AbsoluteViolations() []string {
+	var v []string
+
+	// 1. No pass may empty a non-trivial input. A pass that explicitly declined
+	//    is recorded as a no-op (TokensOut == TokensIn), so a genuine 0 here is a
+	//    real emptying, not the EntropyFilter decline sentinel.
+	for _, s := range r.Samples {
+		for _, p := range s.Passes {
+			if p.TokensIn >= floorNonTrivialTokens && !p.Declined && p.TokensOut == 0 {
+				v = append(v, fmt.Sprintf("%s/%s: emptied a non-trivial input (%d tokens → 0)",
+					s.Sample, p.Pass, p.TokensIn))
+			}
+		}
+	}
+
+	// 2. Every lossless pass must round-trip on every sample (RoundTrip is non-nil
+	//    only for lossless passes).
+	for _, s := range r.Samples {
+		for _, p := range s.Passes {
+			if p.RoundTrip != nil && !*p.RoundTrip {
+				v = append(v, fmt.Sprintf("%s/%s: lossless pass failed round-trip", s.Sample, p.Pass))
+			}
+		}
+	}
+
+	// 3. Aggregate lossy fidelity floor. Lossless passes carry RoundTripOK and are
+	//    gated by rule 2 instead; lossy passes (RoundTripOK == nil) must keep at
+	//    least half their anchors and answer spans across the corpus.
+	for _, ps := range r.Summary {
+		if ps.RoundTripOK != nil {
+			continue
+		}
+		if ps.MeanAnchorPct < floorAnchorPct {
+			v = append(v, fmt.Sprintf("pass %s: mean anchor %.2f < floor %.2f", ps.Pass, ps.MeanAnchorPct, floorAnchorPct))
+		}
+		if ps.MeanExtractFid < floorExtractFidelity {
+			v = append(v, fmt.Sprintf("pass %s: mean extract fidelity %.2f < floor %.2f", ps.Pass, ps.MeanExtractFid, floorExtractFidelity))
+		}
+	}
+
+	// 4. Dictionary passes must trigger at volume: across non-trivial samples, the
+	//    best (lowest) ratio of any dictionary pass must beat the trigger floor.
+	bestDict, sawNonTrivial := 2.0, false
+	for _, s := range r.Samples {
+		for _, p := range s.Passes {
+			if p.TokensIn < floorNonTrivialTokens || !dictPasses[p.Pass] {
+				continue
+			}
+			sawNonTrivial = true
+			if p.Ratio < bestDict {
+				bestDict = p.Ratio
+			}
+		}
+	}
+	if sawNonTrivial && bestDict > floorDictTriggerRatio {
+		v = append(v, fmt.Sprintf("dictionary passes never triggered: best ratio %.3f > floor %.2f (corpus has no compressible volume)",
+			bestDict, floorDictTriggerRatio))
+	}
+
+	return v
+}
+
 // CheckRegression loads a baseline JSON file and fails if any metric regressed.
 func CheckRegression(current Report, baselinePath string) error {
 	data, err := os.ReadFile(baselinePath)

@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 
@@ -17,6 +18,13 @@ type PassResult struct {
 	AnchorPct       float64 `json:"anchor_pct"`           // fraction of anchor tokens preserved verbatim
 	ExtractFidelity float64 `json:"extract_fidelity"`     // fraction of answer spans surviving as substrings
 	RoundTrip       *bool   `json:"round_trip,omitempty"` // nil for lossy passes
+	// Declined is true when a lossy pass returned no output for a non-empty
+	// input — its "I decline to compress this" sentinel. In production the
+	// caller keeps the original text, so the bench records the pass as a no-op
+	// (ratio 1.0, anchors/spans intact) rather than as catastrophic emptying.
+	// Without this the entropy pass scored ratio 0.000 / fidelity 0.00 on inputs
+	// it had simply skipped, dragging the aggregate into a misleading loss (#492).
+	Declined bool `json:"declined,omitempty"`
 }
 
 // SampleResult aggregates all pass results for one corpus sample.
@@ -41,18 +49,48 @@ func RunSample(s Sample, family tokens.Family) SampleResult {
 	passes := []string{"aggressive", "entropy", "terse", "ib", "codebook", "ngram_codebook", "symmap"}
 	result := SampleResult{Sample: s.Name, Kind: s.Kind}
 	for _, p := range passes {
-		out := applyPass(p, s.Content)
+		out := applyPass(p, s)
+		// A lossy pass that emits nothing for a non-empty input has declined to
+		// compress (e.g. EntropyFilter's nil sentinel when its quality gate trips
+		// or savings < 3%). Production keeps the original on decline, so record a
+		// no-op instead of a 0.000-ratio total loss (#492).
+		declined := false
+		if !passKind(p) && strings.TrimSpace(out) == "" && strings.TrimSpace(s.Content) != "" {
+			out = s.Content
+			declined = true
+		}
 		pr := measure(p, s, s.Content, out, counter)
+		pr.Declined = declined
 		result.Passes = append(result.Passes, pr)
 	}
 	return result
 }
 
+// extForKind maps a sample's modality to the file extension that drives the
+// aggressive pass. The bench previously hard-coded ".go" for every sample, so
+// aggressive applied Go-specific stripping to logs/diffs/prose and reported
+// destructive, unrepresentative fidelity. Driving it with the real modality ext
+// measures the pass the way production invokes it (#492).
+func extForKind(kind string) string {
+	switch kind {
+	case "code":
+		return ".go"
+	case "diff":
+		return ".diff"
+	case "log":
+		return ".log"
+	case "prose":
+		return ".md"
+	}
+	return ".txt"
+}
+
 // applyPass runs the named pass and returns the compressed text.
-func applyPass(pass, content string) string {
+func applyPass(pass string, s Sample) string {
+	content := s.Content
 	switch pass {
 	case "aggressive":
-		return compress.AggressiveCompress(content, ".go")
+		return compress.AggressiveCompress(content, extForKind(s.Kind))
 	case "entropy":
 		lines := strings.Split(content, "\n")
 		filtered := compress.EntropyFilter(lines, compress.EntropyThresholdStandard)
@@ -145,10 +183,29 @@ func roundTripCheck(_ string, original, compressed string) bool {
 	rev, body := parseLegend(compressed)
 	if rev == nil {
 		// No legend — pass produced no substitutions; output should equal input.
-		return strings.TrimSpace(original) == strings.TrimSpace(compressed)
+		return normalizeWS(original) == normalizeWS(compressed)
 	}
 	reconstructed := applyReverseMap(body, rev)
-	return strings.TrimSpace(reconstructed) == strings.TrimSpace(original)
+	return normalizeWS(reconstructed) == normalizeWS(original)
+}
+
+// wsRun collapses runs of intra-line whitespace (spaces and tabs, not
+// newlines) to a single space.
+var wsRun = regexp.MustCompile(`[ \t]+`)
+
+// normalizeWS collapses intra-line whitespace runs to a single space and trims,
+// so the round-trip comparison is token-exact rather than byte-exact. The
+// ngram codebook matches its patterns with `[ \t]+` between tokens and restores
+// them with a single space, so a diff/source body with tabs reconstructs the
+// same TOKENS but not the original byte-for-byte spacing. Genuine token loss
+// (a dropped or altered token, a missing line) still fails this comparison
+// because newlines and token identity are preserved.
+func normalizeWS(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		lines[i] = strings.TrimSpace(wsRun.ReplaceAllString(ln, " "))
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 // parseLegend splits a compressed string produced by ApplyWithLegend into the
