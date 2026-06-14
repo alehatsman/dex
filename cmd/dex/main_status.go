@@ -14,6 +14,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/store"
 )
 
 func cmdIndexStatus(ctx context.Context, args []string) error {
@@ -128,16 +129,17 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 	}
 
 	type row struct {
-		root      string
-		cacheHash string // first 5 chars of cache dir name; used for untagged display
-		chunks    int
-		files     int
-		nodes     int64
-		edges     int64
-		last      time.Time
-		stale     bool
-		corrupt   bool
-		empty     bool
+		root        string
+		cacheHash   string // first 5 chars of cache dir name; used for untagged display
+		chunks      int
+		files       int
+		nodes       int64
+		edges       int64
+		last        time.Time
+		stale       bool
+		staleSchema bool // index built before/under a different schema version — reindex, not damaged
+		corrupt     bool
+		empty       bool
 	}
 	results := make([]row, len(entries))
 	sem := make(chan struct{}, 8)
@@ -161,7 +163,17 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 			// (#334).
 			st, err := openStore(ctx, path)
 			if err != nil {
-				results[idx] = row{root: fmt.Sprintf("(corrupt cache: %s)", name), corrupt: true}
+				// A schema-version mismatch is not damage — the db was
+				// written by an older binary (or one before the
+				// schema-version mechanism, so meta.schema_version is
+				// empty). The data is intact; the user just needs
+				// `dex reindex`. Reserve "corrupt" for genuinely
+				// unreadable databases (#489).
+				if errors.Is(err, store.ErrSchemaVersionMismatch) {
+					results[idx] = row{root: fmt.Sprintf("(schema mismatch: %s)", name), staleSchema: true}
+				} else {
+					results[idx] = row{root: fmt.Sprintf("(corrupt cache: %s)", name), corrupt: true}
+				}
 				return
 			}
 			stats, _ := st.Stats(ctx)
@@ -225,33 +237,61 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 
 	if *format == "json" {
 		type jsonRow struct {
-			Project   string    `json:"project"`
-			Files     int       `json:"files"`
-			Chunks    int       `json:"chunks"`
-			Nodes     int64     `json:"nodes"`
-			Edges     int64     `json:"edges"`
-			LastIndex time.Time `json:"last_index"`
-			Corrupt   bool      `json:"corrupt,omitempty"`
-			Stale     bool      `json:"stale,omitempty"`
+			Project        string    `json:"project"`
+			Files          int       `json:"files"`
+			Chunks         int       `json:"chunks"`
+			Nodes          int64     `json:"nodes"`
+			Edges          int64     `json:"edges"`
+			LastIndex      time.Time `json:"last_index"`
+			Corrupt        bool      `json:"corrupt,omitempty"`
+			Stale          bool      `json:"stale,omitempty"`
+			SchemaMismatch bool      `json:"schema_mismatch,omitempty"`
+			Remedy         string    `json:"remedy,omitempty"`
 		}
 		out := make([]jsonRow, 0, len(rows))
 		for _, r := range rows {
 			jr := jsonRow{
-				Project:   r.root,
-				Files:     r.files,
-				Chunks:    r.chunks,
-				Nodes:     r.nodes,
-				Edges:     r.edges,
-				LastIndex: r.last,
-				Corrupt:   r.corrupt,
-				Stale:     r.stale,
+				Project:        r.root,
+				Files:          r.files,
+				Chunks:         r.chunks,
+				Nodes:          r.nodes,
+				Edges:          r.edges,
+				LastIndex:      r.last,
+				Corrupt:        r.corrupt,
+				Stale:          r.stale,
+				SchemaMismatch: r.staleSchema,
+			}
+			// A schema mismatch is recoverable — surface the remedy
+			// rather than treating the index as damaged (#489).
+			if r.staleSchema {
+				jr.Remedy = "run dex reindex"
 			}
 			out = append(out, jr)
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"projects": out})
 	}
 
-	fmt.Printf("projects (%d indexed)\n", len(rows))
+	// Count healthy / stale-schema / corrupt separately so the header
+	// doesn't lump reindex-able and damaged indexes into "indexed" (#489).
+	var healthy, staleSchema, corrupt int
+	for _, r := range rows {
+		switch {
+		case r.corrupt:
+			corrupt++
+		case r.staleSchema:
+			staleSchema++
+		default:
+			healthy++
+		}
+	}
+	header := fmt.Sprintf("projects (%d indexed", healthy)
+	if staleSchema > 0 {
+		header += fmt.Sprintf(", %d stale", staleSchema)
+	}
+	if corrupt > 0 {
+		header += fmt.Sprintf(", %d corrupt", corrupt)
+	}
+	fmt.Println(header + ")")
 
 	// Stacked layout: each project is a self-contained block of
 	// labelled key:value rows. The labels are padded to a fixed width
@@ -265,6 +305,10 @@ func cmdIndexStatus(ctx context.Context, args []string) error {
 		}
 		if r.corrupt {
 			fmt.Printf("  %s\n    CORRUPT\n", r.root)
+			continue
+		}
+		if r.staleSchema {
+			fmt.Printf("  %s\n    stale (schema mismatch) — run: dex reindex\n", r.root)
 			continue
 		}
 		fmt.Printf("  %s\n", r.root)
