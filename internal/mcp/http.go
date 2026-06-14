@@ -62,6 +62,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/alehatsman/dex/internal/logx"
@@ -400,12 +401,44 @@ func resolveProjectFromURL(w http.ResponseWriter, r *http.Request, projects map[
 		writeError(w, http.StatusBadRequest, "missing project id")
 		return ""
 	}
-	root, ok := projects[id]
+	canonical, ok, ambiguous := resolveRegistryID(id, projects)
+	if ambiguous {
+		writeError(w, http.StatusBadRequest, "ambiguous project id prefix: "+id)
+		return ""
+	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "unknown project id: "+id)
 		return ""
 	}
-	return root
+	return projects[canonical]
+}
+
+// resolveRegistryID maps a URL {id} to a canonical registry key, accepting
+// either the full key or an unambiguous prefix of it. The boot banner
+// prints a 12-char id prefix (serve.go), so an operator can paste that
+// straight into a REST/MCP-over-HTTP call. An exact match always wins; a
+// prefix that matches exactly one key resolves to it; a prefix matching
+// more than one key is reported ambiguous (the caller turns that into an
+// error rather than silently picking one).
+func resolveRegistryID[V any](id string, registry map[string]V) (canonical string, ok bool, ambiguous bool) {
+	if _, exact := registry[id]; exact {
+		return id, true, false
+	}
+	var match string
+	n := 0
+	for k := range registry {
+		if strings.HasPrefix(k, id) {
+			match, n = k, n+1
+		}
+	}
+	switch n {
+	case 1:
+		return match, true, false
+	case 0:
+		return "", false, false
+	default:
+		return "", false, true
+	}
 }
 
 // decodeBody reads the request body into v. Empty bodies (Content-

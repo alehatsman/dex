@@ -175,6 +175,11 @@ func (s *Server) newMCPHandler(projects map[string]string) http.Handler {
 	// holding an SSE stream open per call. Clients may still open the optional
 	// standalone SSE GET; dex just never pushes over it.
 	return sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
-		return servers[r.PathValue("id")] // nil for unknown id => 400
+		// Accept the full id or an unambiguous prefix (the boot banner
+		// prints a 12-char prefix). Unknown or ambiguous => nil => 400.
+		if canonical, ok, _ := resolveRegistryID(r.PathValue("id"), servers); ok {
+			return servers[canonical]
+		}
+		return nil
 	}, &sdk.StreamableHTTPOptions{JSONResponse: true})
 }
