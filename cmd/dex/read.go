@@ -45,7 +45,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("read", flag.ContinueOnError)
 	setHelp(fs,
 		"Read a file (MCP: read). Default mode=full is raw content (no LLM); mode=summary is an LLM digest.",
-		"dex read [flags] <file>",
+		"dex read [flags] [<path>] <file>",
 		`dex read internal/store/store.go`,
 		`dex read --mode=signatures internal/mcp/server.go`,
 		`dex read --start=100 --end=160 cmd/dex/main.go`,
@@ -70,7 +70,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown --format=%s (want text|json)", *format)
 	}
-	rest := fs.Args()
+	projPath, rest := splitProjectArg(fs.Args())
 	if len(rest) != 1 {
 		return fmt.Errorf("read needs exactly one <file> argument")
 	}
@@ -79,7 +79,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	// the same Server.Summarize the MCP `read` tool uses so CLI and tool agree.
 	// (The local fast paths below avoid a server spin-up for the hot modes.)
 	if serverReadMode(*mode) {
-		return readViaServer(ctx, path, *mode, *start, *end, *focus, *temp, *maxTok, *format, *verbose)
+		return readViaServer(ctx, projPath, path, *mode, *start, *end, *focus, *temp, *maxTok, *format, *verbose)
 	}
 	if *start < 0 || *end < 0 {
 		return fmt.Errorf("--start/--end must be non-negative")
@@ -175,12 +175,12 @@ func cmdRead(ctx context.Context, args []string) error {
 // tool uses, so the CLI and the tool produce identical output. Focus/temp/
 // max-tokens/verbose are summary-only and ignored by the deterministic modes.
 // For summary, a missing chat model yields a needs-chat status, not an error.
-func readViaServer(ctx context.Context, file, mode string, start, end int, focus string, temp float64, maxTok int, format string, verbose bool) error {
+func readViaServer(ctx context.Context, projPath, file, mode string, start, end int, focus string, temp float64, maxTok int, format string, verbose bool) error {
 	base, err := indexDir()
 	if err != nil {
 		return err
 	}
-	p, err := proj.Resolve("", base)
+	p, err := proj.Resolve(projPath, base)
 	if err != nil {
 		return err
 	}
