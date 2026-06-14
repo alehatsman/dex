@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,7 +61,16 @@ type ExtractResult struct {
 // top-level Load failure (config / build system) is returned as err.
 func ExtractGo(ctx context.Context, projectRoot string) (*ExtractResult, error) {
 	if !hasGoModule(projectRoot) {
-		return &ExtractResult{}, nil
+		res := &ExtractResult{}
+		// Don't fail silently: a Go tree with no go.mod yields an empty
+		// graph, which darkens every graph tool (trace/impact/callers/path)
+		// with no signal to the operator. Warn iff Go files are actually
+		// present — a non-Go project must stay quiet (issue #516).
+		if n := countGoFiles(projectRoot); n > 0 {
+			res.Warnings = append(res.Warnings, fmt.Sprintf(
+				"found %d Go file(s) but no go.mod/go.work: Go graph extraction skipped — run 'go mod init <module>' to enable graph tools (trace/impact/callers/path)", n))
+		}
+		return res, nil
 	}
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
@@ -117,9 +127,45 @@ func ExtractGo(ctx context.Context, projectRoot string) (*ExtractResult, error) 
 	// the most common case.
 	extractCrossPackageImplements(pkgs, inTree, modulePath, edgeSet)
 
+	// go.mod present but nothing resolved: a build that fails to load any
+	// package (toolchain mismatch, broken module) leaves the graph empty.
+	// Per-package errors above are noisy; add one actionable summary so the
+	// 0-node graph isn't mistaken for "no code" (issue #516).
+	if res.Packages == 0 {
+		if n := countGoFiles(projectRoot); n > 0 {
+			res.Warnings = append(res.Warnings, fmt.Sprintf(
+				"go.mod present but 0 Go packages resolved from %d Go file(s): graph tools will be empty — check the build (go build ./...) and load warnings above", n))
+		}
+	}
+
 	res.Nodes = nodeSet.flatten()
 	res.Edges = edgeSet.flatten()
 	return res, nil
+}
+
+// countGoFiles reports how many .go files live under root, skipping the
+// usual heavy/irrelevant dirs. It only decides whether a missing-go.mod or
+// zero-package result is worth warning about, so a non-Go tree stays
+// silent. Best-effort: walk errors collapse to the count so far.
+func countGoFiles(root string) int {
+	n := 0
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			base := d.Name()
+			if path != root && (base == "vendor" || base == "node_modules" || base == "testdata" || strings.HasPrefix(base, ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".go") {
+			n++
+		}
+		return nil
+	})
+	return n
 }
 
 // inferModulePath picks the most likely module path for the project.
