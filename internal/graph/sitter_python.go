@@ -29,7 +29,11 @@ import (
 
 // newPythonExtractor returns a fresh extractor instance. The framework
 // builds one per Run so accumulator state is isolated.
-func newPythonExtractor() Extractor {
+func newPythonExtractor() Extractor { return newPythonExtractorImpl() }
+
+// newPythonExtractorImpl returns the concrete walker so the query-driven
+// tags front-end can embed it without a type assertion.
+func newPythonExtractorImpl() *pythonExtractor {
 	return &pythonExtractor{
 		nodeIDs:     map[string]struct{}{},
 		symbols:     map[string]map[string]string{},
@@ -129,7 +133,25 @@ func (e *pythonExtractor) Init(_ context.Context, root string) error {
 }
 
 func (e *pythonExtractor) ProcessFile(_ context.Context, in FileInput) error {
-	pkg := pythonPackagePath(in.RelPath)
+	pkg, fileID, imports := e.emitFileScaffold(in)
+
+	// Walk only the module's *named* top-level children. Comments and
+	// whitespace come through as anonymous nodes that we don't want
+	// to descend into.
+	root := in.Root
+	for i := 0; i < int(root.NamedChildCount()); i++ {
+		child := root.NamedChild(i)
+		e.processTopLevel(child, in.Source, in.RelPath, pkg, fileID, imports)
+	}
+	return nil
+}
+
+// emitFileScaffold emits the package + file nodes and the package→file
+// contains edge, and registers an empty import table for the file. It is
+// the shared per-file setup used by both the recursive walker
+// (ProcessFile) and the query-driven tags path.
+func (e *pythonExtractor) emitFileScaffold(in FileInput) (pkg, fileID string, imports *pyImportTable) {
+	pkg = pythonPackagePath(in.RelPath)
 
 	// Package node, emitted lazily on first sight of a file in pkg.
 	// addNode dedupes by ID, so subsequent files in the same package
@@ -145,7 +167,7 @@ func (e *pythonExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		Metadata:      map[string]any{"language": "python"},
 	})
 
-	fileID := NodeID("", pkg, NodeFile, in.RelPath)
+	fileID = NodeID("", pkg, NodeFile, in.RelPath)
 	e.addNode(Node{
 		ID:            fileID,
 		Kind:          NodeFile,
@@ -167,21 +189,12 @@ func (e *pythonExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		EndLine:   1,
 	})
 
-	imports := &pyImportTable{
+	imports = &pyImportTable{
 		modules:     map[string]string{},
 		fromImports: map[string]pyFromImport{},
 	}
 	e.fileImports[in.RelPath] = imports
-
-	// Walk only the module's *named* top-level children. Comments and
-	// whitespace come through as anonymous nodes that we don't want
-	// to descend into.
-	root := in.Root
-	for i := 0; i < int(root.NamedChildCount()); i++ {
-		child := root.NamedChild(i)
-		e.processTopLevel(child, in.Source, in.RelPath, pkg, fileID, imports)
-	}
-	return nil
+	return pkg, fileID, imports
 }
 
 func (e *pythonExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, error) {
@@ -246,13 +259,35 @@ func (e *pythonExtractor) addFunction(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID, className string,
 ) {
+	id := e.emitFunctionNode(n, src, filePath, pkg, fileID, className)
+	if id == "" {
+		return
+	}
+	// Collect call sites inside the body. The walker descends only
+	// into expressions, not into nested function defs, so a `def f()`
+	// inside `def g()` doesn't attribute its inner calls to g.
+	body := n.ChildByFieldName("body")
+	if body != nil {
+		e.collectCalls(body, src, id, pkg, className, filePath)
+	}
+}
+
+// emitFunctionNode emits the node/symbol/edge surface for a function or
+// method (file→contains; class→has_method when className is set) WITHOUT
+// descending into the body. It is the shared emission step used by both
+// the recursive walker (addFunction) and the query-driven tags path.
+// Returns the node ID, or "" when the def has no usable name.
+func (e *pythonExtractor) emitFunctionNode(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID, className string,
+) string {
 	nameNode := n.ChildByFieldName("name")
 	if nameNode == nil {
-		return
+		return ""
 	}
 	name := nodeText(nameNode, src)
 	if name == "" {
-		return
+		return ""
 	}
 	kind := NodeFunction
 	qn := name
@@ -311,14 +346,7 @@ func (e *pythonExtractor) addFunction(
 			EndLine:   endLine,
 		})
 	}
-
-	// Collect call sites inside the body. The walker descends only
-	// into expressions, not into nested function defs, so a `def f()`
-	// inside `def g()` doesn't attribute its inner calls to g.
-	body := n.ChildByFieldName("body")
-	if body != nil {
-		e.collectCalls(body, src, id, pkg, className, filePath)
-	}
+	return id
 }
 
 // addClass emits a class node + recurses into the body to pick up
@@ -328,13 +356,53 @@ func (e *pythonExtractor) addClass(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID string,
 ) {
+	if e.emitClassNode(n, src, filePath, pkg, fileID) == "" {
+		return
+	}
+	name := nodeText(n.ChildByFieldName("name"), src)
+	body := n.ChildByFieldName("body")
+	if body == nil {
+		return
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		child := body.NamedChild(i)
+		if child == nil {
+			continue
+		}
+		kind := child.Type()
+		if kind == "decorated_definition" {
+			inner := child.ChildByFieldName("definition")
+			if inner != nil {
+				child = inner
+				kind = inner.Type()
+			}
+		}
+		switch kind {
+		case "function_definition":
+			e.addFunction(child, src, filePath, pkg, fileID, name)
+		case "class_definition":
+			// Nested class — emit as a top-level class. Python allows
+			// it; the QN-without-outer is a first-cut simplification.
+			e.addClass(child, src, filePath, pkg, fileID)
+		}
+	}
+}
+
+// emitClassNode emits the class node, its symbol-table entry, and the
+// file→contains edge WITHOUT descending into the class body. Shared by
+// the recursive walker (addClass) and the query-driven tags path.
+// Returns the node ID, or "" when the class has no usable name.
+func (e *pythonExtractor) emitClassNode(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID string,
+) string {
 	nameNode := n.ChildByFieldName("name")
 	if nameNode == nil {
-		return
+		return ""
 	}
 	name := nodeText(nameNode, src)
 	if name == "" {
-		return
+		return ""
 	}
 	id := NodeID("", pkg, NodeClass, name)
 	startLine := lineOfPoint(n.StartPoint().Row)
@@ -362,33 +430,7 @@ func (e *pythonExtractor) addClass(
 		StartLine: startLine,
 		EndLine:   endLine,
 	})
-
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil {
-			continue
-		}
-		kind := child.Type()
-		if kind == "decorated_definition" {
-			inner := child.ChildByFieldName("definition")
-			if inner != nil {
-				child = inner
-				kind = inner.Type()
-			}
-		}
-		switch kind {
-		case "function_definition":
-			e.addFunction(child, src, filePath, pkg, fileID, name)
-		case "class_definition":
-			// Nested class — emit as a top-level class. Python allows
-			// it; the QN-without-outer is a first-cut simplification.
-			e.addClass(child, src, filePath, pkg, fileID)
-		}
-	}
+	return id
 }
 
 // ---- import parsing --------------------------------------------------------

@@ -148,13 +148,39 @@ func (r *Registry) Extensions() []string {
 // Callers can pass a subset to NewRegistry for hermetic, single-language
 // extraction (useful in tests).
 func DefaultExtractors() []ExtractorFactory {
+	pyFactory := newPythonExtractor
+	// 468b pilot gate: DEX_GRAPH_TAGS selects the query-driven discovery
+	// front-end per language so it can be A/B'd against the walker.
+	// Default is unchanged (the hand-rolled walker).
+	if tagsLangEnabled("python") {
+		pyFactory = newPythonTagsExtractor
+	}
 	return []ExtractorFactory{
-		newPythonExtractor,
+		pyFactory,
 		newTSExtractor,
 		newJSExtractor,
 		newRustExtractor,
 		newJavaExtractor,
 	}
+}
+
+// tagsLangEnabled reports whether the query-driven (tags) extractor is
+// requested for lang via DEX_GRAPH_TAGS — a comma-separated list of
+// language names, or "1"/"all" for every supported language.
+func tagsLangEnabled(lang string) bool {
+	v := strings.TrimSpace(os.Getenv("DEX_GRAPH_TAGS"))
+	if v == "" {
+		return false
+	}
+	for _, tok := range strings.Split(v, ",") {
+		switch tok := strings.TrimSpace(tok); tok {
+		case "1", "all":
+			return true
+		case lang:
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultRegistry is the package-level registry, lazily populated on
