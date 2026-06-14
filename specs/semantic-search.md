@@ -79,6 +79,12 @@ path; building the index and the on-disk engine are sibling specs'.
 - IF the embedding backend is unreachable, dex returns a distinct
   `embedding-service-unreachable` status with the endpoint and a hint to fall
   back to grep/ripgrep, rather than an empty or error result.
+- WHERE answer quality is gated (#550), `dex bench eval --faithfulness`
+  synthesizes an `ask` answer per golden query from the retrieved evidence and
+  scores how well each answer is grounded in that evidence — a model-free
+  claim-overlap proxy, complementary to retrieval recall (which only scores
+  whether the right files were found, not whether the synthesized prose is
+  supported). It needs a chat model and supports `--check` for regression.
 
 ## Non-goals
 

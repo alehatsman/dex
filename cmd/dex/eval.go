@@ -68,6 +68,21 @@ Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexin
              DEX_FUSION_ALPHA=0.5    dense weight for FusionLinear (0 < α ≤ 1).
 `
 
+// goldenPathForMode returns the default golden-set path for a generation mode
+// when no explicit --golden path was given.
+func goldenPathForMode(root, mode string) string {
+	name := "golden.json"
+	switch mode {
+	case "blast-radius":
+		name = "blast-radius.json"
+	case "structural":
+		name = "structural.json"
+	case "orphan":
+		name = "orphan.json"
+	}
+	return filepath.Join(root, "benchmark", "eval", name)
+}
+
 func runEval(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("bench eval", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, evalUsage) }
@@ -86,6 +101,7 @@ func runEval(ctx context.Context, args []string) error {
 	graphSweep := fs.Bool("graph-sweep", false, "sweep GraphLaneWeight (off, 0.5…2.0) at the calibrated fusion default and print per-weight NDCG/Recall deltas vs graph-off — the GraphLaneWeight ablation (#470)")
 	emitCalib := fs.String("emit-calibration", "", "with --alpha-sweep: write the winning config to this calibration.yml path (run from the dex repo; commit the diff)")
 	expand := fs.String("expand", "off", "query-side expansion to A/B (#252): off | on | full. Requires DEX_EXPAND_MODEL.")
+	faithfulness := fs.Bool("faithfulness", false, "answer-faithfulness gate (#550): synthesize an ask answer per query and score how well it is grounded in the retrieved evidence. Requires a chat model (DEX_CHAT_URL/DEX_CHAT_MODEL).")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	var projectPath string
@@ -117,16 +133,7 @@ func runEval(ctx context.Context, args []string) error {
 
 	gPath := *goldenPath
 	if gPath == "" {
-		name := "golden.json"
-		switch *mode {
-		case "blast-radius":
-			name = "blast-radius.json"
-		case "structural":
-			name = "structural.json"
-		case "orphan":
-			name = "orphan.json"
-		}
-		gPath = filepath.Join(p.Root, "benchmark", "eval", name)
+		gPath = goldenPathForMode(p.Root, *mode)
 	}
 
 	if *gen {
@@ -180,6 +187,12 @@ func runEval(ctx context.Context, args []string) error {
 	}
 	if *emitCalib != "" {
 		return fmt.Errorf("dex bench eval: --emit-calibration requires --alpha-sweep")
+	}
+	if *faithfulness {
+		if err := runFaithfulnessEval(ctx, st, em, gs, *k, *outputFmt, *checkPath); err != nil {
+			return fmt.Errorf("dex bench eval: faithfulness: %w", err)
+		}
+		return nil
 	}
 
 	var rw eval.Rewrite
