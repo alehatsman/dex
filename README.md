@@ -44,8 +44,11 @@ tools (`ask`, `find`, `read`, …) automatically.
 
 ## Verbs
 
-The CLI verbs and the MCP tool names are identical. CLI form is
-`dex <verb> [path] <args…>`; `path` defaults to the current directory.
+For the everyday set the CLI verbs and the MCP tool names are identical. CLI
+form is `dex <verb> [path] <args…>`; `path` defaults to the current directory.
+The graph/analysis tools are flat MCP tools but live under `dex graph <sub>` on
+the CLI (`deps callers callees path diff clusters cycles smells routes export`,
+each annotated `(MCP: <name>)` in `dex graph --help`).
 
 | verb     | what it does                                                        |
 |----------|---------------------------------------------------------------------|

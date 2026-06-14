@@ -143,6 +143,8 @@ var verbs = []verbSpec{
 			{"path", "shortest call/import path A→B"},
 			{"diff", "blast-radius of a git diff"},
 			{"clusters", "Louvain call-graph clusters"},
+			{"smells", "long funcs, dead exports, god files/nodes"},
+			{"routes", "HTTP/MCP/gRPC handlers + registration sites"},
 			{"export", "dump nodes/edges as JSONL"},
 		},
 		flags: []flagSpec{flagK, flagFormat, flagV},
