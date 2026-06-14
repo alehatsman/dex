@@ -68,6 +68,18 @@ func (s *Server) summarizeResolveMode(in SummarizeInput) (mode string, isLLM boo
 	return mode, isLLM
 }
 
+// escapesRoot reports whether path lies outside root. Both are compared
+// lexically via filepath.Rel; a relative result of ".." or one prefixed with
+// "../" means path climbs above root. The separator-aware prefix avoids a
+// false positive on sibling names like "..foo".
+func escapesRoot(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return true
+	}
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // summarizeReadFile resolves target under p, validates it stays inside the
 // project root, stats it, reads it, and computes its etag. Returns done=true
 // and a populated earlyOut for all error paths.
@@ -77,6 +89,16 @@ func (s *Server) summarizeReadFile(p *proj.Project, target string) (
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(p.Root, target)
 	}
+	target = filepath.Clean(target)
+	// Containment is decided lexically, before any existence check: an escaping
+	// path must be rejected the same way whether or not it happens to exist, so
+	// a non-existent escaping path (e.g. ../../etc/shadow) reports "outside
+	// project root" rather than leaking the resolved path through a misleading
+	// "file does not exist" message (#508). The post-symlink check below then
+	// catches in-root paths that symlink out.
+	if escapesRoot(p.Root, target) {
+		return "", "", nil, "", SummarizeOutput{Status: "error", Hint: fmt.Sprintf("path %s is outside project root %s", target, p.Root)}, true
+	}
 	real, err := filepath.EvalSymlinks(target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -85,7 +107,7 @@ func (s *Server) summarizeReadFile(p *proj.Project, target string) (
 		return "", "", nil, "", SummarizeOutput{Status: "error", Hint: fmt.Sprintf("resolve path: %v", err)}, true
 	}
 	rel, err := filepath.Rel(p.Root, real)
-	if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
+	if err != nil || escapesRoot(p.Root, real) {
 		return "", "", nil, "", SummarizeOutput{Status: "error", Hint: fmt.Sprintf("path %s is outside project root %s", target, p.Root)}, true
 	}
 	fi, err := os.Stat(real)
