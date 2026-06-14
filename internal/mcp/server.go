@@ -140,7 +140,7 @@ type cacheState struct {
 	// unified diff when it is smaller than deltaThreshold × full content.
 	readContentCache map[string]map[string][]byte // sessionID → relPath → raw bytes
 	// answerCache is the bounded per-server cache for synthesized answers.
-	answerCache answerCache
+	answerCache retrieve.AnswerCache
 	// tgCache holds per-(root,prefix,ext) RAM-resident trigram indices used
 	// by searchGrep to narrow candidate files before reading them.
 	tgCache trigramCache

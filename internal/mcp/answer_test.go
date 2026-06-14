@@ -124,14 +124,8 @@ func TestBuildAnswerEvidenceOrderingAndBudget(t *testing.T) {
 	}
 }
 
-func TestAnswerCacheKeyDistinguishesFields(t *testing.T) {
-	var c answerCache
-	k1 := c.key("q", "intent", "model", "evidence")
-	k2 := c.key("qi", "ntent", "model", "evidence") // same concat, different split
-	if k1 == k2 {
-		t.Error("cache key collided across field boundaries — length prefixing failed")
-	}
-}
+// TestAnswerCacheKeyDistinguishesFields moved to internal/retrieve
+// (answer_test.go) with the AnswerCache type.
 
 func TestBuildAnswerEvidenceSessionContext(t *testing.T) {
 	out := &ContextOutput{

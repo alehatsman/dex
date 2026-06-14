@@ -1,10 +1,10 @@
-// Package mcp — answer synthesis for the `ask` tool.
+// Package mcp — answer synthesis wiring for the `ask` tool.
 //
-// answer.go turns the evidence bundle that contextRouter composes
-// (suggested_reads with inlined content, symbol signatures+docs, graph
-// edges) into a short grounded prose answer via the chat leg. This is
-// what makes `ask` the single tool an agent needs: it returns the
-// prepared answer, not just routing instructions.
+// The synthesis algorithm (the chat call + answer cache) lives in
+// internal/retrieve (retrieve.SynthesizeAnswer). This file is the
+// transport side: it renders the wire ContextOutput into an evidence
+// text block (buildAnswerEvidence) and adapts the MCP session's Log
+// stream into a plain token callback.
 //
 // Synthesis is best-effort and never blocks a result: if the chat
 // client is absent or unreachable, the bundle is returned exactly as
@@ -14,22 +14,13 @@ package mcp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
-	"github.com/alehatsman/dex/internal/chat"
+	"github.com/alehatsman/dex/internal/retrieve"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-// answerMaxTokens caps synthesis length. Answers are meant to be a
-// tight paragraph or two with citations, not an essay — bounding tokens
-// also bounds generation time on the (shared) GPU.
-const answerMaxTokens = 400
 
 // answerMaxEvidenceBytes caps how much evidence text we feed the chat
 // model. The inline byte pool bounds the bundle (~20 KB targeted /
@@ -38,16 +29,15 @@ const answerMaxTokens = 400
 // context). Overflowing the window makes the backend silently truncate
 // from the left, dropping the system prompt and producing a degraded or
 // empty answer. 12 KB (~3k tokens) leaves headroom for the system
-// prompt, question, and answerMaxTokens of output inside a 4096 window.
-// Sized for the smallest common local context; raise if you serve a
-// long-context model.
+// prompt, question, and answer output inside a 4096 window. Sized for
+// the smallest common local context; raise if you serve a long-context
+// model.
 const answerMaxEvidenceBytes = 12 * 1024
 
 // synthesizeAnswer fills out.Answer (and out.AnswerModel) from the
 // evidence already assembled on out. It is a no-op when no chat client
 // is wired or no usable evidence text exists. Chat-layer failures are
-// swallowed: a missing answer degrades to the evidence-only bundle,
-// never an error to the caller.
+// swallowed: a missing answer degrades to the evidence-only bundle.
 //
 // When session is non-nil, tokens are streamed to the client via Log
 // notifications as they arrive, so the agent sees output before the
@@ -61,71 +51,27 @@ func (s *Server) synthesizeAnswer(ctx context.Context, session *sdk.ServerSessio
 		return
 	}
 
-	model := s.ChatClient.ModelName()
-	key := s.answerCache.key(question, intent, model, evidence)
-	if cached, ok := s.answerCache.get(key); ok {
-		out.Answer = cached
-		out.AnswerModel = model
-		return
-	}
-
-	msgs := []chat.Message{
-		{Role: "system", Content: answerSystemPrompt},
-		{Role: "user", Content: buildAnswerUser(question, intent, evidence)},
-	}
-	opts := chat.Options{MaxTokens: answerMaxTokens}
-
-	var (
-		resp chat.Response
-		err  error
-	)
+	var logTok func(string)
 	if session != nil {
-		resp, err = s.ChatClient.GenerateStream(ctx, msgs, opts, func(tok string) {
+		logTok = func(tok string) {
 			_ = session.Log(ctx, &sdk.LoggingMessageParams{
 				Level:  "debug",
 				Logger: "dex/ask",
 				Data:   tok,
 			})
-		})
-	} else {
-		resp, err = s.ChatClient.Generate(ctx, msgs, opts)
-	}
-	if err != nil {
-		// Unreachable / any chat error → leave Answer empty; the agent
-		// still has the full evidence bundle and next_action.
-		if !errors.Is(err, chat.ErrUnreachable) {
-			out.Hint = strings.TrimSpace(out.Hint + " (answer synthesis skipped: " + err.Error() + ")")
 		}
+	}
+
+	ans, model, hintErr := retrieve.SynthesizeAnswer(ctx, s.ChatClient, &s.answerCache, intent, question, evidence, logTok)
+	if hintErr != nil {
+		out.Hint = strings.TrimSpace(out.Hint + " (answer synthesis skipped: " + hintErr.Error() + ")")
 		return
 	}
-	ans := strings.TrimSpace(resp.Content)
 	if ans == "" {
 		return
 	}
 	out.Answer = ans
 	out.AnswerModel = model
-	s.answerCache.put(key, ans)
-}
-
-const answerSystemPrompt = "You are a code-intelligence assistant answering a question about ONE specific " +
-	"codebase. Use ONLY the EVIDENCE provided below — code excerpts, symbol signatures, and graph edges. " +
-	"Answer in a few concise sentences, concrete and specific to this code. Cite the locations that support " +
-	"each claim inline as `path:line`. If the evidence is insufficient to answer fully, say so in one sentence " +
-	"and name the most useful file or symbol to read next. Never invent file paths, identifiers, or APIs that " +
-	"do not appear in the evidence."
-
-// buildAnswerUser assembles the user turn: the question, the routed
-// intent (so the model knows whether it's explaining behavior, listing
-// callers, etc.), and the evidence block.
-func buildAnswerUser(question, intent, evidence string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "QUESTION: %s\n", strings.TrimSpace(question))
-	if intent != "" {
-		fmt.Fprintf(&b, "INTENT: %s\n", intent)
-	}
-	b.WriteString("\nEVIDENCE:\n")
-	b.WriteString(evidence)
-	return b.String()
 }
 
 // buildAnswerEvidence renders the bundle into a compact, citation-ready
@@ -239,59 +185,4 @@ func buildAnswerEvidence(out *ContextOutput) string {
 	}
 
 	return b.String()
-}
-
-// ─── answer cache ─────────────────────────────────────────────────────────
-//
-// Agents re-ask the same question repeatedly within a session. The
-// cache key folds in the evidence text, so a re-index that changes the
-// retrieved chunks (or a different model) naturally misses — no explicit
-// invalidation needed. Bounded FIFO; correctness doesn't depend on
-// retention, only latency/GPU savings.
-
-const answerCacheCap = 256
-
-// answerCache is a bounded FIFO string→string cache held on the Server.
-// Zero value is usable; init() allocates the map on first put.
-type answerCache struct {
-	mu    sync.Mutex
-	data  map[string]string
-	order []string
-}
-
-func (c *answerCache) key(question, intent, model, evidence string) string {
-	h := sha256.New()
-	// Length-prefix each field so concatenation can't collide across
-	// boundaries (e.g. "ab"+"c" vs "a"+"bc").
-	for _, part := range []string{question, intent, model, evidence} {
-		h.Write(fmt.Appendf(nil, "%d:", len(part)))
-		h.Write([]byte(part))
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-func (c *answerCache) get(key string) (string, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	v, ok := c.data[key]
-	return v, ok
-}
-
-func (c *answerCache) put(key, val string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.data == nil {
-		c.data = make(map[string]string, answerCacheCap)
-	}
-	if _, exists := c.data[key]; exists {
-		c.data[key] = val
-		return
-	}
-	if len(c.order) >= answerCacheCap {
-		oldest := c.order[0]
-		c.order = c.order[1:]
-		delete(c.data, oldest)
-	}
-	c.data[key] = val
-	c.order = append(c.order, key)
 }
