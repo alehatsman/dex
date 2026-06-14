@@ -40,7 +40,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
 detail / power lanes:
   dex graph  <sub> [<path>] ...          deps/callers/callees/links/path/diff/clusters
   dex notes  add|query|rm|gc             per-project notes (MCP: notes)
-  dex index  status [<path>]             endpoint health + project stats
+  dex status [<path>]                    endpoint health + project stats (alias: index status)
 
 build / maintenance:
   dex index <path>                   build or refresh the index  (--dry-run to preview)
@@ -122,8 +122,9 @@ query (the CLI verbs share the MCP tool names, #354/#427):
                                           Flags: --mode, --start, --end, --focus,
                                           --temperature, --max-tokens, -v,
                                           --format=text|json
-  dex index status [<path>]          endpoint health + project stats
-                                          (MCP: status)
+  dex status [<path>]                endpoint health + project stats
+                                          (MCP: status; alias for index status)
+  dex index status [<path>]          same as dex status
 
 build / maintenance:
   dex index <path>                   build or refresh the index. Runs chunk+embed

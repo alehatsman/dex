@@ -83,6 +83,10 @@ func main() {
 	switch cmd {
 	case "index", "idx":
 		err = cmdIndexDispatch(ctx, args)
+	case "status":
+		// Top-level alias for `dex index status` (#501) — the command
+		// agents/humans reach for first. Same handler, identical output.
+		err = cmdIndexStatus(ctx, args)
 	case "ask":
 		err = cmdAsk(ctx, args)
 	case "read":

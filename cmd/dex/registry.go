@@ -243,6 +243,11 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "status", group: groupBuild, args: "[<path>]", fileArgs: true,
+		summary: "endpoint health + project stats (alias: index status)",
+		flags:   []flagSpec{flagFormat, flagV},
+	},
+	{
 		name: "generate", group: groupBuild, args: "<path> <prompt>",
 		summary: "RAG code generation",
 		flags:   []flagSpec{flagFormat, flagV},

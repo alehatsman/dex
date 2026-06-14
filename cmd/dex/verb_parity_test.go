@@ -17,7 +17,6 @@ import "testing"
 //
 // mcpOnlyTools are deliberately MCP-only and need no CLI path:
 //   - session: an agent-session lifecycle concept with no CLI analogue.
-//   - status:  reachable on the CLI as `dex index status`, not a bare verb.
 func TestMCPToolCLIParity(t *testing.T) {
 	// The MCP tool surface, kept in lockstep with registerTools by hand.
 	mcpTools := []string{
@@ -42,7 +41,7 @@ func TestMCPToolCLIParity(t *testing.T) {
 		}
 	}
 
-	mcpOnlyTools := map[string]bool{"session": true, "status": true}
+	mcpOnlyTools := map[string]bool{"session": true}
 
 	for _, tool := range mcpTools {
 		if topLevel[tool] || graphSubs[tool] || mcpOnlyTools[tool] {
