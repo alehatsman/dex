@@ -41,7 +41,15 @@ const (
 	metaEmbedModel    = "embed_model"
 	metaVecQuant      = "vec_quant"
 	metaSchemaVersion = "schema_version"
+	metaIndexingAt    = "indexing_started_at"
 )
+
+// IndexingStaleAfter bounds how long an "indexing in progress" marker is
+// trusted. A crashed indexer can't clear the marker (the clear runs in a
+// deferred call), so a query treats a marker older than this as stale and
+// reports not-indexing. Generous enough to cover a full rebuild of a large
+// repo; the next index run resets the marker regardless.
+const IndexingStaleAfter = 30 * time.Minute
 
 // ErrEmbedModelMismatch is returned by EnsureEmbedModel when the active
 // embedding model differs from the one previously recorded for the
@@ -365,6 +373,48 @@ func (s *Store) SetLastIndexedAt(ctx context.Context, t time.Time) error {
 		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 		strconv.FormatInt(t.UnixNano(), 10))
 	return err
+}
+
+// SetIndexing records that a (full or incremental) re-index is underway,
+// stamping the start time. Cross-process visible: a `dex serve` daemon
+// reading the same DB sees the marker a separate `dex index` writes, so it
+// can warn that results are partial. Pair with ClearIndexing via defer.
+func (s *Store) SetIndexing(ctx context.Context, t time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key,value) VALUES('`+metaIndexingAt+`', ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		strconv.FormatInt(t.UnixNano(), 10))
+	return err
+}
+
+// ClearIndexing removes the in-progress marker. Called when a re-index
+// finishes (success or handled error).
+func (s *Store) ClearIndexing(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM meta WHERE key='`+metaIndexingAt+`'`)
+	return err
+}
+
+// IndexingInProgress reports whether a re-index is currently underway,
+// reading the marker live from the DB (cross-process). A marker older than
+// IndexingStaleAfter is treated as a crashed indexer and reported as not
+// in progress. Returns the start time when in progress.
+func (s *Store) IndexingInProgress(ctx context.Context) (bool, time.Time) {
+	var raw string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM meta WHERE key='`+metaIndexingAt+`'`).Scan(&raw)
+	if err != nil {
+		return false, time.Time{}
+	}
+	nanos, perr := strconv.ParseInt(raw, 10, 64)
+	if perr != nil || nanos <= 0 {
+		return false, time.Time{}
+	}
+	started := time.Unix(0, nanos)
+	if time.Since(started) > IndexingStaleAfter {
+		return false, time.Time{}
+	}
+	return true, started
 }
 
 // EmbedModel returns the embedding model identity previously recorded

@@ -72,7 +72,8 @@ type SearchOutput struct {
 	Hint     string      `json:"hint,omitempty"`     // human-readable suggestion for the model
 	Endpoint string      `json:"endpoint,omitempty"` // when unreachable
 	Project  string      `json:"project,omitempty"`  // resolved project root
-	Stale    bool        `json:"stale,omitempty"`    // last_indexed older than 24h
+	Stale    bool        `json:"stale,omitempty"`    // last_indexed older than 24h, or a rebuild is in progress
+	Indexing bool        `json:"indexing,omitempty"` // a re-index is underway; hits are partial (#531)
 	Hits     []SearchHit `json:"hits"`
 }
 
@@ -133,6 +134,13 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		out.Stale = true
 		out.Hint = fmt.Sprintf("index is %s old — results may be stale; run `dex index %s` to refresh.",
 			time.Since(stats.LastIndex).Round(time.Hour), p.Root)
+	}
+	// An active rebuild trumps age: the index is being rewritten right now,
+	// so any hits are partial. Mark stale and surface the more urgent note.
+	if indexing, note := indexingNotice(ctx, st); indexing {
+		out.Stale = true
+		out.Indexing = true
+		out.Hint = note
 	}
 
 	hits, err := st.SearchFused(ctx, vecs[0], in.Query, candidateK)

@@ -96,6 +96,12 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("seen time: %w", err)
 	}
+
+	// Publish an "indexing in progress" marker so concurrent readers (e.g. a
+	// `dex serve` daemon on the same DB) can warn that results are partial
+	// rather than serving a half-rebuilt index as authoritative (#531).
+	defer ix.markIndexing(ctx, startTime)()
+
 	ix.Options.Logger.Info("index: starting", "root", ix.Proj.Root)
 
 	// Refuse a silent embed-model swap: two same-dim models produce
@@ -459,6 +465,23 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		"skipped", skipped.Load(),
 		logx.DurMS(time.Since(startTime)))
 	return nil
+}
+
+// markIndexing stamps the indexing-in-progress marker and returns a cleanup
+// func (call via defer) that removes it. The clear runs on a fresh context
+// so a cancelled run still unmarks; a crash leaves the marker for the
+// staleness window to reap (#531).
+func (ix *Indexer) markIndexing(ctx context.Context, startTime time.Time) func() {
+	if serr := ix.Store.SetIndexing(ctx, startTime); serr != nil {
+		ix.Options.Logger.Warn("index: could not set indexing marker", "err", serr)
+	}
+	return func() {
+		clearCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if cerr := ix.Store.ClearIndexing(clearCtx); cerr != nil {
+			ix.Options.Logger.Warn("index: could not clear indexing marker", "err", cerr)
+		}
+	}
 }
 
 type pending struct {

@@ -34,6 +34,7 @@ type ProjectStatus struct {
 	Dim         int    `json:"dim"`
 	EmbedModel  string `json:"embed_model,omitempty"`
 	LastIndexed string `json:"last_indexed,omitempty"`
+	Indexing    bool   `json:"indexing,omitempty"` // a re-index is underway; counts are mid-rebuild (#531)
 }
 
 type StatusOutput struct {
@@ -168,6 +169,7 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 				}
 				stats, _ := st.Stats(ctx)
 				root, _ := st.ProjectRoot(ctx)
+				indexing, _ := st.IndexingInProgress(ctx)
 				st.Close()
 				ps := ProjectStatus{
 					ID:         id,
@@ -176,6 +178,7 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 					Files:      stats.Files,
 					Dim:        stats.Dim,
 					EmbedModel: stats.EmbedModel,
+					Indexing:   indexing,
 				}
 				if !stats.LastIndex.IsZero() {
 					ps.LastIndexed = stats.LastIndex.Format(time.RFC3339)

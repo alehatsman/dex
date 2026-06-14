@@ -204,6 +204,7 @@ type ContextOutput struct {
 	Project        string          `json:"project,omitempty"`
 	Intent         string          `json:"intent,omitempty"`
 	Stale          bool            `json:"stale,omitempty"`
+	Indexing       bool            `json:"indexing,omitempty"` // a re-index is underway; results are partial (#531)
 	SemanticHits   []SemHit        `json:"semantic_hits,omitempty"`
 	Symbols        []SymbolHit     `json:"symbols,omitempty"`
 	Graph          *GraphResult    `json:"graph,omitempty"`
@@ -288,6 +289,13 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 		out.Stale = true
 		out.Hint = fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
 			time.Since(stats.LastIndex).Round(time.Hour), p.Root)
+	}
+	// An active rebuild trumps age: evidence is being rewritten right now, so
+	// what we return is partial (#531).
+	if indexing, note := indexingNotice(ctx, st); indexing {
+		out.Stale = true
+		out.Indexing = true
+		out.Hint = note
 	}
 
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
