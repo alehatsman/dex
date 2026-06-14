@@ -48,7 +48,7 @@ func (s *Server) synthesizeAnswer(ctx context.Context, session *sdk.ServerSessio
 	if s.ChatClient == nil {
 		return
 	}
-	evidence := buildAnswerEvidence(out)
+	evidence := buildAnswerEvidence(intent, out)
 	if strings.TrimSpace(evidence) == "" {
 		return
 	}
@@ -152,7 +152,30 @@ func validateAnswerCitations(answer string, out *ContextOutput) []string {
 // text block. Order mirrors how an agent would read: curated reads
 // first, then symbol signatures, then the structural graph. Bounded by
 // answerMaxEvidenceBytes.
-func buildAnswerEvidence(out *ContextOutput) string {
+//
+// Exception: for the callers/callees intents the graph edges ARE the
+// answer, so they lead — otherwise a budget-filling reads block can
+// truncate them out entirely and the model concludes "no callers" while
+// graph.edges carries the real ones (issue #535).
+// appendGraphEdges renders the structural call/import edges into the evidence
+// via write. Returns false when the byte budget is exhausted mid-write so the
+// caller can stop early. A no-op (returns true) when there are no edges.
+func appendGraphEdges(write func(string) bool, out *ContextOutput) bool {
+	if out.Graph == nil || len(out.Graph.Edges) == 0 {
+		return true
+	}
+	if !write("\nGRAPH EDGES:\n") {
+		return false
+	}
+	for _, e := range out.Graph.Edges {
+		if !write(fmt.Sprintf("- %s --%s--> %s\n", e.From, e.Kind, e.To)) {
+			return false
+		}
+	}
+	return true
+}
+
+func buildAnswerEvidence(intent string, out *ContextOutput) string {
 	var b strings.Builder
 	budget := answerMaxEvidenceBytes
 
@@ -166,6 +189,16 @@ func buildAnswerEvidence(out *ContextOutput) string {
 		b.WriteString(s)
 		budget -= len(s)
 		return budget > 0
+	}
+
+	// For callers/callees the graph edges ARE the authoritative answer — lead
+	// with them so they survive the byte budget regardless of how rich the
+	// reads/semantic lanes are (issue #535). Other intents render them last.
+	leadGraph := intent == "callers" || intent == "callees"
+	if leadGraph {
+		if !appendGraphEdges(write, out) {
+			return b.String()
+		}
 	}
 
 	reads := out.SuggestedReads
@@ -228,16 +261,9 @@ func buildAnswerEvidence(out *ContextOutput) string {
 		}
 	}
 
-	// Graph edges: structural context for callers/callees/architecture.
-	if out.Graph != nil && len(out.Graph.Edges) > 0 {
-		if !write("\nGRAPH EDGES:\n") {
-			return b.String()
-		}
-		for _, e := range out.Graph.Edges {
-			if !write(fmt.Sprintf("- %s --%s--> %s\n", e.From, e.Kind, e.To)) {
-				return b.String()
-			}
-		}
+	// Graph edges in their default trailing position (callers/callees already led).
+	if !leadGraph {
+		appendGraphEdges(write, out)
 	}
 
 	// Session context appended last: code content forms a stable prefix for

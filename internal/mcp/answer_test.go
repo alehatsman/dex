@@ -115,12 +115,50 @@ func TestBuildAnswerEvidenceOrderingAndBudget(t *testing.T) {
 		SuggestedReads: []SuggestedRead{{Path: "a.go", StartLine: 1, EndLine: 3, Reason: "primary", Content: "AAA"}},
 		Symbols:        []SymbolHit{{QualifiedName: "Foo", Kind: "function", Path: "a.go", StartLine: 1, Signature: "func Foo()"}},
 	}
-	ev := buildAnswerEvidence(out)
+	ev := buildAnswerEvidence(retrieve.IntentBehaviorSearch, out)
 	if !strings.Contains(ev, "a.go:1-3") || !strings.Contains(ev, "AAA") {
 		t.Errorf("evidence missing suggested read: %q", ev)
 	}
 	if !strings.Contains(ev, "Foo") || !strings.Contains(ev, "func Foo()") {
 		t.Errorf("evidence missing symbol signature: %q", ev)
+	}
+}
+
+// TestBuildAnswerEvidenceCallersLeadWithGraph asserts that for the
+// callers/callees intents the GRAPH EDGES — the authoritative answer — are
+// rendered even when a budget-filling reads block precedes them. Regression
+// for #535: edges rendered last got truncated out, so the model answered
+// "no callers" while graph.edges carried the real two.
+func TestBuildAnswerEvidenceCallersLeadWithGraph(t *testing.T) {
+	// A reads payload comfortably larger than the evidence byte budget, so
+	// the old last-place graph rendering would be truncated away entirely.
+	huge := strings.Repeat("X", answerMaxEvidenceBytes+4096)
+	out := &ContextOutput{
+		SuggestedReads: []SuggestedRead{{Path: "big.go", StartLine: 1, EndLine: 9, Content: huge}},
+		Graph: &GraphResult{Edges: []GraphEdge{
+			{From: "store.(*Store).Search", To: "store.(*Store).SearchFused", Kind: "calls"},
+			{From: "mcp.(*Server).search", To: "store.(*Store).SearchFused", Kind: "calls"},
+		}},
+	}
+
+	for _, intent := range []string{retrieve.IntentCallers, retrieve.IntentCallees} {
+		ev := buildAnswerEvidence(intent, out)
+		if !strings.Contains(ev, "GRAPH EDGES:") {
+			t.Errorf("intent %s: graph edges truncated out of evidence", intent)
+		}
+		if !strings.Contains(ev, "store.(*Store).Search --calls--> store.(*Store).SearchFused") {
+			t.Errorf("intent %s: caller edge missing from evidence", intent)
+		}
+		// Edges must precede the bulky reads payload (they lead).
+		if gi, ri := strings.Index(ev, "GRAPH EDGES:"), strings.Index(ev, "big.go"); ri >= 0 && gi > ri {
+			t.Errorf("intent %s: graph edges should lead, got edge@%d after read@%d", intent, gi, ri)
+		}
+	}
+
+	// For a non-graph intent the edges keep their trailing position.
+	ev := buildAnswerEvidence(retrieve.IntentBehaviorSearch, out)
+	if gi, ri := strings.Index(ev, "GRAPH EDGES:"), strings.Index(ev, "big.go"); gi >= 0 && ri >= 0 && gi < ri {
+		t.Errorf("behavior_search: graph edges should trail reads, got edge@%d before read@%d", gi, ri)
 	}
 }
 
@@ -133,7 +171,7 @@ func TestBuildAnswerEvidenceSessionContext(t *testing.T) {
 		KnowledgeFacts: []string{"[Architecture] watch.go owns the file watcher", "[Gotcha] debounce is 500ms"},
 		SuggestedReads: []SuggestedRead{{Path: "watch.go", StartLine: 1, EndLine: 3, Content: "func Watch(){}"}},
 	}
-	ev := buildAnswerEvidence(out)
+	ev := buildAnswerEvidence(retrieve.IntentBehaviorSearch, out)
 
 	if !strings.Contains(ev, "SESSION CONTEXT:") {
 		t.Errorf("evidence missing SESSION CONTEXT block: %q", ev)
@@ -156,7 +194,7 @@ func TestBuildAnswerEvidenceNoSessionContext(t *testing.T) {
 	out := &ContextOutput{
 		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "func A(){}"}},
 	}
-	ev := buildAnswerEvidence(out)
+	ev := buildAnswerEvidence(retrieve.IntentBehaviorSearch, out)
 	if strings.Contains(ev, "SESSION CONTEXT:") {
 		t.Errorf("expected no SESSION CONTEXT block when session/knowledge absent: %q", ev)
 	}
