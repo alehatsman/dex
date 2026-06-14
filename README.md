@@ -58,7 +58,7 @@ each annotated `(MCP: <name>)` in `dex graph --help`).
 | `map`    | deterministic repo orientation map                                  |
 | `trace`  | call graph — `--dir callers\|callees\|path`                         |
 | `impact` | transitive caller blast-radius                                      |
-| `read`   | read a file — `--mode full` (raw, default), `signatures`, `summary` (LLM), … |
+| `read`   | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
 | `grep`   | exact regex match                                                   |
 | `ls`     | file-tree listing                                                   |
 | `shell`  | run a command with compressed output                                |

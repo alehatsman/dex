@@ -26,8 +26,18 @@ import (
 //   - entropy     — drop low-information lines
 //   - auto        — large indexed files → signatures, otherwise full (mirrors
 //     the redirect hook's redirectLineThreshold)
+//   - skeleton    — exported type decls in full + function/method signatures
+//     with @B<n> body handles, no LLM (delegates to the server)
+//   - map         — imports + exported symbols from the index, no LLM
+//     (delegates to the server)
 //   - summary     — LLM-generated digest (the only mode that calls the chat
 //     model; honors --focus/--temperature/--max-tokens)
+//
+// `entropy`/`auto` are CLI-local conveniences; the MCP `read` tool's
+// session-scoped extras (`expand` body handles, `handle` budget downgrade) are
+// MCP-only by nature — handles live in per-session server memory, so a separate
+// CLI process can't resolve a handle issued by a prior one. See verbs parity
+// test read_parity_test.go.
 //
 // `dex compress` (#229) is the generic text-in/out sibling; `dex read` is
 // file-oriented with line ranges and index-aware mode auto-selection.
@@ -41,7 +51,7 @@ func cmdRead(ctx context.Context, args []string) error {
 		`dex read --start=100 --end=160 cmd/dex/main.go`,
 		`dex read --mode=summary --focus="public API" internal/mcp/server.go`,
 	)
-	mode := fs.String("mode", "full", "read mode: full|signatures|aggressive|entropy|auto|summary")
+	mode := fs.String("mode", "full", "read mode: "+strings.Join(readModeChoices, "|"))
 	start := fs.Int("start", 0, "first line to read (1-based, inclusive; 0 = file start)")
 	end := fs.Int("end", 0, "last line to read (1-based, inclusive; 0 = end of file)")
 	format := fs.String("format", "text", "output format: text|json")
@@ -52,10 +62,8 @@ func cmdRead(ctx context.Context, args []string) error {
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
-	switch *mode {
-	case "auto", "full", "signatures", "aggressive", "entropy", "summary":
-	default:
-		return fmt.Errorf("invalid --mode=%s (want full|signatures|aggressive|entropy|auto|summary)", *mode)
+	if !validReadMode(*mode) {
+		return fmt.Errorf("invalid --mode=%s (want %s)", *mode, strings.Join(readModeChoices, "|"))
 	}
 	switch *format {
 	case "text", "json":
@@ -67,8 +75,11 @@ func cmdRead(ctx context.Context, args []string) error {
 		return fmt.Errorf("read needs exactly one <file> argument")
 	}
 	path := rest[0]
-	if *mode == "summary" {
-		return readSummarize(ctx, path, *start, *end, *focus, *temp, *maxTok, *format, *verbose)
+	// skeleton/map/summary live in the index + summarize handler — delegate to
+	// the same Server.Summarize the MCP `read` tool uses so CLI and tool agree.
+	// (The local fast paths below avoid a server spin-up for the hot modes.)
+	if serverReadMode(*mode) {
+		return readViaServer(ctx, path, *mode, *start, *end, *focus, *temp, *maxTok, *format, *verbose)
 	}
 	if *start < 0 || *end < 0 {
 		return fmt.Errorf("--start/--end must be non-negative")
@@ -159,11 +170,12 @@ func cmdRead(ctx context.Context, args []string) error {
 	return err
 }
 
-// readSummarize handles `dex read --mode=summary`: the LLM digest path (MCP:
-// read mode=summary). It routes through the same Summarize handler the MCP
-// `read` tool uses, so CLI and tool produce the same digest. Returns a
-// needs-chat status (not an error) when no chat model is wired.
-func readSummarize(ctx context.Context, file string, start, end int, focus string, temp float64, maxTok int, format string, verbose bool) error {
+// readViaServer handles the index/summarize-backed read modes (skeleton, map,
+// summary) by routing through the same Server.Summarize handler the MCP `read`
+// tool uses, so the CLI and the tool produce identical output. Focus/temp/
+// max-tokens/verbose are summary-only and ignored by the deterministic modes.
+// For summary, a missing chat model yields a needs-chat status, not an error.
+func readViaServer(ctx context.Context, file, mode string, start, end int, focus string, temp float64, maxTok int, format string, verbose bool) error {
 	base, err := indexDir()
 	if err != nil {
 		return err
@@ -181,7 +193,7 @@ func readSummarize(ctx context.Context, file string, start, end int, focus strin
 		Focus:       focus,
 		Temperature: float32(temp),
 		MaxTokens:   maxTok,
-		Mode:        "summary",
+		Mode:        mode,
 	})
 	if err != nil {
 		return err
@@ -198,7 +210,13 @@ func readSummarize(ctx context.Context, file string, start, end int, focus strin
 		}
 		return nil
 	}
-	fmt.Printf("file:  %s (lines %d-%d, %d bytes", out.Path, out.StartLine, out.EndLine, out.Bytes)
+	// Whole-file structural modes (skeleton/map) report no line bounds; only
+	// show the range for the line-oriented modes that set one.
+	fmt.Printf("file:  %s (", out.Path)
+	if out.StartLine > 0 || out.EndLine > 0 {
+		fmt.Printf("lines %d-%d, ", out.StartLine, out.EndLine)
+	}
+	fmt.Printf("%d bytes", out.Bytes)
 	if out.Truncated {
 		fmt.Print(", truncated")
 	}

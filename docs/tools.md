@@ -48,11 +48,19 @@ no tiers.
 | `signatures` | indexed symbols + their source lines | no |
 | `skeleton` | exported decls in full + function signatures with `@B<n>` body handles | no |
 | `map` | imports + exported symbols | no |
+| `aggressive` | maximal lossless compression of the source | no |
 | `lines:N-M` | a raw line slice | no |
 | `summary` | LLM-generated digest (`--focus` to steer) | **yes** |
 
 `summary` is the only mode that needs a chat model; without one it returns
 `status=needs-chat` and you fall back to a structural mode.
+
+The CLI `read` verb adds two local conveniences with no MCP equivalent —
+`entropy` (entropy-ranked compression) and `auto` (large indexed files →
+`signatures`, else `full`, mirroring the redirect hook). Conversely the MCP
+tool's session-scoped `expand` (`@B<n>` body handles) and internal `handle`
+downgrade have no CLI form: handles live in per-session server memory. CLI↔MCP
+mode parity is locked by `cmd/dex/read_parity_test.go`.
 
 ## Response contract
 

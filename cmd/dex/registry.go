@@ -57,8 +57,32 @@ var (
 		"auto", "behavior_search", "symbol_lookup", "callers", "callees",
 		"architecture", "package_topology", "editing_context",
 	}
-	readModeChoices = []string{"full", "signatures", "aggressive", "entropy", "auto", "summary"}
+	// readModeChoices is the canonical CLI `read --mode` set — the single source
+	// of truth for usage text, shell completion, and `cmdRead` validation.
+	// skeleton/map/summary delegate to Server.Summarize (see serverReadMode);
+	// the rest run locally. Parity with the MCP `read` tool's mode set is locked
+	// by read_parity_test.go.
+	readModeChoices = []string{"full", "signatures", "aggressive", "entropy", "auto", "skeleton", "map", "summary"}
+
+	// serverReadModes are the read modes whose logic lives in the index +
+	// Server.Summarize handler; cmdRead delegates these instead of computing a
+	// view locally, so CLI output matches the MCP `read` tool exactly.
+	serverReadModes = map[string]bool{"skeleton": true, "map": true, "summary": true}
 )
+
+// validReadMode reports whether m is an accepted CLI `read --mode`.
+func validReadMode(m string) bool {
+	for _, c := range readModeChoices {
+		if c == m {
+			return true
+		}
+	}
+	return false
+}
+
+// serverReadMode reports whether mode m is handled by delegating to
+// Server.Summarize rather than by a local fast path.
+func serverReadMode(m string) bool { return serverReadModes[m] }
 
 // verbs is the canonical registry. Order within a group is the display order
 // in `dex help all`.

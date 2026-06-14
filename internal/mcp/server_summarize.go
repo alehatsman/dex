@@ -245,6 +245,17 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	return
 }
 
+// ReadModes returns the user-facing `read` modes the Summarize dispatch above
+// handles, in documentation order. It is the canonical anchor for CLI↔MCP mode
+// parity (cmd/dex/read_parity_test.go) — keep it in sync with the switch.
+//
+// `handle` is intentionally excluded: it is an internal terminal of the
+// budget-downgrade chain (#487), never a mode an operator selects. `lines` is
+// listed as a stand-in for the `lines:N-M` prefix family.
+func ReadModes() []string {
+	return []string{"full", "signatures", "skeleton", "map", "aggressive", "lines", "summary"}
+}
+
 // summarizeBatch handles file_view when paths[] is provided.
 // All files are processed with the same mode in a single call.
 // When 3+ files are successfully read, a TF-IDF codebook is applied to
