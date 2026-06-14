@@ -163,6 +163,10 @@ func main() {
 		}
 		return
 	default:
+		if hint, ok := mcpOnlyToolHint(cmd); ok {
+			fmt.Fprintln(os.Stderr, hint)
+			os.Exit(2)
+		}
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		usageConcise()
 		os.Exit(2)

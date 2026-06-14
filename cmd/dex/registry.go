@@ -84,6 +84,21 @@ func validReadMode(m string) bool {
 // Server.Summarize rather than by a local fast path.
 func serverReadMode(m string) bool { return serverReadModes[m] }
 
+// mcpOnlyToolHints maps MCP tools that deliberately have NO CLI verb to a
+// help message. The dispatcher consults this on an unknown command so
+// `dex <tool>` points at the MCP surface instead of a bare "unknown command"
+// (#521). These tools stay off the `verbs` registry by design — the MCP-only
+// contract is locked by verb_parity_test.go.
+var mcpOnlyToolHints = map[string]string{
+	"session": "session is available via the MCP tool surface, not the CLI — it recaps an active MCP connection's working set (DEX_EXPERT power lane).",
+}
+
+// mcpOnlyToolHint returns the MCP-only help message for cmd, if any.
+func mcpOnlyToolHint(cmd string) (string, bool) {
+	h, ok := mcpOnlyToolHints[cmd]
+	return h, ok
+}
+
 // verbs is the canonical registry. Order within a group is the display order
 // in `dex help all`.
 var verbs = []verbSpec{
