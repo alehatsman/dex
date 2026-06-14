@@ -33,6 +33,7 @@ repos:
     commit: ab8149664182b662453a563161aa89013c806dc9   # tag 3.1.0
     languages: [python]
     query_sets: [queries/flask.json]
+    trace_sets: [../trace/flask-py.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }

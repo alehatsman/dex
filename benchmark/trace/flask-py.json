@@ -1,0 +1,68 @@
+{
+  "repo": "flask",
+  "lang": "py",
+  "commit": "ab8149664182b662453a563161aa89013c806dc9",
+  "note": "Hand-verified callers/callees of stable methods in src/flask/app.py, read directly from source (not echoed from the graph). Scope = INTRA-REPO call targets only: calls into external deps (werkzeug, blinker signals, logging) have no graph node and are excluded, so a missing edge reflects a real resolution gap, not an out-of-corpus call. Peer keys are <dotted-package-path>.<qualified-name> (Python package paths carry no '/', so trace.peerKey keeps the full dotted path). The wsgi_app probe is the cross-language signal: the current tree-sitter extractor captures self.method() calls but drops ctx.push()/ctx.pop() (instance dispatch on a typed local) — exactly what go/types resolves and #468 aims to recover. Scored via: dex bench trace run --project <flask> --gold benchmark/trace/flask-py.json",
+  "probes": [
+    {
+      "symbol": "Flask.wsgi_app",
+      "package": "src.flask.app",
+      "direction": "callees",
+      "expected": [
+        "src.flask.app.Flask.request_context",
+        "src.flask.app.Flask.full_dispatch_request",
+        "src.flask.app.Flask.handle_exception",
+        "src.flask.app.Flask.should_ignore_error",
+        "src.flask.ctx.RequestContext.push",
+        "src.flask.ctx.RequestContext.pop"
+      ]
+    },
+    {
+      "symbol": "Flask.full_dispatch_request",
+      "package": "src.flask.app",
+      "direction": "callees",
+      "expected": [
+        "src.flask.app.Flask.preprocess_request",
+        "src.flask.app.Flask.dispatch_request",
+        "src.flask.app.Flask.handle_user_exception",
+        "src.flask.app.Flask.finalize_request"
+      ]
+    },
+    {
+      "symbol": "Flask.dispatch_request",
+      "package": "src.flask.app",
+      "direction": "callees",
+      "expected": [
+        "src.flask.app.Flask.raise_routing_exception",
+        "src.flask.app.Flask.make_default_options_response",
+        "src.flask.app.Flask.ensure_sync"
+      ]
+    },
+    {
+      "symbol": "Flask.finalize_request",
+      "package": "src.flask.app",
+      "direction": "callees",
+      "expected": [
+        "src.flask.app.Flask.make_response",
+        "src.flask.app.Flask.process_response"
+      ]
+    },
+    {
+      "symbol": "Flask.dispatch_request",
+      "package": "src.flask.app",
+      "direction": "callers",
+      "expected": [
+        "src.flask.app.Flask.full_dispatch_request"
+      ]
+    },
+    {
+      "symbol": "Flask.finalize_request",
+      "package": "src.flask.app",
+      "direction": "callers",
+      "expected": [
+        "src.flask.app.Flask.full_dispatch_request",
+        "src.flask.app.Flask.handle_exception"
+      ]
+    }
+  ]
+}
