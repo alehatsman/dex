@@ -67,6 +67,7 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 			Kind:      h.Kind,
 			StartLine: h.StartLine,
 			EndLine:   h.EndLine,
+			SortScore: h.DisplayScore(),
 			Score:     h.Score,
 			Content:   h.Content,
 		})

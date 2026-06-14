@@ -74,6 +74,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 			Kind:      h.Kind,
 			StartLine: h.StartLine,
 			EndLine:   h.EndLine,
+			SortScore: 1.0, // exact-match lookup: all hits rank equally
 			Score:     1.0,
 			Role:      formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
 			Content:   h.Content,

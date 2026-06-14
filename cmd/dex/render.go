@@ -193,10 +193,14 @@ func formatProjectAge(t time.Time) string {
 }
 
 type queryJSONHit struct {
-	Path        string  `json:"path"`
-	Kind        string  `json:"kind"`
-	StartLine   int     `json:"start_line"`
-	EndLine     int     `json:"end_line"`
+	Path      string `json:"path"`
+	Kind      string `json:"kind"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	// SortScore is the authoritative key the hits are ordered by — compare
+	// this across hits, not Score. Folds rerank/cross-encoder/RRF into one
+	// monotonic value; the per-lane fields below are diagnostics.
+	SortScore   float32 `json:"sort_score"`
 	Score       float32 `json:"score"`
 	BM25Score   float32 `json:"bm25_score,omitempty"`
 	RRFScore    float32 `json:"rrf_score,omitempty"`
@@ -212,6 +216,7 @@ func hitsToJSON(hits []store.Hit) []queryJSONHit {
 			Kind:        h.Kind,
 			StartLine:   h.StartLine,
 			EndLine:     h.EndLine,
+			SortScore:   h.DisplayScore(),
 			Score:       h.Score,
 			BM25Score:   h.BM25Score,
 			RRFScore:    h.RRFScore,

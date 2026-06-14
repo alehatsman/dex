@@ -34,7 +34,14 @@ type SearchHit struct {
 	Kind      string `json:"kind"`
 	StartLine int    `json:"start_line"`
 	EndLine   int    `json:"end_line"`
-	// Score is the cosine similarity in [-1, 1]. Always populated.
+	// SortScore is the authoritative key the hits are ordered by — compare
+	// THIS across hits, not Score. It folds the full pipeline (local rerank,
+	// cross-encoder, RRF fusion) into one monotonic value, so it is the only
+	// field guaranteed non-increasing down the list. Score/bm25/rrf/rerank
+	// below are per-lane diagnostics that need not be monotonic on their own.
+	SortScore float32 `json:"sort_score"`
+	// Score is the cosine similarity in [-1, 1]. Always populated. A
+	// per-lane diagnostic — do NOT sort by it; use SortScore.
 	Score float32 `json:"score"`
 	// BM25Score is the lexical (FTS5) score when the hit surfaced
 	// through the BM25 leg of hybrid search. Larger = better. Zero
@@ -198,6 +205,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			Kind:        h.Kind,
 			StartLine:   h.StartLine,
 			EndLine:     h.EndLine,
+			SortScore:   h.DisplayScore(),
 			Score:       h.Score,
 			BM25Score:   h.BM25Score,
 			RRFScore:    h.RRFScore,
