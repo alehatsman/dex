@@ -78,7 +78,7 @@ func dropLowEntropyLines(lines []string, threshold float64) []string {
 			out = append(out, line)
 			continue
 		}
-		keep := isDeclarationLine(line) ||
+		keep := lineIsStructural(line) ||
 			lineScore(line, seen, windowTrigrams(lineTg, i)) >= threshold
 		if keep {
 			out = append(out, line)
@@ -134,6 +134,48 @@ func isDeclarationLine(line string) bool {
 		}
 	}
 	return false
+}
+
+// controlKeywords are leading keywords marking a control-flow statement whose
+// line carries the logic's structure. They must survive the entropy pass: a
+// dropped `if`/`return`/`else` silently rewrites what the code does, which is
+// exactly the "lossless"-but-lossy misrepresentation reported in #540. Kept
+// keyword-based and cross-language (Go/Python/Rust/JS/Java/Ruby/Swift).
+var controlKeywords = []string{
+	"if", "else", "elif", "for", "while", "do", "loop", "foreach",
+	"switch", "select", "case", "default", "match", "when",
+	"return", "break", "continue", "goto", "fallthrough", "yield",
+	"defer", "go", "try", "catch", "finally", "except", "ensure",
+	"throw", "raise", "guard", "unless", "until",
+}
+
+// isControlFlowLine reports whether line is a control-flow statement, after
+// trimming indentation and peeling a leading closing brace (so `} else {`,
+// `} catch (e) {`, `} finally {` register). A keyword matches only when it is
+// a whole word — followed by a space, an operator/bracket, or end of line — so
+// `format` is not mistaken for `for`, nor `iffy` for `if`.
+func isControlFlowLine(line string) bool {
+	s := strings.TrimSpace(line)
+	s = strings.TrimSpace(strings.TrimPrefix(s, "}"))
+	for _, kw := range controlKeywords {
+		if s == kw {
+			return true
+		}
+		if strings.HasPrefix(s, kw) {
+			switch s[len(kw)] {
+			case ' ', '\t', '(', '{', ':', ';', '}':
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// lineIsStructural reports whether line carries declaration or control-flow
+// structure that must never be dropped on entropy grounds, regardless of how
+// textually low-novelty it scores.
+func lineIsStructural(line string) bool {
+	return isDeclarationLine(line) || isControlFlowLine(line)
 }
 
 // dropLowEntropyLinesStrict is dropLowEntropyLines that never drops a line

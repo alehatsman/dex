@@ -48,7 +48,7 @@ no tiers.
 | `signatures` | indexed symbols + their source lines | no |
 | `skeleton` | exported decls in full + function signatures with `@B<n>` body handles | no |
 | `map` | imports + exported symbols | no |
-| `aggressive` | maximal lossless compression of the source | no |
+| `aggressive` | maximal lossy compression: strips comments and low-entropy lines (declaration + control-flow lines protected) | no |
 | `lines:N-M` | a raw line slice | no |
 | `summary` | LLM-generated digest (`--focus` to steer) | **yes** |
 
