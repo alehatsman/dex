@@ -313,9 +313,9 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	// is diluted by RRF rather than amplified. Empty/timeout/error → the
 	// un-expanded query. Placed after store-open so a broken repo never
 	// pays the GPU call.
-	exp := s.expandQuery(ctx, in.Question, resolveExpandMode(in.Expand, s.ExpandMode))
-	if !exp.empty() {
-		candidates.Identifiers = appendExpansionIdentifiers(candidates.Identifiers, exp.Identifiers)
+	exp := retrieve.ExpandQuery(ctx, s.ExpandClient, in.Question, retrieve.ResolveExpandMode(in.Expand, s.ExpandMode))
+	if !exp.Empty() {
+		candidates.Identifiers = retrieve.AppendExpansionIdentifiers(candidates.Identifiers, exp.Identifiers)
 		out.Expanded = true
 	}
 
@@ -330,7 +330,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	// for recall even when the symbol lane has exact hits. The embed text
 	// stays the raw question (no extra GPU) unless full-mode HyDE is on;
 	// the BM25 text carries the expansion keywords/identifiers for free.
-	semHits, embedFailed := s.runSemanticLane(ctx, st, expandedEmbedText(in.Question, exp), expandedFTSText(in.Question, exp), k)
+	semHits, embedFailed := s.runSemanticLane(ctx, st, retrieve.ExpandedEmbedText(in.Question, exp), retrieve.ExpandedFTSText(in.Question, exp), k)
 	leanNoEmbedder := s.EmbedClient == nil
 	if embedFailed && !leanNoEmbedder {
 		out.Endpoint = s.EmbedClient.Endpoint()

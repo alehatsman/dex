@@ -12,8 +12,8 @@ import (
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/eval"
-	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -190,7 +190,7 @@ func runEval(ctx context.Context, args []string) error {
 		} else {
 			mode := *expand
 			rw = func(ctx context.Context, q string) (string, string) {
-				return mcp.ExpandForEval(ctx, xc, mode, q)
+				return retrieve.ExpandForEval(ctx, xc, mode, q)
 			}
 			fmt.Fprintf(os.Stderr, "dex bench eval: query expansion=%s via %s\n", mode, xc.ModelName())
 		}

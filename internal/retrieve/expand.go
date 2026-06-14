@@ -1,4 +1,4 @@
-package mcp
+package retrieve
 
 import (
 	"context"
@@ -17,34 +17,35 @@ import (
 //                   (zero extra embedding cost — the documented biggest win)
 //   - identifiers → appended to the symbol-lane candidates
 //   - hyde        → a hypothetical answer passage embedded into the vector
-//                   lane (only in expandFull mode, since it costs a GPU embed)
+//                   lane (only in ExpandFull mode, since it costs a GPU embed)
 //
 // The raw question always stays in every lane, so a fanciful generation is
 // diluted by RRF rather than amplified. Any error, timeout, or empty result
 // degrades silently to the un-expanded query.
 
-// expandMode is the opt-in level for query expansion.
-type expandMode string
+// ExpandMode is the opt-in level for query expansion.
+type ExpandMode string
 
 const (
-	expandOff  expandMode = "off"  // no expansion call (default)
-	expandOn   expandMode = "on"   // keywords + identifiers (no extra embed)
-	expandFull expandMode = "full" // expandOn + HyDE passage embedded into the vector lane
+	ExpandOff  ExpandMode = "off"  // no expansion call (default)
+	ExpandOn   ExpandMode = "on"   // keywords + identifiers (no extra embed)
+	ExpandFull ExpandMode = "full" // ExpandOn + HyDE passage embedded into the vector lane
 )
 
 // expandTimeout caps the single expansion call. On expiry the lanes fall
 // back to the raw question — expansion never blocks an answer.
 const expandTimeout = 5 * time.Second
 
-// queryExpansion is the structured result of one expansion pass. Every
+// QueryExpansion is the structured result of one expansion pass. Every
 // field is best-effort; an empty field means "no expansion for that lane".
-type queryExpansion struct {
+type QueryExpansion struct {
 	Keywords    []string `json:"keywords"`
 	Identifiers []string `json:"identifiers"`
 	Hyde        string   `json:"hyde"`
 }
 
-func (e queryExpansion) empty() bool {
+// Empty reports whether the expansion produced nothing usable.
+func (e QueryExpansion) Empty() bool {
 	return len(e.Keywords) == 0 && len(e.Identifiers) == 0 && strings.TrimSpace(e.Hyde) == ""
 }
 
@@ -55,35 +56,35 @@ Schema: {"keywords":[string],"identifiers":[string],"hyde":string}
 - hyde: one short sentence (<=40 words) describing the code that answers the query, phrased like a doc comment. Empty string if unsure.
 Return strictly valid JSON.`
 
-// resolveExpandMode maps a request field (possibly empty) to a concrete
+// ResolveExpandMode maps a request field (possibly empty) to a concrete
 // mode. An empty field defers to the server default; an unrecognised value
 // is treated as off so a typo can never silently enable GPU work.
-func resolveExpandMode(reqValue, serverDefault string) expandMode {
+func ResolveExpandMode(reqValue, serverDefault string) ExpandMode {
 	v := strings.ToLower(strings.TrimSpace(reqValue))
 	if v == "" {
 		v = strings.ToLower(strings.TrimSpace(serverDefault))
 	}
-	switch expandMode(v) {
-	case expandOn:
-		return expandOn
-	case expandFull:
-		return expandFull
+	switch ExpandMode(v) {
+	case ExpandOn:
+		return ExpandOn
+	case ExpandFull:
+		return ExpandFull
 	default:
-		return expandOff
+		return ExpandOff
 	}
 }
 
-// expandQuery runs the expansion pass. It returns the zero queryExpansion
+// ExpandQuery runs the expansion pass. It returns the zero QueryExpansion
 // (and never an error) when expansion is off, unconfigured, or fails —
 // callers treat an empty result as "use the raw question".
-func (s *Server) expandQuery(ctx context.Context, question string, mode expandMode) queryExpansion {
-	if mode == expandOff || s.ExpandClient == nil || strings.TrimSpace(question) == "" {
-		return queryExpansion{}
+func ExpandQuery(ctx context.Context, client chat.Chatter, question string, mode ExpandMode) QueryExpansion {
+	if mode == ExpandOff || client == nil || strings.TrimSpace(question) == "" {
+		return QueryExpansion{}
 	}
 	cctx, cancel := context.WithTimeout(ctx, expandTimeout)
 	defer cancel()
 
-	resp, err := s.ExpandClient.Generate(cctx, []chat.Message{
+	resp, err := client.Generate(cctx, []chat.Message{
 		{Role: "system", Content: expandSystemPrompt},
 		{Role: "user", Content: question},
 		// ReasoningEffort "none" disables the reasoning trace on thinking
@@ -91,30 +92,30 @@ func (s *Server) expandQuery(ctx context.Context, question string, mode expandMo
 		// separate reasoning channel — and keeps the call fast.
 	}, chat.Options{Temperature: 0, MaxTokens: 256, ReasoningEffort: "none"})
 	if err != nil {
-		return queryExpansion{} // failure-soft
+		return QueryExpansion{} // failure-soft
 	}
 
 	exp := parseExpansion(resp.Content)
-	if mode != expandFull {
+	if mode != ExpandFull {
 		exp.Hyde = "" // only pay the embed cost in full mode
 	}
 	return exp
 }
 
-// parseExpansion extracts a queryExpansion from a model reply that may be
+// parseExpansion extracts a QueryExpansion from a model reply that may be
 // wrapped in a reasoning trace, markdown fences, or surrounding prose. It
 // strips <think> blocks, isolates the outermost JSON object, and sanitises
 // the fields. A reply it cannot parse yields the zero value.
-func parseExpansion(raw string) queryExpansion {
+func parseExpansion(raw string) QueryExpansion {
 	s := stripThink(raw)
 	start := strings.IndexByte(s, '{')
 	end := strings.LastIndexByte(s, '}')
 	if start < 0 || end <= start {
-		return queryExpansion{}
+		return QueryExpansion{}
 	}
-	var exp queryExpansion
+	var exp QueryExpansion
 	if err := json.Unmarshal([]byte(s[start:end+1]), &exp); err != nil {
-		return queryExpansion{}
+		return QueryExpansion{}
 	}
 	exp.Keywords = sanitizeTerms(exp.Keywords, 8)
 	exp.Identifiers = sanitizeTerms(exp.Identifiers, 6)
@@ -146,16 +147,15 @@ func stripThink(s string) string {
 // or off mode returns the raw question unchanged for both. The symbol lane's
 // identifier expansion is not reflected here: eval scores store.Search, which
 // has no symbol lane.
-func ExpandForEval(ctx context.Context, client *chat.Client, mode, question string) (embedText, ftsText string) {
-	s := &Server{ExpandClient: client}
-	exp := s.expandQuery(ctx, question, resolveExpandMode(mode, ""))
-	return expandedEmbedText(question, exp), expandedFTSText(question, exp)
+func ExpandForEval(ctx context.Context, client chat.Chatter, mode, question string) (embedText, ftsText string) {
+	exp := ExpandQuery(ctx, client, question, ResolveExpandMode(mode, ""))
+	return ExpandedEmbedText(question, exp), ExpandedFTSText(question, exp)
 }
 
-// expandedFTSText folds expansion keywords and identifiers into the BM25/FTS
+// ExpandedFTSText folds expansion keywords and identifiers into the BM25/FTS
 // text of the semantic lane. The raw question leads so its terms keep their
 // weight; extra terms only widen recall. Costs nothing extra to embed.
-func expandedFTSText(question string, exp queryExpansion) string {
+func ExpandedFTSText(question string, exp QueryExpansion) string {
 	extra := append(append([]string{}, exp.Keywords...), exp.Identifiers...)
 	if len(extra) == 0 {
 		return question
@@ -163,20 +163,20 @@ func expandedFTSText(question string, exp queryExpansion) string {
 	return question + " " + strings.Join(extra, " ")
 }
 
-// expandedEmbedText returns the text fed to the embedder. It stays the raw
+// ExpandedEmbedText returns the text fed to the embedder. It stays the raw
 // question unless a HyDE passage is present (full mode), in which case the
 // passage is appended so the vector leans toward answer-space.
-func expandedEmbedText(question string, exp queryExpansion) string {
+func ExpandedEmbedText(question string, exp QueryExpansion) string {
 	if strings.TrimSpace(exp.Hyde) == "" {
 		return question
 	}
 	return question + "\n\n" + exp.Hyde
 }
 
-// appendExpansionIdentifiers appends model-guessed identifiers after the
+// AppendExpansionIdentifiers appends model-guessed identifiers after the
 // resolved ones, skipping case-insensitive duplicates so the exact-match
 // candidates keep priority in the symbol lane.
-func appendExpansionIdentifiers(existing, add []string) []string {
+func AppendExpansionIdentifiers(existing, add []string) []string {
 	if len(add) == 0 {
 		return existing
 	}
