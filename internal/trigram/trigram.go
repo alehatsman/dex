@@ -128,6 +128,15 @@ func (idx *Index) Narrow(query string) ([]string, bool) {
 		return nil, false
 	}
 
+	// An alternation (`A|B`) is a disjunction: a file matches if it contains
+	// any one branch. But the trigrams below are AND-intersected, so a pattern
+	// like `Foo|Bar` would demand a file contain trigrams of BOTH branches and
+	// silently drop files that match only one — worse with every added branch.
+	// Decline to narrow and let the caller full-scan instead (#544).
+	if patternHasAlternation(query) {
+		return nil, false
+	}
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -199,6 +208,32 @@ func reFoldsCase(re *syntax.Regexp) bool {
 	}
 	for _, sub := range re.Sub {
 		if reFoldsCase(sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// patternHasAlternation reports whether the RE2 pattern contains an alternation
+// (`|`) anywhere — including inside a group. The word-trigram prefilter
+// AND-intersects across all runs in the pattern, which is unsound for the OR
+// semantics of an alternation, so a pattern with one must decline narrowing. A
+// pattern that fails to parse is treated as non-alternating: the caller has
+// already validated/compiled it, so a parse miss here just skips no narrowing.
+func patternHasAlternation(pattern string) bool {
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return false
+	}
+	return reHasAlternation(re)
+}
+
+func reHasAlternation(re *syntax.Regexp) bool {
+	if re.Op == syntax.OpAlternate {
+		return true
+	}
+	for _, sub := range re.Sub {
+		if reHasAlternation(sub) {
 			return true
 		}
 	}

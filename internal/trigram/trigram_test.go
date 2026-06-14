@@ -120,6 +120,41 @@ func TestBuildAndNarrow(t *testing.T) {
 			t.Error("case-sensitive query should still narrow")
 		}
 	})
+
+	t.Run("alternation declines to narrow", func(t *testing.T) {
+		// #544: the branches are OR'd, but the trigram prefilter AND-intersects
+		// them — so "searchGrep|doSomethingElse" would demand a file contain
+		// trigrams of BOTH branches and drop a.go and b.go, which each match
+		// only one. Narrow must decline (full scan) instead.
+		if _, ok := idx.Narrow("searchGrep|doSomethingElse"); ok {
+			t.Error("Narrow must return ok=false for an alternation, not an AND-intersect prefilter")
+		}
+		// Alternation nested inside a group is just as unsound.
+		if _, ok := idx.Narrow("(searchGrep|doSomethingElse)"); ok {
+			t.Error("Narrow must return ok=false for a grouped alternation")
+		}
+	})
+}
+
+func TestPatternHasAlternation(t *testing.T) {
+	// Genuine multi-trigram alternations — the unsound case the prefilter must
+	// decline. (RE2 factors a shared prefix, so CompressDocker|CompressMake
+	// parses as Compress(Docker|Make): the inner OpAlternate still trips this.)
+	alts := []string{"searchGrep|doSomethingElse", "foobar|bazqux", "CompressDocker|CompressMake"}
+	for _, p := range alts {
+		if !patternHasAlternation(p) {
+			t.Errorf("patternHasAlternation(%q) = false, want true", p)
+		}
+	}
+	// No genuine alternation. RE2 simplifies trivial single-char alternations
+	// into character classes ("a|b" → "[ab]", "x|y|z" → "[xyz]"), which carry
+	// no multi-trigram branches and so are sound to narrow.
+	plain := []string{"searchGrep", "[Ss]earch", `func \(s \*Store\)`, "a.*b", "(((", "a|b", "x|y|z"}
+	for _, p := range plain {
+		if patternHasAlternation(p) {
+			t.Errorf("patternHasAlternation(%q) = true, want false", p)
+		}
+	}
 }
 
 func TestPatternFoldsCase(t *testing.T) {
