@@ -24,6 +24,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
+	"github.com/alehatsman/dex/internal/throttle"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -457,15 +458,15 @@ func symbolNearMiss(ctx context.Context, st store.Searcher, intent string, candi
 // applyLoopThrottle applies loop-detection throttling. It returns true when
 // the call is blocked (caller should return early with out unchanged).
 func (s *Server) applyLoopThrottle(question string, out *ContextOutput) bool {
-	ldLevel, ldHint := s.ld().Check("ask", argsKey(question), true)
-	if ldLevel == ThrottleBlock {
+	ldLevel, ldHint := s.ld().Check("ask", throttle.ArgsKey(question), true)
+	if ldLevel == throttle.Block {
 		out.Status = "loop-blocked"
 		out.Hint = ldHint
 		out.SemanticHits = nil
 		out.Symbols = nil
 		return true
 	}
-	if ldLevel == ThrottleReduce {
+	if ldLevel == throttle.Reduce {
 		if len(out.SemanticHits) > 3 {
 			out.SemanticHits = out.SemanticHits[:3]
 		}

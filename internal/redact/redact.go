@@ -1,17 +1,21 @@
-package mcp
+// Package redact masks credential-shaped substrings in text before it is
+// surfaced to a caller (e.g. shell output). Patterns preserve a leading
+// context prefix (key=, bearer , etc.) so the surrounding text survives while
+// the secret value itself is hidden.
+package redact
 
 import "regexp"
 
-// redactRule pairs a pattern name with its compiled regex and replacement.
+// rule pairs a pattern name with its compiled regex and replacement.
 // Group 1 in the pattern captures the prefix to preserve (key=, bearer , etc.)
 // so the replacement keeps context while hiding the credential value.
-type redactRule struct {
+type rule struct {
 	name string
 	re   *regexp.Regexp
 	repl string
 }
 
-var redactRules = []redactRule{
+var rules = []rule{
 	{
 		name: "Bearer token",
 		re:   regexp.MustCompile(`(?i)(bearer\s+)[a-zA-Z0-9\-_\.]{8,}`),
@@ -50,12 +54,12 @@ var redactRules = []redactRule{
 	},
 }
 
-// maskSensitiveData replaces credential patterns in output with redaction
-// markers. The prefix (e.g. "Bearer ", "api_key=") is preserved so context
-// survives; only the credential value itself is masked.
-func maskSensitiveData(s string) string {
-	for _, rule := range redactRules {
-		s = rule.re.ReplaceAllString(s, rule.repl)
+// Mask replaces credential patterns in s with redaction markers. The prefix
+// (e.g. "Bearer ", "api_key=") is preserved so context survives; only the
+// credential value itself is masked.
+func Mask(s string) string {
+	for _, r := range rules {
+		s = r.re.ReplaceAllString(s, r.repl)
 	}
 	return s
 }

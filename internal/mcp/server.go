@@ -26,6 +26,7 @@ import (
 	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/slo"
 	"github.com/alehatsman/dex/internal/store"
+	"github.com/alehatsman/dex/internal/throttle"
 	"github.com/alehatsman/dex/internal/watch"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -165,7 +166,7 @@ type patternState struct {
 	bounce     *bounceTracker
 	bounceOnce sync.Once
 	// loop is the per-server loop detector. Lazily initialised by ld().
-	loop     *loopDetector
+	loop     *throttle.Detector
 	loopOnce sync.Once
 }
 
@@ -238,8 +239,8 @@ func (s *Server) bt() *bounceTracker {
 	return s.bounce
 }
 
-func (s *Server) ld() *loopDetector {
-	s.loopOnce.Do(func() { s.loop = newLoopDetector() })
+func (s *Server) ld() *throttle.Detector {
+	s.loopOnce.Do(func() { s.loop = throttle.New() })
 	return s.loop
 }
 

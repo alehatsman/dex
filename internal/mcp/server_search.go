@@ -15,6 +15,7 @@ import (
 	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
+	"github.com/alehatsman/dex/internal/throttle"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -174,8 +175,8 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	hits = filterHits(hits, exts, in.PathGlob, k)
 
 	// Loop detection: block/reduce/hint before building the response.
-	ldLevel, ldHint := s.ld().Check("find", argsKey(in.Query), true)
-	if ldLevel == ThrottleBlock {
+	ldLevel, ldHint := s.ld().Check("find", throttle.ArgsKey(in.Query), true)
+	if ldLevel == throttle.Block {
 		return nil, SearchOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
 	}
 
@@ -206,7 +207,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			Content:     h.Content,
 		})
 	}
-	if ldLevel == ThrottleReduce && len(out.Hits) > 5 {
+	if ldLevel == throttle.Reduce && len(out.Hits) > 5 {
 		out.Hits = out.Hits[:5]
 		out.Hint = ldHint + " [reduced: showing top 5]"
 	}

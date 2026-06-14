@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/throttle"
+
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -153,8 +155,8 @@ outer:
 		}
 	}
 
-	ldLevel, ldHint := s.ld().Check("grep", argsKey(in.Pattern), true)
-	if ldLevel == ThrottleBlock {
+	ldLevel, ldHint := s.ld().Check("grep", throttle.ArgsKey(in.Pattern), true)
+	if ldLevel == throttle.Block {
 		return nil, SearchGrepOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
 	}
 
@@ -172,7 +174,7 @@ outer:
 	if truncated {
 		out.Hint = fmt.Sprintf("results capped at %d — narrow the pattern or path to see more", maxResults)
 	}
-	if ldLevel == ThrottleReduce && len(out.Matches) > 10 {
+	if ldLevel == throttle.Reduce && len(out.Matches) > 10 {
 		out.Matches = out.Matches[:10]
 		out.Total = 10
 		out.Hint = ldHint + " [reduced: showing top 10]"

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/redact"
+
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -524,7 +526,7 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	rawBytes := buf.String()
 
 	if in.Raw {
-		return nil, ShellOutput{Output: maskSensitiveData(stripANSI(rawBytes)), ExitCode: exitCode}, nil
+		return nil, ShellOutput{Output: redact.Mask(stripANSI(rawBytes)), ExitCode: exitCode}, nil
 	}
 
 	policy := classifyCommand(in.Command)
@@ -534,7 +536,7 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 		return nil, ShellOutput{Output: rawBytes, ExitCode: exitCode}, nil
 	}
 
-	clean := maskSensitiveData(stripANSI(rawBytes))
+	clean := redact.Mask(stripANSI(rawBytes))
 
 	// Verbatim: strip ANSI, preserve content (only hard-cap via maxLines).
 	if policy == policyVerbatim {

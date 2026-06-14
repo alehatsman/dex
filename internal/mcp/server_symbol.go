@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/throttle"
+
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -41,8 +43,8 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 	if err != nil {
 		return nil, FindSymbolOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err)}, nil
 	}
-	ldLevel, ldHint := s.ld().Check("lookup", argsKey(in.Name), true)
-	if ldLevel == ThrottleBlock {
+	ldLevel, ldHint := s.ld().Check("lookup", throttle.ArgsKey(in.Name), true)
+	if ldLevel == throttle.Block {
 		return nil, FindSymbolOutput{Status: "loop-blocked", Project: p.Root, Hint: ldHint}, nil
 	}
 
@@ -77,7 +79,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 			Content:   h.Content,
 		})
 	}
-	if ldLevel == ThrottleReduce && len(out.Hits) > 5 {
+	if ldLevel == throttle.Reduce && len(out.Hits) > 5 {
 		out.Hits = out.Hits[:5]
 		out.Hint = ldHint + " [reduced: showing top 5]"
 	}
