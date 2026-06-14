@@ -171,6 +171,68 @@ func (s *Server) summarizeModeSkeleton(w summarizeWork) (*sdk.CallToolResult, Su
 	return nil, out, nil
 }
 
+// summarizeModeHandle is the cheapest renderable terminal of the budget
+// downgrade chain (#487): when even `map` exceeds budget_tokens,
+// selectAffordableMode lands here. It emits a compact reference stub — the
+// path, symbol count, and @Bn body handles — never the full raw file. It is
+// deterministic (no LLM) and consistent with estimateModeTokens(handle)=25.
+func (s *Server) summarizeModeHandle(w summarizeWork) (*sdk.CallToolResult, SummarizeOutput, error) {
+	out := w.out
+	out.Status = "ok"
+	out.Etag = w.etag
+	lineCount := bytes.Count(w.data, []byte("\n")) + 1
+
+	st, err := s.openStore(w.p.DBPath)
+	if err == nil {
+		if syms, err := st.SymbolsByFile(w.ctx, w.relTarget); err == nil && len(syms) > 0 {
+			scopes := make([]compress.BodyScope, 0, len(syms))
+			for _, sym := range syms {
+				exported := len(sym.Name) > 0 && sym.Name[0] >= 'A' && sym.Name[0] <= 'Z'
+				scopes = append(scopes, compress.BodyScope{
+					Name:      sym.QualifiedName,
+					Kind:      sym.Kind,
+					Exported:  exported,
+					StartLine: sym.StartLine,
+					EndLine:   sym.EndLine,
+				})
+			}
+			res := compress.SkeletonPass(w.data, w.relTarget, scopes)
+			s.registerBodyHandles(w.sessionID, w.relTarget, w.etag, res.Bodies)
+			// Compact by design: a one-line pointer plus a small sample of body
+			// handles, never the full per-symbol list (that would blow the very
+			// budget that routed us here). All handles remain resolvable via the
+			// registry above; estimateModeTokens(handle)=25.
+			const sample = 5
+			names := make([]string, 0, sample)
+			for _, b := range res.Bodies {
+				if len(names) == sample {
+					break
+				}
+				names = append(names, fmt.Sprintf("%s @B%d", b.Name, b.N))
+			}
+			more := ""
+			if len(res.Bodies) > len(names) {
+				more = fmt.Sprintf(" (+%d more handles @B%d…@B%d)", len(res.Bodies)-len(names), len(names)+1, len(res.Bodies))
+			}
+			out.Content = fmt.Sprintf("HANDLE %s (%d lines, %d symbols) — budget too small for a fuller view; request a body by @Bn handle or re-read with a larger budget_tokens\n%s%s",
+				w.relTarget, lineCount, len(syms), strings.Join(names, "\n"), more)
+			out.Bytes = len(out.Content)
+			s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+			w.bt.recordCompressed(w.sessionID, w.relTarget)
+			s.sessionAutoFile(w.p.DBPath, w.relTarget)
+			return nil, out, nil
+		}
+	}
+
+	// No index/symbols: still emit a compact pointer, never the raw file.
+	out.Content = fmt.Sprintf("HANDLE %s (%d lines) — budget too small for a fuller view; re-read with a larger budget_tokens or mode=map",
+		w.relTarget, lineCount)
+	out.Bytes = len(out.Content)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	w.bt.recordCompressed(w.sessionID, w.relTarget)
+	return nil, out, nil
+}
+
 // summarizeModeRaw returns the file's raw content — no LLM, no compression.
 // This is the `full` mode (the default): predictable, cheap, exact bytes.
 // StartLine/EndLine slice a sub-range; the whole file otherwise.

@@ -235,6 +235,10 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		result, out, err = s.summarizeModeAggressive(w)
 	case mode == "skeleton":
 		result, out, err = s.summarizeModeSkeleton(w)
+	case mode == "handle":
+		// Cheapest terminal of the budget downgrade chain (#487): compact
+		// body-handle stub, never a fall-through to the full raw file.
+		result, out, err = s.summarizeModeHandle(w)
 	default: // "full" — raw file content, no LLM, no compression.
 		result, out, err = s.summarizeModeRaw(w)
 	}
