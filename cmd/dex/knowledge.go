@@ -117,6 +117,26 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
+	// Validate --archetype against the known set, normalising case so the
+	// correct salience weight is applied — an unknown archetype is rejected
+	// rather than silently stored with the default weight (#520).
+	canonArch, ok := canonicalArchetype(*archetype)
+	if !ok {
+		return fmt.Errorf("invalid --archetype=%q (want one of: Architecture, Gotcha, Decision, Convention, Dependency, Pattern, Fact)", *archetype)
+	}
+	*archetype = canonArch
+	// --confidence is a (0,1] value; 0 is the unset sentinel that defers to the
+	// store default (0.8). Reject an explicitly-supplied out-of-range value
+	// instead of silently coercing it (negative→default, >1→clamp) (#520).
+	confSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "confidence" {
+			confSet = true
+		}
+	})
+	if confSet && (*confidence <= 0 || *confidence > 1) {
+		return fmt.Errorf("invalid --confidence=%g (want a value in (0,1])", *confidence)
+	}
 	path, rest := splitProjectArg(fs.Args())
 	body := strings.TrimSpace(strings.Join(rest, " "))
 	if body == "" {

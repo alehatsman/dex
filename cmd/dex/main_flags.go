@@ -40,6 +40,30 @@ func validExpandMode(s string) bool {
 	return false
 }
 
+// canonicalArchetype validates a knowledge-fact archetype case-insensitively
+// and returns its canonical capitalisation. The canonical form matters: the
+// store's salience weighting (archetypeWeight) is case-sensitive, so a
+// mis-cased archetype would silently fall back to the default weight (#520).
+func canonicalArchetype(s string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "architecture":
+		return "Architecture", true
+	case "gotcha":
+		return "Gotcha", true
+	case "decision":
+		return "Decision", true
+	case "convention":
+		return "Convention", true
+	case "dependency":
+		return "Dependency", true
+	case "pattern":
+		return "Pattern", true
+	case "fact":
+		return "Fact", true
+	}
+	return "", false
+}
+
 // boolFlag duck-types the stdlib's unexported flag.boolFlag interface so
 // reorderFlags can tell standalone boolean flags (`-v`) from flags that
 // consume a value as the next token (`--rerank off`).
