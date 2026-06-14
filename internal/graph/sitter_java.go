@@ -33,7 +33,11 @@ import (
 	"github.com/smacker/go-tree-sitter/java"
 )
 
-func newJavaExtractor() Extractor {
+func newJavaExtractor() Extractor { return newJavaExtractorImpl() }
+
+// newJavaExtractorImpl returns the concrete walker. The tags extractor
+// embeds it to reuse Init / Finalize / resolveCall / the emit helpers.
+func newJavaExtractorImpl() *javaExtractor {
 	return &javaExtractor{
 		nodeIDs:     map[string]struct{}{},
 		symbols:     map[string]map[string]string{},
@@ -115,7 +119,24 @@ func (e *javaExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	// single-pass walk that visits package_declaration before any
 	// other top-level item is fine.
 	pkg := javaPackagePath(in.Root, in.Source, in.RelPath)
+	fileID := e.emitScaffold(in, pkg)
 
+	imports := &javaImportTable{
+		classes: map[string]javaClassImport{},
+		statics: map[string]javaStaticImport{},
+	}
+	e.fileImports[in.RelPath] = imports
+
+	for i := 0; i < int(in.Root.NamedChildCount()); i++ {
+		e.processTopLevel(in.Root.NamedChild(i), in.Source, in.RelPath, pkg, fileID, imports)
+	}
+	return nil
+}
+
+// emitScaffold emits the package and file nodes and the package→file
+// contains edge, returning the file node ID. Shared with the tags
+// extractor.
+func (e *javaExtractor) emitScaffold(in FileInput, pkg string) string {
 	pkgID := NodeID("", pkg, NodePackage, pkg)
 	e.addNode(Node{
 		ID:            pkgID,
@@ -147,17 +168,7 @@ func (e *javaExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		StartLine: 1,
 		EndLine:   1,
 	})
-
-	imports := &javaImportTable{
-		classes: map[string]javaClassImport{},
-		statics: map[string]javaStaticImport{},
-	}
-	e.fileImports[in.RelPath] = imports
-
-	for i := 0; i < int(in.Root.NamedChildCount()); i++ {
-		e.processTopLevel(in.Root.NamedChild(i), in.Source, in.RelPath, pkg, fileID, imports)
-	}
-	return nil
+	return fileID
 }
 
 func (e *javaExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, error) {
@@ -209,13 +220,44 @@ func (e *javaExtractor) addClassLike(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID string, kind NodeKind,
 ) {
+	name := e.emitClassLikeNode(n, src, filePath, pkg, fileID, kind)
+	if name == "" {
+		return
+	}
+
+	body := n.ChildByFieldName("body")
+	if body == nil {
+		return
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		child := body.NamedChild(i)
+		if child == nil {
+			continue
+		}
+		switch child.Type() {
+		case "method_declaration":
+			e.addMethod(child, src, filePath, pkg, fileID, name, false)
+		case "constructor_declaration":
+			e.addMethod(child, src, filePath, pkg, fileID, name, true)
+		}
+	}
+}
+
+// emitClassLikeNode emits a class/interface/enum/record node plus its
+// contains edge and registers it in the symbol table. It performs no body
+// traversal — emitting the members is the caller's concern. Returns the
+// declared type name, or "" if the declaration has no usable name.
+func (e *javaExtractor) emitClassLikeNode(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID string, kind NodeKind,
+) string {
 	nameNode := n.ChildByFieldName("name")
 	if nameNode == nil {
-		return
+		return ""
 	}
 	name := nodeText(nameNode, src)
 	if name == "" {
-		return
+		return ""
 	}
 	id := NodeID("", pkg, kind, name)
 	startLine := lineOfPoint(n.StartPoint().Row)
@@ -243,43 +285,45 @@ func (e *javaExtractor) addClassLike(
 		StartLine: startLine,
 		EndLine:   endLine,
 	})
-
-	body := n.ChildByFieldName("body")
-	if body == nil {
-		return
-	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil {
-			continue
-		}
-		switch child.Type() {
-		case "method_declaration":
-			e.addMethod(child, src, filePath, pkg, fileID, name, false)
-		case "constructor_declaration":
-			e.addMethod(child, src, filePath, pkg, fileID, name, true)
-		}
-	}
+	return name
 }
 
-// addMethod registers a method or constructor on the given class.
-// Constructors get the synthetic name "<init>" to keep them
-// distinguishable from regular methods named after the class.
+// addMethod registers a method or constructor on the given class and
+// collects the calls in its body. Constructors get the synthetic name
+// "<init>" to keep them distinguishable from regular methods named
+// after the class.
 func (e *javaExtractor) addMethod(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID, className string, isCtor bool,
 ) {
+	id := e.emitMethodNode(n, src, filePath, pkg, fileID, className, isCtor)
+	if id == "" {
+		return
+	}
+	if body := n.ChildByFieldName("body"); body != nil {
+		e.collectCalls(body, src, id, pkg, className, filePath)
+	}
+}
+
+// emitMethodNode emits the method/constructor node plus its contains and
+// has_method edges, and registers it in the symbol table. It performs no
+// body traversal — call collection is the caller's concern. Returns the
+// node ID, or "" if the declaration has no usable name.
+func (e *javaExtractor) emitMethodNode(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID, className string, isCtor bool,
+) string {
 	var methodName string
 	if isCtor {
 		methodName = "<init>"
 	} else {
 		nameNode := n.ChildByFieldName("name")
 		if nameNode == nil {
-			return
+			return ""
 		}
 		methodName = nodeText(nameNode, src)
 		if methodName == "" {
-			return
+			return ""
 		}
 	}
 	// Disambiguate overloads by parameter-type signature: Java allows
@@ -337,10 +381,7 @@ func (e *javaExtractor) addMethod(
 		StartLine: startLine,
 		EndLine:   endLine,
 	})
-
-	if body := n.ChildByFieldName("body"); body != nil {
-		e.collectCalls(body, src, id, pkg, className, filePath)
-	}
+	return id
 }
 
 // javaParamSig returns the comma-joined parameter type list of a method or
