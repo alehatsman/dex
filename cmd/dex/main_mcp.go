@@ -140,12 +140,19 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 		EmbedClient:  newEmbedClient(""),
 		ChatClient:   chatClient,
 		RerankClient: rerankClient,
-		ExpandClient: expandClient,
 		ExpandMode:   expandDefaultMode(expandClient),
 		IndexDir:     base,
 		StoreOpts:    opts,
 		Retrieve:     rerankSvc,
 		AutoWatch:    autoWatchConfigFromEnv(),
+	}
+	// Only populate the interface field when a client is actually configured.
+	// newExpandClient returns a *chat.Client, so assigning its nil value
+	// directly would leave ExpandClient a non-nil interface wrapping a nil
+	// pointer — the per-request expand=on|full override would then deref it
+	// and panic instead of degrading to the documented no-op (#502).
+	if expandClient != nil {
+		srv.ExpandClient = expandClient
 	}
 	return srv, rerankClient
 }
