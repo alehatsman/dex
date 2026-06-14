@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -12,6 +14,51 @@ import (
 	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// goFuncHasHTTPHandlerSig reports whether the Go function/method whose
+// declaration begins at path:startLine has an HTTP-handler signature: it
+// returns http.HandlerFunc / http.Handler, or takes (http.ResponseWriter,
+// *http.Request). It reads only the declaration (up to the body's opening
+// brace), so it is cheap. A read error yields false — the name heuristic
+// alone is not enough to claim a route (#522).
+func goFuncHasHTTPHandlerSig(absPath string, startLine int) bool {
+	if startLine <= 0 {
+		return false
+	}
+	f, err := os.Open(absPath)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	var decl strings.Builder
+	line := 0
+	for sc.Scan() {
+		line++
+		if line < startLine {
+			continue
+		}
+		text := sc.Text()
+		decl.WriteString(text)
+		decl.WriteByte('\n')
+		// The signature is complete once the body opens; cap the span so a
+		// malformed/odd node can't make us read the whole file.
+		if strings.Contains(text, "{") || line-startLine >= 12 {
+			break
+		}
+	}
+
+	d := decl.String()
+	// http.Handler also matches the http.HandlerFunc return type. Within the
+	// name-prefixed candidate set this is a strong handler signal; a bare
+	// "http.Handler" param on a non-handle/serve function never reaches here.
+	if strings.Contains(d, "http.Handler") {
+		return true
+	}
+	return strings.Contains(d, "http.ResponseWriter") && strings.Contains(d, "http.Request")
+}
 
 type RoutesInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
@@ -89,7 +136,13 @@ func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesIn
 		}
 	}
 
-	// 2. Functions/methods named handle*/Handle* (excluding ServeHTTP already captured).
+	// 2. Functions/methods named handle*/Handle* (excluding ServeHTTP already
+	//    captured). The name alone over-matches — serverReadMode, a Watcher's
+	//    fsnotify handle(), ServerInstructions all share a handle/serve prefix
+	//    yet are not HTTP handlers (#522). For Go, corroborate with the
+	//    signature: a real handler returns http.HandlerFunc/http.Handler or
+	//    takes (http.ResponseWriter, *http.Request). Other languages keep the
+	//    name signal (no cheap signature check here).
 	for name, nodes := range view.NodesByName {
 		lower := strings.ToLower(name)
 		if name == "ServeHTTP" {
@@ -97,9 +150,14 @@ func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesIn
 		}
 		if strings.HasPrefix(lower, "handle") || strings.HasPrefix(lower, "serve") {
 			for _, n := range nodes {
-				if n.Kind == graph.NodeFunction || n.Kind == graph.NodeMethod {
-					add(n, "http_handler", "")
+				if n.Kind != graph.NodeFunction && n.Kind != graph.NodeMethod {
+					continue
 				}
+				if strings.HasSuffix(n.FilePath, ".go") &&
+					!goFuncHasHTTPHandlerSig(filepath.Join(p.Root, n.FilePath), n.StartLine) {
+					continue
+				}
+				add(n, "http_handler", "")
 			}
 		}
 	}
