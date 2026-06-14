@@ -4,6 +4,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Entropy filter threshold levels — bits/char combined score below which a
@@ -43,11 +44,30 @@ func EntropyFilter(lines []string, threshold float64) []string {
 
 	// Layer 1: per-line bidirectional entropy + marker - repetition scoring.
 	seenTrigrams := make(map[string]struct{}, 256)
+	keptTokens := make(map[string]struct{})
 	out := make([]string, 0, len(stripped))
 	for i, line := range stripped {
-		if strings.TrimSpace(line) == "" {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
 			out = append(out, line)
 			continue
+		}
+		// Preserve the first occurrence of a distinct standalone token. A lone
+		// token (no internal whitespace) — a commit sha, version, id, count, or
+		// bare filename — carries terse signal that Shannon entropy under-scores
+		// precisely because it is short, so a command whose entire output is one
+		// such token (e.g. `dex version` → `05fddd4`) would otherwise vanish with
+		// no marker and read as "produced nothing" (#506). Repeats fall through
+		// to normal scoring so genuine token-spam can still be dropped.
+		if isStandaloneToken(trimmed) {
+			if _, dup := keptTokens[trimmed]; !dup {
+				keptTokens[trimmed] = struct{}{}
+				out = append(out, line)
+				for tg := range lineTg[i] {
+					seenTrigrams[tg] = struct{}{}
+				}
+				continue
+			}
 		}
 		score := lineScore(line, seenTrigrams, windowTrigrams(lineTg, i))
 		if score >= threshold {
@@ -184,6 +204,28 @@ func countLongIdents(line string) int {
 		}
 	}
 	return count
+}
+
+// isStandaloneToken reports whether trimmed is a single whitespace-free token
+// carrying at least 4 alphanumeric characters (a sha, version, id, count, or
+// filename). Such a line has no verbosity for the entropy filter to compress
+// away, so it is signal rather than noise. Separators (dots, dashes, slashes)
+// do not break the count, so dotted versions like "v1.2.3" qualify. trimmed
+// must already be whitespace-trimmed.
+func isStandaloneToken(trimmed string) bool {
+	if strings.IndexFunc(trimmed, unicode.IsSpace) >= 0 {
+		return false
+	}
+	alnum := 0
+	for _, c := range trimmed {
+		if unicode.IsLetter(c) || unicode.IsDigit(c) {
+			alnum++
+			if alnum >= 4 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // charTrigrams returns the set of 3-character substrings in s.

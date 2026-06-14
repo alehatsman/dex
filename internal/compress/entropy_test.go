@@ -286,3 +286,59 @@ func TestEntropyFilter_QualityGateBlocks(t *testing.T) {
 		}
 	}
 }
+
+// TestEntropyFilter_PreservesStandaloneToken pins #506: a lone token line (a
+// commit sha) carries terse signal that short-line Shannon entropy under-scores.
+// It must survive the entropy filter even when its content recurs inside a
+// neighbouring verbose line, so a command whose entire output is one such token
+// never silently vanishes.
+func TestEntropyFilter_PreservesStandaloneToken(t *testing.T) {
+	lines := []string{
+		"05fddd4",
+		"dex index status",
+		"version: dex 05fddd4 built 2026-06-14",
+		"project: /home/aleh/projects/dex",
+		"chunks: 12345 indexed",
+		"symbols: 6789 across 42 files",
+		"embed model: qwen3-embedding:4b dim 1024",
+		"last index: 2026-06-14 17:00",
+	}
+	got := EntropyFilter(lines, EntropyThresholdStandard)
+	if got == nil {
+		got = lines // filter declined; the line is trivially preserved
+	}
+	found := false
+	for _, l := range got {
+		if strings.TrimSpace(l) == "05fddd4" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("standalone token line '05fddd4' was dropped: %q", got)
+	}
+}
+
+func TestIsStandaloneToken(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"05fddd4", true},      // short commit sha
+		{"v1.2.3", true},       // version
+		{"deadbeefcafe", true}, // long hash
+		{"main.go", true},      // bare filename
+		{"123456", true},       // count / id
+		{"abc", false},         // <4 alphanumeric run
+		{"---", false},         // pure decoration
+		{"==>", false},         // punctuation only
+		{"two tokens", false},  // internal whitespace
+		{"error: boom", false}, // multi-token line
+		{"", false},            // empty
+	}
+	for _, c := range cases {
+		if got := isStandaloneToken(c.in); got != c.want {
+			t.Errorf("isStandaloneToken(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
