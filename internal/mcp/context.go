@@ -350,9 +350,15 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 		return nil, out, nil
 	}
 
-	// Near-miss surface for symbol_lookup whiffs.
-	if hint := symbolNearMiss(ctx, st, intent, candidates); hint != "" {
-		out.Hint = hint
+	// Near-miss surface for symbol_lookup whiffs — only when the symbol lane
+	// actually whiffed. symbolNearMiss does a substring scan, so without this
+	// gate a query that has exact defs but is also a substring of other names
+	// (Run ⊂ runBench/RunResult) would emit a contradictory "no exact symbol
+	// match" hint alongside the exact symbols[] it found (#533).
+	if len(out.Symbols) == 0 {
+		if hint := symbolNearMiss(ctx, st, intent, candidates); hint != "" {
+			out.Hint = hint
+		}
 	}
 
 	enrichGraph(&out, intent, graphView, out.SemanticHits, out.Symbols)
