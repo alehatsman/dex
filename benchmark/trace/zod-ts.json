@@ -1,0 +1,67 @@
+{
+  "repo": "zod",
+  "lang": "ts",
+  "commit": "1fb56a5c18c27102dbc92260a4007c7732a0ccca",
+  "note": "Hand-verified callers/callees of stable free functions in packages/zod/src/v4/core/util.ts, read directly from source (not echoed from the graph). Scope = INTRA-REPO call targets only: calls into the std lib / built-ins (Object.*, Array.isArray, Map/Set) have no graph node and are excluded, so a missing edge reflects a real resolution gap, not an out-of-corpus call. Peer keys are <last-path-segment>.<qualified-name>: TS package paths are '/'-separated, so trace.peerKey keeps only the final segment ('util'), e.g. util.assignProp. Two cross-language signal directions isolate what the name-resolution tree-sitter extractor drops vs go/types, both rooted in the same gap — calls inside callback/getter closures: (callee side) extend/merge call assignProp inside a `get shape()` getter, which the extractor drops; (caller side) assignProp's true callers are 7 builder functions (pick/omit/extend/safeExtend/merge/partial/required) that all call it from inside that getter — the extractor resolves NONE of them, so the probe returns empty (scored P=R=0 by design: a silent empty result for a query with real answers is a full failure, not a skip). The schemas.ts callers of isObject are excluded because they live in anonymous `inst._zod.parse` arrow closures with no named enclosing node — a node-modeling limit, not the resolution gap #468 targets. #468 (uniform tree-sitter tags) aims to recover the closure-body edges. Scored via: dex bench trace run --project <zod> --gold benchmark/trace/zod-ts.json",
+  "probes": [
+    {
+      "symbol": "extend",
+      "package": "packages/zod/src/v4/core/util",
+      "direction": "callees",
+      "expected": [
+        "util.isPlainObject",
+        "util.mergeDefs",
+        "util.assignProp",
+        "util.clone"
+      ]
+    },
+    {
+      "symbol": "merge",
+      "package": "packages/zod/src/v4/core/util",
+      "direction": "callees",
+      "expected": [
+        "util.mergeDefs",
+        "util.assignProp",
+        "util.clone"
+      ]
+    },
+    {
+      "symbol": "isPlainObject",
+      "package": "packages/zod/src/v4/core/util",
+      "direction": "callees",
+      "expected": [
+        "util.isObject"
+      ]
+    },
+    {
+      "symbol": "shallowClone",
+      "package": "packages/zod/src/v4/core/util",
+      "direction": "callees",
+      "expected": [
+        "util.isPlainObject"
+      ]
+    },
+    {
+      "symbol": "isObject",
+      "package": "packages/zod/src/v4/core/util",
+      "direction": "callers",
+      "expected": [
+        "util.isPlainObject"
+      ]
+    },
+    {
+      "symbol": "assignProp",
+      "package": "packages/zod/src/v4/core/util",
+      "direction": "callers",
+      "expected": [
+        "util.pick",
+        "util.omit",
+        "util.extend",
+        "util.safeExtend",
+        "util.merge",
+        "util.partial",
+        "util.required"
+      ]
+    }
+  ]
+}

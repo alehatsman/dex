@@ -330,6 +330,150 @@
           "f1": 1
         }
       ]
+    },
+    {
+      "repo": "zod",
+      "lang": "ts",
+      "set": "zod-ts",
+      "probes": 6,
+      "unresolved": 0,
+      "macro_precision": 0.8333333333333334,
+      "macro_recall": 0.736111111111111,
+      "macro_f1": 0.7761904761904761,
+      "results": [
+        {
+          "probe": {
+            "symbol": "extend",
+            "package": "packages/zod/src/v4/core/util",
+            "direction": "callees",
+            "expected": [
+              "util.isPlainObject",
+              "util.mergeDefs",
+              "util.assignProp",
+              "util.clone"
+            ]
+          },
+          "got": [
+            "util.clone",
+            "util.isPlainObject",
+            "util.mergeDefs"
+          ],
+          "resolved": true,
+          "tp": 3,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1,
+          "recall": 0.75,
+          "f1": 0.8571428571428571
+        },
+        {
+          "probe": {
+            "symbol": "merge",
+            "package": "packages/zod/src/v4/core/util",
+            "direction": "callees",
+            "expected": [
+              "util.mergeDefs",
+              "util.assignProp",
+              "util.clone"
+            ]
+          },
+          "got": [
+            "util.clone",
+            "util.mergeDefs"
+          ],
+          "resolved": true,
+          "tp": 2,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1,
+          "recall": 0.6666666666666666,
+          "f1": 0.8
+        },
+        {
+          "probe": {
+            "symbol": "isPlainObject",
+            "package": "packages/zod/src/v4/core/util",
+            "direction": "callees",
+            "expected": [
+              "util.isObject"
+            ]
+          },
+          "got": [
+            "util.isObject"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "shallowClone",
+            "package": "packages/zod/src/v4/core/util",
+            "direction": "callees",
+            "expected": [
+              "util.isPlainObject"
+            ]
+          },
+          "got": [
+            "util.isPlainObject"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "isObject",
+            "package": "packages/zod/src/v4/core/util",
+            "direction": "callers",
+            "expected": [
+              "util.isPlainObject"
+            ]
+          },
+          "got": [
+            "util.isPlainObject"
+          ],
+          "resolved": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "probe": {
+            "symbol": "assignProp",
+            "package": "packages/zod/src/v4/core/util",
+            "direction": "callers",
+            "expected": [
+              "util.pick",
+              "util.omit",
+              "util.extend",
+              "util.safeExtend",
+              "util.merge",
+              "util.partial",
+              "util.required"
+            ]
+          },
+          "got": [],
+          "resolved": true,
+          "tp": 0,
+          "fp": 0,
+          "fn": 7,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        }
+      ]
     }
   ]
 }

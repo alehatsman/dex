@@ -65,6 +65,7 @@ repos:
     commit: 1fb56a5c18c27102dbc92260a4007c7732a0ccca   # tag v4.4.3
     languages: [ts]
     query_sets: [queries/zod.json]
+    trace_sets: [../trace/zod-ts.json]
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
