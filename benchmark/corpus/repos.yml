@@ -22,6 +22,10 @@
 # Start small: flask + gin + ripgrep + zod (fast; py/go/rust/ts). react is the
 # large flagship — add it in a second pass (see the commented block) and bound
 # its index cost with index_subdir.
+#
+# #493 Phase 1 extends coverage to the C-family + JVM (guava/leveldb/redis) and
+# adds a database/systems domain plus a large-haystack tier (redis ~150k LOC).
+# See the block at the end of this file.
 
 repos:
   - name: flask
@@ -78,3 +82,53 @@ repos:
       # subdir and emit subdir-relative paths, so labels match the index.
       git_history: { enabled: true, max_commits: 500, max_files: 5 }
       structural:  { enabled: true, max_commits: 500, max_files: 5 }
+
+  # ── #493 Phase 1: language + domain + scale coverage ─────────────────────
+  # Closes the C-family / JVM gap (corpus was py/go/rust/ts/js only) and adds a
+  # database/systems domain + a large-haystack tier. Pins are release-tag
+  # commits — all three are lightweight tags, so the SHA *is* the commit
+  # (`git ls-remote <url> 'refs/tags/<tag>^{}' refs/tags/<tag>` returns no
+  # peeled `^{}` line). blast_radius is enabled to match gin and give the
+  # graph-lane co-change probe uniform coverage — it is the corpus regression
+  # guard for #468 (cross-language symbol-graph parity).
+  #
+  # These entries run gen-only until curated query_sets land: writing
+  # queries/<name>.json means read-verifying every relevant_files path at the
+  # pin (subdir-relative where index_subdir is set), which is the next step of
+  # #493, not this drop.
+
+  - name: guava
+    url: https://github.com/google/guava
+    commit: 5c71d2a15435399fa62508d807d5cc83506f7496   # tag v33.4.0
+    languages: [java]
+    # Bound the monorepo to the core library source; skips guava-tests,
+    # guava-gwt, and the android/ variant. A future query set's relevant_files
+    # are relative to this subdir (#285).
+    index_subdir: guava/src/com/google/common
+    gen:
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
+
+  - name: leveldb
+    url: https://github.com/google/leveldb
+    commit: 99b3c03b3284f5886f9ef9a4ef703d57373e61be   # tag 1.23
+    languages: [cpp]
+    # Small, clean C++ (db/, table/, util/, include/) — no index_subdir needed.
+    gen:
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
+
+  - name: redis
+    url: https://github.com/redis/redis
+    commit: a0a6f23d997b024689ba157916837f493a593a34   # tag 7.4.2
+    languages: [c]
+    # Scale tier + database/systems domain. index_subdir: src scopes to the
+    # core (~150k LOC of .c/.h) and skips vendored deps/ (jemalloc, lua,
+    # hiredis) that would otherwise dominate the index.
+    index_subdir: src
+    gen:
+      git_history:  { enabled: true, max_commits: 500, max_files: 5 }
+      blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
+      structural:   { enabled: true, max_commits: 500, max_files: 5 }
