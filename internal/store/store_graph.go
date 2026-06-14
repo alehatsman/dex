@@ -914,11 +914,13 @@ func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]fl
 	}
 	scores := make(map[hitKey]float32, len(primary)+len(graphHits))
 	byKey := make(map[hitKey]Hit, len(primary)+len(graphHits))
+	fromPrimary := make(map[hitKey]struct{}, len(primary))
 
 	for i, h := range primary {
 		hk := hitKey{h.Path, h.StartLine}
 		scores[hk] += 1.0 / float32(kRRF+i+1)
 		byKey[hk] = h
+		fromPrimary[hk] = struct{}{}
 	}
 	for i, h := range graphHits {
 		hk := hitKey{h.Path, h.StartLine}
@@ -943,6 +945,14 @@ func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]fl
 	out := make([]Hit, len(all))
 	for i, r := range all {
 		out[i] = byKey[r.key]
+		// Graph-only neighbors skip the downstream reranker (held out as a
+		// breadth-only tail), so stamp the fused score they're sorted by as
+		// SortScore — otherwise they'd fall back to a near-zero cosine and
+		// invert the rendered score= at the tail (#518). Primary hits are
+		// left alone; their SortScore comes from the rerank pass.
+		if _, ok := fromPrimary[r.key]; !ok {
+			out[i].SortScore = r.score
+		}
 	}
 	return out
 }

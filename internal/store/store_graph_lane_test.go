@@ -147,6 +147,40 @@ func TestFuseWithGraphNeighborsHopDecay(t *testing.T) {
 	}
 }
 
+// TestFuseWithGraphNeighborsStampsGraphOnlySortScore guards #518: graph-only
+// neighbors bypass the downstream reranker, so fuse must stamp the fused score
+// they're ordered by into SortScore (descending, monotonic) while leaving the
+// primary hit's SortScore zero (it gets one from the rerank pass).
+func TestFuseWithGraphNeighborsStampsGraphOnlySortScore(t *testing.T) {
+	primary := []Hit{{Path: "match.go", StartLine: 1, Score: 1.0}}
+	graphHits := []Hit{
+		{Path: "near.go", StartLine: 1},
+		{Path: "far.go", StartLine: 1},
+	}
+	weightByPath := map[string]float32{
+		"near.go": pow32(0.6, 1),
+		"far.go":  pow32(0.6, 2),
+	}
+	out := fuseWithGraphNeighbors(primary, graphHits, weightByPath, 1.0, 3)
+
+	var prev float32 = -1
+	for _, h := range out {
+		if h.Path == "match.go" {
+			if h.SortScore != 0 {
+				t.Errorf("primary hit must keep SortScore zero, got %v", h.SortScore)
+			}
+			continue
+		}
+		if h.SortScore <= 0 {
+			t.Errorf("graph-only %q must carry a positive SortScore, got %v", h.Path, h.SortScore)
+		}
+		if prev >= 0 && h.SortScore > prev {
+			t.Errorf("graph-only SortScore must be non-increasing in order: %v after %v", h.SortScore, prev)
+		}
+		prev = h.SortScore
+	}
+}
+
 // TestFuseWithGraphNeighborsLaneWeight verifies that a higher laneWeight
 // amplifies graph hits enough to outrank primary hits at the same range.
 func TestFuseWithGraphNeighborsLaneWeight(t *testing.T) {

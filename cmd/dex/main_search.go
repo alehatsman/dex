@@ -127,10 +127,10 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 				fmt.Println(header)
 				fmt.Println("  " + scores)
 			} else {
-				header += fmt.Sprintf("  score=%.4f", h.Score)
-				if h.RerankScore > 0 {
-					header += fmt.Sprintf("  rerank=%.4f", h.RerankScore)
-				}
+				// score= is the value the list is sorted by (DisplayScore),
+				// not the raw cosine — otherwise the ranking looks
+				// non-monotonic. Use --explain for the per-lane breakdown.
+				header += fmt.Sprintf("  score=%.4f", h.DisplayScore())
 				fmt.Println(header)
 			}
 			fmt.Println(truncate(h.Content, *maxContentBytes))

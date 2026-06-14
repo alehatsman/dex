@@ -98,4 +98,54 @@ func TestApplyLocalRerank_RespectsCrossEncoder(t *testing.T) {
 	if out[0].Name != "x" {
 		t.Errorf("cross-encoder order must be preserved; got first = %q", out[0].Name)
 	}
+	// Cross-encoder short-circuit must NOT stamp SortScore — RerankScore
+	// stays the authoritative sort key (and DisplayScore falls back to it).
+	for _, h := range out {
+		if h.SortScore != 0 {
+			t.Errorf("cross-encoder path should leave SortScore zero; got %v for %q", h.SortScore, h.Name)
+		}
+	}
+}
+
+// TestApplyLocalRerank_SetsMonotonicSortScore guards #518: the local reranker
+// must stamp SortScore so a rendered score= is monotonic with the visible
+// order, even though coherence/MMR reorder relative to RRFScore.
+func TestApplyLocalRerank_SetsMonotonicSortScore(t *testing.T) {
+	hits := []Hit{
+		{Name: "a1", Path: "a.go", RRFScore: 0.9},
+		{Name: "a2", Path: "a.go", RRFScore: 0.8},
+		{Name: "b1", Path: "b.go", RRFScore: 0.6},
+	}
+	out := ApplyLocalRerank(hits, false, 0)
+	for i, h := range out {
+		if h.SortScore <= 0 {
+			t.Errorf("hit %d (%q) missing SortScore; got %v", i, h.Name, h.SortScore)
+		}
+		if i > 0 && out[i-1].SortScore < h.SortScore {
+			t.Errorf("SortScore non-monotonic: out[%d]=%v < out[%d]=%v",
+				i-1, out[i-1].SortScore, i, h.SortScore)
+		}
+	}
+}
+
+// TestHit_DisplayScore_Precedence pins the score= precedence used by `dex find`
+// default output: SortScore > RerankScore > RRFScore > cosine Score.
+func TestHit_DisplayScore_Precedence(t *testing.T) {
+	cases := []struct {
+		name string
+		h    Hit
+		want float32
+	}{
+		{"semantic-only", Hit{Score: 0.42}, 0.42},
+		{"rrf-over-cosine", Hit{Score: 0.42, RRFScore: 0.7}, 0.7},
+		{"rerank-over-rrf", Hit{Score: 0.42, RRFScore: 0.7, RerankScore: 0.9}, 0.9},
+		{"sortscore-wins", Hit{Score: 0.42, RRFScore: 0.7, RerankScore: 0.9, SortScore: 0.55}, 0.55},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.h.DisplayScore(); got != tc.want {
+				t.Errorf("DisplayScore() = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

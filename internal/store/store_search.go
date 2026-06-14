@@ -44,6 +44,15 @@ type Hit struct {
 	// wired, pool ≤ k, or endpoint unreachable). Larger = more relevant.
 	RerankScore float32
 
+	// SortScore is the effective value the hits are ordered by after the
+	// local rerank pass (noise penalty, definition/coherence boosts, MMR).
+	// It is the *authoritative* sort key when the cross-encoder did not
+	// run, since those passes reorder relative to RRFScore — so display
+	// this (not Score/RRFScore) to keep the visible ranking monotonic.
+	// Zero when local rerank was skipped (cross-encoder path, where
+	// RerankScore is the sort key instead).
+	SortScore float32
+
 	// Centrality fields — populated from graph_nodes via the
 	// chunk_id join when the symbol has a corresponding graph node.
 	// Zero when no graph node exists (the file is in an unindexed
@@ -55,6 +64,25 @@ type Hit struct {
 	CrossPkgCallers int
 	PageRank        float64
 	Betweenness     float64
+}
+
+// DisplayScore returns the single value the hit is actually ranked by, so a
+// rendered "score=" is monotonic with the listed order. Precedence mirrors the
+// search pipeline: the local-rerank sort key (SortScore) wins; else the
+// cross-encoder score (RerankScore); else the RRF fusion score; else the raw
+// cosine Score for a semantic-only search. The per-lane breakdown (sem/bm25/
+// rrf/rerank) stays available behind --explain.
+func (h Hit) DisplayScore() float32 {
+	switch {
+	case h.SortScore > 0:
+		return h.SortScore
+	case h.RerankScore > 0:
+		return h.RerankScore
+	case h.RRFScore > 0:
+		return h.RRFScore
+	default:
+		return h.Score
+	}
 }
 
 // FormatHits renders a slice of hits as a fenced CONTEXT block for

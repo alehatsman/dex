@@ -111,6 +111,10 @@ func ApplyLocalRerank(hits []Hit, isSymbolQuery bool, defBoost float64) []Hit {
 	out := make([]Hit, len(arr))
 	for i := range arr {
 		out[i] = arr[i].h
+		// Expose the final scratch score as the authoritative sort key so
+		// callers can render a value that is monotonic with the visible
+		// order (the coherence/MMR passes above reorder relative to RRF).
+		out[i].SortScore = arr[i].s
 	}
 	return out
 }
