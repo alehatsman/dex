@@ -8,12 +8,30 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alehatsman/dex/internal/redact"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// shellInterpreter resolves the interpreter the shell tool runs commands with.
+// It prefers bash (resolved once on PATH) so the tool matches the dialect of
+// the native Bash tool agents migrate from — `set -o pipefail`, `[[ ]]`,
+// process substitution, arrays — and falls back to POSIX sh (always present)
+// when bash is absent (#542). The DEX_SHELL env var overrides the choice.
+var shellInterpreter = sync.OnceValue(resolveShellInterpreter)
+
+func resolveShellInterpreter() string {
+	if override := strings.TrimSpace(os.Getenv("DEX_SHELL")); override != "" {
+		return override
+	}
+	if path, err := exec.LookPath("bash"); err == nil {
+		return path
+	}
+	return "sh"
+}
 
 type ShellInput struct {
 	Command string `json:"command"`
@@ -528,7 +546,7 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	ctx, cancel := context.WithTimeout(ctx, shellTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", in.Command)
+	cmd := exec.CommandContext(ctx, shellInterpreter(), "-c", in.Command)
 	cmd.Dir = cwd
 
 	var buf bytes.Buffer

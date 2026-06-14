@@ -911,6 +911,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
 			"so raw command output never hits your context budget. " +
 			"Use raw:true to skip compression. " +
+			"Runs via bash when available (falls back to POSIX sh), so pipefail and bash-only " +
+			"syntax work; override with DEX_SHELL. " +
 			"File-write redirects (> >>) and tee are blocked; use the Write tool instead. " +
 			"Timeout: 60 s."),
 	}, h.shellRun)
