@@ -32,6 +32,7 @@ type CallEdgeInput struct {
 	Package     string `json:"package,omitempty" jsonschema:"optional package path filter when the same name is defined in multiple packages"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits to return (default 12, max 50)"`
+	Verbose     bool   `json:"verbose,omitempty" jsonschema:"return the full enclosing function body per hit instead of a window centred on the call site (default false)"`
 }
 
 // CallSite is one calls-edge endpoint — the function on the other end
@@ -48,9 +49,16 @@ type CallSite struct {
 	// Role tags the peer the same way SearchHit.Role does: how this
 	// function sits in the call graph. Empty for unremarkable peers.
 	// See formatRole for the threshold/tiering rules.
-	Role      string `json:"role,omitempty"`
-	Content   string `json:"content,omitempty"`
-	Truncated bool   `json:"truncated,omitempty"`
+	Role string `json:"role,omitempty"`
+	// Content is, by default, a small window centred on the call site (#486)
+	// — for a who-calls-X query the call expression is the answer, not the
+	// whole enclosing function. StartLine/EndLine still name the enclosing
+	// symbol for reference. Set Verbose to get the full enclosing body.
+	Content string `json:"content,omitempty"`
+	// ContentStartLine is the first source line of Content (the window's top,
+	// or the enclosing symbol's start line in verbose mode).
+	ContentStartLine int  `json:"content_start_line,omitempty"`
+	Truncated        bool `json:"truncated,omitempty"`
 }
 
 // TargetMatch is one resolved interpretation of the input `name`.
@@ -226,24 +234,66 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 		out.Hits = out.Hits[:k]
 	}
 
-	// Inline a short slice of each hit's containing function so the
-	// agent doesn't need a follow-up Read for context. Same shape as
-	// inlineContent's per-read budget for targeted intents.
-	const (
-		maxHitLines = 30
-		maxHitBytes = 2 * 1024
-	)
-	for i := range out.Hits {
-		abs := out.Hits[i].Path
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(p.Root, abs)
-		}
-		content, truncated, err := source.ReadLineRange(abs, out.Hits[i].StartLine, out.Hits[i].EndLine, maxHitLines, maxHitBytes)
-		if err == nil {
-			out.Hits[i].Content = content
-			out.Hits[i].Truncated = truncated
+	// #485: zero callers on an exported symbol is a correctness trap — it
+	// reads as "dead / safe to delete" but the symbol may be reached only via
+	// interface/reflection dispatch (the MCP SDK calls handlers through the
+	// toolSurface interface, leaving no static `calls` edge). Only meaningful
+	// for the callers direction.
+	if callers && len(out.Hits) == 0 {
+		if h := zeroCallerHint(view, targets); h != "" {
+			out.Hint = h
 		}
 	}
 
+	inlineCallSites(out.Hits, p.Root, in.Verbose)
+
 	return nil, out, nil
+}
+
+// inlineCallSites fills each hit's Content so the agent doesn't need a
+// follow-up Read. #486: by default it centres a small window on the call site
+// — for a who-calls-X query the call expression is the answer; the full
+// enclosing body (which can be 150+ lines) is noise. Verbose restores the
+// whole-function slice for the rare case it's wanted.
+func inlineCallSites(hits []CallSite, root string, verbose bool) {
+	const (
+		maxHitLines    = 30
+		maxHitBytes    = 2 * 1024
+		callSiteWindow = 6 // lines of context on each side of the call site
+	)
+	for i := range hits {
+		abs := hits[i].Path
+		// In windowed mode the call expression lives in the caller's file
+		// (CallSitePath), which can differ from the hit's own Path.
+		if !verbose && hits[i].CallSiteLine > 0 && hits[i].CallSitePath != "" {
+			abs = hits[i].CallSitePath
+		}
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(root, abs)
+		}
+
+		startLine, endLine := callSiteRange(hits[i], verbose, callSiteWindow)
+		content, truncated, err := source.ReadLineRange(abs, startLine, endLine, maxHitLines, maxHitBytes)
+		if err == nil {
+			hits[i].Content = content
+			hits[i].ContentStartLine = startLine
+			hits[i].Truncated = truncated
+		}
+	}
+}
+
+// callSiteRange picks the source line range to inline for a hit (#486).
+// Default: a [line-window, line+window] slice centred on the call site, so a
+// who-calls-X hit returns the call expression plus a little context instead of
+// the whole enclosing function. Verbose (or a missing call-site line) falls
+// back to the enclosing symbol's full [StartLine, EndLine] body.
+func callSiteRange(hit CallSite, verbose bool, window int) (start, end int) {
+	if verbose || hit.CallSiteLine <= 0 {
+		return hit.StartLine, hit.EndLine
+	}
+	start = hit.CallSiteLine - window
+	if start < 1 {
+		start = 1
+	}
+	return start, hit.CallSiteLine + window
 }

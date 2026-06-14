@@ -328,6 +328,9 @@ func runGraphCallEdges(ctx context.Context, args []string, callers bool) error {
 	fmt.Println()
 	if len(out.Hits) == 0 {
 		fmt.Printf("no %s\n", rel)
+		if out.Hint != "" {
+			fmt.Printf("hint: %s\n", out.Hint)
+		}
 		return nil
 	}
 	fmt.Printf("%s (%d):\n", rel, len(out.Hits))
@@ -431,6 +434,9 @@ func runGraphDocEdges(ctx context.Context, args []string, backlinks bool) error 
 	fmt.Printf("doc: %s\n\n", out.Targets[0].Doc)
 	if len(out.Hits) == 0 {
 		fmt.Printf("no %s\n", rel)
+		if out.Hint != "" {
+			fmt.Printf("hint: %s\n", out.Hint)
+		}
 		return nil
 	}
 	fmt.Printf("%s (%d):\n", rel, len(out.Hits))
