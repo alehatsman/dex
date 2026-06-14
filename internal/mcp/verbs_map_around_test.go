@@ -176,6 +176,44 @@ func TestMapAroundDiff(t *testing.T) {
 			t.Errorf("out = {%q, %q}, want {no-graph, no call edges}", out.Status, out.Hint)
 		}
 	})
+
+	// #510: a diff that changed files but produced an empty blast radius (new
+	// uncalled symbols, deletions, or non-graph lines) must be annotated so it
+	// doesn't read as "nothing changed".
+	t.Run("empty radius with changed files is annotated", func(t *testing.T) {
+		fake := &captureAroundSurface{
+			Server: stubServer(t),
+			diff: DiffOutput{
+				Status:       "ok",
+				Ref:          "HEAD~1",
+				ChangedFiles: []string{"internal/eval/trace/trace.go", "internal/eval/trace/doc.go"},
+				Nodes:        nil, // new files added symbols nothing calls yet
+			},
+		}
+		_, out, err := mapVerb(ctx, fake, nil, MapInput{AroundDiff: "HEAD~1"})
+		if err != nil {
+			t.Fatalf("mapVerb: %v", err)
+		}
+		if out.Status != "ok" {
+			t.Fatalf("status = %q, want ok", out.Status)
+		}
+		for _, want := range []string{"2 changed file(s)", "empty blast radius", "internal/eval/trace/trace.go"} {
+			if !strings.Contains(out.Map, want) {
+				t.Errorf("annotation missing %q\n%s", want, out.Map)
+			}
+		}
+	})
+
+	t.Run("empty radius with no changed files is not annotated", func(t *testing.T) {
+		fake := &captureAroundSurface{Server: stubServer(t), diff: DiffOutput{Status: "ok", Ref: "HEAD~1"}}
+		_, out, err := mapVerb(ctx, fake, nil, MapInput{AroundDiff: "HEAD~1"})
+		if err != nil {
+			t.Fatalf("mapVerb: %v", err)
+		}
+		if strings.Contains(out.Map, "empty blast radius") {
+			t.Errorf("unexpected annotation when no files changed\n%s", out.Map)
+		}
+	})
 }
 
 // TestMapAroundMutualExclusion covers the guard rails: around + around_diff, and

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/codemap"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -80,11 +81,38 @@ func mapAroundDiff(ctx context.Context, h toolSurface, req *sdk.CallToolRequest,
 	if ref == "" {
 		ref = in.AroundDiff
 	}
+	syms := DiffSymbols(d)
+	out := codemap.RenderAround(DiffTitle(ref), syms, in.Budget)
+	// A bare "blast radius (0 symbols)" reads as "nothing changed / broken
+	// result" when in fact files DID change — the diff just added symbols
+	// nothing calls yet, only removed code, or touched non-graph lines. Annotate
+	// so an empty radius is distinguishable from an empty diff (#510).
+	if len(syms) == 0 && len(d.ChangedFiles) > 0 {
+		out += emptyDiffRadiusNote(d.ChangedFiles)
+	}
 	return nil, MapOutput{
 		Status: "ok",
 		Zoom:   "around",
-		Map:    codemap.RenderAround(DiffTitle(ref), DiffSymbols(d), in.Budget),
+		Map:    out,
 	}, nil
+}
+
+// emptyDiffRadiusNote explains an empty blast radius for a diff that did touch
+// files: new/added symbols have no incoming call edges yet (or the change only
+// removed code / touched non-graph lines), so there is no caller fan-out to
+// show. It lists a few changed files for orientation (#510).
+func emptyDiffRadiusNote(changed []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n_%d changed file(s), empty blast radius — new/added symbols have no incoming call edges yet (or the diff only removed code / touched non-graph lines)._\n", len(changed))
+	const maxList = 5
+	for i, f := range changed {
+		if i == maxList {
+			fmt.Fprintf(&b, "  …and %d more\n", len(changed)-maxList)
+			break
+		}
+		fmt.Fprintf(&b, "  • %s\n", f)
+	}
+	return b.String()
 }
 
 // AroundSymbols assembles the deduped region for an --around query: the seed
