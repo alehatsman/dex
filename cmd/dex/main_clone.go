@@ -56,8 +56,9 @@ func cmdClone(ctx context.Context, args []string) error {
 	if err := dst.EnsureCacheDir(); err != nil {
 		return err
 	}
-	// Copy index.db. SQLite WAL files are not copied — they're either
-	// already checkpointed (idle index) or will be rebuilt on next open.
+	// Copy index.db as an independent file. SQLite WAL files are not copied —
+	// they're either already checkpointed (idle index) or will be rebuilt on
+	// next open.
 	if err := copyFile(src.DBPath, dst.DBPath); err != nil {
 		return fmt.Errorf("copy index: %w", err)
 	}
@@ -85,11 +86,11 @@ func retagProjectRoot(ctx context.Context, dbPath, root string) error {
 	return st.SetProjectRoot(ctx, root)
 }
 
+// copyFile copies src to dst as a distinct file. It deliberately does NOT
+// hard-link: clone produces an independently mutable index (dst is retagged
+// and later reconciled), so a shared inode would let a write to one corrupt
+// the other — retagging dst's project_root would overwrite src's (#517).
 func copyFile(srcPath, dstPath string) error {
-	// Hard-link is instant when src and dst are on the same filesystem.
-	if err := os.Link(srcPath, dstPath); err == nil {
-		return nil
-	}
 	in, err := os.Open(srcPath)
 	if err != nil {
 		return err
