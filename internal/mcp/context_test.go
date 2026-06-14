@@ -917,28 +917,8 @@ func TestPickSuggestedReadsArchitectureCap(t *testing.T) {
 	}
 }
 
-func TestInlineCapsFor(t *testing.T) {
-	exploration := []string{retrieve.IntentArchitecture, retrieve.IntentPackageTopology}
-	targeted := []string{
-		retrieve.IntentBehaviorSearch, retrieve.IntentSymbolLookup, retrieve.IntentCallers,
-		retrieve.IntentCallees, retrieve.IntentEditingContext,
-	}
-	for _, intent := range exploration {
-		c := inlineCapsFor(intent)
-		if c.totalBytesCap < 32*1024 {
-			t.Errorf("%s totalBytesCap=%d, want ≥32 KB for exploration", intent, c.totalBytesCap)
-		}
-		if c.maxLinesPerRead < 100 {
-			t.Errorf("%s maxLinesPerRead=%d, want ≥100 for exploration", intent, c.maxLinesPerRead)
-		}
-	}
-	for _, intent := range targeted {
-		c := inlineCapsFor(intent)
-		if c.totalBytesCap > 24*1024 {
-			t.Errorf("%s totalBytesCap=%d, want ≤24 KB for targeted intents", intent, c.totalBytesCap)
-		}
-	}
-}
+// TestInlineCapsFor moved to internal/retrieve (inline_test.go) with the
+// caps policy itself — the budget is transport-free.
 
 func TestInlineSuggestedReadsExplorationDenser(t *testing.T) {
 	// 200-line file requested in full. targeted caps clip at 60 lines;

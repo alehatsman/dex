@@ -50,6 +50,11 @@ type SemHit struct {
 	Kind      string
 	Score     float32
 	Reason    string
+	// Content / Truncated are the inline overlay, populated by
+	// InlineContent. They are zero until the composition step charges
+	// the byte budget against this hit.
+	Content   string
+	Truncated bool
 }
 
 // SymHit is one symbol-lane result in neutral form. It carries the raw
@@ -69,6 +74,10 @@ type SymHit struct {
 	OutDegree       int
 	CrossPkgCallers int
 	Betweenness     float64
+	// Body / Truncated are the inline overlay, populated by
+	// InlineContent (the symbol's source slice and its clip flag).
+	Body      string
+	Truncated bool
 }
 
 // SymbolLane runs FindSymbol for each detected identifier and returns

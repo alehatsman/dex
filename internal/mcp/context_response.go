@@ -9,23 +9,6 @@ import (
 
 // ─── next_action / avoid (prose) ──────────────────────────────────────────
 
-// noiseFloorScore is the per-hit cutoff applied to semantic_hits
-// inlining when the top score is already below lowConfidenceScore.
-// On a genuine no-signal query (gibberish, very rare phrase) the whole
-// pool tends to cluster in the 0.35-0.40 band; inlining all of them
-// burns the byte budget on hits the agent will rightly ignore. The
-// path+range still ships, just without Content, so the caller can
-// follow up with a manual Read if a low-score path turns out to be
-// relevant after all.
-const noiseFloorScore = 0.40
-
-// lowConfidenceScore is the cosine-fused top-score threshold below
-// which we treat semantic results as noise rather than signal. Picked
-// empirically: real matches on this index cluster ≥0.5; nonsense
-// queries ("frobnicate the quux gizmo") tend to score ≤0.4 on whatever
-// chunk happens to share a token.
-const lowConfidenceScore = 0.45
-
 // buildNextAction returns an imperative sentence the agent can execute
 // directly. The issue is explicit that prose outperforms structured
 // args for agent compliance. Always concrete — names paths and line
@@ -51,7 +34,7 @@ func buildNextAction(intent string, reads []SuggestedRead, symbols []SymbolHit, 
 	case retrieve.IntentEditingContext:
 		intentPayloadStrong = hasBlame
 	}
-	weakSemantic := topSemScore > 0 && topSemScore < lowConfidenceScore
+	weakSemantic := topSemScore > 0 && topSemScore < retrieve.LowConfidenceScore
 	if len(symbols) == 0 && weakSemantic && !intentPayloadStrong {
 		return "Top semantic match is weak — rephrase with concrete keywords or fall back to grep."
 	}
@@ -210,15 +193,5 @@ func buildAvoid(intent string, semHits []SemHit, symbols []SymbolHit, graphIndex
 
 // countInlinedBytes sums len(Content) / len(Body) across the three output lanes.
 func countInlinedBytes(reads []SuggestedRead, syms []SymbolHit, sem []SemHit) int {
-	n := 0
-	for i := range reads {
-		n += len(reads[i].Content)
-	}
-	for i := range syms {
-		n += len(syms[i].Body)
-	}
-	for i := range sem {
-		n += len(sem[i].Content)
-	}
-	return n
+	return retrieve.CountInlinedBytes(toNeutralReads(reads), toNeutralSyms(syms), toNeutralSems(sem))
 }

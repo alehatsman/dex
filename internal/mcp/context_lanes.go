@@ -80,16 +80,3 @@ func maxSemanticScore(hits []SemHit) float32 {
 	}
 	return top
 }
-
-// isReadableRange reports whether a SemHit points at a concrete file
-// slice the agent can actually `Read`. Rollup chunks (package_summary,
-// repo_summary) have Path set to a directory; they're useful context
-// in semantic_hits but should not land in suggested_reads where
-// "lines 0-0" reads as a Read directive the agent can't execute.
-func isReadableRange(h SemHit) bool {
-	switch h.Kind {
-	case "package_summary", "repo_summary":
-		return false
-	}
-	return true
-}
