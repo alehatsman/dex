@@ -34,8 +34,14 @@ type endpointProbe struct {
 func collectEndpoints() []endpointProbe {
 	probes := []endpointProbe{}
 
-	em := newEmbedClient("")
-	probes = append(probes, endpointProbe{name: "embed", url: em.Endpoint(), model: em.ModelName(), health: em.Health})
+	// A nil embedder is the lean profile (DEX_EMBED_ENGINE=none / bm25-only):
+	// no embedding backend is wired, so probe nothing rather than dereferencing
+	// it (#545). Mirrors the opt-in rerank branch below.
+	if em := newEmbedClient(""); em != nil {
+		probes = append(probes, endpointProbe{name: "embed", url: em.Endpoint(), model: em.ModelName(), health: em.Health})
+	} else {
+		probes = append(probes, endpointProbe{name: "embed", status: "not configured"})
+	}
 
 	cc := newChatClient()
 	probes = append(probes, endpointProbe{name: "chat", url: cc.BaseURL, model: cc.Model, health: cc.Health})
