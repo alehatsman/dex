@@ -463,18 +463,42 @@ func hasFileWriteRedirect(command string) bool {
 				start++ // ">>" append
 			}
 			target := strings.TrimSpace(string(b[start:]))
-			target = strings.SplitN(target, " ", 2)[0]
-			// Only a real filesystem target is a write (#507). Allow fd
-			// duplication/closing (2>&1, 1>&2, >&2, 2>&-) whose target starts
-			// with '&', the bit-bucket /dev/null, and a bare '>' with no target
-			// on this token (e.g. trailing pipe/operator handled elsewhere).
-			if target == "" || target == "/dev/null" || strings.HasPrefix(target, "&") {
+			// fd duplication/closing (2>&1, 1>&2, >&2, 2>&-): the target begins
+			// with '&' — never a file write. Checked before tokenizing so a glued
+			// trailing operator (2>&1;) can't break the exemption.
+			if strings.HasPrefix(target, "&") {
+				continue
+			}
+			// Delimit the target on ANY shell metacharacter, not just a space, so
+			// a glued operator (2>/dev/null;, >/dev/null|grep, (cmd 2>/dev/null))
+			// isn't captured into the target and defeat the exemption (#538).
+			target = firstShellToken(target)
+			// Only a real filesystem target is a write (#507). Allow the
+			// bit-bucket /dev/null and a bare '>' with no target on this token.
+			if target == "" || target == "/dev/null" {
 				continue
 			}
 			return true
 		}
 	}
 	return false
+}
+
+// firstShellToken returns the leading token of s up to the first shell
+// metacharacter (whitespace or an operator), or "" if s is empty or begins
+// with one. Used to isolate a redirect target from any glued operator (#538).
+func firstShellToken(s string) string {
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		switch r {
+		case ' ', '\t', '\n', '\r', ';', '|', '&', '(', ')':
+			return true
+		}
+		return false
+	})
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 // ── handler ───────────────────────────────────────────────────────────────────

@@ -252,6 +252,10 @@ func TestHasFileWriteRedirect(t *testing.T) {
 		"cmd 2>err.log",  // stderr to a real file is a write
 		"cmd 2>>err.log", // append to a real file
 		"cmd 1>out.txt",  // explicit fd to a file
+		// #538: a real file write must stay blocked even with a glued operator.
+		"cmd 2>err.log;next",
+		"echo x>out.txt|cat",
+		"cmd >out.txt&&echo ok",
 	}
 	allowed := []string{
 		"git status",
@@ -269,6 +273,13 @@ func TestHasFileWriteRedirect(t *testing.T) {
 		"cmd 2>&-",
 		"cmd 2>&1 1>/dev/null",
 		"go test ./... 2>&1 | tail",
+		// #538: a glued operator after a /dev/null (or fd-dup) redirect must
+		// not capture the operator into the target and defeat the exemption.
+		"cmd 2>/dev/null; next",
+		"cmd >/dev/null|grep x",
+		"(cmd 2>/dev/null)",
+		"cmd 2>/dev/null&&echo ok",
+		"cmd 2>&1;next",
 	}
 	for _, cmd := range blocked {
 		if !hasFileWriteRedirect(cmd) {
