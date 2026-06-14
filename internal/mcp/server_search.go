@@ -25,7 +25,7 @@ type SearchInput struct {
 	Query       string   `json:"query" jsonschema:"natural-language or code query"`
 	ProjectRoot string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	K           int      `json:"k,omitempty" jsonschema:"number of results to return (default 8, max 30)"`
-	Exclude     []string `json:"exclude,omitempty" jsonschema:"path prefixes to skip (e.g. ['vendor/', 'internal/legacy/'])"`
+	Exclude     []string `json:"exclude,omitempty" jsonschema:"paths to skip: a plain entry is a directory prefix ('vendor/', 'internal/legacy/'); an entry with glob metacharacters (*?[) is matched as a glob against the full path and the basename ('*_test.go', 'testdata/**')"`
 	Languages   []string `json:"languages,omitempty" jsonschema:"restrict results to these languages (e.g. ['go','typescript']); accepts language names or raw extensions (.rs, .go)"`
 	PathGlob    string   `json:"path_glob,omitempty" jsonschema:"glob pattern matched against relative file path (e.g. 'internal/**', '**/test*')"`
 }
@@ -290,11 +290,22 @@ func collectSymbolHits(ctx context.Context, st *store.Store, idents []string, po
 // Symbol-lane RRF fusion moved to internal/retrieve.FuseWithSymbols (#480).
 
 // excluded returns true when path matches any entry in the exclude list.
-// An exclude entry matches if path equals it or path has it as a prefix
-// (treating it as a directory prefix).
+//
+// An entry that contains glob metacharacters (*?[) is matched as a glob via
+// the same engine as path_glob — against the full relative path AND the
+// basename, so a slash-free pattern like "*_test.go" excludes nested files
+// (.gitignore / rg --glob semantics) instead of silently no-op'ing (#536). A
+// plain entry keeps directory-prefix/equality semantics, so "internal/" still
+// excludes the whole subtree.
 func excluded(path string, exclude []string) bool {
 	for _, ex := range exclude {
 		if ex == "" {
+			continue
+		}
+		if strings.ContainsAny(ex, "*?[") {
+			if matchGlob(ex, path) || matchGlob(ex, filepath.Base(path)) {
+				return true
+			}
 			continue
 		}
 		if path == ex || strings.HasPrefix(path, ex) {

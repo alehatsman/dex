@@ -73,6 +73,38 @@ func TestFilterMissHint(t *testing.T) {
 	}
 }
 
+// TestExcluded covers exclude semantics: glob entries (#536) match the full
+// path or the basename; plain entries keep directory-prefix/equality.
+func TestExcluded(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		exclude []string
+		want    bool
+	}{
+		// #536: a slash-free glob must exclude nested files, not silently no-op.
+		{"basename glob excludes nested test file", "internal/mcp/server_test.go", []string{"*_test.go"}, true},
+		{"basename glob spares non-match", "internal/mcp/server.go", []string{"*_test.go"}, false},
+		{"doublestar glob over full path", "internal/mcp/server_test.go", []string{"**/*_test.go"}, true},
+		{"dir-rooted doublestar", "testdata/fixture.json", []string{"testdata/**"}, true},
+		{"dir-rooted doublestar spares others", "internal/x.go", []string{"testdata/**"}, false},
+		{"charclass glob", "a.tsx", []string{"*.[jt]sx"}, true},
+		// Plain entries keep prefix/equality behavior.
+		{"plain dir prefix", "internal/legacy/x.go", []string{"internal/legacy/"}, true},
+		{"plain prefix spares sibling", "internal/modern/x.go", []string{"internal/legacy/"}, false},
+		{"plain exact match", "vendor", []string{"vendor"}, true},
+		{"empty entries are ignored", "internal/x.go", []string{"", ""}, false},
+		{"no exclude list", "internal/x.go", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := excluded(tt.path, tt.exclude); got != tt.want {
+				t.Errorf("excluded(%q, %v) = %v, want %v", tt.path, tt.exclude, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestFilterHitsToEmptyIsDetectable locks the precondition the handler uses:
 // an unrecognized language (treated as a raw extension) drops all hits, so
 // the handler can detect filter-induced emptiness and call filterMissHint.
