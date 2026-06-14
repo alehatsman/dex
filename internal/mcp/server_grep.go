@@ -65,20 +65,32 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	if prefix == "." {
 		prefix = ""
 	}
-	// Validate an explicit subdir exists before searching — otherwise a typo'd
+	// Validate an explicit path exists before searching — otherwise a typo'd
 	// path silently falls through to walking the whole project root and returns
-	// a misleading "no-matches".
+	// a misleading "no-matches". Accept both directories and a single file (the
+	// `rg pattern file.go` idiom, and what sibling tools accept); reject only
+	// genuinely missing paths, and say so honestly.
+	var prefixIsFile bool
 	if prefix != "" {
-		if info, statErr := os.Stat(filepath.Join(p.Root, prefix)); statErr != nil || !info.IsDir() {
+		info, statErr := os.Stat(filepath.Join(p.Root, prefix))
+		if statErr != nil {
 			return nil, SearchGrepOutput{Status: "not-found", Project: p.Root,
 				Hint: fmt.Sprintf("path %q does not exist under %s", prefix, p.Root)}, nil
 		}
+		prefixIsFile = !info.IsDir()
 	}
 	extFilter := strings.TrimPrefix(in.Ext, ".")
 
-	// Build file list from the index when available; fall back to walking the fs.
+	// Build the file list. A single-file path scopes the scan to exactly that
+	// file (an ext filter excluding it yields an empty set → no-matches, never a
+	// whole-repo walk); a directory uses the index when available and falls back
+	// to walking the fs.
 	var filePaths []string
-	if _, statErr := os.Stat(p.DBPath); !errors.Is(statErr, os.ErrNotExist) {
+	if prefixIsFile {
+		if extFilter == "" || strings.HasSuffix(prefix, "."+extFilter) {
+			filePaths = append(filePaths, filepath.Join(p.Root, prefix))
+		}
+	} else if _, statErr := os.Stat(p.DBPath); !errors.Is(statErr, os.ErrNotExist) {
 		st, openErr := s.openStore(p.DBPath)
 		if openErr == nil {
 			if files, treeErr := st.FileTree(ctx, prefix); treeErr == nil {
@@ -91,7 +103,7 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 			}
 		}
 	}
-	if len(filePaths) == 0 {
+	if !prefixIsFile && len(filePaths) == 0 {
 		searchRoot := p.Root
 		if prefix != "" {
 			searchRoot = filepath.Join(p.Root, prefix)
