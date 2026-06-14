@@ -41,13 +41,7 @@ import (
 )
 
 func newTSExtractor() Extractor {
-	return &tsExtractor{jstsBase: jstsBase{
-		lang:        "typescript",
-		nodeIDs:     map[string]struct{}{},
-		symbols:     map[string]map[string]string{},
-		fileImports: map[string]*tsImportTable{},
-		knownFiles:  map[string]string{},
-	}}
+	return &tsExtractor{jstsBase: newJSTSBase("typescript")}
 }
 
 type tsExtractor struct {
@@ -178,126 +172,6 @@ func (e *tsExtractor) processTopLevel(
 }
 
 // ---- TS-specific declarations ---------------------------------------------
-
-func (e *tsExtractor) addInterface(
-	n *sitter.Node, src []byte,
-	filePath, pkg, fileID string,
-) {
-	nameNode := n.ChildByFieldName("name")
-	if nameNode == nil {
-		return
-	}
-	name := nodeText(nameNode, src)
-	if name == "" {
-		return
-	}
-	id := NodeID("", pkg, NodeInterface, name)
-	startLine := lineOfPoint(n.StartPoint().Row)
-	endLine := lineOfPoint(n.EndPoint().Row)
-	if e.addNode(Node{
-		ID:            id,
-		Kind:          NodeInterface,
-		Name:          name,
-		QualifiedName: name,
-		PackagePath:   pkg,
-		FilePath:      filePath,
-		StartLine:     startLine,
-		EndLine:       endLine,
-		Metadata:      map[string]any{"language": "typescript"},
-	}) {
-		e.symbols[pkg] = ensureMap(e.symbols[pkg])
-		e.symbols[pkg][name] = id
-	}
-	e.edges = append(e.edges, Edge{
-		ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
-		Kind:      EdgeContains,
-		SrcID:     fileID,
-		DstID:     id,
-		FilePath:  filePath,
-		StartLine: startLine,
-		EndLine:   endLine,
-	})
-}
-
-// ---- import parsing --------------------------------------------------------
-
-// parseImportStatement handles every import shape that has a `from`:
-//
-//	import foo from "./p"
-//	import { a, b as c } from "./p"
-//	import * as ns from "./p"
-//	import foo, { a } from "./p"
-//	import "./p"                    (side-effect; no bindings)
-//
-// The source specifier is captured raw; resolution to a packagePath
-// happens in Finalize once knownFiles is complete (the dispatch order
-// across files isn't deterministic relative to source position).
-func (e *tsExtractor) parseImportStatement(
-	n *sitter.Node, src []byte,
-	filePath, currentPkg, fileID string,
-	imports *tsImportTable,
-) {
-	sourceNode := n.ChildByFieldName("source")
-	if sourceNode == nil {
-		return
-	}
-	specifier := stripQuotes(nodeText(sourceNode, src))
-	if specifier == "" {
-		return
-	}
-	startLine := lineOfPoint(n.StartPoint().Row)
-
-	// Stash the "from" anchor for Finalize-time resolution. The
-	// import_clause children give us local bindings; later we
-	// translate each binding's pkg from raw specifier to resolved
-	// packagePath. We borrow the modules map's "__from__" slot for
-	// the per-file anchor — wiped after resolution.
-	imports.modules["__from__"] = filePath
-
-	clauseHandled := false
-	for i := 0; i < int(n.NamedChildCount()); i++ {
-		child := n.NamedChild(i)
-		if child == nil || child == sourceNode {
-			continue
-		}
-		if child.Type() != "import_clause" {
-			continue
-		}
-		clauseHandled = true
-		e.processImportClause(child, src, specifier, imports)
-	}
-
-	// Side-effect import (`import "./p"`) still emits the imports
-	// edge so graph_deps can see the dependency. clauseHandled is
-	// false in this case, but we always emit.
-	_ = clauseHandled
-
-	impID := NodeID("", currentPkg, NodeImport, specifier)
-	e.addNode(Node{
-		ID:            impID,
-		Kind:          NodeImport,
-		Name:          specifier,
-		QualifiedName: specifier,
-		PackagePath:   currentPkg,
-		Metadata:      map[string]any{"language": "typescript"},
-	})
-	e.edges = append(e.edges, Edge{
-		ID:        EdgeID(fileID, EdgeImports, impID, filePath, startLine),
-		Kind:      EdgeImports,
-		SrcID:     fileID,
-		DstID:     impID,
-		FilePath:  filePath,
-		StartLine: startLine,
-		EndLine:   startLine,
-	})
-	pkgID := NodeID("", currentPkg, NodePackage, currentPkg)
-	e.edges = append(e.edges, Edge{
-		ID:    EdgeID(pkgID, EdgeImports, impID, "", 0),
-		Kind:  EdgeImports,
-		SrcID: pkgID,
-		DstID: impID,
-	})
-}
 
 // ---- helpers ---------------------------------------------------------------
 

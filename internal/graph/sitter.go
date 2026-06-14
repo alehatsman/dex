@@ -148,17 +148,25 @@ func (r *Registry) Extensions() []string {
 // Callers can pass a subset to NewRegistry for hermetic, single-language
 // extraction (useful in tests).
 func DefaultExtractors() []ExtractorFactory {
+	// DEX_GRAPH_TAGS selects the query-driven discovery front-end per
+	// language so it can be A/B'd against the walker. Default is
+	// unchanged (the hand-rolled walkers).
 	pyFactory := newPythonExtractor
-	// 468b pilot gate: DEX_GRAPH_TAGS selects the query-driven discovery
-	// front-end per language so it can be A/B'd against the walker.
-	// Default is unchanged (the hand-rolled walker).
 	if tagsLangEnabled("python") {
 		pyFactory = newPythonTagsExtractor
 	}
+	tsFactory := newTSExtractor
+	if tagsLangEnabled("typescript") {
+		tsFactory = newTSTagsExtractor
+	}
+	jsFactory := newJSExtractor
+	if tagsLangEnabled("javascript") {
+		jsFactory = newJSTagsExtractor
+	}
 	return []ExtractorFactory{
 		pyFactory,
-		newTSExtractor,
-		newJSExtractor,
+		tsFactory,
+		jsFactory,
 		newRustExtractor,
 		newJavaExtractor,
 	}

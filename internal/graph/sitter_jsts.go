@@ -77,13 +77,31 @@ func (e *jstsBase) addFunction(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID, className string,
 ) {
+	id := e.emitFunctionNode(n, src, filePath, pkg, fileID, className)
+	if id == "" {
+		return
+	}
+	if body := n.ChildByFieldName("body"); body != nil {
+		e.collectCalls(body, src, id, pkg, className, filePath)
+	}
+}
+
+// emitFunctionNode emits the node/symbol/edge surface for a function or
+// method (file→contains; class→has_method when className is set) WITHOUT
+// descending into the body. Shared by the recursive walker (addFunction)
+// and the query-driven tags path. Returns the node ID, or "" when the
+// declaration has no usable name.
+func (e *jstsBase) emitFunctionNode(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID, className string,
+) string {
 	nameNode := n.ChildByFieldName("name")
 	if nameNode == nil {
-		return
+		return ""
 	}
 	name := nodeText(nameNode, src)
 	if name == "" {
-		return
+		return ""
 	}
 	kind := NodeFunction
 	qn := name
@@ -136,9 +154,7 @@ func (e *jstsBase) addFunction(
 			EndLine:   endLine,
 		})
 	}
-	if body := n.ChildByFieldName("body"); body != nil {
-		e.collectCalls(body, src, id, pkg, className, filePath)
-	}
+	return id
 }
 
 // addClass registers a class node and recurses into its body for
@@ -148,13 +164,43 @@ func (e *jstsBase) addClass(
 	n *sitter.Node, src []byte,
 	filePath, pkg, fileID string,
 ) {
+	name := e.emitClassNode(n, src, filePath, pkg, fileID)
+	if name == "" {
+		return
+	}
+	body := n.ChildByFieldName("body")
+	if body == nil {
+		return
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		child := body.NamedChild(i)
+		if child == nil {
+			continue
+		}
+		switch child.Type() {
+		case "method_definition":
+			e.addFunction(child, src, filePath, pkg, fileID, name)
+		case "class_declaration":
+			e.addClass(child, src, filePath, pkg, fileID)
+		}
+	}
+}
+
+// emitClassNode emits the class node, its symbol entry, and the
+// file→contains edge WITHOUT descending into the body. Shared by the
+// recursive walker (addClass) and the query-driven tags path. Returns the
+// class name, or "" when the class has no usable name.
+func (e *jstsBase) emitClassNode(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID string,
+) string {
 	nameNode := n.ChildByFieldName("name")
 	if nameNode == nil {
-		return
+		return ""
 	}
 	name := nodeText(nameNode, src)
 	if name == "" {
-		return
+		return ""
 	}
 	id := NodeID("", pkg, NodeClass, name)
 	startLine := lineOfPoint(n.StartPoint().Row)
@@ -182,23 +228,155 @@ func (e *jstsBase) addClass(
 		StartLine: startLine,
 		EndLine:   endLine,
 	})
+	return name
+}
 
-	body := n.ChildByFieldName("body")
-	if body == nil {
+// emitScaffold emits the package + file nodes and the package→file
+// contains edge, returning the file node ID. Shared by the recursive
+// walkers and the query-driven tags path.
+func (e *jstsBase) emitScaffold(in FileInput, pkg string) string {
+	pkgID := NodeID("", pkg, NodePackage, pkg)
+	e.addNode(Node{
+		ID:            pkgID,
+		Kind:          NodePackage,
+		Name:          path.Base(pkg),
+		QualifiedName: pkg,
+		PackagePath:   pkg,
+		Metadata:      map[string]any{"language": e.lang},
+	})
+	fileID := NodeID("", pkg, NodeFile, in.RelPath)
+	e.addNode(Node{
+		ID:            fileID,
+		Kind:          NodeFile,
+		Name:          filepath.Base(in.RelPath),
+		QualifiedName: in.RelPath,
+		PackagePath:   pkg,
+		FilePath:      in.RelPath,
+		StartLine:     1,
+		EndLine:       lineOfPoint(in.Root.EndPoint().Row),
+		Metadata:      map[string]any{"language": e.lang},
+	})
+	e.edges = append(e.edges, Edge{
+		ID:        EdgeID(pkgID, EdgeContains, fileID, in.RelPath, 1),
+		Kind:      EdgeContains,
+		SrcID:     pkgID,
+		DstID:     fileID,
+		FilePath:  in.RelPath,
+		StartLine: 1,
+		EndLine:   1,
+	})
+	return fileID
+}
+
+// addInterface emits a TypeScript interface as a node (no body recursion).
+// Shared by the ts walker and the tags path.
+func (e *jstsBase) addInterface(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID string,
+) {
+	nameNode := n.ChildByFieldName("name")
+	if nameNode == nil {
 		return
 	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child == nil {
+	name := nodeText(nameNode, src)
+	if name == "" {
+		return
+	}
+	id := NodeID("", pkg, NodeInterface, name)
+	startLine := lineOfPoint(n.StartPoint().Row)
+	endLine := lineOfPoint(n.EndPoint().Row)
+	if e.addNode(Node{
+		ID:            id,
+		Kind:          NodeInterface,
+		Name:          name,
+		QualifiedName: name,
+		PackagePath:   pkg,
+		FilePath:      filePath,
+		StartLine:     startLine,
+		EndLine:       endLine,
+		Metadata:      map[string]any{"language": e.lang},
+	}) {
+		e.symbols[pkg] = ensureMap(e.symbols[pkg])
+		e.symbols[pkg][name] = id
+	}
+	e.edges = append(e.edges, Edge{
+		ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
+		Kind:      EdgeContains,
+		SrcID:     fileID,
+		DstID:     id,
+		FilePath:  filePath,
+		StartLine: startLine,
+		EndLine:   endLine,
+	})
+}
+
+// ---- import parsing --------------------------------------------------------
+
+// parseImportStatement handles every import shape that has a `from`:
+//
+//	import foo from "./p"
+//	import { a, b as c } from "./p"
+//	import * as ns from "./p"
+//	import foo, { a } from "./p"
+//	import "./p"                    (side-effect; no bindings)
+//
+// The source specifier is captured raw; resolution to a packagePath
+// happens in Finalize once knownFiles is complete (the dispatch order
+// across files isn't deterministic relative to source position).
+func (e *jstsBase) parseImportStatement(
+	n *sitter.Node, src []byte,
+	filePath, currentPkg, fileID string,
+	imports *tsImportTable,
+) {
+	sourceNode := n.ChildByFieldName("source")
+	if sourceNode == nil {
+		return
+	}
+	specifier := stripQuotes(nodeText(sourceNode, src))
+	if specifier == "" {
+		return
+	}
+	startLine := lineOfPoint(n.StartPoint().Row)
+
+	// Stash the "from" anchor for Finalize-time resolution.
+	imports.modules["__from__"] = filePath
+
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		child := n.NamedChild(i)
+		if child == nil || child == sourceNode {
 			continue
 		}
-		switch child.Type() {
-		case "method_definition":
-			e.addFunction(child, src, filePath, pkg, fileID, name)
-		case "class_declaration":
-			e.addClass(child, src, filePath, pkg, fileID)
+		if child.Type() != "import_clause" {
+			continue
 		}
+		e.processImportClause(child, src, specifier, imports)
 	}
+
+	impID := NodeID("", currentPkg, NodeImport, specifier)
+	e.addNode(Node{
+		ID:            impID,
+		Kind:          NodeImport,
+		Name:          specifier,
+		QualifiedName: specifier,
+		PackagePath:   currentPkg,
+		Metadata:      map[string]any{"language": e.lang},
+	})
+	e.edges = append(e.edges, Edge{
+		ID:        EdgeID(fileID, EdgeImports, impID, filePath, startLine),
+		Kind:      EdgeImports,
+		SrcID:     fileID,
+		DstID:     impID,
+		FilePath:  filePath,
+		StartLine: startLine,
+		EndLine:   startLine,
+	})
+	pkgID := NodeID("", currentPkg, NodePackage, currentPkg)
+	e.edges = append(e.edges, Edge{
+		ID:    EdgeID(pkgID, EdgeImports, impID, "", 0),
+		Kind:  EdgeImports,
+		SrcID: pkgID,
+		DstID: impID,
+	})
 }
 
 // addLexicalDecl handles `const foo = () => {}` and `const foo =
@@ -211,55 +389,69 @@ func (e *jstsBase) addLexicalDecl(
 	filePath, pkg, fileID string,
 ) {
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		child := n.NamedChild(i)
-		if child == nil || child.Type() != "variable_declarator" {
-			continue
-		}
-		nameNode := child.ChildByFieldName("name")
-		valueNode := child.ChildByFieldName("value")
-		if nameNode == nil || valueNode == nil {
-			continue
-		}
-		name := nodeText(nameNode, src)
-		if name == "" {
-			continue
-		}
-		// Only function-like values become function nodes.
-		switch valueNode.Type() {
-		case "arrow_function", "function", "function_expression":
-		default:
-			continue
-		}
-		id := NodeID("", pkg, NodeFunction, name)
-		startLine := lineOfPoint(n.StartPoint().Row)
-		endLine := lineOfPoint(n.EndPoint().Row)
-		if e.addNode(Node{
-			ID:            id,
-			Kind:          NodeFunction,
-			Name:          name,
-			QualifiedName: name,
-			PackagePath:   pkg,
-			FilePath:      filePath,
-			StartLine:     startLine,
-			EndLine:       endLine,
-			Metadata:      map[string]any{"language": e.lang, "form": "arrow"},
-		}) {
-			e.symbols[pkg] = ensureMap(e.symbols[pkg])
-			e.symbols[pkg][name] = id
-		}
-		e.edges = append(e.edges, Edge{
-			ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
-			Kind:      EdgeContains,
-			SrcID:     fileID,
-			DstID:     id,
-			FilePath:  filePath,
-			StartLine: startLine,
-			EndLine:   endLine,
-		})
-		if body := valueNode.ChildByFieldName("body"); body != nil {
+		id, body := e.emitArrowDeclarator(n, n.NamedChild(i), src, filePath, pkg, fileID)
+		if id != "" && body != nil {
 			e.collectCalls(body, src, id, pkg, "", filePath)
 		}
 	}
+}
+
+// emitArrowDeclarator emits an arrow/function-expression const node for a
+// single variable_declarator child of a lexical/variable declaration,
+// WITHOUT collecting calls. n is the declaration statement (used for the
+// node's start line, matching the walker). Returns the node ID and the
+// function body (for the caller to walk), or ("", nil) when the
+// declarator isn't a function-like binding. Shared by addLexicalDecl and
+// the query-driven tags path.
+func (e *jstsBase) emitArrowDeclarator(
+	n, child *sitter.Node, src []byte,
+	filePath, pkg, fileID string,
+) (string, *sitter.Node) {
+	if child == nil || child.Type() != "variable_declarator" {
+		return "", nil
+	}
+	nameNode := child.ChildByFieldName("name")
+	valueNode := child.ChildByFieldName("value")
+	if nameNode == nil || valueNode == nil {
+		return "", nil
+	}
+	name := nodeText(nameNode, src)
+	if name == "" {
+		return "", nil
+	}
+	// Only function-like values become function nodes.
+	switch valueNode.Type() {
+	case "arrow_function", "function", "function_expression":
+	default:
+		return "", nil
+	}
+	id := NodeID("", pkg, NodeFunction, name)
+	startLine := lineOfPoint(n.StartPoint().Row)
+	endLine := lineOfPoint(n.EndPoint().Row)
+	if e.addNode(Node{
+		ID:            id,
+		Kind:          NodeFunction,
+		Name:          name,
+		QualifiedName: name,
+		PackagePath:   pkg,
+		FilePath:      filePath,
+		StartLine:     startLine,
+		EndLine:       endLine,
+		Metadata:      map[string]any{"language": e.lang, "form": "arrow"},
+	}) {
+		e.symbols[pkg] = ensureMap(e.symbols[pkg])
+		e.symbols[pkg][name] = id
+	}
+	e.edges = append(e.edges, Edge{
+		ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
+		Kind:      EdgeContains,
+		SrcID:     fileID,
+		DstID:     id,
+		FilePath:  filePath,
+		StartLine: startLine,
+		EndLine:   endLine,
+	})
+	return id, valueNode.ChildByFieldName("body")
 }
 
 // maybeMarkDefaultExport sets symbols[pkg]["default"] to the node ID

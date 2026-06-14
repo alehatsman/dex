@@ -29,13 +29,19 @@ import (
 )
 
 func newJSExtractor() Extractor {
-	return &jsExtractor{jstsBase: jstsBase{
-		lang:        "javascript",
+	return &jsExtractor{jstsBase: newJSTSBase("javascript")}
+}
+
+// newJSTSBase builds the shared accumulator/resolution state for a
+// JavaScript or TypeScript extractor (walker or tags-driven).
+func newJSTSBase(lang string) jstsBase {
+	return jstsBase{
+		lang:        lang,
 		nodeIDs:     map[string]struct{}{},
 		symbols:     map[string]map[string]string{},
 		fileImports: map[string]*tsImportTable{},
 		knownFiles:  map[string]string{},
-	}}
+	}
 }
 
 type jsExtractor struct {
@@ -124,63 +130,6 @@ func (e *jsExtractor) processTopLevel(
 	case "import_statement":
 		e.parseImportStatement(n, src, filePath, pkg, fileID, imports)
 	}
-}
-
-// ---- import parsing --------------------------------------------------------
-
-func (e *jsExtractor) parseImportStatement(
-	n *sitter.Node, src []byte,
-	filePath, currentPkg, fileID string,
-	imports *tsImportTable,
-) {
-	sourceNode := n.ChildByFieldName("source")
-	if sourceNode == nil {
-		return
-	}
-	specifier := stripQuotes(nodeText(sourceNode, src))
-	if specifier == "" {
-		return
-	}
-	startLine := lineOfPoint(n.StartPoint().Row)
-
-	imports.modules["__from__"] = filePath
-
-	for i := 0; i < int(n.NamedChildCount()); i++ {
-		child := n.NamedChild(i)
-		if child == nil || child == sourceNode {
-			continue
-		}
-		if child.Type() != "import_clause" {
-			continue
-		}
-		e.processImportClause(child, src, specifier, imports)
-	}
-
-	impID := NodeID("", currentPkg, NodeImport, specifier)
-	e.addNode(Node{
-		ID:            impID,
-		Kind:          NodeImport,
-		Name:          specifier,
-		QualifiedName: specifier,
-		PackagePath:   currentPkg,
-		Metadata:      map[string]any{"language": "javascript"},
-	})
-	e.edges = append(e.edges, Edge{
-		ID:        EdgeID(fileID, EdgeImports, impID, filePath, startLine),
-		Kind:      EdgeImports,
-		SrcID:     fileID,
-		DstID:     impID,
-		FilePath:  filePath,
-		StartLine: startLine,
-		EndLine:   startLine,
-	})
-	pkgID := NodeID("", currentPkg, NodePackage, currentPkg)
-	e.edges = append(e.edges, Edge{
-		ID:    EdgeID(pkgID, EdgeImports, impID, "", 0),
-		Kind:  EdgeImports,
-		SrcID: pkgID,
-		DstID: impID,
-	})
 }
 
 // jsPackagePath strips the trailing `.js` or `.jsx` extension. Files

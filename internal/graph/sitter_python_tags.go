@@ -57,27 +57,18 @@ func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error
 	// these lists are the flat equivalent of what the recursive walker
 	// would have visited — scope is reconstructed below.
 	var funcs, classes, calls, imps []*sitter.Node
-	qc := sitter.NewQueryCursor()
-	qc.Exec(e.query, in.Root)
-	for {
-		m, ok := qc.NextMatch()
-		if !ok {
-			break
+	runTagsQuery(e.query, in.Root, func(capture string, n *sitter.Node) {
+		switch capture {
+		case "function":
+			funcs = append(funcs, n)
+		case "class":
+			classes = append(classes, n)
+		case "call":
+			calls = append(calls, n)
+		case "import", "import_from":
+			imps = append(imps, n)
 		}
-		for _, c := range m.Captures {
-			switch e.query.CaptureNameForId(c.Index) {
-			case "function":
-				funcs = append(funcs, c.Node)
-			case "class":
-				classes = append(classes, c.Node)
-			case "call":
-				calls = append(calls, c.Node)
-			case "import", "import_from":
-				imps = append(imps, c.Node)
-			}
-		}
-	}
-	qc.Close()
+	})
 
 	// Imports — only direct children of the module node. The walker
 	// processes top-level imports exclusively; imports inside if/try
@@ -99,7 +90,7 @@ func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error
 	// descends module → class → class, so a class defined inside a
 	// function body is unreachable and never becomes a node.
 	for _, n := range classes {
-		if pyHasFunctionAncestor(n) {
+		if hasAncestorOfType(n, "function_definition") {
 			continue
 		}
 		e.emitClassNode(n, in.Source, in.RelPath, pkg, fileID)
@@ -108,7 +99,7 @@ func (e *pythonTagsExtractor) ProcessFile(_ context.Context, in FileInput) error
 	// Functions / methods — same reachability rule. className is the
 	// nearest enclosing class (a method), else "" (a top-level func).
 	for _, n := range funcs {
-		if pyHasFunctionAncestor(n) {
+		if hasAncestorOfType(n, "function_definition") {
 			continue
 		}
 		className := ""
@@ -153,13 +144,12 @@ func (e *pythonTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, pkg, 
 	}
 	// A function nested in another function is not a node, so the walker
 	// never ran collectCalls over its body.
-	if pyHasFunctionAncestor(fn) {
+	if hasAncestorOfType(fn, "function_definition") {
 		return
 	}
 	// The call must live in the function's body, not its parameter list,
 	// decorators, or default-argument expressions.
-	body := fn.ChildByFieldName("body")
-	if body == nil || n.StartByte() < body.StartByte() || n.StartByte() >= body.EndByte() {
+	if body := fn.ChildByFieldName("body"); !nodeContains(body, n) {
 		return
 	}
 
@@ -196,29 +186,12 @@ func (e *pythonTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, pkg, 
 	})
 }
 
-// pyHasFunctionAncestor reports whether n is nested inside any
-// function_definition — making it unreachable by the recursive walker,
-// which never descends into nested defs.
-func pyHasFunctionAncestor(n *sitter.Node) bool {
-	for p := n.Parent(); p != nil; p = p.Parent() {
-		if p.Type() == "function_definition" {
-			return true
-		}
-	}
-	return false
-}
-
 // pyNearestClassAncestor returns the closest enclosing class_definition,
 // stopping (returning nil) at the first function boundary — used to
 // decide whether a function is a method and under which class.
 func pyNearestClassAncestor(n *sitter.Node) *sitter.Node {
-	for p := n.Parent(); p != nil; p = p.Parent() {
-		switch p.Type() {
-		case "function_definition":
-			return nil
-		case "class_definition":
-			return p
-		}
+	if a := firstAncestorOfType(n, "function_definition", "class_definition"); a != nil && a.Type() == "class_definition" {
+		return a
 	}
 	return nil
 }
