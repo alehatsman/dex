@@ -17,6 +17,9 @@
 //	graph tags <path> --tag|--doc Tag→docs or doc→tags (CLI-only).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
 //	read <file>                   Read a file (MCP: read). Default mode=full is raw (no LLM); mode=summary is an LLM digest.
+//	grep <path> <pattern>         Exact RE2 regex search over project files (MCP: grep).
+//	ls <path>                     Indexed file tree with chunk counts (MCP: ls).
+//	shell <command...>            Run a command with compressed output (MCP: shell).
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
 //	generate <path> <prompt>      Generate code grounded in the project's index.
@@ -100,6 +103,12 @@ func main() {
 		err = cmdTrace(ctx, args)
 	case "impact":
 		err = cmdImpact(ctx, args)
+	case "grep":
+		err = cmdGrep(ctx, args)
+	case "ls":
+		err = cmdLs(ctx, args)
+	case "shell":
+		err = cmdShell(ctx, args)
 	case "generate":
 		err = cmdGenerate(ctx, args)
 	case "env":

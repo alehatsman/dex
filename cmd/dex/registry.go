@@ -149,6 +149,34 @@ var verbs = []verbSpec{
 		summary: "transitive caller blast-radius",
 		flags:   []flagSpec{flagK, flagFormat, flagV},
 	},
+	{
+		name: "grep", group: groupQuery, args: "[<path>] <pattern>",
+		summary: "exact RE2 regex search",
+		flags: []flagSpec{
+			{name: "--ext", desc: "file extension filter (no dot)", arg: true},
+			{name: "--in", desc: "restrict to a subdirectory", arg: true},
+			{name: "--max-results", desc: "maximum matches", arg: true},
+			flagFormat,
+		},
+	},
+	{
+		name: "ls", group: groupQuery, args: "[<path>]",
+		summary: "indexed file tree + chunk counts",
+		flags: []flagSpec{
+			{name: "--in", desc: "restrict to a subdirectory", arg: true},
+			{name: "--depth", desc: "max directory depth", arg: true},
+			flagFormat,
+		},
+	},
+	{
+		name: "shell", group: groupQuery, args: "<command...>",
+		summary: "run a command with compressed output",
+		flags: []flagSpec{
+			{name: "--cwd", desc: "working directory", arg: true},
+			{name: "--raw", desc: "skip compression"},
+			flagFormat,
+		},
+	},
 
 	// ---- graph / notes / power lanes ----
 	{
