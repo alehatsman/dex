@@ -16,6 +16,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/retrieve"
@@ -72,6 +74,78 @@ func (s *Server) synthesizeAnswer(ctx context.Context, session *sdk.ServerSessio
 	}
 	out.Answer = ans
 	out.AnswerModel = model
+
+	// Guard against fabricated citations. The contract tells the model to
+	// cite ONLY paths from the evidence bundle (all index-derived, so real).
+	// A path-shaped token in the answer that is absent from that bundle is
+	// ungrounded — a smaller answer model can invent a plausible path the
+	// agent then wastes a round-trip read()ing. We don't rewrite the prose
+	// (the wording is opaque); we append a deterministic steering note.
+	if bad := validateAnswerCitations(ans, out); len(bad) > 0 {
+		out.Answer += "\n\n[dex] Unverified path(s) not in the evidence: " +
+			strings.Join(bad, ", ") +
+			" — these were not provided to the model; do not read() them, rely on suggested_reads / next_action."
+	}
+}
+
+// answerPathCitation matches repo-relative file-path citations in prose:
+// a leading non-path boundary (RE2 has no lookbehind, so we consume one
+// char and capture the path in group 1), then one or more "segment/"
+// parts and a filename with an extension. The first segment is dot-free
+// and the boundary excludes '.', which together drop import paths and
+// domains (github.com/foo.go) and version strings (qwen2.5-coder:14b)
+// that are not read()-able repo files.
+var answerPathCitation = regexp.MustCompile(`(?:^|[^A-Za-z0-9_./])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.+-]+)+\.[A-Za-z0-9]+)`)
+
+// evidencePathSet collects every index-derived path the model was shown,
+// normalized to forward-slash clean form for membership tests.
+func evidencePathSet(out *ContextOutput) map[string]bool {
+	set := make(map[string]bool)
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			set[filepath.ToSlash(filepath.Clean(p))] = true
+		}
+	}
+	for _, r := range out.SuggestedReads {
+		add(r.Path)
+	}
+	for _, h := range out.SemanticHits {
+		add(h.Path)
+	}
+	for _, sym := range out.Symbols {
+		add(sym.Path)
+	}
+	for p := range out.Annotations {
+		add(p)
+	}
+	return set
+}
+
+// validateAnswerCitations returns the path-shaped citations in the answer
+// that are absent from the evidence bundle, in first-seen order with
+// duplicates collapsed. Returns nil when the answer is empty or the
+// evidence set is empty (nothing to validate against).
+func validateAnswerCitations(answer string, out *ContextOutput) []string {
+	if strings.TrimSpace(answer) == "" {
+		return nil
+	}
+	evidence := evidencePathSet(out)
+	if len(evidence) == 0 {
+		return nil
+	}
+	var ungrounded []string
+	seen := make(map[string]bool)
+	for _, m := range answerPathCitation.FindAllStringSubmatch(answer, -1) {
+		raw := m[1]
+		norm := filepath.ToSlash(filepath.Clean(raw))
+		if evidence[norm] || seen[norm] {
+			continue
+		}
+		seen[norm] = true
+		ungrounded = append(ungrounded, raw)
+	}
+	return ungrounded
 }
 
 // buildAnswerEvidence renders the bundle into a compact, citation-ready
