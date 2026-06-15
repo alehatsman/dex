@@ -190,18 +190,32 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 // collectQueryCall attributes a single call to its enclosing function
 // (call_expression / new_expression) discovered by the query.
 func (e *jstsTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePath, pkg string) {
-	// Nearest enclosing scope boundary. class_declaration is included so
-	// class-body field initializers (which are never collected) are
+	// Walk up to the nearest enclosing function-like node that is a graph
+	// node. Function-like ancestors that are NOT graph nodes (object-literal
+	// getters/methods, callbacks, IIFEs) are transparent: a call lexically
+	// nested inside them is attributed to the enclosing named function — e.g.
+	// `extend` calls `assignProp` inside a `get shape()` getter on an object
+	// literal, and that edge belongs to `extend`. A class_declaration boundary
+	// stops the walk so class-body field initializers (never collected) are
 	// dropped, not attributed to an enclosing function.
-	boundary := firstAncestorOfType(n,
+	var boundary *sitter.Node
+	var callerID, callerCls string
+	for anc := firstAncestorOfType(n,
 		"function_declaration", "method_definition",
 		"arrow_function", "function", "function_expression",
-		"class_declaration")
-	if boundary == nil || boundary.Type() == "class_declaration" {
-		return
+		"class_declaration"); anc != nil; anc = firstAncestorOfType(anc,
+		"function_declaration", "method_definition",
+		"arrow_function", "function", "function_expression",
+		"class_declaration") {
+		if anc.Type() == "class_declaration" {
+			return
+		}
+		if id, cls, ok := e.jstsCallerInfo(anc, src, pkg); ok {
+			boundary, callerID, callerCls = anc, id, cls
+			break
+		}
 	}
-	callerID, callerCls, ok := e.jstsCallerInfo(boundary, src, pkg)
-	if !ok {
+	if boundary == nil {
 		return
 	}
 	// The call must sit in the function's body, not its parameter list.

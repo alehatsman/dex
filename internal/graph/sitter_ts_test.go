@@ -55,6 +55,7 @@ func TestTSExtractorFixture(t *testing.T) {
 		{textPkg, "lower"},
 		{utilsPkg, "id"},
 		{utilsPkg, "noop"}, // arrow-const must be promoted to NodeFunction
+		{mainPkg, "withCache"},
 	} {
 		id := NodeID("", f.pkg, NodeFunction, f.name)
 		if findByID(res.Nodes, id) == nil {
@@ -102,6 +103,7 @@ func TestTSExtractorFixture(t *testing.T) {
 	// ---- Calls ----
 	mainFnID := NodeID("", mainPkg, NodeFunction, "main")
 	helperFnID := NodeID("", mainPkg, NodeFunction, "helper")
+	withCacheID := NodeID("", mainPkg, NodeFunction, "withCache")
 	makeHandlerID := NodeID("", handlerPkg, NodeFunction, "makeHandler")
 	upperFnID := NodeID("", textPkg, NodeFunction, "upper")
 	noopID := NodeID("", utilsPkg, NodeFunction, "noop")
@@ -119,6 +121,7 @@ func TestTSExtractorFixture(t *testing.T) {
 		{"main → noop (named import to arrow-const)", mainFnID, noopID, "arrow-const noop must be reachable as a callee via named import"},
 		{"makeHandler → Handler (new same-file)", makeHandlerID, handlerClsID, "new Handler() inside makeHandler resolves to the local class"},
 		{"Handler.greet → Handler.format (this.X)", greetID, formatID, "this.X inside a method resolves to same class"},
+		{"withCache → helper (call inside object-literal getter, #554)", withCacheID, helperFnID, "a call in a getter body on an object literal has no resolvable node of its own; it must attribute to the enclosing function, not drop"},
 	}
 	for _, c := range calls {
 		t.Run(c.name, func(t *testing.T) {
