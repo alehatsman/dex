@@ -182,6 +182,15 @@ service clients are the http-api spec's.
   the stdio→REST shim (`dex mcp --remote`, `remote.go`) and the native HTTP-MCP
   transport at `/v1/projects/{id}/mcp` (`http_mcp.go`); both register the same
   surface via `registerTools`, so the tool contract here applies unchanged.
+- **Mutating the codebase.** dex is read-only by design (#551): every tool
+  carries `readOnlyHint: true` and there is no edit/write/apply verb. Editing is
+  the host agent's native job (Claude Code's `Edit`/`Write`), and a read-only
+  surface composes cleanly with it — dex *locates and explains* (find, trace,
+  impact, read), the agent *changes*. This is a deliberate boundary, not a gap:
+  a symbol-level edit tool (cf. Serena's `apply`-at-symbol over LSP) was
+  considered and declined to keep the surface small and the failure modes
+  read-only. `notes` is the sole persistence verb, and it writes dex's own
+  knowledge store, never project files.
 
 ## Checklist
 
@@ -199,6 +208,7 @@ service clients are the http-api spec's.
 - [x] `shell` blocks `>`/`>>`/`tee`; `raw:true` skip; 60 s timeout; compressed output
 - [x] `grep` RE2 search over indexed files; fs-walk fallback; `max_results` cap (default 50); `no-matches` status
 - [x] Read-only tools carry `readOnlyHint: true` MCP annotation
+- [x] Read-only by design (#551): no edit/write/apply verb; editing is the host agent's job, dex locates/explains. Deliberate boundary, not a gap.
 - [x] Per-project scoping: `project_root` → canonical index (cwd default)
 - [x] Structured statuses: `no-index`, `embedding-service-unreachable`, `chat-service-unreachable`, `no-graph`, `not-found`, `stale`
 - [x] Lazy per-project auto-watcher spawned per session, refreshes chunk + graph lanes, stops on shutdown

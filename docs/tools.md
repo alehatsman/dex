@@ -71,6 +71,12 @@ yields an explicit fallback signal, never a hard failure — so an agent can
 recover (e.g. run `dex index`, retry with another mode) instead of giving up.
 `ask` always returns a `next_action` directive telling you what to do next.
 
+dex is **read-only by design** (#551): every tool is `readOnlyHint: true` and
+there is no edit/write/apply verb. dex locates and explains (`find`, `trace`,
+`impact`, `read`); the host agent makes the changes with its own editing tools.
+The only persistence verb, `notes`, writes dex's knowledge store — never project
+files.
+
 ## Transports
 
 - **stdio** — `dex mcp`, attached via `claude mcp add --scope user dex -- dex mcp`.
