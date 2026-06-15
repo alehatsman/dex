@@ -52,6 +52,23 @@ chunk rows, then compute PageRank + degree centrality over `calls` edges.
 > baselines it at Go ≈ 1.08 vs TypeScript ≈ 0.69 — TS holds ~19% of the
 > call-graph nodes but only ~13% of the centrality mass.
 
+> **Co-change coupling is mostly non-structural (the #555 ceiling).** The
+> blast-radius eval rewards retrieving files that co-change with an anchor but
+> aren't lexical/dense matches — nominally the graph lane's job. Its src-only
+> subset (test-tainted gold excluded) has a persistent rank gap: the candidate
+> pool recalls the gold, ranking buries it. `dex bench cochange` measures the
+> ceiling on the only lever that could re-rank it without lexical overlap —
+> what fraction of that gold is even *reachable* from its anchor through
+> calls/imports edges (1- and 2-hop). The committed baseline
+> (`benchmark/corpus/cochange-baseline.json`) shows two-hop reachability is low
+> on most repos — guava ≈ 89% (dense Java imports) is the lone outlier; flask
+> ≈ 43%, react ≈ 21%, gin ≈ 37%, and ripgrep/zod ≈ 0% *despite populated
+> graphs*. Where it's near-zero the co-change pairs are genuinely call/import
+> disjoint: history reveals the coupling, the structural graph does not, so no
+> graph/fusion reweight can close that gap. That measured ceiling is why #555
+> is parked rather than tuned. It is GPU-free (graph + git-mined gold only) and
+> mirrors `bench skew`/`bench trace`.
+
 The embedding dimension is fixed for the life of an index — changing the
 embedding model requires `dex reindex`.
 

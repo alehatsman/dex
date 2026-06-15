@@ -1,0 +1,76 @@
+{
+  "cells": [
+    {
+      "repo": "flask",
+      "report": {
+        "lang": "python",
+        "queries": 189,
+        "test_gold": 90,
+        "src_only": 99,
+        "anchor_in_graph": 99,
+        "one_hop": 26,
+        "two_hop": 43
+      }
+    },
+    {
+      "repo": "gin",
+      "report": {
+        "lang": "go",
+        "queries": 256,
+        "test_gold": 172,
+        "src_only": 84,
+        "anchor_in_graph": 45,
+        "one_hop": 23,
+        "two_hop": 31
+      }
+    },
+    {
+      "repo": "guava",
+      "report": {
+        "lang": "java",
+        "queries": 178,
+        "test_gold": 0,
+        "src_only": 178,
+        "anchor_in_graph": 178,
+        "one_hop": 70,
+        "two_hop": 158
+      }
+    },
+    {
+      "repo": "react",
+      "report": {
+        "lang": "js",
+        "queries": 19,
+        "test_gold": 0,
+        "src_only": 19,
+        "anchor_in_graph": 19,
+        "one_hop": 4,
+        "two_hop": 4
+      }
+    },
+    {
+      "repo": "ripgrep",
+      "report": {
+        "lang": "rust",
+        "queries": 139,
+        "test_gold": 4,
+        "src_only": 135,
+        "anchor_in_graph": 135,
+        "one_hop": 0,
+        "two_hop": 0
+      }
+    },
+    {
+      "repo": "zod",
+      "report": {
+        "lang": "ts",
+        "queries": 455,
+        "test_gold": 255,
+        "src_only": 200,
+        "anchor_in_graph": 198,
+        "one_hop": 0,
+        "two_hop": 0
+      }
+    }
+  ]
+}
