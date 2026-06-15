@@ -3,6 +3,7 @@ package eval
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -26,6 +27,12 @@ type Report struct {
 	// Queries is the per-query detail, included in JSON output for
 	// debugging but omitted from the Markdown summary.
 	Queries []QueryResult `json:"queries,omitempty"`
+
+	// Manifest records the experiment identity (golden corpus, lane, model,
+	// fusion config, k, HEADs) under which these metrics were produced. It is
+	// a pointer so reports written before manifests existed unmarshal as nil;
+	// `--check` gates on manifest compatibility when both sides carry one.
+	Manifest *EvalManifest `json:"manifest,omitempty"`
 }
 
 // aggregate fills the scalar means of a Report from results. It does NOT
@@ -104,6 +111,52 @@ func (rep Report) Regressions(ref Report, tol float64) []Regression {
 	return out
 }
 
+// ByTypeRegressions returns per-query-type bucket regressions beyond tol,
+// considering only buckets present in BOTH reports with at least minBucket
+// queries on each side (small buckets are too noisy to gate on). Each
+// regression's Metric is prefixed with the bucket name. The second return
+// value lists buckets present in exactly one report — a query-corpus change
+// that the QuerySetSHA256 manifest gate should already have caught, surfaced
+// here as a warning rather than a silent skip.
+//
+// This closes the gap where an aggregate win hides a per-bucket regression:
+// the report computes ByType but Regressions only looked at the global means.
+func (rep Report) ByTypeRegressions(ref Report, tol float64, minBucket int) (regs []Regression, bucketDelta []string) {
+	seen := make(map[string]bool)
+	for t := range rep.ByType {
+		seen[t] = true
+	}
+	for t := range ref.ByType {
+		seen[t] = true
+	}
+	// Stable order for deterministic output.
+	types := make([]string, 0, len(seen))
+	for t := range seen {
+		types = append(types, t)
+	}
+	sort.Strings(types)
+	for _, t := range types {
+		now, inNow := rep.ByType[t]
+		was, inRef := ref.ByType[t]
+		if !inNow || !inRef {
+			where := "now"
+			if inRef {
+				where = "ref"
+			}
+			bucketDelta = append(bucketDelta, fmt.Sprintf("%q present only in %s", t, where))
+			continue
+		}
+		if now.N < minBucket || was.N < minBucket {
+			continue
+		}
+		for _, r := range now.Regressions(was, tol) {
+			r.Metric = t + "/" + r.Metric
+			regs = append(regs, r)
+		}
+	}
+	return regs, bucketDelta
+}
+
 // JSON serializes the report as indented JSON.
 func (rep Report) JSON() ([]byte, error) {
 	return json.MarshalIndent(rep, "", "  ")
@@ -113,6 +166,15 @@ func (rep Report) JSON() ([]byte, error) {
 func (rep Report) Markdown() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Code-Retrieval Eval — k=%d, n=%d queries\n\n", rep.K, rep.N)
+	if m := rep.Manifest; m != nil {
+		stale := ""
+		if StaleGolden(m.GoldenHead, m.RepoHead) {
+			stale = " ⚠ STALE"
+		}
+		fmt.Fprintf(&b, "_lane=%s mode=%s model=%s/dim=%d fusion=%s α=%.2f graph=%.2f — golden HEAD %s vs repo HEAD %s%s_\n\n",
+			m.Lane, m.GoldenMode, m.EmbedModel, m.EmbedDim, m.FusionMode, m.FusionAlpha, m.GraphWeight,
+			shortHead(m.GoldenHead), shortHead(m.RepoHead), stale)
+	}
 	b.WriteString("| Metric | Value |\n")
 	b.WriteString("|--------|-------|\n")
 	fmt.Fprintf(&b, "| NDCG@%d   | %.3f |\n", rep.K, rep.MeanNDCG)

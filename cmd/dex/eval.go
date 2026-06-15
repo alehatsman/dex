@@ -54,7 +54,14 @@ Flags:
   --max-files N    skip commits touching more than N code files (default: 5)
   --max-per-kind N orphan mode: max queries per declaration kind (default: 50)
   --output format  json or md (default: md)
-  --check path     compare against a reference report JSON; exit 1 on regression
+  --check path     compare against a reference report JSON; exit 1 on regression.
+                   Fails closed when the reference's experiment manifest
+                   (lane/model/mode/k/fusion/query-corpus) is incompatible, and
+                   on a per-query-type bucket regression — not only the
+                   aggregate. Both HEADs and the manifest are recorded in the
+                   report so runs are only ever compared like-for-like.
+  --allow-incompatible  with --check: compare despite an incompatible manifest
+  --allow-stale-golden  compare even when the golden HEAD != current repo HEAD
   --alpha-sweep   sweep FusionLinear α from 0.1 to 1.0 in 0.1 steps, printing
                    a table with the RRF baseline. Use to tune DEX_FUSION_ALPHA.
   --graph-sweep   sweep GraphLaneWeight (off, 0.5…2.0) at the calibrated fusion
@@ -102,6 +109,8 @@ func runEval(ctx context.Context, args []string) error {
 	emitCalib := fs.String("emit-calibration", "", "with --alpha-sweep: write the winning config to this calibration.yml path (run from the dex repo; commit the diff)")
 	expand := fs.String("expand", "off", "query-side expansion to A/B (#252): off | on | full. Requires DEX_EXPAND_MODEL.")
 	faithfulness := fs.Bool("faithfulness", false, "answer-faithfulness gate (#550): synthesize an ask answer per query and score how well it is grounded in the retrieved evidence. Requires a chat model (DEX_CHAT_URL/DEX_CHAT_MODEL).")
+	allowStale := fs.Bool("allow-stale-golden", false, "compare even when the golden set's HEAD differs from the current repo HEAD (deliberate historical comparison). Without it, --check fails on a stale golden set.")
+	allowIncompat := fs.Bool("allow-incompatible", false, "with --check: compare even when the reference report's experiment manifest (lane/model/mode/k/fusion/query-corpus) is incompatible. Without it, the check fails closed.")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	var projectPath string
@@ -167,6 +176,14 @@ func runEval(ctx context.Context, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
 
+	// Resolve the current repo HEAD and flag a stale golden set (generated
+	// against a different HEAD). Warn always; fail under --check unless the
+	// caller opts into a deliberate historical comparison.
+	repoHead, err := checkStaleGolden(ctx, p.Root, gs, *checkPath != "", *allowStale)
+	if err != nil {
+		return err
+	}
+
 	if *alphaSweep && *graphSweep {
 		return fmt.Errorf("dex bench eval: --alpha-sweep and --graph-sweep are mutually exclusive")
 	}
@@ -213,6 +230,7 @@ func runEval(ctx context.Context, args []string) error {
 		return fmt.Errorf("dex bench eval: run: %w", err)
 	}
 	rep := eval.Compute(results, *k)
+	rep.Manifest = buildEvalManifest(*mode, gPath, gs, repoHead, *lane, *k, stats, storeOpts())
 
 	switch *outputFmt {
 	case "json":
@@ -226,12 +244,59 @@ func runEval(ctx context.Context, args []string) error {
 	}
 
 	if *checkPath != "" {
-		if err := checkEvalRegression(rep, *checkPath); err != nil {
+		if err := checkEvalRegression(rep, *checkPath, *allowIncompat); err != nil {
 			return fmt.Errorf("dex bench eval: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench eval: regression check passed")
 	}
 	return nil
+}
+
+// checkStaleGolden resolves the repo HEAD and reports whether the golden set
+// is stale (generated against a different HEAD). It warns always; when a
+// regression check is active it returns an error unless the caller opted into
+// a deliberate historical comparison. The resolved HEAD is returned for the
+// report manifest regardless.
+func checkStaleGolden(ctx context.Context, root string, gs eval.GoldenSet, checkActive, allowStale bool) (string, error) {
+	repoHead, err := eval.RepoHead(ctx, root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "dex bench eval: warning: could not resolve repo HEAD: %v\n", err)
+	}
+	if eval.StaleGolden(gs.Head, repoHead) {
+		msg := fmt.Sprintf("golden set HEAD %s != repo HEAD %s — labels may be stale", shortHash(gs.Head), shortHash(repoHead))
+		if checkActive && !allowStale {
+			return repoHead, fmt.Errorf("dex bench eval: %s; regenerate with --gen or pass --allow-stale-golden", msg)
+		}
+		fmt.Fprintf(os.Stderr, "dex bench eval: warning: %s\n", msg)
+	}
+	return repoHead, nil
+}
+
+// buildEvalManifest stamps the experiment identity onto a report: the golden
+// corpus (mode, file hash, query hash, generation HEAD), the repo HEAD at
+// scoring time, and the retrieval configuration (lane, embed model/dim, fusion
+// mode/alpha, graph weight, k). It is what lets --check refuse to compare
+// runs produced under different conditions.
+func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lane string, k int, stats store.Stats, opts store.Options) *eval.EvalManifest {
+	var goldenSHA string
+	if data, err := os.ReadFile(goldenPath); err == nil {
+		goldenSHA = eval.SHA256Hex(data)
+	}
+	return &eval.EvalManifest{
+		SchemaVersion:  eval.ManifestSchemaVersion,
+		GoldenMode:     mode,
+		GoldenSHA256:   goldenSHA,
+		GoldenHead:     gs.Head,
+		RepoHead:       repoHead,
+		QuerySetSHA256: eval.QuerySetSHA256(gs),
+		Lane:           strings.ToLower(lane),
+		EmbedModel:     stats.EmbedModel,
+		EmbedDim:       stats.Dim,
+		FusionMode:     store.FusionModeString(opts.FusionMode),
+		FusionAlpha:    opts.FusionAlpha,
+		GraphWeight:    opts.GraphLaneWeight,
+		K:              k,
+	}
 }
 
 // resolveEvalProject resolves the project path to its index identity.
@@ -243,9 +308,13 @@ func resolveEvalProject(path string) (*proj.Project, error) {
 	return proj.Resolve(path, base)
 }
 
-// checkEvalRegression fails if NDCG@k, Recall@k or MRR dropped by more than
-// the tolerance versus a committed reference report.
-func checkEvalRegression(current eval.Report, refPath string) error {
+// checkEvalRegression fails if NDCG@k, Recall@k or MRR — globally or in any
+// matching per-type bucket — dropped by more than the tolerance versus a
+// committed reference report. It first gates on experiment-manifest
+// compatibility: an incompatible reference (different lane/model/mode/k/fusion
+// or query corpus) fails closed unless allowIncompat is set, so the metric
+// comparison is only ever run on genuinely comparable numbers.
+func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool) error {
 	data, err := os.ReadFile(refPath)
 	if err != nil {
 		return fmt.Errorf("read reference %q: %w", refPath, err)
@@ -254,8 +323,32 @@ func checkEvalRegression(current eval.Report, refPath string) error {
 	if err := json.Unmarshal(data, &ref); err != nil {
 		return fmt.Errorf("parse reference: %w", err)
 	}
-	const tol = 0.02
+
+	// Manifest gate. Both sides must carry a manifest to compare identity;
+	// a reference written before manifests existed falls back to a metric-only
+	// comparison with a warning (regenerate the baseline to enable the gate).
+	switch {
+	case current.Manifest != nil && ref.Manifest != nil:
+		if diffs := current.Manifest.Incompatible(*ref.Manifest); len(diffs) > 0 {
+			if !allowIncompat {
+				return fmt.Errorf("incompatible experiment manifest: %s — pass --allow-incompatible to compare anyway", strings.Join(diffs, ", "))
+			}
+			fmt.Fprintf(os.Stderr, "dex bench eval: warning: comparing incompatible runs: %s\n", strings.Join(diffs, ", "))
+		}
+	case ref.Manifest == nil:
+		fmt.Fprintln(os.Stderr, "dex bench eval: warning: reference report predates experiment manifests — comparing metrics only; regenerate the baseline to enable the compatibility gate")
+	}
+
+	const (
+		tol       = 0.02
+		minBucket = 5
+	)
 	regs := current.Regressions(ref, tol)
+	byType, bucketDelta := current.ByTypeRegressions(ref, tol, minBucket)
+	regs = append(regs, byType...)
+	for _, d := range bucketDelta {
+		fmt.Fprintf(os.Stderr, "dex bench eval: warning: query-type bucket %s\n", d)
+	}
 	if len(regs) == 0 {
 		return nil
 	}

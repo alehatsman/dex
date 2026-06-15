@@ -69,3 +69,34 @@ func TestRegressions(t *testing.T) {
 		t.Errorf("expected all three metrics flagged, got %v", regs)
 	}
 }
+
+func TestByTypeRegressions(t *testing.T) {
+	// Aggregate is flat, but the `symbol` bucket regresses while `nl` improves
+	// — exactly the per-type drop an aggregate-only gate would miss.
+	ref := Report{ByType: map[string]Report{
+		"nl":     {N: 30, MeanNDCG: 0.60, MeanRecall: 0.70, MRR: 0.75},
+		"symbol": {N: 10, MeanNDCG: 0.80, MeanRecall: 0.85, MRR: 0.90},
+		"small":  {N: 2, MeanNDCG: 0.90, MeanRecall: 0.90, MRR: 0.90},
+	}}
+	now := Report{ByType: map[string]Report{
+		"nl":     {N: 30, MeanNDCG: 0.65, MeanRecall: 0.72, MRR: 0.78}, // improved
+		"symbol": {N: 10, MeanNDCG: 0.50, MeanRecall: 0.85, MRR: 0.90}, // NDCG sank
+		"small":  {N: 2, MeanNDCG: 0.10, MeanRecall: 0.10, MRR: 0.10},  // below minBucket → ignored
+	}}
+	regs, delta := now.ByTypeRegressions(ref, 0.02, 5)
+	if len(delta) != 0 {
+		t.Fatalf("unexpected bucket delta: %v", delta)
+	}
+	if len(regs) != 1 || regs[0].Metric != "symbol/NDCG@k" {
+		t.Fatalf("expected one symbol/NDCG@k regression, got %v", regs)
+	}
+
+	// A bucket present in only one report is surfaced as a delta, not silently dropped.
+	now2 := Report{ByType: map[string]Report{
+		"nl": {N: 30, MeanNDCG: 0.65, MeanRecall: 0.72, MRR: 0.78},
+	}}
+	_, delta2 := now2.ByTypeRegressions(ref, 0.02, 5)
+	if len(delta2) == 0 {
+		t.Fatal("expected bucket-set change to be reported")
+	}
+}
