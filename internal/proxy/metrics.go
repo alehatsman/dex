@@ -29,6 +29,13 @@ type Stats struct {
 	// is the signal that pruning is too aggressive.
 	ReReadsAfterStub atomic.Int64
 	ReReadTokens     atomic.Int64
+
+	// Dup-in-window counters (#562 target probe): same file read more than once
+	// with all copies inside the keep-window. DupReadTokens is the upper bound a
+	// cross-read dedup pass could reclaim — if it stays ~0 in real traffic, #562
+	// has no target.
+	DupReadsInWindow atomic.Int64
+	DupReadTokens    atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -52,6 +59,11 @@ type Snapshot struct {
 	// pruning is paying off net of the re-reads it induces.
 	ReReadsAfterStub int64 `json:"rereads_after_stub"`
 	ReReadTokens     int64 `json:"reread_tokens"`
+
+	// Dup-in-window probe (#562): redundant in-window reads and the tokens a
+	// dedup pass could reclaim. ~0 here means #562 has no target.
+	DupReadsInWindow int64 `json:"dup_reads_in_window"`
+	DupReadTokens    int64 `json:"dup_read_tokens"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.
@@ -94,6 +106,10 @@ func (s *Stats) recordReReads(r ReReadStats) {
 		s.ReReadsAfterStub.Add(int64(r.ReReads))
 		s.ReReadTokens.Add(int64(r.ReReadTokens))
 	}
+	if r.DupReadsInWindow > 0 {
+		s.DupReadsInWindow.Add(int64(r.DupReadsInWindow))
+		s.DupReadTokens.Add(int64(r.DupReadTokens))
+	}
 }
 
 // Snapshot returns a consistent point-in-time view of the stats.
@@ -130,5 +146,8 @@ func (s *Stats) Snapshot() Snapshot {
 
 		ReReadsAfterStub: s.ReReadsAfterStub.Load(),
 		ReReadTokens:     s.ReReadTokens.Load(),
+
+		DupReadsInWindow: s.DupReadsInWindow.Load(),
+		DupReadTokens:    s.DupReadTokens.Load(),
 	}
 }

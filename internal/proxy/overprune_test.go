@@ -96,6 +96,40 @@ func TestAnalyzeReReads_FitsInWindowIsNoOp(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReReads_DupInWindow(t *testing.T) {
+	// foo.go read twice, both inside the keep-window → one dedupable copy.
+	messages := makeMessages(t,
+		readToolUseMsg("t1", "/repo/foo.go"),
+		toolResultMsg("t1", big(50)),
+		readToolUseMsg("t2", "/repo/foo.go"),
+		toolResultMsg("t2", big(50)),
+	)
+	got := AnalyzeReReads(messages, 10, tokens.Cl100k)
+	if got.DupReadsInWindow != 1 {
+		t.Fatalf("DupReadsInWindow = %d, want 1", got.DupReadsInWindow)
+	}
+	if got.DupReadTokens <= 0 {
+		t.Fatalf("DupReadTokens = %d, want > 0 (the superseded copy)", got.DupReadTokens)
+	}
+	// Neither copy is old, so there is no re-read-after-stub.
+	if got.ReReads != 0 {
+		t.Fatalf("ReReads = %d, want 0", got.ReReads)
+	}
+}
+
+func TestAnalyzeReReads_DistinctFilesNotDup(t *testing.T) {
+	// Two different files in-window → nothing dedupable.
+	messages := makeMessages(t,
+		readToolUseMsg("t1", "/repo/foo.go"),
+		toolResultMsg("t1", big(50)),
+		readToolUseMsg("t2", "/repo/bar.go"),
+		toolResultMsg("t2", big(50)),
+	)
+	if got := AnalyzeReReads(messages, 10, tokens.Cl100k); got.DupReadsInWindow != 0 {
+		t.Fatalf("DupReadsInWindow = %d, want 0", got.DupReadsInWindow)
+	}
+}
+
 func TestAnalyzeReReadsBody_FailOpenOnGarbage(t *testing.T) {
 	if got := AnalyzeReReadsBody([]byte("not json"), 10); got != (ReReadStats{}) {
 		t.Fatalf("garbage body = %+v, want zero", got)

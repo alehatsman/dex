@@ -13,6 +13,15 @@ import (
 type ReReadStats struct {
 	ReReads      int // file reads in the keep-window whose path was stubbed in the old region
 	ReReadTokens int // tokens of those re-read results — what re-fetching the stubbed file cost
+
+	// Dup-in-window signal: same file read more than once with BOTH copies
+	// inside the keep-window, where PruneHistory leaves them all verbatim. This
+	// is the only case a cross-read dedup pass (#562) would reclaim beyond what
+	// keepRecent stubbing already does — measured here to decide if #562 has a
+	// target before building it. Counts the older (dedupable) copies; the newest
+	// is the live one and is never counted.
+	DupReadsInWindow int // redundant in-window reads (occurrences − 1 per path)
+	DupReadTokens    int // tokens a dedup pass could reclaim (all but the newest copy)
 }
 
 // toolUseInfo captures the bits of an assistant tool_use block the over-pruning
@@ -62,10 +71,13 @@ func AnalyzeReReads(messages []json.RawMessage, keepRecent int, fam tokens.Famil
 	if keepRecent < 0 {
 		keepRecent = 0
 	}
-	if len(messages) <= keepRecent {
-		return ReReadStats{}
-	}
+	// When everything fits in the keep-window the old region is empty (nothing
+	// stubbed → no re-reads), but in-window duplicates can still exist, so we
+	// don't bail early — we floor pruneUntil at 0 and let the dup pass run.
 	pruneUntil := len(messages) - keepRecent
+	if pruneUntil < 0 {
+		pruneUntil = 0
+	}
 
 	info := buildToolUseInfo(messages)
 
@@ -80,12 +92,30 @@ func AnalyzeReReads(messages []json.RawMessage, keepRecent int, fam tokens.Famil
 	})
 
 	var st ReReadStats
+	// Token counts of qualifying file reads in the keep-window, per path, in
+	// message order — the input both signals derive from.
+	winReads := make(map[string][]int)
 	collectFileReads(messages[pruneUntil:], info, func(path, text string) {
+		tok := tokens.CountFor(text, fam)
 		if stubbed[path] {
 			st.ReReads++
-			st.ReReadTokens += tokens.CountFor(text, fam)
+			st.ReReadTokens += tok
+		}
+		if len(text) >= minPruneChars {
+			winReads[path] = append(winReads[path], tok)
 		}
 	})
+	for _, toks := range winReads {
+		if len(toks) < 2 {
+			continue // single in-window read — nothing to dedup
+		}
+		// The newest (last) copy is the live one #562 would keep; the rest are
+		// the redundant copies it could collapse.
+		st.DupReadsInWindow += len(toks) - 1
+		for _, t := range toks[:len(toks)-1] {
+			st.DupReadTokens += t
+		}
+	}
 	return st
 }
 

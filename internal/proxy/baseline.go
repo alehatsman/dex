@@ -87,6 +87,8 @@ func logRequestMetrics(logger *slog.Logger, r *http.Request, finalBody []byte, b
 		"tool_descs_compressed", toolDesc.ToolsCompressed,
 		"rereads_after_stub", reReads.ReReads,
 		"reread_tokens", reReads.ReReadTokens,
+		"dup_reads_in_window", reReads.DupReadsInWindow,
+		"dup_read_tokens", reReads.DupReadTokens,
 	}
 	if model != "" {
 		attrs = append(attrs, "model", model, "messages", msgCount)
