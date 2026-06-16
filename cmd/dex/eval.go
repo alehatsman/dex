@@ -103,7 +103,7 @@ func runEval(ctx context.Context, args []string) error {
 	maxPerKind := fs.Int("max-per-kind", 0, "orphan mode: max queries per declaration kind (default: 50)")
 	outputFmt := fs.String("output", "md", "output format: json or md")
 	checkPath := fs.String("check", "", "reference report JSON to check for regression")
-	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+symbol+graph, zero-inference) | onnx (in-process ONNX, requires env vars)")
+	lane := fs.String("lane", "full", "retrieval lane: full (semantic+BM25, default) | bm25 (BM25+graph store lane; no router/ask exact-symbol; zero-inference) | onnx (in-process ONNX, requires env vars)")
 	alphaSweep := fs.Bool("alpha-sweep", false, "sweep FusionLinear α from 0.1 to 1.0 and print a comparison table with RRF as baseline")
 	graphSweep := fs.Bool("graph-sweep", false, "sweep GraphLaneWeight (off, 0.5…2.0) at the calibrated fusion default and print per-weight NDCG/Recall deltas vs graph-off — the GraphLaneWeight ablation (#470)")
 	emitCalib := fs.String("emit-calibration", "", "with --alpha-sweep: write the winning config to this calibration.yml path (run from the dex repo; commit the diff)")
@@ -371,7 +371,7 @@ func shortHash(h string) string {
 func evalEmbedForLane(lane, model string) (embed.Embedder, error) {
 	switch strings.ToLower(lane) {
 	case "bm25":
-		fmt.Fprintln(os.Stderr, "dex bench eval: --lane bm25 — BM25+symbol+graph only (zero-inference)")
+		fmt.Fprintln(os.Stderr, "dex bench eval: --lane bm25 — BM25+graph store lane, no router/ask exact-symbol (zero-inference)")
 		return nil, nil
 	case "onnx":
 		if os.Getenv("DEX_ONNX_MODEL") == "" || os.Getenv("DEX_ONNXRUNTIME_LIB") == "" {
