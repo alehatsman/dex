@@ -81,14 +81,17 @@ func Compute(results []QueryResult, k int) Report {
 }
 
 // Regression is a single metric that dropped beyond tolerance versus a
-// reference report.
+// reference report. CILow/CIHigh and Boot are set only by the bootstrap
+// comparator (BootstrapRegressions); the fixed-tolerance path leaves them zero.
 type Regression struct {
-	Metric   string
-	Was, Now float64
+	Metric        string
+	Was, Now      float64
+	CILow, CIHigh float64 // bootstrap CI on the mean per-query delta (Boot only)
+	Boot          bool    // true when produced by the paired-bootstrap comparator
 }
 
 func (r Regression) String() string {
-	return fmt.Sprintf("%s regressed: was %.3f, now %.3f (delta %.3f)", r.Metric, r.Was, r.Now, r.Was-r.Now)
+	return fmt.Sprintf("%s regressed: was %.3f, now %.3f (delta %.3f)%s", r.Metric, r.Was, r.Now, r.Was-r.Now, r.bootstrapNote())
 }
 
 // Regressions returns the metrics (NDCG@k, Recall@k, MRR) that dropped by
