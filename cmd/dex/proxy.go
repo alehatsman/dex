@@ -114,6 +114,8 @@ func printProxyStats(ctx context.Context, addr, token string) error {
 	fmt.Fprintf(os.Stdout, "  requests : %d total, %d compressed\n", snap.RequestsTotal, snap.RequestsCompressed)
 	fmt.Fprintf(os.Stdout, "  tokens   : %d before → %d after  (%d saved, %.1f%%)\n",
 		snap.TokensBefore, snap.TokensAfter, snap.TokensSaved, pct)
+	fmt.Fprintf(os.Stdout, "  re-reads : %d files re-read after prune  (%d tokens re-fetched)\n",
+		snap.ReReadsAfterStub, snap.ReReadTokens)
 	fmt.Fprintln(os.Stdout)
 
 	enc := json.NewEncoder(os.Stdout)

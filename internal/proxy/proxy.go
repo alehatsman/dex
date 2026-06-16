@@ -195,6 +195,12 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			current := body
 			var paths []string
 
+			// Over-pruning signal (#561): measured on the ORIGINAL body, where
+			// the client still re-sends both the old and the re-read copies of a
+			// file. Pure measurement — does not alter pruning.
+			reReads := AnalyzeReReadsBody(body, DefaultKeepRecent)
+			stats.recordReReads(reReads)
+
 			pruned, prunedBytes := PruneRequestBody(current, DefaultKeepRecent)
 			if prunedBytes > 0 {
 				current = pruned
@@ -224,7 +230,7 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			stats.record(before, after)
 			stats.recordCache(cacheStats)
 			stats.recordToolDesc(toolDescStats)
-			logRequestMetrics(logger, r, current, before, after, paths, cacheStats, toolDescStats)
+			logRequestMetrics(logger, r, current, before, after, paths, cacheStats, toolDescStats, reReads)
 
 			r.Body = io.NopCloser(bytes.NewReader(current))
 			r.ContentLength = int64(len(current))

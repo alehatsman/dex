@@ -22,6 +22,13 @@ type Stats struct {
 	// least one description rewritten, and the total descriptions changed.
 	RequestsToolDescCompressed atomic.Int64
 	ToolDescsCompressed        atomic.Int64
+
+	// Over-pruning counters (#561): the cost side of pruning — file reads stubbed
+	// in the old region that the agent re-read inside the keep-window, and the
+	// tokens those re-fetches cost. A rising ReReadTokens relative to TokensSaved
+	// is the signal that pruning is too aggressive.
+	ReReadsAfterStub atomic.Int64
+	ReReadTokens     atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -39,6 +46,12 @@ type Snapshot struct {
 
 	RequestsToolDescCompressed int64 `json:"requests_tool_desc_compressed"`
 	ToolDescsCompressed        int64 `json:"tool_descs_compressed"`
+
+	// Over-pruning signal (#561): re-reads of files the pruner stubbed, and the
+	// tokens those re-fetches cost. Read alongside TokensSaved to judge whether
+	// pruning is paying off net of the re-reads it induces.
+	ReReadsAfterStub int64 `json:"rereads_after_stub"`
+	ReReadTokens     int64 `json:"reread_tokens"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.
@@ -73,6 +86,16 @@ func (s *Stats) recordToolDesc(t ToolDescStats) {
 	}
 }
 
+// recordReReads folds one request's over-pruning signal into the totals: how
+// many stubbed files the agent re-read in the keep-window and the tokens those
+// re-fetches cost.
+func (s *Stats) recordReReads(r ReReadStats) {
+	if r.ReReads > 0 {
+		s.ReReadsAfterStub.Add(int64(r.ReReads))
+		s.ReReadTokens.Add(int64(r.ReReadTokens))
+	}
+}
+
 // Snapshot returns a consistent point-in-time view of the stats.
 func (s *Stats) Snapshot() Snapshot {
 	before := s.TokensBefore.Load()
@@ -104,5 +127,8 @@ func (s *Stats) Snapshot() Snapshot {
 
 		RequestsToolDescCompressed: s.RequestsToolDescCompressed.Load(),
 		ToolDescsCompressed:        s.ToolDescsCompressed.Load(),
+
+		ReReadsAfterStub: s.ReReadsAfterStub.Load(),
+		ReReadTokens:     s.ReReadTokens.Load(),
 	}
 }
