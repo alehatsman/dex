@@ -46,6 +46,7 @@ build / maintenance:
   dex index <path>                   build or refresh the index  (--dry-run to preview)
   dex watch <path>                   keep the index fresh as files change
   dex reindex <path>                 drop and re-embed from scratch
+  dex summarize [<path>...]          generate per-file LLM summaries (isolated table; --get to read)
   dex nuke <path>                    delete the on-disk index
   dex bench <sub> [<path>]            benchmarks: eval|corpus|compress|perf|locomo
   dex proxy <path>                    MCP proxy — forward tools to a remote dex server

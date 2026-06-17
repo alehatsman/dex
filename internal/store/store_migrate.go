@@ -14,7 +14,7 @@ import (
 // `dex reindex`, never an in-place upgrade. This replaces the old accretive
 // flag-guarded ALTER chain (#431): the schema is built once, correctly, and
 // version-gated rather than patched forward on every Open.
-const schemaVersion = "1"
+const schemaVersion = "2"
 
 // chunkFTSContentExpr builds the SQL expression for a chunk's FTS `content`
 // document: the Contextual-BM25 prefix (context_text + newline, when present)
@@ -249,6 +249,21 @@ func schemaDDL() []string {
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_coaccess_src ON co_access_edges(src_path)`,
 		`CREATE INDEX IF NOT EXISTS idx_coaccess_dst ON co_access_edges(dst_path)`,
+		// file_summaries — LLM-generated per-file prose, produced on demand by
+		// `dex summarize` (#572). Deliberately ISOLATED from retrieval: no FTS
+		// trigger, no vector, and no search/fusion path reads it. source_hash is
+		// the file's chunk content_sha1 set (body-change signal, not the
+		// positional graph_nodes.content_hash); prompt_version forces regen when
+		// the summarizer prompt changes. Dropped+rebuilt with the rest of the
+		// index on reindex via the schemaVersion gate.
+		`CREATE TABLE IF NOT EXISTS file_summaries (
+		   path           TEXT PRIMARY KEY,
+		   source_hash    TEXT NOT NULL,
+		   prompt_version INTEGER NOT NULL,
+		   model          TEXT NOT NULL,
+		   summary        TEXT NOT NULL,
+		   generated_at   INTEGER NOT NULL
+		 )`,
 	}
 }
 

@@ -89,6 +89,8 @@ func main() {
 		err = cmdIndexStatus(ctx, args)
 	case "ask":
 		err = cmdAsk(ctx, args)
+	case "summarize":
+		err = cmdSummarize(ctx, args)
 	case "read":
 		err = cmdRead(ctx, args)
 	case "graph":

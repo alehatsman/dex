@@ -282,6 +282,17 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{{name: "--all", desc: "every known project"}, {name: "--yes", desc: "skip confirmation"}},
 	},
 	{
+		name: "summarize", group: groupBuild, args: "[<path>...]", fileArgs: true,
+		summary: "generate per-file LLM summaries into the index (isolated from search)",
+		flags: []flagSpec{
+			{name: "--get", desc: "print a stored summary as JSON, without generating", arg: true},
+			{name: "--force", desc: "regenerate even when the source hash is unchanged"},
+			{name: "--focus", desc: "optional focus hint for the summarizer", arg: true},
+			flagFormat,
+			flagV,
+		},
+	},
+	{
 		name: "watch", group: groupBuild, args: "<path>",
 		summary: "keep the index fresh as files change",
 		flags: []flagSpec{
