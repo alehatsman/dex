@@ -102,7 +102,7 @@ flags after the name (-k, --package, --max-depth, --format) pass through.`)
 func cmdImpact(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("impact", flag.ContinueOnError)
 	setHelp(fs,
-		"Transitive blast-radius via callers (MCP: impact). Go-only today.",
+		"Transitive blast-radius via callers (MCP: impact). Go is type-resolved; other langs name-based (tree-sitter, incomplete recall).",
 		"dex impact [flags] [<path>] <name>",
 		"dex impact NewServer",
 		"dex impact '(*Server).Run' --max-depth 4")

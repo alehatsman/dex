@@ -113,6 +113,47 @@ func TestZeroCallerHintUnexportedSilent(t *testing.T) {
 	}
 }
 
+// #582: an empty calls-edge result on a name-based (tree-sitter) language is
+// low-confidence — recall is incomplete, so it must carry a "not proof of none"
+// caveat naming the language and pointing at grep, in either direction.
+func TestNameBasedEmptyHintNonGo(t *testing.T) {
+	ts := graphquery.Node{ID: "f", Kind: graph.NodeFunction, Name: "set",
+		MetadataJSON: []byte(`{"language":"typescript"}`)}
+	for _, rel := range []string{"callers", "callees"} {
+		got := nameBasedEmptyHint([]graphquery.Node{ts}, rel)
+		if got == "" {
+			t.Fatalf("%s: want a name-based caveat for a TypeScript target, got empty", rel)
+		}
+		for _, want := range []string{rel, "typescript", "name-based", "grep"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s hint %q missing %q", rel, got, want)
+			}
+		}
+	}
+}
+
+// A Go target falls through (no caveat) — Go edges are type-resolved, so the
+// empty is exact and the caller applies the #485 interface-dispatch hint instead.
+func TestNameBasedEmptyHintGoSilent(t *testing.T) {
+	// Go nodes leave Metadata["language"] absent.
+	goNode := graphquery.Node{ID: "g", Kind: graph.NodeFunction, Name: "Run"}
+	if got := nameBasedEmptyHint([]graphquery.Node{goNode}, "callers"); got != "" {
+		t.Errorf("Go target should get no name-based hint, got %q", got)
+	}
+}
+
+// A mixed resolution (Go + TS share a name) still warns: the TS target could
+// have unrecovered edges, so an empty result is not authoritative.
+func TestNameBasedEmptyHintMixedWarns(t *testing.T) {
+	targets := []graphquery.Node{
+		{ID: "g", Kind: graph.NodeFunction, Name: "Get"},
+		{ID: "t", Kind: graph.NodeFunction, Name: "get", MetadataJSON: []byte(`{"language":"typescript"}`)},
+	}
+	if got := nameBasedEmptyHint(targets, "callers"); !strings.Contains(got, "typescript") {
+		t.Errorf("mixed Go/TS target should warn about the non-Go language, got %q", got)
+	}
+}
+
 // #486: callers should center the inlined snippet on the call site, not return
 // the whole enclosing function body.
 func TestCallSiteRange(t *testing.T) {

@@ -148,7 +148,7 @@ func BuildAvoid(intent string, semHits []SemHit, symbols []SymHit, graphIndexed,
 		if hasRefs {
 			return "Do not grep for the identifier — the `references` field already lists call sites. For Go this comes from the static graph; for other languages it's a ripgrep-backed lexical list (verify edge cases by reading the snippets)."
 		}
-		return "Do not trust the symbols list as exhaustive for non-Go callees — `calls` edges are Go-only today. Verify with grep on the symbol name for other languages."
+		return "Do not trust the symbols list as exhaustive — Go `calls` edges are type-resolved, but Python/JS/TS/Rust/Java edges are name-based (tree-sitter) with incomplete recall. Verify with grep on the symbol name."
 	}
 	if !graphIndexed {
 		return "Graph not indexed for this project — results from semantic + symbol lanes only. Run `dex index <project>` to refresh both layers (graph extraction is part of the default index run)."

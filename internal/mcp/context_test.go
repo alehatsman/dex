@@ -1028,8 +1028,8 @@ func TestBuildAvoid(t *testing.T) {
 		graphIndexed bool
 		want         string
 	}{
-		{"callers warns non-Go fallback", retrieve.IntentCallers, sem, syms, true, "`calls` edges are Go-only"},
-		{"callers without graph still warns", retrieve.IntentCallers, sem, syms, false, "`calls` edges are Go-only"},
+		{"callers warns non-Go fallback", retrieve.IntentCallers, sem, syms, true, "name-based (tree-sitter)"},
+		{"callers without graph still warns", retrieve.IntentCallers, sem, syms, false, "name-based (tree-sitter)"},
 		{"symbol_lookup without graph nudges to index", retrieve.IntentSymbolLookup, sem, syms, false, "Run `dex index"},
 		{"symbol_lookup with graph: don't grep", retrieve.IntentSymbolLookup, sem, syms, true, "Do not grep"},
 		{"behavior + both lanes", retrieve.IntentBehaviorSearch, sem, syms, true, "Do not grep for the identifier"},

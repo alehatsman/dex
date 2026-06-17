@@ -1,7 +1,6 @@
 package graphquery
 
 import (
-	"encoding/json"
 	"sort"
 
 	"github.com/alehatsman/dex/internal/graph"
@@ -40,18 +39,7 @@ type PackageGraph struct {
 // python/rust/js testdata fixtures) that has no place in this DAG. Nodes carry
 // no metadata at all (the common Go case) → Go.
 func isGoPackageNode(n Node) bool {
-	if n.Kind != graph.NodePackage {
-		return false
-	}
-	if len(n.MetadataJSON) == 0 {
-		return true
-	}
-	var md map[string]any
-	if err := json.Unmarshal(n.MetadataJSON, &md); err != nil {
-		return true // unparseable metadata: don't exclude a real Go package
-	}
-	_, nonGo := md["language"]
-	return !nonGo
+	return n.Kind == graph.NodePackage && n.Language() == "go"
 }
 
 // BuildPackageGraph derives the internal package import DAG from a

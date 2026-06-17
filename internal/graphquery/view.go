@@ -9,6 +9,7 @@ package graphquery
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 
 	"github.com/alehatsman/dex/internal/graph"
@@ -52,6 +53,28 @@ type Node struct {
 	// it to tell a Go package node (no "language" key) from a tree-sitter
 	// one (stamped with its language) — see isGoPackageNode.
 	MetadataJSON []byte
+}
+
+// Language reports the node's source language using the convention every
+// extractor follows: the tree-sitter extractors stamp Metadata["language"]
+// (see the sitter_*.go files), while the Go extractor leaves it absent. So a
+// node with no metadata, unparseable metadata, or no "language" key is Go.
+//
+// Callers use this to distinguish Go's type-resolved call edges from the
+// name-based (tree-sitter) edges, whose recall is incomplete — an empty
+// call-graph result on a name-based language is not proof that no edges exist.
+func (n Node) Language() string {
+	if len(n.MetadataJSON) == 0 {
+		return "go"
+	}
+	var md map[string]any
+	if err := json.Unmarshal(n.MetadataJSON, &md); err != nil {
+		return "go"
+	}
+	if lang, ok := md["language"].(string); ok && lang != "" {
+		return lang
+	}
+	return "go"
 }
 
 type Edge struct {

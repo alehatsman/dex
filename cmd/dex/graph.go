@@ -349,11 +349,11 @@ func cmdGraphCallees(ctx context.Context, args []string) error {
 func runGraphCallEdges(ctx context.Context, args []string, callers bool) error {
 	name := "graph callees"
 	rel := "callees"
-	helpOneLiner := "Outgoing `calls` edges (MCP: callees). Go-only today."
+	helpOneLiner := "Outgoing `calls` edges (MCP: callees). Go is type-resolved; other langs name-based (tree-sitter)."
 	if callers {
 		name = "graph callers"
 		rel = "callers"
-		helpOneLiner = "Incoming `calls` edges (MCP: callers). Go-only today."
+		helpOneLiner = "Incoming `calls` edges (MCP: callers). Go is type-resolved; other langs name-based (tree-sitter)."
 	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	setHelp(fs, helpOneLiner, "dex "+name+" [flags] [<path>] <name>")

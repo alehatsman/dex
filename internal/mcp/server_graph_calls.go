@@ -234,14 +234,25 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 		out.Hits = out.Hits[:k]
 	}
 
-	// #485: zero callers on an exported symbol is a correctness trap — it
-	// reads as "dead / safe to delete" but the symbol may be reached only via
-	// interface/reflection dispatch (the MCP SDK calls handlers through the
-	// toolSurface interface, leaving no static `calls` edge). Only meaningful
-	// for the callers direction.
-	if callers && len(out.Hits) == 0 {
-		if h := zeroCallerHint(view, targets); h != "" {
+	if len(out.Hits) == 0 {
+		rel := "callees"
+		if callers {
+			rel = "callers"
+		}
+		// On the name-based (tree-sitter) languages an empty result is
+		// low-confidence: recall is incomplete, so it is not proof there are
+		// no edges. Caveat both directions before the Go-specific hint below.
+		if h := nameBasedEmptyHint(targets, rel); h != "" {
 			out.Hint = h
+		} else if callers {
+			// #485: zero callers on an exported Go symbol is a correctness
+			// trap — it reads as "dead / safe to delete" but the symbol may be
+			// reached only via interface/reflection dispatch (the MCP SDK calls
+			// handlers through the toolSurface interface, leaving no static
+			// `calls` edge). Go edges are type-resolved, so this empty is exact.
+			if h := zeroCallerHint(view, targets); h != "" {
+				out.Hint = h
+			}
 		}
 	}
 

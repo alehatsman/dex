@@ -131,3 +131,29 @@ func TestBuildPackageGraphNoPackages(t *testing.T) {
 		t.Errorf("nodes = %d, want 0 (no-graph)", len(out.Nodes))
 	}
 }
+
+// Node.Language follows the extractor convention: tree-sitter stamps
+// Metadata["language"]; the Go extractor leaves it absent. So missing,
+// unparseable, or language-less metadata reads as Go (#582).
+func TestNodeLanguage(t *testing.T) {
+	cases := []struct {
+		name string
+		md   []byte
+		want string
+	}{
+		{"no metadata", nil, "go"},
+		{"empty metadata", []byte{}, "go"},
+		{"typescript", []byte(`{"language":"typescript"}`), "typescript"},
+		{"python", []byte(`{"language":"python","receiver":"C"}`), "python"},
+		{"unparseable", []byte(`{not json`), "go"},
+		{"no language key", []byte(`{"receiver":"C"}`), "go"},
+		{"empty language value", []byte(`{"language":""}`), "go"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := (Node{MetadataJSON: c.md}).Language(); got != c.want {
+				t.Errorf("Language() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

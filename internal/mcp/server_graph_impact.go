@@ -147,7 +147,12 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 	// which leaves no static `calls` edge. Distinguish "no static callers" from
 	// "truly dead" and, where possible, name the interface(s) it satisfies.
 	if out.Total == 0 {
-		if h := zeroCallerHint(view, targets); h != "" {
+		// Impact walks the callers direction transitively. On a name-based
+		// (tree-sitter) language, incomplete recall means total:0 is not proof
+		// of an empty blast radius — caveat before the Go interface-dispatch hint.
+		if h := nameBasedEmptyHint(targets, "callers"); h != "" {
+			out.Hint = h
+		} else if h := zeroCallerHint(view, targets); h != "" {
 			out.Hint = h
 		}
 	}
@@ -207,6 +212,29 @@ func zeroCallerHint(view *graphquery.View, targets []graphquery.Node) string {
 		return "0 static callers, but this is an exported symbol — it may be invoked via interface/reflection dispatch (e.g. the MCP SDK), not a static call edge. This is not proof the symbol is dead."
 	}
 	return ""
+}
+
+// nameBasedEmptyHint returns a caveat WHEN an empty calls-edge result is for a
+// target in a tree-sitter (name-based) language. Unlike Go's type-resolved
+// edges, those extractors have incomplete recall, so an empty result is not
+// proof that no callers/callees exist — the agent should verify with grep
+// rather than conclude "none". Returns "" when every target is Go, so a Go
+// empty falls through to the exact #485 interface-dispatch hint instead.
+func nameBasedEmptyHint(targets []graphquery.Node, rel string) string {
+	seen := map[string]bool{}
+	var langs []string
+	for _, t := range targets {
+		if l := t.Language(); l != "go" && !seen[l] {
+			seen[l] = true
+			langs = append(langs, l)
+		}
+	}
+	if len(langs) == 0 {
+		return ""
+	}
+	sort.Strings(langs)
+	return fmt.Sprintf("no %s edges found, but %s call-graph edges are name-based (tree-sitter) with incomplete recall — an empty result is not proof there are none. Verify with grep on the symbol name.",
+		rel, strings.Join(langs, "/"))
 }
 
 func isExportedName(name string) bool {

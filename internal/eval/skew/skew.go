@@ -23,7 +23,6 @@
 package skew
 
 import (
-	"encoding/json"
 	"sort"
 
 	"github.com/alehatsman/dex/internal/graph"
@@ -75,7 +74,7 @@ func Compute(view *graphquery.View) Report {
 		if n.Kind != graph.NodeFunction && n.Kind != graph.NodeMethod {
 			continue
 		}
-		lang := nodeLanguage(n)
+		lang := n.Language()
 		a := byLang[lang]
 		if a == nil {
 			a = &acc{comms: map[int]struct{}{}}
@@ -124,21 +123,4 @@ func Compute(view *graphquery.View) Report {
 		return a.Language < b.Language
 	})
 	return rep
-}
-
-// nodeLanguage reports a node's source language using the same convention as
-// the package-graph tool: tree-sitter extractors stamp Metadata["language"];
-// the Go extractor leaves it absent. So no metadata / no "language" key → Go.
-func nodeLanguage(n graphquery.Node) string {
-	if len(n.MetadataJSON) == 0 {
-		return "go"
-	}
-	var md map[string]any
-	if err := json.Unmarshal(n.MetadataJSON, &md); err != nil {
-		return "go"
-	}
-	if lang, ok := md["language"].(string); ok && lang != "" {
-		return lang
-	}
-	return "go"
 }

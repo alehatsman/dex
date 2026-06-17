@@ -744,7 +744,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
 				"who calls it), 'callees' (what it calls), or 'path' (shortest call route to the `to` symbol). " +
-				"Go-only for now; other languages fall back to ripgrep via `ask`. Accepts a bare name ('Foo'), " +
+				"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
+				"recall, so an empty result there is not proof of none — verify with grep. Accepts a bare name ('Foo'), " +
 				"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
 				"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
 		}, traceHandler(h))
@@ -939,7 +940,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"sibling `tests` (foo.go ↔ foo_test.go) and `nearest_doc` (closest CLAUDE.md / doc.go / README.md walking " +
 			"up); editing_context adds `last_commit` / `last_author` (git blame) and `owners` (CODEOWNERS); architecture " +
 			"and editing_context add `build_tags` and `package`. `references` carries the `calls` graph edges for " +
-			"callers/callees intents (Go-only; other languages fall back to a ripgrep usage list). Inline content " +
+			"callers/callees intents (Go is type-resolved; other languages are name-based via tree-sitter, with a ripgrep usage list as backup). Inline content " +
 			"shares ONE per-intent byte pool across both lanes: targeted intents budget ~60 lines / 4 KB per range " +
 			"and ~20 KB total; exploration intents (architecture, package_topology) widen to ~120 lines / 8 KB per " +
 			"range and ~40 KB total. Suggested_reads (~2 targeted / ~5 exploration) are filled first as the curated " +
