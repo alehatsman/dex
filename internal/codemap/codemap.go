@@ -118,17 +118,21 @@ func ShownL0(clusters []Cluster, budget int) []Cluster {
 		return nil
 	}
 
-	var b strings.Builder
-	b.WriteString(l0Header)
+	// Budget against the grouped render, not per-cluster lines: a cluster
+	// whose package is already shown only extends an existing headline, so
+	// collapsing same-package clusters (#569) frees room for more distinct
+	// packages instead of spending a whole slot per Louvain community.
 	shown := make([]Cluster, 0, len(ranked))
 	for _, c := range ranked {
-		line := l0Line(c)
+		candidate := make([]Cluster, len(shown)+1)
+		copy(candidate, shown)
+		candidate[len(shown)] = c
+		rendered := l0Header + strings.Join(groupShownByPkg(candidate), "")
 		// Always show the first cluster; otherwise stop before exceeding budget.
-		if len(shown) > 0 && tokens.Count(b.String()+line) > budget {
+		if len(shown) > 0 && tokens.Count(rendered) > budget {
 			break
 		}
-		b.WriteString(line)
-		shown = append(shown, c)
+		shown = candidate
 	}
 	return shown
 }
@@ -145,8 +149,8 @@ func RenderL0(clusters []Cluster, budget int) string {
 
 	var b strings.Builder
 	b.WriteString(l0Header)
-	for _, c := range shown {
-		b.WriteString(l0Line(c))
+	for _, line := range groupShownByPkg(shown) {
+		b.WriteString(line)
 	}
 	if dropped := len(clusters) - len(shown); dropped > 0 {
 		fmt.Fprintf(&b, "\n…%d more cluster(s). `dex map --cluster <id>` to zoom in.\n", dropped)
@@ -154,17 +158,87 @@ func RenderL0(clusters []Cluster, budget int) string {
 	return b.String()
 }
 
-// l0Line renders one cluster headline for L0.
-func l0Line(c Cluster) string {
-	pkg := dominantPkg(c.Symbols)
-	tops := make([]string, 0, 3)
-	for _, s := range c.Symbols {
-		if len(tops) == 3 {
+// l0RepNoise are low-signal identifiers that make poor cluster representatives
+// — common receivers/locals/error vars that float up by PageRank but tell an
+// agent nothing about what a cluster is (#569). Single- and two-char names are
+// filtered separately by length.
+var l0RepNoise = map[string]bool{
+	"err": true, "ctx": true, "tmp": true, "val": true, "ret": true,
+	"res": true, "out": true, "cur": true, "idx": true, "cnt": true,
+	"buf": true, "msg": true, "req": true, "obj": true,
+}
+
+// topNames picks up to n representative symbol names, best-first by PageRank,
+// skipping low-signal noise (l0RepNoise, ≤2-char names). If filtering leaves
+// fewer than n, it backfills with the skipped names so a cluster of all-short
+// names still shows something rather than nothing.
+func topNames(symbols []Symbol, n int) []string {
+	ranked := append([]Symbol(nil), symbols...)
+	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].PageRank > ranked[j].PageRank })
+
+	tops := make([]string, 0, n)
+	var skipped []string
+	for _, s := range ranked {
+		if len(tops) == n {
 			break
 		}
-		tops = append(tops, shortName(s.QualifiedName))
+		name := shortName(s.QualifiedName)
+		if len(name) <= 2 || l0RepNoise[strings.ToLower(name)] {
+			skipped = append(skipped, name)
+			continue
+		}
+		tops = append(tops, name)
 	}
-	return fmt.Sprintf("- #%d **%s** (%d symbols): %s\n", c.ID, pkg, c.size(), strings.Join(tops, ", "))
+	for _, name := range skipped {
+		if len(tops) == n {
+			break
+		}
+		tops = append(tops, name)
+	}
+	return tops
+}
+
+// l0Line renders one cluster headline for L0 (the single-cluster case of
+// l0Group); ShownL0 uses it to size each cluster against the budget.
+func l0Line(c Cluster) string {
+	return l0Group(dominantPkg(c.Symbols), []Cluster{c})
+}
+
+// l0Group renders one headline for a set of shown clusters that share a
+// dominant package, so a package fragmented across several Louvain communities
+// reads as one line (with every zoomable cluster id) instead of N near-identical
+// rows that crowd out other packages (#569). The single-cluster form is
+// byte-identical to the original l0Line output.
+func l0Group(pkg string, group []Cluster) string {
+	ids := make([]string, 0, len(group))
+	total := 0
+	syms := make([]Symbol, 0)
+	for _, c := range group {
+		ids = append(ids, fmt.Sprintf("#%d", c.ID))
+		total += c.size()
+		syms = append(syms, c.Symbols...)
+	}
+	return fmt.Sprintf("- %s **%s** (%d symbols): %s\n",
+		strings.Join(ids, " "), pkg, total, strings.Join(topNames(syms, 3), ", "))
+}
+
+// groupShownByPkg merges the shown clusters that share a dominant package into
+// one headline each, preserving weight order via first appearance.
+func groupShownByPkg(shown []Cluster) []string {
+	order := []string{}
+	groups := map[string][]Cluster{}
+	for _, c := range shown {
+		pkg := dominantPkg(c.Symbols)
+		if _, ok := groups[pkg]; !ok {
+			order = append(order, pkg)
+		}
+		groups[pkg] = append(groups[pkg], c)
+	}
+	lines := make([]string, 0, len(order))
+	for _, pkg := range order {
+		lines = append(lines, l0Group(pkg, groups[pkg]))
+	}
+	return lines
 }
 
 // RenderL1 renders one cluster in detail: members grouped by package (packages

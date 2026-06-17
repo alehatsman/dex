@@ -43,6 +43,55 @@ func TestRenderL0_LabelsDominantPackage(t *testing.T) {
 	}
 }
 
+func TestRenderL0_CollapsesSamePackageClusters(t *testing.T) {
+	// Two Louvain clusters whose dominant package is the same must read as
+	// one headline (with both zoomable ids), not two near-identical rows
+	// that crowd out other packages (#569).
+	clusters := []Cluster{
+		{ID: 10, Symbols: []Symbol{sym("mcp.Alpha", "func", "internal/mcp", "internal/mcp/a.go", 1, 0.90)}},
+		{ID: 11, Symbols: []Symbol{sym("mcp.Beta", "func", "internal/mcp", "internal/mcp/b.go", 1, 0.80)}},
+		{ID: 12, Symbols: []Symbol{sym("store.Gamma", "func", "internal/store", "internal/store/c.go", 1, 0.50)}},
+	}
+	out := RenderL0(clusters, 1000)
+	if n := strings.Count(out, "internal/mcp"); n != 1 {
+		t.Fatalf("same-package clusters must collapse to one internal/mcp line, got %d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "#10") || !strings.Contains(out, "#11") {
+		t.Fatalf("collapsed line must list every zoomable cluster id:\n%s", out)
+	}
+	if !strings.Contains(out, "internal/store") {
+		t.Fatalf("a distinct package must still appear on its own line:\n%s", out)
+	}
+}
+
+func TestTopNames_FiltersNoiseRepresentatives(t *testing.T) {
+	// err / id float up by PageRank but are useless representatives; the
+	// meaningful names must win even though they rank lower (#569).
+	syms := []Symbol{
+		sym("p.err", "var", "p", "p/x.go", 1, 0.99),
+		sym("p.id", "var", "p", "p/x.go", 2, 0.98),
+		sym("p.Handler", "type", "p", "p/x.go", 3, 0.50),
+		sym("p.Process", "func", "p", "p/x.go", 4, 0.40),
+		sym("p.Resolve", "func", "p", "p/x.go", 5, 0.30),
+	}
+	got := strings.Join(topNames(syms, 3), ",")
+	if got != "Handler,Process,Resolve" {
+		t.Fatalf("noise representatives not filtered: got %q", got)
+	}
+}
+
+func TestTopNames_BackfillsWhenAllNoise(t *testing.T) {
+	// A cluster of only short/noise names should still surface something
+	// rather than an empty representative list.
+	syms := []Symbol{
+		sym("p.err", "var", "p", "p/x.go", 1, 0.9),
+		sym("p.id", "var", "p", "p/x.go", 2, 0.8),
+	}
+	if got := topNames(syms, 3); len(got) != 2 {
+		t.Fatalf("backfill should surface all-noise names rather than nothing: %v", got)
+	}
+}
+
 func TestRenderL0_HonorsBudget(t *testing.T) {
 	// A tiny budget shows at least one cluster and reports the rest dropped.
 	out := RenderL0(sampleClusters(), 1)
