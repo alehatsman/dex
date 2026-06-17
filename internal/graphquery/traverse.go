@@ -85,22 +85,42 @@ func ResolveCallTargets(view *View, name, pkgFilter string) []Node {
 		return out
 	}
 
-	// 3) "pkg.Foo" — split on the last dot and try pkg-tail matching.
-	//    Only attempt when there's exactly one dot and the second
-	//    segment looks like an identifier (no receiver parens).
+	// 3) "X.Foo" — split on the last dot (no receiver parens) and match Foo
+	//    where X is EITHER the package tail ("pkg.Foo") OR the receiver type
+	//    ("Type.Foo" → stored "(*Type).Foo"). The receiver form is what an
+	//    agent reaches for first (Indexer.Run); step 1 already covers the
+	//    literal "(*Type).Foo" QualifiedName (#571).
 	if i := strings.LastIndex(name, "."); i > 0 && !strings.ContainsAny(name, "()*") {
-		pkgTail, bare := name[:i], name[i+1:]
+		qualifier, bare := name[:i], name[i+1:]
 		for _, n := range view.NodesByName[bare] {
-			tail := n.PackagePath
-			if j := strings.LastIndex(tail, "/"); j >= 0 {
-				tail = tail[j+1:]
-			}
-			if tail == pkgTail {
+			if pkgTail(n.PackagePath) == qualifier || receiverType(n.QualifiedName) == qualifier {
 				add(n)
 			}
 		}
 	}
 	return out
+}
+
+// pkgTail returns the last path segment of a package path
+// ("internal/index" → "index").
+func pkgTail(pkgPath string) string {
+	if j := strings.LastIndex(pkgPath, "/"); j >= 0 {
+		return pkgPath[j+1:]
+	}
+	return pkgPath
+}
+
+// receiverType extracts T from a method QualifiedName like "(*T).Foo" or
+// "(T).Foo"; returns "" when qn is not a parenthesized-receiver method.
+func receiverType(qn string) string {
+	if !strings.HasPrefix(qn, "(") {
+		return ""
+	}
+	closeIdx := strings.Index(qn, ")")
+	if closeIdx < 0 {
+		return ""
+	}
+	return strings.TrimPrefix(qn[1:closeIdx], "*")
 }
 
 // BFSPath finds the shortest path from any seed node to any node in dstSet,
