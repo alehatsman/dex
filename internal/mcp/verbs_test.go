@@ -8,7 +8,7 @@ import (
 // powerTools are the granular lanes that #316 story 3 moved behind DEX_EXPERT.
 // They must be absent from the default surface and present once expert is on.
 var powerTools = []string{
-	"lookup", "deps", "callers", "callees", "path",
+	"lookup", "deps",
 	"diff", "clusters", "routes", "smells", "status", "session",
 }
 

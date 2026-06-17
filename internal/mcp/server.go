@@ -53,7 +53,7 @@ Workflow:
 3. Read: read for large files; native Read for small ones
 4. Shell: shell(command) for build/test output
 
-Power lanes (lookup, deps, callers, callees, path, diff, clusters, routes, smells, status, notes, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
+Power lanes (lookup, deps, diff, clusters, routes, smells, status, notes, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
 Start every session by calling ask() with the task description.`
 }
@@ -767,24 +767,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"Pass `path` (relative file inside the project) OR `package` (full package path). " +
 					"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing."),
 			}, h.graphDeps)
-
-			addTool(srv, &sdk.Tool{
-				Name:        "callers",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Return functions that CALL the given symbol, from the static graph's `calls` edges. " +
-					"Go-only for now (Python/JS/Rust callers fall back to ripgrep via `ask`). " +
-					"Accepts a bare name (`Foo`), a qualified method (`(*Server).RunStdio`), or a package-qualified " +
-					"name (`mcp.NewServer`). Multiple matches are returned with their package paths so the agent can " +
-					"disambiguate. Returns 'no-graph' when calls edges haven't been indexed yet."),
-			}, h.graphCallers)
-
-			addTool(srv, &sdk.Tool{
-				Name:        "callees",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Return functions that the given symbol CALLS, from the static graph's `calls` edges. " +
-					"Go-only for now. Same name resolution as `callers`. " +
-					"Returns 'no-graph' when calls edges haven't been indexed yet."),
-			}, h.graphCallees)
+			// callers/callees are not standalone tools — `trace --dir
+			// callers|callees` is the single call-graph entry point (#575).
 		}
 
 		addTool(srv, &sdk.Tool{
@@ -834,16 +818,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
 					"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
 			}, h.smells)
-
-			addTool(srv, &sdk.Tool{
-				Name:        "path",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Find the shortest call/import path between two symbols in the graph. " +
-					"BFS over `calls` and `imports` edges from src to dst. " +
-					"Returns an ordered list of hops (symbol + edge_kind leading into it). " +
-					"Status `no-path` means no route within max_depth (default 8). " +
-					"Requires a graph index (`dex index . --graph=only`)."),
-			}, h.graphPath)
+			// `path` is not a standalone tool — `trace --dir path --to <dst>`
+			// finds the shortest route between two symbols (#575).
 
 			addTool(srv, &sdk.Tool{
 				Name:        "diff",

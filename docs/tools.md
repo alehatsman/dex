@@ -19,7 +19,7 @@ cwd). Over MCP they are tools the agent calls directly.
 | `ls`     | File-tree listing | always |
 | `shell`  | Run a command, return compressed output | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete` facts; high-salience ones auto-inject into `ask` | always |
-| `deps` `callers` `callees` `path` `diff` `clusters` `routes` `smells` `session` | Graph/analysis power lane | graph |
+| `deps` `diff` `clusters` `routes` `smells` `session` | Graph/analysis power lane | graph |
 
 ## Capability-derived exposure
 
@@ -30,13 +30,14 @@ matches the deployment:
 - **Default verbs** (non-weak model): add `map`, `trace`, `impact`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
-- **Power lane** (`lookup`, `deps`, `callers`, `callees`, `path`, `diff`,
-  `clusters`, `routes`, `smells`, `session`): behind `DEX_EXPERT=1`, to
-  keep the everyday agent tool list small. (On the CLI every verb is always
-  available.)
+- **Power lane** (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`,
+  `session`): behind `DEX_EXPERT=1`, to keep the everyday agent tool list small.
+  Call-graph walks (callers/callees/shortest path) are not standalone tools —
+  `trace --dir callers|callees|path` is the single entry point. (On the CLI
+  every verb, plus the full `dex graph <sub>` set, is always available.)
 - **Weak/local model detected**: only the always-on lane is exposed.
 
-This is a flat, prefix-free surface of up to 21 tools — no `category_` prefixes,
+This is a flat, prefix-free surface of up to 18 tools — no `category_` prefixes,
 no tiers.
 
 ## `read` modes

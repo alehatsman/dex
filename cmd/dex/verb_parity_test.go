@@ -22,7 +22,7 @@ func TestMCPToolCLIParity(t *testing.T) {
 	mcpTools := []string{
 		"ask", "find", "lookup", "map", "trace", "impact", "read",
 		"grep", "ls", "shell",
-		"deps", "callers", "callees", "path", "diff", "clusters",
+		"deps", "diff", "clusters",
 		"smells", "routes",
 		"status", "notes", "session",
 	}
