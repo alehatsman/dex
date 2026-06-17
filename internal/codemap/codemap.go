@@ -198,12 +198,6 @@ func topNames(symbols []Symbol, n int) []string {
 	return tops
 }
 
-// l0Line renders one cluster headline for L0 (the single-cluster case of
-// l0Group); ShownL0 uses it to size each cluster against the budget.
-func l0Line(c Cluster) string {
-	return l0Group(dominantPkg(c.Symbols), []Cluster{c})
-}
-
 // l0Group renders one headline for a set of shown clusters that share a
 // dominant package, so a package fragmented across several Louvain communities
 // reads as one line (with every zoomable cluster id) instead of N near-identical
