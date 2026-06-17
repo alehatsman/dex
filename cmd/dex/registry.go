@@ -243,11 +243,6 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagFormat, flagV},
 	},
 	{
-		name: "generate", group: groupBuild, args: "<path> <prompt>",
-		summary: "RAG code generation",
-		flags:   []flagSpec{flagFormat, flagV},
-	},
-	{
 		name: "compact", aliases: []string{"bundle"}, group: groupBuild, args: "<path>",
 		summary: "concatenate indexable files for LLM prompts",
 		flags: []flagSpec{

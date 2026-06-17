@@ -134,7 +134,6 @@ build / maintenance:
                                           skips graph, --graph=only refreshes just the
                                           graph layer. Other flags: -v, --force,
                                           --dry-run, --format=text|json
-  dex generate <path> <prompt>       RAG: top-k chunks → chat endpoint
   dex env                            print effective env-var config with sources
                                           Flags: --all, --doc, -v, --format=text|json
   dex compact <path>                 concatenate indexable files under <path>

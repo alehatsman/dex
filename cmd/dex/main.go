@@ -22,7 +22,6 @@
 //	shell <command...>            Run a command with compressed output (MCP: shell).
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
-//	generate <path> <prompt>      Generate code grounded in the project's index.
 //	env                           Print effective env-var configuration.
 //	compact <path>                Concatenate indexable files for LLM prompts (alias: bundle).
 //	nuke <path>                   Delete the on-disk index for a project.
@@ -113,8 +112,6 @@ func main() {
 		err = cmdLs(ctx, args)
 	case "shell":
 		err = cmdShell(ctx, args)
-	case "generate":
-		err = cmdGenerate(ctx, args)
 	case "env":
 		err = cmdEnv(ctx, args)
 	case "compact", "bundle":
