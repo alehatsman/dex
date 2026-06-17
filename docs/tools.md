@@ -18,7 +18,7 @@ cwd). Over MCP they are tools the agent calls directly.
 | `grep`   | Exact regex over indexed files | always |
 | `ls`     | File-tree listing | always |
 | `shell`  | Run a command, return compressed output | always |
-| `notes`  | Persistent project memory: `add`/`list`/`delete` facts; high-salience ones auto-inject into `ask` | always |
+| `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask` | always |
 | `deps` `diff` `clusters` `routes` `smells` `session` | Graph/analysis power lane | graph |
 
 ## Capability-derived exposure

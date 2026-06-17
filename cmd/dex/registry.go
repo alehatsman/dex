@@ -212,12 +212,12 @@ var verbs = []verbSpec{
 		flags: []flagSpec{flagK, flagFormat, flagV},
 	},
 	{
-		name: "notes", group: groupGraph, args: "add|query|rm|gc",
+		name: "notes", group: groupGraph, args: "add|list|delete|gc",
 		summary: "per-project notes",
 		subs: []subSpec{
 			{"add", "store a fact"},
-			{"query", "list top-k by salience"},
-			{"rm", "delete by id"},
+			{"list", "top-k facts by salience"},
+			{"delete", "delete a fact by id"},
 			{"gc", "decay + consolidate + evict"},
 		},
 		flags: []flagSpec{flagFormat},

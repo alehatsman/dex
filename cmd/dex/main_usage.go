@@ -38,7 +38,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
 
 detail / power lanes:
   dex graph  <sub> [<path>] ...          deps/callers/callees/links/path/diff/clusters
-  dex notes  add|query|rm|gc             per-project notes (MCP: notes)
+  dex notes  add|list|delete|gc          per-project notes (MCP: notes)
   dex status [<path>]                    endpoint health + project stats (alias: index status)
 
 build / maintenance:
@@ -146,12 +146,13 @@ build / maintenance:
                                           engine — no LLM call. Writes to stdout
                                           or --out. Flags: --mode=auto|aggressive|
                                           entropy|terse|off, --ext, --format=text|json
-  dex notes add|query|rm|gc          CLI access to the per-project knowledge
+  dex notes add|list|delete|gc       CLI access to the per-project knowledge
                                           store (MCP: notes). add stores
                                           a fact (--archetype, --confidence),
-                                          query lists top-k by salience (--k),
-                                          rm deletes by id, gc runs decay +
+                                          list shows top-k by salience (--k),
+                                          delete removes by id, gc runs decay +
                                           consolidate + evict (--max-facts).
+                                          query/rm are accepted aliases.
                                           Flags: --format=text|json
   dex nuke   <path>                  delete the on-disk index for a project
                                           (prompts on TTY; pass --yes for scripts)

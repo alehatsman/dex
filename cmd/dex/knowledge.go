@@ -13,33 +13,37 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// cmdKnowledge dispatches `dex notes <add|query|rm>` — CLI access to the
+// cmdKnowledge dispatches `dex notes <add|list|delete|gc>` — CLI access to the
 // per-project knowledge store, which was previously reachable only through the
 // `ctx_knowledge` MCP tool. This lets scripts, CI steps, and commit hooks
-// record and inspect project facts without an MCP session.
+// record and inspect project facts without an MCP session. The verbs match the
+// MCP `notes` tool's action names (#576); `query`/`rm` stay as back-compat
+// aliases for `list`/`delete`.
 func cmdKnowledge(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("notes needs a subcommand: add | query | rm")
+		return fmt.Errorf("notes needs a subcommand: add | list | delete | gc")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "add":
 		return cmdKnowledgeAdd(ctx, rest)
-	case "query", "list":
+	case "list", "query":
 		return cmdKnowledgeQuery(ctx, rest)
-	case "rm", "delete":
+	case "delete", "rm":
 		return cmdKnowledgeRm(ctx, rest)
 	case "gc":
 		return cmdKnowledgeGC(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
   dex notes add [<path>] --archetype A --confidence c <body...>   store a fact
-  dex notes query [<path>] [--k N]                                top-k facts by salience
-  dex notes rm [<path>] <id>                                      delete a fact by id
-  dex notes gc [<path>]                                           decay + consolidate + evict`)
+  dex notes list [<path>] [--k N]                                 top-k facts by salience
+  dex notes delete [<path>] <id>                                  delete a fact by id
+  dex notes gc [<path>]                                           decay + consolidate + evict
+
+  (query/rm are accepted as aliases for list/delete)`)
 		return nil
 	default:
-		return fmt.Errorf("unknown notes subcommand: %s (have: add, query, rm, gc)", sub)
+		return fmt.Errorf("unknown notes subcommand: %s (have: add, list, delete, gc)", sub)
 	}
 }
 
