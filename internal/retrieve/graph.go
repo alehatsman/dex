@@ -3,6 +3,7 @@ package retrieve
 import (
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
@@ -205,17 +206,55 @@ func (e *graphEnricher) packageRollup(pkgs map[string]struct{}) {
 	}
 }
 
-// rollupMembers adds up to limit of pkg's type/function nodes, ranked by
-// PageRank (QualifiedName breaks ties for determinism).
+// rollupNoise are low-signal trailing identifiers that make poor architecture
+// representatives — common unexported helpers/error vars that float up by
+// PageRank but say nothing about a package's shape (#570). All lowercase, so
+// they only ever match unexported symbols. ≤2-char names are dropped by length.
+var rollupNoise = map[string]bool{
+	"err": true, "ctx": true, "tmp": true, "val": true, "ret": true,
+	"res": true, "out": true, "cur": true, "idx": true, "cnt": true,
+	"buf": true, "msg": true, "req": true, "obj": true,
+}
+
+// trailingIdent returns the final identifier of a qualified name, e.g.
+// "(*Server).Run" → "Run", "mcp.writeJSON" → "writeJSON", "DurMS" → "DurMS".
+func trailingIdent(qn string) string {
+	if i := strings.LastIndexAny(qn, "."); i >= 0 && i < len(qn)-1 {
+		return qn[i+1:]
+	}
+	return qn
+}
+
+// rollupMembers adds up to limit of pkg's type/function nodes as the package's
+// architecture representatives. Exported symbols rank first — they are the
+// package's API surface, which is what an architecture/topology view is about;
+// unexported helpers (writeJSON, joinSlice, err) are implementation detail and
+// only fill remaining slots when a package exposes fewer than limit exported
+// symbols (so helper-only packages like main are still represented). Trivial
+// noise names are dropped outright. PageRank then QualifiedName order within
+// each exported/unexported tier keeps the choice deterministic (#570).
 func (e *graphEnricher) rollupMembers(pkg string, limit int) {
 	var members []graphquery.Node
 	for _, n := range e.view.NodesByPackage[pkg] {
 		switch n.Kind {
 		case graph.NodeType, graph.NodeStruct, graph.NodeInterface, graph.NodeFunction:
+			name := trailingIdent(n.QualifiedName)
+			if len(name) <= 2 || rollupNoise[strings.ToLower(name)] {
+				continue
+			}
 			members = append(members, n)
 		}
 	}
+	exported := func(n graphquery.Node) bool {
+		for _, r := range trailingIdent(n.QualifiedName) {
+			return unicode.IsUpper(r)
+		}
+		return false
+	}
 	sort.SliceStable(members, func(i, j int) bool {
+		if ei, ej := exported(members[i]), exported(members[j]); ei != ej {
+			return ei
+		}
 		if members[i].PageRank != members[j].PageRank {
 			return members[i].PageRank > members[j].PageRank
 		}

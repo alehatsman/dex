@@ -114,6 +114,55 @@ func TestEnrichGraphArchitectureRollup(t *testing.T) {
 	}
 }
 
+// TestEnrichGraphArchitecturePrefersExportedReps is the regression for #570:
+// the architecture rollup ranked representatives by raw PageRank, so unexported
+// implementation helpers (writeJSON, err) and trivial names (do) floated up as
+// a package's "shape" instead of its exported API. Exported symbols must win
+// the slots; trivial noise must be dropped; non-noise helpers only backfill.
+func TestEnrichGraphArchitecturePrefersExportedReps(t *testing.T) {
+	nodesByID := map[string]graphquery.Node{}
+	add := func(n graphquery.Node) { nodesByID[n.ID] = n }
+
+	cPkg := graphquery.Node{ID: "c_pkg", Kind: graph.NodePackage, Name: "c", QualifiedName: "internal/c", PackagePath: "internal/c"}
+	server := graphquery.Node{ID: "c_server", Kind: graph.NodeType, QualifiedName: "c.Server", PackagePath: "internal/c", PageRank: 1}
+	writeJSON := graphquery.Node{ID: "c_wj", Kind: graph.NodeFunction, QualifiedName: "c.writeJSON", PackagePath: "internal/c", PageRank: 50}
+	errFn := graphquery.Node{ID: "c_err", Kind: graph.NodeFunction, QualifiedName: "c.err", PackagePath: "internal/c", PageRank: 99}
+	doFn := graphquery.Node{ID: "c_do", Kind: graph.NodeFunction, QualifiedName: "(*c).do", PackagePath: "internal/c", PageRank: 99}
+	for _, n := range []graphquery.Node{cPkg, server, writeJSON, errFn, doFn} {
+		add(n)
+	}
+
+	view := &graphquery.View{
+		NodesByID: nodesByID,
+		NodesByPackage: map[string][]graphquery.Node{
+			"internal/c": {cPkg, server, writeJSON, errFn, doFn},
+		},
+		EdgesByKind: map[graph.EdgeKind][]graphquery.Edge{},
+	}
+
+	gr, ok := EnrichGraph(IntentArchitecture, view, nil, nil)
+	if !ok || gr == nil {
+		t.Fatal("EnrichGraph returned no result for architecture")
+	}
+	present := map[string]bool{}
+	for _, n := range gr.Nodes {
+		present[n.ID] = true
+	}
+
+	if !present[CompactID(server)] {
+		t.Error("exported Server must be kept as a representative even at low PageRank")
+	}
+	if present[CompactID(errFn)] {
+		t.Error("noise 'err' must be dropped from architecture representatives")
+	}
+	if present[CompactID(doFn)] {
+		t.Error("<=2-char 'do' must be dropped from architecture representatives")
+	}
+	if !present[CompactID(writeJSON)] {
+		t.Error("non-noise unexported helper should backfill remaining slots")
+	}
+}
+
 // itoa is a tiny zero-padded int formatter so member IDs sort lexically the
 // same as numerically (f00..f39), keeping the fixture readable.
 func itoa(i int) string {
