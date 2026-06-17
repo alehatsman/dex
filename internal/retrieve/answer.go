@@ -22,10 +22,26 @@ import (
 // the evidence bundle unchanged. A non-unreachable chat error is
 // returned so the caller can note it in a hint.
 
-// answerMaxTokens caps synthesis length. Answers are meant to be a
+// answerTruncatedMarker is appended to a synthesized answer that hit the
+// token ceiling (finish_reason=length), so a mid-sentence cut is never
+// mistaken for a complete answer (#568).
+const answerTruncatedMarker = " […answer truncated at token limit]"
+
+// answerMaxTokensFor caps synthesis length. Answers are meant to be a
 // tight paragraph or two with citations, not an essay — bounding tokens
-// also bounds generation time on the (shared) GPU.
-const answerMaxTokens = 400
+// also bounds generation time on the (shared) GPU. Exploration intents
+// (architecture, package_topology) get a higher ceiling: the caller is
+// forming a mental model and their evidence pool is wider (see
+// InlineCapsFor), so the flat 400-token cap truncated those answers
+// mid-sentence (#568). Targeted intents stay at 400.
+func answerMaxTokensFor(intent string) int {
+	switch intent {
+	case IntentArchitecture, IntentPackageTopology:
+		return 900
+	default:
+		return 400
+	}
+}
 
 // SynthesizeAnswer produces a grounded prose answer from pre-assembled
 // evidence text. It returns ("", "", nil) when synthesis is disabled
@@ -52,7 +68,7 @@ func SynthesizeAnswer(ctx context.Context, client chat.Chatter, cache *AnswerCac
 		{Role: "system", Content: answerSystemPrompt},
 		{Role: "user", Content: buildAnswerUser(question, intent, evidence)},
 	}
-	opts := chat.Options{MaxTokens: answerMaxTokens}
+	opts := chat.Options{MaxTokens: answerMaxTokensFor(intent)}
 
 	var (
 		resp chat.Response
@@ -75,6 +91,16 @@ func SynthesizeAnswer(ctx context.Context, client chat.Chatter, cache *AnswerCac
 	ans := strings.TrimSpace(resp.Content)
 	if ans == "" {
 		return "", "", nil
+	}
+	// A "length" finish means the model hit the token ceiling mid-answer:
+	// the prose just stops, often mid-sentence. Mark it so the caller never
+	// mistakes a truncated lead for a complete one (#568). When streaming,
+	// emit the marker through logTok too so the forwarded output matches.
+	if resp.FinishReason == "length" {
+		ans += answerTruncatedMarker
+		if logTok != nil {
+			logTok(answerTruncatedMarker)
+		}
 	}
 	cache.put(key, ans)
 	return ans, model, nil
