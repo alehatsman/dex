@@ -313,13 +313,16 @@ func printSearchHitResult(status, hint, project string, hits []mcp.SearchHit, ma
 // printContextText emits a human-readable rendering of a ContextOutput.
 // maxBytes limits content display (0 = no limit). Mirrors the layout
 // cmdQuery uses for hits so the two surfaces feel like the same tool.
-func printContextText(out mcp.ContextOutput, maxBytes int) {
+// printContextText renders the bundle. When answerHandled is true the
+// answer was already streamed to stdout by the caller, so the answer
+// block is skipped here to avoid printing it twice.
+func printContextText(out mcp.ContextOutput, maxBytes int, answerHandled bool) {
 	if out.Status != "ok" {
 		printContextError(out)
 		return
 	}
 	printContextHeader(out)
-	if out.Answer != "" {
+	if !answerHandled && out.Answer != "" {
 		if out.AnswerModel != "" {
 			fmt.Printf("answer (%s):\n", out.AnswerModel)
 		}

@@ -60,15 +60,42 @@ func cmdAsk(ctx context.Context, args []string) error {
 	}
 
 	s, _ := newServerFromEnv(base)
-	t0 := time.Now()
-	_, out, err := s.ContextRouter(ctx, mcp.ContextInput{
+	in := mcp.ContextInput{
 		ProjectRoot: p.Root,
 		Question:    question,
 		Intent:      *intent,
 		K:           *k,
 		NoInline:    *noInline,
 		Expand:      *expand,
-	})
+	}
+
+	// Stream the synthesized answer to stdout token-by-token when writing
+	// to an interactive terminal in text mode: the first token lands in
+	// ~300ms instead of blocking ~1.5–3s for the whole answer. Piped and
+	// JSON output stay one-shot so byte output is stable for consumers; a
+	// cache hit skips the sink and the answer is printed below as usual.
+	streaming := (*format == "" || *format == "text") && stdoutIsTTY() && s.ChatClient != nil
+	var streamed strings.Builder
+	var sink func(string)
+	if streaming {
+		model := s.ChatClient.ModelName()
+		first := true
+		sink = func(tok string) {
+			if first {
+				if model != "" {
+					fmt.Printf("answer (%s):\n", model)
+				} else {
+					fmt.Print("answer:\n")
+				}
+				first = false
+			}
+			fmt.Print(tok)
+			streamed.WriteString(tok)
+		}
+	}
+
+	t0 := time.Now()
+	_, out, err := s.ContextRouterStream(ctx, in, sink)
 	elapsed := time.Since(t0)
 	if err != nil {
 		return err
@@ -80,7 +107,19 @@ func cmdAsk(ctx context.Context, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	case "", "text":
-		printContextText(out, *maxContentBytes)
+		// When tokens were streamed, the answer is already on stdout.
+		// Emit any suffix the synthesis layer appended after streaming
+		// (the citation-guard note), then render the rest of the bundle
+		// with the answer block suppressed to avoid a double print.
+		answerHandled := false
+		if streamed.Len() > 0 {
+			if suffix := strings.TrimPrefix(out.Answer, strings.TrimSpace(streamed.String())); suffix != "" && suffix != out.Answer {
+				fmt.Print(suffix)
+			}
+			fmt.Print("\n\n")
+			answerHandled = true
+		}
+		printContextText(out, *maxContentBytes, answerHandled)
 		if *verbose {
 			fmt.Fprintf(os.Stderr, "timing: %dms\n", elapsed.Milliseconds())
 		}

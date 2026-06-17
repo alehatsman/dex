@@ -243,10 +243,25 @@ type ContextOutput struct {
 // ContextRouter is the exported entry point used by the CLI
 // (`dex ask`). It delegates to the MCP-registered handler.
 func (s *Server) ContextRouter(ctx context.Context, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
-	return s.contextRouter(ctx, nil, in)
+	return s.contextRouterStream(ctx, nil, in, nil)
 }
 
+// ContextRouterStream is ContextRouter with a token sink: when tokenSink
+// is non-nil, answer-synthesis tokens are delivered to it as they arrive
+// (the CLI streams them to stdout for a fast first token). A nil sink is
+// identical to ContextRouter.
+func (s *Server) ContextRouterStream(ctx context.Context, in ContextInput, tokenSink func(string)) (*sdk.CallToolResult, ContextOutput, error) {
+	return s.contextRouterStream(ctx, nil, in, tokenSink)
+}
+
+// contextRouter satisfies the toolSurface interface used by tool
+// registration and the HTTP/remote proxies; those paths never stream, so
+// it delegates with a nil sink.
 func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
+	return s.contextRouterStream(ctx, req, in, nil)
+}
+
+func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolRequest, in ContextInput, tokenSink func(string)) (*sdk.CallToolResult, ContextOutput, error) {
 	if strings.TrimSpace(in.Question) == "" {
 		// Empty question = session-start orientation: return the deterministic
 		// L0+L1 map so the agent names the right cluster before any find()
@@ -393,9 +408,20 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	// Synthesize a grounded prose answer from the evidence just
 	// assembled. Best-effort: a missing/unreachable chat client leaves
 	// out.Answer empty and the agent falls back to the evidence bundle.
-	var session *sdk.ServerSession
-	if req != nil {
-		session = req.Session
+	//
+	// An explicit tokenSink (CLI streaming) wins; otherwise, for an MCP
+	// session, tokens stream out as Log notifications. Plain ContextRouter
+	// has neither and synthesizes in one blocking call.
+	logTok := tokenSink
+	if logTok == nil && req != nil && req.Session != nil {
+		session := req.Session
+		logTok = func(tok string) {
+			_ = session.Log(ctx, &sdk.LoggingMessageParams{
+				Level:  "debug",
+				Logger: "dex/ask",
+				Data:   tok,
+			})
+		}
 	}
 	// Loop detection: check after evidence is assembled so a block still
 	// fires even when the question changes but the search pattern repeats.
@@ -403,7 +429,7 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 		return nil, out, nil
 	}
 
-	s.synthesizeAnswer(ctx, session, intent, in.Question, &out)
+	s.synthesizeAnswer(ctx, logTok, intent, in.Question, &out)
 
 	// next_action was built deterministically from suggested_reads[0] before
 	// the answer existed; realign it so it never points away from the file the

@@ -83,6 +83,16 @@ func stdinIsTTY() bool {
 	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
+// stdoutIsTTY reports whether stdout is a character device (terminal).
+// Used to gate answer streaming so piped/redirected output stays one-shot.
+func stdoutIsTTY() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
 // ─── reindex ───────────────────────────────────────────────────────────────
 
 func cmdReindex(ctx context.Context, args []string) error {

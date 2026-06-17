@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/retrieve"
-	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // answerMaxEvidenceBytes caps how much evidence text we feed the chat
@@ -41,27 +40,17 @@ const answerMaxEvidenceBytes = 12 * 1024
 // is wired or no usable evidence text exists. Chat-layer failures are
 // swallowed: a missing answer degrades to the evidence-only bundle.
 //
-// When session is non-nil, tokens are streamed to the client via Log
-// notifications as they arrive, so the agent sees output before the
-// tool call completes.
-func (s *Server) synthesizeAnswer(ctx context.Context, session *sdk.ServerSession, intent, question string, out *ContextOutput) {
+// When logTok is non-nil, tokens are streamed to it as they arrive, so
+// the transport (MCP Log notifications, or the CLI's stdout) sees output
+// before the call completes. A cache hit returns the whole answer at once
+// and never calls logTok.
+func (s *Server) synthesizeAnswer(ctx context.Context, logTok func(string), intent, question string, out *ContextOutput) {
 	if s.ChatClient == nil {
 		return
 	}
 	evidence := buildAnswerEvidence(intent, out)
 	if strings.TrimSpace(evidence) == "" {
 		return
-	}
-
-	var logTok func(string)
-	if session != nil {
-		logTok = func(tok string) {
-			_ = session.Log(ctx, &sdk.LoggingMessageParams{
-				Level:  "debug",
-				Logger: "dex/ask",
-				Data:   tok,
-			})
-		}
 	}
 
 	ans, model, hintErr := retrieve.SynthesizeAnswer(ctx, s.ChatClient, &s.answerCache, intent, question, evidence, logTok)

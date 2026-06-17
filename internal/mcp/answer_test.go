@@ -34,6 +34,58 @@ func TestSynthesizeAnswerPopulatesAnswer(t *testing.T) {
 	}
 }
 
+// fakeStreamChat serves the given tokens as an SSE /v1/chat/completions
+// stream, so GenerateStream (the logTok path) delivers them one by one.
+func fakeStreamChat(t *testing.T, tokens []string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl, _ := w.(http.Flusher)
+		for _, tok := range tokens {
+			b, _ := json.Marshal(map[string]any{
+				"model":   "fake-14b",
+				"choices": []map[string]any{{"delta": map[string]string{"content": tok}}},
+			})
+			_, _ = w.Write([]byte("data: " + string(b) + "\n"))
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+		if fl != nil {
+			fl.Flush()
+		}
+	}))
+}
+
+// TestSynthesizeAnswerStreamsTokens asserts that a non-nil logTok receives
+// the answer token-by-token (the CLI streaming contract, #565) and that the
+// assembled out.Answer begins with the streamed text — the invariant the CLI
+// relies on to print only the post-stream suffix.
+func TestSynthesizeAnswerStreamsTokens(t *testing.T) {
+	tokens := []string{"The ", "debounce ", "lives ", "in ", "internal/watch/watch.go:42."}
+	chatSrv := fakeStreamChat(t, tokens)
+	defer chatSrv.Close()
+	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second)}
+
+	out := &ContextOutput{
+		SuggestedReads: []SuggestedRead{
+			{Path: "internal/watch/watch.go", StartLine: 40, EndLine: 50, Reason: "debounce", Content: "func debounce() {}"},
+		},
+	}
+	var got []string
+	sink := func(tok string) { got = append(got, tok) }
+	s.synthesizeAnswer(context.Background(), sink, retrieve.IntentBehaviorSearch, "where is debounce", out)
+
+	if len(got) <= 1 {
+		t.Fatalf("expected multiple streamed tokens, got %d (%q) — sink not wired to GenerateStream", len(got), got)
+	}
+	streamed := strings.Join(got, "")
+	if !strings.HasPrefix(out.Answer, strings.TrimSpace(streamed)) {
+		t.Errorf("out.Answer %q must begin with streamed text %q", out.Answer, strings.TrimSpace(streamed))
+	}
+}
+
 func TestSynthesizeAnswerNilChatClient(t *testing.T) {
 
 	s := &Server{} // no ChatClient
