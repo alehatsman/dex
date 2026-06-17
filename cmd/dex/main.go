@@ -97,8 +97,6 @@ func main() {
 		err = cmdGraph(ctx, args)
 	case "map":
 		err = cmdMap(ctx, args)
-	case "orient":
-		err = cmdOrient(ctx, args)
 	// Verb front doors (#354/#427) — the CLI verbs share the MCP tool names:
 	// find / lookup / trace / impact (map / read / ask already exist above).
 	case "find":

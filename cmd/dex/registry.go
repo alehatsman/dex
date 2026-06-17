@@ -143,13 +143,8 @@ var verbs = []verbSpec{
 	},
 	{
 		name: "map", group: groupQuery, args: "[--cluster <id>] [<path>]",
-		summary: "deterministic repo orientation map",
+		summary: "deterministic repo orientation: first-touch bundle, or --cluster to zoom",
 		flags:   []flagSpec{{name: "--cluster", desc: "focus a cluster id", arg: true}, flagFormat, flagV},
-	},
-	{
-		name: "orient", group: groupQuery, args: "[<path>]",
-		summary: "fast first-touch orientation digest",
-		flags:   []flagSpec{flagFormat, flagV},
 	},
 	{
 		name: "trace", group: groupQuery, args: "[<path>] <name>",

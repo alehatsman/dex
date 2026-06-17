@@ -25,8 +25,7 @@ func usageConcise() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
 
 verbs (match the MCP tools — run "dex help all" for the full reference):
-  dex map    [--cluster <id>] [<path>]   deterministic repo orientation map (L0/L1)
-  dex orient [<path>]                    fast first-touch orientation digest
+  dex map    [--cluster <id>] [<path>]   repo orientation: first-touch bundle, or --cluster to zoom
   dex find   [<path>] <q...>             semantic + symbol search
   dex lookup [<path>] <name>             exact identifier lookup
   dex read   <file>                      read a file — default raw (no LLM); --mode for views/summary
@@ -114,8 +113,10 @@ query (the CLI verbs share the MCP tool names, #354/#427):
                                           Flags: --k
   dex graph export [<path>]          dump graph_nodes/graph_edges as JSONL
                                           Flags: --output=<dir>
-  dex map [--cluster <id>] [<path>]  deterministic repo orientation map (MCP: map)
-  dex orient [<path>]                fast first-touch orientation digest (MCP: orient)
+  dex map [--cluster <id>] [<path>]  repo orientation (MCP: map). No --cluster: the
+                                          first-touch bundle (L0 overview + a zoom into
+                                          the most-central cluster). --cluster <id>: zoom
+                                          a chosen cluster.
   dex read <file>                    read a file (MCP: read). Modes:
                                           full (default; raw, no LLM), signatures,
                                           aggressive, entropy, auto, and summary

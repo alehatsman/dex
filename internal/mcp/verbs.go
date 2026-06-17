@@ -53,7 +53,7 @@ type MapInput struct {
 type MapOutput struct {
 	Status string `json:"status"` // "ok" | "no-index" | "no-graph" | "not-found" | "error"
 	Hint   string `json:"hint,omitempty"`
-	Zoom   string `json:"zoom,omitempty"` // "l0" | "l1" | "around"
+	Zoom   string `json:"zoom,omitempty"` // "orient" | "l1" | "around"
 	Map    string `json:"map,omitempty"`
 }
 
@@ -122,7 +122,10 @@ func mapVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in Ma
 		}
 		return nil, MapOutput{Status: "ok", Zoom: "l1", Map: codemap.RenderL1(c, in.Budget)}, nil
 	}
-	return nil, MapOutput{Status: "ok", Zoom: "l0", Map: codemap.RenderL0(clusters, in.Budget)}, nil
+	// Default (no cluster): the first-touch orientation bundle — L0 overview plus
+	// an auto-zoom into the most-central cluster (#574, the former `orient`).
+	// RenderOrient defaults the budgets when zero (150 L0, 1000 L1).
+	return nil, MapOutput{Status: "ok", Zoom: "orient", Map: codemap.RenderOrient(clusters, in.Budget, 0)}, nil
 }
 
 // adaptCommunities maps the MCP community projection into the renderer's input.

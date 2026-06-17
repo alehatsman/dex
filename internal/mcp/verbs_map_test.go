@@ -87,14 +87,14 @@ func TestMapVerbDispatch(t *testing.T) {
 		}
 	})
 
-	t.Run("no cluster renders l0 overview", func(t *testing.T) {
+	t.Run("no cluster renders the orient bundle", func(t *testing.T) {
 		fake := &captureCommSurface{Server: stubServer(t), out: okOneCluster}
 		_, out, err := mapVerb(ctx, fake, nil, MapInput{})
 		if err != nil {
 			t.Fatalf("mapVerb: %v", err)
 		}
-		if out.Status != "ok" || out.Zoom != "l0" {
-			t.Errorf("out = {%q, zoom %q}, want {ok, l0}", out.Status, out.Zoom)
+		if out.Status != "ok" || out.Zoom != "orient" {
+			t.Errorf("out = {%q, zoom %q}, want {ok, orient}", out.Status, out.Zoom)
 		}
 	})
 }

@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/alehatsman/dex/internal/codemap"
 	"github.com/alehatsman/dex/internal/mcp"
@@ -14,16 +13,17 @@ import (
 )
 
 // cmdMap renders `dex map` — a deterministic, zero-inference orientation map
-// (epic #316, story 1). With no --cluster it prints L0 (top clusters by
-// PageRank); with --cluster <id> it prints L1 (that cluster in detail). It
-// composes the existing Louvain communities + PageRank already in the graph —
-// no model is called.
+// (epic #316, story 1). With no --cluster it prints the first-touch orientation
+// bundle: the L0 overview (top clusters by PageRank) followed by an L1 zoom into
+// the most-central cluster (#574 — the former `dex orient`). With --cluster <id>
+// it zooms a chosen cluster instead. It composes the Louvain communities +
+// PageRank already in the graph — no model is called.
 func cmdMap(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("map", flag.ContinueOnError)
 	setHelp(fs,
-		"Deterministic repo orientation map: top clusters (L0), one cluster in detail (L1), or a task-focused region (--around / --around-diff).",
+		"Deterministic repo orientation: the first-touch bundle (L0 overview + a zoom into the most-central cluster), one chosen cluster in detail (--cluster), or a task-focused region (--around / --around-diff).",
 		"dex map [--cluster <id>] [--around <symbol>] [--around-diff <ref>] [--budget <tokens>] [flags] [<path>]")
-	cluster := fs.Int("cluster", -1, "zoom into one cluster by id (L1); omit for the repo overview (L0)")
+	cluster := fs.Int("cluster", -1, "zoom into one cluster by id (L1); omit for the first-touch orientation bundle")
 	around := fs.String("around", "", "render the region around a symbol — its callers ∪ callees — instead of the overview")
 	aroundDiff := fs.String("around-diff", "", "render the blast radius of a git diff (the ref to diff against, e.g. HEAD~1)")
 	budget := fs.Int("budget", 0, "token budget (default 150 for L0, 1000 for L1/region)")
@@ -83,16 +83,23 @@ func cmdMap(ctx context.Context, args []string) error {
 			return fmt.Errorf("cluster #%d not found (try `dex map` to list clusters)", *cluster)
 		}
 		if *format == "json" {
-			return printMapJSON("l1", []codemap.Cluster{c})
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]any{"zoom": "l1", "clusters": []codemap.Cluster{c}})
 		}
 		fmt.Print(codemap.RenderL1(c, *budget))
 		return nil
 	}
 
+	// Default (no --cluster): the first-touch orientation bundle — L0 overview
+	// plus an auto-zoom into the most-central cluster. RenderOrient defaults the
+	// budgets when zero (150 for L0, 1000 for the L1 zoom).
 	if *format == "json" {
-		return printMapJSON("l0", clusters)
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{"zoom": "orient", "map": codemap.RenderOrient(clusters, *budget, 0)})
 	}
-	fmt.Print(codemap.RenderL0(clusters, *budget))
+	fmt.Print(codemap.RenderOrient(clusters, *budget, 0))
 	return nil
 }
 
@@ -123,27 +130,6 @@ func findCluster(clusters []codemap.Cluster, id int) (codemap.Cluster, bool) {
 		}
 	}
 	return codemap.Cluster{}, false
-}
-
-// printMapJSON emits the adapted clusters as JSON, sorted by aggregate PageRank
-// for L0 so machine consumers see the same order as the text view.
-func printMapJSON(zoom string, clusters []codemap.Cluster) error {
-	if zoom == "l0" {
-		sort.SliceStable(clusters, func(i, j int) bool {
-			return clusterWeight(clusters[i]) > clusterWeight(clusters[j])
-		})
-	}
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(map[string]any{"zoom": zoom, "clusters": clusters})
-}
-
-func clusterWeight(c codemap.Cluster) float64 {
-	var w float64
-	for _, s := range c.Symbols {
-		w += s.PageRank
-	}
-	return w
 }
 
 // cmdMapAround renders a task-focused region (issue #347, story 5): the

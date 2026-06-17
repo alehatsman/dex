@@ -12,8 +12,8 @@ import (
 // overview plus an L1 zoom into the most-central cluster so an agent names the
 // right package/cluster before any find() — zero inference, byte-stable, so the
 // injected text stays cache-friendly across a session. The bundle is rendered
-// through codemap.RenderOrient, the same path `dex orient` uses, so the CLI and
-// MCP surfaces agree by construction.
+// through codemap.RenderOrient, the same path `dex map` (no --cluster) and the
+// map() tool use, so the CLI and MCP surfaces agree by construction (#574).
 //
 // The community parameters mirror `dex map` (min-members 3, k 50, top-k 25) so
 // orientation, map(), and the nav-bench routing lane all see the same clusters.
