@@ -1,8 +1,15 @@
 # Tools
 
-The CLI verbs and the MCP tool names are identical, so an agent and a human
-share one vocabulary. CLI form: `dex <verb> [path] <args…>` (`path` defaults to
-cwd). Over MCP they are tools the agent calls directly.
+This is the **query/tool contract** — the verbs an agent (over MCP) and a human
+(on the CLI) share. Their names are identical, so the two surfaces speak one
+vocabulary. CLI form: `dex <verb> [path] <args…>` (`path` defaults to cwd); over
+MCP they are tools the agent calls directly.
+
+The CLI *also* carries lifecycle/ops commands that have **no MCP form** and are
+not part of this contract — `index`, `reindex`, `watch`, `serve`, `mcp`,
+`proxy`, `setup`, `doctor`, `config`, `env`, `clone`, `bench`, `compact`,
+`compress`, `hook`. Those build, serve, and maintain the index rather than query
+it; see the README or `dex help all`.
 
 ## Surface
 
@@ -35,6 +42,9 @@ matches the deployment:
   Call-graph walks (callers/callees/shortest path) are not standalone tools —
   `trace --dir callers|callees|path` is the single entry point. (On the CLI
   every verb, plus the full `dex graph <sub>` set, is always available.)
+  Several `dex graph` subcommands are **CLI-only** with no MCP tool —
+  `neighbors`, `packages`, `links`, `backlinks`, `tags`, `cycles`, `export` —
+  so they don't count toward the tool surface above.
 - **Weak/local model detected**: only the always-on lane is exposed.
 
 This is a flat, prefix-free surface of up to 18 tools — no `category_` prefixes,
