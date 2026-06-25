@@ -236,8 +236,14 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			r.ContentLength = int64(len(current))
 		}
 
-		// Everything else — forward verbatim.
-		rp.ServeHTTP(w, r)
+		// Intercept the response body to extract provider-reported token counts
+		// from SSE usage chunks (#57). The tee writer passes all bytes through
+		// unchanged and fires notify once Done() is called.
+		tw := newUsageTeeWriter(w, func(u ProviderUsage) {
+			stats.recordUsage(u)
+		})
+		rp.ServeHTTP(tw, r)
+		tw.Done()
 	})
 
 	// Gate every route (including /stats) behind the proxy token when set.

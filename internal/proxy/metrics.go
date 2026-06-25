@@ -36,6 +36,13 @@ type Stats struct {
 	// has no target.
 	DupReadsInWindow atomic.Int64
 	DupReadTokens    atomic.Int64
+
+	// Provider-reported token counts from SSE usage chunks (#57).
+	InputTokens      atomic.Int64
+	OutputTokens     atomic.Int64
+	CacheReadTokens  atomic.Int64
+	CacheWriteTokens atomic.Int64
+	ReasoningTokens  atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -64,6 +71,13 @@ type Snapshot struct {
 	// dedup pass could reclaim. ~0 here means #562 has no target.
 	DupReadsInWindow int64 `json:"dup_reads_in_window"`
 	DupReadTokens    int64 `json:"dup_read_tokens"`
+
+	// Provider-reported token counts extracted from SSE usage chunks (#57).
+	InputTokens      int64 `json:"input_tokens"`
+	OutputTokens     int64 `json:"output_tokens"`
+	CacheReadTokens  int64 `json:"cache_read_tokens"`
+	CacheWriteTokens int64 `json:"cache_write_tokens"`
+	ReasoningTokens  int64 `json:"reasoning_tokens"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.
@@ -112,6 +126,25 @@ func (s *Stats) recordReReads(r ReReadStats) {
 	}
 }
 
+// recordUsage folds provider-reported SSE token counts into the running totals.
+func (s *Stats) recordUsage(u ProviderUsage) {
+	if u.InputTokens != 0 {
+		s.InputTokens.Add(u.InputTokens)
+	}
+	if u.OutputTokens != 0 {
+		s.OutputTokens.Add(u.OutputTokens)
+	}
+	if u.CacheReadTokens != 0 {
+		s.CacheReadTokens.Add(u.CacheReadTokens)
+	}
+	if u.CacheWriteTokens != 0 {
+		s.CacheWriteTokens.Add(u.CacheWriteTokens)
+	}
+	if u.ReasoningTokens != 0 {
+		s.ReasoningTokens.Add(u.ReasoningTokens)
+	}
+}
+
 // Snapshot returns a consistent point-in-time view of the stats.
 func (s *Stats) Snapshot() Snapshot {
 	before := s.TokensBefore.Load()
@@ -149,5 +182,11 @@ func (s *Stats) Snapshot() Snapshot {
 
 		DupReadsInWindow: s.DupReadsInWindow.Load(),
 		DupReadTokens:    s.DupReadTokens.Load(),
+
+		InputTokens:      s.InputTokens.Load(),
+		OutputTokens:     s.OutputTokens.Load(),
+		CacheReadTokens:  s.CacheReadTokens.Load(),
+		CacheWriteTokens: s.CacheWriteTokens.Load(),
+		ReasoningTokens:  s.ReasoningTokens.Load(),
 	}
 }
