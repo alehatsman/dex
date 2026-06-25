@@ -1,7 +1,7 @@
 package retrieve
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -48,7 +48,15 @@ func FuseWithSymbols(semantic, symbol []store.Hit, n int) []store.Hit {
 	for hk, s := range scores {
 		all = append(all, ranked{hk, s})
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].score > all[j].score })
+	slices.SortStableFunc(all, func(a, b ranked) int {
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
+		}
+		return 0
+	})
 	if len(all) > n {
 		all = all[:n]
 	}

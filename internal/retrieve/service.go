@@ -3,6 +3,7 @@ package retrieve
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 // search lanes need (today just an embedder; the chat/expand backends and
 // caches join as later cuts move in) and exposes the lanes as methods. It
 // is constructed per request by the transport from the server's wired
-// clients — cheap, stateless beyond its backends.
+// clients — cheap beyond the shared RerankCache it may hold.
 type Service struct {
 	// Embed is the embedding backend for the semantic lane. Optional: nil
 	// runs the lane BM25-only (the lean DEX_EMBED_ENGINE=none profile).
@@ -159,6 +160,7 @@ func (svc Service) SemanticLane(ctx context.Context, st store.Searcher, embedTex
 			if errors.Is(err, embed.ErrUnreachable) {
 				return nil, true
 			}
+			slog.Warn("embed error (degrading to BM25-only)", "err", err)
 			return nil, false
 		}
 		queryVec = vecs[0]

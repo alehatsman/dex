@@ -133,11 +133,6 @@ func NewRerankCache(capacity int) *RerankCache {
 	}
 }
 
-func rerankEntryOf(el *list.Element) (*rerankEntry, bool) {
-	e, ok := el.Value.(*rerankEntry)
-	return e, ok
-}
-
 // Get returns the cached scores for key and promotes the entry to most-recent.
 func (c *RerankCache) Get(key string) ([]rerank.Score, bool) {
 	c.mu.Lock()
@@ -147,10 +142,8 @@ func (c *RerankCache) Get(key string) ([]rerank.Score, bool) {
 		return nil, false
 	}
 	c.ll.MoveToFront(el)
-	if e, ok := rerankEntryOf(el); ok {
-		return e.scores, true
-	}
-	return nil, false
+	e := el.Value.(*rerankEntry)
+	return e.scores, true
 }
 
 // Put inserts or refreshes key, evicting the least-recently-used entry when
@@ -159,9 +152,7 @@ func (c *RerankCache) Put(key string, scores []rerank.Score) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.index[key]; ok {
-		if e, ok := rerankEntryOf(el); ok {
-			e.scores = scores
-		}
+		el.Value.(*rerankEntry).scores = scores
 		c.ll.MoveToFront(el)
 		return
 	}
@@ -170,9 +161,7 @@ func (c *RerankCache) Put(key string, scores []rerank.Score) {
 	if c.ll.Len() > c.cap {
 		if oldest := c.ll.Back(); oldest != nil {
 			c.ll.Remove(oldest)
-			if e, ok := rerankEntryOf(oldest); ok {
-				delete(c.index, e.key)
-			}
+			delete(c.index, oldest.Value.(*rerankEntry).key)
 		}
 	}
 }

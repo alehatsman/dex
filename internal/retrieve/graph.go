@@ -1,12 +1,20 @@
 package retrieve
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
+)
+
+// callDirection specifies which side of a calls edge the symbol occupies.
+type callDirection bool
+
+const (
+	callsInbound  callDirection = true  // symbol is destination → walk inbound edges to find callers
+	callsOutbound callDirection = false // symbol is source → walk outbound edges to find callees
 )
 
 // GraphResult is the call-graph neighborhood emitted alongside an ask
@@ -59,8 +67,8 @@ func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols
 		semHits:  semHits,
 		symbols:  symbols,
 		gr:       &GraphResult{Nodes: []GraphNode{}, Edges: []GraphEdge{}},
-		seenNode: map[string]bool{},
-		seenEdge: map[string]bool{},
+		seenNode: map[string]struct{}{},
+		seenEdge: map[string]struct{}{},
 	}
 	e.runForIntent(intent)
 	if len(e.gr.Nodes) == 0 && len(e.gr.Edges) == 0 {
@@ -77,8 +85,8 @@ type graphEnricher struct {
 	semHits  []SemHit
 	symbols  []SymHit
 	gr       *GraphResult
-	seenNode map[string]bool
-	seenEdge map[string]bool
+	seenNode map[string]struct{}
+	seenEdge map[string]struct{}
 }
 
 func (e *graphEnricher) addNode(n graphquery.Node) {
@@ -90,10 +98,10 @@ func (e *graphEnricher) addNode(n graphquery.Node) {
 	if n.Kind == graph.NodeImport && n.QualifiedName != "" {
 		key = "import:" + n.QualifiedName
 	}
-	if e.seenNode[key] || len(e.gr.Nodes) >= MaxGraphNodes {
+	if _, ok := e.seenNode[key]; ok || len(e.gr.Nodes) >= MaxGraphNodes {
 		return
 	}
-	e.seenNode[key] = true
+	e.seenNode[key] = struct{}{}
 	// For imports the compactID already encodes the import path, so
 	// QualifiedName is redundant — drop it on the wire.
 	qname := n.QualifiedName
@@ -120,10 +128,10 @@ func (e *graphEnricher) addEdge(ge graphquery.Edge) {
 	// same dependency on the wire (see addNode), so a raw-ID
 	// dedup leaks duplicates like `src -> fmt` × N.
 	key := from + "|" + string(ge.Kind) + "|" + to
-	if e.seenEdge[key] || len(e.gr.Edges) >= MaxGraphEdges {
+	if _, ok := e.seenEdge[key]; ok || len(e.gr.Edges) >= MaxGraphEdges {
 		return
 	}
-	e.seenEdge[key] = true
+	e.seenEdge[key] = struct{}{}
 	e.gr.Edges = append(e.gr.Edges, GraphEdge{
 		From: from,
 		To:   to,
@@ -185,7 +193,7 @@ func (e *graphEnricher) packageRollup(pkgs map[string]struct{}) {
 	for pkg := range pkgs {
 		ordered = append(ordered, pkg)
 	}
-	sort.Strings(ordered)
+	slices.Sort(ordered)
 
 	// Pass 1: anchor every package node first.
 	for _, pkg := range ordered {
@@ -210,10 +218,10 @@ func (e *graphEnricher) packageRollup(pkgs map[string]struct{}) {
 // representatives — common unexported helpers/error vars that float up by
 // PageRank but say nothing about a package's shape (#570). All lowercase, so
 // they only ever match unexported symbols. ≤2-char names are dropped by length.
-var rollupNoise = map[string]bool{
-	"err": true, "ctx": true, "tmp": true, "val": true, "ret": true,
-	"res": true, "out": true, "cur": true, "idx": true, "cnt": true,
-	"buf": true, "msg": true, "req": true, "obj": true,
+var rollupNoise = map[string]struct{}{
+	"err": {}, "ctx": {}, "tmp": {}, "val": {}, "ret": {},
+	"res": {}, "out": {}, "cur": {}, "idx": {}, "cnt": {},
+	"buf": {}, "msg": {}, "req": {}, "obj": {},
 }
 
 // trailingIdent returns the final identifier of a qualified name, e.g.
@@ -239,7 +247,8 @@ func (e *graphEnricher) rollupMembers(pkg string, limit int) {
 		switch n.Kind {
 		case graph.NodeType, graph.NodeStruct, graph.NodeInterface, graph.NodeFunction:
 			name := trailingIdent(n.QualifiedName)
-			if len(name) <= 2 || rollupNoise[strings.ToLower(name)] {
+			_, inNoise := rollupNoise[strings.ToLower(name)]
+			if len(name) <= 2 || inNoise {
 				continue
 			}
 			members = append(members, n)
@@ -251,14 +260,20 @@ func (e *graphEnricher) rollupMembers(pkg string, limit int) {
 		}
 		return false
 	}
-	sort.SliceStable(members, func(i, j int) bool {
-		if ei, ej := exported(members[i]), exported(members[j]); ei != ej {
-			return ei
+	slices.SortStableFunc(members, func(a, b graphquery.Node) int {
+		if ea, eb := exported(a), exported(b); ea != eb {
+			if ea {
+				return -1
+			}
+			return 1
 		}
-		if members[i].PageRank != members[j].PageRank {
-			return members[i].PageRank > members[j].PageRank
+		if a.PageRank != b.PageRank {
+			if a.PageRank > b.PageRank {
+				return -1
+			}
+			return 1
 		}
-		return members[i].QualifiedName < members[j].QualifiedName
+		return strings.Compare(a.QualifiedName, b.QualifiedName)
 	})
 	if len(members) > limit {
 		members = members[:limit]
@@ -300,10 +315,9 @@ func (e *graphEnricher) importEdgesAmong(pkgs map[string]struct{}) {
 // a meaningful cross-section without burning the budget on one package.
 const architectureAnchorPkgs = 8
 
-// callsExpansion walks the calls-edges in or out of the matched
-// symbols. Direction picks which side the symbol is on:
-// `dst` = callers (edges arriving at the symbol), `src` = callees.
-func (e *graphEnricher) callsExpansion(direction string) {
+// callsExpansion walks the calls-edges in or out of the matched symbols.
+// callsInbound finds callers (symbol is edge destination); callsOutbound finds callees (symbol is edge source).
+func (e *graphEnricher) callsExpansion(direction callDirection) {
 	for _, sym := range e.symbols {
 		lookup := e.view.NodesByQualified[sym.QualifiedName]
 		if len(lookup) == 0 {
@@ -312,7 +326,7 @@ func (e *graphEnricher) callsExpansion(direction string) {
 		for _, n := range lookup {
 			e.addNode(n)
 			edges := e.view.EdgesBySrc[n.ID]
-			if direction == "dst" {
+			if direction == callsInbound {
 				edges = e.view.EdgesByDst[n.ID]
 			}
 			for _, ge := range edges {
@@ -320,7 +334,7 @@ func (e *graphEnricher) callsExpansion(direction string) {
 					continue
 				}
 				peerID := ge.SrcID
-				if direction == "src" {
+				if direction == callsOutbound {
 					peerID = ge.DstID
 				}
 				if peer, ok := e.view.NodesByID[peerID]; ok {
@@ -370,12 +384,12 @@ func (e *graphEnricher) runForIntent(intent string) {
 	case IntentSymbolLookup, IntentEditingContext:
 		e.symbolNeighborhood()
 	case IntentCallers:
-		e.callsExpansion("dst")
+		e.callsExpansion(callsInbound)
 		if len(e.gr.Nodes) == 0 {
 			e.symbolNeighborhood()
 		}
 	case IntentCallees:
-		e.callsExpansion("src")
+		e.callsExpansion(callsOutbound)
 		if len(e.gr.Nodes) == 0 {
 			e.symbolNeighborhood()
 		}

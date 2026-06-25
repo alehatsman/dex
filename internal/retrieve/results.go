@@ -1,7 +1,7 @@
 package retrieve
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/alehatsman/dex/internal/graphquery"
 )
@@ -63,16 +63,19 @@ func PickSuggestedReads(intent string, semHits []SemHit, symbols []SymHit, symbo
 		maxReads = 2
 	}
 
-	seen := map[string]bool{}
+	seen := map[string]struct{}{}
 	out := make([]SuggestedRead, 0, maxReads)
 
 	// Pass 1: symbol definitions for symbol-driven intents.
 	if intent == IntentSymbolLookup || intent == IntentCallers || intent == IntentCallees {
 		for _, sym := range symbols {
-			if sym.Path == "" || seen[sym.Path] {
+			if sym.Path == "" {
 				continue
 			}
-			seen[sym.Path] = true
+			if _, ok := seen[sym.Path]; ok {
+				continue
+			}
+			seen[sym.Path] = struct{}{}
 			out = append(out, SuggestedRead{
 				Path:      sym.Path,
 				StartLine: sym.StartLine,
@@ -123,32 +126,50 @@ func PickSuggestedReads(intent string, semHits []SemHit, symbols []SymHit, symbo
 		}
 		rs = append(rs, r)
 	}
-	sort.SliceStable(rs, func(i, j int) bool {
-		if rs[i].crossLane != rs[j].crossLane {
-			return rs[i].crossLane // cross-lane agreement first
+	slices.SortStableFunc(rs, func(a, b ranked) int {
+		if a.crossLane != b.crossLane {
+			if a.crossLane {
+				return -1 // cross-lane agreement first
+			}
+			return 1
 		}
-		if preferCode && rs[i].nonImpl != rs[j].nonImpl {
-			return !rs[i].nonImpl // implementation beats doc/build
+		if preferCode && a.nonImpl != b.nonImpl {
+			if !a.nonImpl {
+				return -1 // implementation beats doc/build
+			}
+			return 1
 		}
 		if usesCentrality {
 			// scoreBucket groups close cosines so PageRank can flip the
 			// order. 0.05 wide: 0.55 and 0.59 share bucket 11; 0.55 and
 			// 0.60 split into 11/12 and the higher score wins outright.
-			bi, bj := int(rs[i].hit.Score*20), int(rs[j].hit.Score*20)
+			bi, bj := int(a.hit.Score*20), int(b.hit.Score*20)
 			if bi != bj {
-				return bi > bj
+				if bi > bj {
+					return -1
+				}
+				return 1
 			}
-			if rs[i].pageRank != rs[j].pageRank {
-				return rs[i].pageRank > rs[j].pageRank
+			if a.pageRank != b.pageRank {
+				if a.pageRank > b.pageRank {
+					return -1
+				}
+				return 1
 			}
 		}
-		return rs[i].hit.Score > rs[j].hit.Score
+		if a.hit.Score > b.hit.Score {
+			return -1
+		}
+		if a.hit.Score < b.hit.Score {
+			return 1
+		}
+		return 0
 	})
 	for _, r := range rs {
-		if seen[r.hit.Path] {
+		if _, ok := seen[r.hit.Path]; ok {
 			continue
 		}
-		seen[r.hit.Path] = true
+		seen[r.hit.Path] = struct{}{}
 		reason := "top semantic match"
 		if r.crossLane {
 			reason = "semantic match + symbol agreement"
