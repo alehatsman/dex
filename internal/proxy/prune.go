@@ -251,14 +251,6 @@ func buildToolNameMap(messages []json.RawMessage) map[string]string {
 	return m
 }
 
-// rewriteMessage rewrites tool_result blocks in a single message.
-// Returns (rewritten, true) on success; (nil, false) if the message should be
-// left untouched (fail-open).
-func rewriteMessage(raw json.RawMessage, toolNames map[string]string) (json.RawMessage, bool) {
-	out, ok, _ := rewriteMessageWithStats(raw, toolNames, nil)
-	return out, ok
-}
-
 // rewriteMessageWithStats is like rewriteMessage but accumulates stats into st
 // (when non-nil). The third return value is the number of blocks preserved.
 func rewriteMessageWithStats(raw json.RawMessage, toolNames map[string]string, st *PruneHistoryStats) (json.RawMessage, bool, int) {

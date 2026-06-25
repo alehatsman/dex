@@ -14,6 +14,7 @@ import (
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/retrieve"
+	"github.com/alehatsman/dex/internal/slo"
 	"github.com/alehatsman/dex/internal/store"
 	"github.com/alehatsman/dex/internal/throttle"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -257,17 +258,22 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// SLO monitoring: record this tool call and check thresholds.
 	tr := s.sloFor(p.Root)
 	tr.RecordToolCall()
-	if ann := sloAnnotation(tr.Check()); ann != "" {
-		if out.Hint == "" {
-			out.Hint = ann
-		} else {
-			out.Hint += " " + ann
-		}
-	}
+	out.Hint = appendSLOAnnotation(out.Hint, tr)
 	// Surface any k override last so it leads the hint and survives the
 	// branch-specific hint assignments above (#543).
 	out.Hint = prependHint(out.Hint, kHint)
 	return nil, out, nil
+}
+
+// appendSLOAnnotation appends any SLO annotation to hint (space-joined).
+func appendSLOAnnotation(hint string, tr *slo.Tracker) string {
+	if ann := sloAnnotation(tr.Check()); ann != "" {
+		if hint == "" {
+			return ann
+		}
+		return hint + " " + ann
+	}
+	return hint
 }
 
 // prependHint puts lead in front of an existing hint (space-joined), returning

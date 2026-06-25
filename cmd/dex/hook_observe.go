@@ -100,7 +100,7 @@ func notifyProxyCompact() {
 		return
 	}
 	compactURL := u.Scheme + "://" + u.Host + "/compact"
-	req, err := http.NewRequest(http.MethodPost, compactURL, nil)
+	req, err := http.NewRequest(http.MethodPost, compactURL, nil) //nolint:gosec // URL built from operator-controlled env var with hardcoded path
 	if err != nil {
 		return
 	}
@@ -108,7 +108,7 @@ func notifyProxyCompact() {
 		req.Header.Set("X-Dex-Proxy-Token", tok)
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // same URL, same rationale
 	if err != nil {
 		return
 	}

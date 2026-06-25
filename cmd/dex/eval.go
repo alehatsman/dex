@@ -75,6 +75,19 @@ Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexin
              DEX_FUSION_ALPHA=0.5    dense weight for FusionLinear (0 < α ≤ 1).
 `
 
+// splitEvalArgs separates the project path (first non-flag arg) from flag args,
+// allowing flags to appear after the positional argument.
+func splitEvalArgs(args []string) (projectPath string, flagArgs []string) {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") || projectPath != "" {
+			flagArgs = append(flagArgs, a)
+		} else {
+			projectPath = a
+		}
+	}
+	return
+}
+
 // goldenPathForMode returns the default golden-set path for a generation mode
 // when no explicit --golden path was given.
 func goldenPathForMode(root, mode string) string {
@@ -113,15 +126,7 @@ func runEval(ctx context.Context, args []string) error {
 	allowIncompat := fs.Bool("allow-incompatible", false, "with --check: compare even when the reference report's experiment manifest (lane/model/mode/k/fusion/query-corpus) is incompatible. Without it, the check fails closed.")
 
 	// Project path is the first non-flag arg; allow flags after it.
-	var projectPath string
-	var flagArgs []string
-	for _, a := range args {
-		if strings.HasPrefix(a, "-") || projectPath != "" {
-			flagArgs = append(flagArgs, a)
-		} else {
-			projectPath = a
-		}
-	}
+	projectPath, flagArgs := splitEvalArgs(args)
 	if projectPath == "" {
 		fs.Usage()
 		return flag.ErrHelp

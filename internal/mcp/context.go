@@ -420,21 +420,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	// Synthesize a grounded prose answer from the evidence just
 	// assembled. Best-effort: a missing/unreachable chat client leaves
 	// out.Answer empty and the agent falls back to the evidence bundle.
-	//
-	// An explicit tokenSink (CLI streaming) wins; otherwise, for an MCP
-	// session, tokens stream out as Log notifications. Plain ContextRouter
-	// has neither and synthesizes in one blocking call.
-	logTok := tokenSink
-	if logTok == nil && req != nil && req.Session != nil {
-		session := req.Session
-		logTok = func(tok string) {
-			_ = session.Log(ctx, &sdk.LoggingMessageParams{
-				Level:  "debug",
-				Logger: "dex/ask",
-				Data:   tok,
-			})
-		}
-	}
+	logTok := resolveLogSink(ctx, tokenSink, req)
 	// Loop detection: check after evidence is assembled so a block still
 	// fires even when the question changes but the search pattern repeats.
 	if blocked := s.applyLoopThrottle(in.Question, &out); blocked {
@@ -459,6 +445,26 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	// already holds.
 	s.applySeenContext(sessionKey(req), &out)
 	return nil, out, nil
+}
+
+// resolveLogSink returns the token sink to use for answer streaming.
+// An explicit sink (CLI path) wins; for MCP sessions the sink wraps
+// session.Log so tokens arrive as Log notifications; otherwise nil.
+func resolveLogSink(ctx context.Context, tokenSink func(string), req *sdk.CallToolRequest) func(string) {
+	if tokenSink != nil {
+		return tokenSink
+	}
+	if req == nil || req.Session == nil {
+		return nil
+	}
+	session := req.Session
+	return func(tok string) {
+		_ = session.Log(ctx, &sdk.LoggingMessageParams{
+			Level:  "debug",
+			Logger: "dex/ask",
+			Data:   tok,
+		})
+	}
 }
 
 // noLaneHits sets out.Status/Hint and returns true when both retrieval lanes

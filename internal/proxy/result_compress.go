@@ -2,11 +2,6 @@ package proxy
 
 import "strings"
 
-// minResultCompressChars is the character threshold below which tool_result
-// content is not considered for preservation checks (already short enough
-// that stub overhead would dominate).
-const minResultCompressChars = 512
-
 // shouldPreserveResult returns true when the tool_result content should be
 // left byte-identical rather than replaced with a stub. Two cases:
 //

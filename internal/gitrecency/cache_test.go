@@ -5,9 +5,33 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+// gitEnv returns os.Environ() with git repo-discovery variables stripped so
+// that an inherited GIT_DIR (injected by pre-push hook children when the test
+// suite runs from a linked worktree) does not override cmd.Dir. See issue #341.
+func gitEnv(extra ...string) []string {
+	leaky := map[string]bool{
+		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
+		"GIT_COMMON_DIR": true, "GIT_OBJECT_DIRECTORY": true,
+	}
+	env := os.Environ()
+	out := make([]string, 0, len(env)+len(extra))
+	for _, kv := range env {
+		k := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			k = kv[:i]
+		}
+		if leaky[k] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, extra...)
+}
 
 // initGitRepo creates a minimal git repo in dir with one committed file
 // at relPath. Returns the commit unix timestamp.
@@ -17,7 +41,7 @@ func initGitRepo(t *testing.T, dir string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
+		cmd.Env = gitEnv(
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@t",
 			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@t",
 			"GIT_AUTHOR_DATE=2020-01-01T00:00:00Z",
@@ -51,7 +75,7 @@ func TestEmptyRootIsNoop(t *testing.T) {
 func TestRecencyBoostDecays(t *testing.T) {
 	// Directly test the decay function without running git.
 	now := time.Now()
-	age0 := now.Sub(now)           // 0 hours
+	age0 := now.Sub(now)                       // 0 hours
 	age48 := now.Add(-48 * time.Hour).Sub(now) // negative, but we negate
 	_ = age0
 	_ = age48
@@ -86,7 +110,7 @@ func TestBonusWithGitRepo(t *testing.T) {
 	run := func(args ...string) {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
+		cmd.Env = gitEnv(
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@t",
 			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@t",
 		)
@@ -95,7 +119,7 @@ func TestBonusWithGitRepo(t *testing.T) {
 		}
 	}
 	run("add", "main.go")
-	run("commit", "-m", "init")
+	run("commit", "--no-verify", "-m", "init")
 
 	// Also leave a file dirty.
 	dirty := filepath.Join(dir, "dirty.go")

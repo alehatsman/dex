@@ -211,9 +211,4 @@ func recentWorkingSet(files []SessionFile, current string, n int) []string {
 	return out
 }
 
-type weightedPath struct {
-	path string
-	w    float64
-}
-
 const coAccessMinWeightStr = "0.05"
