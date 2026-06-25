@@ -3,6 +3,7 @@ package mcp
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alehatsman/dex/internal/compress"
 )
@@ -448,6 +449,36 @@ func TestShellRun_Raw(t *testing.T) {
 	}
 	if !strings.Contains(out.Output, "raw") {
 		t.Fatalf("content missing: %q", out.Output)
+	}
+}
+
+func TestResolveShellTimeout(t *testing.T) {
+	cases := []struct {
+		in   int
+		want time.Duration
+	}{
+		{0, shellTimeout},
+		{-5, shellTimeout},
+		{1, 1 * time.Second},
+		{120, 120 * time.Second},
+		{10_000, shellTimeoutMax}, // clamped
+	}
+	for _, c := range cases {
+		if got := resolveShellTimeout(c.in); got != c.want {
+			t.Errorf("resolveShellTimeout(%d): got %v want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestShellRun_TimeoutSecsHonored(t *testing.T) {
+	s := &Server{}
+	// A 1s timeout against a 5s sleep should trip the 124 exit.
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: "sleep 5", TimeoutSecs: 1, Raw: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.ExitCode != 124 {
+		t.Fatalf("expected timeout exit 124, got %d (output=%q)", out.ExitCode, out.Output)
 	}
 }
 

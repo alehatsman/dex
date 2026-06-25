@@ -304,6 +304,7 @@ func cmdShell(ctx context.Context, args []string) error {
 		"dex shell --raw git status")
 	cwd := fs.String("cwd", "", "working directory (default: current directory)")
 	raw := fs.Bool("raw", false, "skip compression, return full output")
+	timeout := fs.Int("timeout", 0, "per-call timeout in seconds (default 60, max 600; 0 = default)")
 	format := fs.String("format", "text", "output format: text | json")
 	// No reorderFlags here: the command tail may carry its own flags, so we let
 	// flag.Parse stop at the first non-flag token and forward the remainder.
@@ -320,9 +321,10 @@ func cmdShell(ctx context.Context, args []string) error {
 	}
 	s, _ := newServerFromEnv(base)
 	out, err := s.ShellRun(ctx, mcp.ShellInput{
-		Command: strings.Join(rest, " "),
-		Cwd:     *cwd,
-		Raw:     *raw,
+		Command:     strings.Join(rest, " "),
+		Cwd:         *cwd,
+		Raw:         *raw,
+		TimeoutSecs: *timeout,
 	})
 	if err != nil {
 		return err

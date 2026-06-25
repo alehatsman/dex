@@ -34,9 +34,10 @@ func resolveShellInterpreter() string {
 }
 
 type ShellInput struct {
-	Command string `json:"command"`
-	Cwd     string `json:"cwd,omitempty"  jsonschema:"working directory (default: server's cwd)"`
-	Raw     bool   `json:"raw,omitempty"  jsonschema:"skip compression and return full output"`
+	Command     string `json:"command"`
+	Cwd         string `json:"cwd,omitempty"  jsonschema:"working directory (default: server's cwd)"`
+	Raw         bool   `json:"raw,omitempty"  jsonschema:"skip compression and return full output"`
+	TimeoutSecs int    `json:"timeout_secs,omitempty"  jsonschema:"per-call timeout in seconds (default 60, max 600); 0 uses the default"`
 }
 
 type ShellOutput struct {
@@ -47,7 +48,24 @@ type ShellOutput struct {
 	SavedPct      int    `json:"saved_pct,omitempty"`
 }
 
-const shellTimeout = 60 * time.Second
+const (
+	shellTimeout    = 60 * time.Second  // default per-call timeout
+	shellTimeoutMax = 600 * time.Second // upper bound on TimeoutSecs (#24)
+)
+
+// resolveShellTimeout maps the input TimeoutSecs to a concrete duration,
+// clamping to [1s, shellTimeoutMax] and falling back to shellTimeout when the
+// caller passes 0 or a negative value.
+func resolveShellTimeout(secs int) time.Duration {
+	if secs <= 0 {
+		return shellTimeout
+	}
+	d := time.Duration(secs) * time.Second
+	if d > shellTimeoutMax {
+		return shellTimeoutMax
+	}
+	return d
+}
 
 // shellWrappedEnv marks child processes spawned by the shell tool so a nested
 // dex (or another compression wrapper that honors the convention) can detect
@@ -556,7 +574,7 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 		in.Raw = true
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, shellTimeout)
+	ctx, cancel := context.WithTimeout(ctx, resolveShellTimeout(in.TimeoutSecs))
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, shellInterpreter(), "-c", in.Command)
@@ -571,12 +589,18 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 
 	exitCode := 0
 	if runErr != nil {
-		if ee, ok := runErr.(*exec.ExitError); ok {
-			exitCode = ee.ExitCode()
-		} else if ctx.Err() != nil {
+		// Timeout-by-cancel: CommandContext sends SIGKILL, which yields an
+		// ExitError with ExitCode()=-1. Check ctx first so the conventional
+		// 124 surfaces, not the SIGKILL artifact.
+		switch {
+		case ctx.Err() != nil:
 			exitCode = 124
-		} else {
-			exitCode = 1
+		default:
+			if ee, ok := runErr.(*exec.ExitError); ok {
+				exitCode = ee.ExitCode()
+			} else {
+				exitCode = 1
+			}
 		}
 	}
 
