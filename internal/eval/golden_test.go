@@ -7,6 +7,116 @@ import (
 	"testing"
 )
 
+func TestValidateGolden(t *testing.T) {
+	base := GoldenSet{
+		Queries: []GoldenQuery{
+			{ID: "q1", Query: "open store connection", RelevantFiles: []string{"store.go"}},
+			{ID: "q2", Query: "parse config file", RelevantFiles: []string{"config.go", "config_test.go"}},
+		},
+	}
+
+	t.Run("all valid returns unchanged", func(t *testing.T) {
+		got, issues := ValidateGolden(base)
+		if len(issues) != 0 {
+			t.Fatalf("want no issues, got %v", issues)
+		}
+		if len(got.Queries) != 2 {
+			t.Fatalf("want 2 queries, got %d", len(got.Queries))
+		}
+	})
+
+	t.Run("empty ID skipped", func(t *testing.T) {
+		gs := GoldenSet{Queries: []GoldenQuery{
+			{ID: "", Query: "something useful", RelevantFiles: []string{"a.go"}},
+			base.Queries[0],
+		}}
+		got, issues := ValidateGolden(gs)
+		if len(got.Queries) != 1 || got.Queries[0].ID != "q1" {
+			t.Fatalf("expected q1 only, got %+v", got.Queries)
+		}
+		if len(issues) != 1 {
+			t.Fatalf("want 1 issue, got %v", issues)
+		}
+	})
+
+	t.Run("duplicate ID drops second occurrence", func(t *testing.T) {
+		gs := GoldenSet{Queries: []GoldenQuery{
+			base.Queries[0], // q1
+			{ID: "q1", Query: "different query text", RelevantFiles: []string{"other.go"}},
+			base.Queries[1], // q2
+		}}
+		got, issues := ValidateGolden(gs)
+		if len(got.Queries) != 2 {
+			t.Fatalf("want 2 queries, got %d", len(got.Queries))
+		}
+		if got.Queries[0].Query != base.Queries[0].Query {
+			t.Fatalf("first q1 not retained")
+		}
+		if len(issues) != 1 {
+			t.Fatalf("want 1 issue, got %v", issues)
+		}
+	})
+
+	t.Run("empty query text skipped", func(t *testing.T) {
+		gs := GoldenSet{Queries: []GoldenQuery{
+			{ID: "q3", Query: "", RelevantFiles: []string{"a.go"}},
+			base.Queries[0],
+		}}
+		got, issues := ValidateGolden(gs)
+		if len(got.Queries) != 1 {
+			t.Fatalf("want 1 query, got %d", len(got.Queries))
+		}
+		if len(issues) != 1 {
+			t.Fatalf("want 1 issue, got %v", issues)
+		}
+	})
+
+	t.Run("empty relevant_files skipped", func(t *testing.T) {
+		gs := GoldenSet{Queries: []GoldenQuery{
+			{ID: "q4", Query: "do something important", RelevantFiles: nil},
+			base.Queries[0],
+		}}
+		got, issues := ValidateGolden(gs)
+		if len(got.Queries) != 1 {
+			t.Fatalf("want 1 query, got %d", len(got.Queries))
+		}
+		if len(issues) != 1 {
+			t.Fatalf("want 1 issue, got %v", issues)
+		}
+	})
+
+	t.Run("anchor in relevant_files removed", func(t *testing.T) {
+		gs := GoldenSet{Queries: []GoldenQuery{
+			{ID: "q5", Query: "blast radius from anchor.go", Anchor: "anchor.go", RelevantFiles: []string{"anchor.go", "dep.go", "other.go"}},
+		}}
+		got, issues := ValidateGolden(gs)
+		if len(got.Queries) != 1 {
+			t.Fatalf("want 1 query, got %d", len(got.Queries))
+		}
+		for _, f := range got.Queries[0].RelevantFiles {
+			if f == "anchor.go" {
+				t.Fatalf("anchor.go should have been removed from relevant_files")
+			}
+		}
+		if len(issues) != 1 {
+			t.Fatalf("want 1 issue (anchor removed), got %v", issues)
+		}
+	})
+
+	t.Run("anchor is only relevant_file skips query", func(t *testing.T) {
+		gs := GoldenSet{Queries: []GoldenQuery{
+			{ID: "q6", Query: "blast radius single file", Anchor: "only.go", RelevantFiles: []string{"only.go"}},
+		}}
+		got, issues := ValidateGolden(gs)
+		if len(got.Queries) != 0 {
+			t.Fatalf("want 0 queries (only relevant file was anchor), got %d", len(got.Queries))
+		}
+		if len(issues) != 2 { // one for removal, one for skip
+			t.Fatalf("want 2 issues (anchor removed + no relevant_files), got %v", issues)
+		}
+	})
+}
+
 // TestGenerateSubdirRelativePaths is the #285 regression guard: when the gen
 // root is a subdirectory of a larger repo (the corpus index_subdir case), the
 // generated relevant_files must be relative to that subdir (so they match how

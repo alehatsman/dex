@@ -48,6 +48,7 @@ func RunRepo(ctx context.Context, em embed.Embedder, st *store.Store, spec RepoS
 
 	var out []LabeledReport
 	score := func(setLabel string, gs eval.GoldenSet) error {
+		gs, _ = eval.ValidateGolden(gs)
 		if len(gs.Queries) == 0 {
 			return nil // nothing to score (e.g. a repo with no qualifying history)
 		}

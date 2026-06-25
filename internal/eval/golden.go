@@ -214,6 +214,55 @@ func gitOutput(ctx context.Context, root string, args ...string) (string, error)
 	return strings.TrimSpace(string(out)), nil
 }
 
+// ValidateGolden checks gs for structural issues that silently distort metric
+// means: queries with empty RelevantFiles score 0 and inflate the denominator;
+// duplicate IDs break QuerySetSHA256; empty IDs/texts are unscorable. Affected
+// queries are dropped and described in the returned issue list. For blast-radius
+// queries, an anchor present in RelevantFiles is removed (it is excluded from
+// ranked results and can never be "hit").
+func ValidateGolden(gs GoldenSet) (GoldenSet, []string) {
+	var valid []GoldenQuery
+	var issues []string
+	seen := make(map[string]bool)
+	for i, q := range gs.Queries {
+		switch {
+		case q.ID == "":
+			issues = append(issues, fmt.Sprintf("query %d: empty ID, skipping", i))
+			continue
+		case seen[q.ID]:
+			issues = append(issues, fmt.Sprintf("query %q: duplicate ID, skipping duplicate", q.ID))
+			continue
+		case q.Query == "":
+			issues = append(issues, fmt.Sprintf("query %q: empty query text, skipping", q.ID))
+			continue
+		case len(q.RelevantFiles) == 0:
+			issues = append(issues, fmt.Sprintf("query %q: no relevant_files, skipping", q.ID))
+			continue
+		}
+		seen[q.ID] = true
+		if q.Anchor != "" {
+			var clean []string
+			for _, f := range q.RelevantFiles {
+				if f != q.Anchor {
+					clean = append(clean, f)
+				}
+			}
+			if len(clean) < len(q.RelevantFiles) {
+				issues = append(issues, fmt.Sprintf("query %q: anchor %q removed from relevant_files (unreachable in ranked results)", q.ID, q.Anchor))
+				q.RelevantFiles = clean
+			}
+			if len(q.RelevantFiles) == 0 {
+				issues = append(issues, fmt.Sprintf("query %q: no relevant_files remain after anchor removal, skipping", q.ID))
+				continue
+			}
+		}
+		valid = append(valid, q)
+	}
+	out := gs
+	out.Queries = valid
+	return out, issues
+}
+
 // LoadGolden reads a golden set from a JSON file.
 func LoadGolden(path string) (GoldenSet, error) {
 	data, err := os.ReadFile(path)

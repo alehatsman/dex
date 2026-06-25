@@ -153,8 +153,12 @@ func runEval(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("dex bench eval: load golden set: %w\n  (generate one with: dex bench eval %s --gen)", err, projectPath)
 	}
+	gs, valIssues := eval.ValidateGolden(gs)
+	for _, iss := range valIssues {
+		fmt.Fprintf(os.Stderr, "dex bench eval: warning: golden set: %s\n", iss)
+	}
 	if len(gs.Queries) == 0 {
-		return fmt.Errorf("dex bench eval: golden set is empty")
+		return fmt.Errorf("dex bench eval: golden set is empty (0 valid queries)")
 	}
 
 	if _, err := os.Stat(p.DBPath); err != nil {
