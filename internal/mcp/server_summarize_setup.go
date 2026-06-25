@@ -25,16 +25,17 @@ import (
 // contract (no chat model), so it escalates to raw `full`, never an LLM summary
 // (#483).
 func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget, mode string, isLLM bool) (string, bool) {
-	if !bt.shouldForceFull(sessionID, relTarget) || mode == "summary" || mode == "full" {
+	rm := ReadMode(mode)
+	if !bt.shouldForceFull(sessionID, relTarget) || rm.IsComplete() {
 		return mode, isLLM
 	}
-	if mode == "skeleton" {
-		return "full", false
+	if rm == ReadModeSkeleton {
+		return string(ReadModeFull), false
 	}
 	if s.ChatClient != nil {
-		return "summary", true
+		return string(ReadModeSummary), true
 	}
-	return "full", false
+	return string(ReadModeFull), false
 }
 
 // summarizeResolveMode picks the read mode, applying profile defaults and

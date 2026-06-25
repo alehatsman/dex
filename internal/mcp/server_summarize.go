@@ -231,20 +231,21 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		realTarget: realTarget, relTarget: relTarget,
 		sessionID: sessionID, etag: etag, bt: bt, out: out,
 	}
+	rm := ReadMode(mode)
 	switch {
-	case mode == "summary":
+	case rm == ReadModeSummary:
 		result, out, err = s.summarizeModeSummary(w)
-	case strings.HasPrefix(mode, "lines:"):
+	case rm.IsLines():
 		result, out, err = s.summarizeModeLines(w, mode)
-	case mode == "signatures":
+	case rm == ReadModeSignatures:
 		result, out, err = s.summarizeModeSignatures(w)
-	case mode == "map":
+	case rm == ReadModeMap:
 		result, out, err = s.summarizeModeMap(w)
-	case mode == "aggressive":
+	case rm == ReadModeAggressive:
 		result, out, err = s.summarizeModeAggressive(w)
-	case mode == "skeleton":
+	case rm == ReadModeSkeleton:
 		result, out, err = s.summarizeModeSkeleton(w)
-	case mode == "handle":
+	case rm == ReadModeHandle:
 		// Cheapest terminal of the budget downgrade chain (#487): compact
 		// body-handle stub, never a fall-through to the full raw file.
 		result, out, err = s.summarizeModeHandle(w)
@@ -262,7 +263,12 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 // budget-downgrade chain (#487), never a mode an operator selects. `lines` is
 // listed as a stand-in for the `lines:N-M` prefix family.
 func ReadModes() []string {
-	return []string{"full", "signatures", "skeleton", "map", "aggressive", "lines", "summary"}
+	all := AllReadModes()
+	out := make([]string, len(all))
+	for i, m := range all {
+		out[i] = string(m)
+	}
+	return out
 }
 
 // applyExpansionHandle decodes an in.Handle (#344) into a concrete path + line
@@ -295,15 +301,7 @@ func applyExpansionHandle(in SummarizeInput) (SummarizeInput, *SummarizeOutput) 
 // (full raw file) and blowing the token budget (#528). The bare `lines`
 // stand-in is not itself dispatchable — only the `lines:` prefix is.
 func validReadMode(mode string) bool {
-	if strings.HasPrefix(mode, "lines:") || mode == "handle" {
-		return true
-	}
-	for _, m := range ReadModes() {
-		if m != "lines" && m == mode {
-			return true
-		}
-	}
-	return false
+	return ValidReadMode(ReadMode(mode))
 }
 
 // summarizeBatch handles file_view when paths[] is provided.
