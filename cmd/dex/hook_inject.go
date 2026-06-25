@@ -16,7 +16,8 @@ import (
 // hookInject handles UserPromptSubmit. It runs a dex ask query on the prompt
 // and emits {"additionalContext": "..."} so Claude sees relevant file paths
 // before processing the turn. Also prepends a one-time-per-session nudge when
-// routing rules are stale or drifted. Silent on any error.
+// routing rules are stale or drifted, and a per-prompt nudge when dex MCP
+// schemas have not yet been loaded via ToolSearch. Silent on any error.
 func hookInject(ctx context.Context) error {
 	raw := hookReadStdin()
 	if len(raw) == 0 {
@@ -31,6 +32,12 @@ func hookInject(ctx context.Context) error {
 	}
 
 	nudge := rulesNudge()
+	if sn := schemasNudge(); sn != "" {
+		if nudge != "" {
+			nudge += "\n"
+		}
+		nudge += sn
+	}
 
 	// Skip very short prompts (confirmations, "yes", "ok", etc.) — not
 	// worth a round-trip to the index for sub-4-word inputs.
@@ -129,6 +136,29 @@ func rulesNudgeSentinelPath() string {
 		return ""
 	}
 	return filepath.Join(dir, "rules-nudge-sentinel")
+}
+
+// schemasNudge returns a reminder to load dex MCP tool schemas via ToolSearch
+// if they have not been loaded yet this session. It fires on every prompt until
+// hookObserve sees a ToolSearch call and creates the schemas-loaded sentinel.
+// The sentinel expires after 30 minutes so a new session always gets the nudge.
+func schemasNudge() string {
+	sentinel := schemasLoadedSentinelPath()
+	if sentinel == "" {
+		return ""
+	}
+	if fi, err := os.Stat(sentinel); err == nil && time.Since(fi.ModTime()) < 30*time.Minute {
+		return "" // schemas loaded this session
+	}
+	return "[DEX] Schemas not loaded — call ToolSearch(query=\"select:mcp__dex__ask,mcp__dex__shell,mcp__dex__ls,mcp__dex__find,mcp__dex__grep,mcp__dex__read\") as your FIRST action before any other tool call."
+}
+
+func schemasLoadedSentinelPath() string {
+	dir := hookLogDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "schemas-loaded-sentinel")
 }
 
 func buildInjectContext(out mcp.ContextOutput) string {

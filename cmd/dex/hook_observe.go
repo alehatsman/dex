@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const toolSearch = "ToolSearch"
+
 // hookObserve handles PostToolUse, Stop, and PreCompact. It appends a compact
 // event record to $XDG_DATA_HOME/dex/hooks.jsonl. No stdout output.
 func hookObserve() error {
@@ -54,6 +56,19 @@ func hookObserve() error {
 	}
 	defer func() { _ = f.Close() }()
 	_, _ = f.Write(append(line, '\n'))
+
+	// When ToolSearch fires, schemas are now loaded — touch the sentinel so
+	// schemasNudge in hookInject stops firing for the next 30 minutes.
+	if ev.ToolName == toolSearch {
+		if sentinel := schemasLoadedSentinelPath(); sentinel != "" {
+			if mkErr := os.MkdirAll(filepath.Dir(sentinel), 0o755); mkErr == nil {
+				if sf, err := os.OpenFile(sentinel, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); err == nil {
+					_ = sf.Close()
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
