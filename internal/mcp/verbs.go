@@ -185,6 +185,8 @@ type TraceOutput struct {
 	Src       string        `json:"src,omitempty"`     // path
 	Dst       string        `json:"dst,omitempty"`     // path
 	Path      []PathHop     `json:"path,omitempty"`    // path: ordered hops
+	// Risk is set only for direction=callers: Low | Medium | High | Critical.
+	Risk string `json:"risk,omitempty"`
 }
 
 // traceHandler adapts traceVerb to the SDK handler shape, capturing h.
@@ -226,6 +228,7 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 			Project:   out.Project,
 			Targets:   out.Targets,
 			Hits:      out.Hits,
+			Risk:      out.Risk,
 		}, err
 	case "path":
 		if strings.TrimSpace(in.To) == "" {

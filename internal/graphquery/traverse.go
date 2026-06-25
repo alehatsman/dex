@@ -1,11 +1,80 @@
 package graphquery
 
 import (
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
 )
+
+// riskLowMax, riskMediumMax, riskHighMax are the inclusive upper bounds for
+// each risk tier. Override via DEX_RISK_LOW_MAX / DEX_RISK_MEDIUM_MAX /
+// DEX_RISK_HIGH_MAX env vars at process startup.
+var (
+	riskLowMax    = envInt("DEX_RISK_LOW_MAX", 1)
+	riskMediumMax = envInt("DEX_RISK_MEDIUM_MAX", 4)
+	riskHighMax   = envInt("DEX_RISK_HIGH_MAX", 10)
+)
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return def
+}
+
+// RiskLevel classifies a transitive caller count into Low / Medium / High / Critical.
+func RiskLevel(n int) string {
+	switch {
+	case n <= riskLowMax:
+		return "Low"
+	case n <= riskMediumMax:
+		return "Medium"
+	case n <= riskHighMax:
+		return "High"
+	default:
+		return "Critical"
+	}
+}
+
+// TransitiveCallerCount counts the unique callers reachable from seeds up to
+// maxDepth hops via EdgeCalls. Same BFS as ComputeImpact but returns only the
+// count, avoiding the []Reachable allocation.
+func TransitiveCallerCount(view *View, seeds []Node, maxDepth int) int {
+	type item struct {
+		id    string
+		depth int
+	}
+	visited := map[string]bool{}
+	for _, t := range seeds {
+		visited[t.ID] = true
+	}
+	queue := make([]item, 0, len(seeds))
+	for _, t := range seeds {
+		queue = append(queue, item{t.ID, 0})
+	}
+	count := 0
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if cur.depth >= maxDepth {
+			continue
+		}
+		for _, e := range view.EdgesByDst[cur.id] {
+			if e.Kind != graph.EdgeCalls || visited[e.SrcID] {
+				continue
+			}
+			visited[e.SrcID] = true
+			count++
+			queue = append(queue, item{e.SrcID, cur.depth + 1})
+		}
+	}
+	return count
+}
 
 // Hop is one step in a resolved call/import path. Fields mirror the mcp wire
 // type so callers convert directly. EdgeKind names the edge leading into this

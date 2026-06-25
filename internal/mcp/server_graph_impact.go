@@ -49,6 +49,9 @@ type ImpactOutput struct {
 	// codemap's "+N more" tail line: keep the head readable, summarise the
 	// rest instead of dumping it.
 	Elided []DepthElision `json:"elided,omitempty"`
+	// Risk is a four-tier classification of the symbol's edit blast radius:
+	// Low | Medium | High | Critical, derived from a BFS at depth 5.
+	Risk string `json:"risk,omitempty"`
 }
 
 // DepthElision summarises the PageRank tail dropped at one BFS depth.
@@ -140,6 +143,11 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 	kept, elided := capPerDepth(nodes, k)
 	out.Nodes = impactNodesFrom(kept)
 	out.Elided = elided
+
+	// Risk is always computed at depth 5 regardless of the display maxDepth,
+	// so the classification reflects the full transitive blast radius.
+	riskCount := graphquery.TransitiveCallerCount(view, targets, 5)
+	out.Risk = graphquery.RiskLevel(riskCount)
 
 	// #485: a bare total:0 on a live, exported symbol reads as "dead / safe to
 	// delete" — but exported methods are routinely dispatched via an interface

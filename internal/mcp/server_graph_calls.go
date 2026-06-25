@@ -78,6 +78,9 @@ type CallEdgeOutput struct {
 	Project string        `json:"project,omitempty"`
 	Targets []TargetMatch `json:"targets,omitempty"`
 	Hits    []CallSite    `json:"hits"`
+	// Risk is set on callers-direction queries only: Low | Medium | High |
+	// Critical, derived from a BFS at depth 5 over the callers direction.
+	Risk string `json:"risk,omitempty"`
 }
 
 func (s *Server) graphCallers(ctx context.Context, _ *sdk.CallToolRequest, in CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error) {
@@ -254,6 +257,13 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 				out.Hint = h
 			}
 		}
+	}
+
+	// Risk classification is only meaningful for the callers direction — it
+	// answers "how much of the codebase transitively depends on this symbol".
+	if callers {
+		riskCount := graphquery.TransitiveCallerCount(view, targets, 5)
+		out.Risk = graphquery.RiskLevel(riskCount)
 	}
 
 	inlineCallSites(out.Hits, p.Root, in.Verbose)
