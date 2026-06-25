@@ -150,8 +150,6 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 
-	hits = s.applyMultiScaleFilter(ctx, st, p.DBPath, in.Query, hits)
-
 	// Symbol leg: extract identifier tokens from the query, look them up
 	// by exact name, and RRF-fuse with the semantic results. Runs in the
 	// same request with no extra embedding round-trip — FindSymbol is a
@@ -163,7 +161,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			symPool = 15
 		}
 		if symHits := collectSymbolHits(ctx, st, idents, symPool); len(symHits) > 0 {
-			hits = retrieve.FuseWithSymbols(hits, symHits, k)
+			hits = retrieve.FuseWithSymbols(hits, symHits, candidateK)
 		}
 	}
 
@@ -183,6 +181,12 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 	hits = retrieve.RerankECS(hits, sessionTask)
+
+	// Multi-scale TF-IDF path filter — moved here so it runs after the full
+	// fusion+rerank pipeline. Applying it earlier would prune the candidate
+	// pool before symbol fusion and spreading activation, starving both lanes.
+	hits = s.applyMultiScaleFilter(ctx, st, p.DBPath, in.Query, hits)
+
 	s.activityRecord(p.Root, 1)
 
 	// Apply language and path_glob filters post-ranking, then trim to k.
