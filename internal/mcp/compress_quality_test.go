@@ -53,8 +53,8 @@ func TestBounceTracker_SessionIsolation(t *testing.T) {
 
 func TestSelectAffordableMode_NoBudget(t *testing.T) {
 	// No budget = no downgrade.
-	got := selectAffordableMode("full", 10000, 0)
-	if got != "full" {
+	got := selectAffordableMode(ReadModeFull, 10000, 0)
+	if got != ReadModeFull {
 		t.Errorf("want full, got %s", got)
 	}
 }
@@ -64,31 +64,31 @@ func TestSelectAffordableMode_Downgrade(t *testing.T) {
 	// signatures ≈ 10000 * 0.20 = 2000 > 500
 	// map ≈ 10000 * 0.12 = 1200 > 500
 	// handle = 25 ≤ 500
-	got := selectAffordableMode("full", 10000, 500)
-	if got != "handle" {
+	got := selectAffordableMode(ReadModeFull, 10000, 500)
+	if got != ReadModeHandle {
 		t.Errorf("want handle, got %s", got)
 	}
 }
 
 func TestSelectAffordableMode_SkeletonFits(t *testing.T) {
 	// 1000 token file with 300 budget: skeleton ≈ 300 ≤ 300 (fits before signatures).
-	got := selectAffordableMode("full", 1000, 300)
-	if got != "skeleton" {
+	got := selectAffordableMode(ReadModeFull, 1000, 300)
+	if got != ReadModeSkeleton {
 		t.Errorf("want skeleton, got %s", got)
 	}
 }
 
 func TestSelectAffordableMode_SignaturesFits(t *testing.T) {
 	// 1000 token file with 250 budget: skeleton ≈ 300 > 250; signatures ≈ 200 ≤ 250.
-	got := selectAffordableMode("full", 1000, 250)
-	if got != "signatures" {
+	got := selectAffordableMode(ReadModeFull, 1000, 250)
+	if got != ReadModeSignatures {
 		t.Errorf("want signatures, got %s", got)
 	}
 }
 
 func TestViewDowngradeChain(t *testing.T) {
-	chain := viewDowngradeChain("full")
-	if chain[0] != "full" || chain[len(chain)-1] != "handle" {
+	chain := viewDowngradeChain(ReadModeFull)
+	if chain[0] != ReadModeFull || chain[len(chain)-1] != ReadModeHandle {
 		t.Errorf("downgrade chain %v should start with full and end with handle", chain)
 	}
 }

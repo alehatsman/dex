@@ -15,8 +15,8 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func (s *Server) summarizeModeLines(w summarizeWork, mode string) (*sdk.CallToolResult, SummarizeOutput, error) {
-	rest := strings.TrimPrefix(mode, "lines:")
+func (s *Server) summarizeModeLines(w summarizeWork, mode ReadMode) (*sdk.CallToolResult, SummarizeOutput, error) {
+	rest := strings.TrimPrefix(string(mode), "lines:")
 	start, end, ok := summarize.ParseLinesRange(rest)
 	if !ok {
 		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("invalid lines mode %q — expected lines:N-M (e.g. lines:10-40)", w.in.Mode)}, nil

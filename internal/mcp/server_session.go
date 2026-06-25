@@ -231,9 +231,9 @@ func (s *Server) sessionSnapshot(ctx context.Context, st *store.Store, projectRo
 				continue
 			}
 			seen[f.Path] = struct{}{}
-			mode := "signatures"
+			mode := ReadModeSignatures
 			if f.Op == "write" {
-				mode = "map"
+				mode = ReadModeMap
 			}
 			fmt.Fprintf(&b, "```\nread: {\"path\": %q, \"mode\": %q, \"project_root\": %q}\n```\n",
 				f.Path, mode, projectRoot)

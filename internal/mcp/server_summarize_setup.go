@@ -24,46 +24,46 @@ import (
 // modes (full/summary) are left untouched. `skeleton` is deterministic by
 // contract (no chat model), so it escalates to raw `full`, never an LLM summary
 // (#483).
-func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget, mode string, isLLM bool) (string, bool) {
-	rm := ReadMode(mode)
-	if !bt.shouldForceFull(sessionID, relTarget) || rm.IsComplete() {
+func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string, mode ReadMode, isLLM bool) (ReadMode, bool) {
+	if !bt.shouldForceFull(sessionID, relTarget) || mode.IsComplete() {
 		return mode, isLLM
 	}
-	if rm == ReadModeSkeleton {
-		return string(ReadModeFull), false
+	if mode == ReadModeSkeleton {
+		return ReadModeFull, false
 	}
 	if s.ChatClient != nil {
-		return string(ReadModeSummary), true
+		return ReadModeSummary, true
 	}
-	return string(ReadModeFull), false
+	return ReadModeFull, false
 }
 
 // summarizeResolveMode picks the read mode, applying profile defaults and
 // task-aware overrides. The default `full` is raw file content (no LLM); the
 // only LLM path is `summary` (isLLM). The no-chat handling for summary lives
 // in the caller, which degrades it to a `needs-chat` status.
-func (s *Server) summarizeResolveMode(in SummarizeInput) (mode string, isLLM bool) {
-	mode = strings.ToLower(strings.TrimSpace(in.Mode))
-	if mode == "" {
+func (s *Server) summarizeResolveMode(in SummarizeInput) (ReadMode, bool) {
+	raw := strings.ToLower(strings.TrimSpace(in.Mode))
+	if raw == "" {
 		if in.ProjectRoot != "" {
 			if prof := profiles.Active(in.ProjectRoot); prof.Read.DefaultMode != "" {
-				mode = prof.Read.DefaultMode
+				raw = prof.Read.DefaultMode
 			}
 		}
-		if mode == "" {
-			mode = "full"
+		if raw == "" {
+			raw = string(ReadModeFull)
 		}
 	}
-	isLLM = mode == "summary"
+	mode := ReadMode(raw)
+	isLLM := mode == ReadModeSummary
 	// A task hint compresses the raw default toward a structural mode (e.g. a
 	// Generate task → signatures) to save tokens; it never forces the LLM.
-	if in.Task != "" && mode == "full" {
+	if in.Task != "" && mode == ReadModeFull {
 		if override := compress.TaskToMode(in.Task); override != "" {
 			if p2, h2 := s.resolveProject(in.ProjectRoot); h2 == "" {
 				pt := compress.LoadPolicy(p2.CacheDir)
 				override = pt.ChooseMode(compress.IntentFromTask(in.Task), override)
 			}
-			mode = override
+			mode = ReadMode(override)
 		}
 	}
 	return mode, isLLM

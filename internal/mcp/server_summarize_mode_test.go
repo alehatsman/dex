@@ -15,8 +15,8 @@ func TestValidReadMode(t *testing.T) {
 		"handle",
 	}
 	for _, m := range valid {
-		if !validReadMode(m) {
-			t.Errorf("validReadMode(%q) = false, want true", m)
+		if !ValidReadMode(ReadMode(m)) {
+			t.Errorf("ValidReadMode(%q) = false, want true", m)
 		}
 	}
 	invalid := []string{
@@ -28,8 +28,8 @@ func TestValidReadMode(t *testing.T) {
 		"Full", // case-sensitive: resolve lowercases before this check
 	}
 	for _, m := range invalid {
-		if validReadMode(m) {
-			t.Errorf("validReadMode(%q) = true, want false", m)
+		if ValidReadMode(ReadMode(m)) {
+			t.Errorf("ValidReadMode(%q) = true, want false", m)
 		}
 	}
 }

@@ -67,43 +67,43 @@ func (bt *bounceTracker) shouldForceFull(sessionID, path string) bool {
 }
 
 // viewDowngradeChain returns the ordered sequence of modes to try when the
-// requested mode is too expensive. The chain always ends in "handle" which
-// is guaranteed cheap (~25 tokens).
-func viewDowngradeChain(requested string) []string {
+// requested mode is too expensive. The chain always ends in ReadModeHandle
+// which is guaranteed cheap (~25 tokens).
+func viewDowngradeChain(requested ReadMode) []ReadMode {
 	switch requested {
-	case "full":
-		return []string{"full", "skeleton", "signatures", "map", "handle"}
-	case "skeleton":
-		return []string{"skeleton", "signatures", "map", "handle"}
-	case "aggressive":
-		return []string{"aggressive", "signatures", "map", "handle"}
-	case "signatures":
-		return []string{"signatures", "map", "handle"}
-	case "map":
-		return []string{"map", "handle"}
+	case ReadModeFull:
+		return []ReadMode{ReadModeFull, ReadModeSkeleton, ReadModeSignatures, ReadModeMap, ReadModeHandle}
+	case ReadModeSkeleton:
+		return []ReadMode{ReadModeSkeleton, ReadModeSignatures, ReadModeMap, ReadModeHandle}
+	case ReadModeAggressive:
+		return []ReadMode{ReadModeAggressive, ReadModeSignatures, ReadModeMap, ReadModeHandle}
+	case ReadModeSignatures:
+		return []ReadMode{ReadModeSignatures, ReadModeMap, ReadModeHandle}
+	case ReadModeMap:
+		return []ReadMode{ReadModeMap, ReadModeHandle}
 	default:
-		return []string{requested, "handle"}
+		return []ReadMode{requested, ReadModeHandle}
 	}
 }
 
 // estimateModeTokens estimates the token cost of reading a file with the
 // given mode, based on the file's raw token count. Fractions are from
 // empirical lean-ctx ablation / dex compression ratios.
-func estimateModeTokens(fileTokens int, mode string) int {
+func estimateModeTokens(fileTokens int, mode ReadMode) int {
 	switch mode {
-	case "full":
+	case ReadModeFull:
 		return fileTokens
-	case "aggressive":
+	case ReadModeAggressive:
 		return fileTokens * 40 / 100
-	case "skeleton":
+	case ReadModeSkeleton:
 		return fileTokens * 30 / 100
-	case "signatures":
+	case ReadModeSignatures:
 		return fileTokens * 20 / 100
-	case "map":
+	case ReadModeMap:
 		return fileTokens * 12 / 100
 	case "reference":
 		return fileTokens * 5 / 100
-	case "handle":
+	case ReadModeHandle:
 		return 25
 	}
 	return fileTokens
@@ -113,7 +113,7 @@ func estimateModeTokens(fileTokens int, mode string) int {
 // chain that fits within budgetTokens. fileTokens is the file's estimated
 // raw token count. Returns requestedMode unchanged when budgetTokens <= 0
 // (opt-in: callers that don't set a budget get the original behavior).
-func selectAffordableMode(requestedMode string, fileTokens, budgetTokens int) string {
+func selectAffordableMode(requestedMode ReadMode, fileTokens, budgetTokens int) ReadMode {
 	if budgetTokens <= 0 {
 		return requestedMode
 	}
@@ -122,5 +122,5 @@ func selectAffordableMode(requestedMode string, fileTokens, budgetTokens int) st
 			return m
 		}
 	}
-	return "handle"
+	return ReadModeHandle
 }

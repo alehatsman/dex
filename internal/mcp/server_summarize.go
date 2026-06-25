@@ -120,7 +120,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	// loudly: the switch's default arm serves the full raw file, so a typo'd or
 	// CLI-only mode (e.g. "entropy") would silently blow the token budget (#528).
 	// Auto-selected modes come from trusted sources and are always valid.
-	if explicitMode && !validReadMode(mode) {
+	if explicitMode && !ValidReadMode(mode) {
 		return nil, SummarizeOutput{
 			Status: "error",
 			Hint:   fmt.Sprintf("unrecognized read mode %q; valid: %s (use lines:N-M for a line range)", mode, strings.Join(ReadModes(), ", ")),
@@ -152,8 +152,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	{
 		tr := s.sloFor(p.Root)
 		tr.RecordToolCall()
-		if tr.ConsumeThrottle() && mode == "summary" {
-			mode = "signatures"
+		if tr.ConsumeThrottle() && mode == ReadModeSummary {
+			mode = ReadModeSignatures
 			isLLM = false
 		}
 		if blockMsg := sloBlock(tr.Check()); blockMsg != "" {
@@ -225,7 +225,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	// Honor an explicit raw-full or LLM-summary request, and honor any other
 	// explicitly-requested mode (e.g. lines:N-M, signatures) — the shortcut
 	// only applies when the structural mode was auto-selected (#511).
-	if !explicitMode && compress.IsDepsFilename(filepath.Base(realTarget)) && mode != "full" && mode != "summary" {
+	if !explicitMode && compress.IsDepsFilename(filepath.Base(realTarget)) && mode != ReadModeFull && mode != ReadModeSummary {
 		if summary, ok := compress.CompressDepsFile(relTarget, data); ok {
 			out.Status = "ok"
 			out.Etag = etag
@@ -241,25 +241,24 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		realTarget: realTarget, relTarget: relTarget,
 		sessionID: sessionID, etag: etag, bt: bt, out: out,
 	}
-	rm := ReadMode(mode)
 	switch {
-	case rm == ReadModeSummary:
+	case mode == ReadModeSummary:
 		result, out, err = s.summarizeModeSummary(w)
-	case rm.IsLines():
+	case mode.IsLines():
 		result, out, err = s.summarizeModeLines(w, mode)
-	case rm == ReadModeSignatures:
+	case mode == ReadModeSignatures:
 		result, out, err = s.summarizeModeSignatures(w)
-	case rm == ReadModeMap:
+	case mode == ReadModeMap:
 		result, out, err = s.summarizeModeMap(w)
-	case rm == ReadModeAggressive:
+	case mode == ReadModeAggressive:
 		result, out, err = s.summarizeModeAggressive(w)
-	case rm == ReadModeSkeleton:
+	case mode == ReadModeSkeleton:
 		result, out, err = s.summarizeModeSkeleton(w)
-	case rm == ReadModeHandle:
+	case mode == ReadModeHandle:
 		// Cheapest terminal of the budget downgrade chain (#487): compact
 		// body-handle stub, never a fall-through to the full raw file.
 		result, out, err = s.summarizeModeHandle(w)
-	default: // "full" — raw file content, no LLM, no compression.
+	default: // full — raw file content, no LLM, no compression.
 		result, out, err = s.summarizeModeRaw(w)
 	}
 	return
@@ -304,16 +303,6 @@ func applyExpansionHandle(in SummarizeInput) (SummarizeInput, *SummarizeOutput) 
 	return in, nil
 }
 
-// validReadMode reports whether mode is one the Summarize dispatch actually
-// handles: an exact ReadModes() entry, the `lines:N-M` prefix family, or the
-// internal `handle` terminal (#487). It mirrors the dispatch switch so an
-// unrecognized explicit mode errors instead of silently hitting the default arm
-// (full raw file) and blowing the token budget (#528). The bare `lines`
-// stand-in is not itself dispatchable — only the `lines:` prefix is.
-func validReadMode(mode string) bool {
-	return ValidReadMode(ReadMode(mode))
-}
-
 // summarizeBatch handles file_view when paths[] is provided.
 // All files are processed with the same mode in a single call.
 // Go import blocks are deduplicated across files (union emitted once as a shared
@@ -327,7 +316,7 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 	}
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
 	if mode == "" {
-		mode = "signatures"
+		mode = string(ReadModeSignatures)
 	}
 
 	// Stable-first layout: load session-stable file set before the per-file
