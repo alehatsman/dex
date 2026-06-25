@@ -3,8 +3,8 @@ package main
 // `dex proxy` — loopback Anthropic API pass-through (epic #232).
 //
 // Sits between Claude Code and the Anthropic API at ANTHROPIC_BASE_URL and
-// runs each /v1/messages request through history pruning and tool-description
-// compression before forwarding. SSE streaming passes through unbuffered.
+// runs each /v1/messages request through model routing, history pruning, and
+// tool-description compression before forwarding. SSE streaming passes through unbuffered.
 //
 //	export ANTHROPIC_BASE_URL=http://127.0.0.1:8788
 //	dex proxy
@@ -53,6 +53,16 @@ func cmdProxy(ctx context.Context, args []string) error {
 		"Fetch and print a token-savings snapshot from a running proxy, then exit.")
 	toolDescFlag := fs.String("tool-desc", "",
 		"MCP tool-description compression: full|terse|lazy (default full; env DEX_PROXY_TOOL_DESC). Forced full when ENABLE_TOOL_SEARCH is set.")
+	routeModelFlag := fs.String("route-model", "",
+		"Token-count model routing: on|off (default off; env DEX_PROXY_ROUTE_MODEL).")
+	routeLowThreshold := fs.Int("route-low-threshold", 0,
+		"Input tokens below this → route-low-model (default 2000; env DEX_PROXY_ROUTE_LOW_THRESHOLD).")
+	routeLowModel := fs.String("route-low-model", "",
+		"Model for low-token turns (env DEX_PROXY_ROUTE_LOW_MODEL; default claude-haiku-4-5-20251001).")
+	routeMidThreshold := fs.Int("route-mid-threshold", 0,
+		"Input tokens below this → route-mid-model (default 20000; env DEX_PROXY_ROUTE_MID_THRESHOLD).")
+	routeMidModel := fs.String("route-mid-model", "",
+		"Model for mid-token turns (env DEX_PROXY_ROUTE_MID_MODEL; default claude-sonnet-4-6).")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -83,6 +93,8 @@ func cmdProxy(ctx context.Context, args []string) error {
 		toolDescMode = proxy.ToolDescFull
 	}
 
+	routeCfg := parseModelRouteConfig(*routeModelFlag, *routeLowThreshold, *routeLowModel, *routeMidThreshold, *routeMidModel)
+
 	fmt.Printf("dex proxy\n")
 	fmt.Printf("  addr=%s  upstream=%s  auth=%v\n", *addr, *upstream, token != "")
 	fmt.Printf("  wire it up: export ANTHROPIC_BASE_URL=http://%s\n", *addr)
@@ -91,6 +103,13 @@ func cmdProxy(ctx context.Context, args []string) error {
 		fmt.Printf("  auth: clients must send header %s: <DEX_PROXY_TOKEN>\n", proxy.ProxyTokenHeader)
 	}
 	fmt.Printf("  tool-desc: %s\n", toolDescMode)
+	if routeCfg.Enabled {
+		fmt.Printf("  route-model: on  low<%d→%s  mid<%d→%s\n",
+			routeCfg.LowThreshold, routeCfg.LowModel,
+			routeCfg.MidThreshold, routeCfg.MidModel)
+	} else {
+		fmt.Printf("  route-model: off\n")
+	}
 	fmt.Printf("  stats: dex proxy --stats\n")
 
 	return proxy.Run(ctx, proxy.Options{
@@ -99,7 +118,48 @@ func cmdProxy(ctx context.Context, args []string) error {
 		Logger:       cliLogger(),
 		Token:        token,
 		ToolDescMode: toolDescMode,
+		RouteConfig:  routeCfg,
 	})
+}
+
+// parseModelRouteConfig builds a ModelRouteConfig from flags + env. Flags take
+// precedence; env vars fill in unset values; hard-coded defaults apply last.
+func parseModelRouteConfig(routeModel string, lowThr int, lowModel string, midThr int, midModel string) proxy.ModelRouteConfig {
+	raw := strings.TrimSpace(routeModel)
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("DEX_PROXY_ROUTE_MODEL"))
+	}
+	if strings.ToLower(raw) != "on" {
+		return proxy.ModelRouteConfig{}
+	}
+
+	if lowThr == 0 {
+		lowThr = envInt("DEX_PROXY_ROUTE_LOW_THRESHOLD", 2000)
+	}
+	if lowModel == "" {
+		if v := strings.TrimSpace(os.Getenv("DEX_PROXY_ROUTE_LOW_MODEL")); v != "" {
+			lowModel = v
+		} else {
+			lowModel = "claude-haiku-4-5-20251001"
+		}
+	}
+	if midThr == 0 {
+		midThr = envInt("DEX_PROXY_ROUTE_MID_THRESHOLD", 20000)
+	}
+	if midModel == "" {
+		if v := strings.TrimSpace(os.Getenv("DEX_PROXY_ROUTE_MID_MODEL")); v != "" {
+			midModel = v
+		} else {
+			midModel = "claude-sonnet-4-6"
+		}
+	}
+	return proxy.ModelRouteConfig{
+		Enabled:      true,
+		LowThreshold: lowThr,
+		LowModel:     lowModel,
+		MidThreshold: midThr,
+		MidModel:     midModel,
+	}
 }
 
 // printProxyStats fetches the /stats snapshot from a running proxy and prints it.
@@ -111,7 +171,7 @@ func printProxyStats(ctx context.Context, addr, token string) error {
 
 	pct := snap.CompressionRatio * 100
 	fmt.Fprintf(os.Stdout, "dex proxy stats  addr=%s\n", addr)
-	fmt.Fprintf(os.Stdout, "  requests : %d total, %d compressed\n", snap.RequestsTotal, snap.RequestsCompressed)
+	fmt.Fprintf(os.Stdout, "  requests : %d total, %d compressed, %d routed\n", snap.RequestsTotal, snap.RequestsCompressed, snap.RequestsRouted)
 	fmt.Fprintf(os.Stdout, "  tokens   : %d before → %d after  (%d saved, %.1f%%)\n",
 		snap.TokensBefore, snap.TokensAfter, snap.TokensSaved, pct)
 	fmt.Fprintf(os.Stdout, "  re-reads : %d files re-read after prune  (%d tokens re-fetched)\n",

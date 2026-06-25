@@ -50,7 +50,7 @@ func countBodyTokens(body []byte) int64 {
 // logRequestMetrics emits a single structured log line with token before/after
 // counts and which compression paths fired. Bodies are never logged — only
 // counts and path labels, per the no-body-logging posture.
-func logRequestMetrics(logger *slog.Logger, r *http.Request, finalBody []byte, before, after int64, paths []string, cache CacheStats, toolDesc ToolDescStats, reReads ReReadStats) {
+func logRequestMetrics(logger *slog.Logger, r *http.Request, finalBody []byte, before, after int64, paths []string, cache CacheStats, toolDesc ToolDescStats, reReads ReReadStats, route ModelRouteStats) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			logger.Warn("dex proxy: metrics log panicked; forwarding unaffected", "recover", rec)
@@ -92,6 +92,9 @@ func logRequestMetrics(logger *slog.Logger, r *http.Request, finalBody []byte, b
 	}
 	if model != "" {
 		attrs = append(attrs, "model", model, "messages", msgCount)
+	}
+	if route.Applied {
+		attrs = append(attrs, "route_requested", route.RequestedModel, "route_reason", route.Reason)
 	}
 	logger.Info("dex proxy request", attrs...)
 }

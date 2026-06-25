@@ -215,7 +215,7 @@ func TestToolDescCompressionIntegration(t *testing.T) {
 
 	var logs strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescLazy))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescLazy, ModelRouteConfig{}))
 	t.Cleanup(front.Close)
 
 	schema := map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}}

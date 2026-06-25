@@ -3,6 +3,7 @@
 // It sits between Claude Code and the Anthropic API at ANTHROPIC_BASE_URL,
 // running each /v1/messages request through deterministic passes that leave
 // tool_result CONTENT untouched — the model always sees verbatim tool output:
+//  0. RouteModel — rewrites the "model" field based on input token count (opt-in).
 //  1. PruneRequestBody — rewrites old tool_result blocks (outside keep_recent)
 //     to compact re-read stubs; recent results pass through verbatim (#357).
 //  2. tool-description compression + cache-breakpoint alignment.
@@ -60,6 +61,10 @@ type Options struct {
 	// rewritten in flight (see toolcompress.go). Zero value is ToolDescFull
 	// (no-op), the conservative default.
 	ToolDescMode ToolDescMode
+	// RouteConfig drives token-count-based model routing (see modelroute.go).
+	// Zero value (Enabled:false) disables routing — requests pass through with
+	// the model field untouched.
+	RouteConfig ModelRouteConfig
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -86,7 +91,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -147,7 +152,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 // newProxyHandler builds the mux:
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -195,6 +200,16 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			current := body
 			var paths []string
 
+			// Model routing runs first so that subsequent passes (pruning,
+			// cache alignment) use the model-specific floors of the routed
+			// model, not the originally-requested one.
+			routed, routeStats := RouteModel(current, int(before), routeCfg)
+			if routeStats.Applied {
+				current = routed
+				paths = append(paths, "route:"+routeStats.RoutedModel)
+			}
+			stats.recordRoute(routeStats)
+
 			// Over-pruning signal (#561): measured on the ORIGINAL body, where
 			// the client still re-sends both the old and the re-read copies of a
 			// file. Pure measurement — does not alter pruning.
@@ -230,7 +245,7 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			stats.record(before, after)
 			stats.recordCache(cacheStats)
 			stats.recordToolDesc(toolDescStats)
-			logRequestMetrics(logger, r, current, before, after, paths, cacheStats, toolDescStats, reReads)
+			logRequestMetrics(logger, r, current, before, after, paths, cacheStats, toolDescStats, reReads, routeStats)
 
 			r.Body = io.NopCloser(bytes.NewReader(current))
 			r.ContentLength = int64(len(current))

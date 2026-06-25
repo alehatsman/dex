@@ -43,6 +43,9 @@ type Stats struct {
 	CacheReadTokens  atomic.Int64
 	CacheWriteTokens atomic.Int64
 	ReasoningTokens  atomic.Int64
+
+	// Model routing counters: requests where the model field was rewritten.
+	RequestsRouted atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -78,6 +81,9 @@ type Snapshot struct {
 	CacheReadTokens  int64 `json:"cache_read_tokens"`
 	CacheWriteTokens int64 `json:"cache_write_tokens"`
 	ReasoningTokens  int64 `json:"reasoning_tokens"`
+
+	// Model routing: requests where the model field was rewritten by the proxy.
+	RequestsRouted int64 `json:"requests_routed"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.
@@ -109,6 +115,13 @@ func (s *Stats) recordToolDesc(t ToolDescStats) {
 	if t.Applied {
 		s.RequestsToolDescCompressed.Add(1)
 		s.ToolDescsCompressed.Add(int64(t.ToolsCompressed))
+	}
+}
+
+// recordRoute folds one request's model-routing outcome into the totals.
+func (s *Stats) recordRoute(r ModelRouteStats) {
+	if r.Applied {
+		s.RequestsRouted.Add(1)
 	}
 }
 
@@ -188,5 +201,7 @@ func (s *Stats) Snapshot() Snapshot {
 		CacheReadTokens:  s.CacheReadTokens.Load(),
 		CacheWriteTokens: s.CacheWriteTokens.Load(),
 		ReasoningTokens:  s.ReasoningTokens.Load(),
+
+		RequestsRouted: s.RequestsRouted.Load(),
 	}
 }
