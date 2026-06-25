@@ -21,6 +21,7 @@ it; see the README or `dex help all`.
 | `map`    | Deterministic repo orientation map | always |
 | `trace`  | Call graph: `--dir callers\|callees\|path` | graph |
 | `impact` | Transitive caller blast-radius | graph |
+| `locate` | One-call orientation around `ref` (`path:line`) / `symbol` / `frame`: callers, sibling tests, nearest doc, last commit, related notes | always (callers need graph) |
 | `read`   | Read a file (see modes below) | always (`summary` needs chat) |
 | `grep`   | Exact regex over indexed files | always |
 | `ls`     | File-tree listing | always |
@@ -34,7 +35,7 @@ A tool is registered only when the backend it needs is available, so the surface
 matches the deployment:
 
 - **Always on** (no models at all): `ask`, `grep`, `ls`, `shell`.
-- **Default verbs** (non-weak model): add `map`, `trace`, `impact`, `read`, `notes`.
+- **Default verbs** (non-weak model): add `map`, `trace`, `impact`, `locate`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
 - **Power lane** (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`,

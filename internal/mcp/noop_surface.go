@@ -23,6 +23,9 @@ func (n *noopSurface) err() error { return errors.New(n.unavailMsg) }
 func (n *noopSurface) contextRouter(_ context.Context, _ *sdk.CallToolRequest, _ ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
 	return nil, ContextOutput{}, n.err()
 }
+func (n *noopSurface) locate(_ context.Context, _ *sdk.CallToolRequest, _ LocateInput) (*sdk.CallToolResult, LocateOutput, error) {
+	return nil, LocateOutput{}, n.err()
+}
 func (n *noopSurface) search(_ context.Context, _ *sdk.CallToolRequest, _ SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	return nil, SearchOutput{}, n.err()
 }

@@ -662,6 +662,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 // shared Input type, so both backends advertise byte-identical tools.
 type toolSurface interface {
 	contextRouter(context.Context, *sdk.CallToolRequest, ContextInput) (*sdk.CallToolResult, ContextOutput, error)
+	locate(context.Context, *sdk.CallToolRequest, LocateInput) (*sdk.CallToolResult, LocateOutput, error)
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
 	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
 	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
@@ -792,6 +793,23 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"Use before editing a widely-called symbol to gauge the ripple. " +
 				"Same name resolution as `trace`. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphImpact)
+
+		// locate is in the default lane (#636 / GitHub #65 S1): one-call
+		// orientation around a code location. It composes the everyday lanes
+		// (resolve → callers → tests → nearest doc → churn → notes) that an
+		// agent otherwise stitches together by hand dozens of times a session.
+		addTool(srv, &sdk.Tool{
+			Name:        "locate",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("One-call orientation around a code location. Give any one of `ref` " +
+				"('path:line'), `symbol` (a name), or `frame` (a raw stack-trace line) and locate resolves " +
+				"the enclosing symbol, then returns its callers (+ risk tier), sibling test files, the nearest " +
+				"doc (CLAUDE.md/doc.go/README.md walking up), the file's last commit + author, and related " +
+				"project notes — in one response. Pass `issues: true` to also list matching open GitHub issues " +
+				"via `gh` (best-effort). Pure composition over the index; needs no chat model. Degrades cleanly: " +
+				"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
+				"Use this BEFORE fanning out trace/find/read to orient on a path:line, symbol, or panic frame."),
+		}, h.locate)
 
 		// notes is in the default lane (#548): persistent project memory is the
 		// highest-leverage saver of repeat exploration, and the read path (facts
