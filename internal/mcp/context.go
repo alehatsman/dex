@@ -273,8 +273,20 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		return nil, ContextOutput{Status: "error", Hint: hint}, nil
 	}
 
+	// Repetition guard: at 7+ identical asks skip the expensive search+LLM
+	// pipeline and return just the hint. At 4–6, continue but annotate.
+	if throttleHint, earlyReturn := s.searchThrottleHint(in.Question, p.Root); earlyReturn {
+		return nil, ContextOutput{Status: "ok", Project: p.Root, Hint: throttleHint}, nil
+	} else if throttleHint != "" {
+		// Pre-set hint; activityNudge will be skipped below in favour of this.
+		hint = throttleHint
+	}
+
 	intent, candidates := retrieve.ResolveIntent(in.Question, in.Intent)
 	out := ContextOutput{Project: p.Root, Intent: intent}
+	if hint != "" {
+		out.Hint = hint
+	}
 
 	if _, err := os.Stat(p.DBPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
