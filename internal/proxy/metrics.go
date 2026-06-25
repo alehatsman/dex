@@ -46,6 +46,10 @@ type Stats struct {
 
 	// Model routing counters: requests where the model field was rewritten.
 	RequestsRouted atomic.Int64
+
+	// Edit-fail-after-read counter (#58): how many times a compressed file read
+	// in the old region was followed by a failed Edit on the same path.
+	EditFails atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -84,6 +88,9 @@ type Snapshot struct {
 
 	// Model routing: requests where the model field was rewritten by the proxy.
 	RequestsRouted int64 `json:"requests_routed"`
+
+	// Edit-fail counter (#58): compressed reads followed by Edit failures.
+	EditFails int64 `json:"edit_fails"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.
@@ -136,6 +143,19 @@ func (s *Stats) recordReReads(r ReReadStats) {
 	if r.DupReadsInWindow > 0 {
 		s.DupReadsInWindow.Add(int64(r.DupReadsInWindow))
 		s.DupReadTokens.Add(int64(r.DupReadTokens))
+	}
+}
+
+// recordEditFails folds one request's edit-fail signal into the totals and
+// invokes hook (when non-nil) for each path that triggered the signal.
+func (s *Stats) recordEditFails(ef EditFailStats, hook func(string)) {
+	if ef.EditFails > 0 {
+		s.EditFails.Add(int64(ef.EditFails))
+	}
+	if hook != nil {
+		for _, p := range ef.Paths {
+			hook(p)
+		}
 	}
 }
 
@@ -203,5 +223,7 @@ func (s *Stats) Snapshot() Snapshot {
 		ReasoningTokens:  s.ReasoningTokens.Load(),
 
 		RequestsRouted: s.RequestsRouted.Load(),
+
+		EditFails: s.EditFails.Load(),
 	}
 }
