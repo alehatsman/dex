@@ -68,6 +68,8 @@ func cmdProxy(ctx context.Context, args []string) error {
 		"Model for mid-token turns (env DEX_PROXY_ROUTE_MID_MODEL; default claude-sonnet-4-6).")
 	effortFlag := fs.String("effort", "",
 		"Reasoning-effort budget: low|medium|high (env DEX_PROXY_EFFORT). Skipped if client already set effort or model is not a reasoning model.")
+	ccrFlag := fs.Bool("ccr", false,
+		"Content-addressed recovery: tee pruned reads to a content-addressed store and re-inject on demand (env DEX_PROXY_CCR). Off by default.")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -106,6 +108,10 @@ func cmdProxy(ctx context.Context, args []string) error {
 	}
 	effort := proxy.ParseEffortLevel(effortRaw)
 
+	// Content-addressed recovery (#597): --ccr flag, falling back to
+	// DEX_PROXY_CCR. Not a secret, so flag + env are both fine.
+	ccrEnabled := *ccrFlag || envBool("DEX_PROXY_CCR", false)
+
 	// Budget event log (#60): one JSONL file per session under ~/.cache/dex/sessions/.
 	sessionID := time.Now().UTC().Format("20060102T150405Z")
 	bl, blErr := openBudgetLog(sessionID)
@@ -134,6 +140,9 @@ func cmdProxy(ctx context.Context, args []string) error {
 	if effort != "" {
 		fmt.Printf("  effort: %s\n", effort)
 	}
+	if ccrEnabled {
+		fmt.Printf("  ccr: on (content-addressed recovery of pruned reads)\n")
+	}
 	fmt.Printf("  stats: dex proxy --stats\n")
 
 	// Wire cost events to the SLO tracker for the current project root so
@@ -154,6 +163,7 @@ func cmdProxy(ctx context.Context, args []string) error {
 		BudgetLog:    bl,
 		CostHook:     costHook,
 		Effort:       effort,
+		CCREnabled:   ccrEnabled,
 	})
 }
 

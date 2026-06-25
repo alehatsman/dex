@@ -90,7 +90,7 @@ func cachedPrefixLen(messages []json.RawMessage) int {
 // On any parse or marshal error the original body is returned unchanged
 // (fail-open). The second return value is the number of bytes removed (0 if
 // pruning was skipped or produced no savings). The third is the prune stats.
-func PruneRequestBody(body []byte, keepRecent int) ([]byte, int, PruneHistoryStats) {
+func PruneRequestBody(body []byte, keepRecent int, store *TeeStore) ([]byte, int, PruneHistoryStats) {
 	var req struct {
 		Messages []json.RawMessage          `json:"messages"`
 		Rest     map[string]json.RawMessage `json:"-"`
@@ -110,7 +110,7 @@ func PruneRequestBody(body []byte, keepRecent int) ([]byte, int, PruneHistorySta
 		return body, 0, PruneHistoryStats{}
 	}
 
-	pruned, pruneSt := PruneHistoryWithStats(req.Messages, keepRecent)
+	pruned, pruneSt := pruneHistory(req.Messages, keepRecent, store)
 
 	newMsgs, err := json.Marshal(pruned)
 	if err != nil {
@@ -166,12 +166,20 @@ type PruneHistoryStats struct {
 // messages are left untouched (fail-open). The returned slice shares no backing
 // arrays with the input.
 func PruneHistory(messages []json.RawMessage, keepRecent int) []json.RawMessage {
-	out, _ := PruneHistoryWithStats(messages, keepRecent)
+	out, _ := pruneHistory(messages, keepRecent, nil)
 	return out
 }
 
 // PruneHistoryWithStats is like PruneHistory but also returns rewrite statistics.
 func PruneHistoryWithStats(messages []json.RawMessage, keepRecent int) ([]json.RawMessage, PruneHistoryStats) {
+	return pruneHistory(messages, keepRecent, nil)
+}
+
+// pruneHistory is the shared implementation. When store is non-nil, file-read
+// results that get stubbed are teed to it (content-addressed) and the stub
+// carries a dex:lc_expand:<hash> recovery marker (#597). A nil store is the
+// no-CCR path and behaves exactly as before.
+func pruneHistory(messages []json.RawMessage, keepRecent int, store *TeeStore) ([]json.RawMessage, PruneHistoryStats) {
 	if keepRecent < 0 {
 		keepRecent = 0
 	}
@@ -194,7 +202,7 @@ func PruneHistoryWithStats(messages []json.RawMessage, keepRecent int) ([]json.R
 			out[i] = raw
 			continue
 		}
-		rewritten, ok, preserved := rewriteMessageWithStats(raw, toolNames, &st)
+		rewritten, ok, preserved := rewriteMessageWithStats(raw, toolNames, &st, store)
 		if !ok {
 			out[i] = raw // fail-open
 			continue
@@ -253,7 +261,7 @@ func buildToolNameMap(messages []json.RawMessage) map[string]string {
 
 // rewriteMessageWithStats is like rewriteMessage but accumulates stats into st
 // (when non-nil). The third return value is the number of blocks preserved.
-func rewriteMessageWithStats(raw json.RawMessage, toolNames map[string]string, st *PruneHistoryStats) (json.RawMessage, bool, int) {
+func rewriteMessageWithStats(raw json.RawMessage, toolNames map[string]string, st *PruneHistoryStats, store *TeeStore) (json.RawMessage, bool, int) {
 	// Decode into a generic map to preserve unknown fields.
 	var msg map[string]json.RawMessage
 	if json.Unmarshal(raw, &msg) != nil {
@@ -287,7 +295,7 @@ func rewriteMessageWithStats(raw json.RawMessage, toolNames map[string]string, s
 	preserved := 0
 	newBlocks := make([]json.RawMessage, len(blocks))
 	for i, blkRaw := range blocks {
-		rewritten, didChange, wasPreserved := rewriteBlock(blkRaw, toolNames)
+		rewritten, didChange, wasPreserved := rewriteBlock(blkRaw, toolNames, store)
 		newBlocks[i] = rewritten
 		if didChange {
 			changed = true
@@ -320,7 +328,7 @@ func rewriteMessageWithStats(raw json.RawMessage, toolNames map[string]string, s
 // rewriteBlock rewrites one content block if it is a tool_result eligible for
 // pruning. Returns (rewritten, changed, preserved) where preserved is true
 // when the block was actively kept verbatim rather than stubbed.
-func rewriteBlock(raw json.RawMessage, toolNames map[string]string) (json.RawMessage, bool, bool) {
+func rewriteBlock(raw json.RawMessage, toolNames map[string]string, store *TeeStore) (json.RawMessage, bool, bool) {
 	var blk map[string]json.RawMessage
 	if json.Unmarshal(raw, &blk) != nil {
 		return raw, false, false
@@ -369,6 +377,12 @@ func rewriteBlock(raw json.RawMessage, toolNames map[string]string) (json.RawMes
 	case kindFileRead:
 		lines := countLines(text)
 		stub = fmt.Sprintf("[earlier file read (%d lines) pruned to save tokens; re-read if needed]", lines)
+		// CCR (#597): tee the original bytes content-addressed and embed a
+		// recovery marker so the pruned read can be reconstructed losslessly.
+		// No-op when store is nil or the content is below the tee threshold.
+		if hash, ok := store.Put(text); ok {
+			stub += " " + marker(hash)
+		}
 	case kindCommand:
 		stub = headTailSummary(text)
 	default:

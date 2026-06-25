@@ -60,6 +60,11 @@ type Stats struct {
 	// <lc_safe>, or containing test/build output.
 	ResultsPreserved atomic.Int64
 	TokensPreserved  atomic.Int64
+
+	// CCR counters (#597): requests where the content-addressed recovery pass
+	// re-injected pruned bytes, and the total tool_result blocks restored.
+	RequestsCCRRecovered atomic.Int64
+	CCRBlocksRestored    atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -109,6 +114,11 @@ type Snapshot struct {
 	// verbatim rather than stub-replaced.
 	ResultsPreserved int64 `json:"results_preserved"`
 	TokensPreserved  int64 `json:"tokens_preserved"`
+
+	// CCR counters (#597): requests where pruned bytes were re-injected from the
+	// content-addressed store, and the total blocks restored.
+	RequestsCCRRecovered int64 `json:"requests_ccr_recovered"`
+	CCRBlocksRestored    int64 `json:"ccr_blocks_restored"`
 
 	// LogPath is the absolute path of the per-session JSONL budget event log
 	// (#60). Empty when no BudgetLog is configured.
@@ -189,6 +199,15 @@ func (s *Stats) recordPrune(p PruneHistoryStats) {
 	}
 }
 
+// recordCCR folds one request's recovery outcome into the totals: how many
+// requests re-injected pruned bytes and the total blocks restored.
+func (s *Stats) recordCCR(restored int) {
+	if restored > 0 {
+		s.RequestsCCRRecovered.Add(1)
+		s.CCRBlocksRestored.Add(int64(restored))
+	}
+}
+
 // recordCost adds costUSD to the running session cost total.
 func (s *Stats) recordCost(costUSD float64) {
 	if costUSD > 0 {
@@ -265,6 +284,9 @@ func (s *Stats) Snapshot() Snapshot {
 
 		ResultsPreserved: s.ResultsPreserved.Load(),
 		TokensPreserved:  s.TokensPreserved.Load(),
+
+		RequestsCCRRecovered: s.RequestsCCRRecovered.Load(),
+		CCRBlocksRestored:    s.CCRBlocksRestored.Load(),
 
 		SessionCostUSD: float64(s.SessionCostMicroUSD.Load()) / 1_000_000,
 	}

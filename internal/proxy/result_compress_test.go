@@ -73,7 +73,7 @@ func TestRewriteBlock_PreservesDexCompressed(t *testing.T) {
 	dexResult := `{"output":"compressed output","exit_code":0,"saved_pct":55}`
 	blk := makeToolResultBlock("r1", dexResult)
 
-	rewritten, changed, preserved := rewriteBlock(blk, toolNames)
+	rewritten, changed, preserved := rewriteBlock(blk, toolNames, nil)
 	if changed {
 		t.Error("dex compressed result should not be changed")
 	}
@@ -96,7 +96,7 @@ func TestRewriteBlock_PreservesTestOutput(t *testing.T) {
 	}
 	blk := makeToolResultBlock("s1", testOut)
 
-	_, changed, preserved := rewriteBlock(blk, toolNames)
+	_, changed, preserved := rewriteBlock(blk, toolNames, nil)
 	if changed {
 		t.Error("test output should not be changed")
 	}
@@ -115,7 +115,7 @@ func TestRewriteBlock_StillStubsNonPreserved(t *testing.T) {
 	}
 	blk := makeToolResultBlock("r1", content)
 
-	_, changed, preserved := rewriteBlock(blk, toolNames)
+	_, changed, preserved := rewriteBlock(blk, toolNames, nil)
 	if !changed {
 		t.Error("non-preserved file read should be stubbed (changed)")
 	}

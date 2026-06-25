@@ -81,6 +81,10 @@ type Options struct {
 	// Effort, when non-empty, injects a reasoning-budget hint into every outbound
 	// request that doesn't already set one. See ParseEffortLevel (#30).
 	Effort EffortLevel
+	// CCREnabled turns on content-addressed recovery (#597): pruned file-read
+	// results are teed to a content-addressed store and stubs carry a recovery
+	// marker, and the keep-window expansion pass runs pre-send. Off by default.
+	CCREnabled bool
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -110,7 +114,19 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook, opts.Effort)
+	// Content-addressed recovery store (#597). Fail-open: a setup error logs
+	// and runs the proxy with CCR disabled rather than aborting startup.
+	var ccr *TeeStore
+	if opts.CCREnabled {
+		store, err := NewTeeStore()
+		if err != nil {
+			opts.Logger.Warn("dex proxy: CCR disabled (tee store setup failed)", "err", err)
+		} else {
+			ccr = store
+		}
+	}
+
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook, opts.Effort, ccr)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -172,7 +188,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - POST /compact → record a PreCompact event in the budget log
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64), effort EffortLevel) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64), effort EffortLevel, ccr *TeeStore) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -222,7 +238,6 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 		// by the usage tee writer closure below for per-response cost attribution.
 		var effectiveModel string
 
-
 		// POST /v1/messages — prune + compress, then forward.
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/messages") {
 			body, err := io.ReadAll(r.Body)
@@ -260,12 +275,26 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			editFails := AnalyzeEditFailsBody(body, DefaultKeepRecent)
 			stats.recordEditFails(editFails, editFailHook)
 
-			pruned, prunedBytes, pruneSt := PruneRequestBody(current, DefaultKeepRecent)
+			pruned, prunedBytes, pruneSt := PruneRequestBody(current, DefaultKeepRecent, ccr)
 			if prunedBytes > 0 {
 				current = pruned
 				paths = append(paths, "prune")
 			}
 			stats.recordPrune(pruneSt)
+
+			// CCR re-injection (#597): restore any recoverable content marked in
+			// the keep-recent window. No-op on v1 traffic (pruning only marks the
+			// old region); positioned for the deferred active-recovery trigger.
+			// GC self-throttles, so calling it per request is cheap.
+			if ccr != nil {
+				ccr.MaybeGC()
+				expanded, restored := ccr.ExpandMarkers(current, DefaultKeepRecent)
+				if restored > 0 {
+					current = expanded
+					paths = append(paths, "ccr")
+				}
+				stats.recordCCR(restored)
+			}
 
 			// Reasoning-effort passthrough (#30): inject a budget hint after
 			// routing (so the model name is final) but before cache alignment
