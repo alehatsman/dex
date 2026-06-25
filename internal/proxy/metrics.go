@@ -50,6 +50,12 @@ type Stats struct {
 	// Edit-fail-after-read counter (#58): how many times a compressed file read
 	// in the old region was followed by a failed Edit on the same path.
 	EditFails atomic.Int64
+
+	// Result-preservation counters (#45): tool_result blocks in the old region
+	// kept verbatim because already compressed (dex saved_pct > 0), carrying
+	// <lc_safe>, or containing test/build output.
+	ResultsPreserved atomic.Int64
+	TokensPreserved  atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -91,6 +97,11 @@ type Snapshot struct {
 
 	// Edit-fail counter (#58): compressed reads followed by Edit failures.
 	EditFails int64 `json:"edit_fails"`
+
+	// Result-preservation counters (#45): old-region tool_result blocks kept
+	// verbatim rather than stub-replaced.
+	ResultsPreserved int64 `json:"results_preserved"`
+	TokensPreserved  int64 `json:"tokens_preserved"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.
@@ -156,6 +167,14 @@ func (s *Stats) recordEditFails(ef EditFailStats, hook func(string)) {
 		for _, p := range ef.Paths {
 			hook(p)
 		}
+	}
+}
+
+// recordPrune folds one request's PruneHistoryStats into the running totals.
+func (s *Stats) recordPrune(p PruneHistoryStats) {
+	if p.ResultsPreserved > 0 {
+		s.ResultsPreserved.Add(int64(p.ResultsPreserved))
+		s.TokensPreserved.Add(int64(p.TokensPreserved))
 	}
 }
 
@@ -225,5 +244,8 @@ func (s *Stats) Snapshot() Snapshot {
 		RequestsRouted: s.RequestsRouted.Load(),
 
 		EditFails: s.EditFails.Load(),
+
+		ResultsPreserved: s.ResultsPreserved.Load(),
+		TokensPreserved:  s.TokensPreserved.Load(),
 	}
 }
