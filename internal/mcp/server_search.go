@@ -95,6 +95,15 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	}
 	out.Project = p.Root
 
+	// Repetition guard: at 7+ identical searches skip re-running the expensive
+	// embedding+search pipeline and return just the hint. At 4–6, continue but
+	// annotate. Must run before the embedding call so the skip is meaningful.
+	if throttleHint, earlyReturn := s.searchThrottleHint(in.Query, p.Root); earlyReturn {
+		return nil, SearchOutput{Status: "ok", Project: p.Root, Hint: throttleHint, Hits: []SearchHit{}}, nil
+	} else if throttleHint != "" {
+		out.Hint = throttleHint
+	}
+
 	if _, err := os.Stat(p.DBPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			out.Status = "no-index"
@@ -205,9 +214,6 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	}
 
 	out.Status = "ok"
-	if hint := s.searchThrottleHint(in.Query, p.Root); hint != "" {
-		out.Hint = hint
-	}
 	if out.Hint == "" {
 		out.Hint = s.activityNudge(p.Root, sessionTask)
 	}

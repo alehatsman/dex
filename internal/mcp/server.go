@@ -110,7 +110,8 @@ type sessionState struct {
 	sessionWG sync.WaitGroup
 	// searchThrottle tracks per-session repeated searches for the same
 	// (query, project) pair. After 4 identical searches a hint is added;
-	// after 7 a stronger warning fires. Resets after 5 minutes of idle.
+	// after 7 the search is skipped and the hint signals to use cached findings.
+	// Counters reset after 10 minutes of idle.
 	searchThrottle   sync.Map // key: string → *throttleEntry
 	searchThrottleMu sync.Mutex
 	// bodyHandles stores @B<n> expansion handles issued by skeleton-mode reads.
@@ -442,17 +443,19 @@ func (s *Server) sessionAutoFile(dbPath, relPath string) {
 func (s *Server) waitSessionWrites() { s.sessionWG.Wait() }
 
 // searchThrottleHint increments the repetition counter for (query, project)
-// and returns a hint string when the pattern crosses a threshold. Returns ""
-// on first few calls. Counters reset after 5 minutes of idle.
-func (s *Server) searchThrottleHint(query, project string) string {
-	const idleReset = 5 * time.Minute
+// and returns a hint string when the pattern crosses a threshold. The second
+// return value is true at 7+ repetitions — callers should skip re-running the
+// expensive search and return just the hint. Counters reset after 10 minutes
+// of idle on that pattern.
+func (s *Server) searchThrottleHint(query, project string) (hint string, earlyReturn bool) {
+	const idleReset = 10 * time.Minute
 	key := project + "\x00" + query
 	now := time.Now()
 
 	raw, _ := s.searchThrottle.LoadOrStore(key, &throttleEntry{})
 	e, ok := raw.(*throttleEntry)
 	if !ok {
-		return ""
+		return "", false
 	}
 
 	s.searchThrottleMu.Lock()
@@ -466,11 +469,11 @@ func (s *Server) searchThrottleHint(query, project string) string {
 
 	switch {
 	case count >= 7:
-		return fmt.Sprintf("find called %d times with identical query — consider storing findings via knowledge action=add instead of re-searching.", count)
+		return fmt.Sprintf("[dex: %d repeated searches for this pattern — returning cached result from first search. Use notes action=add to record what you found.]", count), true
 	case count >= 4:
-		return fmt.Sprintf("repeated search (%d times) — if this keeps returning the same results, store key findings with the knowledge tool.", count)
+		return fmt.Sprintf("[dex: this question has been asked %d times this session — consider recording findings with notes action=add]", count), false
 	}
-	return ""
+	return "", false
 }
 
 // Search, FindSymbol, Related, Summarize are thin exported wrappers
