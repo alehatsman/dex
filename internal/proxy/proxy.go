@@ -65,6 +65,10 @@ type Options struct {
 	// Zero value (Enabled:false) disables routing — requests pass through with
 	// the model field untouched.
 	RouteConfig ModelRouteConfig
+	// EditFailHook, when non-nil, is called once per detected edit-fail event
+	// (#58) with the file path that triggered the signal. Callers use this to
+	// forward the event to adaptive.PolicyTable.RecordSignal.
+	EditFailHook func(path string)
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -91,7 +95,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -152,7 +156,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 // newProxyHandler builds the mux:
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string)) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -215,6 +219,11 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			// file. Pure measurement — does not alter pruning.
 			reReads := AnalyzeReReadsBody(body, DefaultKeepRecent)
 			stats.recordReReads(reReads)
+
+			// Edit-fail signal (#58): detect compressed read → Edit error on the
+			// same path. Measured on the original body before any rewrite.
+			editFails := AnalyzeEditFailsBody(body, DefaultKeepRecent)
+			stats.recordEditFails(editFails, editFailHook)
 
 			pruned, prunedBytes := PruneRequestBody(current, DefaultKeepRecent)
 			if prunedBytes > 0 {

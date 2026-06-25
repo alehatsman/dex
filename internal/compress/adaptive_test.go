@@ -110,6 +110,57 @@ func TestLoadPolicy_CorruptFile(t *testing.T) {
 	}
 }
 
+func TestRecordSignal_EditFail_DropsExtDelta(t *testing.T) {
+	dir := t.TempDir()
+	pt := LoadPolicy(dir)
+
+	// Initially no delta.
+	if d := pt.ExtDelta("internal/foo.go"); d != 0 {
+		t.Fatalf("expected zero delta before any signal, got %v", d)
+	}
+
+	// One EditFail → delta drops below zero.
+	pt.RecordSignal("internal/foo.go", SignalEditFail)
+	d := pt.ExtDelta("internal/foo.go")
+	if d >= 0 {
+		t.Errorf("expected negative delta after EditFail, got %v", d)
+	}
+
+	// Multiple EditFails saturate at -signalDeltaClamp.
+	for i := 0; i < 100; i++ {
+		pt.RecordSignal("internal/foo.go", SignalEditFail)
+	}
+	d = pt.ExtDelta("internal/foo.go")
+	if d < -signalDeltaClamp {
+		t.Errorf("delta overflowed clamp: got %v, min is %v", d, -signalDeltaClamp)
+	}
+	if d != -signalDeltaClamp {
+		t.Errorf("expected delta to be clamped at %v, got %v", -signalDeltaClamp, d)
+	}
+}
+
+func TestRecordSignal_ExtDelta_PersistsAcrossInstances(t *testing.T) {
+	dir := t.TempDir()
+	pt := LoadPolicy(dir)
+	pt.RecordSignal("main.go", SignalEditFail)
+	saved := pt.ExtDelta("main.go")
+
+	pt2 := LoadPolicy(dir)
+	if pt2.ExtDelta("main.go") != saved {
+		t.Errorf("persisted ext delta mismatch: want %v got %v", saved, pt2.ExtDelta("main.go"))
+	}
+}
+
+func TestRecordSignal_NoExtension(t *testing.T) {
+	dir := t.TempDir()
+	pt := LoadPolicy(dir)
+	// File with no extension — should be a no-op.
+	pt.RecordSignal("Makefile", SignalEditFail)
+	if d := pt.ExtDelta("Makefile"); d != 0 {
+		t.Errorf("expected zero delta for extensionless file, got %v", d)
+	}
+}
+
 func TestIntentFromTask(t *testing.T) {
 	cases := []struct{ task, want string }{
 		{"implement new feature", "generate"},
