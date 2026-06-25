@@ -225,11 +225,12 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			editFails := AnalyzeEditFailsBody(body, DefaultKeepRecent)
 			stats.recordEditFails(editFails, editFailHook)
 
-			pruned, prunedBytes := PruneRequestBody(current, DefaultKeepRecent)
+			pruned, prunedBytes, pruneSt := PruneRequestBody(current, DefaultKeepRecent)
 			if prunedBytes > 0 {
 				current = pruned
 				paths = append(paths, "prune")
 			}
+			stats.recordPrune(pruneSt)
 
 			// Tool-description compression runs before cache alignment so the
 			// cache pass marks breakpoints on the final (compressed) tools
