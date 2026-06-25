@@ -75,6 +75,9 @@ type SymHit struct {
 	OutDegree       int
 	CrossPkgCallers int
 	Betweenness     float64
+	// Signature is the stored declaration header from graph_nodes.signature.
+	// Non-empty for Go symbols when the graph is built.
+	Signature string
 	// Body / Truncated are the inline overlay, populated by
 	// InlineContent (the symbol's source slice and its clip flag).
 	Body      string
@@ -125,6 +128,7 @@ func (svc Service) SymbolLane(ctx context.Context, st store.Searcher, cand Inten
 				OutDegree:       h.OutDegree,
 				CrossPkgCallers: h.CrossPkgCallers,
 				Betweenness:     h.Betweenness,
+				Signature:       h.Signature,
 			})
 			paths[h.Path] = struct{}{}
 			if len(out) >= k {

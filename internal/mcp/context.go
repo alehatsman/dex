@@ -97,10 +97,10 @@ type SymbolHit struct {
 	SeenTurn int `json:"seen,omitempty"`
 }
 
-// RefHit is a lexical reference produced by the references lane
+// RefHit is a reference produced by the references lane
 // (callers/callees intents). Stand-in for the deferred `calls` graph
-// edges — ripgrep over the bare symbol name, capped to a few dozen
-// hits. The definition line is filtered out so the list is genuinely
+// edges — BM25 chunk search over the bare symbol name, capped to a few
+// dozen hits. The definition chunk is filtered out so the list is genuinely
 // "uses of" rather than "appearances of".
 type RefHit struct {
 	Path    string `json:"path"`
@@ -215,7 +215,7 @@ type ContextOutput struct {
 	// session-start orientation path (ask called with an empty question, #348 /
 	// #316 story 6). Zero inference, byte-stable across calls. Absent otherwise.
 	Map string `json:"map,omitempty"`
-	// References is the ripgrep-backed reference list. Populated for
+	// References is the BM25-backed reference list. Populated for
 	// callers/callees intents when at least one SymbolHit is present.
 	// Stand-in for the deferred `calls` graph edges.
 	References []RefHit `json:"references,omitempty"`
@@ -394,7 +394,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits)
 		out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
 	}
-	(&Enricher{projectRoot: p.Root}).Enrich(ctx, intent, k, &out)
+	(&Enricher{projectRoot: p.Root, Store: st}).Enrich(ctx, intent, k, &out)
 	topSem := maxSemanticScore(out.SemanticHits)
 	var graphEdgeCount int
 	if out.Graph != nil {

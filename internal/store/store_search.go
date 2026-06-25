@@ -64,6 +64,11 @@ type Hit struct {
 	CrossPkgCallers int
 	PageRank        float64
 	Betweenness     float64
+	// Signature is the stored declaration header from graph_nodes.signature,
+	// populated by the Go extractor via go/types. Empty for non-Go symbols or
+	// when the graph hasn't been built. Callers should prefer this over reading
+	// the source file when non-empty.
+	Signature string
 }
 
 // DisplayScore returns the single value the hit is actually ranked by, so a
@@ -859,7 +864,7 @@ func (s *Store) FindSymbol(ctx context.Context, name string, k int) ([]Hit, erro
 		`SELECT c.id, c.path, c.kind, c.name, c.start_line, c.end_line, c.content,
 		        COALESCE(g.in_degree, 0), COALESCE(g.out_degree, 0),
 		        COALESCE(g.cross_pkg_callers, 0), COALESCE(g.pagerank, 0),
-		        COALESCE(g.betweenness, 0)
+		        COALESCE(g.betweenness, 0), COALESCE(g.signature, '')
 		 FROM chunks c
 		 LEFT JOIN graph_nodes g ON g.chunk_id = c.id
 		 WHERE c.name = ?
@@ -877,7 +882,7 @@ func (s *Store) FindSymbol(ctx context.Context, name string, k int) ([]Hit, erro
 		var id int64
 		var h Hit
 		if err := rows.Scan(&id, &h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &h.Content,
-			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank, &h.Betweenness); err != nil {
+			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank, &h.Betweenness, &h.Signature); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -901,7 +906,7 @@ func (s *Store) findSymbolInGraph(ctx context.Context, name string, k int) ([]Hi
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT kind, name, file_path, start_line, end_line,
 		        in_degree, out_degree, cross_pkg_callers, pagerank,
-		        COALESCE(betweenness, 0)
+		        COALESCE(betweenness, 0), COALESCE(signature, '')
 		 FROM graph_nodes
 		 WHERE name = ? AND file_path != '' AND start_line > 0
 		 ORDER BY pagerank DESC, in_degree DESC, file_path, start_line LIMIT ?`,
@@ -915,7 +920,7 @@ func (s *Store) findSymbolInGraph(ctx context.Context, name string, k int) ([]Hi
 	for rows.Next() {
 		var h Hit
 		if err := rows.Scan(&h.Kind, &h.Name, &h.Path, &h.StartLine, &h.EndLine,
-			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank, &h.Betweenness); err != nil {
+			&h.InDegree, &h.OutDegree, &h.CrossPkgCallers, &h.PageRank, &h.Betweenness, &h.Signature); err != nil {
 			return nil, err
 		}
 		out = append(out, h)

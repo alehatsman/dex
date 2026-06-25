@@ -142,7 +142,7 @@ func (c *RerankCache) Get(key string) ([]rerank.Score, bool) {
 		return nil, false
 	}
 	c.ll.MoveToFront(el)
-	e := el.Value.(*rerankEntry)
+	e := el.Value.(*rerankEntry) //nolint:errcheck
 	return e.scores, true
 }
 
@@ -152,7 +152,7 @@ func (c *RerankCache) Put(key string, scores []rerank.Score) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.index[key]; ok {
-		el.Value.(*rerankEntry).scores = scores
+		el.Value.(*rerankEntry).scores = scores //nolint:errcheck
 		c.ll.MoveToFront(el)
 		return
 	}
@@ -161,7 +161,7 @@ func (c *RerankCache) Put(key string, scores []rerank.Score) {
 	if c.ll.Len() > c.cap {
 		if oldest := c.ll.Back(); oldest != nil {
 			c.ll.Remove(oldest)
-			delete(c.index, oldest.Value.(*rerankEntry).key)
+			delete(c.index, oldest.Value.(*rerankEntry).key) //nolint:errcheck
 		}
 	}
 }

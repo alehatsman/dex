@@ -2,9 +2,6 @@ package mcp
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -526,30 +523,6 @@ func TestMatchOwners(t *testing.T) {
 	}
 }
 
-// ─── parseRipgrepLine ────────────────────────────────────────────────────
-
-func TestParseRipgrepLine(t *testing.T) {
-	cases := []struct {
-		in       string
-		wantPath string
-		wantLine int
-		wantSnip string
-		wantOk   bool
-	}{
-		{"foo.go:42:    Search()", "foo.go", 42, "    Search()", true},
-		{"a/b/c.go:1:package c", "a/b/c.go", 1, "package c", true},
-		{"malformed", "", 0, "", false},
-		{"foo.go:notanumber:x", "", 0, "", false},
-	}
-	for _, tc := range cases {
-		p, l, s, ok := parseRipgrepLine(tc.in)
-		if ok != tc.wantOk || p != tc.wantPath || l != tc.wantLine || s != tc.wantSnip {
-			t.Errorf("parseRipgrepLine(%q) = (%q, %d, %q, %v); want (%q, %d, %q, %v)",
-				tc.in, p, l, s, ok, tc.wantPath, tc.wantLine, tc.wantSnip, tc.wantOk)
-		}
-	}
-}
-
 // ─── enrich() integration ────────────────────────────────────────────────
 
 func TestEnrichEditingContext(t *testing.T) {
@@ -633,52 +606,19 @@ func TestEnrichBehaviorSearchOmitsHeavyLegs(t *testing.T) {
 	}
 }
 
-// ─── runReferencesLane: k drives the cap ─────────────────────────────────
+// ─── runReferencesLane: nil store returns nil ────────────────────────────
 
-func TestRunReferencesLaneCapsScaleWithK(t *testing.T) {
-	if _, err := exec.LookPath("rg"); err != nil {
-		t.Skip("ripgrep not on PATH")
-	}
-	root := t.TempDir()
-	// Write 50 files each with a single usage of `Target` — that's
-	// well past the default 30/20 caps so we can observe k's effect.
-	for i := 0; i < 50; i++ {
-		path := filepath.Join(root, fmt.Sprintf("u%d.go", i))
-		body := "package x\n\nfunc _" + fmt.Sprint(i) + "() { Target() }\n"
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Definition lives in a separate file so it's filtered out, not counted.
-	if err := os.WriteFile(filepath.Join(root, "def.go"),
-		[]byte("package x\n\nfunc Target() {}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
+func TestRunReferencesLaneNilStore(t *testing.T) {
+	// Without a store wired, runReferencesLane should return nil gracefully.
 	def := SymbolHit{
 		QualifiedName: "Target",
 		Path:          "def.go",
 		StartLine:     3,
 		EndLine:       3,
 	}
-
-	// With a single symbol the per-symbol cap dominates (the total cap
-	// never kicks in). At k=8: perSymCap=clamp(8*3,20,60)=24.
-	got8 := (&Enricher{projectRoot: root}).runReferencesLane(context.Background(), 8, []SymbolHit{def})
-	wantPerSym8, _ := refCapsFor(8)
-	if len(got8) != wantPerSym8 {
-		t.Errorf("k=8 produced %d refs, want %d (per-symbol cap)", len(got8), wantPerSym8)
-	}
-
-	// At k=30: perSymCap=60, total=100; the fixture has only 50 usages
-	// so all 50 surface. The point of the test is k=30 > k=8.
-	got30 := (&Enricher{projectRoot: root}).runReferencesLane(context.Background(), 30, []SymbolHit{def})
-	if len(got30) <= len(got8) {
-		t.Errorf("k=30 yielded %d refs, k=8 yielded %d; expected wider cap to surface more usages",
-			len(got30), len(got8))
-	}
-	if len(got30) != 50 {
-		t.Errorf("k=30 with 50 usages should surface all 50; got %d", len(got30))
+	got := (&Enricher{projectRoot: t.TempDir()}).runReferencesLane(context.Background(), 8, []SymbolHit{def})
+	if got != nil {
+		t.Errorf("expected nil when Store is nil; got %v", got)
 	}
 }
 

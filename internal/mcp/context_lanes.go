@@ -33,6 +33,7 @@ func (s *Server) runSymbolLane(ctx context.Context, st store.Searcher, cand retr
 			EndLine:       h.EndLine,
 			Kind:          h.Kind,
 			Role:          formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
+			Signature:     h.Signature,
 		})
 	}
 	// Demote test/doc/build/fixture paths so the prose directive (which

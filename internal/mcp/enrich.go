@@ -3,7 +3,7 @@
 // enrich.go holds the secondary lanes that the router calls *after*
 // the semantic + symbol lanes have produced the primary bundle. They
 // are intentionally static: filesystem walks, bounded subprocess calls
-// to `git` and `rg`, and a few regex scans. No embeddings, no LLM.
+// to `git`, and a few regex scans. No embeddings, no LLM.
 //
 // Gating matrix (driven by intent):
 //
@@ -25,14 +25,15 @@ package mcp
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alehatsman/dex/internal/retrieve"
+	"github.com/alehatsman/dex/internal/store"
 )
 
 // ─── budgets ─────────────────────────────────────────────────────────────
@@ -49,7 +50,6 @@ const (
 	maxRefHits           = 100
 	maxRefsPerSymbol     = 60
 	blameTimeout         = 600 * time.Millisecond
-	rgTimeout            = 2 * time.Second
 )
 
 // Enricher holds the static context shared across all enrichment legs for
@@ -58,6 +58,7 @@ const (
 // every call.
 type Enricher struct {
 	projectRoot string
+	Store       store.Searcher
 }
 
 // refCapsFor returns (perSymbol, total) reference caps for the given
@@ -95,7 +96,11 @@ func (e *Enricher) enrichSymbolsSigDoc(syms []SymbolHit) {
 			abs = filepath.Join(e.projectRoot, abs)
 		}
 		sig, doc := readSignatureAndDoc(abs, syms[i].StartLine, bareSymbolName(syms[i].QualifiedName))
-		syms[i].Signature = sig
+		// Prefer the stored signature from graph_nodes when available —
+		// it comes from go/types and is more accurate than the line-scan heuristic.
+		if syms[i].Signature == "" {
+			syms[i].Signature = sig
+		}
 		syms[i].Doc = doc
 	}
 }
@@ -553,23 +558,18 @@ func (e *Enricher) findNearestDoc(relPath string) string {
 	return ""
 }
 
-// ─── leg 4: ripgrep references (callers/callees only) ────────────────────
+// ─── leg 4: BM25 references (callers/callees only) ───────────────────────
 
-// runReferencesLane shells out to ripgrep for each symbol's bare name
-// and returns deduplicated RefHits. The definition line (filtered by
-// matching the SymbolHit's StartLine) is excluded so the list is
-// genuinely "uses of" rather than "appearances of". Caps scale with
-// `k` via refCapsFor — defaults match the legacy 30/20 budget.
-//
-// If `rg` isn't on PATH or all invocations fail, returns nil — the
-// caller still has the deferred-graph `avoid` line to fall back on.
+// runReferencesLane finds usage sites for each symbol via BM25 chunk search.
+// The definition chunk is filtered out so the list is genuinely "uses of"
+// rather than "appearances of". Caps scale with `k` via refCapsFor.
+// Returns nil when no store is wired.
 func (e *Enricher) runReferencesLane(ctx context.Context, k int, symbols []SymbolHit) []RefHit {
-	if _, err := exec.LookPath("rg"); err != nil {
+	if e.Store == nil {
 		return nil
 	}
-
 	perSymCap, totalCap := refCapsFor(k)
-	seen := map[string]struct{}{} // path:line dedupe
+	seen := map[string]struct{}{}
 	var out []RefHit
 
 	for _, sym := range symbols {
@@ -580,24 +580,42 @@ func (e *Enricher) runReferencesLane(ctx context.Context, k int, symbols []Symbo
 		if bare == "" {
 			continue
 		}
-		hits := e.ripgrepSymbol(ctx, bare, perSymCap, sym, seen)
-		// Per-symbol cap before moving to the next, so a hot symbol
-		// can't starve the others.
-		if len(hits) > perSymCap {
-			hits = hits[:perSymCap]
+		// BM25-only search (nil vec) — finds indexed chunks that mention the
+		// symbol name. perSymCap*2 gives the fusion layer headroom before
+		// filtering and capping to perSymCap.
+		hits, err := e.Store.SearchFused(ctx, nil, bare, perSymCap*2)
+		if err != nil {
+			continue
 		}
+		added := 0
 		for _, h := range hits {
-			if len(out) >= totalCap {
+			if len(out) >= totalCap || added >= perSymCap {
 				break
 			}
-			out = append(out, h)
+			// Skip the definition chunk itself.
+			if sym.Path != "" && h.Path == sym.Path &&
+				h.StartLine >= sym.StartLine && h.StartLine <= sym.EndLine {
+				continue
+			}
+			key := h.Path + ":" + strconv.Itoa(h.StartLine)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, RefHit{
+				Path:    h.Path,
+				Line:    h.StartLine,
+				Snippet: firstContentLine(h.Content),
+				Symbol:  sym.QualifiedName,
+			})
+			added++
 		}
 	}
 	return out
 }
 
 // bareSymbolName strips a "(*T)." or "T." prefix and returns the
-// rightmost identifier — the form rg will actually find in usages.
+// rightmost identifier.
 func bareSymbolName(qualified string) string {
 	if i := strings.LastIndex(qualified, "."); i >= 0 {
 		return qualified[i+1:]
@@ -605,84 +623,14 @@ func bareSymbolName(qualified string) string {
 	return qualified
 }
 
-// ripgrepSymbol runs `rg -nw --max-count=<...> -e <symbol> <root>` and
-// parses its `path:line:text` output into RefHits, skipping the
-// definition line. Single subprocess, bounded by rgTimeout. perSymCap
-// caps per-file matches via rg's --max-count.
-func (e *Enricher) ripgrepSymbol(ctx context.Context, symbol string, perSymCap int, defSym SymbolHit, seen map[string]struct{}) []RefHit {
-	cctx, cancel := context.WithTimeout(ctx, rgTimeout)
-	defer cancel()
-
-	// --word-regexp: don't match SearchTerms when looking for Search.
-	// --max-count: cap per-file matches; rg's default is unlimited.
-	// --no-heading, --color=never: parseable single-line output.
-	cmd := exec.CommandContext(cctx, "rg",
-		"--word-regexp",
-		"--max-count="+fmt.Sprint(perSymCap),
-		"--no-heading",
-		"--color=never",
-		"--line-number",
-		"-e", symbol,
-		e.projectRoot,
-	)
-	stdout, err := cmd.Output()
-	if err != nil {
-		// rg exits 1 when nothing matches — treat as empty, not error.
-		return nil
-	}
-
-	var out []RefHit
-	defAbs := filepath.Join(e.projectRoot, defSym.Path)
-	sc := bufio.NewScanner(strings.NewReader(string(stdout)))
-	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	for sc.Scan() {
-		path, line, snippet, ok := parseRipgrepLine(sc.Text())
-		if !ok {
-			continue
+// firstContentLine returns the first non-empty line of s, trimmed.
+func firstContentLine(s string) string {
+	for _, line := range strings.SplitN(s, "\n", 10) {
+		if t := strings.TrimSpace(line); t != "" {
+			return t
 		}
-		// Skip the definition itself: same file + within def line range.
-		if defSym.Path != "" && (path == defAbs || path == defSym.Path) {
-			if line >= defSym.StartLine && line <= defSym.EndLine {
-				continue
-			}
-		}
-		// Normalize to project-relative path for consistency with the
-		// rest of the bundle.
-		rel, err := filepath.Rel(e.projectRoot, path)
-		if err == nil && !strings.HasPrefix(rel, "..") {
-			path = rel
-		}
-		key := path + ":" + fmt.Sprint(line)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, RefHit{
-			Path:    path,
-			Line:    line,
-			Snippet: strings.TrimSpace(snippet),
-			Symbol:  defSym.QualifiedName,
-		})
 	}
-	return out
-}
-
-// parseRipgrepLine splits `path:line:text` — paths on Windows can
-// contain `:` after the drive letter, but we run on Linux/macOS where
-// the first two `:` are always separators.
-func parseRipgrepLine(s string) (path string, line int, text string, ok bool) {
-	p, rest, found := strings.Cut(s, ":")
-	if !found {
-		return "", 0, "", false
-	}
-	lineStr, snippet, found := strings.Cut(rest, ":")
-	if !found {
-		return "", 0, "", false
-	}
-	if _, err := fmt.Sscanf(lineStr, "%d", &line); err != nil {
-		return "", 0, "", false
-	}
-	return p, line, snippet, true
+	return strings.TrimSpace(s)
 }
 
 // ─── leg 5: git blame + CODEOWNERS (editing_context only) ────────────────
