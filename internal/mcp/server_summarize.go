@@ -41,6 +41,11 @@ type SummarizeInput struct {
 	// reference, so it can never read a path it invented. Distinct from `expand`,
 	// which addresses suppressed bodies within one skeleton read.
 	Handle string `json:"handle,omitempty" jsonschema:"expansion handle from a find/ask/lookup result (the result's 'handle' field); reads that exact range — supersedes path/paths/start_line/end_line"`
+	// Dedup controls Go import block deduplication in multi-file (paths[]) reads.
+	// Default (omitted / true): the union of all import blocks is emitted once as a
+	// shared header and each file's block is replaced with a back-reference comment.
+	// Pass false to receive raw per-file output without any deduplication.
+	Dedup *bool `json:"dedup,omitempty" jsonschema:"set to false to disable Go import deduplication in batch reads (default: true, dedup is on for full/signatures modes with ≥2 Go files)"`
 }
 
 type SummarizeOutput struct {
@@ -64,6 +69,11 @@ type SummarizeOutput struct {
 	// Place the Anthropic cache_control breakpoint after this many tokens from
 	// the start of the response to maximise prompt-cache hits.
 	StablePrefixTokens int `json:"stable_prefix_tokens,omitempty"`
+	// ImportsDedupSavedLines is the number of import lines removed from
+	// per-file output by Go import deduplication. Zero when dedup was not
+	// applied (single-file, fewer than 2 files had import blocks, or dedup
+	// was explicitly disabled).
+	ImportsDedupSavedLines int `json:"imports_dedup_saved_lines,omitempty"`
 }
 
 // maxSummarizeBytes caps the slice we send to the chat endpoint. Above
@@ -306,8 +316,10 @@ func validReadMode(mode string) bool {
 
 // summarizeBatch handles file_view when paths[] is provided.
 // All files are processed with the same mode in a single call.
-// When 3+ files are successfully read, a TF-IDF codebook is applied to
-// replace repeated lines (imports, boilerplate) with short §N refs.
+// Go import blocks are deduplicated across files (union emitted once as a shared
+// header; per-file blocks replaced with a back-reference) unless dedup=false.
+// When 3+ files are successfully read, a TF-IDF codebook is also applied to
+// replace any remaining repeated lines with short §N refs.
 func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	const maxBatch = 10
 	if len(in.Paths) > maxBatch {
@@ -385,16 +397,44 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 		results = append(stable, fresh...)
 	}
 
-	// Build codebook from successfully-read file contents.
+	// Build file-content slice for dedup + codebook.
 	var fileContents []string
 	for _, r := range results {
 		if r.ok {
 			fileContents = append(fileContents, r.content)
 		}
 	}
+
+	// Go import block deduplication: extract the parenthesized import block from
+	// each file, emit the union once as a shared header, replace per-file blocks
+	// with a single back-reference line. Applied when: mode is full or the content
+	// happens to contain import blocks (dedup is a no-op when no blocks are found),
+	// and the caller has not opted out with dedup=false.
+	var dedupHeader string
+	var importsDedupSavedLines int
+	if in.Dedup == nil || *in.Dedup {
+		var deduped []string
+		dedupHeader, deduped, importsDedupSavedLines = compress.DeduplicateGoImports(fileContents)
+		if dedupHeader != "" {
+			// Splice deduped content back into results.
+			j := 0
+			for i := range results {
+				if results[i].ok {
+					results[i].content = deduped[j]
+					j++
+				}
+			}
+			fileContents = deduped
+		}
+	}
+
 	cb := compress.BuildCodebook(fileContents)
 
 	var sb strings.Builder
+	if dedupHeader != "" {
+		sb.WriteString(dedupHeader)
+		sb.WriteByte('\n')
+	}
 	if !cb.Empty() {
 		sb.WriteString(cb.Legend())
 		sb.WriteByte('\n')
@@ -423,11 +463,12 @@ func (s *Server) summarizeBatch(ctx context.Context, in SummarizeInput) (*sdk.Ca
 	}
 
 	return nil, SummarizeOutput{
-		Status:             "ok",
-		Project:            project,
-		Content:            strings.TrimRight(sb.String(), "\n"),
-		Paths:              resolvedPaths,
-		StablePrefixTokens: stablePrefixTokens,
+		Status:                 "ok",
+		Project:                project,
+		Content:                strings.TrimRight(sb.String(), "\n"),
+		Paths:                  resolvedPaths,
+		StablePrefixTokens:     stablePrefixTokens,
+		ImportsDedupSavedLines: importsDedupSavedLines,
 	}, nil
 }
 
