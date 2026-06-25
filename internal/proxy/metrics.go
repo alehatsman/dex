@@ -102,6 +102,10 @@ type Snapshot struct {
 	// verbatim rather than stub-replaced.
 	ResultsPreserved int64 `json:"results_preserved"`
 	TokensPreserved  int64 `json:"tokens_preserved"`
+
+	// LogPath is the absolute path of the per-session JSONL budget event log
+	// (#60). Empty when no BudgetLog is configured.
+	LogPath string `json:"log_path,omitempty"`
 }
 
 // record adds one request's before/after token counts to the cumulative totals.

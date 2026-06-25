@@ -69,6 +69,9 @@ type Options struct {
 	// (#58) with the file path that triggered the signal. Callers use this to
 	// forward the event to adaptive.PolicyTable.RecordSignal.
 	EditFailHook func(path string)
+	// BudgetLog, when non-nil, records per-turn and per-compact budget events
+	// to the session JSONL log (#60).
+	BudgetLog *BudgetLog
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -95,7 +98,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -155,8 +158,9 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 
 // newProxyHandler builds the mux:
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
+//   - POST /compact → record a PreCompact event in the budget log
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string)) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -184,8 +188,21 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 		// GET /stats — JSON snapshot of cumulative token counters (no PII).
 		if r.Method == http.MethodGet && r.URL.Path == "/stats" {
 			snap := stats.Snapshot()
+			if budgetLog != nil {
+				snap.LogPath = budgetLog.LogPath()
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(snap)
+			return
+		}
+
+		// POST /compact — fired by the PreCompact hook to record a context
+		// compaction event and advance the window counter.
+		if r.Method == http.MethodPost && r.URL.Path == "/compact" {
+			if budgetLog != nil {
+				_, _ = budgetLog.AppendCompact()
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -266,6 +283,9 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 		// unchanged and fires notify once Done() is called.
 		tw := newUsageTeeWriter(w, func(u ProviderUsage) {
 			stats.recordUsage(u)
+			if budgetLog != nil {
+				_ = budgetLog.AppendTurn(u)
+			}
 		})
 		rp.ServeHTTP(tw, r)
 		tw.Done()

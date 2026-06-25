@@ -30,7 +30,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/alehatsman/dex/internal/proxy"
 )
@@ -95,6 +97,13 @@ func cmdProxy(ctx context.Context, args []string) error {
 
 	routeCfg := parseModelRouteConfig(*routeModelFlag, *routeLowThreshold, *routeLowModel, *routeMidThreshold, *routeMidModel)
 
+	// Budget event log (#60): one JSONL file per session under ~/.cache/dex/sessions/.
+	sessionID := time.Now().UTC().Format("20060102T150405Z")
+	bl, blErr := openBudgetLog(sessionID)
+	if blErr != nil {
+		fmt.Printf("  budget-log: disabled (%v)\n", blErr)
+	}
+
 	fmt.Printf("dex proxy\n")
 	fmt.Printf("  addr=%s  upstream=%s  auth=%v\n", *addr, *upstream, token != "")
 	fmt.Printf("  wire it up: export ANTHROPIC_BASE_URL=http://%s\n", *addr)
@@ -110,6 +119,9 @@ func cmdProxy(ctx context.Context, args []string) error {
 	} else {
 		fmt.Printf("  route-model: off\n")
 	}
+	if bl != nil {
+		fmt.Printf("  budget-log: %s\n", bl.LogPath())
+	}
 	fmt.Printf("  stats: dex proxy --stats\n")
 
 	return proxy.Run(ctx, proxy.Options{
@@ -119,6 +131,7 @@ func cmdProxy(ctx context.Context, args []string) error {
 		Token:        token,
 		ToolDescMode: toolDescMode,
 		RouteConfig:  routeCfg,
+		BudgetLog:    bl,
 	})
 }
 
@@ -162,6 +175,26 @@ func parseModelRouteConfig(routeModel string, lowThr int, lowModel string, midTh
 	}
 }
 
+// openBudgetLog creates the per-session budget log under ~/.cache/dex/sessions/
+// and writes a current_session pointer file so the PreCompact hook can locate it.
+func openBudgetLog(sessionID string) (*proxy.BudgetLog, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	base := filepath.Join(cacheDir, "dex", "sessions")
+	bl, err := proxy.NewBudgetLog(base, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	// Write pointer so the hook can resolve the current session log.
+	ptr := filepath.Join(cacheDir, "dex", "current_session")
+	if mkErr := os.MkdirAll(filepath.Dir(ptr), 0o755); mkErr == nil {
+		_ = os.WriteFile(ptr, []byte(sessionID), 0o644)
+	}
+	return bl, nil
+}
+
 // printProxyStats fetches the /stats snapshot from a running proxy and prints it.
 func printProxyStats(ctx context.Context, addr, token string) error {
 	snap, err := proxy.FetchStats(ctx, addr, token)
@@ -178,6 +211,9 @@ func printProxyStats(ctx context.Context, addr, token string) error {
 		snap.ReReadsAfterStub, snap.ReReadTokens)
 	fmt.Fprintf(os.Stdout, "  dup-reads: %d redundant in-window reads  (%d tokens dedupable)\n",
 		snap.DupReadsInWindow, snap.DupReadTokens)
+	if snap.LogPath != "" {
+		fmt.Fprintf(os.Stdout, "  log      : %s\n", snap.LogPath)
+	}
 	fmt.Fprintln(os.Stdout)
 
 	enc := json.NewEncoder(os.Stdout)
