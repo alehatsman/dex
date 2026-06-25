@@ -23,6 +23,10 @@ import (
 // cleanly instead of pretending success.
 var ErrUnreachable = errors.New("chat service unreachable")
 
+// ErrModelNotFound is returned by Health when the endpoint is reachable
+// but the configured model does not appear in the /v1/models listing.
+var ErrModelNotFound = errors.New("chat model not found")
+
 // Chatter is the interface satisfied by *Client. Callers that need to
 // inject a stub in tests should hold a Chatter, not a *Client.
 // Mirrors the embed.Embedder pattern in internal/embed/client.go.
@@ -266,6 +270,13 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Op
 // service is fine. /v1/models is the OpenAI-compat listing endpoint;
 // every supported backend (Ollama, vLLM, llama.cpp-server, TEI) serves
 // it cheaply.
+//
+// Beyond raw reachability the method also parses the response body and
+// verifies that c.Model appears in the listing. If the body cannot be
+// decoded (proxy that omits the listing, non-standard format) we fail
+// open and return nil — better to report "ok" than to block a working
+// setup with an opaque parse error. When the list is readable but the
+// model is absent we return ErrModelNotFound.
 func (c *Client) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/models", nil)
 	if err != nil {
@@ -279,5 +290,26 @@ func (c *Client) Health(ctx context.Context) error {
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("chat: /v1/models returned %d", resp.StatusCode)
 	}
-	return nil
+
+	var modelList struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&modelList); err != nil {
+		// Fail-open: proxy or non-standard endpoint that doesn't return
+		// an enumerable list — treat as reachable.
+		return nil
+	}
+	// Empty data list means the endpoint didn't enumerate models — fail
+	// open so backends that return {"data":[]} don't show as degraded.
+	if len(modelList.Data) == 0 {
+		return nil
+	}
+	for _, m := range modelList.Data {
+		if m.ID == c.Model {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrModelNotFound, c.Model)
 }

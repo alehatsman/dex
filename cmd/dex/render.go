@@ -5,12 +5,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/store"
@@ -73,10 +75,14 @@ func printEndpoints(ctx context.Context) {
 		wg.Add(1)
 		go func(p *endpointProbe) {
 			defer wg.Done()
-			if err := p.health(ctx); err != nil {
-				p.status = "UNREACHABLE"
-			} else {
+			err := p.health(ctx)
+			switch {
+			case err == nil:
 				p.status = "ok"
+			case errors.Is(err, chat.ErrModelNotFound):
+				p.status = fmt.Sprintf("DEGRADED model not found: %s", p.model)
+			default:
+				p.status = "UNREACHABLE"
 			}
 		}(&probes[i])
 	}

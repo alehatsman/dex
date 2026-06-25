@@ -2,11 +2,13 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/rerank"
 	"github.com/alehatsman/dex/internal/store"
@@ -41,9 +43,10 @@ type StatusOutput struct {
 	Endpoint          string          `json:"endpoint"`
 	Reachable         bool            `json:"reachable"`
 	Model             string          `json:"model"`
-	ChatEndpoint      string          `json:"chat_endpoint,omitempty"`
-	ChatReachable     bool            `json:"chat_reachable,omitempty"`
-	ChatModel         string          `json:"chat_model,omitempty"`
+	ChatEndpoint        string          `json:"chat_endpoint,omitempty"`
+	ChatReachable       bool            `json:"chat_reachable,omitempty"`
+	ChatModelAvailable  bool            `json:"chat_model_available,omitempty"`
+	ChatModel           string          `json:"chat_model,omitempty"`
 	RerankEndpoint    string          `json:"rerank_endpoint,omitempty"`
 	RerankReachable   bool            `json:"rerank_reachable,omitempty"`
 	RerankModel       string          `json:"rerank_model,omitempty"`
@@ -121,7 +124,24 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 		})
 	}
 	if s.ChatClient != nil {
-		probe(&wg, s.ChatClient, func(ok bool, _ string) { out.ChatReachable = ok })
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			err := s.ChatClient.Health(pctx)
+			switch {
+			case err == nil:
+				out.ChatReachable = true
+				out.ChatModelAvailable = true
+			case errors.Is(err, chat.ErrModelNotFound):
+				out.ChatReachable = true
+				out.ChatModelAvailable = false
+			default:
+				out.ChatReachable = false
+				out.ChatModelAvailable = false
+			}
+		}()
 	}
 	if s.RerankClient != nil {
 		probe(&wg, s.RerankClient, func(ok bool, _ string) { out.RerankReachable = ok })

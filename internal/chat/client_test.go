@@ -173,3 +173,77 @@ func TestNewDefaults(t *testing.T) {
 		t.Errorf("BaseURL should be trimmed: %q", c.BaseURL)
 	}
 }
+
+// modelsHandler returns a /v1/models handler that lists the given model IDs.
+func modelsHandler(ids ...string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		type modelEntry struct {
+			ID string `json:"id"`
+		}
+		resp := struct {
+			Data []modelEntry `json:"data"`
+		}{}
+		for _, id := range ids {
+			resp.Data = append(resp.Data, modelEntry{ID: id})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func TestHealthModelPresent(t *testing.T) {
+	srv := httptest.NewServer(modelsHandler("llama3", "mistral"))
+	defer srv.Close()
+	c := New(srv.URL, "llama3", 2*time.Second)
+	if err := c.Health(context.Background()); err != nil {
+		t.Errorf("Health with present model = %v, want nil", err)
+	}
+}
+
+func TestHealthModelNotFound(t *testing.T) {
+	srv := httptest.NewServer(modelsHandler("llama3", "mistral"))
+	defer srv.Close()
+	c := New(srv.URL, "gpt-4", 2*time.Second)
+	err := c.Health(context.Background())
+	if !errors.Is(err, ErrModelNotFound) {
+		t.Errorf("Health with absent model = %v, want ErrModelNotFound", err)
+	}
+}
+
+func TestHealthUnreachable(t *testing.T) {
+	c := New(closedURL(t), "fake", 200*time.Millisecond)
+	err := c.Health(context.Background())
+	if !errors.Is(err, ErrUnreachable) {
+		t.Errorf("Health on closed port = %v, want ErrUnreachable", err)
+	}
+}
+
+func TestHealthFailOpenUnparseable(t *testing.T) {
+	// Server returns 200 but with non-JSON body — should fail open (return nil).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("not json at all"))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "any-model", 2*time.Second)
+	if err := c.Health(context.Background()); err != nil {
+		t.Errorf("Health with unparseable body = %v, want nil (fail-open)", err)
+	}
+}
+
+func TestHealthFailOpenEmptyList(t *testing.T) {
+	// Server returns {"data":[]} — empty list should fail open (return nil).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "any-model", 2*time.Second)
+	if err := c.Health(context.Background()); err != nil {
+		t.Errorf("Health with empty data list = %v, want nil (fail-open)", err)
+	}
+}
