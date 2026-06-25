@@ -11,6 +11,80 @@ import (
 // tool_result rewriting.
 const DefaultKeepRecent = 10
 
+// PruneStride is exported so callers can reason about worst-case cache misses.
+// The prune boundary is rounded down to the nearest multiple of this stride so
+// the byte prefix stays identical between jumps, keeping the provider cache warm.
+const PruneStride = 16
+
+// pruneStart returns the first message index eligible for rewriting.
+// Rounds down to the nearest PruneStride multiple so the byte prefix
+// stays identical between jumps, keeping the provider cache warm.
+func pruneStart(msgLen, keepRecent int) int {
+	raw := msgLen - keepRecent
+	if raw <= 0 {
+		return 0
+	}
+	return (raw / PruneStride) * PruneStride
+}
+
+// hasCacheControlMarker reports whether a single raw message JSON contains a
+// cache_control key at any of the three nesting levels Anthropic supports:
+//  1. Top-level message object
+//  2. Content block inside message.content[]
+//  3. Text span inside a content block
+func hasCacheControlMarker(raw json.RawMessage) bool {
+	var msg map[string]any
+	if json.Unmarshal(raw, &msg) != nil {
+		return false
+	}
+	if _, ok := msg["cache_control"]; ok {
+		return true
+	}
+	contentAny, ok := msg["content"]
+	if !ok {
+		return false
+	}
+	blocks, ok := contentAny.([]any)
+	if !ok {
+		return false
+	}
+	for _, blkAny := range blocks {
+		blk, ok := blkAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, ok := blk["cache_control"]; ok {
+			return true
+		}
+		// Check text spans inside the block (level 3).
+		if spansAny, ok := blk["content"]; ok {
+			if spans, ok := spansAny.([]any); ok {
+				for _, spanAny := range spans {
+					if span, ok := spanAny.(map[string]any); ok {
+						if _, ok := span["cache_control"]; ok {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// cachedPrefixLen returns the index after the last cache_control marker,
+// scanning at message, content-block, and text levels.
+// Returns 0 if no marker found (prune freely).
+func cachedPrefixLen(messages []json.RawMessage) int {
+	last := 0
+	for i, raw := range messages {
+		if hasCacheControlMarker(raw) {
+			last = i + 1
+		}
+	}
+	return last
+}
+
 // PruneRequestBody parses an Anthropic /v1/messages JSON body, prunes old
 // tool_result blocks via PruneHistory, and returns the rewritten body.
 // On any parse or marshal error the original body is returned unchanged
@@ -87,10 +161,13 @@ func PruneHistory(messages []json.RawMessage, keepRecent int) []json.RawMessage 
 	toolNames := buildToolNameMap(messages)
 
 	out := make([]json.RawMessage, len(messages))
-	pruneUntil := len(messages) - keepRecent
+	boundary := pruneStart(len(messages), keepRecent)
+	pruneFloor := cachedPrefixLen(messages) // protect client-set cache_control prefix
 
 	for i, raw := range messages {
-		if i >= pruneUntil {
+		// Keep messages in the keep-recent zone (i >= boundary) or inside the
+		// client-set cache_control prefix (i < pruneFloor) byte-identical.
+		if i >= boundary || i < pruneFloor {
 			out[i] = raw
 			continue
 		}

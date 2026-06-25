@@ -89,21 +89,18 @@ func longContent(lines int) string {
 func TestOldFileReadGetsHonestRereadStub(t *testing.T) {
 	fileContent := longContent(20) // 20 lines, well above minPruneChars
 
+	// With PruneStride=16 and keepRecent=10, we need at least 26 messages so
+	// the prune zone (len-keepRecent) >= 16 and rounds to 16 rather than 0.
 	msgs := makeMessages(t,
 		toolUseMsg("id1", "Read"),
 		toolResultMsg("id1", fileContent),
-		// Pad so these two are outside the keep_recent window.
-		map[string]any{"role": "user", "content": "later message 1"},
-		map[string]any{"role": "user", "content": "later message 2"},
-		map[string]any{"role": "user", "content": "later message 3"},
-		map[string]any{"role": "user", "content": "later message 4"},
-		map[string]any{"role": "user", "content": "later message 5"},
-		map[string]any{"role": "user", "content": "later message 6"},
-		map[string]any{"role": "user", "content": "later message 7"},
-		map[string]any{"role": "user", "content": "later message 8"},
-		map[string]any{"role": "user", "content": "later message 9"},
-		map[string]any{"role": "user", "content": "later message 10"},
 	)
+	// Pad to 26 total: 24 padding + the 2 above.
+	for i := 1; i <= 24; i++ {
+		msgs = append(msgs, makeMessages(t,
+			map[string]any{"role": "user", "content": "later message"},
+		)...)
+	}
 
 	pruned := PruneHistory(msgs, DefaultKeepRecent)
 	got := extractFirstToolResultContent(t, pruned)
@@ -148,13 +145,14 @@ func TestCommandOutputGetsHeadTailSummary(t *testing.T) {
 	}
 	cmdOutput := strings.Join(lines, "\n") + "\n"
 
-	// Ensure prunable: 12 messages, keepRecent=10 → first 2 are pruned.
+	// With PruneStride=16 and keepRecent=10, need >=26 messages so the prune zone
+	// rounds up to 16 rather than 0.
 	msgs := makeMessages(t,
 		toolUseMsg("id1", "Bash"),
 		toolResultMsg("id1", cmdOutput),
 	)
-	// Pad to push the result outside keepRecent.
-	for i := 0; i < 10; i++ {
+	// Pad to 26 total.
+	for i := 0; i < 24; i++ {
 		msgs = append(msgs, makeMessages(t,
 			map[string]any{"role": "user", "content": "padding"},
 		)...)
@@ -184,7 +182,8 @@ func TestShortContentSkipped(t *testing.T) {
 		toolUseMsg("id1", "Read"),
 		toolResultMsg("id1", shortContent),
 	)
-	for i := 0; i < 10; i++ {
+	// Need >=26 messages with keepRecent=10 so stride boundary fires at 16.
+	for i := 0; i < 24; i++ {
 		msgs = append(msgs, makeMessages(t,
 			map[string]any{"role": "user", "content": "padding"},
 		)...)
@@ -206,7 +205,8 @@ func TestUnknownToolGetsHeadTailFallback(t *testing.T) {
 		toolUseMsg("id1", "some_exotic_tool_xyz"),
 		toolResultMsg("id1", content),
 	)
-	for i := 0; i < 10; i++ {
+	// Need >=26 messages with keepRecent=10 so stride boundary fires at 16.
+	for i := 0; i < 24; i++ {
 		msgs = append(msgs, makeMessages(t,
 			map[string]any{"role": "user", "content": "padding"},
 		)...)
@@ -268,7 +268,8 @@ func TestArrayContentToolResult(t *testing.T) {
 			},
 		},
 	)
-	for i := 0; i < 10; i++ {
+	// Need >=26 messages with keepRecent=10 so stride boundary fires at 16.
+	for i := 0; i < 24; i++ {
 		msgs = append(msgs, makeMessages(t,
 			map[string]any{"role": "user", "content": "padding"},
 		)...)
@@ -291,6 +292,173 @@ func TestHeadTailSummary(t *testing.T) {
 	summary := headTailSummary(s)
 	if !strings.Contains(summary, "5 lines pruned") {
 		t.Errorf("expected 5 lines pruned annotation; got: %q", summary)
+	}
+}
+
+// TestPruneStartStride verifies that pruneStart always returns a multiple of
+// PruneStride and is monotonically non-decreasing as msgLen grows.
+func TestPruneStartStride(t *testing.T) {
+	keepRecent := 8
+	prev := 0
+	for msgLen := 0; msgLen <= 64; msgLen++ {
+		got := pruneStart(msgLen, keepRecent)
+		// Must be a multiple of PruneStride (or zero).
+		if got != 0 && got%PruneStride != 0 {
+			t.Errorf("pruneStart(%d, %d) = %d, not a multiple of PruneStride (%d)",
+				msgLen, keepRecent, got, PruneStride)
+		}
+		// Must be non-decreasing.
+		if got < prev {
+			t.Errorf("pruneStart(%d, %d) = %d < prev %d (non-monotonic)",
+				msgLen, keepRecent, got, prev)
+		}
+		prev = got
+	}
+}
+
+// msgWithCacheControl builds a user message that carries a top-level
+// cache_control marker (simulating what the client sets as a breakpoint).
+func msgWithCacheControl(text string) any {
+	return map[string]any{
+		"role":          "user",
+		"content":       text,
+		"cache_control": map[string]any{"type": "ephemeral"},
+	}
+}
+
+// msgWithCacheControlInContent builds a user message whose content array has a
+// block carrying cache_control (level-2 nesting).
+func msgWithCacheControlInContent(text string) any {
+	return map[string]any{
+		"role": "user",
+		"content": []any{
+			map[string]any{
+				"type":          "text",
+				"text":          text,
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+	}
+}
+
+// TestCacheControlPrefixPreserved checks that messages up through the last
+// cache_control marker are left byte-identical after PruneHistory, even when
+// they fall inside the prunable zone.
+func TestCacheControlPrefixPreserved(t *testing.T) {
+	fileContent := longContent(20)
+
+	// Messages 0-3: tool pair + padding + cache_control at index 3.
+	// Total 20 messages, keepRecent=4: pruneStart(20,4)=16, pruneFloor=4.
+	// Prune zone is [4,16); messages 0-3 are protected by pruneFloor.
+	// Without pruneFloor, message 1 (index 1 < 16) would be pruned.
+	msgs := makeMessages(t,
+		toolUseMsg("id1", "Read"),
+		toolResultMsg("id1", fileContent), // index 1 — in stride zone, must survive via pruneFloor
+		map[string]any{"role": "user", "content": "padding2"},
+		msgWithCacheControl("breakpoint here"), // index 3 — last cache_control marker → pruneFloor=4
+	)
+	// Pad to 20 total.
+	for i := 4; i < 20; i++ {
+		msgs = append(msgs, makeMessages(t,
+			map[string]any{"role": "user", "content": "padding"},
+		)...)
+	}
+	pruned := PruneHistory(msgs, 4)
+
+	// Messages 0-3 must be byte-identical to inputs.
+	for i := 0; i <= 3; i++ {
+		if string(pruned[i]) != string(msgs[i]) {
+			t.Errorf("message[%d] changed despite being inside cache_control prefix\norig: %s\n got: %s",
+				i, msgs[i], pruned[i])
+		}
+	}
+	// The tool_result at index 1 must still contain original content (not a stub).
+	got := extractFirstToolResultContent(t, pruned[:2])
+	if !strings.Contains(got, "line content here") {
+		t.Errorf("tool_result inside cache prefix should be untouched; got: %q", got)
+	}
+}
+
+// TestCacheControlNoMarkers verifies that histories with no cache_control
+// markers behave exactly as before (boundary driven purely by pruneStart).
+func TestCacheControlNoMarkers(t *testing.T) {
+	fileContent := longContent(20)
+
+	msgs := makeMessages(t,
+		toolUseMsg("id1", "Read"),
+		toolResultMsg("id1", fileContent),
+	)
+	// Need >=26 messages with keepRecent=10 so the prune zone (len-keepRecent)
+	// rounds up to 16 via PruneStride, placing msg 0-1 in the prunable zone.
+	for i := 0; i < 24; i++ {
+		msgs = append(msgs, makeMessages(t,
+			map[string]any{"role": "user", "content": "padding"},
+		)...)
+	}
+
+	pruned := PruneHistory(msgs, DefaultKeepRecent)
+	// With no markers, pruneFloor=0, boundary=pruneStart(26,10)=16.
+	// Messages 0-15 (including the tool_result at index 1) are eligible for pruning.
+	got := extractFirstToolResultContent(t, pruned)
+	if !strings.Contains(got, "pruned to save tokens; re-read if needed") {
+		t.Errorf("expected prune stub with no cache markers; got: %q", got)
+	}
+}
+
+// TestCacheControlBoundaryFloor checks that the prune floor correctly protects
+// the cache_control prefix while still pruning eligible messages outside it.
+// Setup: 20 messages total, keepRecent=4 → pruneStart(20,4)=(16/16)*16=16.
+// cache_control at index 3 → pruneFloor=4. Prune zone = [4, 16).
+// Messages 0-3 must be untouched; message 5 (tool_result outside floor) pruned.
+func TestCacheControlBoundaryFloor(t *testing.T) {
+	fileContent := longContent(20)
+
+	// Indices 0-3: tool pair + padding + cache_control marker.
+	msgs := makeMessages(t,
+		toolUseMsg("id1", "Read"),
+		toolResultMsg("id1", fileContent),             // index 1 — inside floor, must NOT be pruned
+		map[string]any{"role": "user", "content": "p"}, // index 2
+		msgWithCacheControlInContent("cc block level 2"), // index 3 — last cache marker → pruneFloor=4
+		toolUseMsg("id2", "Read"),
+		toolResultMsg("id2", fileContent), // index 5 — in [4,16) → MUST be pruned
+	)
+	// Pad to 20 total (indices 6-19).
+	for i := 6; i < 20; i++ {
+		msgs = append(msgs, makeMessages(t,
+			map[string]any{"role": "user", "content": "padding"},
+		)...)
+	}
+
+	pruned := PruneHistory(msgs, 4)
+
+	// Messages 0-3 must be byte-identical (inside pruneFloor).
+	for i := 0; i <= 3; i++ {
+		if string(pruned[i]) != string(msgs[i]) {
+			t.Errorf("message[%d] changed despite being inside cache_control prefix", i)
+		}
+	}
+
+	// Message 5 (tool_result for id2) is in the prune zone [4, 16) and should be pruned.
+	var secondResultContent string
+	for _, raw := range pruned[4:6] {
+		var msg struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type    string `json:"type"`
+				Content string `json:"content"`
+			} `json:"content"`
+		}
+		if json.Unmarshal(raw, &msg) != nil || msg.Role != "user" {
+			continue
+		}
+		for _, blk := range msg.Content {
+			if blk.Type == "tool_result" {
+				secondResultContent = blk.Content
+			}
+		}
+	}
+	if !strings.Contains(secondResultContent, "pruned to save tokens; re-read if needed") {
+		t.Errorf("tool_result outside cache prefix should be pruned; got: %q", secondResultContent)
 	}
 }
 

@@ -409,30 +409,25 @@ func TestPruneIntegration(t *testing.T) {
 	})
 	front, logs := newTestProxy(t, up)
 
-	// Build a request with 12 messages: assistant tool_use + user tool_result
-	// (Read, bulky) + 10 padding user messages so the result is outside
-	// keep_recent=10.
+	// Build a request with 26 messages: assistant tool_use + user tool_result
+	// (Read, bulky) + 24 padding user messages. With PruneStride=16 and
+	// keepRecent=10: pruneStart(26,10)=(16/16)*16=16, so messages 0-15
+	// (including the tool_result at index 1) are in the prune zone.
 	bigContent := strings.Repeat("line content here\n", 20) // > 200 chars
+	msgs := []any{
+		map[string]any{"role": "assistant", "content": []any{
+			map[string]any{"type": "tool_use", "id": "tid1", "name": "Read", "input": map[string]any{}},
+		}},
+		map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "tool_result", "tool_use_id": "tid1", "content": bigContent},
+		}},
+	}
+	for i := 0; i < 24; i++ {
+		msgs = append(msgs, map[string]any{"role": "user", "content": "pad"})
+	}
 	body, err := json.Marshal(map[string]any{
-		"model": "claude-sonnet-4-6",
-		"messages": []any{
-			map[string]any{"role": "assistant", "content": []any{
-				map[string]any{"type": "tool_use", "id": "tid1", "name": "Read", "input": map[string]any{}},
-			}},
-			map[string]any{"role": "user", "content": []any{
-				map[string]any{"type": "tool_result", "tool_use_id": "tid1", "content": bigContent},
-			}},
-			map[string]any{"role": "user", "content": "pad1"},
-			map[string]any{"role": "user", "content": "pad2"},
-			map[string]any{"role": "user", "content": "pad3"},
-			map[string]any{"role": "user", "content": "pad4"},
-			map[string]any{"role": "user", "content": "pad5"},
-			map[string]any{"role": "user", "content": "pad6"},
-			map[string]any{"role": "user", "content": "pad7"},
-			map[string]any{"role": "user", "content": "pad8"},
-			map[string]any{"role": "user", "content": "pad9"},
-			map[string]any{"role": "user", "content": "pad10"},
-		},
+		"model":    "claude-sonnet-4-6",
+		"messages": msgs,
 	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
