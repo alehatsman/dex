@@ -200,6 +200,15 @@ type InfraOptions struct {
 	VectorQuant string
 }
 
+// GitRecencyBonuser is implemented by *gitrecency.Cache. The interface seam
+// keeps the store package free of the gitrecency import — the caller wires a
+// live cache via Store.SetGitRecency after opening the store.
+type GitRecencyBonuser interface {
+	// Bonus returns a per-chunk-ID additive RRF bonus map, scaled by 1/rrfK.
+	// Returns nil when all bonuses are zero.
+	Bonus(pathFor map[int64]string, rrfK int) map[int64]float32
+}
+
 // Options influence the runtime behaviour of an opened Store.
 // All fields are optional; the zero value matches the default
 // (hybrid BM25+semantic search enabled).
@@ -216,6 +225,7 @@ type Store struct {
 	noVec      atomic.Bool  // true when index is BM25-only (DEX_EMBED_ENGINE=none) — no vec0 table, nil vecs
 	embedModel atomic.Value // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
 	opts       Options      // immutable after Open
+	gitRecency GitRecencyBonuser // non-nil when a project root is known at open time
 
 	knowledgeStore // knowledge-fact methods, keyed on Store.db
 }
@@ -290,6 +300,12 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// SetGitRecency wires a git-recency signal provider to the store. Call this
+// after OpenWith, once the project root is known, to enable file-recency and
+// dirty-file boosts in search ranking. Safe to call from one goroutine while
+// no searches are in flight; the MCP server wires this once at startup.
+func (s *Store) SetGitRecency(c GitRecencyBonuser) { s.gitRecency = c }
 
 type Stats struct {
 	Chunks    int

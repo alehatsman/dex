@@ -29,14 +29,15 @@ type BreakerStatus struct {
 }
 
 type ProjectStatus struct {
-	ID          string `json:"id"`
-	Root        string `json:"root,omitempty"`
-	Chunks      int    `json:"chunks"`
-	Files       int    `json:"files"`
-	Dim         int    `json:"dim"`
-	EmbedModel  string `json:"embed_model,omitempty"`
-	LastIndexed string `json:"last_indexed,omitempty"`
-	Indexing    bool   `json:"indexing,omitempty"` // a re-index is underway; counts are mid-rebuild (#531)
+	ID               string `json:"id"`
+	Root             string `json:"root,omitempty"`
+	Chunks           int    `json:"chunks"`
+	Files            int    `json:"files"`
+	Dim              int    `json:"dim"`
+	EmbedModel       string `json:"embed_model,omitempty"`
+	LastIndexed      string `json:"last_indexed,omitempty"`
+	Indexing         bool   `json:"indexing,omitempty"`          // a re-index is underway; counts are mid-rebuild (#531)
+	GitRecencyActive bool   `json:"git_recency_active,omitempty"` // git recency/dirty boost is wired for this project
 }
 
 type StatusOutput struct {
@@ -191,14 +192,20 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 				root, _ := st.ProjectRoot(ctx)
 				indexing, _ := st.IndexingInProgress(ctx)
 				st.Close()
+				gitActive := false
+				if root != "" {
+					_, gitErr := os.Stat(filepath.Join(root, ".git"))
+					gitActive = gitErr == nil
+				}
 				ps := ProjectStatus{
-					ID:         id,
-					Root:       root,
-					Chunks:     stats.Chunks,
-					Files:      stats.Files,
-					Dim:        stats.Dim,
-					EmbedModel: stats.EmbedModel,
-					Indexing:   indexing,
+					ID:               id,
+					Root:             root,
+					Chunks:           stats.Chunks,
+					Files:            stats.Files,
+					Dim:              stats.Dim,
+					EmbedModel:       stats.EmbedModel,
+					Indexing:         indexing,
+					GitRecencyActive: gitActive,
 				}
 				if !stats.LastIndex.IsZero() {
 					ps.LastIndexed = stats.LastIndex.Format(time.RFC3339)

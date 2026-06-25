@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/gitrecency"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/rerank"
 	"github.com/alehatsman/dex/internal/retrieve"
@@ -209,7 +210,13 @@ func maxHitsPerFile() int {
 }
 
 func openStore(ctx context.Context, dbPath string) (*store.Store, error) {
-	return store.OpenWith(ctx, dbPath, storeOpts())
+	st, err := store.OpenWith(ctx, dbPath, storeOpts())
+	if err == nil {
+		if root, rerr := st.ProjectRoot(ctx); rerr == nil && root != "" {
+			st.SetGitRecency(gitrecency.New(root))
+		}
+	}
+	return st, err
 }
 
 // cliLogger returns a stderr text logger. Used for the CLI commands

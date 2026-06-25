@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/alehatsman/dex/internal/gitrecency"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -26,7 +27,13 @@ func (s *Server) openStore(dbPath string) (*store.Store, error) {
 		return store.OpenWith(context.Background(), dbPath, s.StoreOpts)
 	}
 	cs.once.Do(func() {
-		cs.st, cs.err = store.OpenWith(context.Background(), dbPath, s.StoreOpts)
+		st, err := store.OpenWith(context.Background(), dbPath, s.StoreOpts)
+		if err == nil {
+			if root, rerr := st.ProjectRoot(context.Background()); rerr == nil && root != "" {
+				st.SetGitRecency(gitrecency.New(root))
+			}
+		}
+		cs.st, cs.err = st, err
 	})
 	return cs.st, cs.err
 }

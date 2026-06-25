@@ -304,10 +304,11 @@ const cooccurNeighborAlpha = 0.5
 // paint the entire candidate pool.
 const cooccurNeighborsPerQuery = 16
 
-// applyProximityBonus adds session proximity + cooccur spreading bonuses to
-// the score map. In FusionLinear mode scores are in [0,1] — the raw bonus
-// (~1/rrfK ≈ 0.017) would be ~60× weaker relative to primary scores than in
-// RRF mode, so it is scaled by rrfK/3 to give comparable proportional impact.
+// applyProximityBonus adds session proximity, cooccur spreading, and git
+// recency/dirty bonuses to the score map. In FusionLinear mode scores are in
+// [0,1] — the raw bonus (~1/rrfK ≈ 0.017) would be ~60× weaker relative to
+// primary scores than in RRF mode, so it is scaled by rrfK/3 to give
+// comparable proportional impact.
 func (s *Store) applyProximityBonus(ctx context.Context, rrf map[int64]float32, pathFor map[int64]string) {
 	scale := float32(1)
 	if s.opts.FusionMode == FusionLinear {
@@ -318,6 +319,11 @@ func (s *Store) applyProximityBonus(ctx context.Context, rrf map[int64]float32, 
 	}
 	for id, bonus := range s.cooccurNeighborBonus(ctx, pathFor) {
 		rrf[id] += bonus * scale
+	}
+	if s.gitRecency != nil {
+		for id, bonus := range s.gitRecency.Bonus(pathFor, rrfK) {
+			rrf[id] += bonus * scale
+		}
 	}
 }
 
