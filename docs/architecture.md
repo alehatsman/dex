@@ -88,6 +88,16 @@ empty query drops the semantic lane (BM25-only).
 Symbol lookup is exact-match against `chunks.name`, falling back to `graph_nodes`.
 Graph queries (callers/callees/path/impact/clusters) walk `graph_edges`.
 
+`graph_nodes` also carries refactor-target columns (#591): `signature` (the
+declaration header), `start_byte` / `end_byte` (the symbol's 0-based,
+end-exclusive byte span in the source file), and `declaration_hash` (a hash of
+the signature, distinct from the positional `content_hash`). The Go extractor
+fills all four for function/method/type nodes; the tree-sitter extractors fill
+the byte span for every language. `Store.SymbolEditSpanByID` /
+`SymbolEditSpansByName` resolve a node to its exact byte range, so a consumer
+can apply a precise slice edit (`source[start_byte:end_byte]`) without reading
+the whole file — the foundation for deterministic typed refactors.
+
 ## The tool layer
 
 `internal/mcp` wraps retrieval as the tool surface. `ask` leads: it routes a
