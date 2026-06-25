@@ -66,6 +66,8 @@ func cmdProxy(ctx context.Context, args []string) error {
 		"Input tokens below this → route-mid-model (default 20000; env DEX_PROXY_ROUTE_MID_THRESHOLD).")
 	routeMidModel := fs.String("route-mid-model", "",
 		"Model for mid-token turns (env DEX_PROXY_ROUTE_MID_MODEL; default claude-sonnet-4-6).")
+	effortFlag := fs.String("effort", "",
+		"Reasoning-effort budget: low|medium|high (env DEX_PROXY_EFFORT). Skipped if client already set effort or model is not a reasoning model.")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -98,6 +100,12 @@ func cmdProxy(ctx context.Context, args []string) error {
 
 	routeCfg := parseModelRouteConfig(*routeModelFlag, *routeLowThreshold, *routeLowModel, *routeMidThreshold, *routeMidModel)
 
+	effortRaw := *effortFlag
+	if strings.TrimSpace(effortRaw) == "" {
+		effortRaw = os.Getenv("DEX_PROXY_EFFORT")
+	}
+	effort := proxy.ParseEffortLevel(effortRaw)
+
 	// Budget event log (#60): one JSONL file per session under ~/.cache/dex/sessions/.
 	sessionID := time.Now().UTC().Format("20060102T150405Z")
 	bl, blErr := openBudgetLog(sessionID)
@@ -123,6 +131,9 @@ func cmdProxy(ctx context.Context, args []string) error {
 	if bl != nil {
 		fmt.Printf("  budget-log: %s\n", bl.LogPath())
 	}
+	if effort != "" {
+		fmt.Printf("  effort: %s\n", effort)
+	}
 	fmt.Printf("  stats: dex proxy --stats\n")
 
 	// Wire cost events to the SLO tracker for the current project root so
@@ -142,6 +153,7 @@ func cmdProxy(ctx context.Context, args []string) error {
 		RouteConfig:  routeCfg,
 		BudgetLog:    bl,
 		CostHook:     costHook,
+		Effort:       effort,
 	})
 }
 

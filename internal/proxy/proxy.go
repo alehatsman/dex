@@ -78,6 +78,9 @@ type Options struct {
 	// CostHook, when non-nil, is called after each response with the incremental
 	// USD cost for that response. Callers use this to forward cost to an SLO tracker.
 	CostHook func(costUSD float64)
+	// Effort, when non-empty, injects a reasoning-budget hint into every outbound
+	// request that doesn't already set one. See ParseEffortLevel (#30).
+	Effort EffortLevel
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -107,7 +110,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook, opts.Effort)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -169,7 +172,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - POST /compact → record a PreCompact event in the budget log
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64)) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64), effort EffortLevel) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -263,6 +266,15 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 				paths = append(paths, "prune")
 			}
 			stats.recordPrune(pruneSt)
+
+			// Reasoning-effort passthrough (#30): inject a budget hint after
+			// routing (so the model name is final) but before cache alignment
+			// (so the rewrite is included in the stable prefix).
+			effortRewritten, effortStats := ApplyEffort(current, effort)
+			if effortStats.Applied {
+				current = effortRewritten
+				paths = append(paths, "effort:"+effortStats.Effort)
+			}
 
 			// Tool-description compression runs before cache alignment so the
 			// cache pass marks breakpoints on the final (compressed) tools
