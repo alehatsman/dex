@@ -1022,3 +1022,61 @@ func TestApplyMultiScaleFilterFallsBackOnNoOverlap(t *testing.T) {
 		t.Error("applyMultiScaleFilter: dropped all hits when candidate paths had no overlap — expected fallback to original hits")
 	}
 }
+
+func TestApplyMultiScaleFilterRescuesBM25StrongHits(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	// Five files so multi-scale index produces >= 3 meso candidates for the query.
+	for _, name := range []string{"alpha.go", "beta.go", "gamma.go", "delta.go", "epsilon.go"} {
+		writeFile(t, filepath.Join(projDir, name), "package main\n// "+name+" handles authentication\nfunc Handle() {}\n")
+	}
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+
+	p, hint := s.resolveProject(root)
+	if hint != "" {
+		t.Fatalf("resolveProject: %s", hint)
+	}
+	st, err := store.Open(context.Background(), p.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// inMeso is a hit from a real indexed file that will appear in the meso
+	// candidates and anchor the FilterByPaths return to non-empty.
+	inMeso := store.Hit{Path: "alpha.go"}
+	// rescued has a path outside the meso candidates but a strong BM25 score;
+	// the fix should re-admit it.
+	rescued := store.Hit{Path: "internal/watch/watch.go", BM25Score: 15.0}
+	// noise has a weak BM25 score and should remain excluded.
+	noise := store.Hit{Path: "internal/noise/noise.go", BM25Score: 2.0}
+
+	result := s.applyMultiScaleFilter(
+		context.Background(), st, p.DBPath, "authentication",
+		[]store.Hit{inMeso, rescued, noise},
+	)
+
+	hasMeso, hasRescued, hasNoise := false, false, false
+	for _, h := range result {
+		switch h.Path {
+		case inMeso.Path:
+			hasMeso = true
+		case rescued.Path:
+			hasRescued = true
+		case noise.Path:
+			hasNoise = true
+		}
+	}
+	if !hasMeso {
+		t.Error("meso-candidate hit was unexpectedly dropped")
+	}
+	if !hasRescued {
+		t.Errorf("BM25-strong hit (score %.1f) was not rescued after meso filter", rescued.BM25Score)
+	}
+	if hasNoise {
+		t.Errorf("low-BM25 hit (score %.1f) should have been excluded", noise.BM25Score)
+	}
+}
