@@ -472,13 +472,21 @@ func TestResolveShellTimeout(t *testing.T) {
 
 func TestShellRun_TimeoutSecsHonored(t *testing.T) {
 	s := &Server{}
-	// A 1s timeout against a 5s sleep should trip the 124 exit.
+	// A 1s timeout against a 5s sleep should trip the 124 exit AND actually
+	// abort within a couple of seconds — the regression guard for the
+	// descendant-kill fix: without process-group SIGKILL, sleep would inherit
+	// stdout and block cmd.Wait for the full 5s.
+	start := time.Now()
 	out, err := s.ShellRun(t.Context(), ShellInput{Command: "sleep 5", TimeoutSecs: 1, Raw: true})
+	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if out.ExitCode != 124 {
 		t.Fatalf("expected timeout exit 124, got %d (output=%q)", out.ExitCode, out.Output)
+	}
+	if elapsed > 4*time.Second {
+		t.Fatalf("timeout did not abort the descendant: elapsed=%v (want <4s)", elapsed)
 	}
 }
 

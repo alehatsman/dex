@@ -580,6 +580,11 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	cmd := exec.CommandContext(ctx, shellInterpreter(), "-c", in.Command)
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), shellWrappedEnv+"=1")
+	// Without process-group setup, context cancellation only kills the shell
+	// wrapper; descendants holding stdout/stderr pipes keep cmd.Wait blocked
+	// until they exit naturally, so the timeout fires but the work doesn't
+	// actually stop.
+	setupShellProcessGroup(cmd)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
