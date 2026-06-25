@@ -44,6 +44,10 @@ type Stats struct {
 	CacheWriteTokens atomic.Int64
 	ReasoningTokens  atomic.Int64
 
+	// Session cost in micro-USD (USD × 1,000,000), summed from provider usage (#56).
+	// Stored as int64 to allow lock-free atomic adds on the float cost.
+	SessionCostMicroUSD atomic.Int64
+
 	// Model routing counters: requests where the model field was rewritten.
 	RequestsRouted atomic.Int64
 
@@ -91,6 +95,9 @@ type Snapshot struct {
 	CacheReadTokens  int64 `json:"cache_read_tokens"`
 	CacheWriteTokens int64 `json:"cache_write_tokens"`
 	ReasoningTokens  int64 `json:"reasoning_tokens"`
+
+	// Cumulative session cost in USD (#56).
+	SessionCostUSD float64 `json:"session_cost_usd"`
 
 	// Model routing: requests where the model field was rewritten by the proxy.
 	RequestsRouted int64 `json:"requests_routed"`
@@ -182,6 +189,13 @@ func (s *Stats) recordPrune(p PruneHistoryStats) {
 	}
 }
 
+// recordCost adds costUSD to the running session cost total.
+func (s *Stats) recordCost(costUSD float64) {
+	if costUSD > 0 {
+		s.SessionCostMicroUSD.Add(int64(costUSD * 1_000_000))
+	}
+}
+
 // recordUsage folds provider-reported SSE token counts into the running totals.
 func (s *Stats) recordUsage(u ProviderUsage) {
 	if u.InputTokens != 0 {
@@ -251,5 +265,7 @@ func (s *Stats) Snapshot() Snapshot {
 
 		ResultsPreserved: s.ResultsPreserved.Load(),
 		TokensPreserved:  s.TokensPreserved.Load(),
+
+		SessionCostUSD: float64(s.SessionCostMicroUSD.Load()) / 1_000_000,
 	}
 }

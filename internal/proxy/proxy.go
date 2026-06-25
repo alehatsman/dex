@@ -72,6 +72,12 @@ type Options struct {
 	// BudgetLog, when non-nil, records per-turn and per-compact budget events
 	// to the session JSONL log (#60).
 	BudgetLog *BudgetLog
+	// Pricing is the model → cost table used to compute SessionCostUSD (#56).
+	// Nil uses LoadPricing() (defaultPricing + DEX_MODEL_PRICING_JSON overrides).
+	Pricing map[string]ModelPricing
+	// CostHook, when non-nil, is called after each response with the incremental
+	// USD cost for that response. Callers use this to forward cost to an SLO tracker.
+	CostHook func(costUSD float64)
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -87,6 +93,9 @@ func Run(ctx context.Context, opts Options) error {
 	if opts.Stats == nil {
 		opts.Stats = &Stats{}
 	}
+	if opts.Pricing == nil {
+		opts.Pricing = LoadPricing()
+	}
 	if err := validateBind(opts.Addr, opts.Token); err != nil {
 		return err
 	}
@@ -98,7 +107,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("upstream %q must be an absolute URL (scheme://host)", opts.Upstream)
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -160,7 +169,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - POST /compact → record a PreCompact event in the budget log
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64)) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -206,6 +215,11 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			return
 		}
 
+		// effectiveModel is set during POST /v1/messages processing and captured
+		// by the usage tee writer closure below for per-response cost attribution.
+		var effectiveModel string
+
+
 		// POST /v1/messages — prune + compress, then forward.
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/messages") {
 			body, err := io.ReadAll(r.Body)
@@ -229,6 +243,7 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 				current = routed
 				paths = append(paths, "route:"+routeStats.RoutedModel)
 			}
+			effectiveModel = routeStats.RoutedModel
 			stats.recordRoute(routeStats)
 
 			// Over-pruning signal (#561): measured on the ORIGINAL body, where
@@ -285,6 +300,11 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			stats.recordUsage(u)
 			if budgetLog != nil {
 				_ = budgetLog.AppendTurn(u)
+			}
+			cost := ComputeCost(u, effectiveModel, pricing)
+			stats.recordCost(cost)
+			if costHook != nil && cost > 0 {
+				costHook(cost)
 			}
 		})
 		rp.ServeHTTP(tw, r)

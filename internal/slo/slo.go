@@ -46,6 +46,7 @@ const (
 	MetricContextTokens = "context_tokens" // total output tokens returned across all tool calls
 	MetricToolCalls     = "tool_calls"     // total MCP tool calls this session
 	MetricShellCalls    = "shell_calls"    // ctx_shell invocations
+	MetricCostUSD       = "cost_usd"       // cumulative proxy session cost in USD (#56)
 )
 
 // SLOEntry is one threshold entry from .dex/config.yml.
@@ -99,6 +100,7 @@ type Snapshot struct {
 	ContextTokens uint64
 	ToolCalls     uint64
 	ShellCalls    uint64
+	CostUSD       float64
 }
 
 // Violation is a single SLO breach.
@@ -137,6 +139,7 @@ type Tracker struct {
 	contextTokens atomic.Uint64
 	toolCalls     atomic.Uint64
 	shellCalls    atomic.Uint64
+	costMicroUSD  atomic.Int64 // USD × 1,000,000 stored as int64 for lock-free add
 
 	cfg Config
 
@@ -170,6 +173,13 @@ func (t *Tracker) RecordShellCall() {
 	t.shellCalls.Add(1)
 }
 
+// RecordCostUSD adds costUSD to the running session cost total.
+func (t *Tracker) RecordCostUSD(costUSD float64) {
+	if costUSD > 0 {
+		t.costMicroUSD.Add(int64(costUSD * 1_000_000))
+	}
+}
+
 // ConsumeThrottle returns true (and clears the flag) if a throttle violation
 // is pending. Callers use this to force a cheaper summarize mode.
 func (t *Tracker) ConsumeThrottle() bool {
@@ -188,6 +198,7 @@ func (t *Tracker) Snapshot() Snapshot {
 		ContextTokens: t.contextTokens.Load(),
 		ToolCalls:     t.toolCalls.Load(),
 		ShellCalls:    t.shellCalls.Load(),
+		CostUSD:       float64(t.costMicroUSD.Load()) / 1_000_000,
 	}
 }
 
@@ -272,6 +283,8 @@ func (t *Tracker) metricValue(snap Snapshot, metric string) float64 {
 		return float64(snap.ToolCalls)
 	case MetricShellCalls:
 		return float64(snap.ShellCalls)
+	case MetricCostUSD:
+		return snap.CostUSD
 	default:
 		return 0
 	}

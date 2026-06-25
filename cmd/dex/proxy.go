@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/proxy"
+	"github.com/alehatsman/dex/internal/slo"
 )
 
 func cmdProxy(ctx context.Context, args []string) error {
@@ -124,6 +125,14 @@ func cmdProxy(ctx context.Context, args []string) error {
 	}
 	fmt.Printf("  stats: dex proxy --stats\n")
 
+	// Wire cost events to the SLO tracker for the current project root so
+	// cost_usd SLO entries in .dex/config.yml are evaluated after each response.
+	var costHook func(float64)
+	if root, err := os.Getwd(); err == nil {
+		tracker := slo.ForProject(root)
+		costHook = tracker.RecordCostUSD
+	}
+
 	return proxy.Run(ctx, proxy.Options{
 		Addr:         *addr,
 		Upstream:     *upstream,
@@ -132,6 +141,7 @@ func cmdProxy(ctx context.Context, args []string) error {
 		ToolDescMode: toolDescMode,
 		RouteConfig:  routeCfg,
 		BudgetLog:    bl,
+		CostHook:     costHook,
 	})
 }
 
@@ -213,6 +223,12 @@ func printProxyStats(ctx context.Context, addr, token string) error {
 		snap.DupReadsInWindow, snap.DupReadTokens)
 	if snap.LogPath != "" {
 		fmt.Fprintf(os.Stdout, "  log      : %s\n", snap.LogPath)
+	}
+	if snap.SessionCostUSD > 0 || snap.InputTokens > 0 {
+		fmt.Fprintf(os.Stdout, "  cost     : $%.4f  (input %dk, output %dk, cache-read %dk, cache-write %dk)\n",
+			snap.SessionCostUSD,
+			snap.InputTokens/1000, snap.OutputTokens/1000,
+			snap.CacheReadTokens/1000, snap.CacheWriteTokens/1000)
 	}
 	fmt.Fprintln(os.Stdout)
 
