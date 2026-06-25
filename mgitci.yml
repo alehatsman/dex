@@ -11,10 +11,9 @@
 # `mooncake task ci` is the same gate the local pre-push hook runs: build +
 # test + golangci-lint + govulncheck + arch-snapshot + budget + dupl, all with
 # GO_TAGS=sqlite_fts5 (tasks.yml). Its go tooling comes from the shared
-# go-quality module, fetched from this moongit over plain http;
-# MOONCAKE_MODULE_INSECURE marks the host trusted for that fetch, and tasks.yml
-# pins the module at host.docker.internal:8080 so it resolves from inside the
-# container (127.0.0.1 there would mean the container itself).
+# go-quality module, fetched from github.com over https (tasks.yml pins
+# github.com/alehatsman/go-quality), so the CI container just needs outbound
+# internet — no insecure-host trust or local moongit reachability required.
 version: "1"
 on:
   push:
@@ -25,5 +24,3 @@ jobs:
     steps:
       - shell:
           cmd: mooncake task ci
-        env:
-          MOONCAKE_MODULE_INSECURE: host.docker.internal:8080

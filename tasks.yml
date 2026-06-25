@@ -10,15 +10,11 @@ version: '1'
 # moongit. Each task is a thin wrapper over a `goq/*` component; the only
 # dex-specific knobs are the vars below.
 #
-# PREREQ: go-quality is hosted on the local moongit over plain http, so the
-# module fetch needs the host trusted once per shell:
-#   export MOONCAKE_MODULE_INSECURE=host.docker.internal:8080
+# go-quality is fetched from github.com over https (alehatsman/go-quality),
+# so no host trust or local moongit is needed — module resolution works on any
+# machine, including a fresh PC while the moongit host is down. moongit keeps a
+# mirror of the repo, but github is the source consumers pin.
 # (the first run clones to ~/.cache/mooncake/modules/...; later runs hit cache.)
-#
-# The source below uses host.docker.internal (not 127.0.0.1) so the SAME
-# tasks.yml resolves from both the host — where host.docker.internal maps to
-# this box — and a moongit CI container, where 127.0.0.1 would mean the
-# container itself. mgitci.yml sets the matching MOONCAKE_MODULE_INSECURE.
 #
 # Kept local (not quality gates, or no module equivalent): install-tools,
 # check-tools, install, clean, test-race, fmt (writer), setup-hooks.
@@ -44,7 +40,7 @@ modules:
   # ai-lint, fmt, tools, sync-config) silently ignore them. This is exactly
   # the set each prop used to be passed to by hand.
   goq:
-    source: "host.docker.internal:8080/alehatsman/go-quality@v0.1.1"
+    source: "github.com/alehatsman/go-quality@v0.1.1"
     props:
       go_tags: "{{ GO_TAGS }}"
       pkg: "{{ PKG }}"
