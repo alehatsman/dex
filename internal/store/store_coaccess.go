@@ -73,10 +73,34 @@ func (s *Store) RecordCoAccess(ctx context.Context, path string) error {
 	return tx.Commit()
 }
 
+// CoAccessNeighbor is one weighted entry returned by CoAccessNeighborsWeighted.
+// Weight is the raw stored weight in [coAccessMinWeight, coAccessMaxWeight].
+type CoAccessNeighbor struct {
+	Path   string
+	Weight float64
+}
+
 // CoAccessNeighbors returns up to n file paths that are the strongest
 // co-access associates of the given seed paths, ordered by descending weight.
 // Silently returns nil on store error.
 func (s *Store) CoAccessNeighbors(ctx context.Context, seeds []string, n int) ([]string, error) {
+	wn, err := s.CoAccessNeighborsWeighted(ctx, seeds, n)
+	if err != nil || len(wn) == 0 {
+		return nil, err
+	}
+	paths := make([]string, len(wn))
+	for i, w := range wn {
+		paths[i] = w.Path
+	}
+	return paths, nil
+}
+
+// CoAccessNeighborsWeighted is CoAccessNeighbors but returns the raw weight
+// per neighbor too. Used by the primary-rank spreading-activation bonus
+// (search_quality.cooccurNeighborBonus) — without weights, every neighbor
+// would contribute the same boost, erasing the LTP signal the graph spent
+// session-time accumulating.
+func (s *Store) CoAccessNeighborsWeighted(ctx context.Context, seeds []string, n int) ([]CoAccessNeighbor, error) {
 	if s.opts.DisableCoAccess || len(seeds) == 0 || n <= 0 {
 		return nil, nil
 	}
@@ -102,7 +126,7 @@ func (s *Store) CoAccessNeighbors(ctx context.Context, seeds []string, n int) ([
 		seedSet[p] = struct{}{}
 	}
 
-	var out []weightedPath
+	var out []CoAccessNeighbor
 	for rows.Next() {
 		var p string
 		var w float64
@@ -110,18 +134,14 @@ func (s *Store) CoAccessNeighbors(ctx context.Context, seeds []string, n int) ([
 			return nil, err
 		}
 		if _, isSeed := seedSet[p]; !isSeed {
-			out = append(out, weightedPath{p, w})
+			out = append(out, CoAccessNeighbor{Path: p, Weight: w})
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].w > out[j].w })
-	paths := make([]string, len(out))
-	for i, wp := range out {
-		paths[i] = wp.path
-	}
-	return paths, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].Weight > out[j].Weight })
+	return out, nil
 }
 
 // PruneCoAccess removes edges whose decayed weight has fallen below

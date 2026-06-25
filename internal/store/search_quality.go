@@ -290,10 +290,24 @@ func (s *Store) fetchPathsForIDs(ctx context.Context, ids []int64) (map[int64]st
 	return out, rows.Err()
 }
 
-// applyProximityBonus adds session proximity bonuses to the score map.
-// In FusionLinear mode scores are in [0,1] — the raw bonus (~1/rrfK ≈ 0.017)
-// would be ~60× weaker relative to primary scores than in RRF mode, so it is
-// scaled by rrfK/3 to give comparable proportional impact.
+// cooccurNeighborAlpha is the strength of the spreading-activation bonus a
+// chunk receives by being a Hebbian co-access neighbor of a session-touched
+// file, expressed as a fraction of the direct session-proximity bonus. 0.5
+// lands neighbors at peak weight at half the strength of a directly-touched
+// file — strong enough to break ties between equally-ranked candidates, weak
+// enough not to override a primary-lane signal (#31).
+const cooccurNeighborAlpha = 0.5
+
+// cooccurNeighborsPerQuery caps how many neighbors are pulled across the whole
+// session working set. Tightening keeps the spreading-activation effect
+// focused: a working set whose graph has hundreds of weak edges shouldn't
+// paint the entire candidate pool.
+const cooccurNeighborsPerQuery = 16
+
+// applyProximityBonus adds session proximity + cooccur spreading bonuses to
+// the score map. In FusionLinear mode scores are in [0,1] — the raw bonus
+// (~1/rrfK ≈ 0.017) would be ~60× weaker relative to primary scores than in
+// RRF mode, so it is scaled by rrfK/3 to give comparable proportional impact.
 func (s *Store) applyProximityBonus(ctx context.Context, rrf map[int64]float32, pathFor map[int64]string) {
 	scale := float32(1)
 	if s.opts.FusionMode == FusionLinear {
@@ -302,6 +316,75 @@ func (s *Store) applyProximityBonus(ctx context.Context, rrf map[int64]float32, 
 	for id, bonus := range s.sessionProximityBonus(ctx, pathFor) {
 		rrf[id] += bonus * scale
 	}
+	for id, bonus := range s.cooccurNeighborBonus(ctx, pathFor) {
+		rrf[id] += bonus * scale
+	}
+}
+
+// cooccurNeighborBonus returns a per-chunk RRF addend that spreads the
+// session-proximity boost outward along Hebbian co-access edges (#31).
+//
+// Mechanism: take the session-touched paths as seeds, query the existing
+// co_access_edges table for weighted neighbors, and award each chunk whose
+// path matches a neighbor a bonus proportional to that neighbor's weight
+// (normalized to [0, 1] via coAccessMaxWeight). A chunk pulled in by
+// multiple seeds is rewarded by its strongest tie, not the sum — otherwise
+// a single weak neighbor connected to many seeds could dominate.
+//
+// No-op when CoAccess is disabled, no active session, or no graph data.
+func (s *Store) cooccurNeighborBonus(ctx context.Context, pathFor map[int64]string) map[int64]float32 {
+	if s.opts.DisableCoAccess || len(pathFor) == 0 {
+		return nil
+	}
+	sess, ok, err := s.SessionGet(ctx)
+	if err != nil || !ok || len(sess.Files) == 0 {
+		return nil
+	}
+	limit := len(sess.Files)
+	if limit > 20 {
+		limit = 20
+	}
+	seeds := make([]string, 0, limit)
+	for _, f := range sess.Files[:limit] {
+		seeds = append(seeds, f.Path)
+	}
+
+	neighbors, err := s.CoAccessNeighborsWeighted(ctx, seeds, cooccurNeighborsPerQuery)
+	if err != nil || len(neighbors) == 0 {
+		return nil
+	}
+
+	// Index pathFor by path so neighbor lookups are O(1).
+	idsByPath := make(map[string][]int64, len(pathFor))
+	for id, p := range pathFor {
+		idsByPath[p] = append(idsByPath[p], id)
+	}
+
+	// Accumulate the strongest normalized weight per chunk-id.
+	weightByID := make(map[int64]float32)
+	for _, nb := range neighbors {
+		ids := idsByPath[nb.Path]
+		if len(ids) == 0 {
+			continue
+		}
+		w := float32(nb.Weight / coAccessMaxWeight)
+		if w > 1 {
+			w = 1 // defensive: should not happen given the cap
+		}
+		for _, id := range ids {
+			if w > weightByID[id] {
+				weightByID[id] = w
+			}
+		}
+	}
+	if len(weightByID) == 0 {
+		return nil
+	}
+	out := make(map[int64]float32, len(weightByID))
+	for id, w := range weightByID {
+		out[id] = w * cooccurNeighborAlpha / float32(rrfK)
+	}
+	return out
 }
 
 // sessionProximityBonus returns an extra RRF addend for chunks in session-touched
