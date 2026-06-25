@@ -128,6 +128,21 @@ func cmdRead(ctx context.Context, args []string) error {
 		content = rangeText(fullLines, *start, *end)
 	case "full":
 		content = rangeText(fullLines, *start, *end)
+		// Lossless JSON compaction (#619): whole-file .json/.jsonl reads recover
+		// 20–50% whitespace with zero semantic loss. Only for the entire file —
+		// a partial line range may slice mid-token and break the scan.
+		if *start == 0 && *end == 0 {
+			switch strings.ToLower(ext) {
+			case ".jsonl", ".ndjson":
+				if c, ok := compress.CompactJSONL(content); ok {
+					content = c
+				}
+			case ".json":
+				if c, ok := compress.CompactJSON(content); ok {
+					content = c
+				}
+			}
+		}
 	case "aggressive":
 		content = compress.CompressCode(rangeText(fullLines, *start, *end), ext, strict)
 	case "entropy":

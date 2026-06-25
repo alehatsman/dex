@@ -23,9 +23,10 @@ import (
 //
 // Modes operate on raw text and need no index: aggressive (strip comments +
 // structural noise + per-language entropy + symbol map), entropy (drop
-// low-information lines), terse (function-word/abbreviation/dedup passes), and
-// auto (aggressive, which self-degrades to the original via SafeguardRatio when
-// it would not help). Index-backed structural views (signatures/map) live in
+// low-information lines), terse (function-word/abbreviation/dedup passes), json
+// (lossless whitespace strip for JSON / JSONL — no semantic change), and auto
+// (aggressive, which self-degrades to the original via SafeguardRatio when it
+// would not help). Index-backed structural views (signatures/map) live in
 // `dex read`.
 func cmdCompress(args []string) error {
 	fs := flag.NewFlagSet("compress", flag.ContinueOnError)
@@ -34,10 +35,11 @@ func cmdCompress(args []string) error {
 		"dex compress [flags] <file|->",
 		`dex compress main.go`,
 		`dex compress --mode=entropy build.log`,
+		`dex compress --mode=json package-lock.json`,
 		`go test ./... 2>&1 | dex compress - --mode=terse`,
 		`dex compress --format=json main.go`,
 	)
-	mode := fs.String("mode", "auto", "compression mode: auto|aggressive|entropy|terse|off")
+	mode := fs.String("mode", "auto", "compression mode: auto|aggressive|entropy|terse|json|off")
 	ext := fs.String("ext", "", "file-extension hint for language-aware passes (default: inferred from <file>; e.g. .go)")
 	format := fs.String("format", "text", "output format: text|json (json reports token savings)")
 	out := fs.String("out", "", "write compressed output to FILE instead of stdout")
@@ -45,9 +47,9 @@ func cmdCompress(args []string) error {
 		return err
 	}
 	switch *mode {
-	case "auto", "aggressive", "entropy", "terse", "off":
+	case "auto", "aggressive", "entropy", "terse", "json", "off":
 	default:
-		return fmt.Errorf("invalid --mode=%s (want auto|aggressive|entropy|terse|off)", *mode)
+		return fmt.Errorf("invalid --mode=%s (want auto|aggressive|entropy|terse|json|off)", *mode)
 	}
 	switch *format {
 	case "text", "json":
@@ -152,6 +154,19 @@ func applyCompressMode(mode, content, ext string, strict bool) string {
 	case "terse":
 		res := compress.TerseCompress(content, compress.Level3)
 		return res.Output
+	case "json":
+		// Lossless whitespace strip (#619). JSONL/NDJSON keeps newline record
+		// separators; everything else is treated as a single document / stream.
+		if strings.EqualFold(ext, ".jsonl") || strings.EqualFold(ext, ".ndjson") {
+			if c, ok := compress.CompactJSONL(content); ok {
+				return c
+			}
+			return content
+		}
+		if c, ok := compress.CompactJSON(content); ok {
+			return c
+		}
+		return content
 	default:
 		return content
 	}

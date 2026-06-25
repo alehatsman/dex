@@ -437,6 +437,36 @@ func TestShellRun_NonZeroExit(t *testing.T) {
 	}
 }
 
+func TestShellRun_JSONCompaction(t *testing.T) {
+	s := &Server{}
+	// printf is not a verbatim/passthrough command, so this also proves the
+	// compaction runs ahead of policy routing (#619).
+	out, err := s.ShellRun(t.Context(), ShellInput{
+		Command: `printf '{\n  "a": 1,\n  "b": [\n    2,\n    3\n  ]\n}\n'`,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := strings.TrimRight(out.Output, "\n"); got != `{"a":1,"b":[2,3]}` {
+		t.Fatalf("compacted output = %q", got)
+	}
+	if out.OutputLines != 1 || out.SavedPct <= 0 {
+		t.Fatalf("expected single-line compacted output with savings, got lines=%d saved=%d", out.OutputLines, out.SavedPct)
+	}
+}
+
+func TestShellRun_NonJSONUntouched(t *testing.T) {
+	s := &Server{}
+	// Output that doesn't start with { or [ must skip the JSON path entirely.
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: `printf 'plain line one\nplain line two\n'`})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out.Output, "plain line one") || !strings.Contains(out.Output, "plain line two") {
+		t.Fatalf("non-JSON output altered: %q", out.Output)
+	}
+}
+
 func TestShellRun_Raw(t *testing.T) {
 	s := &Server{}
 	// Raw=true: compression fields should be zero

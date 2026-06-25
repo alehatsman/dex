@@ -11,10 +11,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alehatsman/dex/internal/compress"
 	"github.com/alehatsman/dex/internal/redact"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// lineCount counts text lines the same way CompressText does — ignoring a
+// single trailing newline — so the ShellOutput line metrics stay consistent
+// across compaction paths.
+func lineCount(s string) int {
+	if s == "" {
+		return 0
+	}
+	return strings.Count(strings.TrimRight(s, "\n"), "\n") + 1
+}
 
 // shellInterpreter resolves the interpreter the shell tool runs commands with.
 // It prefers bash (resolved once on PATH) so the tool matches the dialect of
@@ -623,6 +634,28 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	}
 
 	clean := redact.Mask(stripANSI(rawBytes))
+
+	// Lossless JSON compaction (#619): JSON-shaped output (jq, gh api, go list
+	// -json, config dumps) is 20–50% insignificant whitespace. Strip it with a
+	// text-level scan — no re-parse, no semantic change — and return the result
+	// verbatim. This runs ahead of policy routing so JSON from any command is
+	// handled, and because pure whitespace removal is already lossless the
+	// line-dropping passes below must never touch it.
+	if compact, ok := compress.CompactJSONAuto(clean); ok {
+		orig := lineCount(clean)
+		outLines := lineCount(compact)
+		saved := 0
+		if orig > 0 {
+			saved = (orig - outLines) * 100 / orig
+		}
+		return nil, ShellOutput{
+			Output:        compact,
+			ExitCode:      exitCode,
+			OriginalLines: orig,
+			OutputLines:   outLines,
+			SavedPct:      saved,
+		}, nil
+	}
 
 	// Verbatim: strip ANSI, preserve content (only hard-cap via maxLines).
 	if policy == policyVerbatim {
