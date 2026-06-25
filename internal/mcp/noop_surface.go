@@ -92,3 +92,6 @@ func (n *noopSurface) status(_ context.Context, _ *sdk.CallToolRequest, _ Status
 func (n *noopSurface) summarize(_ context.Context, _ *sdk.CallToolRequest, _ SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	return nil, SummarizeOutput{}, n.err()
 }
+func (n *noopSurface) budget(_ context.Context, _ *sdk.CallToolRequest, _ BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
+	return nil, BudgetOutput{}, n.err()
+}

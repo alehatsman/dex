@@ -10,7 +10,7 @@ var mcpToolSurface = []string{
 	"grep", "ls", "shell",
 	"deps", "diff", "clusters",
 	"smells", "routes",
-	"status", "notes", "session",
+	"status", "notes", "session", "budget",
 }
 
 // TestMCPToolCLIParity locks every MCP `read`/graph/query tool to a reachable
@@ -45,7 +45,12 @@ func TestMCPToolCLIParity(t *testing.T) {
 		}
 	}
 
-	mcpOnlyTools := map[string]bool{"session": true}
+	mcpOnlyTools := map[string]bool{
+		"session": true,
+		// budget reports per-session counters (slo.Tracker + heatmap) — a CLI
+		// invocation has no agent session and no in-memory counters to report.
+		"budget": true,
+	}
 
 	for _, tool := range mcpTools {
 		if topLevel[tool] || graphSubs[tool] || mcpOnlyTools[tool] {

@@ -274,6 +274,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/clusters", jsonHandler(opts.Projects, func(in *CommunitiesInput, r string) { in.ProjectRoot = r }, s.GraphCommunities))
 	authed.HandleFunc("POST /v1/projects/{id}/notes", jsonHandler(opts.Projects, func(in *KnowledgeInput, r string) { in.ProjectRoot = r }, s.Knowledge))
 	authed.HandleFunc("POST /v1/projects/{id}/session", jsonHandler(opts.Projects, func(in *SessionInput, r string) { in.ProjectRoot = r }, s.Session))
+	authed.HandleFunc("POST /v1/projects/{id}/budget", jsonHandler(opts.Projects, func(in *BudgetInput, r string) { in.ProjectRoot = r }, s.Budget))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over
 	// MCP at /v1/projects/{id}/mcp (no stdio shim). Mounted method-agnostic:

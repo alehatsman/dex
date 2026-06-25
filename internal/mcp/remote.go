@@ -293,6 +293,12 @@ func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ St
 	err := rc.do(ctx, http.MethodGet, rc.base+"/v1/status", nil, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) budget(ctx context.Context, _ *sdk.CallToolRequest, in BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
+	var out BudgetOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/budget"), in, &out)
+	return nil, out, err
+}
 func (rc *remoteClient) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
 	var out CyclesOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/cycles"), in, &out)

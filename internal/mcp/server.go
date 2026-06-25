@@ -513,6 +513,11 @@ func (s *Server) Session(ctx context.Context, in SessionInput) (SessionOutput, e
 	return out, err
 }
 
+func (s *Server) Budget(ctx context.Context, in BudgetInput) (BudgetOutput, error) {
+	_, out, err := s.budget(ctx, nil, in)
+	return out, err
+}
+
 func (s *Server) resolveProject(projectRoot string) (*proj.Project, string) {
 	root := projectRoot
 	if root == "" {
@@ -677,6 +682,7 @@ type toolSurface interface {
 	shellRun(context.Context, *sdk.CallToolRequest, ShellInput) (*sdk.CallToolResult, ShellOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
+	budget(context.Context, *sdk.CallToolRequest, BudgetInput) (*sdk.CallToolResult, BudgetOutput, error)
 }
 
 // addTool registers h on srv with a panic recovery guard. A handler panic is
@@ -852,6 +858,16 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
 			}, h.status)
+
+			addTool(srv, &sdk.Tool{
+				Name:        "budget",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Per-session context budget radar (#33). Retrospective view of tokens actually " +
+					"emitted by dex's tools this session: context_tokens, tool_calls, shell_calls, plus the " +
+					"top files by net token footprint (original − compressed-savings) from the heatmap. " +
+					"Surfaces any active SLO violations and a one-line hint when a file dominates. " +
+					"Complements `session action=budget`, which is a prospective estimate from declared session state."),
+			}, h.budget)
 
 			addTool(srv, &sdk.Tool{
 				Name: "session",

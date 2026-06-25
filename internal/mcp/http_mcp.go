@@ -130,6 +130,11 @@ func (p projectScoped) shellRun(ctx context.Context, req *sdk.CallToolRequest, i
 func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
 	return p.s.status(ctx, req, in)
 }
+
+func (p projectScoped) budget(ctx context.Context, req *sdk.CallToolRequest, in BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.budget(ctx, req, in)
+}
 func (p projectScoped) graphCycles(ctx context.Context, req *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.graphCycles(ctx, req, in)
