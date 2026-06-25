@@ -2,8 +2,11 @@ package graph
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"go/ast"
+	"go/printer"
 	"go/token"
 	"go/types"
 	"io/fs"
@@ -14,6 +17,87 @@ import (
 
 	"golang.org/x/tools/go/packages"
 )
+
+// maxSignatureLen bounds a persisted declaration signature. A pathological
+// generic constraint or alias can render long; clamp so one row can't bloat
+// the column. Real declarations are far shorter.
+const maxSignatureLen = 1000
+
+// goByteSpan returns the 0-based, end-exclusive byte span of n in the file
+// fset maps it into. token.Position carries the byte offset directly, so this
+// needs no source read.
+func goByteSpan(fset *token.FileSet, n ast.Node) (start, end int) {
+	return fset.Position(n.Pos()).Offset, fset.Position(n.End()).Offset
+}
+
+// goFuncSignature prints a function or method declaration header without its
+// body or doc comment — e.g. "func (s *Server) Run(ctx context.Context) error".
+// go/printer renders from the AST + fset (no source bytes) with canonical
+// gofmt spacing. A FuncDecl with a nil Body prints as just the signature.
+func goFuncSignature(fset *token.FileSet, fn *ast.FuncDecl) string {
+	stripped := &ast.FuncDecl{Recv: fn.Recv, Name: fn.Name, Type: fn.Type}
+	return clampSignature(printNode(fset, stripped))
+}
+
+// goTypeSignature prints a type declaration header. Struct and interface
+// bodies are collapsed to the keyword so a large type doesn't bloat the
+// column; alias / defined types over a compact underlying are printed in
+// full (e.g. "type ReadMode string"). Type parameters, when present, are
+// preserved on the name.
+func goTypeSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
+	head := "type " + ts.Name.Name
+	if ts.TypeParams != nil {
+		head += printNode(fset, ts.TypeParams)
+	}
+	switch ts.Type.(type) {
+	case *ast.StructType:
+		return clampSignature(head + " struct")
+	case *ast.InterfaceType:
+		return clampSignature(head + " interface")
+	default:
+		sep := " "
+		if ts.Assign.IsValid() {
+			sep = " = "
+		}
+		return clampSignature(head + sep + printNode(fset, ts.Type))
+	}
+}
+
+// goInterfaceMethodSignature prints one interface method's signature —
+// "Name(params) results" — from its *ast.FuncType.
+func goInterfaceMethodSignature(fset *token.FileSet, name string, ft *ast.FuncType) string {
+	sig := printNode(fset, ft) // renders "func(params) results"
+	sig = strings.TrimPrefix(sig, "func")
+	return clampSignature(name + sig)
+}
+
+// printNode renders an AST node to its gofmt-canonical source. Returns "" on
+// the (practically impossible) printer error so callers degrade to an empty
+// signature rather than a partial one.
+func printNode(fset *token.FileSet, node ast.Node) string {
+	var b strings.Builder
+	if err := printer.Fprint(&b, fset, node); err != nil {
+		return ""
+	}
+	return b.String()
+}
+
+func clampSignature(sig string) string {
+	if len(sig) > maxSignatureLen {
+		return sig[:maxSignatureLen]
+	}
+	return sig
+}
+
+// declarationHash hashes a signature so a consumer can detect signature drift
+// independently of the positional content hash. Empty signature → empty hash.
+func declarationHash(sig string) string {
+	if sig == "" {
+		return ""
+	}
+	h := sha1.Sum([]byte(sig))
+	return hex.EncodeToString(h[:])
+}
 
 // hasGoModule walks up from start looking for a go.mod (or go.work).
 // packages.Load("./...") emits a confusing "directory prefix . does not
@@ -299,15 +383,21 @@ func extractFunc(
 		// Top-level function.
 		qn := name
 		fnID := NodeID(modulePath, p.PkgPath, NodeFunction, qn)
+		sig := goFuncSignature(fset, fn)
+		startByte, endByte := goByteSpan(fset, fn)
 		nodes.add(Node{
-			ID:            fnID,
-			Kind:          NodeFunction,
-			Name:          name,
-			QualifiedName: qn,
-			PackagePath:   p.PkgPath,
-			FilePath:      rel,
-			StartLine:     startLine,
-			EndLine:       endLine,
+			ID:              fnID,
+			Kind:            NodeFunction,
+			Name:            name,
+			QualifiedName:   qn,
+			PackagePath:     p.PkgPath,
+			FilePath:        rel,
+			StartLine:       startLine,
+			EndLine:         endLine,
+			Signature:       sig,
+			StartByte:       startByte,
+			EndByte:         endByte,
+			DeclarationHash: declarationHash(sig),
 		})
 		edges.add(Edge{
 			ID:        EdgeID(fileID, EdgeContains, fnID, rel, startLine),
@@ -334,15 +424,21 @@ func extractFunc(
 	}
 	qn := "(" + recvDisplay + ")." + name
 	methodID := NodeID(modulePath, p.PkgPath, NodeMethod, qn)
+	sig := goFuncSignature(fset, fn)
+	startByte, endByte := goByteSpan(fset, fn)
 	nodes.add(Node{
-		ID:            methodID,
-		Kind:          NodeMethod,
-		Name:          name,
-		QualifiedName: qn,
-		PackagePath:   p.PkgPath,
-		FilePath:      rel,
-		StartLine:     startLine,
-		EndLine:       endLine,
+		ID:              methodID,
+		Kind:            NodeMethod,
+		Name:            name,
+		QualifiedName:   qn,
+		PackagePath:     p.PkgPath,
+		FilePath:        rel,
+		StartLine:       startLine,
+		EndLine:         endLine,
+		Signature:       sig,
+		StartByte:       startByte,
+		EndByte:         endByte,
+		DeclarationHash: declarationHash(sig),
 		Metadata: map[string]any{
 			"receiver":         recvName,
 			"receiver_pointer": isPtr,
@@ -580,15 +676,21 @@ func extractTypes(
 			kind = NodeInterface
 		}
 		typeID := NodeID(modulePath, p.PkgPath, NodeType, qn)
+		sig := goTypeSignature(fset, ts)
+		startByte, endByte := goByteSpan(fset, ts)
 		nodes.add(Node{
-			ID:            typeID,
-			Kind:          kind,
-			Name:          name,
-			QualifiedName: qn,
-			PackagePath:   p.PkgPath,
-			FilePath:      rel,
-			StartLine:     startLine,
-			EndLine:       endLine,
+			ID:              typeID,
+			Kind:            kind,
+			Name:            name,
+			QualifiedName:   qn,
+			PackagePath:     p.PkgPath,
+			FilePath:        rel,
+			StartLine:       startLine,
+			EndLine:         endLine,
+			Signature:       sig,
+			StartByte:       startByte,
+			EndByte:         endByte,
+			DeclarationHash: declarationHash(sig),
 		})
 		edges.add(Edge{
 			ID:        EdgeID(fileID, EdgeContains, typeID, rel, startLine),
@@ -647,6 +749,7 @@ func extractStructFields(
 			})
 			continue
 		}
+		startByte, endByte := goByteSpan(fset, fld)
 		for _, n := range fld.Names {
 			fieldQN := typeName + "." + n.Name
 			fieldID := NodeID(modulePath, p.PkgPath, NodeField, fieldQN)
@@ -659,6 +762,8 @@ func extractStructFields(
 				FilePath:      rel,
 				StartLine:     startLine,
 				EndLine:       endLine,
+				StartByte:     startByte,
+				EndByte:       endByte,
 			})
 			edges.add(Edge{
 				ID:        EdgeID(typeID, EdgeHasField, fieldID, rel, startLine),
@@ -709,17 +814,26 @@ func extractInterfaceMethods(
 		for _, n := range m.Names {
 			startLine := fset.Position(m.Pos()).Line
 			endLine := fset.Position(m.End()).Line
+			startByte, endByte := goByteSpan(fset, m)
+			var sig string
+			if ft, ok := m.Type.(*ast.FuncType); ok {
+				sig = goInterfaceMethodSignature(fset, n.Name, ft)
+			}
 			qn := "(" + typeName + ")." + n.Name
 			methodID := NodeID(modulePath, p.PkgPath, NodeMethod, qn)
 			nodes.add(Node{
-				ID:            methodID,
-				Kind:          NodeMethod,
-				Name:          n.Name,
-				QualifiedName: qn,
-				PackagePath:   p.PkgPath,
-				FilePath:      rel,
-				StartLine:     startLine,
-				EndLine:       endLine,
+				ID:              methodID,
+				Kind:            NodeMethod,
+				Name:            n.Name,
+				QualifiedName:   qn,
+				PackagePath:     p.PkgPath,
+				FilePath:        rel,
+				StartLine:       startLine,
+				EndLine:         endLine,
+				Signature:       sig,
+				StartByte:       startByte,
+				EndByte:         endByte,
+				DeclarationHash: declarationHash(sig),
 				Metadata: map[string]any{
 					"on_interface": true,
 				},

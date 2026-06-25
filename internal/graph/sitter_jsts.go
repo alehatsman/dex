@@ -109,6 +109,8 @@ func (e *jstsBase) emitFunctionNode(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      meta,
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
@@ -169,6 +171,8 @@ func (e *jstsBase) emitClassNode(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      map[string]any{"language": e.lang},
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
@@ -249,6 +253,8 @@ func (e *jstsBase) addInterface(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      map[string]any{"language": e.lang},
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
@@ -375,6 +381,8 @@ func (e *jstsBase) emitArrowDeclarator(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      map[string]any{"language": e.lang, "form": "arrow"},
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])

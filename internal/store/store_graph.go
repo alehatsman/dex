@@ -8,6 +8,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -32,6 +33,16 @@ type GraphNodeRow struct {
 	ChunkID       int64 // 0 = NULL
 	MetadataJSON  []byte
 	ContentHash   string
+	// Refactor-target columns (#591). Signature is the declaration header;
+	// StartByte/EndByte are the symbol's 0-based, end-exclusive byte span in
+	// the source file; DeclarationHash hashes the signature (distinct from
+	// the positional ContentHash). Populated by the Go extractor for
+	// function/method/type nodes and by the tree-sitter extractors for byte
+	// spans; zero/empty elsewhere.
+	Signature       string
+	StartByte       int
+	EndByte         int
+	DeclarationHash string
 	// Centrality columns. Populated by graph.ComputeCentrality after the
 	// upsert pass. Zero on freshly-upserted rows; stays zero for nodes
 	// the centrality computation skips (non-calls-graph nodes).
@@ -94,20 +105,25 @@ func (s *Store) GraphUpsertNodes(ctx context.Context, rows []GraphNodeRow, now t
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT INTO graph_nodes(
 		   id, kind, name, qualified_name, package_path, file_path,
-		   start_line, end_line, chunk_id, metadata_json, content_hash, last_seen_at
-		 ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   start_line, end_line, chunk_id, metadata_json, content_hash, last_seen_at,
+		   signature, start_byte, end_byte, declaration_hash
+		 ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
-		   kind          = excluded.kind,
-		   name          = excluded.name,
-		   qualified_name= excluded.qualified_name,
-		   package_path  = excluded.package_path,
-		   file_path     = excluded.file_path,
-		   start_line    = excluded.start_line,
-		   end_line      = excluded.end_line,
-		   chunk_id      = excluded.chunk_id,
-		   metadata_json = excluded.metadata_json,
-		   content_hash  = excluded.content_hash,
-		   last_seen_at  = excluded.last_seen_at`)
+		   kind            = excluded.kind,
+		   name            = excluded.name,
+		   qualified_name  = excluded.qualified_name,
+		   package_path    = excluded.package_path,
+		   file_path       = excluded.file_path,
+		   start_line      = excluded.start_line,
+		   end_line        = excluded.end_line,
+		   chunk_id        = excluded.chunk_id,
+		   metadata_json   = excluded.metadata_json,
+		   content_hash    = excluded.content_hash,
+		   last_seen_at    = excluded.last_seen_at,
+		   signature       = excluded.signature,
+		   start_byte      = excluded.start_byte,
+		   end_byte        = excluded.end_byte,
+		   declaration_hash= excluded.declaration_hash`)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -123,7 +139,8 @@ func (s *Store) GraphUpsertNodes(ctx context.Context, rows []GraphNodeRow, now t
 		}
 		if _, err := stmt.ExecContext(ctx,
 			r.ID, r.Kind, r.Name, r.QualifiedName, r.PackagePath, r.FilePath,
-			r.StartLine, r.EndLine, chunkID, string(r.MetadataJSON), r.ContentHash, ts); err != nil {
+			r.StartLine, r.EndLine, chunkID, string(r.MetadataJSON), r.ContentHash, ts,
+			r.Signature, r.StartByte, r.EndByte, r.DeclarationHash); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("upsert node %s: %w", r.ID, err)
 		}
@@ -224,7 +241,8 @@ func (s *Store) GraphAllNodes(ctx context.Context) ([]GraphNodeRow, error) {
 		`SELECT id, kind, name, qualified_name, package_path, file_path,
 		        start_line, end_line, COALESCE(chunk_id, 0), metadata_json, content_hash,
 		        in_degree, out_degree, cross_pkg_callers, pagerank, betweenness,
-		        COALESCE(community_id, 0)
+		        COALESCE(community_id, 0),
+		        signature, start_byte, end_byte, declaration_hash
 		   FROM graph_nodes
 		  ORDER BY id`)
 	if err != nil {
@@ -237,7 +255,8 @@ func (s *Store) GraphAllNodes(ctx context.Context) ([]GraphNodeRow, error) {
 		var md string
 		if err := rows.Scan(&r.ID, &r.Kind, &r.Name, &r.QualifiedName, &r.PackagePath, &r.FilePath,
 			&r.StartLine, &r.EndLine, &r.ChunkID, &md, &r.ContentHash,
-			&r.InDegree, &r.OutDegree, &r.CrossPkgCallers, &r.PageRank, &r.Betweenness, &r.CommunityID); err != nil {
+			&r.InDegree, &r.OutDegree, &r.CrossPkgCallers, &r.PageRank, &r.Betweenness, &r.CommunityID,
+			&r.Signature, &r.StartByte, &r.EndByte, &r.DeclarationHash); err != nil {
 			return nil, err
 		}
 		r.MetadataJSON = []byte(md)
@@ -432,6 +451,84 @@ func (s *Store) SymbolsByFile(ctx context.Context, relPath string) ([]GraphSymbo
 	}
 	return scanSymbols(rows)
 }
+
+// SymbolEditSpan is the precise edit target for a graph node (#591): the
+// source file plus the symbol's byte span and declaration signature. A
+// refactor consumer resolves a node to this and applies a byte-range edit
+// (source[StartByte:EndByte]) without reading the whole file first.
+// StartByte/EndByte are 0-based and end-exclusive; they are 0 for nodes the
+// extractor did not populate (e.g. package/import nodes), so callers should
+// treat StartByte==EndByte==0 as "no span".
+type SymbolEditSpan struct {
+	ID              string
+	QualifiedName   string
+	Kind            string
+	FilePath        string
+	StartLine       int
+	EndLine         int
+	StartByte       int
+	EndByte         int
+	Signature       string
+	DeclarationHash string
+}
+
+const symbolEditSpanCols = `id, qualified_name, kind, file_path,
+	        start_line, end_line, start_byte, end_byte, signature, declaration_hash`
+
+// SymbolEditSpanByID resolves a graph node ID to its edit span. ok is false
+// (with a nil error) when no node carries that ID.
+func (s *Store) SymbolEditSpanByID(ctx context.Context, id string) (SymbolEditSpan, bool, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+symbolEditSpanCols+` FROM graph_nodes WHERE id = ?`, id)
+	span, err := scanEditSpanRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SymbolEditSpan{}, false, nil
+	}
+	if err != nil {
+		return SymbolEditSpan{}, false, err
+	}
+	return span, true, nil
+}
+
+// SymbolEditSpansByName resolves a qualified name to every matching node's
+// edit span, ordered by file then start line. A bare name can be defined in
+// several packages, so this returns all interpretations; the caller
+// disambiguates (e.g. by package) exactly like the call-graph lanes do.
+func (s *Store) SymbolEditSpansByName(ctx context.Context, qualifiedName string) ([]SymbolEditSpan, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+symbolEditSpanCols+`
+		   FROM graph_nodes
+		  WHERE qualified_name = ?
+		  ORDER BY file_path, start_line`, qualifiedName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SymbolEditSpan
+	for rows.Next() {
+		span, err := scanEditSpan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, span)
+	}
+	return out, rows.Err()
+}
+
+// editSpanScanner is the row/rows-agnostic Scan surface shared by the two
+// SymbolEditSpan queries (database/sql's *Row and *Rows both satisfy it).
+type editSpanScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanEditSpan(sc editSpanScanner) (SymbolEditSpan, error) {
+	var e SymbolEditSpan
+	err := sc.Scan(&e.ID, &e.QualifiedName, &e.Kind, &e.FilePath,
+		&e.StartLine, &e.EndLine, &e.StartByte, &e.EndByte, &e.Signature, &e.DeclarationHash)
+	return e, err
+}
+
+func scanEditSpanRow(row *sql.Row) (SymbolEditSpan, error) { return scanEditSpan(row) }
 
 func scanSymbols(rows *sql.Rows) ([]GraphSymbol, error) {
 	defer func() { _ = rows.Close() }()

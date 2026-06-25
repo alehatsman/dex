@@ -14,7 +14,11 @@ import (
 // `dex reindex`, never an in-place upgrade. This replaces the old accretive
 // flag-guarded ALTER chain (#431): the schema is built once, correctly, and
 // version-gated rather than patched forward on every Open.
-const schemaVersion = "2"
+// v3 (#591): graph_nodes gains the four refactor-target columns
+// (signature, start_byte, end_byte, declaration_hash). Empty byte spans are
+// useless to a refactor consumer, so the upgrade is a reindex (the
+// fail-closed gate below), not an ALTER-with-defaults backfill.
+const schemaVersion = "3"
 
 // chunkFTSContentExpr builds the SQL expression for a chunk's FTS `content`
 // document: the Contextual-BM25 prefix (context_text + newline, when present)
@@ -121,6 +125,18 @@ func schemaDDL() []string {
 		   metadata_json      TEXT NOT NULL DEFAULT '{}',
 		   content_hash       TEXT NOT NULL,
 		   last_seen_at       INTEGER NOT NULL,
+		   -- Refactor-target columns (#591). signature is the declaration
+		   -- header (Go: gofmt-printed, body stripped); start_byte/end_byte
+		   -- are the symbol's exact byte span in the source file (0-based,
+		   -- end exclusive) for slice-precise edits without reading the file;
+		   -- declaration_hash is a hash of the signature, distinct from the
+		   -- positional content_hash, so a consumer can detect signature
+		   -- drift independently of line shifts. All default empty/0 so nodes
+		   -- from extractors that don't populate them stay inert.
+		   signature          TEXT NOT NULL DEFAULT '',
+		   start_byte         INTEGER NOT NULL DEFAULT 0,
+		   end_byte           INTEGER NOT NULL DEFAULT 0,
+		   declaration_hash   TEXT NOT NULL DEFAULT '',
 		   in_degree          INTEGER NOT NULL DEFAULT 0,
 		   out_degree         INTEGER NOT NULL DEFAULT 0,
 		   cross_pkg_callers  INTEGER NOT NULL DEFAULT 0,

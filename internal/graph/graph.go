@@ -121,6 +121,21 @@ type Node struct {
 	ChunkID       int64 // 0 = unlinked
 	Metadata      map[string]any
 
+	// Refactor-target fields (#591). Signature is the declaration header
+	// (Go: gofmt-printed, body stripped); StartByte/EndByte are the symbol's
+	// 0-based, end-exclusive byte span in the source file; DeclarationHash
+	// hashes the signature so a consumer can detect signature drift
+	// independently of line shifts. The Go extractor fills all four for
+	// function/method/type nodes; the tree-sitter extractors fill the byte
+	// span. Empty/zero elsewhere. Signature + byte span participate in
+	// ContentHash (a param rename changes the signature without moving the
+	// node's lines, so the row must re-upsert to refresh it); DeclarationHash
+	// is a pure function of Signature and is therefore not hashed separately.
+	Signature       string
+	StartByte       int
+	EndByte         int
+	DeclarationHash string
+
 	// Centrality fields — populated by ComputeCentrality from the
 	// `calls` edges, persisted via GraphStore.GraphSetCentrality.
 	// Zero on freshly-extracted Nodes; only the centrality pass writes
@@ -189,6 +204,16 @@ func (n Node) ContentHash() string {
 	h.Write([]byte(strconv.FormatInt(n.ChunkID, 10)))
 	h.Write([]byte{0})
 	h.Write(marshalMetadata(n.Metadata))
+	// Refactor-target fields (#591). Signature catches a same-line
+	// declaration change (e.g. a parameter rename) the line/byte fields would
+	// miss; the byte span keeps the persisted edit target fresh. DeclarationHash
+	// is derived from Signature, so hashing Signature alone suffices.
+	h.Write([]byte{0})
+	h.Write([]byte(n.Signature))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(n.StartByte)))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(n.EndByte)))
 	return hex.EncodeToString(h.Sum(nil))
 }
 

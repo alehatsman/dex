@@ -213,6 +213,8 @@ func (e *rustExtractor) addFunction(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      meta,
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
@@ -278,6 +280,8 @@ func (e *rustExtractor) addType(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      meta,
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
@@ -322,6 +326,8 @@ func (e *rustExtractor) emitTraitNode(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      map[string]any{"language": "rust"},
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])

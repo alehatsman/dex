@@ -239,6 +239,8 @@ func (e *pythonExtractor) emitFunctionNode(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      meta,
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
@@ -305,6 +307,8 @@ func (e *pythonExtractor) emitClassNode(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      map[string]any{"language": "python"},
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])

@@ -149,17 +149,21 @@ func (a *storeAdapter) ChunksByPaths(ctx context.Context, paths []string) (map[s
 
 func nodeToRow(n Node) store.GraphNodeRow {
 	return store.GraphNodeRow{
-		ID:            n.ID,
-		Kind:          string(n.Kind),
-		Name:          n.Name,
-		QualifiedName: n.QualifiedName,
-		PackagePath:   n.PackagePath,
-		FilePath:      n.FilePath,
-		StartLine:     n.StartLine,
-		EndLine:       n.EndLine,
-		ChunkID:       n.ChunkID,
-		MetadataJSON:  MarshalMetadata(n.Metadata),
-		ContentHash:   n.ContentHash(),
+		ID:              n.ID,
+		Kind:            string(n.Kind),
+		Name:            n.Name,
+		QualifiedName:   n.QualifiedName,
+		PackagePath:     n.PackagePath,
+		FilePath:        n.FilePath,
+		StartLine:       n.StartLine,
+		EndLine:         n.EndLine,
+		ChunkID:         n.ChunkID,
+		MetadataJSON:    MarshalMetadata(n.Metadata),
+		ContentHash:     n.ContentHash(),
+		Signature:       n.Signature,
+		StartByte:       n.StartByte,
+		EndByte:         n.EndByte,
+		DeclarationHash: n.DeclarationHash,
 	}
 }
 
@@ -189,6 +193,10 @@ func rowToNode(r store.GraphNodeRow) Node {
 		EndLine:         r.EndLine,
 		ChunkID:         r.ChunkID,
 		Metadata:        unmarshalMetadata(r.MetadataJSON),
+		Signature:       r.Signature,
+		StartByte:       r.StartByte,
+		EndByte:         r.EndByte,
+		DeclarationHash: r.DeclarationHash,
 		InDegree:        r.InDegree,
 		OutDegree:       r.OutDegree,
 		CrossPkgCallers: r.CrossPkgCallers,

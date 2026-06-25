@@ -150,6 +150,13 @@ linters:
         linters: [gosec]
         text: "G(505|401)"
 
+      # sha1 is used for the symbol declaration_hash (#591) — a content
+      # fingerprint of a node's signature, mirroring graph.go above. Not
+      # cryptographic.
+      - path: internal/graph/go\.go
+        linters: [gosec]
+        text: "G(505|401)"
+
       # sha1 is used for recent-commit fingerprinting / content hashing in
       # the indexer's git helper, not for cryptographic security.
       - path: internal/index/git\.go

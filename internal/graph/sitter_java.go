@@ -197,6 +197,8 @@ func (e *javaExtractor) emitClassLikeNode(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      map[string]any{"language": "java"},
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
@@ -259,6 +261,8 @@ func (e *javaExtractor) emitMethodNode(
 		FilePath:      filePath,
 		StartLine:     startLine,
 		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
 		Metadata:      meta,
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
