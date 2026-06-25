@@ -1048,35 +1048,35 @@ func TestApplyMultiScaleFilterRescuesBM25StrongHits(t *testing.T) {
 	// inMeso is a hit from a real indexed file that will appear in the meso
 	// candidates and anchor the FilterByPaths return to non-empty.
 	inMeso := store.Hit{Path: "alpha.go"}
-	// rescued has a path outside the meso candidates but a strong BM25 score;
-	// the fix should re-admit it.
+	// rescued has a path outside the meso candidates but a positive BM25 score;
+	// the fix should re-admit it regardless of magnitude.
 	rescued := store.Hit{Path: "internal/watch/watch.go", BM25Score: 15.0}
-	// noise has a weak BM25 score and should remain excluded.
-	noise := store.Hit{Path: "internal/noise/noise.go", BM25Score: 2.0}
+	// pure is a semantic-only hit (BM25Score==0) and should remain excluded.
+	pure := store.Hit{Path: "internal/noise/noise.go", BM25Score: 0}
 
 	result := s.applyMultiScaleFilter(
 		context.Background(), st, p.DBPath, "authentication",
-		[]store.Hit{inMeso, rescued, noise},
+		[]store.Hit{inMeso, rescued, pure},
 	)
 
-	hasMeso, hasRescued, hasNoise := false, false, false
+	hasMeso, hasRescued, hasPure := false, false, false
 	for _, h := range result {
 		switch h.Path {
 		case inMeso.Path:
 			hasMeso = true
 		case rescued.Path:
 			hasRescued = true
-		case noise.Path:
-			hasNoise = true
+		case pure.Path:
+			hasPure = true
 		}
 	}
 	if !hasMeso {
 		t.Error("meso-candidate hit was unexpectedly dropped")
 	}
 	if !hasRescued {
-		t.Errorf("BM25-strong hit (score %.1f) was not rescued after meso filter", rescued.BM25Score)
+		t.Errorf("BM25 hit (score %.1f) was not rescued after meso filter", rescued.BM25Score)
 	}
-	if hasNoise {
-		t.Errorf("low-BM25 hit (score %.1f) should have been excluded", noise.BM25Score)
+	if hasPure {
+		t.Error("semantic-only hit (BM25Score==0) should remain excluded after meso filter")
 	}
 }

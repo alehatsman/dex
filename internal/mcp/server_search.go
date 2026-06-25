@@ -474,21 +474,16 @@ func clampSearchK(in SearchInput, projectRoot string) (k, candidateK int, kHint 
 	return k, candidateK, kHint
 }
 
-// bm25RescueThreshold is the minimum BM25Score a hit must have to be
-// re-admitted after the meso path filter. Chunks with a strong lexical
-// match on query keywords should not be silently discarded just because
-// their file ranked outside the meso top-N (e.g. an implementation file
-// when a spec doc covers the same topic with higher TF-IDF weight).
-const bm25RescueThreshold float32 = 8.0
-
 // applyMultiScaleFilter restricts hits to the structurally-relevant files for
 // NL and Architecture queries using the in-RAM TF-IDF index. Symbol queries
 // and multi-scale build failures are passed through unchanged.
 //
-// After path-filtering, any hit that was dropped but carries a BM25Score at or
-// above bm25RescueThreshold is re-added. This rescues implementation chunks
-// whose direct keyword signal is strong but whose file lost the meso-level
-// TF-IDF race to a higher-entropy doc (e.g. a spec file).
+// After path-filtering, any dropped hit with a positive BM25Score is re-added.
+// BM25Score is zero only when a hit came through the semantic lane with no
+// lexical match at all; a positive value means FTS5 matched at least one query
+// term (BM25 IDF already down-weights common words, so this is not noisy).
+// This rescues implementation chunks whose file lost the meso TF-IDF race to a
+// higher-entropy doc (e.g. a spec file) while still having direct keyword hits.
 func (s *Server) applyMultiScaleFilter(ctx context.Context, st *store.Store, dbPath, query string, hits []store.Hit) []store.Hit {
 	qt := store.ClassifyQueryType(query)
 	if qt == store.QueryTypeSymbol {
@@ -512,15 +507,15 @@ func (s *Server) applyMultiScaleFilter(ctx context.Context, st *store.Store, dbP
 	}
 	if len(candidatePaths) >= 3 {
 		if filtered := store.FilterByPaths(hits, candidatePaths); len(filtered) > 0 {
-			// Re-admit any dropped hit with a strong lexical signal. Track by
-			// path so we don't re-add multiple chunks from the same already-
-			// included file.
+			// Re-admit dropped hits that had a lexical match (BM25Score > 0).
+			// Track by path so we don't re-add multiple chunks from the same
+			// already-included file.
 			inFiltered := make(map[string]struct{}, len(filtered))
 			for _, h := range filtered {
 				inFiltered[h.Path] = struct{}{}
 			}
 			for _, h := range hits {
-				if _, ok := inFiltered[h.Path]; !ok && h.BM25Score >= bm25RescueThreshold {
+				if _, ok := inFiltered[h.Path]; !ok && h.BM25Score > 0 {
 					filtered = append(filtered, h)
 					inFiltered[h.Path] = struct{}{}
 				}
