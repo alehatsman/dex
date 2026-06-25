@@ -49,6 +49,13 @@ type ShellOutput struct {
 
 const shellTimeout = 60 * time.Second
 
+// shellWrappedEnv marks child processes spawned by the shell tool so a nested
+// dex (or another compression wrapper that honors the convention) can detect
+// the re-entry and skip a second compression pass on the same bytes (#25).
+// On entry, if this is already set by a parent, the shell tool degrades to
+// raw output for the same reason.
+const shellWrappedEnv = "DEX_SHELL_WRAPPED"
+
 var reAnsi = regexp.MustCompile(`\x1b\[[0-9;]*[mGKHF]`)
 
 func stripANSI(s string) string { return reAnsi.ReplaceAllString(s, "") }
@@ -543,11 +550,18 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 		}
 	}
 
+	// Re-entry: a parent (nested dex, lean-ctx, …) already compressed once.
+	// Degrade to raw to avoid double-compression on the same bytes.
+	if !in.Raw && os.Getenv(shellWrappedEnv) == "1" {
+		in.Raw = true
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, shellTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, shellInterpreter(), "-c", in.Command)
 	cmd.Dir = cwd
+	cmd.Env = append(os.Environ(), shellWrappedEnv+"=1")
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf

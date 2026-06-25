@@ -451,6 +451,34 @@ func TestShellRun_Raw(t *testing.T) {
 	}
 }
 
+func TestShellRun_SetsWrappedEnvInChild(t *testing.T) {
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: "printf %s \"$DEX_SHELL_WRAPPED\"", Raw: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out.Output, "1") {
+		t.Fatalf("expected DEX_SHELL_WRAPPED=1 in child env, got %q", out.Output)
+	}
+}
+
+func TestShellRun_HonorsParentWrappedMarker(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "1")
+	s := &Server{}
+	// Without Raw: nested re-entry should degrade to raw output (no compression
+	// stats), since a parent wrapper already compressed once.
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: "echo nested"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.OriginalLines != 0 || out.OutputLines != 0 {
+		t.Fatalf("expected raw degrade on re-entry, got orig=%d out=%d", out.OriginalLines, out.OutputLines)
+	}
+	if !strings.Contains(out.Output, "nested") {
+		t.Fatalf("output missing 'nested': %q", out.Output)
+	}
+}
+
 func TestShellRun_BlocksRedirect(t *testing.T) {
 	s := &Server{}
 	_, err := s.ShellRun(t.Context(), ShellInput{Command: "echo x > /tmp/dex_test_out.txt"})
