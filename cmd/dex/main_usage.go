@@ -144,7 +144,7 @@ build / maintenance:
   dex compress <file|->              compress a file or stdin through the dex
                                           engine — no LLM call. Writes to stdout
                                           or --out. Flags: --mode=auto|aggressive|
-                                          entropy|terse|off, --ext, --format=text|json
+                                          entropy|terse|json|off, --ext, --format=text|json
   dex notes add|list|delete|gc       CLI access to the per-project knowledge
                                           store (MCP: notes). add stores
                                           a fact (--archetype, --confidence),

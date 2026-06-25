@@ -438,6 +438,9 @@ func TestShellRun_NonZeroExit(t *testing.T) {
 }
 
 func TestShellRun_JSONCompaction(t *testing.T) {
+	// Clear the re-entry guard so the test runs compression even when invoked
+	// from inside a dex shell session (which sets DEX_SHELL_WRAPPED=1).
+	t.Setenv(shellWrappedEnv, "")
 	s := &Server{}
 	// printf is not a verbatim/passthrough command, so this also proves the
 	// compaction runs ahead of policy routing (#619).

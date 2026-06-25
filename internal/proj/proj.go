@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -62,25 +63,48 @@ func Resolve(path, baseCacheDir string) (*Project, error) {
 }
 
 // ResolveDeleted computes the Project identity for a path that no longer
-// exists on disk. The cache ID is sha256(abs(path)), which matches what
-// Resolve would have produced when the path was not a symlink. Use only
-// for cleanup (nuke) operations — the returned Root may not be canonical.
+// exists on disk. Use only for cleanup (nuke) operations — the returned
+// Root may not be canonical.
 func ResolveDeleted(path, baseCacheDir string) (*Project, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path %q: %w", path, err)
 	}
-	sum := sha256.Sum256([]byte(abs))
+	// Resolve symlinks on the nearest surviving ancestor so the ID matches
+	// what Resolve would have produced (e.g. macOS /var → /private/var).
+	real := resolveNearestAncestor(abs)
+	sum := sha256.Sum256([]byte(real))
 	id := hex.EncodeToString(sum[:])
 	cache := filepath.Join(baseCacheDir, id)
 	return &Project{
-		Root:         abs,
+		Root:         real,
 		ID:           id,
 		CacheDir:     cache,
 		DBPath:       filepath.Join(cache, "index.db"),
 		LockPath:     filepath.Join(cache, "index.lock"),
 		ActivityPath: filepath.Join(cache, "last_query"),
 	}, nil
+}
+
+// resolveNearestAncestor walks up path until it finds an existing ancestor,
+// calls EvalSymlinks on it, and reattaches the deleted suffix. This makes
+// ResolveDeleted produce IDs consistent with Resolve on platforms (like macOS)
+// where temp-dir ancestors are symlinked (e.g. /var → /private/var).
+func resolveNearestAncestor(path string) string {
+	dir := path
+	for {
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err == nil {
+			suffix := strings.TrimPrefix(path, dir)
+			return resolved + suffix
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return path
 }
 
 // EnsureCacheDir creates the per-project cache directory.
