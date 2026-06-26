@@ -86,16 +86,21 @@ type ReviewHunk struct {
 
 // ReviewFile groups one file's hunks with its file-level history signals.
 type ReviewFile struct {
-	Path          string       `json:"file"`
-	OldPath       string       `json:"old_path,omitempty"`
-	Status        string       `json:"status"` // added | modified | deleted | renamed
-	Tests         []string     `json:"tests_covering,omitempty"`
-	NearestDoc    string       `json:"nearest_doc,omitempty"`
-	Churn30d      int          `json:"churn_30d,omitempty"`
-	LastCommit    string       `json:"last_commit,omitempty"`
-	LastAuthor    string       `json:"last_author,omitempty"`
-	AuthorHistory []string     `json:"author_history,omitempty"`
-	Hunks         []ReviewHunk `json:"hunks"`
+	Path          string   `json:"file"`
+	OldPath       string   `json:"old_path,omitempty"`
+	Status        string   `json:"status"` // added | modified | deleted | renamed
+	Tests         []string `json:"tests_covering,omitempty"`
+	NearestDoc    string   `json:"nearest_doc,omitempty"`
+	Churn30d      int      `json:"churn_30d,omitempty"`
+	LastCommit    string   `json:"last_commit,omitempty"`
+	LastAuthor    string   `json:"last_author,omitempty"`
+	AuthorHistory []string `json:"author_history,omitempty"`
+	// ScopedNotes are notes BOUND to this file's path via their scope
+	// (gotcha-on-touch, #645/#649) — surfaced because the PR touches the file,
+	// each tagged with the matching glob/path. Distinct from per-hunk Notes,
+	// which are recalled by the touched symbol.
+	ScopedNotes []LocatedFact `json:"scoped_notes,omitempty"`
+	Hunks       []ReviewHunk  `json:"hunks"`
 }
 
 // ReviewOutput is the per-hunk bundle. Every lane is best-effort: an empty list
@@ -227,6 +232,17 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 	}
 	rf.Churn30d = gitChurnCount(ctx, root, fd.Path)
 	rf.AuthorHistory = gitAuthorHistory(ctx, root, fd.Path)
+
+	// Proactive gotcha-on-touch (#645/#649): notes whose scope binds this file's
+	// path — surfaced because the PR touches it, even if no hunk symbol recalls
+	// them. Best-effort.
+	if scoped, err := st.KnowledgeByScope(ctx, fd.Path, k); err == nil {
+		for _, f := range scoped {
+			rf.ScopedNotes = append(rf.ScopedNotes, LocatedFact{
+				ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience, Scope: f.Scope,
+			})
+		}
+	}
 
 	// A deleted file has no current symbols to resolve; emit its hunks with
 	// diff + history only (still useful, per the cold-start contract).

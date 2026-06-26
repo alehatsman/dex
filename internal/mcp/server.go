@@ -833,7 +833,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"diverging from the default branch), or `pr` (a GitHub PR number, resolved via `gh`). " +
 				"For each changed hunk review returns the touched symbols, their callers (+ a risk tier from " +
 				"caller blast radius and export status), and related notes; per file it adds sibling tests, the " +
-				"nearest doc, 30-day churn, last commit/author, and recent author history. " +
+				"nearest doc, 30-day churn, last commit/author, recent author history, and any notes whose " +
+				"`scope` binds the file (gotcha-on-touch, #645). " +
 				"Pass `compact: true` to drop low-risk hunks. Pure composition over the index; needs no chat " +
 				"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
 				"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),

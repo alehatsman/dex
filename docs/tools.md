@@ -21,7 +21,7 @@ it; see the README or `dex help all`.
 | `trace`  | Call graph: `--dir callers\|callees\|path` | graph |
 | `impact` | Transitive caller blast-radius | graph |
 | `locate` | One-call orientation around `ref` (`path:line`) / `symbol` / `frame`: callers, sibling tests, nearest doc, last commit, related notes | always (callers need graph) |
-| `review` | Per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers (+ risk tier), tests, nearest doc, churn, author history, notes | always (callers need graph) |
+| `review` | Per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers (+ risk tier), tests, nearest doc, churn, author history, notes (+ per-file scope-bound notes, #645) | always (callers need graph) |
 | `refactor` | Plan a type-precise rename → byte-exact edit triples to apply yourself (never writes). Go-only v1 | Go toolchain |
 | `read`   | Read a file (see modes below) | always (`summary` needs chat) |
 | `grep`   | Exact regex over indexed files | always |
