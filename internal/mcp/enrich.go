@@ -60,6 +60,7 @@ const (
 type Enricher struct {
 	projectRoot string
 	Store       store.Searcher
+	Spread      store.Spreader // optional; nil = no spreading activation
 }
 
 // refCapsFor returns (perSymbol, total) reference caps for the given
@@ -854,6 +855,28 @@ func uniquePaths(reads []SuggestedRead, syms []SymbolHit) []string {
 	return out
 }
 
+// assembleSeeds extracts unique non-empty paths from suggested_reads, capped
+// at 10, to use as spreading-activation seeds for the assemble intent (#688).
+func assembleSeeds(reads []SuggestedRead) []string {
+	const maxSeeds = 10
+	seen := make(map[string]struct{}, len(reads))
+	out := make([]string, 0, min(len(reads), maxSeeds))
+	for _, r := range reads {
+		if r.Path == "" {
+			continue
+		}
+		if _, ok := seen[r.Path]; ok {
+			continue
+		}
+		seen[r.Path] = struct{}{}
+		out = append(out, r.Path)
+		if len(out) >= maxSeeds {
+			break
+		}
+	}
+	return out
+}
+
 // enrich applies every leg appropriate for the given intent to the
 // output bundle in place. Each leg is best-effort; failures leave
 // fields empty rather than propagating errors. `k` is the request's
@@ -905,5 +928,15 @@ func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *Contex
 	// References: callers/callees with at least one symbol hit.
 	if (intent == retrieve.IntentCallers || intent == retrieve.IntentCallees) && len(out.Symbols) > 0 {
 		out.References = e.runReferencesLane(ctx, k, out.Symbols)
+	}
+
+	// assemble: spreading activation over static graph ∪ co-access edges (#688).
+	if intent == retrieve.IntentAssemble && e.Spread != nil {
+		if seeds := assembleSeeds(out.SuggestedReads); len(seeds) > 0 {
+			related, err := e.Spread.AssembleRelated(ctx, seeds, 10)
+			if err == nil && len(related) > 0 {
+				out.RelatedFiles = related
+			}
+		}
 	}
 }

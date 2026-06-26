@@ -238,6 +238,10 @@ type ContextOutput struct {
 	// this answer's lanes. Off unless DEX_EXPAND_MODEL is configured and the
 	// expansion call returned something usable.
 	Expanded bool `json:"expanded,omitempty"`
+	// RelatedFiles are files surfaced by spreading activation over the union of
+	// the static call/import graph and learned co-access (Hebbian) edges (#688),
+	// seeded on the assemble working set. Populated only for intent=assemble.
+	RelatedFiles []string `json:"related_files,omitempty"`
 }
 
 // ContextRouter is the exported entry point used by the CLI
@@ -394,7 +398,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits, candidates.Identifiers)
 		out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
 	}
-	(&Enricher{projectRoot: p.Root, Store: st}).Enrich(ctx, intent, k, &out)
+	(&Enricher{projectRoot: p.Root, Store: st, Spread: st}).Enrich(ctx, intent, k, &out)
 	topSem := maxSemanticScore(out.SemanticHits)
 	var graphEdgeCount int
 	if out.Graph != nil {

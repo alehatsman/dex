@@ -7,7 +7,71 @@ import (
 	"testing"
 
 	"github.com/alehatsman/dex/internal/retrieve"
+	"github.com/alehatsman/dex/internal/store"
 )
+
+// stubSpreader is a test-only store.Spreader that returns a fixed list.
+type stubSpreader struct {
+	out []string
+}
+
+func (s *stubSpreader) AssembleRelated(_ context.Context, _ []string, _ int) ([]string, error) {
+	return s.out, nil
+}
+
+var _ store.Spreader = (*stubSpreader)(nil)
+
+// ─── assemble spreading-activation leg (#688) ────────────────────────────
+
+func TestEnrichAssemblePopulatesRelatedFiles(t *testing.T) {
+	out := &ContextOutput{
+		SuggestedReads: []SuggestedRead{
+			{Path: "internal/store/store.go", StartLine: 1, EndLine: 10},
+		},
+	}
+	sp := &stubSpreader{out: []string{"internal/store/store_search.go", "internal/mcp/context.go"}}
+	(&Enricher{
+		projectRoot: t.TempDir(),
+		Spread:      sp,
+	}).Enrich(context.Background(), retrieve.IntentAssemble, 8, out)
+
+	if len(out.RelatedFiles) == 0 {
+		t.Fatal("expected related_files to be populated for assemble intent")
+	}
+	if out.RelatedFiles[0] != "internal/store/store_search.go" {
+		t.Errorf("unexpected related_files[0]: %q", out.RelatedFiles[0])
+	}
+}
+
+func TestEnrichAssembleNilSpreadSkipped(t *testing.T) {
+	out := &ContextOutput{
+		SuggestedReads: []SuggestedRead{
+			{Path: "x.go", StartLine: 1, EndLine: 5},
+		},
+	}
+	// No Spread wired — related_files must remain empty.
+	(&Enricher{projectRoot: t.TempDir()}).Enrich(context.Background(), retrieve.IntentAssemble, 8, out)
+	if len(out.RelatedFiles) != 0 {
+		t.Errorf("expected no related_files when Spread is nil; got %v", out.RelatedFiles)
+	}
+}
+
+func TestEnrichNonAssembleNoRelatedFiles(t *testing.T) {
+	out := &ContextOutput{
+		SuggestedReads: []SuggestedRead{
+			{Path: "x.go", StartLine: 1, EndLine: 5},
+		},
+	}
+	sp := &stubSpreader{out: []string{"y.go"}}
+	// Non-assemble intent: Spread wired but related_files must stay empty.
+	(&Enricher{
+		projectRoot: t.TempDir(),
+		Spread:      sp,
+	}).Enrich(context.Background(), retrieve.IntentBehaviorSearch, 8, out)
+	if len(out.RelatedFiles) != 0 {
+		t.Errorf("related_files should be empty for non-assemble intent; got %v", out.RelatedFiles)
+	}
+}
 
 // ─── pairSiblingTests ────────────────────────────────────────────────────
 
