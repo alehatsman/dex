@@ -111,3 +111,30 @@ func TestKnowledgeDelete_CascadesVec(t *testing.T) {
 		t.Errorf("fact_vecs has %d rows after delete, want 0 (trigger should cascade)", cnt)
 	}
 }
+
+func TestKnowledgeExportAllUncapped(t *testing.T) {
+	st, ctx := newStore(t)
+	// More than KnowledgeQuery's 50-cap, so a capped read would silently drop some.
+	const n = 60
+	for i := 0; i < n; i++ {
+		body := "fact number " + itoa3(i)
+		if _, err := st.KnowledgeAdd(ctx, "Fact", body, 0.8); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := st.KnowledgeExportAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != n {
+		t.Fatalf("KnowledgeExportAll returned %d, want all %d (uncapped)", len(all), n)
+	}
+	// Capped query still proves the contrast.
+	if capped, _ := st.KnowledgeQuery(ctx, 1000); len(capped) > 50 {
+		t.Errorf("KnowledgeQuery should clamp to 50, got %d", len(capped))
+	}
+}
+
+func itoa3(i int) string {
+	return string(rune('0'+i/100%10)) + string(rune('0'+i/10%10)) + string(rune('0'+i%10))
+}

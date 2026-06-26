@@ -179,7 +179,7 @@ type knowledgeExportRow struct {
 }
 
 func (s *Server) knowledgeExport(ctx context.Context, st *store.Store) (*sdk.CallToolResult, KnowledgeOutput, error) {
-	facts, err := st.KnowledgeQuery(ctx, 50)
+	facts, err := st.KnowledgeExportAll(ctx) // uncapped — a 50-cap would silently drop notes (#647)
 	if err != nil {
 		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 	}

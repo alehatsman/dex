@@ -196,6 +196,22 @@ func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, thre
 	return out, nil
 }
 
+// KnowledgeExportAll returns every stored fact, UNCAPPED (KnowledgeQuery clamps
+// to 50), newest-confident first. For backup/restore — notably preserving the
+// knowledge store across a `dex reindex` that drops and rebuilds the DB, so the
+// user's accumulated notes survive (#647).
+func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFact, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+		   FROM knowledge_facts
+		   ORDER BY confidence DESC, updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanFacts(rows)
+}
+
 // KnowledgeCount returns the number of stored facts.
 func (s *knowledgeStore) KnowledgeCount(ctx context.Context) (int, error) {
 	var n int

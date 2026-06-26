@@ -15,6 +15,7 @@ import (
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
 	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/store"
 )
 
 func cmdNuke(_ context.Context, args []string) error {
@@ -160,6 +161,25 @@ func cmdReindex(ctx context.Context, args []string) error {
 	return reindexOne(ctx, rest[0], base, *verbose, *force, *waitLock, *breakLock)
 }
 
+// restoreNotes re-adds rescued knowledge facts into a freshly-rebuilt store
+// (#647). Best-effort and idempotent (KnowledgeAdd dedups by body); a per-fact
+// failure is skipped, never fatal to the reindex. Embeddings backfill lazily on
+// the next semantic recall.
+func restoreNotes(ctx context.Context, st *store.Store, facts []store.KnowledgeFact) {
+	if len(facts) == 0 {
+		return
+	}
+	restored := 0
+	for _, f := range facts {
+		if _, err := st.KnowledgeAdd(ctx, f.Archetype, f.Body, f.Confidence); err == nil {
+			restored++
+		}
+	}
+	if restored > 0 {
+		fmt.Fprintf(os.Stderr, "  notes: preserved %d across reindex\n", restored)
+	}
+}
+
 // reindexOne drops the existing per-project cache dir and re-runs the
 // indexer from scratch. Used by both `reindex <path>` and the loop in
 // `reindex --all`.
@@ -188,9 +208,13 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	// Read the embed model recorded in the existing index before clearing it.
 	// Preserved as the default so a plain `dex reindex` (no DEX_EMBED_MODEL)
 	// stays consistent with the original build and won't produce a dim mismatch.
+	// While the old store is open, also rescue the knowledge store (#647) — the
+	// clear below drops the whole DB, and the user's notes live in it.
 	var priorEmbedModel string
+	var savedNotes []store.KnowledgeFact
 	if prior, err := openStore(ctx, p.DBPath); err == nil {
 		priorEmbedModel = prior.EmbedModel()
+		savedNotes, _ = prior.KnowledgeExportAll(ctx) // best-effort
 		_ = prior.Close()
 	}
 	if err := clearCacheKeepLock(p); err != nil {
@@ -201,6 +225,9 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		return err
 	}
 	defer st.Close()
+	// Restore rescued notes into the fresh store. KnowledgeAdd dedups by body so
+	// this is idempotent; embeddings backfill lazily on the next semantic recall.
+	restoreNotes(ctx, st, savedNotes)
 	ig, err := ignore.New(p.Root)
 	if err != nil {
 		return err
