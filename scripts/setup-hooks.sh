@@ -6,7 +6,7 @@
 #     ai-lint on staged files. Catches cheap mistakes before they land.
 #
 #   pre-push → mooncake task ci
-#     Full gate: build + test + lint + vuln + arch-snapshot + budget + dupl.
+#     Full gate: repo-wide gofmt + build + test + lint + vuln + arch-snapshot + budget + dupl.
 #
 # Bypass: `git commit --no-verify` or `git push --no-verify`.
 set -euo pipefail
@@ -63,7 +63,7 @@ if ! command -v mooncake >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "pre-push: running 'mooncake task ci' (build + test + lint + vuln + arch + budget + dupl)..."
+echo "pre-push: running 'mooncake task ci' (gofmt + build + test + lint + vuln + arch + budget + dupl)..."
 if ! mooncake task ci; then
   echo "" >&2
   echo "pre-push: ✗ full gate failed. Fix the issue above and re-push," >&2

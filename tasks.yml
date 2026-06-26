@@ -150,6 +150,15 @@ tasks:
     steps:
       - shell: gofmt -w .
 
+  # Repo-wide gofmt gate (#677). goq/ci's golangci-lint has no formatters block
+  # and skips _test.go (run.tests:false); ci-fast only checks staged files. This
+  # closes that gap — `gofmt -l` over the whole tree, staging-agnostic. Wired
+  # into `ci` below; also runnable standalone.
+  fmt-check:
+    desc: Fail if any Go file is not gofmt-formatted (repo-wide, staging-agnostic)
+    steps:
+      - shell: bash ./scripts/fmt-check.sh
+
   # Kept local: offline code-retrieval eval (NDCG@10/Recall@10/MRR over a
   # git-derived golden set). Scores the live Search path against
   # benchmark/eval/golden.json and fails on a >0.02 drop vs the committed
@@ -243,7 +252,15 @@ tasks:
   ci-fast: goq/ci-fast
 
   # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
-  ci: goq/ci
+  # Repo-wide gofmt check runs first (#677) — cheap and staging-agnostic, so it
+  # fails fast before the expensive build/test/lint when a file landed dirty
+  # (goq/ci's golangci-lint doesn't enforce formatting). Then the shared
+  # goq/ci gate (build + test + lint + vuln + arch + budget + dupl).
+  ci:
+    desc: Full pre-push gate — repo-wide gofmt check, then goq/ci (build + test + lint + vuln + arch + budget + dupl).
+    steps:
+      - shell: bash ./scripts/fmt-check.sh
+      - use: goq/ci
 
   # ── ONNX build-tag matrix gate (issue #180). The in-process ONNX embedder
   # is opt-in behind `-tags onnx`; the default ci/ci-fast gates stay
