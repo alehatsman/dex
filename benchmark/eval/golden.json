@@ -1,11 +1,19 @@
 {
   "repo": "dex",
-  "head": "eb5f6776214e39c25746dca4b5eba3d309125ea0",
+  "head": "efe85b411f133d4133bd5a987aa4ff7b0da9f45b",
   "gen_opts": {
     "max_commits": 500,
     "max_files": 5
   },
   "queries": [
+    {
+      "id": "efe85b41",
+      "query": "drop 'pipeline'+'layer' from arch classifier; refresh baseline",
+      "relevant_files": [
+        "internal/store/store_search.go",
+        "internal/store/store_test.go"
+      ]
+    },
     {
       "id": "b044fe81",
       "query": "render related_files in assemble output",
