@@ -1074,7 +1074,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"sibling `tests` (foo.go ↔ foo_test.go) and `nearest_doc` (closest CLAUDE.md / doc.go / README.md walking " +
 			"up); editing_context adds `last_commit` / `last_author` (git blame) and `owners` (CODEOWNERS); architecture " +
 			"and editing_context add `build_tags` and `package`. `references` carries the `calls` graph edges for " +
-			"callers/callees intents (Go is type-resolved; other languages are name-based via tree-sitter, with a ripgrep usage list as backup). Inline content " +
+			"callers/callees intents (Go is type-resolved via the static call graph; other languages use a BM25 chunk search over the bare symbol name). Inline content " +
 			"shares ONE per-intent byte pool across both lanes: targeted intents budget ~60 lines / 4 KB per range " +
 			"and ~20 KB total; exploration intents (architecture, package_topology) widen to ~120 lines / 8 KB per " +
 			"range and ~40 KB total. Suggested_reads (~2 targeted / ~5 exploration) are filled first as the curated " +

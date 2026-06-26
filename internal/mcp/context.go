@@ -10,8 +10,8 @@
 // `next_action`, and an `avoid` line.
 //
 // Graph integration: callers/callees use the `calls` edges from
-// internal/graph (Go-only). Other languages still get a ripgrep-
-// backed `references` list as a fallback.
+// internal/graph (Go-only). Other languages get a BM25 chunk search
+// over the bare symbol name as a fallback (see runReferencesLane).
 package mcp
 
 import (
