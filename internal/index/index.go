@@ -193,6 +193,12 @@ func (ix *Indexer) Run(ctx context.Context) error {
 					if ix.Options.Verbose {
 						ix.Options.Logger.Info("chunk error", "path", task.rel, "err", err)
 					}
+					// Touch existing chunks so they survive PruneUnseen.
+					// Without this, a parse-error file loses its chunks on
+					// the first run, then the mtime fast-path skips it on
+					// every subsequent run (no chunks to touch → slow path
+					// → parse fails again → permanent absence from index).
+					_, _ = ix.Store.TouchPath(ctx, task.rel, startTime)
 					continue
 				}
 				select {
@@ -514,6 +520,9 @@ func (ix *Indexer) embedAndUpsertBatch(ctx context.Context, batch []pending, sta
 		vecs, err := ix.Embed.Embed(ctx, texts)
 		if err != nil {
 			return fmt.Errorf("embed: %w", err)
+		}
+		if len(vecs) != len(batch) {
+			return fmt.Errorf("embed: server returned %d vectors for %d inputs", len(vecs), len(batch))
 		}
 		for i, v := range vecs {
 			rows[i].Vec = v

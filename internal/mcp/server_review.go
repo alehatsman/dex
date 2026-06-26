@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -504,17 +505,31 @@ func rangeEndsAtHEAD(rng string) bool {
 
 // gitDiffUnified runs `git diff --unified=0 <range>` in root and returns the raw
 // unified diff. Zero context keeps hunks tight around the actual change.
+// Output is capped at maxDiffBytes to prevent OOM on auto-generated or vendored
+// diffs; the display caps in the review verb fire on the parsed hunks afterwards.
 func gitDiffUnified(ctx context.Context, root, rng string) (string, error) {
+	const maxDiffBytes = 4 * 1024 * 1024 // 4 MB hard cap
 	cctx, cancel := context.WithTimeout(ctx, reviewGitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "git", "-C", root,
 		"diff", "--unified=0", "--no-color", "--end-of-options", rng) // #nosec G204 — rng validated by reValidRef
 	cmd.Env = gitenv.Current()
-	out, err := cmd.Output()
+	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	data, readErr := io.ReadAll(io.LimitReader(pipe, maxDiffBytes))
+	// Kill ensures the process exits promptly if we stopped reading early;
+	// it is a no-op when the process already exited naturally.
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	if readErr != nil {
+		return "", readErr
+	}
+	return string(data), nil
 }
 
 // gitChurnCount returns the number of commits touching path in the churn window

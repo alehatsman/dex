@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -16,15 +17,27 @@ const DefaultKeepRecent = 10
 // the byte prefix stays identical between jumps, keeping the provider cache warm.
 const PruneStride = 16
 
-// pruneStart returns the first message index eligible for rewriting.
-// Rounds down to the nearest PruneStride multiple so the byte prefix
-// stays identical between jumps, keeping the provider cache warm.
+// pruneStart returns the first message index in the keep-recent zone:
+// messages at index >= result are kept verbatim; messages below are
+// candidates for rewriting. Rounds down to the nearest PruneStride
+// multiple so the byte prefix stays identical between jumps, keeping
+// the provider cache warm.
+//
+// When there are fewer than PruneStride pruneable messages, the rounding
+// would produce 0 — which means "keep everything" (i >= 0 is always true
+// in the pruneHistory loop) and silently skips all pruning until message
+// count crosses the 26-message threshold. Use the raw boundary instead so
+// pruning starts as soon as there is anything to prune.
 func pruneStart(msgLen, keepRecent int) int {
 	raw := msgLen - keepRecent
 	if raw <= 0 {
-		return 0
+		return 0 // nothing to prune: keep all messages
 	}
-	return (raw / PruneStride) * PruneStride
+	rounded := (raw / PruneStride) * PruneStride
+	if rounded == 0 {
+		return raw // fewer than one stride of candidates: use exact boundary
+	}
+	return rounded
 }
 
 // hasCacheControlMarker reports whether a single raw message JSON contains a
@@ -123,9 +136,12 @@ func PruneRequestBody(body []byte, keepRecent int, store *TeeStore) ([]byte, int
 		return body, 0, pruneSt
 	}
 
-	raw["messages"] = newMsgs
-
-	out, err := json.Marshal(raw)
+	// Rewrite the body preserving the original top-level key order.
+	// json.Marshal(map) sorts keys alphabetically, which changes the byte
+	// prefix of every request and flushes the provider's prompt cache on
+	// every pruning turn. rewriteJSONMessages walks the token stream
+	// instead and splices in the new messages array in-place.
+	out, err := rewriteJSONMessages(body, newMsgs)
 	if err != nil {
 		return body, 0, PruneHistoryStats{}
 	}
@@ -134,6 +150,61 @@ func PruneRequestBody(body []byte, keepRecent int, store *TeeStore) ([]byte, int
 		saved = 0
 	}
 	return out, saved, pruneSt
+}
+
+// rewriteJSONMessages rewrites the "messages" value in a JSON object body
+// to newMessages, preserving all other keys and their original order.
+// This avoids the key-sort side-effect of json.Marshal(map) which would
+// flush Anthropic's byte-prefix prompt cache on every pruning turn.
+func rewriteJSONMessages(body, newMessages []byte) ([]byte, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	var out bytes.Buffer
+
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		return nil, fmt.Errorf("rewriteJSONMessages: expected JSON object")
+	}
+	out.WriteByte('{')
+	first := true
+	for dec.More() {
+		tok, err = dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := tok.(string)
+		if !ok {
+			return nil, fmt.Errorf("rewriteJSONMessages: expected string key")
+		}
+		if !first {
+			out.WriteByte(',')
+		}
+		first = false
+		kb, _ := json.Marshal(key)
+		out.Write(kb)
+		out.WriteByte(':')
+
+		if key == "messages" {
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return nil, err
+			}
+			out.Write(newMessages)
+		} else {
+			var val json.RawMessage
+			if err := dec.Decode(&val); err != nil {
+				return nil, err
+			}
+			out.Write(val)
+		}
+	}
+	if _, err = dec.Token(); err != nil { // closing '}'
+		return nil, err
+	}
+	out.WriteByte('}')
+	return out.Bytes(), nil
 }
 
 // PruneHistoryStats accumulates result-preservation counters from one

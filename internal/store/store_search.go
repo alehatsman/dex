@@ -403,6 +403,12 @@ func (s *Store) Search(ctx context.Context, queryVec []float32, queryText string
 	if s.opts.MaxHitsPerFile > 0 {
 		hits = diversify(hits, s.opts.MaxHitsPerFile)
 	}
+	// Enforce the top-k contract: callers size buffers and display caps
+	// around k, so returning more than k hits silently violates the
+	// documented bound. graphTail is appended for recall but still capped.
+	if len(hits) > k {
+		hits = hits[:k]
+	}
 	return hits, nil
 }
 

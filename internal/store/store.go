@@ -461,10 +461,24 @@ func (s *Store) EnsureEmbedModel(ctx context.Context, name string) error {
 	if prev != "" {
 		return fmt.Errorf("%w: index was built with %q, current run uses %q — run `dex reindex` to rebuild", ErrEmbedModelMismatch, prev, name)
 	}
+	// Two concurrent index processes on a fresh DB can both see prev==""
+	// and proceed. Use INSERT OR IGNORE (CONFLICT NOTHING) so only one
+	// writer wins the DB row, then read back the committed value to detect
+	// if we lost the race. This avoids the TOCTOU where both callers
+	// return nil but the last atomic.Store overwrites the DB winner's
+	// model in memory, diverging DB (modelA) from in-memory (modelB).
 	if _, err := s.db.ExecContext(ctx,
 		`INSERT INTO meta(key,value) VALUES('`+metaEmbedModel+`', ?)
-		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, name); err != nil {
+		 ON CONFLICT(key) DO NOTHING`, name); err != nil {
 		return err
+	}
+	var committed string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM meta WHERE key='`+metaEmbedModel+`'`).Scan(&committed); err != nil {
+		return fmt.Errorf("read committed embed model: %w", err)
+	}
+	if committed != name {
+		return fmt.Errorf("%w: index was built with %q, current run uses %q — run `dex reindex` to rebuild", ErrEmbedModelMismatch, committed, name)
 	}
 	s.embedModel.Store(name)
 	return nil
@@ -568,16 +582,11 @@ type PendingChunk struct {
 	Vec        []float32
 }
 
-// initDim performs the one-time, first-write index initialization:
-// persist the vector dimension to meta and materialize the vec0 table +
-// mirror triggers. It is safe to call concurrently — dimInit serializes
-// callers and the double-check skips the work once another goroutine has
-// completed it. The dim is published to s.dim only after ensureVecTable
-// succeeds, so a concurrent reader that sees s.dim != 0 is guaranteed the
-// vec0 triggers already exist.
-func (s *Store) initDim(ctx context.Context, dim int64) error {
-	s.dimInit.Lock()
-	defer s.dimInit.Unlock()
+// initDimLocked performs the vec0 table and meta.dim initialization.
+// Must be called with s.dimInit already held. dim is published to
+// s.dim only after ensureVecTable succeeds, so a concurrent reader
+// that observes s.dim != 0 is guaranteed the vec0 triggers exist.
+func (s *Store) initDimLocked(ctx context.Context, dim int64) error {
 	if s.dim.Load() != 0 { // another goroutine already initialized
 		return nil
 	}
@@ -597,6 +606,13 @@ func (s *Store) initDim(ctx context.Context, dim int64) error {
 	return nil
 }
 
+// initDim is the concurrency-safe wrapper around initDimLocked.
+func (s *Store) initDim(ctx context.Context, dim int64) error {
+	s.dimInit.Lock()
+	defer s.dimInit.Unlock()
+	return s.initDimLocked(ctx, dim)
+}
+
 // UpsertMany inserts a batch of chunks in a single transaction. One
 // commit per batch instead of one commit per chunk drops the no-op
 // fsync count by ~32× on a typical run and is well worth the slight
@@ -606,24 +622,23 @@ func (s *Store) UpsertMany(ctx context.Context, rows []PendingChunk, now time.Ti
 		return nil
 	}
 	if s.dim.Load() == 0 && !s.noVec.Load() {
-		if len(rows[0].Vec) == 0 {
-			// BM25-only mode: no embedder, no vec0 table. Mark once under
-			// dimInit so subsequent calls skip this block on the fast path.
-			s.dimInit.Lock()
-			if s.dim.Load() == 0 && !s.noVec.Load() {
+		// Serialize both the BM25-only and vec first-write paths under
+		// dimInit so they can't race. Without this, a concurrent BM25
+		// caller (Vec==nil) and a vec caller can both pass the outer
+		// load-free check, then set noVec=true AND dim=N simultaneously,
+		// leaving the store in an inconsistent state.
+		s.dimInit.Lock()
+		var initErr error
+		if s.dim.Load() == 0 && !s.noVec.Load() {
+			if len(rows[0].Vec) == 0 {
 				s.noVec.Store(true)
+			} else {
+				initErr = s.initDimLocked(ctx, int64(len(rows[0].Vec)))
 			}
-			s.dimInit.Unlock()
-		} else {
-			// First write to a fresh vector index. Serialize init under dimInit so
-			// that `dex index` and `dex watch` racing their first UpsertMany
-			// don't both write meta.dim / build the vec0 table. dim is
-			// published to the atomic only after the vec0 table + triggers
-			// exist, so any reader that observes dim != 0 can safely INSERT
-			// into chunks and rely on the mirror triggers being present.
-			if err := s.initDim(ctx, int64(len(rows[0].Vec))); err != nil {
-				return err
-			}
+		}
+		s.dimInit.Unlock()
+		if initErr != nil {
+			return initErr
 		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)

@@ -27,6 +27,19 @@ var ErrUnreachable = errors.New("chat service unreachable")
 // but the configured model does not appear in the /v1/models listing.
 var ErrModelNotFound = errors.New("chat model not found")
 
+// ErrStreamTruncated is returned by GenerateStream when the SSE stream
+// ends cleanly (EOF without a connection error) but the model never sent
+// a finish_reason. This indicates the model server died mid-generation
+// (OOM kill, graceful restart) and the partial response must not be
+// treated as a complete answer.
+var ErrStreamTruncated = errors.New("chat: stream truncated (no finish_reason; model server may have died mid-generation)")
+
+// idleStreamTimeout is the maximum time to wait between consecutive SSE
+// tokens before treating the stream as stalled. A GPU OOM stall or hung
+// inference worker can hold the connection open without sending any data;
+// this guard prevents the MCP session from blocking forever.
+const idleStreamTimeout = 2 * time.Minute
+
 // Chatter is the interface satisfied by *Client. Callers that need to
 // inject a stub in tests should hold a Chatter, not a *Client.
 // Mirrors the embed.Embedder pattern in internal/embed/client.go.
@@ -204,17 +217,53 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Op
 	if err != nil {
 		return Response{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+	// Wrap the context with a cancel-cause so the idle watchdog below can
+	// terminate the stream with an explanatory error without polluting the
+	// caller's context.
+	streamCtx, streamCancel := context.WithCancelCause(ctx)
+	defer streamCancel(nil)
+
+	// Idle watchdog: if no SSE token arrives within idleStreamTimeout,
+	// cancel the stream. A GPU OOM stall or hung inference worker can hold
+	// the TCP connection open indefinitely without sending data.
+	idleReset := make(chan struct{}, 1)
+	go func() {
+		t := time.NewTimer(idleStreamTimeout)
+		defer t.Stop()
+		for {
+			select {
+			case <-streamCtx.Done():
+				return
+			case <-idleReset:
+				if !t.Stop() {
+					select {
+					case <-t.C:
+					default:
+					}
+				}
+				t.Reset(idleStreamTimeout)
+			case <-t.C:
+				streamCancel(fmt.Errorf("chat: stream idle for %v — GPU may be stalled", idleStreamTimeout))
+				return
+			}
+		}
+	}()
+
+	// Use a transport-only client so the per-request Timeout on c.HTTP
+	// doesn't fire during a healthy long generation; the idle watchdog
+	// above guards against a genuinely stalled connection.
+	streamReq, err := http.NewRequestWithContext(streamCtx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return Response{}, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-
-	// Use a transport-only client so there is no read deadline on the stream.
+	streamReq.Header.Set("Content-Type", "application/json")
+	streamReq.Header.Set("Accept", "text/event-stream")
 	streamClient := &http.Client{Transport: c.HTTP.Transport}
-	resp, err := streamClient.Do(req)
+	resp, err := streamClient.Do(streamReq)
 	if err != nil {
+		if cause := context.Cause(streamCtx); cause != nil {
+			return Response{}, cause
+		}
 		return Response{}, fmt.Errorf("%w: %v", ErrUnreachable, err)
 	}
 	defer resp.Body.Close()
@@ -227,6 +276,7 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Op
 		sb           strings.Builder
 		finishReason string
 		respModel    string
+		gotDONE      bool
 	)
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -236,6 +286,7 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Op
 		}
 		payload := strings.TrimPrefix(line, "data: ")
 		if payload == "[DONE]" {
+			gotDONE = true
 			break
 		}
 		var chunk streamChunk
@@ -254,11 +305,28 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Op
 				if onToken != nil {
 					onToken(tok)
 				}
+				// Signal the idle watchdog that we received a token.
+				select {
+				case idleReset <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if cause := context.Cause(streamCtx); cause != nil {
+			return Response{}, cause
+		}
 		return Response{}, fmt.Errorf("chat: stream read: %w", err)
+	}
+	// Detect a clean-EOF truncation: the connection closed without [DONE]
+	// (and without a finish_reason), which happens when the model server is
+	// killed mid-generation (OOM, graceful restart). A partial response must
+	// not be returned as a successful complete answer or cached.
+	// Note: some servers omit finish_reason but do send [DONE]; gotDONE
+	// distinguishes a clean protocol end from a TCP-close truncation.
+	if !gotDONE && finishReason == "" && sb.Len() > 0 {
+		return Response{}, ErrStreamTruncated
 	}
 	return Response{Content: sb.String(), Model: respModel, FinishReason: finishReason}, nil
 }

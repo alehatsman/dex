@@ -309,23 +309,42 @@ func (s *Store) migrate(ctx context.Context) error {
 	default:
 		// Initialized index: enforce the version gate before touching it.
 		var stored string
-		_ = s.db.QueryRowContext(ctx,
+		scanErr := s.db.QueryRowContext(ctx,
 			`SELECT value FROM meta WHERE key='`+metaSchemaVersion+`'`).Scan(&stored)
+		if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+			// Transient error (SQLITE_BUSY, context timeout) — surface it
+			// rather than misreporting as ErrSchemaVersionMismatch, which
+			// would prompt the operator to wipe a valid index.
+			return fmt.Errorf("migrate: read schema_version: %w", scanErr)
+		}
 		if stored != schemaVersion {
 			return fmt.Errorf("%w: index built with schema %q, this binary expects %q — run `dex reindex` to rebuild",
 				ErrSchemaVersionMismatch, stored, schemaVersion)
 		}
 	}
 
+	// Wrap the full DDL sequence in a transaction so a crash mid-build
+	// leaves the DB in a clean state (no tables at all) rather than
+	// half-initialized, which would produce a false ErrSchemaVersionMismatch
+	// on the next open.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("migrate: begin: %w", err)
+	}
 	for _, q := range schemaDDL() {
-		if _, err := s.db.ExecContext(ctx, q); err != nil {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("migrate: %w (%s)", err, q)
 		}
 	}
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO meta(key, value) VALUES('`+metaSchemaVersion+`', ?)
 		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, schemaVersion); err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("migrate: stamp schema_version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("migrate: commit: %w", err)
 	}
 	return nil
 }

@@ -317,12 +317,18 @@ type bodyHandle struct {
 	etag      string // file content hash at the time the handle was issued
 }
 
-// registerBodyHandles stores a slice of BodyEntry handles in the per-session
-// map and returns the handle keys (@B1, @B2, …) so the caller can embed them
-// in the skeleton output.
-func (s *Server) registerBodyHandles(sessionID, relPath, etag string, bodies []compress.BodyEntry) {
+// registerBodyHandles assigns session-global sequence numbers to a slice of
+// BodyEntry handles and stores them in the per-session map. Returns the
+// remapped body entries (with session-global N values) and a strings.Replacer
+// that maps file-local @B1/@B2/… to the session-global keys, so callers can
+// fix up the skeleton text produced by compress.SkeletonPass.
+//
+// Without session-global numbering, two successive skeleton reads of different
+// files both produce @B1, @B2, … and the second registration overwrites the
+// first, causing expand=@B1 to resolve against the wrong file.
+func (s *Server) registerBodyHandles(sessionID, relPath, etag string, bodies []compress.BodyEntry) (remapped []compress.BodyEntry, r *strings.Replacer) {
 	if sessionID == "" || len(bodies) == 0 {
-		return
+		return bodies, strings.NewReplacer()
 	}
 	s.bodyHandlesMu.Lock()
 	defer s.bodyHandlesMu.Unlock()
@@ -333,15 +339,24 @@ func (s *Server) registerBodyHandles(sessionID, relPath, etag string, bodies []c
 	if s.bodyHandles[sessionID] == nil {
 		s.bodyHandles[sessionID] = make(map[string]bodyHandle)
 	}
-	for _, be := range bodies {
-		key := fmt.Sprintf("@B%d", be.N)
-		s.bodyHandles[sessionID][key] = bodyHandle{
+	base := s.bodyHandlesSeq[sessionID]
+	pairs := make([]string, 0, len(bodies)*2)
+	remapped = make([]compress.BodyEntry, len(bodies))
+	for i, be := range bodies {
+		newN := base + i + 1
+		newKey := fmt.Sprintf("@B%d", newN)
+		remapped[i] = compress.BodyEntry{N: newN, Name: be.Name, StartLine: be.StartLine, EndLine: be.EndLine}
+		s.bodyHandles[sessionID][newKey] = bodyHandle{
 			relPath:   relPath,
 			startLine: be.StartLine,
 			endLine:   be.EndLine,
 			etag:      etag,
 		}
+		// Map file-local key to session-global key.
+		pairs = append(pairs, fmt.Sprintf("@B%d", be.N), newKey)
 	}
+	s.bodyHandlesSeq[sessionID] = base + len(bodies)
+	return remapped, strings.NewReplacer(pairs...)
 }
 
 // lookupBodyHandle returns the stored body handle for key (e.g. "@B3") in

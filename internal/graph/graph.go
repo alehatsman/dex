@@ -397,10 +397,17 @@ func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
 	if err := g.store.GraphUpsertNodes(ctx, result.Nodes, t0); err != nil {
 		return nil, fmt.Errorf("upsert nodes: %w", err)
 	}
-	if err := g.store.GraphUpsertEdges(ctx, result.Edges, t0); err != nil {
-		return nil, fmt.Errorf("upsert edges: %w", err)
+	edgeErr := g.store.GraphUpsertEdges(ctx, result.Edges, t0)
+	// Run prune even when edge upsert failed. Nodes were already committed
+	// with timestamp t0; without a prune, stale edges and nodes from the
+	// prior run survive until the next successful full pass. Use a
+	// background context so a cancelled ctx doesn't also skip the prune.
+	pruneCtx, pruneCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	prunedNodes, prunedEdges, err := g.store.GraphPruneUnseen(pruneCtx, t0)
+	pruneCancel()
+	if edgeErr != nil {
+		return nil, fmt.Errorf("upsert edges: %w", edgeErr)
 	}
-	prunedNodes, prunedEdges, err := g.store.GraphPruneUnseen(ctx, t0)
 	if err != nil {
 		return nil, fmt.Errorf("prune: %w", err)
 	}

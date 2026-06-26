@@ -148,12 +148,12 @@ func (s *Server) summarizeModeSkeleton(w summarizeWork) (*sdk.CallToolResult, Su
 		return nil, out, nil
 	}
 	res := compress.SkeletonPass(w.data, w.relTarget, bodyScopesForSymbols(syms))
-	s.registerBodyHandles(w.sessionID, w.relTarget, w.etag, res.Bodies)
+	_, remap := s.registerBodyHandles(w.sessionID, w.relTarget, w.etag, res.Bodies)
 	out := w.out
 	out.Status = "ok"
 	out.Etag = w.etag
-	out.Content = res.Text
-	out.Bytes = len(res.Text)
+	out.Content = remap.Replace(res.Text)
+	out.Bytes = len(out.Content)
 	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
 	w.bt.recordCompressed(w.sessionID, w.relTarget)
 	s.sessionAutoFile(w.p.DBPath, w.relTarget)
@@ -186,22 +186,22 @@ func (s *Server) summarizeModeHandle(w summarizeWork) (*sdk.CallToolResult, Summ
 				})
 			}
 			res := compress.SkeletonPass(w.data, w.relTarget, scopes)
-			s.registerBodyHandles(w.sessionID, w.relTarget, w.etag, res.Bodies)
+			remapped, _ := s.registerBodyHandles(w.sessionID, w.relTarget, w.etag, res.Bodies)
 			// Compact by design: a one-line pointer plus a small sample of body
 			// handles, never the full per-symbol list (that would blow the very
 			// budget that routed us here). All handles remain resolvable via the
 			// registry above; estimateModeTokens(handle)=25.
 			const sample = 5
 			names := make([]string, 0, sample)
-			for _, b := range res.Bodies {
+			for _, b := range remapped {
 				if len(names) == sample {
 					break
 				}
 				names = append(names, fmt.Sprintf("%s @B%d", b.Name, b.N))
 			}
 			more := ""
-			if len(res.Bodies) > len(names) {
-				more = fmt.Sprintf(" (+%d more handles @B%d…@B%d)", len(res.Bodies)-len(names), len(names)+1, len(res.Bodies))
+			if len(remapped) > len(names) {
+				more = fmt.Sprintf(" (+%d more handles @B%d…@B%d)", len(remapped)-len(names), len(names)+1, len(remapped))
 			}
 			out.Content = fmt.Sprintf("HANDLE %s (%d lines, %d symbols) — budget too small for a fuller view; request a body by @Bn handle or re-read with a larger budget_tokens\n%s%s",
 				w.relTarget, lineCount, len(syms), strings.Join(names, "\n"), more)

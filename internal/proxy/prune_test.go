@@ -296,19 +296,39 @@ func TestHeadTailSummary(t *testing.T) {
 	}
 }
 
-// TestPruneStartStride verifies that pruneStart always returns a multiple of
-// PruneStride and is monotonically non-decreasing as msgLen grows.
+// TestPruneStartStride verifies pruneStart properties:
+//   - Returns 0 when nothing is pruneable (msgLen <= keepRecent).
+//   - Returns the exact raw boundary when raw < PruneStride (first-pass pruning
+//     starts immediately, not delayed until a full stride accumulates).
+//   - Returns a multiple of PruneStride once raw >= PruneStride (cache-warm).
+//   - Is monotonically non-decreasing as msgLen grows.
 func TestPruneStartStride(t *testing.T) {
 	keepRecent := 8
 	prev := 0
 	for msgLen := 0; msgLen <= 64; msgLen++ {
+		raw := msgLen - keepRecent
 		got := pruneStart(msgLen, keepRecent)
-		// Must be a multiple of PruneStride (or zero).
-		if got != 0 && got%PruneStride != 0 {
-			t.Errorf("pruneStart(%d, %d) = %d, not a multiple of PruneStride (%d)",
-				msgLen, keepRecent, got, PruneStride)
+		switch {
+		case raw <= 0:
+			// Nothing to prune: must return 0.
+			if got != 0 {
+				t.Errorf("pruneStart(%d, %d) = %d, want 0 (nothing to prune)",
+					msgLen, keepRecent, got)
+			}
+		case raw < PruneStride:
+			// First-pass: exact boundary, enables pruning without waiting for stride.
+			if got != raw {
+				t.Errorf("pruneStart(%d, %d) = %d, want raw=%d (first-pass exact boundary)",
+					msgLen, keepRecent, got, raw)
+			}
+		default:
+			// Stride-rounded: must be a positive multiple of PruneStride.
+			if got == 0 || got%PruneStride != 0 {
+				t.Errorf("pruneStart(%d, %d) = %d, not a multiple of PruneStride (%d)",
+					msgLen, keepRecent, got, PruneStride)
+			}
 		}
-		// Must be non-decreasing.
+		// Must be non-decreasing in all cases.
 		if got < prev {
 			t.Errorf("pruneStart(%d, %d) = %d < prev %d (non-monotonic)",
 				msgLen, keepRecent, got, prev)

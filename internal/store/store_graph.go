@@ -191,20 +191,27 @@ func (s *Store) GraphUpsertEdges(ctx context.Context, rows []GraphEdgeRow, now t
 
 // GraphPruneUnseen deletes nodes and edges with last_seen_at strictly
 // older than cutoff. Pair with a cutoff = Run start time so rows
-// touched in the current pass survive.
+// touched in the current pass survive. Both DELETEs run in a single
+// transaction so a crash between them cannot leave orphaned nodes.
 func (s *Store) GraphPruneUnseen(ctx context.Context, cutoff time.Time) (nodes, edges int64, err error) {
 	ts := cutoff.UnixNano()
-	r, err := s.db.ExecContext(ctx, `DELETE FROM graph_edges WHERE last_seen_at < ?`, ts)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, 0, err
 	}
-	edges, _ = r.RowsAffected()
-	r, err = s.db.ExecContext(ctx, `DELETE FROM graph_nodes WHERE last_seen_at < ?`, ts)
+	r, err := tx.ExecContext(ctx, `DELETE FROM graph_edges WHERE last_seen_at < ?`, ts)
 	if err != nil {
+		_ = tx.Rollback()
+		return 0, 0, err
+	}
+	edges, _ = r.RowsAffected()
+	r, err = tx.ExecContext(ctx, `DELETE FROM graph_nodes WHERE last_seen_at < ?`, ts)
+	if err != nil {
+		_ = tx.Rollback()
 		return 0, edges, err
 	}
 	nodes, _ = r.RowsAffected()
-	return nodes, edges, nil
+	return nodes, edges, tx.Commit()
 }
 
 // GraphMaxEpoch returns the maximum last_seen_at value across all graph_nodes
