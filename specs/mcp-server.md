@@ -55,7 +55,12 @@ service clients are the http-api spec's.
     location, `review` for per-hunk PR intelligence) plus persistent project
     memory (#548) and `refactor` for type-precise edit planning. `locate` and
     `review` are pure composition over the index and need no chat model; their
-    callers lane degrades to empty without a graph. `refactor` needs no index at
+    callers lane degrades to empty without a graph. `locate` also carries a batch
+    `claims` mode (#708): given a set of `{ref:'file:line', symbol?}` citations it
+    resolves each against the index in one call and returns `results[]` —
+    `ok`/`moved` (with the corrected `found_at`)/`gone`/`no_file` — so an agent
+    can verify locations carried from notes or memory still hold before citing
+    them, without N defensive reads. `refactor` needs no index at
     all — it loads source on-demand via go/packages and returns byte-exact edit
     triples (read-only #551: it never writes; the agent applies the edits).
     `verify` (#686, epic #683) is the one NON-read-only default verb: it runs the

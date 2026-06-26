@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,14 +29,17 @@ import (
 
 // LocateInput selects the target three ways. Exactly one of Ref / Symbol /
 // Frame is expected; when more than one is set the precedence is Ref, then
-// Symbol, then Frame.
+// Symbol, then Frame. When Claims is set, locate runs in batch
+// claim-verification mode instead (#708) and the single-target fields are
+// ignored.
 type LocateInput struct {
-	Ref         string `json:"ref,omitempty" jsonschema:"a code location as 'path:line' (or 'path:line:col'); path may be project-relative or absolute"`
-	Symbol      string `json:"symbol,omitempty" jsonschema:"a symbol name: bare ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer')"`
-	Frame       string `json:"frame,omitempty" jsonschema:"a raw stack-trace frame line; the file:line or symbol is parsed out of it"`
-	Issues      bool   `json:"issues,omitempty" jsonschema:"opt-in: also list related open GitHub issues via the 'gh' CLI (best-effort, skipped when gh is absent)"`
-	K           int    `json:"k,omitempty" jsonschema:"max callers and related notes to return (default 8, max 30)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	Ref         string     `json:"ref,omitempty" jsonschema:"a code location as 'path:line' (or 'path:line:col'); path may be project-relative or absolute"`
+	Symbol      string     `json:"symbol,omitempty" jsonschema:"a symbol name: bare ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer')"`
+	Frame       string     `json:"frame,omitempty" jsonschema:"a raw stack-trace frame line; the file:line or symbol is parsed out of it"`
+	Claims      []ClaimRef `json:"claims,omitempty" jsonschema:"batch claim-verification (#708): resolve many 'file:line[:symbol]' citations against the index in ONE call (no callers/tests/blame, no LLM). When set, locate returns 'results' instead of the single-target bundle and ref/symbol/frame are ignored. Use to confirm cited locations from notes/memory still resolve before recommending them."`
+	Issues      bool       `json:"issues,omitempty" jsonschema:"opt-in: also list related open GitHub issues via the 'gh' CLI (best-effort, skipped when gh is absent)"`
+	K           int        `json:"k,omitempty" jsonschema:"max callers and related notes to return (default 8, max 30)"`
+	ProjectRoot string     `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 }
 
 // LocatedFact is the compact projection of a knowledge fact surfaced next to
@@ -78,6 +80,11 @@ type LocateOutput struct {
 	LastAuthor string        `json:"last_author,omitempty"`
 	Notes      []LocatedFact `json:"notes,omitempty"`
 	Issues     []string      `json:"issues,omitempty"`
+
+	// Results is populated only in batch claim-verification mode (#708): one
+	// verdict per input claim, in request order. The single-target fields above
+	// stay empty.
+	Results []ClaimResult `json:"results,omitempty"`
 }
 
 // Locate runs the locate verb for callers without an SDK request — the REST
@@ -89,8 +96,9 @@ func (s *Server) Locate(ctx context.Context, in LocateInput) (LocateOutput, erro
 }
 
 func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateInput) (*sdk.CallToolResult, LocateOutput, error) {
-	if strings.TrimSpace(in.Ref) == "" && strings.TrimSpace(in.Symbol) == "" && strings.TrimSpace(in.Frame) == "" {
-		return nil, LocateOutput{Status: "error", Hint: "locate needs one of: ref, symbol, frame", Callers: []CallSite{}}, nil
+	if len(in.Claims) == 0 &&
+		strings.TrimSpace(in.Ref) == "" && strings.TrimSpace(in.Symbol) == "" && strings.TrimSpace(in.Frame) == "" {
+		return nil, LocateOutput{Status: "error", Hint: "locate needs one of: ref, symbol, frame, claims", Callers: []CallSite{}}, nil
 	}
 	p, hint := s.resolveProject(in.ProjectRoot)
 	if hint != "" {
@@ -103,6 +111,20 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		return nil, LocateOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err), Callers: []CallSite{}}, nil
+	}
+
+	// Batch claim-verification mode (#708): resolve a set of cited
+	// 'file:line[:symbol]' claims in one call and return a per-claim verdict,
+	// nothing else. This is the single-target resolver (resolveByRef /
+	// FindSymbol) run in bulk so an agent can confirm citations from notes /
+	// memory still hold before recommending them.
+	if len(in.Claims) > 0 {
+		return nil, LocateOutput{
+			Status:  "ok",
+			Project: p.Root,
+			Callers: []CallSite{},
+			Results: verifyClaims(ctx, st, p.Root, in.Claims),
+		}, nil
 	}
 
 	k := in.K
@@ -227,12 +249,7 @@ func resolveByRef(ctx context.Context, st *store.Store, root, ref string) locate
 	if !ok {
 		return locateTarget{status: "not-found", hint: fmt.Sprintf("ref %q is not 'path:line'", ref)}
 	}
-	if filepath.IsAbs(path) {
-		if rel, err := filepath.Rel(root, path); err == nil && !strings.HasPrefix(rel, "..") {
-			path = rel
-		}
-	}
-	path = filepath.ToSlash(filepath.Clean(path))
+	path = normalizeRefPath(root, path)
 	hit, err := st.ChunkAt(ctx, path, line)
 	if err != nil {
 		return locateTarget{status: "not-found",

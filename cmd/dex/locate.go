@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
@@ -27,11 +28,14 @@ func cmdLocate(ctx context.Context, args []string) error {
 		"dex locate [flags] [<path>] <symbol-or-path:line>",
 		"dex locate '(*Server).RunStdio'",
 		"dex locate internal/mcp/server.go:730",
-		"dex locate --frame 'panic at internal/foo.go:42' --issues")
+		"dex locate --frame 'panic at internal/foo.go:42' --issues",
+		"dex locate --claim internal/mcp/server.go:412=handleAsk --claim internal/retrieve/fuse.go:88=Fuse")
 	frame := fs.String("frame", "", "a raw stack-trace frame line (file:line or symbol parsed out of it)")
 	issues := fs.Bool("issues", false, "also list matching open GitHub issues via the gh CLI (best-effort)")
 	k := fs.Int("k", 0, "max callers and notes to return (default 8, max 30)")
 	format := fs.String("format", "text", "output format: text | json")
+	var claims stringSlice
+	fs.Var(&claims, "claim", "batch-verify a 'file:line[=symbol]' citation (repeatable); when set, locate reports each as ok/moved/gone/no_file")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -39,6 +43,11 @@ func cmdLocate(ctx context.Context, args []string) error {
 
 	in := mcp.LocateInput{Issues: *issues, K: *k}
 	switch {
+	case len(claims) > 0:
+		if *frame != "" || len(rest) != 0 {
+			return fmt.Errorf("locate: pass --claim alone, not with --frame or a positional target")
+		}
+		in.Claims = parseClaimFlags(claims)
 	case *frame != "":
 		in.Frame = *frame
 		if len(rest) != 0 {
@@ -82,8 +91,41 @@ func cmdLocate(ctx context.Context, args []string) error {
 		}
 		return nil
 	}
+	if len(in.Claims) > 0 {
+		renderClaimResults(out.Results)
+		return nil
+	}
 	renderLocateText(out)
 	return nil
+}
+
+// parseClaimFlags turns repeated --claim values ('file:line' or
+// 'file:line=symbol') into ClaimRefs. The first '=' splits ref from symbol so
+// paths/refs (which never contain '=') stay intact.
+func parseClaimFlags(vals []string) []mcp.ClaimRef {
+	claims := make([]mcp.ClaimRef, 0, len(vals))
+	for _, v := range vals {
+		c := mcp.ClaimRef{Ref: v}
+		if i := strings.IndexByte(v, '='); i >= 0 {
+			c.Ref, c.Symbol = v[:i], v[i+1:]
+		}
+		claims = append(claims, c)
+	}
+	return claims
+}
+
+// renderClaimResults prints one line per batch-verified claim.
+func renderClaimResults(results []mcp.ClaimResult) {
+	for _, r := range results {
+		line := fmt.Sprintf("%-7s %s", r.Status, r.Ref)
+		switch {
+		case r.Status == "moved" && r.FoundAt != "":
+			line += "  → " + r.FoundAt
+		case r.SymbolAt != "":
+			line += "  (" + r.SymbolAt + ")"
+		}
+		fmt.Println(line)
+	}
 }
 
 // renderLocateText prints the human view of a locate bundle.
