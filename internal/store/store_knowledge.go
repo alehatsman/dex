@@ -288,29 +288,78 @@ func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFac
 	return scanFacts(rows)
 }
 
-// KnowledgeBackup is the minimal portable note shape used to rescue notes
-// across a reindex — including one triggered BY a schema-version mismatch (#648).
+// KnowledgeBackup is the portable note shape used to rescue notes across a
+// reindex — including one triggered BY a schema-version mismatch (#648). It
+// round-trips every field that survives a rebuild: the scope binding (#645) and
+// the created_at / updated_at / hit_count / revision_count that feed Salience.
+// Dropping these on restore silently unscopes notes and resets their ranking
+// signal (#678).
 type KnowledgeBackup struct {
-	Archetype  string
-	Body       string
-	Confidence float64
+	Archetype     string
+	Body          string
+	Confidence    float64
+	Scope         string
+	CreatedAt     int64 // unix nanos; 0 when the source schema predates the column
+	UpdatedAt     int64 // unix nanos; 0 when the source schema predates the column
+	HitCount      int
+	RevisionCount int
+}
+
+// rawColumns returns the set of column names on table, read straight from
+// sqlite_master via PRAGMA — no migrations. Used to make a raw export tolerant
+// of older schemas that lack newer columns (e.g. a pre-#645 DB has no `scope`).
+func rawColumns(ctx context.Context, db *sql.DB, table string) map[string]bool {
+	rows, err := db.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = rows.Close() }()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return cols
+		}
+		cols[name] = true
+	}
+	return cols
 }
 
 // ExportKnowledgeRaw reads all notes directly from a sqlite index file WITHOUT
 // running migrations, so notes survive even a reindex caused by a schema-version
 // mismatch (when the normal store.Open fail-closes). archetype/body/confidence
-// have existed in every schemaVersion, so the read is version-independent. The
-// sqlite-vec extension is auto-registered at package init, so a DB carrying a
-// vec0 table still opens. Best-effort: returns nil (no error) when the file or
-// the knowledge_facts table is absent/unreadable.
+// have existed in every schemaVersion; the newer columns (scope, created_at,
+// updated_at, hit_count, revision_count) are selected only when present, so the
+// read stays version-independent and forward-tolerant (#678). The sqlite-vec
+// extension is auto-registered at package init, so a DB carrying a vec0 table
+// still opens. Best-effort: returns nil (no error) when the file or the
+// knowledge_facts table is absent/unreadable.
 func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, nil
 	}
 	defer func() { _ = db.Close() }()
-	rows, err := db.QueryContext(ctx,
-		`SELECT archetype, body, confidence FROM knowledge_facts ORDER BY id`)
+	cols := rawColumns(ctx, db, "knowledge_facts")
+	if !cols["archetype"] {
+		return nil, nil // table missing or unreadable → nothing to rescue
+	}
+	// Build a fixed 8-column projection: present columns select directly, absent
+	// ones fall back to a literal default so the scan signature never changes.
+	col := func(name, def string) string {
+		if cols[name] {
+			return name
+		}
+		return def + " AS " + name
+	}
+	query := `SELECT archetype, body, confidence, ` +
+		col("scope", "''") + `, ` +
+		col("created_at", "0") + `, ` +
+		col("updated_at", "0") + `, ` +
+		col("hit_count", "0") + `, ` +
+		col("revision_count", "0") +
+		` FROM knowledge_facts ORDER BY id`
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, nil // file/table missing or unreadable → nothing to rescue
 	}
@@ -318,12 +367,48 @@ func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, 
 	var out []KnowledgeBackup
 	for rows.Next() {
 		var b KnowledgeBackup
-		if err := rows.Scan(&b.Archetype, &b.Body, &b.Confidence); err != nil {
+		if err := rows.Scan(&b.Archetype, &b.Body, &b.Confidence, &b.Scope,
+			&b.CreatedAt, &b.UpdatedAt, &b.HitCount, &b.RevisionCount); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// KnowledgeRestore re-inserts a rescued fact verbatim, preserving the scope
+// binding and the created_at / updated_at / hit_count / revision_count that feed
+// Salience — unlike KnowledgeAdd, which stamps a fresh created_at and zeroes the
+// counters. Only the reindex rescue path uses it (#678). On a body conflict
+// (idempotent re-restore) it keeps the stronger signal: higher confidence, a
+// non-empty scope, and the larger counters. A zero CreatedAt/UpdatedAt (source
+// predated the column) is stamped to now so recency stays sane.
+func (s *knowledgeStore) KnowledgeRestore(ctx context.Context, b KnowledgeBackup) error {
+	if b.Confidence <= 0 {
+		b.Confidence = 0.8
+	}
+	if b.Confidence > 1 {
+		b.Confidence = 1
+	}
+	now := time.Now().UnixNano()
+	if b.CreatedAt == 0 {
+		b.CreatedAt = now
+	}
+	if b.UpdatedAt == 0 {
+		b.UpdatedAt = b.CreatedAt
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope)
+		   VALUES(?,?,?,?,?,?,?,?)
+		   ON CONFLICT(body) DO UPDATE SET
+		     archetype=excluded.archetype,
+		     confidence=MAX(confidence, excluded.confidence),
+		     updated_at=MAX(updated_at, excluded.updated_at),
+		     hit_count=MAX(hit_count, excluded.hit_count),
+		     revision_count=MAX(revision_count, excluded.revision_count),
+		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END`,
+		b.Archetype, b.Body, b.Confidence, b.CreatedAt, b.UpdatedAt, b.HitCount, b.RevisionCount, b.Scope)
+	return err
 }
 
 // KnowledgeCount returns the number of stored facts.

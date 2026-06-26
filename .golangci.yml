@@ -178,6 +178,13 @@ linters:
         linters: [gosec]
         text: "G202"
 
+      # G202: SQL string concatenation in store_knowledge.go — the schema-tolerant
+      # raw export (#678) builds its SELECT column list from a fixed internal
+      # allowlist (column names + literal defaults), never user data.
+      - path: internal/store/store_knowledge\.go
+        linters: [gosec]
+        text: "G202"
+
       # G122: os.ReadFile path in WalkDir callback — the root is the user's
       # own project directory; symlink TOCTOU is not a threat model here.
       - path: internal/index/index\.go

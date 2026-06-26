@@ -162,7 +162,10 @@ func cmdReindex(ctx context.Context, args []string) error {
 }
 
 // restoreNotes re-adds rescued knowledge facts into a freshly-rebuilt store
-// (#647). Best-effort and idempotent (KnowledgeAdd dedups by body); a per-fact
+// (#647). KnowledgeRestore (not KnowledgeAdd) preserves each fact's scope
+// binding and salience signal (created_at / counters) across the rebuild —
+// otherwise the first reindex silently unscopes every scoped note and resets
+// its ranking (#678). Best-effort and idempotent (dedups by body); a per-fact
 // failure is skipped, never fatal to the reindex. Embeddings backfill lazily on
 // the next semantic recall.
 func restoreNotes(ctx context.Context, st *store.Store, facts []store.KnowledgeBackup) {
@@ -171,7 +174,7 @@ func restoreNotes(ctx context.Context, st *store.Store, facts []store.KnowledgeB
 	}
 	restored := 0
 	for _, f := range facts {
-		if _, err := st.KnowledgeAdd(ctx, f.Archetype, f.Body, f.Confidence); err == nil {
+		if err := st.KnowledgeRestore(ctx, f); err == nil {
 			restored++
 		}
 	}
