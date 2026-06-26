@@ -50,4 +50,19 @@ func TestSecretPanelsConsistent(t *testing.T) {
 			t.Errorf("redact.Mask LEAKS %q — shell output containing it would reach the model:\n  %q", name, masked)
 		}
 	}
+
+	// Slack tokens span several subtype prefixes (bot/app/user/refresh/legacy).
+	// The single-sample loop above only exercised one; a per-subtype sweep locks
+	// the char-class so a future single-char drift between the two panels fails
+	// the gate rather than silently leaking one subtype (#676: ignore's class had
+	// drifted to xox[abps], dropping the xoxr- refresh token redact still masked).
+	for _, sub := range []string{"xoxb", "xoxa", "xoxp", "xoxr", "xoxs"} {
+		secret := sub + "-" + strings.Repeat("f", 20)
+		if !ignore.LooksLikeSecret([]byte("config = " + secret + "\n")) {
+			t.Errorf("ignore.LooksLikeSecret MISSES Slack subtype %q — a file containing it would be indexed", sub)
+		}
+		if masked := redact.Mask("value: " + secret); strings.Contains(masked, secret) {
+			t.Errorf("redact.Mask LEAKS Slack subtype %q — shell output containing it would reach the model:\n  %q", sub, masked)
+		}
+	}
 }
