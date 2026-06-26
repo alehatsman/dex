@@ -101,6 +101,11 @@ type shellPolicy int
 const (
 	// policyCompress: apply CompressText (build/test/lint output).
 	policyCompress shellPolicy = iota
+	// policyMinimal: light cleanup that preserves structure (#616) — drop git
+	// index-hash plumbing, collapse blank runs, dedup consecutive non-signal
+	// lines, but keep every diff/error/count line. For git diff/log/show/blame
+	// and dependency audits: wasteful verbatim, unsafe to compress aggressively.
+	policyMinimal
 	// policyVerbatim: strip ANSI, hard-cap lines, no pattern compression
 	// (curl, jq, cat, structured data queries).
 	policyVerbatim
@@ -110,13 +115,18 @@ const (
 )
 
 // classifyCommand returns the output policy for the given command.
-// Priority: passthrough > verbatim > test-runner > compress.
+// Priority: passthrough > verbatim > minimal > test-runner > compress.
 func classifyCommand(command string) shellPolicy {
 	if isPassthroughCommand(command) {
 		return policyPassthrough
 	}
 	if isVerbatimCommand(command) {
 		return policyVerbatim
+	}
+	// Structured-but-bulky output (git diff/log/show/blame, dependency audits):
+	// safe to clean lightly, unsafe to compress aggressively (#616).
+	if isMinimalCommand(command) {
+		return policyMinimal
 	}
 	// Test runner output must be preserved verbatim — agents need the full
 	// pass/fail breakdown, not a compressed summary that may lose failures.
@@ -364,8 +374,9 @@ var verbatimPrefixes = []string{
 	"aws ", "gcloud ", "az ",
 	// CLI API data — structured JSON responses
 	"gh api", "gh --json", "glab api",
-	// Package manager info (read-only, not install)
-	"npm list", "npm audit", "npm outdated", "npm info",
+	// Package manager info (read-only, not install). Audits move to the minimal
+	// tier (#616) — their tables are bulky but must keep CVE/severity lines.
+	"npm list", "npm outdated", "npm info",
 	"cargo metadata", "cargo tree",
 	"go list ", "go version", "go env",
 	"brew list", "brew info", "brew outdated",
@@ -397,8 +408,9 @@ var verbatimPrefixes = []string{
 	// One-shot database queries (bare psql/mysql are passthrough REPLs)
 	"psql -c", "psql --command", "mysql -e", "mysql --execute",
 	"mariadb -e", "sqlite3 ", "mongosh --eval", "redis-cli --eval",
-	// Git data (log/show/diff/blame produce structured output agents read)
-	"git log ", "git show ", "git diff ", "git blame ",
+	// Git data: log/show/diff/blame move to the minimal tier (#616) — bulky but
+	// every +/- diff line must survive. stash list/tag/branch stay verbatim
+	// (short, no diff content to lightly trim).
 	"git stash list", "git tag", "git branch",
 	// Non-streaming log viewers
 	"journalctl --no-pager", "journalctl -u", "journalctl -b",
@@ -419,6 +431,29 @@ func isVerbatimCommand(command string) bool {
 	if idx := strings.LastIndex(cl, "|"); idx >= 0 {
 		tail := strings.TrimSpace(cl[idx+1:])
 		if isVerbatimCommand(tail) {
+			return true
+		}
+	}
+	return false
+}
+
+// minimalPrefixes — structured-but-bulky output that earns the light Minimal
+// tier (#616): keep every diff/error/count line, drop only blank runs, dup
+// lines, and git index-hash plumbing. These were verbatim before; verbatim
+// never compresses, so a 200-commit log or a large diff cost full tokens.
+var minimalPrefixes = []string{
+	"git diff", "git log", "git show", "git blame",
+	"npm audit", "cargo audit", "pnpm audit", "yarn audit",
+}
+
+// isMinimalCommand matches on the leading command only (so `git diff | grep x`
+// is still minimal). A pipe whose TAIL is a verbatim/passthrough tool is caught
+// earlier by classifyCommand's higher-priority checks — the established
+// last-segment-wins rule for pipes — so this needs no pipe-tail handling.
+func isMinimalCommand(command string) bool {
+	cl := strings.ToLower(strings.TrimSpace(command))
+	for _, p := range minimalPrefixes {
+		if cl == p || strings.HasPrefix(cl, p+" ") || strings.HasPrefix(cl, p+"\t") {
 			return true
 		}
 	}
@@ -687,6 +722,24 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 			ExitCode:      exitCode,
 			OriginalLines: orig,
 			OutputLines:   outLines,
+			SavedPct:      saved,
+		}, nil
+	}
+
+	// Minimal: light structure-preserving cleanup for git diff/log/show/blame
+	// and dependency audits (#616) — keeps every diff/error/count line.
+	if policy == policyMinimal {
+		compressed, orig, out := CompressMinimal(clean)
+		saved := 0
+		if orig > 0 {
+			saved = (orig - out) * 100 / orig
+		}
+		s.activityRecord(cwd, shellActivityWeight(in.Command))
+		return nil, ShellOutput{
+			Output:        compressed,
+			ExitCode:      exitCode,
+			OriginalLines: orig,
+			OutputLines:   out,
 			SavedPct:      saved,
 		}, nil
 	}

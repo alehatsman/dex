@@ -361,7 +361,6 @@ func TestClassifyCommand(t *testing.T) {
 		"terraform show",
 		"kubectl get pods -o json",
 		"docker inspect container123",
-		"git log --oneline -10",
 		// test runners — full output required (#82)
 		"go test ./...",
 		"cargo test --workspace",
@@ -381,6 +380,16 @@ func TestClassifyCommand(t *testing.T) {
 		"gh api repos/owner/repo",
 		"docker ps",
 	}
+	// Minimal tier (#616): structured-but-bulky output, lightly cleaned.
+	minimal := []string{
+		"git log --oneline -10",
+		"git diff HEAD~3",
+		"git show abc123",
+		"git blame internal/mcp/server.go",
+		"npm audit",
+		"cargo audit",
+		"git diff | grep -n foo", // leading git-diff → minimal; grep tail isn't verbatim
+	}
 	compressCmds := []string{
 		"cargo build",
 		"npm install",
@@ -397,6 +406,11 @@ func TestClassifyCommand(t *testing.T) {
 	for _, cmd := range verbatim {
 		if got := classifyCommand(cmd); got != policyVerbatim {
 			t.Errorf("expected verbatim for %q, got %v", cmd, got)
+		}
+	}
+	for _, cmd := range minimal {
+		if got := classifyCommand(cmd); got != policyMinimal {
+			t.Errorf("expected minimal for %q, got %v", cmd, got)
 		}
 	}
 	for _, cmd := range compressCmds {

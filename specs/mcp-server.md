@@ -136,7 +136,12 @@ service clients are the http-api spec's.
   `heatmap` (per-file access frequency and compression savings). The task + notes
   + files are surfaced in `ask` responses as `session_task`. No embedding required.
 - WHEN `shell` is called, dex executes a command and returns compressed output
-  (the same pipeline as the indexer's log compression). File-write redirects
+  (the same pipeline as the indexer's log compression). Output is routed by a
+  tiered policy — passthrough (dev servers / auth flows, untouched) · verbatim
+  (structured queries, ANSI-strip + hard-cap only) · minimal (#616: git
+  diff/log/show/blame and dependency audits — drop git index-hash plumbing,
+  collapse blank runs, dedup non-signal lines, but keep every diff/error/count
+  line) · compress (build/test/lint, full pattern pass). File-write redirects
   (`>`, `>>`) and `tee` are blocked by default — the caller must use the Write
   tool — unless `DEX_SHELL_ALLOW_WRITES=1` opts out (#596); `raw:true` skips
   compression; timeout 60 s. WHEN a command exits non-zero and its output
