@@ -332,7 +332,11 @@ func resolveHunkSymbols(ctx context.Context, st *store.Store, path string, h rev
 		if err != nil || hit.Name == "" {
 			continue
 		}
-		key := hit.Name + ":" + strconv.Itoa(hit.StartLine)
+		// Dedup by name only: a long function spans multiple indexed chunks
+		// with different start_line values, but they're the same symbol.
+		// Method names are qualified ((*Foo).Method), so different-receiver
+		// methods with the same bare name won't collide (#700).
+		key := hit.Name
 		if seen[key] {
 			continue
 		}

@@ -206,6 +206,18 @@ func TestReviewIntegration(t *testing.T) {
 	if !sawGreet {
 		t.Errorf("expected Greet among touched symbols, hunks=%+v", f.Hunks)
 	}
+	// Guard #700: no hunk should list the same symbol name twice.
+	for _, h := range f.Hunks {
+		seen := map[string]int{}
+		for _, sym := range h.SymbolsTouched {
+			seen[sym.Name]++
+		}
+		for name, count := range seen {
+			if count > 1 {
+				t.Errorf("hunk @%d has %d duplicate entries for symbol %q (want 1)", h.NewStart, count, name)
+			}
+		}
+	}
 	// File-level history legs are best-effort but should be populated here.
 	if f.LastCommit == "" {
 		t.Errorf("expected last_commit to be set")
