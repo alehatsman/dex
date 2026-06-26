@@ -85,6 +85,11 @@ type Options struct {
 	// results are teed to a content-addressed store and stubs carry a recovery
 	// marker, and the keep-window expansion pass runs pre-send. Off by default.
 	CCREnabled bool
+	// FeedbackHook, when non-nil, is called after each response with the
+	// provider-reported output and input token counts. Callers use this to
+	// compute the output/input ratio and feed it into the adaptive compression
+	// policy (#610).
+	FeedbackHook func(outputTokens, inputTokens int64)
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -126,7 +131,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook, opts.Effort, ccr)
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook, opts.Effort, ccr, opts.FeedbackHook)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -188,7 +193,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - POST /compact → record a PreCompact event in the budget log
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64), effort EffortLevel, ccr *TeeStore) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64), effort EffortLevel, ccr *TeeStore, feedbackHook func(outputTokens, inputTokens int64)) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -366,6 +371,9 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			stats.recordCost(cost)
 			if costHook != nil && cost > 0 {
 				costHook(cost)
+			}
+			if feedbackHook != nil && u.InputTokens > 0 {
+				feedbackHook(u.OutputTokens, u.InputTokens)
 			}
 		})
 		rp.ServeHTTP(tw, r)

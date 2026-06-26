@@ -81,6 +81,7 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		if err := st.SessionSetTask(ctx, in.Task); err != nil {
 			return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
 		}
+		writeCurrentTask(in.Task)
 	case "add_note":
 		if in.Note == "" {
 			return nil, SessionOutput{Status: "error", Hint: "note is empty"}, nil
@@ -592,4 +593,18 @@ func (s *Server) sessionImport(ctx context.Context, st *store.Store, projectRoot
 func (s *Server) sessionHeatmap(cacheDir string) (*sdk.CallToolResult, SessionOutput, error) {
 	hm := heatmap.Load(cacheDir)
 	return nil, SessionOutput{Status: "ok", Content: hm.Format(15)}, nil
+}
+
+// writeCurrentTask writes the task string to ~/.cache/dex/current_task so the
+// proxy can read the current intent without a database query. Fail-open.
+func writeCurrentTask(task string) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return
+	}
+	p := filepath.Join(cacheDir, "dex", "current_task")
+	if mkErr := os.MkdirAll(filepath.Dir(p), 0o755); mkErr != nil {
+		return
+	}
+	_ = os.WriteFile(p, []byte(task), 0o644)
 }

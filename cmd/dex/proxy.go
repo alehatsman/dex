@@ -34,6 +34,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/proxy"
 	"github.com/alehatsman/dex/internal/slo"
 )
@@ -153,6 +155,34 @@ func cmdProxy(ctx context.Context, args []string) error {
 		costHook = tracker.RecordCostUSD
 	}
 
+	// Wire token-ratio feedback into the adaptive compression policy (#610).
+	// Each response fires the hook with provider-reported token counts; the hook
+	// reads the current task from ~/.cache/dex/current_task (written by the MCP
+	// server on session(action=set_task)), derives intent + predicted mode, and
+	// records the output/input ratio as a penalty signal.
+	var feedbackHook func(outputTokens, inputTokens int64)
+	if idir, err := indexDir(); err == nil {
+		if root, err := os.Getwd(); err == nil {
+			if p, err := proj.Resolve(root, idir); err == nil {
+				policy := compress.LoadPolicy(p.CacheDir)
+				feedbackHook = func(outputTokens, inputTokens int64) {
+					task := readCurrentTask()
+					if task == "" {
+						return
+					}
+					predicted := compress.TaskToMode(task)
+					if predicted == "" {
+						return
+					}
+					intent := compress.IntentFromTask(task)
+					mode := policy.ChooseMode(intent, predicted)
+					ratio := float64(outputTokens) / float64(inputTokens)
+					policy.RecordFeedback(intent, mode, ratio)
+				}
+			}
+		}
+	}
+
 	return proxy.Run(ctx, proxy.Options{
 		Addr:         *addr,
 		Upstream:     *upstream,
@@ -164,6 +194,7 @@ func cmdProxy(ctx context.Context, args []string) error {
 		CostHook:     costHook,
 		Effort:       effort,
 		CCREnabled:   ccrEnabled,
+		FeedbackHook: feedbackHook,
 	})
 }
 
@@ -257,4 +288,19 @@ func printProxyStats(ctx context.Context, addr, token string) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(snap)
+}
+
+// readCurrentTask returns the task last set via session(action=set_task), or ""
+// if the file is absent or unreadable. Written by writeCurrentTask in the MCP
+// server whenever the agent updates its working task description.
+func readCurrentTask() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(cacheDir, "dex", "current_task"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

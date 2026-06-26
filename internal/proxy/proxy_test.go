@@ -30,7 +30,7 @@ func newTestProxy(t *testing.T, upstream http.Handler) (*httptest.Server, *bytes
 	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescFull, ModelRouteConfig{}, nil, nil, nil, nil, "", nil))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescFull, ModelRouteConfig{}, nil, nil, nil, nil, "", nil, nil))
 	t.Cleanup(front.Close)
 	return front, &logs
 }
@@ -239,7 +239,7 @@ func TestFailOpenUpstreamDown(t *testing.T) {
 	upURL, _ := url.Parse("http://" + addr)
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescFull, ModelRouteConfig{}, nil, nil, nil, nil, "", nil))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescFull, ModelRouteConfig{}, nil, nil, nil, nil, "", nil, nil))
 	defer front.Close()
 
 	resp, err := http.Post(front.URL+"/v1/messages", "application/json", strings.NewReader(`{"model":"claude"}`))
@@ -300,7 +300,7 @@ func TestAuthGate(t *testing.T) {
 	defer upSrv.Close()
 	upURL, _ := url.Parse(upSrv.URL)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, token, ToolDescFull, ModelRouteConfig{}, nil, nil, nil, nil, "", nil))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, token, ToolDescFull, ModelRouteConfig{}, nil, nil, nil, nil, "", nil, nil))
 	defer front.Close()
 
 	body := `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`
@@ -648,5 +648,47 @@ func TestStatsCounters(t *testing.T) {
 	wantRatio := 20.0 / 300.0
 	if snap.CompressionRatio < wantRatio-0.001 || snap.CompressionRatio > wantRatio+0.001 {
 		t.Errorf("compression_ratio = %f, want ~%f", snap.CompressionRatio, wantRatio)
+	}
+}
+
+// TestFeedbackHookFired verifies that FeedbackHook is called with the
+// provider-reported output and input token counts from the SSE usage events.
+// Anthropic splits tokens: input_tokens in message_start, output_tokens in message_delta.
+func TestFeedbackHookFired(t *testing.T) {
+	const sseBody = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":200}}}\n\n" +
+		"event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":40}}\n\n" +
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+
+	up := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, sseBody)
+	})
+	upSrv := httptest.NewServer(up)
+	t.Cleanup(upSrv.Close)
+	upURL, _ := url.Parse(upSrv.URL)
+
+	var gotOutput, gotInput int64
+	hook := func(outputTokens, inputTokens int64) {
+		gotOutput = outputTokens
+		gotInput = inputTokens
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	front := httptest.NewServer(newProxyHandler(upURL, logger, &Stats{}, "", ToolDescFull, ModelRouteConfig{}, nil, nil, nil, nil, "", nil, hook))
+	t.Cleanup(front.Close)
+
+	resp, err := http.Post(front.URL+"/v1/messages", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if gotOutput != 40 {
+		t.Errorf("FeedbackHook outputTokens = %d, want 40", gotOutput)
+	}
+	if gotInput != 200 {
+		t.Errorf("FeedbackHook inputTokens = %d, want 200", gotInput)
 	}
 }
