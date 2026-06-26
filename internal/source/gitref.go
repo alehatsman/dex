@@ -3,10 +3,11 @@ package source
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/alehatsman/dex/internal/gitenv"
 )
 
 // ReadAtRef returns the contents of path as of git ref (#644 time-travel). It
@@ -46,21 +47,6 @@ func ReadAtRef(ctx context.Context, path, ref string) ([]byte, error) {
 // (e.g. from a hook) can't redirect git to the wrong repository (#341).
 func gitRead(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = hermeticGitEnv()
+	cmd.Env = gitenv.Current()
 	return cmd.Output()
-}
-
-func hermeticGitEnv() []string {
-	env := os.Environ()
-	out := env[:0:0]
-	for _, kv := range env {
-		switch {
-		case strings.HasPrefix(kv, "GIT_DIR="),
-			strings.HasPrefix(kv, "GIT_WORK_TREE="),
-			strings.HasPrefix(kv, "GIT_INDEX_FILE="):
-			continue
-		}
-		out = append(out, kv)
-	}
-	return out
 }

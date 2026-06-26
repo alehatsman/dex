@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alehatsman/dex/internal/gitenv"
 )
 
 func TestShortSHA(t *testing.T) {
@@ -93,7 +95,7 @@ func TestRunGitIgnoresInheritedGitDir(t *testing.T) {
 		t.Helper()
 		c := exec.CommandContext(ctx, "git", args...)
 		c.Dir = dir
-		c.Env = hermeticGitEnv() // build the sentinel free of any ambient GIT_DIR
+		c.Env = gitenv.Current() // build the sentinel free of any ambient GIT_DIR
 		if out, err := c.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}

@@ -4,12 +4,13 @@ package gitrecency
 
 import (
 	"math"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/alehatsman/dex/internal/gitenv"
 )
 
 const (
@@ -99,28 +100,6 @@ func (c *Cache) dirtySet() map[string]struct{} {
 // refreshRecency runs git log and returns a map of relative path → decayed boost.
 // Paths appear once per file, keyed on their most recent commit timestamp.
 // Degrades gracefully to an empty map when git is unavailable or returns an error.
-// hermeticGitEnv returns the process environment with the repo-redirecting GIT_*
-// vars stripped. refreshRecency/refreshDirty set cmd.Dir = root, but an inherited
-// GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (e.g. exported by a git hook the
-// process runs under) overrides cmd.Dir for repository discovery — so git would
-// read the WRONG repo and the recency/dirty boosts would key on its files
-// instead of root's (#680; same hazard guarded in internal/source #341). Scrub
-// them so cmd.Dir is authoritative.
-func hermeticGitEnv() []string {
-	env := os.Environ()
-	out := env[:0:0]
-	for _, kv := range env {
-		switch {
-		case strings.HasPrefix(kv, "GIT_DIR="),
-			strings.HasPrefix(kv, "GIT_WORK_TREE="),
-			strings.HasPrefix(kv, "GIT_INDEX_FILE="):
-			continue
-		}
-		out = append(out, kv)
-	}
-	return out
-}
-
 func refreshRecency(root string) map[string]float32 {
 	now := time.Now()
 	out := make(map[string]float32)
@@ -131,7 +110,7 @@ func refreshRecency(root string) map[string]float32 {
 	cmd := exec.Command("git", "-c", "core.quotePath=false", "log", "--name-only",
 		"--since=14.days", "--pretty=format:%ct", "--diff-filter=AM")
 	cmd.Dir = root
-	cmd.Env = hermeticGitEnv()
+	cmd.Env = gitenv.Current()
 	b, err := cmd.Output()
 	if err != nil {
 		return out
@@ -172,7 +151,7 @@ func refreshDirty(root string) map[string]struct{} {
 	out := make(map[string]struct{})
 	cmd := exec.Command("git", "-c", "core.quotePath=false", "status", "--porcelain")
 	cmd.Dir = root
-	cmd.Env = hermeticGitEnv()
+	cmd.Env = gitenv.Current()
 	b, err := cmd.Output()
 	if err != nil {
 		return out

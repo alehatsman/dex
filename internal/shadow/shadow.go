@@ -25,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/alehatsman/dex/internal/gitenv"
 )
 
 // gitTimeout bounds a single shadow git invocation. `add -A` over a large tree
@@ -63,29 +65,13 @@ type SnapshotResult struct {
 	Created      bool   `json:"created"` // false when the tree was unchanged (no new commit)
 }
 
-// hermeticGitEnv returns the ambient environment with git's repo-discovery
-// variables stripped, then pins GIT_DIR + GIT_WORK_TREE to this shadow. Copy of
-// the mcp/corpus helper (issue #341) — kept local so the shadow package owns its
-// isolation guarantee.
+// env returns the ambient environment with git's repo-discovery variables
+// stripped (gitenv.Hermetic, issue #341), then pins GIT_DIR + GIT_WORK_TREE to
+// this shadow so every git command operates on the shadow repo regardless of
+// what the process inherited.
 func (r *Repo) env() []string {
-	leaky := map[string]bool{
-		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
-		"GIT_COMMON_DIR": true, "GIT_OBJECT_DIRECTORY": true,
-		"GIT_NAMESPACE": true, "GIT_PREFIX": true,
-	}
-	src := os.Environ()
-	out := make([]string, 0, len(src)+2)
-	for _, kv := range src {
-		k := kv
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			k = kv[:i]
-		}
-		if leaky[k] {
-			continue
-		}
-		out = append(out, kv)
-	}
-	return append(out, "GIT_DIR="+r.gitDir, "GIT_WORK_TREE="+r.workTree)
+	return append(gitenv.Hermetic(os.Environ()),
+		"GIT_DIR="+r.gitDir, "GIT_WORK_TREE="+r.workTree)
 }
 
 // git runs a git subcommand against the shadow and returns trimmed stdout.

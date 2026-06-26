@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/gitenv"
 	"github.com/alehatsman/dex/internal/review"
 	"github.com/alehatsman/dex/internal/store"
 
@@ -457,33 +458,6 @@ func resolveReviewRange(ctx context.Context, root string, in ReviewInput) (rng, 
 	return base + "..." + head, "ok", ""
 }
 
-// hermeticGitEnv returns the ambient environment with git's repo-discovery
-// variables stripped. The review git helpers always target the project via
-// `-C root`; an inherited GIT_DIR / GIT_WORK_TREE (e.g. injected into a
-// pre-commit/pre-push hook child, or when dex runs under another git process)
-// would otherwise override `-C` and make these commands read the wrong
-// repository. Mirrors internal/eval/corpus.hermeticGitEnv (issue #341).
-func hermeticGitEnv() []string {
-	leaky := map[string]bool{
-		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
-		"GIT_COMMON_DIR": true, "GIT_OBJECT_DIRECTORY": true,
-		"GIT_NAMESPACE": true, "GIT_PREFIX": true,
-	}
-	env := os.Environ()
-	out := make([]string, 0, len(env))
-	for _, kv := range env {
-		k := kv
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			k = kv[:i]
-		}
-		if leaky[k] {
-			continue
-		}
-		out = append(out, kv)
-	}
-	return out
-}
-
 // rangeEndsAtHEAD reports whether a git range's right-hand side is HEAD (the
 // state the index reflects). resolveReviewRange always emits a range containing
 // ".." / "...", so the side after the last ".." is the head; an empty head
@@ -504,7 +478,7 @@ func gitDiffUnified(ctx context.Context, root, rng string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "git", "-C", root,
 		"diff", "--unified=0", "--no-color", "--end-of-options", rng) // #nosec G204 — rng validated by reValidRef
-	cmd.Env = hermeticGitEnv()
+	cmd.Env = gitenv.Current()
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -522,7 +496,7 @@ func gitChurnCount(ctx context.Context, root, path string) int {
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "git", "-C", root,
 		"rev-list", "--count", "--since="+reviewChurnWindow, "HEAD", "--", path) // #nosec G204
-	cmd.Env = hermeticGitEnv()
+	cmd.Env = gitenv.Current()
 	out, err := cmd.Output()
 	if err != nil {
 		return 0
@@ -544,7 +518,7 @@ func gitAuthorHistory(ctx context.Context, root, path string) []string {
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "git", "-C", root,
 		"log", "-3", "--format=%an", "--", path) // #nosec G204
-	cmd.Env = hermeticGitEnv()
+	cmd.Env = gitenv.Current()
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
