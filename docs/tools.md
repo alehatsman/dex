@@ -65,7 +65,7 @@ no tiers.
 | `map` | imports + exported symbols | no |
 | `aggressive` | maximal lossy compression: strips comments and low-entropy lines (declaration + control-flow lines protected) | no |
 | `lines:N-M` | a raw line slice | no |
-| `analyze` | token-cost comparison of every mode + a recommended mode; **no file content** — pick the cheapest sufficient view first | no |
+| `analyze` | token-cost comparison of every mode + a recommended mode + a `handle`; **no file content** — pick the cheapest view first, or analyze many files then expand only the ones you need via `read(handle=…, mode=…)` (#620) | no |
 | `summary` | LLM-generated digest (`--focus` to steer) | **yes** |
 
 `summary` is the only mode that needs a chat model; without one it returns

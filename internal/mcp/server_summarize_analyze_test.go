@@ -168,6 +168,53 @@ func TestAnalyzeModeNoIndexDegrades(t *testing.T) {
 	}
 }
 
+// TestAnalyzeEmitsExpandableHandle covers #620: mode=analyze returns a
+// whole-file handle, and read(handle=…, mode=…) expands it.
+func TestAnalyzeEmitsExpandableHandle(t *testing.T) {
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "sample.go"), analyzeFixture)
+	seedAnalyzeGraph(t, projDir, cacheDir)
+
+	s := &Server{IndexDir: cacheDir}
+	ctx := context.Background()
+	_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "sample.go", ProjectRoot: projDir, Mode: "analyze"})
+	if err != nil || out.Analysis == nil {
+		t.Fatalf("analyze: err=%v analysis=%v", err, out.Analysis)
+	}
+	h := out.Analysis.Handle
+	if h == "" {
+		t.Fatal("analyze must emit a handle (#620)")
+	}
+	// The handle decodes to the file with a whole-file range.
+	path, start, end, ok := DecodeHandle(h)
+	if !ok || path != "sample.go" || start != 1 || end < 1 {
+		t.Fatalf("handle decode = (%q,%d,%d,%v), want sample.go/1/>=1/true", path, start, end, ok)
+	}
+
+	// Expanding the handle with an explicit mode resolves to the file and
+	// renders that view (mode is honored, not overridden to lines:N-M).
+	_, exp, err := s.summarize(ctx, nil, SummarizeInput{ProjectRoot: projDir, Handle: h, Mode: "signatures"})
+	if err != nil || exp.Status != "ok" {
+		t.Fatalf("expand handle: status=%q err=%v hint=%q", exp.Status, err, exp.Hint)
+	}
+	if exp.Path != "sample.go" {
+		t.Errorf("expanded path = %q, want sample.go", exp.Path)
+	}
+	if !strings.Contains(exp.Content, "Greet") {
+		t.Errorf("signatures expansion should name the symbols, got:\n%s", exp.Content)
+	}
+
+	// Expanding with no mode reads the whole file (lines:1-N default).
+	_, full, err := s.summarize(ctx, nil, SummarizeInput{ProjectRoot: projDir, Handle: h})
+	if err != nil || full.Status != "ok" {
+		t.Fatalf("expand handle (no mode): status=%q err=%v", full.Status, err)
+	}
+	if !strings.Contains(full.Content, "package sample") {
+		t.Errorf("whole-file expansion should contain the source, got:\n%s", full.Content)
+	}
+}
+
 func TestRecommendReadMode(t *testing.T) {
 	// Small file → full.
 	if mode, reason := recommendReadMode(ReadAnalysis{}, 120); mode != "full" || !strings.Contains(reason, "small") {

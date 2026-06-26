@@ -67,7 +67,8 @@ service clients are the http-api spec's.
     lanes — `ask` stays and routes to the non-semantic lanes.
   - `read` is always registered (its structural modes — `full` raw content,
     `signatures`, `skeleton`, `map`, `lines:N-M`, and `analyze` (a per-mode
-    token-cost comparison + recommended mode, no file content, #623) — need no
+    token-cost comparison + recommended mode + a whole-file expansion `handle`
+    for lazy selective reads, no file content, #623/#620) — need no
     chat model). Only `read mode=summary` (the LLM digest) needs a chat model;
     when none is wired it returns `status=needs-chat` rather than being hidden.
   - The power lane (`lookup`, `deps`, `callers`, `callees`, `path`, `diff`,

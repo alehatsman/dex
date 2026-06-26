@@ -58,6 +58,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	focus := fs.String("focus", "", "summary mode: steer the digest — e.g. 'public API surface'")
 	temp := fs.Float64("temperature", 0, "summary mode: sampling temperature (0 = server default)")
 	maxTok := fs.Int("max-tokens", 0, "summary mode: max tokens to generate (0 = server default)")
+	handle := fs.String("handle", "", "expand an opaque file/range handle (e.g. from `read --mode analyze`); supersedes <file>")
 	verbose := fs.Bool("v", false, "summary mode: include model name in text output")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -71,6 +72,14 @@ func cmdRead(ctx context.Context, args []string) error {
 		return fmt.Errorf("unknown --format=%s (want text|json)", *format)
 	}
 	projPath, rest := splitProjectArg(fs.Args())
+	// A handle carries its own path (#620/#344), so <file> is optional with it;
+	// resolution lives server-side (applyExpansionHandle), so always delegate.
+	if *handle != "" {
+		if len(rest) != 0 {
+			return fmt.Errorf("read --handle takes no <file> argument (the handle carries the path)")
+		}
+		return readViaServer(ctx, projPath, "", *mode, *start, *end, *focus, *temp, *maxTok, *format, *verbose, *handle)
+	}
 	if len(rest) != 1 {
 		return fmt.Errorf("read needs exactly one <file> argument")
 	}
@@ -79,7 +88,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	// the same Server.Summarize the MCP `read` tool uses so CLI and tool agree.
 	// (The local fast paths below avoid a server spin-up for the hot modes.)
 	if serverReadMode(*mode) {
-		return readViaServer(ctx, projPath, path, *mode, *start, *end, *focus, *temp, *maxTok, *format, *verbose)
+		return readViaServer(ctx, projPath, path, *mode, *start, *end, *focus, *temp, *maxTok, *format, *verbose, "")
 	}
 	if *start < 0 || *end < 0 {
 		return fmt.Errorf("--start/--end must be non-negative")
@@ -190,7 +199,7 @@ func cmdRead(ctx context.Context, args []string) error {
 // tool uses, so the CLI and the tool produce identical output. Focus/temp/
 // max-tokens/verbose are summary-only and ignored by the deterministic modes.
 // For summary, a missing chat model yields a needs-chat status, not an error.
-func readViaServer(ctx context.Context, projPath, file, mode string, start, end int, focus string, temp float64, maxTok int, format string, verbose bool) error {
+func readViaServer(ctx context.Context, projPath, file, mode string, start, end int, focus string, temp float64, maxTok int, format string, verbose bool, handle string) error {
 	base, err := indexDir()
 	if err != nil {
 		return err
@@ -209,6 +218,7 @@ func readViaServer(ctx context.Context, projPath, file, mode string, start, end 
 		Temperature: float32(temp),
 		MaxTokens:   maxTok,
 		Mode:        mode,
+		Handle:      handle,
 	})
 	if err != nil {
 		return err
@@ -275,6 +285,9 @@ func printReadAnalysis(a *mcp.ReadAnalysis) {
 		fmt.Printf("  — %s", a.Reason)
 	}
 	fmt.Println()
+	if a.Handle != "" {
+		fmt.Printf("handle: %s  (expand later: read --handle %s --mode %s)\n", a.Handle, a.Handle, a.Recommendation)
+	}
 }
 
 // rangeText returns the [start,end] (1-based, inclusive) slice of lines joined

@@ -20,9 +20,13 @@ import (
 // read it. It is the measured counterpart to estimateModeTokens' fixed-fraction
 // heuristics — every count is a real render of the file through that mode.
 type ReadAnalysis struct {
-	Path            string     `json:"path"`
-	Lines           int        `json:"lines"`
-	Bytes           int        `json:"bytes"`
+	Path  string `json:"path"`
+	Lines int    `json:"lines"`
+	Bytes int    `json:"bytes"`
+	// Handle is a #344 expansion handle for the whole file (#620): echo it back
+	// as read(handle=…, mode=…) to lazily expand only the files you need after
+	// analyzing many. An opaque, anti-hallucination token — never a path to type.
+	Handle          string     `json:"handle,omitempty"`
 	Indexed         bool       `json:"indexed"` // structural modes available?
 	MeanBitsPerChar float64    `json:"mean_bits_per_char"`
 	Compressibility string     `json:"compressibility"` // low | medium | high
@@ -86,6 +90,14 @@ func (s *Server) summarizeModeAnalyze(w summarizeWork) (*sdk.CallToolResult, Sum
 
 	an.Compressibility = compressibilityLabel(an)
 	an.Recommendation, an.Reason = recommendReadMode(an, fullTok)
+	// Whole-file expansion handle (#620): lets the agent analyze many files and
+	// then lazily expand only the ones it needs via read(handle=…, mode=…),
+	// echoing an opaque token instead of reconstructing the path.
+	endLine := an.Lines
+	if endLine < 1 {
+		endLine = 1
+	}
+	an.Handle = EncodeHandle(w.relTarget, 1, endLine)
 
 	out := w.out
 	out.Status = "ok"
