@@ -283,6 +283,7 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 				hadGraph = true
 			}
 			seenCaller := map[string]bool{}
+			seenNote := map[int64]bool{}
 			for _, sym := range syms {
 				if sym.Exported {
 					exported = true
@@ -301,7 +302,15 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 						rh.Callers = append(rh.Callers, c)
 					}
 				}
-				rh.Notes = append(rh.Notes, cachedNotes(ctx, s, st, sym.Name, k, noteCache)...)
+				// Dedup notes by ID across symbols: two symbols in the same hunk
+				// often share the same note (e.g. a gotcha scoped to the file),
+				// which would produce duplicates per hunk with many probes (#701).
+				for _, n := range cachedNotes(ctx, s, st, sym.Name, k, noteCache) {
+					if !seenNote[n.ID] {
+						seenNote[n.ID] = true
+						rh.Notes = append(rh.Notes, n)
+					}
+				}
 			}
 		}
 		rh.RiskTier, rh.RiskReason = hunkRisk(maxCallers, exported, hadGraph)

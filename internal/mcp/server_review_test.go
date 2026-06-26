@@ -218,6 +218,18 @@ func TestReviewIntegration(t *testing.T) {
 			}
 		}
 	}
+	// Guard #701: no hunk should list the same note ID twice.
+	for _, h := range f.Hunks {
+		seen := map[int64]int{}
+		for _, n := range h.Notes {
+			seen[n.ID]++
+		}
+		for id, count := range seen {
+			if count > 1 {
+				t.Errorf("hunk @%d has %d duplicate entries for note id=%d (want 1)", h.NewStart, count, id)
+			}
+		}
+	}
 	// File-level history legs are best-effort but should be populated here.
 	if f.LastCommit == "" {
 		t.Errorf("expected last_commit to be set")
