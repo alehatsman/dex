@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,15 +62,15 @@ func hookInject(ctx context.Context) error {
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Session context (active task, notes, budget pressure) — injected on every
-	// turn when a meaningful session exists, independent of the ask() routing.
-	sessionCtx := buildSessionContext(tctx, p.DBPath, p.Root)
-
 	// Skip very short prompts (confirmations, "yes", "ok", etc.) — not
-	// worth a round-trip to the index for sub-4-word inputs.
+	// worth opening the store or routing to the index for sub-4-word inputs.
 	if len(strings.Fields(payload.Prompt)) < 4 {
-		return emitInjectContext(nudge, sessionCtx)
+		return emitInjectContext(nudge, "")
 	}
+
+	// Session context (active task, notes, budget pressure) — injected on
+	// substantive turns when a meaningful session exists.
+	sessionCtx := buildSessionContext(tctx, p.DBPath, p.Root)
 
 	s, _ := newServerFromEnv(base)
 	_, out, err := s.ContextRouter(tctx, mcp.ContextInput{
@@ -119,8 +120,8 @@ func buildSessionContext(ctx context.Context, dbPath, projectRoot string) string
 	fmt.Fprintf(&b, "[DEX] Active session: %s\n", ss.Task)
 	if ss.Notes != "" {
 		notes := ss.Notes
-		if len(notes) > 600 {
-			notes = notes[:600] + "…"
+		if runes := []rune(notes); len(runes) > 600 {
+			notes = string(runes[:600]) + "…"
 		}
 		fmt.Fprintf(&b, "Notes: %s\n", notes)
 	}
@@ -137,7 +138,15 @@ func buildSessionContext(ctx context.Context, dbPath, projectRoot string) string
 
 // sessionBudgetWarn estimates context window utilization from session state
 // and returns a warning when pressure is compress (>60%) or higher.
+// Set DEX_CONTEXT_WINDOW to the model's actual context size in tokens to get
+// accurate pressure levels for 64k or 200k models (default: 128000).
 func sessionBudgetWarn(ss store.SessionState, projectRoot string) string {
+	windowSize := dexctx.DefaultWindowSize
+	if v := os.Getenv("DEX_CONTEXT_WINDOW"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			windowSize = n
+		}
+	}
 	used := dexctx.BytesToTokens(int64(len(ss.Task) + len(ss.Notes)))
 	seen := make(map[string]struct{}, len(ss.Files))
 	for _, f := range ss.Files {
@@ -150,7 +159,7 @@ func sessionBudgetWarn(ss store.SessionState, projectRoot string) string {
 			used += dexctx.BytesToTokens(info.Size())
 		}
 	}
-	ledger := dexctx.Ledger{WindowSize: dexctx.DefaultWindowSize, UsedTokens: used}
+	ledger := dexctx.Ledger{WindowSize: windowSize, UsedTokens: used}
 	if ledger.Pressure() == dexctx.PressureNormal {
 		return ""
 	}

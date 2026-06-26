@@ -549,7 +549,10 @@ func (s *Server) sessionImport(ctx context.Context, st *store.Store, projectRoot
 
 	// Render the recovery digest from the now-restored session, then prepend a
 	// handoff header + staleness warnings.
-	_, recap, _ := s.sessionRecap(ctx, st, projectRoot, 0)
+	_, recap, recapErr := s.sessionRecap(ctx, st, projectRoot, 0)
+	if recapErr != nil {
+		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("generate recap: %v", recapErr)}, nil
+	}
 
 	var head strings.Builder
 	head.WriteString("# Session Handoff Imported\n\n")

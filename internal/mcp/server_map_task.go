@@ -80,12 +80,17 @@ func (s *Server) taskMap(ctx context.Context, in MapInput) (*sdk.CallToolResult,
 		}
 	}
 
-	// 4. Git-recency boost.
+	// 4. Git-recency boost: reuse the TTL-cached instance already wired into the
+	// store; fall back to a fresh cache only when the store was opened without
+	// a git root (edge case: bare index opened by path, no project root).
 	paths := make([]string, 0, len(fileScore))
 	for p := range fileScore {
 		paths = append(paths, p)
 	}
-	gc := gitrecency.New(p.Root)
+	gc := s.storeGitRecency(p.DBPath)
+	if gc == nil {
+		gc = gitrecency.New(p.Root)
+	}
 	recency := gc.FileScores(paths)
 	var gitBoosted []string
 	for path, boost := range recency {

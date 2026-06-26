@@ -14,6 +14,7 @@ import (
 type cachedStore struct {
 	once sync.Once
 	st   *store.Store
+	gc   *gitrecency.Cache // same instance wired into st via SetGitRecency
 	err  error
 }
 
@@ -30,10 +31,27 @@ func (s *Server) openStore(dbPath string) (*store.Store, error) {
 		st, err := store.OpenWith(context.Background(), dbPath, s.StoreOpts)
 		if err == nil {
 			if root, rerr := st.ProjectRoot(context.Background()); rerr == nil && root != "" {
-				st.SetGitRecency(gitrecency.New(root))
+				gc := gitrecency.New(root)
+				st.SetGitRecency(gc)
+				cs.gc = gc
 			}
 		}
 		cs.st, cs.err = st, err
 	})
 	return cs.st, cs.err
+}
+
+// storeGitRecency returns the TTL-cached *gitrecency.Cache that was wired into
+// the store at open time, or nil if the store hasn't been opened yet or has no
+// project root. taskMap uses this to avoid spawning a fresh git log per call.
+func (s *Server) storeGitRecency(dbPath string) *gitrecency.Cache {
+	v, ok := s.storeByPath.Load(dbPath)
+	if !ok {
+		return nil
+	}
+	cs, ok := v.(*cachedStore)
+	if !ok {
+		return nil
+	}
+	return cs.gc
 }

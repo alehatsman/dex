@@ -45,7 +45,7 @@ func (s *Store) SessionGet(ctx context.Context) (SessionState, bool, error) {
 
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT path, op, touched_at FROM session_files
-		  WHERE session_id=? ORDER BY touched_at DESC LIMIT 50`,
+		  WHERE session_id=? ORDER BY touched_at DESC LIMIT 500`,
 		ss.ID)
 	if err != nil {
 		return ss, true, err
@@ -153,9 +153,9 @@ func (s *Store) SessionTrackFile(ctx context.Context, path, op string) error {
 
 // SessionImport restores task, notes, and a file list into the current session
 // (creating one if none exists), for the session-handoff import path (#603). It
-// overwrites task and notes and upserts each file by path. File timestamps are
-// stamped now-i so the bundle's listed order is preserved by SessionGet's
-// touched_at DESC ordering (the first bundle file stays most-recent).
+// overwrites task and notes, clears the existing file list, then inserts the
+// bundle files. File timestamps are stamped now-i so the bundle's listed order
+// is preserved by SessionGet's touched_at DESC ordering.
 func (s *Store) SessionImport(ctx context.Context, task, notes string, files []SessionFile) error {
 	id, err := s.ensureSession(ctx)
 	if err != nil {
@@ -165,6 +165,10 @@ func (s *Store) SessionImport(ctx context.Context, task, notes string, files []S
 	if _, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET task=?, notes=?, updated_at=? WHERE id=?`,
 		task, notes, now, id); err != nil {
+		return err
+	}
+	// Clear pre-existing files so the import is a clean replace, not a merge.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM session_files WHERE session_id=?`, id); err != nil {
 		return err
 	}
 	for i, f := range files {
