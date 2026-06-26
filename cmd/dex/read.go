@@ -50,6 +50,7 @@ func cmdRead(ctx context.Context, args []string) error {
 		`dex read --mode=signatures internal/mcp/server.go`,
 		`dex read --start=100 --end=160 cmd/dex/main.go`,
 		`dex read --mode=summary --focus="public API" internal/mcp/server.go`,
+		`dex read --ref=HEAD~5 --mode=signatures internal/store/store.go  # the file as of 5 commits ago`,
 	)
 	mode := fs.String("mode", "full", "read mode: "+strings.Join(readModeChoices, "|"))
 	start := fs.Int("start", 0, "first line to read (1-based, inclusive; 0 = file start)")
@@ -59,6 +60,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	temp := fs.Float64("temperature", 0, "summary mode: sampling temperature (0 = server default)")
 	maxTok := fs.Int("max-tokens", 0, "summary mode: max tokens to generate (0 = server default)")
 	handle := fs.String("handle", "", "expand an opaque file/range handle (e.g. from `read --mode analyze`); supersedes <file>")
+	ref := fs.String("ref", "", "read the file as of a git ref (e.g. HEAD~5, v1.0); supports full/lines/signatures (#644)")
 	verbose := fs.Bool("v", false, "summary mode: include model name in text output")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -84,6 +86,12 @@ func cmdRead(ctx context.Context, args []string) error {
 		return fmt.Errorf("read needs exactly one <file> argument")
 	}
 	path := rest[0]
+	// --ref time-travels the file's content to a git ref (#644). The index-backed
+	// modes (skeleton/map/summary) describe HEAD's index, so they can't serve a
+	// historical version — reject them with a clear pointer to the content modes.
+	if *ref != "" && serverReadMode(*mode) {
+		return fmt.Errorf("--ref does not support --mode=%s (it reads the HEAD index); use full, lines, or signatures", *mode)
+	}
 	// skeleton/map/summary live in the index + summarize handler — delegate to
 	// the same Server.Summarize the MCP `read` tool uses so CLI and tool agree.
 	// (The local fast paths below avoid a server spin-up for the hot modes.)
@@ -97,9 +105,9 @@ func cmdRead(ctx context.Context, args []string) error {
 		return fmt.Errorf("--end (%d) is before --start (%d)", *end, *start)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readSource(ctx, path, *ref)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
+		return err
 	}
 	fullLines := strings.Split(string(data), "\n")
 	ext := filepath.Ext(path)
@@ -112,12 +120,19 @@ func cmdRead(ctx context.Context, args []string) error {
 
 	switch *mode {
 	case "signatures":
-		if view := buildSignaturesView(ctx, path, fullLines); view != "" {
+		// --ref reads a historical version, but buildSignaturesView queries the
+		// HEAD index — it would return today's symbols for a past file. Skip it
+		// and compress the historical content with tree-sitter instead.
+		var view string
+		if *ref == "" {
+			view = buildSignaturesView(ctx, path, fullLines)
+		}
+		if view != "" {
 			content = view
 		} else {
-			// Not indexed / no symbols — degrade to a structural compress
-			// rather than failing, and say so on stderr (text mode only).
-			if *format == "text" {
+			// Not indexed / no symbols (or a --ref read) — degrade to a structural
+			// compress rather than failing; note it on stderr for working-tree reads.
+			if *format == "text" && *ref == "" {
 				fmt.Fprintln(os.Stderr, "dex read: no index/symbols for this file — falling back to --mode=aggressive")
 			}
 			resolved = "aggressive"
@@ -125,8 +140,9 @@ func cmdRead(ctx context.Context, args []string) error {
 		}
 	case "auto":
 		// Mirror the redirect hook: large indexed files get a signatures view;
-		// otherwise emit the (possibly ranged) full content.
-		if *start == 0 && *end == 0 && len(fullLines) >= redirectLineThreshold {
+		// otherwise emit the (possibly ranged) full content. --ref skips the
+		// HEAD-indexed view (see signatures above).
+		if *ref == "" && *start == 0 && *end == 0 && len(fullLines) >= redirectLineThreshold {
 			if view := buildSignaturesView(ctx, path, fullLines); view != "" {
 				resolved = "signatures"
 				content = view
@@ -141,27 +157,12 @@ func cmdRead(ctx context.Context, args []string) error {
 		// 20–50% whitespace with zero semantic loss. Only for the entire file —
 		// a partial line range may slice mid-token and break the scan.
 		if *start == 0 && *end == 0 {
-			switch strings.ToLower(ext) {
-			case ".jsonl", ".ndjson":
-				if c, ok := compress.CompactJSONL(content); ok {
-					content = c
-				}
-			case ".json":
-				if c, ok := compress.CompactJSON(content); ok {
-					content = c
-				}
-			}
+			content = maybeCompactJSON(content, ext)
 		}
 	case "aggressive":
 		content = compress.CompressCode(rangeText(fullLines, *start, *end), ext, strict)
 	case "entropy":
-		ranged := strings.Split(rangeText(fullLines, *start, *end), "\n")
-		filtered := compress.EntropyFilter(ranged, compress.EntropyThresholdStandard)
-		if filtered == nil {
-			content = strings.Join(ranged, "\n")
-		} else {
-			content = strings.Join(filtered, "\n")
-		}
+		content = entropyFiltered(rangeText(fullLines, *start, *end))
 	}
 
 	if *format == "json" {
