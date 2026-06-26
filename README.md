@@ -64,7 +64,6 @@ each annotated `(MCP: <name>)` in `dex graph --help`).
 | `check`  | verify `file:line[:symbol]` refs against the index → `ok \| moved \| gone \| no_file \| parse_error` |
 | `read`   | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
 | `grep`   | exact regex match                                                   |
-| `ls`     | file-tree listing                                                   |
 | `shell`  | run a command with compressed output                                |
 
 ```sh
@@ -75,7 +74,7 @@ dex trace . Run --dir callers
 
 Start with `ask` — it routes the query and tells you what to read next. Every
 verb works on the CLI. As MCP tools the everyday set is `ask find map trace
-locate review refactor read grep ls shell notes`; the rest (`deps diff
+locate review refactor read grep shell notes`; the rest (`deps diff
 clusters routes smells cohort status budget session checkpoint`) is behind
 `DEX_EXPERT=1` to keep the agent's tool list small.
 Call-graph walks fold into `trace --dir callers|callees|path|impact` — there are
