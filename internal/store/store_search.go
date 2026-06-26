@@ -1043,6 +1043,40 @@ func (s *Store) ChunkAt(ctx context.Context, path string, startLine int) (Hit, e
 	return h, nil
 }
 
+// PathIndexed reports whether the given path has any indexed chunks.
+func (s *Store) PathIndexed(ctx context.Context, path string) (bool, error) {
+	var cnt int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks WHERE path = ? LIMIT 1`, path).Scan(&cnt)
+	if err != nil {
+		return false, err
+	}
+	return cnt > 0, nil
+}
+
+// FindSymbolInPath returns chunks whose name matches sym within the given file.
+// symbolsMatch logic (receiver stripping) is handled by the caller; here we do
+// exact and suffix matches to cover "Check" matching "(*Server).Check".
+func (s *Store) FindSymbolInPath(ctx context.Context, path, sym string) ([]Hit, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT path, kind, name, start_line, end_line, content FROM chunks
+		 WHERE path = ? AND (name = ? OR name LIKE ?)
+		 ORDER BY start_line ASC`,
+		path, sym, "%."+sym)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var hits []Hit
+	for rows.Next() {
+		var h Hit
+		if err := rows.Scan(&h.Path, &h.Kind, &h.Name, &h.StartLine, &h.EndLine, &h.Content); err != nil {
+			return nil, err
+		}
+		hits = append(hits, h)
+	}
+	return hits, rows.Err()
+}
+
 // CodeFilePaths returns every real code file in the chunks table
 // mapped to its inferred line count (max end_line across all its chunks).
 // Used by overview to enumerate the indexed codebase without loading content.

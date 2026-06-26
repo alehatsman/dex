@@ -687,6 +687,7 @@ type toolSurface interface {
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
 	checkpoint(context.Context, *sdk.CallToolRequest, CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error)
+	check(context.Context, *sdk.CallToolRequest, CheckInput) (*sdk.CallToolResult, CheckOutput, error)
 	shellRun(context.Context, *sdk.CallToolRequest, ShellInput) (*sdk.CallToolResult, ShellOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
@@ -863,6 +864,21 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
 				"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
 		}, h.verify)
+
+		// check is in the default lane (#708): batch ref-verification — confirm
+		// that file:line[:symbol] claims are still accurate after code changes.
+		addTool(srv, &sdk.Tool{
+			Name:        "check",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Verify a batch of file:line[:symbol] references against the current index — " +
+				"use this after making or reviewing changes to confirm that cited locations are still valid. " +
+				"Pass `claims` as an array of {ref, symbol?} objects where `ref` is 'file:line', " +
+				"'file:line:symbol', or 'file:symbol'. Each result has `status`: " +
+				"ok (reference is valid), moved (symbol found at a different line in the same file, " +
+				"with `found_at`), gone (symbol/line no longer indexed), no_file (path has no indexed " +
+				"chunks), or parse_error (malformed ref). `symbol_at` reports what IS indexed at the " +
+				"given line when the expected symbol does not match."),
+		}, h.check)
 
 		// notes is in the default lane (#548): persistent project memory is the
 		// highest-leverage saver of repeat exploration, and the read path (facts

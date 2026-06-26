@@ -113,3 +113,6 @@ func (n *noopSurface) summarize(_ context.Context, _ *sdk.CallToolRequest, _ Sum
 func (n *noopSurface) budget(_ context.Context, _ *sdk.CallToolRequest, _ BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
 	return nil, BudgetOutput{}, n.err()
 }
+func (n *noopSurface) check(_ context.Context, _ *sdk.CallToolRequest, _ CheckInput) (*sdk.CallToolResult, CheckOutput, error) {
+	return nil, CheckOutput{}, n.err()
+}

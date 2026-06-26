@@ -198,6 +198,13 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "check", group: groupQuery, args: "[<path>] <ref...>",
+		summary: "verify file:line[:symbol] references against the index",
+		flags: []flagSpec{
+			flagFormat,
+		},
+	},
+	{
 		name: "grep", group: groupQuery, args: "[<path>] <pattern>",
 		summary: "exact RE2 regex search",
 		flags: []flagSpec{

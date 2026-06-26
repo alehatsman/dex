@@ -358,3 +358,9 @@ func (rc *remoteClient) graphCommunities(ctx context.Context, _ *sdk.CallToolReq
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/clusters"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) check(ctx context.Context, _ *sdk.CallToolRequest, in CheckInput) (*sdk.CallToolResult, CheckOutput, error) {
+	var out CheckOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/check"), in, &out)
+	return nil, out, err
+}

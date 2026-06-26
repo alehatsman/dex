@@ -112,6 +112,8 @@ func main() {
 		err = cmdCohort(ctx, args)
 	case "verify":
 		err = cmdVerify(ctx, args)
+	case "check":
+		err = cmdCheck(ctx, args)
 	case "grep":
 		err = cmdGrep(ctx, args)
 	case "shell":

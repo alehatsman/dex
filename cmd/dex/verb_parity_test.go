@@ -9,7 +9,7 @@ var mcpToolSurface = []string{
 	"ask", "find", "map", "trace", "locate", "review", "refactor", "read",
 	"grep", "shell",
 	"deps", "diff", "clusters",
-	"smells", "routes", "cohort", "verify",
+	"smells", "routes", "cohort", "verify", "check",
 	"status", "notes", "session", "budget", "checkpoint",
 }
 
