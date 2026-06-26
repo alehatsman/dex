@@ -136,9 +136,13 @@ service clients are the http-api spec's.
   `etag` (content hash): on re-read pass it back to get `status:unchanged` (reuse
   context) or `status:delta` (a compact unified diff). `mode=skeleton` emits
   exported type declarations in full plus signatures with `@B<n>` body handles
-  expandable on demand. Passing `task` routes compression by intent. Any note
-  whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch,
-  #645/#650), surfaced uniformly across every read mode — read it before editing.
+  expandable on demand. Passing `task` routes compression by intent. `ref` (a git
+  revision) time-travels the read to that commit — `full` (raw) or `signatures`
+  (the historical API, tree-sitter-compressed off the git content, not the HEAD
+  index); index-backed modes are rejected and the file must still exist now
+  (#644/#657). Any note whose `scope` binds the file is returned in `scoped_notes`
+  (gotcha-on-touch, #645/#650), surfaced uniformly across every read mode — read
+  it before editing.
 - WHEN `read mode=map` is called on a non-code file (Markdown, JSON, YAML, TOML,
   lock files), dex returns a structural outline — heading tree, JSON key
   hierarchy (depth ≤ 3), YAML/TOML sections, or lock-file dependency counts —

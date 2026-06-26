@@ -41,6 +41,8 @@ type SummarizeInput struct {
 	// reference, so it can never read a path it invented. Distinct from `expand`,
 	// which addresses suppressed bodies within one skeleton read.
 	Handle string `json:"handle,omitempty" jsonschema:"expansion handle from a find/ask/lookup result (the result's 'handle' field); reads that exact range — supersedes path/paths/start_line/end_line"`
+	// Ref time-travels the read to a git revision (#657).
+	Ref string `json:"ref,omitempty" jsonschema:"read the file as of a git ref (e.g. HEAD~5, v1.0, a sha) instead of the working tree; supports mode=full and mode=signatures (the historical API). The file must still exist now."`
 	// Dedup controls Go import block deduplication in multi-file (paths[]) reads.
 	// Default (omitted / true): the union of all import blocks is emitted once as a
 	// shared header and each file's block is replaced with a back-reference comment.
@@ -201,10 +203,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return nil, out, nil
 	}
 
-	if isLLM {
-		out.Endpoint = s.ChatClient.Endpoint()
-		out.Model = s.ChatClient.ModelName()
-	}
+	s.setSummarizeModel(&out, isLLM)
 
 	var realTarget, relTarget string
 	var data []byte
@@ -218,6 +217,17 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return
 	}
 	out.Path = relTarget
+
+	// Time-travel (#657): read realTarget as of a git ref instead of the working
+	// tree. summarizeReadFile already validated the path + escape check above, so
+	// --ref requires the file to exist now (reading a current file's history).
+	// Short-circuits before the cache/SLO/bounce machinery, so working-tree reads
+	// stay byte-identical — a contained, opt-in branch.
+	if strings.TrimSpace(in.Ref) != "" {
+		out = s.summarizeRefRead(ctx, in, realTarget, relTarget, mode)
+		out.Project = p.Root
+		return nil, out, nil
+	}
 
 	cacheDir := p.CacheDir
 	sloTracker := s.sloFor(p.Root)

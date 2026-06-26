@@ -1001,6 +1001,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"If the file changed since the last read the server may return status=delta with a compact unified diff " +
 				"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
 				"Pass `task` (your current task from `session`) for automatic compression routing of the raw default. " +
+				"Pass `ref` (a git revision: HEAD~5, v1.0, a sha) to time-travel — read the file AS OF that commit, " +
+				"with mode=full (raw) or mode=signatures (the historical API); the file must still exist now (#644). " +
 				"Any note whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch, #645) — read it before you edit. " +
 				"On error, returns 'chat-service-unreachable' or 'error'."),
 		}, h.summarize)
