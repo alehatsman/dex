@@ -122,6 +122,29 @@ func TestCheckParseError(t *testing.T) {
 	}
 }
 
+// TestCheckAbsolutePath: an absolute path inside the project is rebased to
+// project-relative before the index lookup, matching the locate/claims behavior.
+func TestCheckAbsolutePath(t *testing.T) {
+	s, root := checkFixture(t)
+	_, out, err := s.check(context.Background(), nil, CheckInput{
+		ProjectRoot: root,
+		Claims:      []ClaimRef{{Ref: root + "/main.go:3:Foo"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out.Results))
+	}
+	r := out.Results[0]
+	if r.Status != "ok" {
+		t.Errorf("absolute-path claim: status = %q, want ok (symbol_at=%q)", r.Status, r.SymbolAt)
+	}
+	if r.Ref != root+"/main.go:3:Foo" {
+		t.Errorf("original ref not echoed: got %q", r.Ref)
+	}
+}
+
 func TestCheckBatch(t *testing.T) {
 	s, root := checkFixture(t)
 	_, out, err := s.check(context.Background(), nil, CheckInput{

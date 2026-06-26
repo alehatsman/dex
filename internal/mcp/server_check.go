@@ -66,8 +66,15 @@ func (s *Server) check(ctx context.Context, _ *sdk.CallToolRequest, in CheckInpu
 	defer st.Close()
 
 	out := CheckOutput{Results: make([]ClaimResult, 0, len(in.Claims))}
-	for _, c := range in.Claims {
-		out.Results = append(out.Results, verifyOneClaim(ctx, st, c))
+	for i, c := range in.Claims {
+		if i >= maxClaims {
+			out.Results = append(out.Results, ClaimResult{Ref: c.Ref, Status: "parse_error"})
+			continue
+		}
+		c2 := ClaimRef{Ref: normalizeClaimRef(p.Root, c.Ref), Symbol: c.Symbol}
+		r := verifyOneClaim(ctx, st, c2)
+		r.Ref = c.Ref
+		out.Results = append(out.Results, r)
 	}
 	return nil, out, nil
 }
