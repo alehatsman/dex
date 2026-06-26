@@ -42,6 +42,10 @@ type CommunitiesOutput struct {
 	Total       int         `json:"total"`
 	Truncated   bool        `json:"truncated,omitempty"`
 	Communities []Community `json:"communities,omitempty"`
+	// Externals is the project's third-party/stdlib dependency paths, sorted —
+	// fed to the orientation render's "external dependencies by capability"
+	// section (#581). Best-effort; empty when the graph has no import edges.
+	Externals []string `json:"externals,omitempty"`
 }
 
 func (s *Server) GraphCommunities(ctx context.Context, in CommunitiesInput) (CommunitiesOutput, error) {
@@ -96,6 +100,11 @@ func (s *Server) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, i
 	}
 
 	out := CommunitiesOutput{Status: "ok", Project: p.Root, Total: len(communities)}
+	// External dependency paths feed the orientation render's capability section
+	// (#581). Best-effort — a query failure must not fail the communities call.
+	if ext, err := st.ExternalImports(ctx); err == nil {
+		out.Externals = ext
+	}
 	if len(communities) > k {
 		communities = communities[:k]
 		out.Truncated = true

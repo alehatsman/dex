@@ -1354,7 +1354,7 @@ func TestContextRouterEmptyQuestionRendersMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := codemap.RenderOrient(adaptCommunities(comm.Communities), codemap.DefaultL0Budget, codemap.DefaultL1Budget); out.Map != want {
+	if want := codemap.RenderOrient(adaptCommunities(comm.Communities), comm.Externals, codemap.DefaultL0Budget, codemap.DefaultL1Budget); out.Map != want {
 		t.Errorf("out.Map diverges from codemap.RenderOrient:\ngot:\n%s\nwant:\n%s", out.Map, want)
 	}
 }

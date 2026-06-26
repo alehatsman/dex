@@ -41,7 +41,7 @@ func (s *Server) orientResponse(ctx context.Context, in ContextInput) (*sdk.Call
 
 	clusters := adaptCommunities(comm.Communities)
 	out.Status = "ok"
-	out.Map = codemap.RenderOrient(clusters, codemap.DefaultL0Budget, codemap.DefaultL1Budget)
+	out.Map = codemap.RenderOrient(clusters, comm.Externals, codemap.DefaultL0Budget, codemap.DefaultL1Budget)
 	out.NextAction = "Name the cluster matching your task, then find(\"<concept>\", \"<pkg>\") within it — you're already oriented; skip the broad map() call."
 	out.Avoid = "Don't fan out grep/Read to discover layout — the map above already routes you to the right package."
 	return nil, out, nil

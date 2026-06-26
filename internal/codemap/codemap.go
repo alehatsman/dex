@@ -297,19 +297,29 @@ func renderGrouped(title string, symbols []Symbol, size, budget int) string {
 	return b.String()
 }
 
-// RenderOrient composes the session-start orientation bundle: the L0 overview
-// followed by an L1 zoom into the most-central cluster (the first ShownL0
-// entry, ranked by aggregate PageRank). Deterministic and zero-inference — the
-// single home both `ask("")` and `dex map` (no --cluster) render through, so
-// they agree by construction (#348 / #316 story 6 / #574). Returns just L0 when
-// no cluster is shown (empty or unindexed graph).
-func RenderOrient(clusters []Cluster, l0budget, l1budget int) string {
+// RenderOrient composes the session-start orientation bundle: the L0 overview,
+// an L1 zoom into the most-central cluster (the first ShownL0 entry, ranked by
+// aggregate PageRank), and — when the project has classifiable third-party deps
+// — an "external dependencies by capability" section (#581). Deterministic and
+// zero-inference — the single home both `ask("")` and `dex map` (no --cluster)
+// render through, so they agree by construction (#348 / #316 story 6 / #574).
+// `externals` is the project's external import paths (sorted by the caller for
+// byte-stability); pass nil to omit the section. Returns just L0 (plus any
+// externals) when no cluster is shown (empty or unindexed graph).
+func RenderOrient(clusters []Cluster, externals []string, l0budget, l1budget int) string {
 	l0 := RenderL0(clusters, l0budget)
 	shown := ShownL0(clusters, l0budget)
-	if len(shown) == 0 {
-		return l0
+	var b strings.Builder
+	b.WriteString(l0)
+	if len(shown) > 0 {
+		b.WriteString("\n")
+		b.WriteString(RenderL1(shown[0], l1budget))
 	}
-	return l0 + "\n" + RenderL1(shown[0], l1budget)
+	if ext := RenderExternals(externals, DefaultExternalsBudget); ext != "" {
+		b.WriteString("\n")
+		b.WriteString(ext)
+	}
+	return b.String()
 }
 
 // l1Segment renders one package block within a cluster.

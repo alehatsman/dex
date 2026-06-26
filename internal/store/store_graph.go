@@ -452,6 +452,35 @@ func (s *Store) SymbolsByFile(ctx context.Context, relPath string) ([]GraphSymbo
 	return scanSymbols(rows)
 }
 
+// ExternalImports returns the distinct third-party/stdlib import paths the
+// project depends on: `import` nodes whose path is NOT one of the project's own
+// package paths (the same internal-vs-external criterion the graphquery View
+// uses — NodesByPackage keyed on package_path). Sorted, so an orientation
+// render built from it stays byte-stable / cache-friendly (#581).
+func (s *Store) ExternalImports(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT qualified_name FROM graph_nodes
+		WHERE kind = 'import'
+		  AND qualified_name != ''
+		  AND qualified_name NOT IN (
+		    SELECT DISTINCT package_path FROM graph_nodes WHERE package_path != ''
+		  )
+		ORDER BY qualified_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // SymbolEditSpan is the precise edit target for a graph node (#591): the
 // source file plus the symbol's byte span and declaration signature. A
 // refactor consumer resolves a node to this and applies a byte-range edit
