@@ -300,13 +300,60 @@ func collectEdits(pkgs []*packages.Package, fset *token.FileSet, target types.Ob
 	return edits
 }
 
-// scopeHasName reports whether `name` is already declared in target's package
-// scope (a cheap collision signal for top-level renames).
+// scopeHasName reports whether `name` would collide in the declaration space
+// relevant to target. For struct fields and methods it checks the receiver
+// type; for everything else it falls back to the package scope (#716).
 func scopeHasName(target types.Object, name string) bool {
 	if target == nil || target.Pkg() == nil {
 		return false
 	}
+	// Struct field: check the parent struct for an existing field/method.
+	if v, ok := target.(*types.Var); ok && v.IsField() {
+		if parent := fieldParentNamed(v, target.Pkg()); parent != nil {
+			f, _, _ := types.LookupFieldOrMethod(parent, false, target.Pkg(), name)
+			return f != nil
+		}
+	}
+	// Method: check the receiver type for an existing field/method.
+	if fn, ok := target.(*types.Func); ok {
+		if sig, ok2 := fn.Type().(*types.Signature); ok2 && sig.Recv() != nil {
+			recv := sig.Recv().Type()
+			if ptr, ok3 := recv.(*types.Pointer); ok3 {
+				recv = ptr.Elem()
+			}
+			if named, ok4 := recv.(*types.Named); ok4 {
+				f, _, _ := types.LookupFieldOrMethod(named, true, target.Pkg(), name)
+				return f != nil
+			}
+		}
+	}
 	return target.Pkg().Scope().Lookup(name) != nil
+}
+
+// fieldParentNamed finds the named struct type in pkg that directly contains
+// the given field. Returns nil when not found.
+func fieldParentNamed(field *types.Var, pkg *types.Package) *types.Named {
+	scope := pkg.Scope()
+	for _, sname := range scope.Names() {
+		tn, ok := scope.Lookup(sname).(*types.TypeName)
+		if !ok {
+			continue
+		}
+		named, ok := tn.Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		st, ok := named.Underlying().(*types.Struct)
+		if !ok {
+			continue
+		}
+		for i := 0; i < st.NumFields(); i++ {
+			if st.Field(i) == field {
+				return named
+			}
+		}
+	}
+	return nil
 }
 
 func describeObj(obj types.Object) string {

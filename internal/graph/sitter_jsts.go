@@ -560,6 +560,14 @@ func (e *jstsBase) resolveModuleSpecifier(specifier, fromFile string) string {
 	if _, ok := e.knownFiles[joined]; ok {
 		return joined
 	}
+	// Explicit-extension specifier (Deno / browser-native ESM): strip the
+	// extension and retry, since knownFiles is keyed on extension-free paths.
+	if ext := path.Ext(joined); ext != "" {
+		stripped := joined[:len(joined)-len(ext)]
+		if _, ok := e.knownFiles[stripped]; ok {
+			return stripped
+		}
+	}
 	if _, ok := e.knownFiles[joined+"/index"]; ok {
 		return joined + "/index"
 	}

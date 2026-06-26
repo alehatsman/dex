@@ -255,8 +255,15 @@ func resolveByRef(ctx context.Context, st *store.Store, root, ref string) locate
 		return locateTarget{status: "not-found",
 			hint: fmt.Sprintf("%v — check the path is project-relative and indexed.", err)}
 	}
+	sym := hit.Name
+	// Prefer the graph node's QualifiedName (e.g. "(*Store).Run") over the
+	// bare chunk name ("Run") so traceVerb doesn't match every node named Run
+	// across all packages (#716).
+	if qn, qerr := st.GraphQualifiedNameAt(ctx, path, line); qerr == nil && qn != "" {
+		sym = qn
+	}
 	return locateTarget{
-		path: hit.Path, symbol: hit.Name, kind: hit.Kind,
+		path: hit.Path, symbol: sym, kind: hit.Kind,
 		startLine: hit.StartLine, endLine: hit.EndLine, status: "ok",
 	}
 }

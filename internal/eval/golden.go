@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/alehatsman/dex/internal/gitenv"
 )
 
 // GoldenQuery is one labeled retrieval example: a query and the set of source
@@ -170,6 +172,7 @@ func collectCommits(ctx context.Context, root string, max int) ([]commitRec, err
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = root
+	cmd.Env = gitenv.Current() // prevent hook-injected GIT_DIR from redirecting to wrong repo (#716)
 	out, err := cmd.Output()
 	if err != nil {
 		if len(out) == 0 {
@@ -207,6 +210,7 @@ func collectCommits(ctx context.Context, root string, max int) ([]commitRec, err
 func gitOutput(ctx context.Context, root string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = root
+	cmd.Env = gitenv.Current() // prevent hook-injected GIT_DIR from redirecting to wrong repo (#716)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

@@ -610,6 +610,13 @@ func resolveCallee(p *packages.Package, call *ast.CallExpr, modulePath string, i
 			return ""
 		}
 		return NodeID(modulePath, pkgPath, NodeFunction, funObj.Name())
+
+	case *ast.IndexExpr:
+		// Generic instantiation: Foo[T]() — unwrap to the base function.
+		return resolveCallee(p, &ast.CallExpr{Fun: fun.X}, modulePath, inTree)
+	case *ast.IndexListExpr:
+		// Multi-param generic: Foo[T, U]() — unwrap to the base function.
+		return resolveCallee(p, &ast.CallExpr{Fun: fun.X}, modulePath, inTree)
 	}
 	return ""
 }
@@ -621,6 +628,10 @@ func recvTypeName(expr ast.Expr) (string, bool) {
 	switch t := expr.(type) {
 	case *ast.Ident:
 		return t.Name, false
+	case *ast.SelectorExpr:
+		// Cross-package qualified type: sync.Mutex, io.Reader, etc. — use the
+		// local (Sel) name so embed/interface edges resolve within the project.
+		return t.Sel.Name, false
 	case *ast.StarExpr:
 		if id, ok := t.X.(*ast.Ident); ok {
 			return id.Name, true
@@ -628,6 +639,10 @@ func recvTypeName(expr ast.Expr) (string, bool) {
 		// Generic pointer receiver: *T[U]. The X is *ast.IndexExpr / *ast.IndexListExpr.
 		if name, ok := indexBase(t.X); ok {
 			return name, true
+		}
+		// Pointer to cross-package type: *sync.Mutex
+		if sel, ok := t.X.(*ast.SelectorExpr); ok {
+			return sel.Sel.Name, true
 		}
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		if name, ok := indexBase(t); ok {

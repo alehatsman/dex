@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -47,9 +48,10 @@ func resolveShellInterpreter() string {
 
 type ShellInput struct {
 	Command     string `json:"command"`
-	Cwd         string `json:"cwd,omitempty"  jsonschema:"working directory (default: server's cwd)"`
-	Raw         bool   `json:"raw,omitempty"  jsonschema:"skip compression and return full output"`
-	TimeoutSecs int    `json:"timeout_secs,omitempty"  jsonschema:"per-call timeout in seconds (default 60, max 600); 0 uses the default"`
+	Cwd         string `json:"cwd,omitempty"          jsonschema:"working directory (default: server's cwd); must be under project_root when project_root is set"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; when set, cwd must resolve inside it"`
+	Raw         bool   `json:"raw,omitempty"          jsonschema:"skip compression and return full output"`
+	TimeoutSecs int    `json:"timeout_secs,omitempty" jsonschema:"per-call timeout in seconds (default 60, max 600); 0 uses the default"`
 }
 
 type ShellOutput struct {
@@ -71,17 +73,44 @@ const (
 
 // resolveShellTimeout maps the input TimeoutSecs to a concrete duration,
 // clamping to [1s, shellTimeoutMax] and falling back to shellTimeout when the
-// caller passes 0 or a negative value.
+// caller passes 0 or a negative value. Secs is clamped before the Duration
+// multiply to prevent int64 overflow for large JSON-integer inputs.
 func resolveShellTimeout(secs int) time.Duration {
 	if secs <= 0 {
 		return shellTimeout
 	}
-	d := time.Duration(secs) * time.Second
-	if d > shellTimeoutMax {
+	const maxSecs = 600 // shellTimeoutMax / time.Second
+	if secs > maxSecs {
 		return shellTimeoutMax
 	}
-	return d
+	return time.Duration(secs) * time.Second
 }
+
+// outputSizeMax is the maximum bytes buffered from a shell command. Output
+// beyond this is silently discarded to prevent OOM when a command produces
+// unbounded output (find /, yes, dd) within the 60-second timeout window.
+const outputSizeMax = 8 * 1024 * 1024 // 8 MB
+
+// limitedBuf is a bytes.Buffer capped at limit bytes.  Writes past the cap are
+// accepted (return the full len to satisfy io.Writer) but discarded so the
+// command keeps running normally until the timeout fires.
+type limitedBuf struct {
+	buf   bytes.Buffer
+	limit int
+}
+
+func (l *limitedBuf) Write(p []byte) (int, error) {
+	if remaining := l.limit - l.buf.Len(); remaining > 0 {
+		take := p
+		if len(take) > remaining {
+			take = p[:remaining]
+		}
+		l.buf.Write(take) //nolint:errcheck // bytes.Buffer.Write never errors
+	}
+	return len(p), nil
+}
+
+func (l *limitedBuf) String() string { return l.buf.String() }
 
 // shellWrappedEnv marks child processes spawned by the shell tool so a nested
 // dex (or another compression wrapper that honors the convention) can detect
@@ -99,6 +128,10 @@ const shellWrappedEnv = "DEX_SHELL_WRAPPED"
 // Both alternatives require the ESC byte, so plain text such as "[INFO]" is
 // never touched (#670).
 var reAnsi = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+
+// reTeeWord matches "tee" as a whole word so |tee (no space) and "xargs tee"
+// are caught alongside the "tee file" prefix case (#716).
+var reTeeWord = regexp.MustCompile(`\btee\b`)
 
 func stripANSI(s string) string { return reAnsi.ReplaceAllString(s, "") }
 
@@ -530,8 +563,8 @@ func shellValidate(command string) error {
 	if hasFileWriteRedirect(command) {
 		return fmt.Errorf("shell: file-write redirect detected (> or >>); use the Write tool instead")
 	}
-	lower := strings.ToLower(command)
-	if strings.HasPrefix(lower, "tee ") || strings.Contains(lower, "| tee ") {
+	// Block tee as a whole word — catches |tee (no space), xargs tee, etc.
+	if reTeeWord.MatchString(strings.ToLower(command)) {
 		return fmt.Errorf("shell: tee detected; use the Write tool instead")
 	}
 	if hasHeredocFileWrite(command) {
@@ -649,11 +682,30 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 
 	cwd := in.Cwd
 	if cwd == "" {
-		var err error
-		cwd, err = os.Getwd()
-		if err != nil {
-			cwd = "."
+		if in.ProjectRoot != "" {
+			cwd = in.ProjectRoot
+		} else {
+			var err error
+			cwd, err = os.Getwd()
+			if err != nil {
+				cwd = "."
+			}
 		}
+	}
+	// Contain the working directory to the project root when one is provided.
+	if in.ProjectRoot != "" && cwd != "" {
+		root, err := filepath.Abs(in.ProjectRoot)
+		if err != nil {
+			return nil, ShellOutput{}, fmt.Errorf("shell: invalid project_root: %v", err)
+		}
+		abs, err := filepath.Abs(cwd)
+		if err != nil {
+			return nil, ShellOutput{}, fmt.Errorf("shell: invalid cwd: %v", err)
+		}
+		if abs != root && !strings.HasPrefix(abs+string(filepath.Separator), root+string(filepath.Separator)) {
+			return nil, ShellOutput{}, fmt.Errorf("shell: cwd %q is outside project root %q", abs, root)
+		}
+		cwd = abs
 	}
 
 	// Re-entry: a parent (nested dex, lean-ctx, …) already compressed once.
@@ -674,9 +726,9 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	// actually stop.
 	setupShellProcessGroup(cmd)
 
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	buf := &limitedBuf{limit: outputSizeMax}
+	cmd.Stdout = buf
+	cmd.Stderr = buf
 
 	runErr := cmd.Run()
 

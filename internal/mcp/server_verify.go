@@ -137,9 +137,9 @@ func (s *Server) verifyResolve(ctx context.Context, req *sdk.CallToolRequest, ro
 		return mode, nil, &VerifyOutput{Status: "no-changes", Hint: fmt.Sprintf("no changes in %s", rng)}
 	}
 	for _, fd := range fds {
-		if fd.Status == "deleted" {
-			continue // a deleted file's package may still need testing, but its own path is gone
-		}
+		// Include deleted files too — goPackagesForFiles extracts the package
+		// directory from the path, so the remaining files in that package still
+		// get compiled and compile errors caused by the deletion are caught (#716).
 		files = append(files, fd.Path)
 	}
 	return mode, files, nil

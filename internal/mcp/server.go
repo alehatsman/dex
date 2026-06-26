@@ -564,10 +564,14 @@ func (s *Server) markForeground(p *proj.Project) {
 	}
 }
 
-// ensureWatcher lazily spawns a Watcher goroutine for this project,
-// at most once per server lifetime. No-op unless RunStdio set runCtx
-// (i.e. only the stdio MCP path opts in) AND AutoWatch.Enabled is
-// true. Concurrency-safe; the goroutine self-cleans when runCtx ends.
+// watcherCooldown is how long runWatcher waits before allowing a respawn
+// after a persistent setup or watch error.
+const watcherCooldown = 5 * time.Minute
+
+// ensureWatcher lazily spawns a Watcher goroutine for this project.
+// Concurrency-safe; respawns are blocked during a cooldown period so a
+// persistent error (bad inotify, missing index) doesn't leak one goroutine
+// per MCP request (#716).
 func (s *Server) ensureWatcher(p *proj.Project) {
 	if s == nil || s.runCtx == nil || s.runCtx.Err() != nil {
 		return
@@ -575,11 +579,31 @@ func (s *Server) ensureWatcher(p *proj.Project) {
 	if !s.AutoWatch.Enabled {
 		return
 	}
-	if _, loaded := s.watchers.LoadOrStore(p.ID, struct{}{}); loaded {
-		return
+	for {
+		actual, loaded := s.watchers.LoadOrStore(p.ID, struct{}{})
+		if !loaded {
+			// We stored the running marker — spawn the watcher.
+			s.watcherWG.Add(1)
+			go s.runWatcher(p)
+			return
+		}
+		switch v := actual.(type) {
+		case struct{}:
+			return // watcher already running
+		case time.Time:
+			if time.Now().Before(v) {
+				return // still in cooldown
+			}
+			// Cooldown expired: atomically replace with running marker.
+			if s.watchers.CompareAndSwap(p.ID, actual, struct{}{}) {
+				s.watcherWG.Add(1)
+				go s.runWatcher(p)
+			}
+			return
+		default:
+			return
+		}
 	}
-	s.watcherWG.Add(1)
-	go s.runWatcher(p)
 }
 
 // runWatcher owns the lifecycle of a single project's Watcher inside
@@ -587,10 +611,10 @@ func (s *Server) ensureWatcher(p *proj.Project) {
 // returns so RunStdio's defer s.watcherWG.Wait() drains cleanly.
 func (s *Server) runWatcher(p *proj.Project) {
 	defer s.watcherWG.Done()
-	// On exit, free the slot — if the server is shutting down nothing
-	// reads it again; if a future request hits the same project after
-	// a watcher errored out, we can respawn.
-	defer s.watchers.Delete(p.ID)
+
+	// setCooldown replaces the running marker with a cooldown timestamp so
+	// ensureWatcher won't immediately respawn on the next request.
+	setCooldown := func() { s.watchers.Store(p.ID, time.Now().Add(watcherCooldown)) }
 
 	logger := s.AutoWatch.Logger
 	if logger == nil {
@@ -599,20 +623,24 @@ func (s *Server) runWatcher(p *proj.Project) {
 
 	if err := proj.CheckIndexable(p, false); err != nil {
 		logger.Info("mcp watch: skipping (not indexable)", "root", p.Root, "err", err)
+		setCooldown()
 		return
 	}
 	if err := p.EnsureCacheDir(); err != nil {
 		logger.Warn("mcp watch: cache dir failed", "root", p.Root, "err", err)
+		setCooldown()
 		return
 	}
 	st, err := s.openStore(p.DBPath)
 	if err != nil {
 		logger.Warn("mcp watch: store open failed", "root", p.Root, "err", err)
+		setCooldown()
 		return
 	}
 	ig, err := ignore.New(p.Root)
 	if err != nil {
 		logger.Warn("mcp watch: ignore init failed", "root", p.Root, "err", err)
+		setCooldown()
 		return
 	}
 
@@ -647,7 +675,12 @@ func (s *Server) runWatcher(p *proj.Project) {
 	logger.Info("mcp watch: starting", "root", p.Root)
 	if err := w.Run(s.runCtx); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Warn("mcp watch: exited with error", "root", p.Root, "err", err)
+		setCooldown()
+		return
 	}
+	// Clean exit (context canceled = server shutdown): free the slot entirely
+	// so a server restart can spawn fresh.
+	s.watchers.Delete(p.ID)
 }
 
 func (s *Server) RunStdio(ctx context.Context) error {

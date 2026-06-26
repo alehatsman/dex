@@ -27,8 +27,12 @@ const jsTagsQuery = `
 (import_statement) @import
 (call_expression) @call
 (new_expression) @call
+(jsx_self_closing_element) @call
+(jsx_opening_element) @call
 `
 
+// tsTagsQuery omits JSX patterns — the TypeScript grammar (as opposed to TSX)
+// does not define jsx_* node types and will error at query compile time.
 const tsTagsQuery = `
 (function_declaration) @function
 (class_declaration) @class
@@ -229,6 +233,8 @@ func (e *jstsTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePat
 		callee = n.ChildByFieldName("function")
 	case "new_expression":
 		callee = n.ChildByFieldName("constructor")
+	case "jsx_self_closing_element", "jsx_opening_element":
+		callee = n.ChildByFieldName("name")
 	}
 	if callee == nil {
 		return

@@ -526,6 +526,10 @@ func (s *Server) sessionImport(ctx context.Context, st *store.Store, projectRoot
 		if f.Path == "" {
 			continue
 		}
+		// Reject bundle paths that escape the project root (path-traversal guard).
+		if strings.Contains(f.Path, "..") {
+			return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("bundle file path %q is invalid: contains ..", f.Path)}, nil
+		}
 		files = append(files, store.SessionFile{Path: f.Path, Op: f.Op})
 	}
 	if err := st.SessionImport(ctx, b.Task, b.Notes, files); err != nil {
@@ -535,7 +539,7 @@ func (s *Server) sessionImport(ctx context.Context, st *store.Store, projectRoot
 	// Integrity: which bundled files changed or vanished since export?
 	var stale, missing []string
 	for _, f := range b.Files {
-		if f.Etag == "" {
+		if f.Etag == "" || f.Path == "" || strings.Contains(f.Path, "..") {
 			continue
 		}
 		cur, ok := fileEtag(filepath.Join(projectRoot, f.Path))

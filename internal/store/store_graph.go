@@ -458,6 +458,26 @@ func (s *Store) SymbolsByFile(ctx context.Context, relPath string) ([]GraphSymbo
 	return scanSymbols(rows)
 }
 
+// GraphQualifiedNameAt returns the qualified_name of the smallest graph node
+// whose span contains line in path, or "" when no graph node covers that
+// location. Used by locate to prefer receiver-qualified names over bare chunk
+// names for common identifiers like Run/Close/String (#716).
+func (s *Store) GraphQualifiedNameAt(ctx context.Context, path string, line int) (string, error) {
+	var qn string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT qualified_name FROM graph_nodes
+		WHERE file_path = ? AND start_line <= ? AND end_line >= ?
+		ORDER BY (end_line - start_line) ASC LIMIT 1`,
+		path, line, line).Scan(&qn)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return qn, nil
+}
+
 // ExternalImports returns the distinct third-party/stdlib import paths the
 // project depends on: `import` nodes whose path is NOT one of the project's own
 // package paths (the same internal-vs-external criterion the graphquery View
