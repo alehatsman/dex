@@ -277,6 +277,11 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 			syms := resolveHunkSymbols(ctx, st, fd.Path, h)
 			rh.SymbolsTouched = syms
 			fileSymbolsSeen += len(syms)
+			// No symbols at this hunk (comment/whitespace/data). Don't emit
+			// "graph not indexed" — there's simply nothing to look up.
+			if len(syms) == 0 {
+				hadGraph = true
+			}
 			seenCaller := map[string]bool{}
 			for _, sym := range syms {
 				if sym.Exported {
