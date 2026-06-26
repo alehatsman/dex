@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/gitenv"
 	"github.com/alehatsman/dex/internal/review"
 	"github.com/alehatsman/dex/internal/store"
@@ -170,11 +171,18 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	}
 
 	out := ReviewOutput{Status: "ok", Project: p.Root, Range: rng}
-	// Hunk→symbol mapping resolves new-side line numbers against the CURRENT
-	// index (which reflects HEAD). When the range doesn't end at HEAD those line
-	// numbers don't line up, so symbols/callers/risk degrade silently — say so.
+	// When the range doesn't end at HEAD, resolve hunk→symbol against the
+	// diff's own new-side ref via git show (time-travel, #644). Callers/risk
+	// still come from the live graph — note that in the hint.
+	newRef := ""
 	if !rangeEndsAtHEAD(rng) {
-		out.Hint = appendHint(out.Hint, "range does not end at HEAD; symbols/callers map against the current index and may be incomplete for older revisions")
+		newRef = extractNewRef(rng)
+		if newRef == "" {
+			// Couldn't extract a concrete ref (shouldn't happen after resolveReviewRange).
+			out.Hint = appendHint(out.Hint, "range does not end at HEAD; symbols map against the current index and may be incomplete")
+		} else {
+			out.Hint = appendHint(out.Hint, "callers and risk tiers reflect the current index, not the diff's historical revision")
+		}
 	}
 	e := &Enricher{projectRoot: p.Root}
 	// Cache caller/risk + notes per symbol — the same function often recurs
@@ -189,7 +197,7 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	}
 
 	for _, fd := range files {
-		rf := s.reviewFile(ctx, st, e, p.Root, fd, k, &hunkBudget, callerCache, noteCache)
+		rf := s.reviewFile(ctx, st, e, p.Root, fd, k, &hunkBudget, callerCache, noteCache, newRef)
 		if in.Compact {
 			rf.Hunks = dropLowRiskHunks(rf.Hunks)
 			if len(rf.Hunks) == 0 {
@@ -218,9 +226,12 @@ type traceResult struct {
 
 // reviewFile composes one file's hunks. File-level history legs (tests, doc,
 // blame, churn, author) run once; symbol legs run per hunk against the caches.
+// newRef, when non-empty, triggers time-travel: hunk→symbol mapping resolves
+// against the historical file content at that ref instead of the live index.
 func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, root string,
 	fd review.FileDiff, k int, hunkBudget *int,
-	callerCache map[string]traceResult, noteCache map[string][]LocatedFact) ReviewFile {
+	callerCache map[string]traceResult, noteCache map[string][]LocatedFact,
+	newRef string) ReviewFile {
 
 	rf := ReviewFile{Path: fd.Path, OldPath: fd.OldPath, Status: fd.Status}
 
@@ -251,6 +262,17 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 	// diff + history only (still useful, per the cold-start contract).
 	resolvable := fd.Status != "deleted"
 
+	// Time-travel (#644): when newRef is set, pre-fetch the file content at that
+	// ref and chunk it once so resolveHunkSymbols can map historical line numbers
+	// without touching the live index. Best-effort: on error (new file in the
+	// range, binary, or git failure) refChunks stays nil and falls back to ChunkAt.
+	var refChunks []chunk.Chunk
+	if resolvable && newRef != "" {
+		if src, err := gitShowFile(ctx, root, newRef, fd.Path); err == nil {
+			refChunks, _ = chunk.Chunks(ctx, fd.Path, src)
+		}
+	}
+
 	// Track whether this file has any indexed symbols. After reviewMaxHunksNoCode
 	// hunks with zero symbols we treat it as a data/non-code file and apply a
 	// tighter per-file cap so a single large JSON or generated file can't consume
@@ -275,7 +297,7 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 		var maxCallers int
 		var exported, hadGraph bool
 		if resolvable {
-			syms := resolveHunkSymbols(ctx, st, fd.Path, h)
+			syms := resolveHunkSymbols(ctx, st, fd.Path, h, refChunks)
 			rh.SymbolsTouched = syms
 			fileSymbolsSeen += len(syms)
 			// No symbols at this hunk (comment/whitespace/data). Don't emit
@@ -322,12 +344,13 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 
 // resolveHunkSymbols maps a hunk's new-side line range to the enclosing
 // declarations via ChunkAt, deduped by name+line and capped.
-func resolveHunkSymbols(ctx context.Context, st *store.Store, path string, h review.Hunk) []ReviewSymbol {
+// refChunks, when non-nil, overrides ChunkAt with an in-memory span lookup
+// over historical file content (time-travel, #644).
+func resolveHunkSymbols(ctx context.Context, st *store.Store, path string, h review.Hunk, refChunks []chunk.Chunk) []ReviewSymbol {
 	seen := map[string]bool{}
 	var out []ReviewSymbol
-	// Probe ChunkAt at most reviewMaxProbes times, strided evenly across the
-	// hunk so a large added file (hundreds of new lines) costs a bounded number
-	// of lookups instead of one per line.
+	// Probe at most reviewMaxProbes times, strided evenly across the hunk so a
+	// large added file costs a bounded number of lookups.
 	lines := h.TouchedLines()
 	stride := 1
 	if len(lines) > reviewMaxProbes {
@@ -338,22 +361,32 @@ func resolveHunkSymbols(ctx context.Context, st *store.Store, path string, h rev
 			break
 		}
 		line := lines[i]
-		hit, err := st.ChunkAt(ctx, path, line)
-		if err != nil || hit.Name == "" {
-			continue
+		var name, kind string
+		var startLine, endLine int
+		if refChunks != nil {
+			c, ok := chunkAtLine(refChunks, line)
+			if !ok || c.Name == "" {
+				continue
+			}
+			name, kind, startLine, endLine = c.Name, c.Kind, c.StartLine, c.EndLine
+		} else {
+			hit, err := st.ChunkAt(ctx, path, line)
+			if err != nil || hit.Name == "" {
+				continue
+			}
+			name, kind, startLine, endLine = hit.Name, hit.Kind, hit.StartLine, hit.EndLine
 		}
 		// Dedup by name only: a long function spans multiple indexed chunks
 		// with different start_line values, but they're the same symbol.
 		// Method names are qualified ((*Foo).Method), so different-receiver
 		// methods with the same bare name won't collide (#700).
-		key := hit.Name
-		if seen[key] {
+		if seen[name] {
 			continue
 		}
-		seen[key] = true
+		seen[name] = true
 		out = append(out, ReviewSymbol{
-			Name: hit.Name, Kind: hit.Kind, Exported: isExportedName(bareSymbolName(hit.Name)),
-			StartLine: hit.StartLine, EndLine: hit.EndLine,
+			Name: name, Kind: kind, Exported: isExportedName(bareSymbolName(name)),
+			StartLine: startLine, EndLine: endLine,
 		})
 	}
 	return out
@@ -447,6 +480,47 @@ func dropLowRiskHunks(hunks []ReviewHunk) []ReviewHunk {
 		}
 	}
 	return out
+}
+
+// ─── time-travel helpers (#644) ──────────────────────────────────────────
+
+// extractNewRef returns the right-hand side of a git range (the new-side ref),
+// or "" when it is HEAD/empty (meaning the live index is correct).
+func extractNewRef(rng string) string {
+	i := strings.LastIndex(rng, "..")
+	if i < 0 {
+		return ""
+	}
+	ref := strings.TrimSpace(rng[i+2:])
+	if ref == "" || ref == "HEAD" || ref == "@" {
+		return ""
+	}
+	return ref
+}
+
+// gitShowFile retrieves the raw content of path at the given git ref.
+func gitShowFile(ctx context.Context, root, ref, path string) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, reviewGitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "git", "-C", root, "show", ref+":"+path) //nolint:gosec // ref validated by reValidRef; path is project-relative from diff output
+	cmd.Env = gitenv.Current()
+	return cmd.Output()
+}
+
+// chunkAtLine returns the most specific chunk whose span contains line.
+// Mirrors the store.ChunkAt SQL (ORDER BY end_line-start_line ASC LIMIT 1).
+func chunkAtLine(chunks []chunk.Chunk, line int) (chunk.Chunk, bool) {
+	best, found := chunk.Chunk{}, false
+	bestSpan := -1
+	for _, c := range chunks {
+		if c.StartLine <= line && line <= c.EndLine {
+			span := c.EndLine - c.StartLine
+			if !found || span < bestSpan {
+				best, bestSpan, found = c, span, true
+			}
+		}
+	}
+	return best, found
 }
 
 // ─── range resolution + git helpers ──────────────────────────────────────

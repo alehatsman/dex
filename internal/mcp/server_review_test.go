@@ -375,3 +375,96 @@ func TestReviewNonCodeFileCap(t *testing.T) {
 		t.Errorf("data file emitted %d hunks, want <= %d (reviewMaxHunksNoCode)", jsonHunks, reviewMaxHunksNoCode)
 	}
 }
+
+func TestExtractNewRef(t *testing.T) {
+	cases := []struct{ rng, want string }{
+		{"HEAD~5..HEAD~1", "HEAD~1"},
+		{"main...feat/x", "feat/x"},
+		{"HEAD~1..HEAD", ""}, // ends at HEAD → live index
+		{"abc123..", ""},     // empty rhs → HEAD
+		{"HEAD~1..@", ""},    // @ = HEAD alias
+		{"v1.0..v2.0", "v2.0"},
+	}
+	for _, c := range cases {
+		if got := extractNewRef(c.rng); got != c.want {
+			t.Errorf("extractNewRef(%q) = %q, want %q", c.rng, got, c.want)
+		}
+	}
+}
+
+// TestReviewTimeTravel (#644): reviewing a range NOT ending at HEAD resolves
+// symbols against the diff's own new-side ref, not the live index. The test
+// fabricates a scenario where the live index has Greet at line 3, but in the
+// historical diff (v1→v2) Greet was at line 53 (after a 50-line preamble).
+// Without time-travel, ChunkAt(path, 53) fails (nothing at line 53 in HEAD).
+// With time-travel, git show HEAD~1:greet.go is chunked and Greet is found.
+func TestReviewTimeTravel(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	srv := fakeEmbed(t, 16)
+	t.Cleanup(srv.Close)
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+
+	gitRun(t, projDir, "init", "-q")
+
+	// v1: Greet at line 3 (minimal file).
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\nfunc Greet(s string) string { return s }\n")
+	gitRun(t, projDir, "add", ".")
+	gitRun(t, projDir, "commit", "-q", "-m", "v1")
+
+	// v2: 50 blank comment lines prepended so Greet moves to line 53,
+	// and its body is also changed. The historical diff's new-side line
+	// numbers are therefore 50+ higher than what the live index sees.
+	preamble := strings.Repeat("// pad\n", 50)
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\n"+preamble+"func Greet(s string) string { return \"hello \"+s }\n")
+	gitRun(t, projDir, "add", ".")
+	gitRun(t, projDir, "commit", "-q", "-m", "v2")
+
+	// v3 (HEAD): revert to compact file so Greet is back at line 3.
+	// The live index (indexed at HEAD = v3) therefore has Greet at line 3.
+	// Reviewing HEAD~2..HEAD~1 (v1→v2) produces a hunk with new-side lines
+	// around 53 — which would find nothing in the live index.
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\nfunc Greet(s string) string { return \"hi \"+s }\n")
+	gitRun(t, projDir, "add", ".")
+	gitRun(t, projDir, "commit", "-q", "-m", "v3")
+
+	root := indexProject(t, projDir, cacheDir, srv.URL) // indexes at HEAD (v3)
+	s := newServer(srv.URL, cacheDir)
+
+	// Review v1→v2 (historical, does not end at HEAD).
+	_, out, err := s.review(context.Background(), nil, ReviewInput{
+		Ref: "HEAD~2..HEAD~1", ProjectRoot: root,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status = %q hint = %q", out.Status, out.Hint)
+	}
+	if len(out.Files) == 0 {
+		t.Fatal("no files in review output")
+	}
+	// The hint must say callers/risk reflect the current index (not the old degradation message).
+	if !strings.Contains(out.Hint, "callers and risk tiers reflect the current index") {
+		t.Errorf("unexpected hint %q", out.Hint)
+	}
+	// Time-travel must resolve Greet even though it was at line 53 in v2.
+	var sawGreet bool
+	for _, f := range out.Files {
+		for _, h := range f.Hunks {
+			for _, sym := range h.SymbolsTouched {
+				if sym.Name == "Greet" {
+					sawGreet = true
+				}
+			}
+		}
+	}
+	if !sawGreet {
+		t.Errorf("time-travel failed: Greet not in symbols_touched for historical diff (hunks: %+v)", out.Files)
+	}
+}
