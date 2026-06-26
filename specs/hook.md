@@ -129,10 +129,22 @@ passes through on any error.
 ### `dex hook observe` — PostToolUse / Stop / PreCompact
 
 - WHEN any `PostToolUse`, `Stop`, or `PreCompact` hook fires, `hookObserve`
-  appends a compact JSON event record `{"ts": <unix>, "tool_name": "...",
-  "tokens": <rough-estimate>}` to `$XDG_DATA_HOME/dex/hooks.jsonl`
+  appends a compact JSON event record to `$XDG_DATA_HOME/dex/hooks.jsonl`
   (creating the file and directory as needed). No stdout output is produced.
-  The token estimate is `len(tool_input_bytes) / 4`.
+  The token estimate is `len(tool_input_bytes) / 4`. The record carries the
+  join keys `dex feedback` reads (#724):
+  - `ts` — unix seconds.
+  - `tool_name`, `tokens` — as before.
+  - `event` — the boundary name (`Stop` / `PreCompact`); omitted for the
+    common `PostToolUse`. `feedback` segments sessions on these so a join
+    never crosses a boundary.
+  - `paths` — for a read/edit tool (`Read`/`Edit`/`Write`/`NotebookEdit`/
+    `mcp__dex__read`), the file consumed (from `tool_input`); for an `ask`
+    call, the `suggested_reads` it recommended (from `tool_response`).
+  - `inlined_bytes`, `intent` — `ask`-only, parsed from `tool_response`.
+
+  All enrichment is best-effort and fails soft: an unrecognized shape yields
+  no `paths` rather than an error, so the hook never blocks a tool call.
 - WHERE the tool name is `ToolSearch`, `observe` also touches the
   schemas-loaded sentinel so `schemasNudge` in `hookInject` stops firing for
   the next 30 minutes.

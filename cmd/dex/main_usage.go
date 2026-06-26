@@ -52,6 +52,7 @@ build / maintenance:
   dex summarize [<path>...]          generate per-file LLM summaries (isolated table; --get to read)
   dex nuke <path>                    delete the on-disk index
   dex bench <sub> [<path>]            benchmarks: eval|corpus|compress|perf|locomo
+  dex feedback [--json]              relevance of ask suggested_reads on real traffic (reads hooks.jsonl)
   dex proxy <path>                    MCP proxy — forward tools to a remote dex server
 
 config / setup:
@@ -173,6 +174,7 @@ build / maintenance:
                                           new git worktree); follow with
                                           `+"`dex index <dst>`"+` to reconcile
   dex bench  <sub> [<path>]          benchmarks: eval|corpus|compress|perf|locomo
+  dex feedback [--json]              relevance of ask suggested_reads on real traffic (reads hooks.jsonl)
   dex mcp                            run as an MCP server over stdio
   dex serve [flags] --project <p>    run as an HTTP daemon (multi-project).
                                           Flags: --addr=:8080 (default loopback

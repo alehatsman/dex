@@ -32,18 +32,39 @@ func hookObserve() error {
 		_ = json.Unmarshal(r, &hookEventName)
 	}
 
+	// event is one line of hooks.jsonl. paths carries the join keys the
+	// feedback consumer needs (#724): for a read/edit tool it is the file
+	// consumed (from tool_input); for an ask call it is the suggested_reads
+	// the bundle recommended (from tool_response). inlined_bytes and intent
+	// are ask-only. event names a session boundary (Stop / PreCompact) so the
+	// consumer can window the join; it is omitted for the common PostToolUse.
 	type event struct {
-		TS       int64  `json:"ts"`
-		ToolName string `json:"tool_name,omitempty"`
-		Tokens   int    `json:"tokens,omitempty"`
+		TS       int64    `json:"ts"`
+		Event    string   `json:"event,omitempty"`
+		ToolName string   `json:"tool_name,omitempty"`
+		Tokens   int      `json:"tokens,omitempty"`
+		Paths    []string `json:"paths,omitempty"`
+		Inlined  int      `json:"inlined_bytes,omitempty"`
+		Intent   string   `json:"intent,omitempty"`
 	}
 	ev := event{TS: time.Now().Unix()}
+	if hookEventName != "" && hookEventName != "PostToolUse" {
+		ev.Event = hookEventName
+	}
 
 	if raw, ok := v["tool_name"]; ok {
 		_ = json.Unmarshal(raw, &ev.ToolName)
 	}
 	if raw, ok := v["tool_input"]; ok {
 		ev.Tokens = len(raw) / 4 // rough 4-bytes-per-token estimate
+	}
+	switch {
+	case isAskTool(ev.ToolName):
+		// Recommendations the bundle made — joined against later reads.
+		ev.Paths, ev.Inlined, ev.Intent = parseAskResponse(v["tool_response"])
+	case isConsumeTool(ev.ToolName):
+		// A file the agent actually opened — the consumption side of the join.
+		ev.Paths = pathsFromInput(v["tool_input"])
 	}
 
 	logDir := hookLogDir()

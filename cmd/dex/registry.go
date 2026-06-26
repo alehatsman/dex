@@ -351,6 +351,14 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "feedback", group: groupBuild, summary: "relevance of ask suggested_reads on real traffic (reads hooks.jsonl)", noFiles: true,
+		flags: []flagSpec{
+			{name: "--json", desc: "emit the report as JSON"},
+			{name: "--window", desc: "consume-event lookahead per suggested read (0 = whole session)", arg: true},
+			{name: "--log", desc: "path to hooks.jsonl", arg: true},
+		},
+	},
+	{
 		name: "hook", group: groupBuild, args: "inject|rewrite|redirect|observe",
 		summary: "Claude Code hook scripts",
 		subs: []subSpec{
