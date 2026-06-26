@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
@@ -153,6 +156,92 @@ func TestNameBasedEmptyHintMixedWarns(t *testing.T) {
 		t.Errorf("mixed Go/TS target should warn about the non-Go language, got %q", got)
 	}
 }
+
+// #727: non-empty non-Go trace results must be tagged recall=partial and
+// augmented with a grep sweep — a name-based graph hit is not a complete list.
+
+func TestHasNonGoTarget(t *testing.T) {
+	goOnly := []TargetMatch{{Path: "internal/foo/foo.go"}, {Path: "cmd/bar/main.go"}}
+	if hasNonGoTarget(goOnly) {
+		t.Error("all-.go targets reported as non-Go")
+	}
+
+	mixed := []TargetMatch{{Path: "internal/foo/foo.go"}, {Path: "src/bar.ts"}}
+	if !hasNonGoTarget(mixed) {
+		t.Error("mixed Go/TS targets not detected as non-Go")
+	}
+
+	tsOnly := []TargetMatch{{Path: "src/auth.ts"}}
+	if !hasNonGoTarget(tsOnly) {
+		t.Error("TypeScript target not detected as non-Go")
+	}
+
+	empty := []TargetMatch{}
+	if hasNonGoTarget(empty) {
+		t.Error("empty targets reported as non-Go")
+	}
+}
+
+func TestAugmentPartialRecallSetsRecallAndHint(t *testing.T) {
+	// noopSurface returns an empty SearchGrepOutput (status=""), so grepN=0.
+	h := &noopSurface{}
+	out := TraceOutput{
+		Hits: []CallSite{
+			{CallSitePath: "src/auth.ts", CallSiteLine: 42},
+			{CallSitePath: "src/login.ts", CallSiteLine: 10},
+		},
+	}
+	augmentPartialRecall(testCtx(), h, "authenticate", "", &out)
+
+	if out.Recall != "partial" {
+		t.Errorf("Recall = %q, want partial", out.Recall)
+	}
+	for _, want := range []string{"graph: 2", "name-based", "recall partial", "grep:"} {
+		if !strings.Contains(out.Hint, want) {
+			t.Errorf("Hint = %q missing %q", out.Hint, want)
+		}
+	}
+}
+
+func TestAugmentPartialRecallDedupsGrepHits(t *testing.T) {
+	// searchGrep returns two matches; one overlaps an existing call-site line.
+	h := &stubSearchGrep{matches: []GrepMatch{
+		{Path: "src/auth.ts", Line: 42, Content: "authenticate(token)"}, // already in Hits
+		{Path: "src/signup.ts", Line: 7, Content: "authenticate(user)"}, // new
+	}}
+	out := TraceOutput{
+		Hits: []CallSite{
+			{CallSitePath: "src/auth.ts", CallSiteLine: 42},
+		},
+	}
+	augmentPartialRecall(testCtx(), h, "authenticate", "", &out)
+
+	if out.Recall != "partial" {
+		t.Errorf("Recall = %q, want partial", out.Recall)
+	}
+	if len(out.GrepHits) != 1 {
+		t.Fatalf("GrepHits = %d, want 1 (one deduped)", len(out.GrepHits))
+	}
+	if out.GrepHits[0].Path != "src/signup.ts" {
+		t.Errorf("GrepHits[0].Path = %q, want src/signup.ts", out.GrepHits[0].Path)
+	}
+	if !strings.Contains(out.Hint, "grep: 1 more") {
+		t.Errorf("Hint = %q, want 'grep: 1 more'", out.Hint)
+	}
+}
+
+// stubSearchGrep is a noopSurface that returns a fixed grep result.
+type stubSearchGrep struct {
+	noopSurface
+	matches []GrepMatch
+}
+
+func (s *stubSearchGrep) searchGrep(_ context.Context, _ *sdk.CallToolRequest, _ SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
+	return nil, SearchGrepOutput{Status: "ok", Matches: s.matches, Total: len(s.matches)}, nil
+}
+
+// testCtx returns a background context for unit tests.
+func testCtx() context.Context { return context.Background() }
 
 // #486: callers should center the inlined snippet on the call site, not return
 // the whole enclosing function body.

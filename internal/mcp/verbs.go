@@ -224,6 +224,12 @@ type TraceOutput struct {
 	Truncated  bool           `json:"truncated,omitempty"`
 	Elided     []DepthElision `json:"elided,omitempty"`
 	TestsToRun []string       `json:"tests_to_run,omitempty"`
+	// Recall is "partial" when the graph result may undercount call sites —
+	// non-Go (tree-sitter) extractors have incomplete recall, so a non-empty
+	// result is still not a complete blast radius. Check grep_hits for
+	// additional candidate sites surfaced by a name-based grep sweep.
+	Recall   string      `json:"recall,omitempty"`
+	GrepHits []GrepMatch `json:"grep_hits,omitempty"`
 }
 
 // traceHandler adapts traceVerb to the SDK handler shape, capturing h.
@@ -258,7 +264,7 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 		} else {
 			_, out, err = h.graphCallees(ctx, req, ce)
 		}
-		return nil, TraceOutput{
+		tOut := TraceOutput{
 			Direction: dir,
 			Status:    out.Status,
 			Hint:      out.Hint,
@@ -266,7 +272,11 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 			Targets:   out.Targets,
 			Hits:      out.Hits,
 			Risk:      out.Risk,
-		}, err
+		}
+		if out.Status == "ok" && len(out.Hits) > 0 && hasNonGoTarget(out.Targets) {
+			augmentPartialRecall(ctx, h, in.Symbol, in.ProjectRoot, &tOut)
+		}
+		return nil, tOut, err
 	case "path":
 		if strings.TrimSpace(in.To) == "" {
 			return nil, TraceOutput{Direction: dir, Status: "error", Hint: "direction=path requires `to` (destination symbol)"}, nil
@@ -301,5 +311,59 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 		}, err
 	default:
 		return nil, TraceOutput{Direction: dir, Status: "error", Hint: "direction must be one of: callers, callees, path, impact"}, nil
+	}
+}
+
+// hasNonGoTarget reports whether any resolved target lives in a non-Go file.
+// Non-Go edges are name-based (tree-sitter), so recall is incomplete.
+func hasNonGoTarget(targets []TargetMatch) bool {
+	for _, t := range targets {
+		if t.Path != "" && !strings.HasSuffix(t.Path, ".go") {
+			return true
+		}
+	}
+	return false
+}
+
+// augmentPartialRecall runs a grep sweep for the bare symbol name and folds
+// the results into out.GrepHits (deduped against existing call-site lines).
+// Sets out.Recall = "partial" and annotates out.Hint regardless of grep outcome.
+func augmentPartialRecall(ctx context.Context, h toolSurface, symbol, projectRoot string, out *TraceOutput) {
+	bare := bareSymbolName(symbol)
+	if bare == "" {
+		out.Recall = "partial"
+		return
+	}
+	pattern := `\b` + bare + `\b`
+	_, gout, err := h.searchGrep(ctx, nil, SearchGrepInput{
+		ProjectRoot: projectRoot,
+		Pattern:     pattern,
+		MaxResults:  20,
+	})
+
+	out.Recall = "partial"
+
+	var grepN int
+	if err == nil && (gout.Status == "ok" || gout.Status == "no-matches") {
+		// Dedup: skip grep hits already covered by a graph call-site line.
+		seenSite := make(map[string]bool, len(out.Hits))
+		for _, h := range out.Hits {
+			if h.CallSitePath != "" {
+				seenSite[fmt.Sprintf("%s:%d", h.CallSitePath, h.CallSiteLine)] = true
+			}
+		}
+		for _, m := range gout.Matches {
+			if !seenSite[fmt.Sprintf("%s:%d", m.Path, m.Line)] {
+				out.GrepHits = append(out.GrepHits, m)
+			}
+		}
+		grepN = len(out.GrepHits)
+	}
+
+	partial := fmt.Sprintf("graph: %d call-edge(s) (name-based, recall partial); grep: %d more candidate site(s)", len(out.Hits), grepN)
+	if out.Hint != "" {
+		out.Hint += " | " + partial
+	} else {
+		out.Hint = partial
 	}
 }
