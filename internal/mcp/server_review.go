@@ -38,14 +38,15 @@ import (
 // what a reviewer wants anyway.
 
 const (
-	reviewMaxFiles    = 100 // cap files scanned (huge diffs)
-	reviewMaxHunks    = 200 // cap total hunks emitted; truncate past this
-	reviewMaxSymHunk  = 6   // cap symbols resolved per hunk
-	reviewMaxProbes   = 32  // cap ChunkAt lookups per hunk (strided over big hunks)
-	reviewCallerMed   = 10  // >= this many callers → at least medium risk
-	reviewCallerHigh  = 30  // >= this many callers → high risk
-	reviewGitTimeout  = 5 * time.Second
-	reviewChurnWindow = "30 days ago"
+	reviewMaxFiles       = 100 // cap files scanned (huge diffs)
+	reviewMaxHunks       = 200 // cap total hunks emitted; truncate past this
+	reviewMaxHunksNoCode = 3   // per-file cap when the file has no indexed symbols
+	reviewMaxSymHunk     = 6   // cap symbols resolved per hunk
+	reviewMaxProbes      = 32  // cap ChunkAt lookups per hunk (strided over big hunks)
+	reviewCallerMed      = 10  // >= this many callers → at least medium risk
+	reviewCallerHigh     = 30  // >= this many callers → high risk
+	reviewGitTimeout     = 5 * time.Second
+	reviewChurnWindow    = "30 days ago"
 )
 
 // ReviewInput selects the diff three ways. Exactly one of Ref / Branch / PR is
@@ -249,11 +250,22 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 	// diff + history only (still useful, per the cold-start contract).
 	resolvable := fd.Status != "deleted"
 
+	// Track whether this file has any indexed symbols. After reviewMaxHunksNoCode
+	// hunks with zero symbols we treat it as a data/non-code file and apply a
+	// tighter per-file cap so a single large JSON or generated file can't consume
+	// the entire hunkBudget and starve code files in the same diff.
+	var fileHunksEmitted, fileSymbolsSeen int
+
 	for _, h := range fd.Hunks {
 		if *hunkBudget <= 0 {
 			break
 		}
+		// Non-code file guard: after the probe window, if still no symbols, cap early.
+		if fileSymbolsSeen == 0 && fileHunksEmitted >= reviewMaxHunksNoCode {
+			break
+		}
 		*hunkBudget--
+		fileHunksEmitted++
 
 		rh := ReviewHunk{
 			OldStart: h.OldStart, OldLines: h.OldLines,
@@ -264,6 +276,7 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 		if resolvable {
 			syms := resolveHunkSymbols(ctx, st, fd.Path, h)
 			rh.SymbolsTouched = syms
+			fileSymbolsSeen += len(syms)
 			seenCaller := map[string]bool{}
 			for _, sym := range syms {
 				if sym.Exported {

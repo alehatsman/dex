@@ -273,3 +273,81 @@ func TestReviewSurfacesScopedNotes(t *testing.T) {
 		t.Errorf("wrong scoped note: %+v", sn[0])
 	}
 }
+
+// TestReviewNonCodeFileCap guards that a file with no indexed symbols is capped
+// at reviewMaxHunksNoCode hunks so it can't starve code files in the same diff.
+func TestReviewNonCodeFileCap(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	srv := fakeEmbed(t, 16)
+	t.Cleanup(srv.Close)
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+
+	gitRun(t, projDir, "init", "-q")
+
+	// v1: a code file + a JSON data file with many values spaced far enough
+	// apart that each change in v2 becomes a separate git diff hunk (>= 7
+	// unchanged lines between changes keeps hunks distinct with -U3 context).
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\nfunc Greet(name string) string { return \"hi \" + name }\n")
+
+	// 10 entries each separated by 10 filler keys → each value change is a distinct hunk.
+	var jsonV1, jsonV2 strings.Builder
+	jsonV1.WriteString("{\n")
+	jsonV2.WriteString("{\n")
+	for i := 0; i < 10; i++ {
+		jsonV1.WriteString(strings.Repeat("  \"filler\": \"x\",\n", 10))
+		jsonV1.WriteString("  \"key\": \"old\"")
+		jsonV2.WriteString(strings.Repeat("  \"filler\": \"x\",\n", 10))
+		jsonV2.WriteString("  \"key\": \"new\"")
+		if i < 9 {
+			jsonV1.WriteString(",\n")
+			jsonV2.WriteString(",\n")
+		} else {
+			jsonV1.WriteString("\n")
+			jsonV2.WriteString("\n")
+		}
+	}
+	jsonV1.WriteString("}\n")
+	jsonV2.WriteString("}\n")
+	writeFile(t, filepath.Join(projDir, "data.json"), jsonV1.String())
+
+	gitRun(t, projDir, "add", ".")
+	gitRun(t, projDir, "commit", "-q", "-m", "v1")
+
+	// v2: change the code file + update all 10 JSON values → 10 diff hunks.
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\nfunc Greet(name string) string { return \"hello \" + name }\n")
+	writeFile(t, filepath.Join(projDir, "data.json"), jsonV2.String())
+	gitRun(t, projDir, "add", ".")
+	gitRun(t, projDir, "commit", "-q", "-m", "v2")
+
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+
+	_, out, err := s.review(context.Background(), nil, ReviewInput{
+		Ref: "HEAD~1..HEAD", ProjectRoot: root,
+	})
+	if err != nil || out.Status != "ok" {
+		t.Fatalf("review: status=%q hint=%q err=%v", out.Status, out.Hint, err)
+	}
+
+	// Find per-file hunk counts.
+	jsonHunks, codeHunks := -1, -1
+	for _, f := range out.Files {
+		switch filepath.Ext(f.Path) {
+		case ".json":
+			jsonHunks = len(f.Hunks)
+		case ".go":
+			codeHunks = len(f.Hunks)
+		}
+	}
+	if codeHunks <= 0 {
+		t.Errorf("code file missing from review output: %+v", out.Files)
+	}
+	if jsonHunks > reviewMaxHunksNoCode {
+		t.Errorf("data file emitted %d hunks, want <= %d (reviewMaxHunksNoCode)", jsonHunks, reviewMaxHunksNoCode)
+	}
+}
