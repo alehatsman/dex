@@ -76,7 +76,8 @@ func ImplementorsOf(ctx context.Context, projectRoot, ifaceName string) (CohortR
 	iface, ifacePkg, ok := findInterface(pkgs, ifaceName)
 	if !ok {
 		res.Status = "not-found"
-		res.Hint = fmt.Sprintf("no interface named %q in the module", ifaceName)
+		res.Hint = fmt.Sprintf("no interface named %q in the module — cohort requires an interface type; %s",
+			ifaceName, symbolKindHint(pkgs, ifaceName))
 		return res, nil
 	}
 
@@ -169,6 +170,42 @@ func ImplementorsOf(ctx context.Context, projectRoot, ifaceName string) (CohortR
 
 // findInterface resolves ifaceName (bare or pkg-tail-qualified) to a
 // *types.Interface and its declaring package.
+// symbolKindHint returns a human-readable description of what ifaceName
+// actually is (struct, function, etc.) to help the user understand why
+// the cohort not-found error fired.
+func symbolKindHint(pkgs []*packages.Package, ifaceName string) string {
+	_, name := "", ifaceName
+	if i := strings.LastIndex(ifaceName, "."); i >= 0 {
+		name = ifaceName[i+1:]
+	}
+	for _, p := range pkgs {
+		if p.Types == nil {
+			continue
+		}
+		obj := p.Types.Scope().Lookup(name)
+		if obj == nil {
+			continue
+		}
+		switch obj.(type) {
+		case *types.TypeName:
+			underlying := obj.Type().Underlying()
+			switch underlying.(type) {
+			case *types.Struct:
+				return fmt.Sprintf("%q is a struct type — pass one of its embedded interface fields, or pick an interface that types implement", name)
+			default:
+				return fmt.Sprintf("%q is a type alias/defined type, not an interface", name)
+			}
+		case *types.Func:
+			return fmt.Sprintf("%q is a function — pass an interface name (e.g. Embedder, Searcher) to find its implementors", name)
+		case *types.Var:
+			return fmt.Sprintf("%q is a variable, not an interface type", name)
+		case *types.Const:
+			return fmt.Sprintf("%q is a constant, not an interface type", name)
+		}
+	}
+	return fmt.Sprintf("use `dex find %s` to check whether the symbol exists and what kind it is", ifaceName)
+}
+
 func findInterface(pkgs []*packages.Package, ifaceName string) (*types.Interface, *types.Package, bool) {
 	pkgName, name := "", ifaceName
 	if i := strings.LastIndex(ifaceName, "."); i >= 0 {

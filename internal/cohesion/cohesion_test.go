@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -105,6 +106,25 @@ func TestImplementorsOf_NotFound(t *testing.T) {
 	res, _ := ImplementorsOf(context.Background(), root, "NoSuchIface")
 	if res.Status != "not-found" {
 		t.Errorf("status = %q, want not-found", res.Status)
+	}
+}
+
+func TestImplementorsOf_NotFoundHint(t *testing.T) {
+	root := writeIfaceModule(t)
+
+	// Passing a struct name should give a hint mentioning "struct type".
+	res, _ := ImplementorsOf(context.Background(), root, "Full")
+	if res.Status != "not-found" {
+		t.Fatalf("status = %q, want not-found", res.Status)
+	}
+	if !strings.Contains(res.Hint, "struct") {
+		t.Errorf("hint for struct type = %q, want it to mention 'struct'", res.Hint)
+	}
+
+	// Unknown name should fall back to the dex find suggestion.
+	res2, _ := ImplementorsOf(context.Background(), root, "NoSuchThing")
+	if !strings.Contains(res2.Hint, "dex find") {
+		t.Errorf("hint for unknown symbol = %q, want it to suggest 'dex find'", res2.Hint)
 	}
 }
 
