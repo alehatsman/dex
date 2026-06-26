@@ -1048,6 +1048,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
 			"Pass `context` (1-10) to include that many lines before AND after each match (like grep -C) in " +
 			"`before`/`after` — see a match in context without a follow-up read. " +
+			"Pass `fixed:true` to match the pattern literally (like grep -F) — for code with regex metacharacters " +
+			"(foo.bar, arr[i], f(x)), no escaping needed. " +
 			"Returns 'no-matches' when nothing matches. Use ask for conceptual queries."),
 	}, h.searchGrep)
 

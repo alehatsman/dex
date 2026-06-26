@@ -178,6 +178,7 @@ func cmdGrep(ctx context.Context, args []string) error {
 	in := fs.String("in", "", "restrict to a subdirectory of the project")
 	maxResults := fs.Int("max-results", 0, "maximum matches (default 50, max 200)")
 	contextN := fs.Int("context", 0, "lines of context before/after each match (like grep -C), 0-10")
+	fixed := fs.Bool("fixed", false, "match the pattern literally (like grep -F), not as a regex")
 	format := fs.String("format", "text", "output format: text | json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -204,6 +205,7 @@ func cmdGrep(ctx context.Context, args []string) error {
 		Ext:         *ext,
 		MaxResults:  *maxResults,
 		Context:     *contextN,
+		Fixed:       *fixed,
 		ProjectRoot: p.Root,
 	})
 	if err != nil {

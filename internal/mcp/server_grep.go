@@ -21,6 +21,7 @@ type SearchGrepInput struct {
 	Ext         string `json:"ext,omitempty"          jsonschema:"file extension filter without leading dot, e.g. go or ts"`
 	MaxResults  int    `json:"max_results,omitempty"  jsonschema:"maximum matches to return (default 50, max 200)"`
 	Context     int    `json:"context,omitempty"      jsonschema:"lines of surrounding context to include before AND after each match (like grep -C), 0-10; default 0"`
+	Fixed       bool   `json:"fixed,omitempty"        jsonschema:"match the pattern as a literal string (like grep -F) instead of a regex — use for code containing metacharacters (foo.bar, arr[i], f(x))"`
 }
 
 type GrepMatch struct {
@@ -56,7 +57,13 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	if in.Pattern == "" {
 		return nil, SearchGrepOutput{Status: "error", Hint: "pattern is required"}, nil
 	}
-	re, err := regexp.Compile(in.Pattern)
+	// fixed=true matches the pattern literally (grep -F): code routinely contains
+	// regex metacharacters, and quoting them by hand is error-prone (#663).
+	rePattern := in.Pattern
+	if in.Fixed {
+		rePattern = regexp.QuoteMeta(in.Pattern)
+	}
+	re, err := regexp.Compile(rePattern)
 	if err != nil {
 		return nil, SearchGrepOutput{Status: "error", Hint: fmt.Sprintf("invalid pattern: %v", err)}, nil
 	}
@@ -150,7 +157,7 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	if len(filePaths) > 0 {
 		tgKey := trigramCacheKey{root: p.Root, prefix: prefix, ext: extFilter}
 		idx := s.tgCache.getOrBuild(tgKey, filePaths)
-		if narrowed, ok := idx.Narrow(in.Pattern); ok {
+		if narrowed, ok := idx.Narrow(rePattern); ok {
 			filePaths = narrowed
 		}
 	}

@@ -141,3 +141,53 @@ func TestSearchGrepContext(t *testing.T) {
 		t.Errorf("last After should be empty at EOF, got %+v", last.After)
 	}
 }
+
+// TestSearchGrepFixed covers #663: fixed=true matches the pattern literally,
+// so regex metacharacters are treated as plain text.
+func TestSearchGrepFixed(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	s := newServer(srv.URL, t.TempDir())
+	projDir := t.TempDir()
+	// "a.b" appears literally; "axb" would match the regex a.b but not the literal.
+	body := "match a.b here\ndecoy axb here\n"
+	if err := os.WriteFile(filepath.Join(projDir, "f.txt"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	grep := func(fixed bool) SearchGrepOutput {
+		_, out, err := s.searchGrep(context.Background(), nil, SearchGrepInput{
+			Pattern: "a.b", Path: "f.txt", Fixed: fixed, ProjectRoot: projDir,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	// Regex mode: "a.b" matches both "a.b" and "axb".
+	if reOut := grep(false); reOut.Total != 2 {
+		t.Errorf("regex a.b should match both lines, got %d", reOut.Total)
+	}
+	// Fixed mode: only the literal "a.b" line.
+	fx := grep(true)
+	if fx.Total != 1 {
+		t.Fatalf("fixed a.b should match only the literal line, got %d: %+v", fx.Total, fx.Matches)
+	}
+	if !strings.Contains(fx.Matches[0].Content, "a.b") {
+		t.Errorf("fixed match should be the a.b line, got %q", fx.Matches[0].Content)
+	}
+
+	// A pattern that is invalid regex but a fine literal must work in fixed mode.
+	_, badRe, _ := s.searchGrep(context.Background(), nil, SearchGrepInput{
+		Pattern: "f(x", Path: "f.txt", Fixed: false, ProjectRoot: projDir,
+	})
+	if badRe.Status != "error" {
+		t.Errorf("unbalanced paren as regex should error, got %q", badRe.Status)
+	}
+	_, okFixed, _ := s.searchGrep(context.Background(), nil, SearchGrepInput{
+		Pattern: "f(x", Path: "f.txt", Fixed: true, ProjectRoot: projDir,
+	})
+	if okFixed.Status == "error" {
+		t.Errorf("unbalanced paren as a literal should be valid, got error: %s", okFixed.Hint)
+	}
+}
