@@ -39,13 +39,18 @@ func TestParseLinesRange(t *testing.T) {
 		{"10-40", 10, 40, true},
 		{"1-1", 1, 1, true},
 		{"1-100", 1, 100, true},
+		{"10", 10, 10, true}, // single line (#672)
+		{"40-", 40, 0, true}, // open end: line 40 → EOF (#672)
+		{"-10", 0, 10, true}, // open start: first 10 lines (#672)
 		{"", 0, 0, false},
-		{"10", 0, 0, false},
-		{"40-10", 0, 0, false}, // end < start
-		{"0-10", 0, 0, false},  // start < 1
-		{"abc-10", 0, 0, false},
-		{"10-abc", 0, 0, false},
-		{"-10", 0, 0, false},
+		{"40-10", 0, 0, false},   // end < start
+		{"0-10", 0, 0, false},    // start < 1
+		{"abc-10", 0, 0, false},  // non-numeric start
+		{"10-abc", 0, 0, false},  // non-numeric end
+		{"-", 0, 0, false},       // bare dash
+		{"0", 0, 0, false},       // single line < 1
+		{"5-10-15", 0, 0, false}, // multi-dash
+		{"--5", 0, 0, false},     // negative end
 	}
 	for _, tc := range tests {
 		s, e, ok := ParseLinesRange(tc.in)
@@ -104,5 +109,34 @@ func TestFormatSignatures(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("formatSignatures output missing %q\ngot:\n%s", want, got)
 		}
+	}
+}
+
+// TestSliceLinesOpenAndPastEOF covers #672: open-ended and past-EOF ranges must
+// report the true last line (chunk.LineCount), not the walk's phantom-line
+// count for trailing-newline files.
+func TestSliceLinesOpenAndPastEOF(t *testing.T) {
+	data := []byte("L1\nL2\nL3\nL4\nL5\nL6\n") // 6 content lines, trailing newline
+	cases := []struct {
+		name               string
+		start, end         int
+		wantContent        string
+		wantStart, wantEnd int
+	}{
+		{"open end to EOF", 4, 0, "L4\nL5\nL6\n", 4, 6},
+		{"open start first 2", 0, 2, "L1\nL2\n", 1, 2},
+		{"past EOF clamps", 3, 100, "L3\nL4\nL5\nL6\n", 3, 6},
+		{"single line", 5, 5, "L5\n", 5, 5},
+		{"closed range", 3, 4, "L3\nL4\n", 3, 4},
+		{"whole file", 0, 0, "L1\nL2\nL3\nL4\nL5\nL6\n", 1, 6},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, s, e := SliceLines(data, c.start, c.end)
+			if string(got) != c.wantContent || s != c.wantStart || e != c.wantEnd {
+				t.Errorf("SliceLines(%d,%d) = (%q,%d,%d), want (%q,%d,%d)",
+					c.start, c.end, got, s, e, c.wantContent, c.wantStart, c.wantEnd)
+			}
+		})
 	}
 }

@@ -16,18 +16,50 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// ParseLinesRange parses "N-M" from a lines:N-M mode string.
+// ParseLinesRange parses a lines:* range spec into a 1-indexed start/end. A
+// returned 0 means "open" — start of file or end of file — which SliceLines
+// clamps to the actual extents. Four forms are accepted:
+//
+//	N-M  lines N through M (inclusive)  → (N, M)
+//	N-   line N through end of file     → (N, 0)
+//	-M   first line through M           → (0, M)
+//	N    the single line N              → (N, N)
+//
+// Negatives, a bare "-", a zero index, multi-dash specs, and an end before the
+// start are rejected.
 func ParseLinesRange(s string) (start, end int, ok bool) {
 	i := strings.IndexByte(s, '-')
-	if i <= 0 {
+	if i < 0 {
+		// Single line "N".
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 {
+			return 0, 0, false
+		}
+		return n, n, true
+	}
+	left, right := s[:i], s[i+1:]
+	if left == "" && right == "" {
+		return 0, 0, false // bare "-"
+	}
+	if left != "" {
+		n, err := strconv.Atoi(left)
+		if err != nil || n < 1 {
+			return 0, 0, false
+		}
+		start = n
+	}
+	if right != "" {
+		// Atoi rejects a second dash ("10-15" from "5-10-15") and negatives.
+		m, err := strconv.Atoi(right)
+		if err != nil || m < 1 {
+			return 0, 0, false
+		}
+		end = m
+	}
+	if start > 0 && end > 0 && end < start {
 		return 0, 0, false
 	}
-	n, err1 := strconv.Atoi(s[:i])
-	m, err2 := strconv.Atoi(s[i+1:])
-	if err1 != nil || err2 != nil || n < 1 || m < n {
-		return 0, 0, false
-	}
-	return n, m, true
+	return start, end, true
 }
 
 // SignaturesView builds the mode=signatures view: a compact symbol index,
@@ -170,7 +202,10 @@ func SliceLines(data []byte, start, end int) ([]byte, int, int) {
 		return nil, start, start - 1
 	}
 	if end <= 0 || end > line {
-		end = line
+		// Open end (to EOF) or past EOF: report the true last line. The walk's
+		// `line` counts a phantom empty line after a trailing newline, so use
+		// chunk.LineCount for consistency with the whole-file path (#672).
+		end = chunk.LineCount(data)
 	}
 	return data[startByte:endByte], start, end
 }

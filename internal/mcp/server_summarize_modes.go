@@ -19,7 +19,7 @@ func (s *Server) summarizeModeLines(w summarizeWork, mode ReadMode) (*sdk.CallTo
 	rest := strings.TrimPrefix(string(mode), "lines:")
 	start, end, ok := summarize.ParseLinesRange(rest)
 	if !ok {
-		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("invalid lines mode %q — expected lines:N-M (e.g. lines:10-40)", w.in.Mode)}, nil
+		return nil, SummarizeOutput{Status: "error", Hint: fmt.Sprintf("invalid lines mode %q — expected lines:N-M, lines:N- (to EOF), lines:-M (first M), or lines:N (single), e.g. lines:10-40", w.in.Mode)}, nil
 	}
 	slice, sliceStart, sliceEnd := summarize.SliceLines(w.data, start, end)
 	if sliceStart > sliceEnd {
