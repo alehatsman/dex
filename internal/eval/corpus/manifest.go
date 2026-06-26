@@ -68,6 +68,12 @@ type RepoSpec struct {
 	// share. Independent of QuerySets/TraceSets; graph-indexed --graph=only.
 	Skew bool `yaml:"skew"`
 
+	// LSPRecall opts the repo into the tree-sitter-vs-LSP recall gate
+	// (`dex bench lsp`, #604 Phase 2). Requires trace_sets for the probe
+	// definitions and a supported LSP server on PATH. GPU-free: graph-indexed
+	// with --graph=only, same as Skew.
+	LSPRecall bool `yaml:"lsp_recall"`
+
 	// Gen opts the repo into auto-generated golden sets in addition to (or
 	// instead of) curated query sets.
 	Gen GenConfig `yaml:"gen"`
@@ -126,8 +132,8 @@ func (m Manifest) Validate() error {
 		if len(r.Languages) == 0 {
 			return fmt.Errorf("%s: at least one language required", where)
 		}
-		if len(r.QuerySets) == 0 && !r.Gen.GitHistory.Enabled && !r.Gen.BlastRadius.Enabled && !r.Gen.Structural.Enabled && !r.Skew {
-			return fmt.Errorf("%s: no eval source (add a query_set, enable a gen flavor, or set skew: true)", where)
+		if len(r.QuerySets) == 0 && !r.Gen.GitHistory.Enabled && !r.Gen.BlastRadius.Enabled && !r.Gen.Structural.Enabled && !r.Skew && !r.LSPRecall {
+			return fmt.Errorf("%s: no eval source (add a query_set, enable a gen flavor, or set skew/lsp_recall: true)", where)
 		}
 	}
 	return nil

@@ -29,7 +29,7 @@ Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexin
 
 func runBench(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(os.Stderr, "Usage: dex bench <subcommand> [flags]\n\nSubcommands:\n  locomo    LoCoMo memory-recall benchmark\n  eval      offline code-retrieval eval (this repo's git history)\n  corpus    multi-repo retrieval eval (pinned real repos)\n  compress  offline compression benchmark (ratio/anchor%/fidelity)\n  perf      local-compute pipeline performance benchmark\n  nav       navigation cost: calls+tokens to first gold-file touch\n  trace     cross-language trace-precision eval (callers/callees vs gold)\n  skew      cross-language centrality skew (pagerank share vs node share)\n  cochange  blast-radius co-change structural-coverage ceiling (graph reachability)")
+		fmt.Fprintln(os.Stderr, "Usage: dex bench <subcommand> [flags]\n\nSubcommands:\n  locomo    LoCoMo memory-recall benchmark\n  eval      offline code-retrieval eval (this repo's git history)\n  corpus    multi-repo retrieval eval (pinned real repos)\n  compress  offline compression benchmark (ratio/anchor%/fidelity)\n  perf      local-compute pipeline performance benchmark\n  nav       navigation cost: calls+tokens to first gold-file touch\n  trace     cross-language trace-precision eval (callers/callees vs gold)\n  skew      cross-language centrality skew (pagerank share vs node share)\n  cochange  blast-radius co-change structural-coverage ceiling (graph reachability)\n  lsp       tree-sitter-vs-LSP recall gate (#604 Phase 2)")
 		return flag.ErrHelp
 	}
 	sub := args[0]
@@ -53,6 +53,8 @@ func runBench(ctx context.Context, args []string) error {
 		return runBenchSkew(ctx, rest)
 	case "cochange":
 		return runBenchCochange(ctx, rest)
+	case "lsp":
+		return runBenchLSP(ctx, rest)
 	default:
 		return fmt.Errorf("dex bench: unknown subcommand %q", sub)
 	}

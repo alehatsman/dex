@@ -66,6 +66,7 @@ repos:
     languages: [ts]
     query_sets: [queries/zod.json]
     trace_sets: [../trace/zod-ts.json]
+    lsp_recall: true   # #604 Phase-2 gate: typescript-language-server required
     gen:
       git_history:  { enabled: true, max_commits: 500, max_files: 5 }
       blast_radius: { enabled: true, max_commits: 500, max_files: 5 }
