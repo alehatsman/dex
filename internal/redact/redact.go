@@ -65,6 +65,34 @@ var rules = []rule{
 		repl: "[REDACTED:Stripe key]",
 	},
 	{
+		// OpenAI / Anthropic API keys — the most dangerous to leak (the model's
+		// own credential). Word-boundary-anchored so it can't eat the tail of a
+		// hyphenated word like "task-management-…".
+		name: "AI provider key",
+		re:   regexp.MustCompile(`\bsk-(?:proj-)?[A-Za-z0-9_\-]{20,}`),
+		repl: "[REDACTED:AI provider key]",
+	},
+	{
+		name: "GitHub fine-grained PAT",
+		re:   regexp.MustCompile(`github_pat_[A-Za-z0-9_]{82}`),
+		repl: "[REDACTED:GitHub token]",
+	},
+	{
+		name: "GitLab token",
+		re:   regexp.MustCompile(`glpat-[A-Za-z0-9_\-]{20,}`),
+		repl: "[REDACTED:GitLab token]",
+	},
+	{
+		name: "SendGrid key",
+		re:   regexp.MustCompile(`SG\.[A-Za-z0-9_\-]{22,}\.[A-Za-z0-9_\-]{16,}`),
+		repl: "[REDACTED:SendGrid key]",
+	},
+	{
+		name: "AWS STS key",
+		re:   regexp.MustCompile(`ASIA[0-9A-Z]{16}`),
+		repl: "[REDACTED:AWS STS key]",
+	},
+	{
 		// Matches key=<32+char secret>, token=<secret>, etc.
 		name: "Generic long secret",
 		re:   regexp.MustCompile(`(?i)((?:key|token|secret|credential|auth)\s*[=:]\s*['"]?)[a-zA-Z0-9+/=\-_]{32,}['"]?`),

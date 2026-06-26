@@ -46,6 +46,11 @@ func TestMask_KeysAndTokens(t *testing.T) {
 	slack := "xox" + "b-1234567890-abcdefghijklmnop"
 	google := "AIza" + strings.Repeat("b", 35)
 	stripe := "sk_" + "live_abcdefghij1234567890ABCD"
+	openai := "sk-" + strings.Repeat("a", 24)
+	ghPat := "github_" + "pat_" + strings.Repeat("A", 82)
+	gitlab := "glpat-" + strings.Repeat("z", 22)
+	sendgrid := "SG." + strings.Repeat("a", 24) + "." + strings.Repeat("b", 20)
+	awsSTS := "ASIA" + "0123456789ABCDEF"
 
 	cases := []struct{ name, in, hidden string }{
 		// The modern ssh-keygen default — previously leaked (only RSA was masked).
@@ -55,6 +60,11 @@ func TestMask_KeysAndTokens(t *testing.T) {
 		{"slack bot", "SLACK=" + slack, slack},
 		{"google api", "GOOGLE_API_KEY=" + google, google},
 		{"stripe", "key " + stripe, stripe},
+		{"openai/anthropic", "OPENAI_API_KEY=" + openai, openai},
+		{"github fine-grained pat", "token " + ghPat, ghPat},
+		{"gitlab", "GITLAB_TOKEN=" + gitlab, gitlab},
+		{"sendgrid", "SENDGRID=" + sendgrid, sendgrid},
+		{"aws sts", "creds " + awsSTS + " here", awsSTS},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -70,8 +80,16 @@ func TestMask_KeysAndTokens(t *testing.T) {
 }
 
 func TestMask_NoFalsePositive(t *testing.T) {
-	clean := "the quick brown fox ran 12 miles to file.go:42"
-	if got := Mask(clean); got != clean {
-		t.Errorf("clean text altered: %q -> %q", clean, got)
+	clean := []string{
+		"the quick brown fox ran 12 miles to file.go:42",
+		// The AI-provider rule is word-boundary-anchored, so a hyphenated word
+		// that happens to contain "sk-" (ta|sk-) must survive untouched.
+		"run the task-management-system-deployment-pipeline-config now",
+		"refactor the disk-usage-monitor-service-handler module",
+	}
+	for _, c := range clean {
+		if got := Mask(c); got != c {
+			t.Errorf("clean text altered: %q -> %q", c, got)
+		}
 	}
 }

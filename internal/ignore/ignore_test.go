@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -305,12 +306,33 @@ func TestLooksLikeSecret(t *testing.T) {
 		// Should NOT trigger: prefix lookalikes
 		{"sk-but-short", false},
 		{"BEGINPRIVATE KEY but not a real header", false},
+		// Regression (#660): the un-anchored "sk-" rule matched mid-word, so a
+		// hyphenated identifier (ta·sk-, di·sk-, ri·sk-) was flagged as a secret
+		// and the whole file over-skipped from the index. Word-anchored now.
+		{"deploy the task-management-system-deployment-pipeline-config", false},
+		{"the disk-usage-monitor-service-handler-module lives here", false},
+		// A real OpenAI/Anthropic key (at a word boundary) still detected.
+		{"OPENAI_API_KEY=sk-proj-" + repeat("a", 30), true},
 	}
 	for _, c := range cases {
 		got := LooksLikeSecret([]byte(c.blob))
 		if got != c.hit {
 			t.Errorf("LooksLikeSecret(%q) = %v, want %v", trim(c.blob), got, c.hit)
 		}
+	}
+}
+
+// TestRedactSecretTokens_WordBoundary guards the shell-output redaction path
+// (compress.RedactSecrets → ignore.RedactSecretTokens): a hyphenated word must
+// survive byte-for-byte, while a real key is masked (#660).
+func TestRedactSecretTokens_WordBoundary(t *testing.T) {
+	clean := "run the task-management-system-deployment-pipeline now"
+	if got := RedactSecretTokens(clean); got != clean {
+		t.Errorf("hyphenated word mangled: %q -> %q", clean, got)
+	}
+	secret := "key sk-proj-" + repeat("z", 30)
+	if got := RedactSecretTokens(secret); strings.Contains(got, "sk-proj-"+repeat("z", 30)) {
+		t.Errorf("real key survived redaction: %q -> %q", secret, got)
 	}
 }
 

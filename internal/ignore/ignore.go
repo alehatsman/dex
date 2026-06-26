@@ -406,7 +406,7 @@ var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`ghp_[A-Za-z0-9]{36}`),                    // GitHub PAT (classic)
 	regexp.MustCompile(`github_pat_[A-Za-z0-9_]{82}`),            // GitHub fine-grained PAT
 	regexp.MustCompile(`xox[abps]-[A-Za-z0-9-]{10,}`),            // Slack token
-	regexp.MustCompile(`sk-(?:proj-)?[A-Za-z0-9_-]{20,}`),        // OpenAI/Anthropic-style API key
+	regexp.MustCompile(`\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}`),      // OpenAI/Anthropic-style API key (word-anchored: "sk-" recurs mid-word in task-/disk-/risk-…)
 	regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`),                  // Google API key
 	regexp.MustCompile(`sk_live_[0-9a-zA-Z]{24,}`),               // Stripe live secret key
 	regexp.MustCompile(`rk_live_[0-9a-zA-Z]{24,}`),               // Stripe restricted key
