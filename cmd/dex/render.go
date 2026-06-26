@@ -340,6 +340,7 @@ func printContextText(out mcp.ContextOutput, maxBytes int, answerHandled bool) {
 	printAnnotations(out.Annotations)
 	printSemanticHits(out.SemanticHits)
 	printGraph(out.Graph)
+	printRelatedFiles(out.RelatedFiles)
 	printNextActionAndAvoid(out)
 }
 
@@ -407,6 +408,17 @@ func printSymbols(symbols []mcp.SymbolHit) {
 				fmt.Printf("      doc: %s\n", line)
 			}
 		}
+	}
+	fmt.Println()
+}
+
+func printRelatedFiles(paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	fmt.Println("Related files:")
+	for _, p := range paths {
+		fmt.Printf("  %s\n", p)
 	}
 	fmt.Println()
 }
