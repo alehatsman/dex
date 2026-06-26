@@ -191,6 +191,15 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	return nil
 }
 
+// listFacts returns the notes whose scope binds `scope` when it is set (#653) —
+// what would surface on touching that path — otherwise the top-k by salience.
+func listFacts(ctx context.Context, st *store.Store, scope string, k int) ([]store.KnowledgeFact, error) {
+	if scope != "" {
+		return st.KnowledgeByScope(ctx, scope, k)
+	}
+	return st.KnowledgeQuery(ctx, k)
+}
+
 func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("notes query", flag.ContinueOnError)
 	setHelp(fs,
@@ -200,6 +209,7 @@ func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 		`dex notes query --k 20 --format json`,
 	)
 	k := fs.Int("k", 10, "max facts to return (1–50)")
+	scope := fs.String("scope", "", "filter to notes whose scope binds this path (what surfaces on touching it, #653)")
 	format := fs.String("format", "text", "output format: text|json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -214,7 +224,7 @@ func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	facts, err := st.KnowledgeQuery(ctx, *k)
+	facts, err := listFacts(ctx, st, *scope, *k)
 	if err != nil {
 		return err
 	}
@@ -228,7 +238,11 @@ func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 		return nil
 	}
 	for _, f := range facts {
-		fmt.Printf("#%-4d [%-12s] conf=%.2f hits=%d  %s\n", f.ID, f.Archetype, f.Confidence, f.HitCount, f.Body)
+		scopeTag := ""
+		if f.Scope != "" {
+			scopeTag = fmt.Sprintf(" {scope:%s}", f.Scope)
+		}
+		fmt.Printf("#%-4d [%-12s] conf=%.2f hits=%d  %s%s\n", f.ID, f.Archetype, f.Confidence, f.HitCount, f.Body, scopeTag)
 	}
 	return nil
 }

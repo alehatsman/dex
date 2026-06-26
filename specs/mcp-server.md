@@ -149,7 +149,9 @@ service clients are the http-api spec's.
   the fact to a file glob / path / package — `internal/mcp/*_test.go`,
   `internal/store` — so `locate` surfaces it proactively when it touches a
   matching file, "gotcha-on-touch", #645),
-  `action=list` (top-k by salience), `action=delete` (by id). Archetypes:
+  `action=list` (top-k by salience; pass `scope=<path>` to instead return the
+  notes whose scope binds that path — what would surface on touching it, #653),
+  `action=delete` (by id). Archetypes:
   Architecture | Gotcha | Convention | Decision | Observation | Dependency |
   Pattern | Fact. High-salience facts are injected into `ask` responses as
   `knowledge_facts`. No embedding required.

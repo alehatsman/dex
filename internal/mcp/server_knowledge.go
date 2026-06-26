@@ -23,7 +23,7 @@ type KnowledgeInput struct {
 	ID          int64   `json:"id,omitempty"           jsonschema:"fact id for delete action"`
 	K           int     `json:"k,omitempty"            jsonschema:"max facts to return for list (default 10)"`
 	Query       string  `json:"query,omitempty"        jsonschema:"for list: a task/question to recall the most relevant facts for (semantic). Empty = top facts by salience."`
-	Scope       string  `json:"scope,omitempty"        jsonschema:"for add: bind this fact to a file glob / path / package (e.g. 'internal/mcp/*_test.go' or 'internal/store') so file verbs (locate) surface it proactively when they touch a matching path (#645). Empty = unscoped."`
+	Scope       string  `json:"scope,omitempty"        jsonschema:"for add: bind this fact to a file glob / path / package (e.g. 'internal/mcp/*_test.go' or 'internal/store') so file verbs (locate/review/read) surface it proactively when they touch a matching path (#645). For list: a path to filter by — returns only notes whose scope binds it, i.e. what would surface on touching it (#653). Empty = unscoped / unfiltered."`
 }
 
 type KnowledgeFactOutput struct {
@@ -35,6 +35,9 @@ type KnowledgeFactOutput struct {
 	RevisionCount int     `json:"revision_count,omitempty"`
 	Salience      float64 `json:"salience"`
 	UpdatedAt     string  `json:"updated_at"`
+	// Scope is the file glob/path/package this note is bound to (#645); set on
+	// scope-filtered list (#653), empty for an unscoped note.
+	Scope string `json:"scope,omitempty"`
 }
 
 type KnowledgeOutput struct {
@@ -137,6 +140,21 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | export | import | consolidate | gc", in.Action)}, nil
 	}
 
+	// Scope-filtered list (#653): notes whose scope binds the given path — what
+	// would proactively surface on touching it — without opening a file. Takes
+	// precedence over the semantic Query lane when set.
+	if in.Scope != "" {
+		facts, err := st.KnowledgeByScope(ctx, in.Scope, in.K)
+		if err != nil {
+			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+		}
+		out := KnowledgeOutput{Status: "ok"}
+		for _, f := range facts {
+			out.Facts = append(out.Facts, knowledgeFactOut(f))
+		}
+		return nil, out, nil
+	}
+
 	facts, err := s.recallFacts(ctx, st, in.Query, in.K, false)
 	if err != nil {
 		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
@@ -160,6 +178,7 @@ func knowledgeFactOut(f store.KnowledgeFact) KnowledgeFactOutput {
 		RevisionCount: f.RevisionCount,
 		Salience:      f.Salience,
 		UpdatedAt:     f.UpdatedAt.Format("2006-01-02 15:04:05"),
+		Scope:         f.Scope,
 	}
 }
 
