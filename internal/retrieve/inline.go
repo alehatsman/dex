@@ -73,14 +73,15 @@ func InlineCapsFor(intent string) InlineCaps {
 // isTest classifies a path as test source — injected by the transport,
 // which owns path classification.
 func InlineContent(projectRoot, intent string, reads []SuggestedRead, syms []SymHit, sem []SemHit, isTest func(string) bool) {
-	InlineContentKeyed(projectRoot, intent, reads, syms, sem, nil, isTest)
+	InlineContentKeyed(projectRoot, intent, reads, syms, sem, nil, isTest, nil)
 }
 
 // InlineContentKeyed is InlineContent with the query keywords the assemble
 // intent (#687) needs for submodular symbol selection. keywords is ignored for
-// every other intent. InlineContent is the keyword-free shim for callers that
-// don't assemble.
-func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms []SymHit, sem []SemHit, keywords []string, isTest func(string) bool) {
+// every other intent. isNonImpl (also assemble-only) demotes non-implementation
+// symbols within the coverage ordering. InlineContent is the keyword-free shim
+// for callers that don't assemble.
+func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms []SymHit, sem []SemHit, keywords []string, isTest func(string) bool, isNonImpl func(string) bool) {
 	in := &inliner{
 		projectRoot: projectRoot,
 		intent:      intent,
@@ -98,17 +99,20 @@ func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms 
 		// Inline symbol bodies in submodular keyword-coverage order: the
 		// remaining byte budget then naturally selects the non-redundant subset
 		// that covers the most of the query per byte (#687).
-		in.fillSymbolBodiesOrdered(syms, coverageOrder(syms, keywords))
+		in.fillSymbolBodiesOrdered(syms, coverageOrder(syms, keywords, isNonImpl))
 	}
 	in.fillSemanticHits(sem)
 }
 
 // coverageOrder ranks symbol indices by submodular max-coverage of the query
 // keywords over each symbol's name + signature. Cost is the symbol's line span
-// (a fetch-free proxy for body size). With no keywords it falls back to natural
-// order so assemble still inlines bodies. Budget 0 = order all covering symbols;
-// the byte cap downstream does the real cut.
-func coverageOrder(syms []SymHit, keywords []string) []int {
+// (a fetch-free proxy for body size); when isNonImpl reports a symbol's path as
+// non-implementation (test/fixture, docs, build config) its cost is inflated so
+// a real implementation with equal coverage is picked first and leads the
+// assembled set (#723). With no keywords it falls back to natural order so
+// assemble still inlines bodies. Budget 0 = order all covering symbols; the
+// byte cap downstream does the real cut.
+func coverageOrder(syms []SymHit, keywords []string, isNonImpl func(string) bool) []int {
 	if len(keywords) == 0 {
 		order := make([]int, len(syms))
 		for i := range syms {
@@ -132,6 +136,12 @@ func coverageOrder(syms []SymHit, keywords []string) []int {
 		cost := syms[i].EndLine - syms[i].StartLine + 1
 		if cost < 1 {
 			cost = 1
+		}
+		if isNonImpl != nil && isNonImpl(syms[i].Path) {
+			// Demote non-implementation symbols (tests/fixtures, docs,
+			// build config) so a real implementation with equal coverage
+			// is picked first.
+			cost *= 4
 		}
 		items[i] = Coverable{Keys: keys, Cost: cost}
 	}

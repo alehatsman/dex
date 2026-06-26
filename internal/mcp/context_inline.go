@@ -15,7 +15,7 @@ func inlineContent(projectRoot, intent string, reads []SuggestedRead, syms []Sym
 	nSyms := toNeutralSyms(syms)
 	nSem := toNeutralSems(sem)
 
-	retrieve.InlineContentKeyed(projectRoot, intent, nReads, nSyms, nSem, keywords, isTestPath)
+	retrieve.InlineContentKeyed(projectRoot, intent, nReads, nSyms, nSem, keywords, isTestPath, isNonImplPath)
 
 	for i := range reads {
 		reads[i].Content = nReads[i].Content

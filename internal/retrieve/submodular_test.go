@@ -52,7 +52,7 @@ func TestCoverageOrder_RanksByKeywordCoverage(t *testing.T) {
 		{QualifiedName: "pkg.ParseConfig", Signature: "func ParseConfig()", StartLine: 1, EndLine: 5}, // 1: covers parse,config cheaply
 		{QualifiedName: "pkg.Config", StartLine: 1, EndLine: 50},                                      // 2: covers config, expensive
 	}
-	order := coverageOrder(syms, []string{"parse", "config"})
+	order := coverageOrder(syms, []string{"parse", "config"}, nil)
 	if len(order) == 0 || order[0] != 1 {
 		t.Fatalf("expected the cheap two-keyword cover (idx 1) first, got %v", order)
 	}
@@ -66,7 +66,7 @@ func TestCoverageOrder_RanksByKeywordCoverage(t *testing.T) {
 
 func TestCoverageOrder_NoKeywordsIsNaturalOrder(t *testing.T) {
 	syms := []SymHit{{QualifiedName: "A"}, {QualifiedName: "B"}, {QualifiedName: "C"}}
-	got := coverageOrder(syms, nil)
+	got := coverageOrder(syms, nil, nil)
 	if !reflect.DeepEqual(got, []int{0, 1, 2}) {
 		t.Fatalf("no keywords should give natural order, got %v", got)
 	}

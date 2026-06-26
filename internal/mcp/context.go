@@ -28,6 +28,12 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// assembleMaxExpand bounds how many call-graph neighbors ExpandAssemblePool
+// (#723, lever A) adds to an assemble working set. The downstream byte cap
+// does the real cut; this just keeps a hub node's fan-out from flooding the
+// symbol list with low-relevance neighbors.
+const assembleMaxExpand = 24
+
 // ─── tool: ask ────────────────────────────────────────────────────────────
 
 type ContextInput struct {
@@ -400,7 +406,8 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	enrichGraph(&out, intent, graphView, out.SemanticHits, out.Symbols)
 	out.SuggestedReads = pickSuggestedReads(intent, out.SemanticHits, out.Symbols, symbolPaths, graphView)
 	if !in.NoInline {
-		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits, candidates.Identifiers)
+		keywords := assembleInlinePrep(intent, graphView, &out, candidates.Identifiers, in.Question)
+		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits, keywords)
 		out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
 	}
 	(&Enricher{projectRoot: p.Root, Store: st, Spread: st}).Enrich(ctx, intent, k, &out)
