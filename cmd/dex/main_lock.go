@@ -23,7 +23,19 @@ func acquireProjectLock(ctx context.Context, p *proj.Project, cmdName, phase str
 		Started: time.Now(),
 	}
 	if breakLock {
-		return lock.Steal(p.LockPath, h)
+		l, err := lock.Steal(p.LockPath, h)
+		if err == nil {
+			return l, nil
+		}
+		if !errors.Is(err, lock.ErrLocked) {
+			return nil, err
+		}
+		// A live holder is not broken — that would flock a fresh inode and leave
+		// two indexers writing the same store (#667). Say so and exit cleanly.
+		holder, _ := lock.ReadHolder(p.LockPath)
+		fmt.Fprintf(os.Stderr, "another dex indexer is still running on %s%s\n", p.Root, describeHolder(holder))
+		fmt.Fprintln(os.Stderr, "  --break-lock clears only a stale lock; a live holder is not broken — stop it first")
+		return nil, nil
 	}
 	if wait {
 		return lock.AcquireWait(ctx, p.LockPath, h)

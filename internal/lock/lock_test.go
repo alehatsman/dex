@@ -153,20 +153,17 @@ func TestStealRefusesLiveHolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer l.Release()
-	// Steal removes the file under our feet, then tries to Acquire. The
-	// existing holder's flock survives because the kernel keeps the
-	// inode alive; the freshly-created file has its own inode/flock, so
-	// Steal "wins" here. This is documented: Steal is meant for stale
-	// fds, not live holders. We assert the outcome rather than ErrLocked.
+	// A live holder must NOT be stealable: force-breaking it would flock a fresh
+	// inode and leave two concurrent holders writing the same store (#667). Steal
+	// declines with ErrLocked, exactly like Acquire.
 	stolen, err := Steal(path, Holder{PID: 1})
 	if err == nil {
-		defer stolen.Release()
+		stolen.Release()
+		t.Fatal("Steal broke a live holder — two concurrent holders, store-corruption risk (#667)")
 	}
-	// Either outcome is acceptable; the contract is that we don't panic
-	// or corrupt state. Verify the original holder's lock still blocks
-	// fresh Acquires on its (now-orphaned) inode is N/A; only the new
-	// path matters for new callers, so just exercise the code path.
-	_ = err
+	if !errors.Is(err, ErrLocked) {
+		t.Errorf("Steal of a live holder = %v, want ErrLocked", err)
+	}
 }
 
 func TestAcquireWaitBlocksUntilRelease(t *testing.T) {

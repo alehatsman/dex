@@ -100,18 +100,20 @@ func AcquireWait(ctx context.Context, path string, h Holder) (*Lock, error) {
 	}
 }
 
-// Steal forcibly takes the lock by removing the existing lock file
-// and acquiring fresh. Use only when the operator confirms the
-// previous holder is gone (a leaked fd in a daemon, for example). A
-// live flock cannot be broken by another process — if the holder is
-// still running, Steal returns ErrLocked just like Acquire.
+// Steal reclaims a lock whose previous holder is gone — a crash or kill that
+// left a stale lock file behind. It does NOT break a live holder: when a
+// process still holds the flock, Steal returns ErrLocked just like Acquire.
 //
-// Removing the file is safe under flock: the kernel keeps the inode
-// alive for the holder; the next Acquire creates a fresh inode.
+// It is a plain Acquire on purpose. A dead holder's flock is released by the
+// kernel when the process exits (even on SIGKILL), so Acquire reclaims the
+// stale file directly and overwrites its holder JSON — no removal needed. A
+// LIVE holder's flock blocks Acquire, and must NOT be forced: removing the file
+// and re-acquiring would flock a FRESH inode while the old holder keeps its
+// flock on the now-unlinked inode, yielding two concurrent holders writing the
+// same store → corruption (#667). To reclaim a flock held by a misbehaving but
+// live process (e.g. a leaked fd), stop that process first — its flock releases
+// and the next Acquire/Steal succeeds.
 func Steal(path string, h Holder) (*Lock, error) {
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("remove stale lock: %w", err)
-	}
 	return Acquire(path, h)
 }
 
