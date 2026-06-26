@@ -50,6 +50,7 @@ Grouped by role (all optional; defaults shown where notable).
 
 **Tool surface**
 - `DEX_EXPERT=1` — expose the graph/analysis power lane over MCP
+- `DEX_VERIFY_CMD` — test command template for `dex verify`; `{{packages}}` is replaced with the resolved Go package list (default `go test {{packages}}`). Set this when the project needs build tags or extra flags, e.g. `go test -tags sqlite_fts5 {{packages}}`. Can also be set per-project via `.dex/config.yml` `env:` block.
 - `DEX_DESCRIPTION_MODE` — tool-description verbosity (`full`|`terse`|`lazy`; default `terse`). Compact descriptions cut the per-turn token cost of the tools array; set `full` to opt out. Forced to `full` when `ENABLE_TOOL_SEARCH` is active (tool-search needs full docs to pick tools).
 - `DEX_MCP_AUTOWATCH`, `DEX_WATCH_DEBOUNCE` — lazy per-session file watcher
 

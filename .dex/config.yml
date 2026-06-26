@@ -11,3 +11,6 @@ index:
     - internal/testdata/
     - benchmark/
     - data/
+
+env:
+  DEX_VERIFY_CMD: "go test -tags sqlite_fts5 {{packages}}"
