@@ -169,6 +169,11 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "cohort", group: groupQuery, args: "[<path>] <interface>",
+		summary: "types that must change in lockstep with an interface",
+		flags:   []flagSpec{flagFormat},
+	},
+	{
 		name: "refactor", group: groupQuery, args: "[<path>] <symbol> <to>",
 		summary: "plan a type-precise rename (edit triples; never writes)",
 		flags: []flagSpec{

@@ -52,6 +52,11 @@ func (p projectScoped) refactor(ctx context.Context, req *sdk.CallToolRequest, i
 	return p.s.refactor(ctx, req, in)
 }
 
+func (p projectScoped) cohort(ctx context.Context, req *sdk.CallToolRequest, in CohortInput) (*sdk.CallToolResult, CohortOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.cohort(ctx, req, in)
+}
+
 func (p projectScoped) search(ctx context.Context, req *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.search(ctx, req, in)

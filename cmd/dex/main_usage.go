@@ -34,6 +34,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex locate [<path>] <sym|path:line>    one-call orientation: callers, tests, doc, blame, notes
   dex review [<path>]                    per-hunk PR intelligence — --ref|--branch|--pr
   dex refactor [<path>] <symbol> <to>    plan a type-precise rename (edit triples; never writes)
+  dex cohort [<path>] <interface>        types that must change in lockstep with an interface
   dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
   dex grep   [<path>] <pattern>          exact RE2 regex search
   dex ls     [<path>]                    indexed file tree + chunk counts
@@ -89,6 +90,7 @@ query (the CLI verbs share the MCP tool names, #354/#427):
     dex locate [<path>] <target>  one-call orientation (MCP: locate)
     dex review [<path>]           per-hunk PR intelligence (MCP: review)
     dex refactor [<path>] <s> <t> plan a type-precise rename (MCP: refactor)
+    dex cohort [<path>] <iface>   interface lockstep set (MCP: cohort)
     (map / read / ask are already top-level — see below)
 
   dex ask [<path>] <q...>            one-shot router (MCP: ask). Picks intent,

@@ -665,6 +665,7 @@ type toolSurface interface {
 	locate(context.Context, *sdk.CallToolRequest, LocateInput) (*sdk.CallToolResult, LocateOutput, error)
 	review(context.Context, *sdk.CallToolRequest, ReviewInput) (*sdk.CallToolResult, ReviewOutput, error)
 	refactor(context.Context, *sdk.CallToolRequest, RefactorInput) (*sdk.CallToolResult, RefactorOutput, error)
+	cohort(context.Context, *sdk.CallToolRequest, CohortInput) (*sdk.CallToolResult, CohortOutput, error)
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
 	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
 	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
@@ -887,6 +888,20 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
 					"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
 			}, h.smells)
+
+			// cohort (#643): blast radius of an intent. Given an interface, list
+			// the types you must edit in lockstep when its method set changes —
+			// complete implementors plus near-misses (the backend you forgot).
+			addTool(srv, &sdk.Tool{
+				Name:        "cohort",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Find the types that must change together with an interface. Given an `interface` " +
+					"name (bare 'toolSurface' or pkg-qualified 'mcp.toolSurface'), returns every type that " +
+					"implements it ('complete') plus near-misses that implement most of it but are missing methods " +
+					"('partial' — the backend you forgot to update), each with its declaration file:line and the " +
+					"missing method names. Pure go/types — no index needed; Go-only (returns 'unsupported-language' " +
+					"otherwise). Reach for it before adding/removing an interface method to plan the lockstep edit."),
+			}, h.cohort)
 			// `path` is not a standalone tool — `trace --dir path --to <dst>`
 			// finds the shortest route between two symbols (#575).
 

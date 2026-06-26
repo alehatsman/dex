@@ -29,7 +29,7 @@ it; see the README or `dex help all`.
 | `ls`     | File-tree listing | always |
 | `shell`  | Run a command, return compressed output | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask` | always |
-| `deps` `diff` `clusters` `routes` `smells` `session` | Graph/analysis power lane | graph |
+| `deps` `diff` `clusters` `routes` `smells` `cohort` `session` | Graph/analysis power lane | graph (`cohort`: Go toolchain) |
 
 ## Capability-derived exposure
 
@@ -40,7 +40,7 @@ matches the deployment:
 - **Default verbs** (non-weak model): add `map`, `trace`, `impact`, `locate`, `review`, `refactor`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
-- **Power lane** (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`,
+- **Power lane** (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`, `cohort`,
   `session`): behind `DEX_EXPERT=1`, to keep the everyday agent tool list small.
   Call-graph walks (callers/callees/shortest path) are not standalone tools —
   `trace --dir callers|callees|path` is the single entry point. (On the CLI

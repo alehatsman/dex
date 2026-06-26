@@ -50,7 +50,7 @@ tool interface for Claude is the mcp-server spec's.
 - WHEN a client queries a project, the per-project routes are flat and share the
   MCP tool names: `POST .../ask`, `.../map`, `.../trace`, `.../find`,
   `.../lookup`, `.../grep`, `.../read`, `.../ls`, `.../deps`, `.../callers`,
-  `.../callees`, `.../impact`, `.../locate`, `.../review`, `.../refactor`, `.../routes`,
+  `.../callees`, `.../impact`, `.../locate`, `.../review`, `.../refactor`, `.../cohort`, `.../routes`,
   `.../smells`, `.../path`, `.../diff`, `.../clusters`, `.../notes`,
   `.../session`, plus `GET .../graph/packages` and the global `POST /v1/shell`.
 - WHERE `DEX_EXPERT` trims the **stdio** MCP surface to the default verbs, the
@@ -98,7 +98,7 @@ tool interface for Claude is the mcp-server spec's.
 - [x] Bearer auth (`DEX_SERVE_TOKEN`), constant-time; 401 on missing/bad token
 - [x] No-token + non-loopback bind refused at startup
 - [x] Unauthenticated `healthz`/`version`; authed projects/status/per-project tool routes
-- [x] Per-project routes share the MCP tool names, flat (ask/map/trace/find/lookup/grep/read/ls/deps/callers/callees/impact/locate/review/refactor/routes/smells/path/diff/clusters/notes/session + graph/packages + global shell); structured status in body
+- [x] Per-project routes share the MCP tool names, flat (ask/map/trace/find/lookup/grep/read/ls/deps/callers/callees/impact/locate/review/refactor/cohort/routes/smells/path/diff/clusters/notes/session + graph/packages + global shell); structured status in body
 - [x] `DEX_EXPERT` trims only the stdio MCP surface; the REST route set is always full (#427)
 - [x] Body size cap, access log, panic→500, bounded graceful shutdown
 - [x] Eager per-project watcher at startup (idempotent with lazy path)

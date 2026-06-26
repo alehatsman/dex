@@ -70,7 +70,7 @@ service clients are the http-api spec's.
     `read mode=summary` (the LLM digest) needs a chat model; when none is wired
     it returns `status=needs-chat` rather than being hidden.
   - The power lane (`lookup`, `deps`, `callers`, `callees`, `path`, `diff`,
-    `clusters`, `routes`, `smells`, `status`, `session`) is gated behind
+    `clusters`, `routes`, `smells`, `cohort`, `status`, `session`) is gated behind
     `DEX_EXPERT` — the default verbs above cover everyday work, so the stdio
     surface stays small unless an operator opts into the full set.
   - WHEN a weak/local model is detected, the full surface is hidden and only the
@@ -78,7 +78,7 @@ service clients are the http-api spec's.
   This yields a flat, prefix-free surface: the default
   `ask`, `find`, `map`, `trace`, `impact`, `locate`, `review`, `refactor`, `read`, `grep`,
   `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `callers`,
-  `callees`, `path`, `diff`, `clusters`, `routes`, `smells`, `status`,
+  `callees`, `path`, `diff`, `clusters`, `routes`, `smells`, `cohort`, `status`,
   `session`.
 - WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing
   (`path:line`) prose answer grounded in the evidence bundle; WHEN the chat leg

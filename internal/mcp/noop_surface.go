@@ -32,6 +32,9 @@ func (n *noopSurface) review(_ context.Context, _ *sdk.CallToolRequest, _ Review
 func (n *noopSurface) refactor(_ context.Context, _ *sdk.CallToolRequest, _ RefactorInput) (*sdk.CallToolResult, RefactorOutput, error) {
 	return nil, RefactorOutput{}, n.err()
 }
+func (n *noopSurface) cohort(_ context.Context, _ *sdk.CallToolRequest, _ CohortInput) (*sdk.CallToolResult, CohortOutput, error) {
+	return nil, CohortOutput{}, n.err()
+}
 func (n *noopSurface) search(_ context.Context, _ *sdk.CallToolRequest, _ SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	return nil, SearchOutput{}, n.err()
 }
