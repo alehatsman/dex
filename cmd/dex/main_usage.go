@@ -29,8 +29,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex find   [<path>] <q...>             semantic + symbol search
   dex lookup [<path>] <name>             exact identifier lookup
   dex read   <file>                      read a file — default raw (no LLM); --mode for views/summary
-  dex trace  [<path>] <name>             call graph — --dir callers|callees|path
-  dex impact [<path>] <name>             transitive blast-radius (callers, by depth)
+  dex trace  [<path>] <name>             call graph — --dir callers|callees|path|impact
   dex locate [<path>] <sym|path:line>    one-call orientation: callers, tests, doc, blame, notes
   dex review [<path>]                    per-hunk PR intelligence — --ref|--branch|--pr
   dex refactor [<path>] <symbol> <to>    plan a type-precise rename (edit triples; never writes)
@@ -85,8 +84,7 @@ quickstart:
 query (the CLI verbs share the MCP tool names, #354/#427):
     dex find   [<path>] <q...>    semantic + symbol search (MCP: find)
     dex lookup [<path>] <name>    exact identifier lookup (MCP: lookup)
-    dex trace  [<path>] <name>    call graph via --dir callers|callees|path
-    dex impact [<path>] <name>    transitive caller blast-radius
+    dex trace  [<path>] <name>    call graph via --dir callers|callees|path|impact
     dex locate [<path>] <target>  one-call orientation (MCP: locate)
     dex review [<path>]           per-hunk PR intelligence (MCP: review)
     dex refactor [<path>] <s> <t> plan a type-precise rename (MCP: refactor)

@@ -13,7 +13,7 @@ import (
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
 var instructionTools = []string{
-	"ask", "map", "find", "trace", "impact", "read", "shell", "grep",
+	"ask", "map", "find", "trace", "read", "shell", "grep",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the
@@ -28,7 +28,6 @@ var deadToolNames = []string{
 // input schema. Each MUST appear verbatim in ServerInstructions().
 var goodParamSignatures = []string{
 	"find(query, path_glob)",   // SearchInput: query + path_glob (no "path")
-	"impact(name)",             // ImpactInput.Name
 	"read(path)",               // read takes path, not "file"
 	"trace(symbol, direction)", // already correct — pin it so it stays
 }

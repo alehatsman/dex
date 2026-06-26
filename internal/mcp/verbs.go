@@ -11,7 +11,7 @@ import (
 )
 
 // The verb facade (#316 story 3): a small default tool surface — map / find /
-// trace / impact / read / ask — that everyday agents reach for, with the
+// trace / read / ask — that everyday agents reach for, with the
 // granular graph/search/analysis lanes moved behind DEX_EXPERT. The facades
 // here are thin compositions over the existing toolSurface handlers (no
 // handler rewrites): they route an input to the right underlying call and copy
@@ -165,29 +165,38 @@ func findCluster(clusters []codemap.Cluster, id int) (codemap.Cluster, bool) {
 // directions (callers/callees) and path share one symbol-name input.
 type TraceInput struct {
 	Symbol      string `json:"symbol" jsonschema:"symbol to trace: bare ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer')"`
-	Direction   string `json:"direction,omitempty" jsonschema:"'callers' (default — who calls it), 'callees' (what it calls), or 'path' (shortest call route to the 'to' symbol)"`
+	Direction   string `json:"direction,omitempty" jsonschema:"'callers' (default — who calls it), 'callees' (what it calls), 'path' (shortest call route to the 'to' symbol), or 'impact' (transitive caller blast-radius with risk tier + tests_to_run)"`
 	To          string `json:"to,omitempty" jsonschema:"destination symbol; required when direction=path"`
 	Package     string `json:"package,omitempty" jsonschema:"optional package-path filter when the same name is defined in multiple packages"`
-	MaxDepth    int    `json:"max_depth,omitempty" jsonschema:"path BFS depth limit (default 8, max 15); used only when direction=path"`
-	K           int    `json:"k,omitempty" jsonschema:"max call-edge hits to return (default 12, max 50); used for callers/callees"`
+	MaxDepth    int    `json:"max_depth,omitempty" jsonschema:"BFS depth limit: path (default 8, max 15); impact (default 3, max 5). Ignored for callers/callees"`
+	K           int    `json:"k,omitempty" jsonschema:"max hits to return: callers/callees (default 12, max 50); impact nodes per depth (default 8, max 200)"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 }
 
-// TraceOutput is the unified envelope across the three directions. The
-// call-edge directions fill Targets+Hits; path fills Src/Dst/Path. Empty
-// fields are omitted, so each direction's response stays compact.
+// TraceOutput is the unified envelope across the four directions. The
+// call-edge directions fill Targets+Hits; path fills Src/Dst/Path; impact fills
+// Nodes+MaxDepth+Total+Elided+TestsToRun. Empty fields are omitted, so each
+// direction's response stays compact.
 type TraceOutput struct {
 	Direction string        `json:"direction"`
 	Status    string        `json:"status"` // "ok" | "no-index" | "no-graph" | "not-found" | "no-path" | "error"
 	Hint      string        `json:"hint,omitempty"`
 	Project   string        `json:"project,omitempty"`
-	Targets   []TargetMatch `json:"targets,omitempty"` // callers/callees: resolved interpretations of `symbol`
+	Targets   []TargetMatch `json:"targets,omitempty"` // callers/callees/impact: resolved interpretations of `symbol`
 	Hits      []CallSite    `json:"hits"`              // callers/callees: the call-edge endpoints
 	Src       string        `json:"src,omitempty"`     // path
 	Dst       string        `json:"dst,omitempty"`     // path
 	Path      []PathHop     `json:"path,omitempty"`    // path: ordered hops
-	// Risk is set only for direction=callers: Low | Medium | High | Critical.
+	// Risk is set for direction=callers and direction=impact: Low | Medium |
+	// High | Critical.
 	Risk string `json:"risk,omitempty"`
+	// impact: the transitive caller blast-radius.
+	Nodes      []ImpactNode   `json:"nodes,omitempty"`
+	MaxDepth   int            `json:"max_depth,omitempty"`
+	Total      int            `json:"total,omitempty"`
+	Truncated  bool           `json:"truncated,omitempty"`
+	Elided     []DepthElision `json:"elided,omitempty"`
+	TestsToRun []string       `json:"tests_to_run,omitempty"`
 }
 
 // traceHandler adapts traceVerb to the SDK handler shape, capturing h.
@@ -246,7 +255,24 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 			Dst:       out.Dst,
 			Path:      out.Path,
 		}, err
+	case "impact":
+		ii := ImpactInput{Name: in.Symbol, Package: in.Package, MaxDepth: in.MaxDepth, K: in.K, ProjectRoot: in.ProjectRoot}
+		_, out, err := h.graphImpact(ctx, req, ii)
+		return nil, TraceOutput{
+			Direction:  dir,
+			Status:     out.Status,
+			Hint:       out.Hint,
+			Project:    out.Project,
+			Targets:    out.Targets,
+			Risk:       out.Risk,
+			Nodes:      out.Nodes,
+			MaxDepth:   out.MaxDepth,
+			Total:      out.Total,
+			Truncated:  out.Truncated,
+			Elided:     out.Elided,
+			TestsToRun: out.TestsToRun,
+		}, err
 	default:
-		return nil, TraceOutput{Direction: dir, Status: "error", Hint: "direction must be one of: callers, callees, path"}, nil
+		return nil, TraceOutput{Direction: dir, Status: "error", Hint: "direction must be one of: callers, callees, path, impact"}, nil
 	}
 }

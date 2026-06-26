@@ -18,8 +18,7 @@ it; see the README or `dex help all`.
 | `ask`    | One-shot router: picks intent, fuses lanes, returns `suggested_reads`, a `next_action`, and (with chat) a cited answer | always |
 | `find`   | Hybrid semantic + lexical top-k search | embedder |
 | `map`    | Deterministic repo orientation map | always |
-| `trace`  | Call graph: `--dir callers\|callees\|path` | graph |
-| `impact` | Transitive caller blast-radius | graph |
+| `trace`  | Call graph: `--dir callers\|callees\|path\|impact` (impact = transitive caller blast-radius + risk tier + `tests_to_run`) | graph |
 | `locate` | One-call orientation around `ref` (`path:line`) / `symbol` / `frame`: callers, sibling tests, nearest doc, last commit, related notes | always (callers need graph) |
 | `review` | Per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers (+ risk tier), tests, nearest doc, churn, author history, notes (+ per-file scope-bound notes, #645) | always (callers need graph) |
 | `refactor` | Plan a type-precise rename → byte-exact edit triples to apply yourself (never writes). Go-only v1 | Go toolchain |
@@ -36,7 +35,7 @@ A tool is registered only when the backend it needs is available, so the surface
 matches the deployment:
 
 - **Always on** (no models at all): `ask`, `grep`, `ls`, `shell`.
-- **Default verbs** (non-weak model): add `map`, `trace`, `impact`, `locate`, `review`, `refactor`, `read`, `notes`.
+- **Default verbs** (non-weak model): add `map`, `trace` (incl. `--dir impact`), `locate`, `review`, `refactor`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
 - **Power lane** (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`, `cohort`,
@@ -92,7 +91,7 @@ recover (e.g. run `dex index`, retry with another mode) instead of giving up.
 
 dex is **read-only by design** (#551): every tool is `readOnlyHint: true` and
 there is no edit/write/apply verb. dex locates and explains (`find`, `trace`,
-`impact`, `read`); the host agent makes the changes with its own editing tools.
+`read`); the host agent makes the changes with its own editing tools.
 The only persistence verb, `notes`, writes dex's knowledge store — never project
 files.
 

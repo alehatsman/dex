@@ -97,15 +97,14 @@ func main() {
 	case "map":
 		err = cmdMap(ctx, args)
 	// Verb front doors (#354/#427) — the CLI verbs share the MCP tool names:
-	// find / lookup / trace / impact (map / read / ask already exist above).
+	// find / lookup / trace (map / read / ask already exist above). impact folded
+	// into `trace --dir impact` (#684).
 	case "find":
 		err = cmdFind(ctx, args)
 	case "lookup":
 		err = cmdLookup(ctx, args)
 	case "trace":
 		err = cmdTrace(ctx, args)
-	case "impact":
-		err = cmdImpact(ctx, args)
 	case "review":
 		err = cmdReview(ctx, args)
 	case "locate":

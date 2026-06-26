@@ -69,6 +69,7 @@ func splitTraceArgs(args []string) (dir string, fwd []string, help bool, err err
 //	callers (default) -> dex graph callers
 //	callees           -> dex graph callees
 //	path              -> dex graph path (destination via --to or a 2nd arg)
+//	impact            -> transitive caller blast-radius (risk tier + tests_to_run)
 func cmdTrace(ctx context.Context, args []string) error {
 	dir, fwd, help, err := splitTraceArgs(args)
 	if err != nil {
@@ -79,8 +80,9 @@ func cmdTrace(ctx context.Context, args []string) error {
   dex trace [<path>] <name>                         incoming callers (default)
   dex trace [<path>] <name> --dir callees           outgoing callees
   dex trace [<path>] <src> --dir path --to <dst>    shortest call path
+  dex trace [<path>] <name> --dir impact            transitive caller blast-radius
 
-mirrors MCP `+"`trace`"+`; re-dispatches to `+"`dex graph callers|callees|path`"+`.
+mirrors MCP `+"`trace`"+`; re-dispatches to `+"`dex graph callers|callees|path`"+` and impact.
 flags after the name (-k, --package, --max-depth, --format) pass through.`)
 		return nil
 	}
@@ -91,21 +93,24 @@ flags after the name (-k, --package, --max-depth, --format) pass through.`)
 		return cmdGraphCallees(ctx, fwd)
 	case "path":
 		return cmdGraphPath(ctx, fwd)
+	case "impact":
+		return cmdImpact(ctx, fwd)
 	default:
-		return fmt.Errorf("trace: --direction must be callers, callees, or path (got %q)", dir)
+		return fmt.Errorf("trace: --direction must be callers, callees, path, or impact (got %q)", dir)
 	}
 }
 
 // cmdImpact reports the transitive blast-radius of a symbol — every function
 // reachable by following `calls` edges in the callers direction, tagged with
-// hop depth (MCP: impact). No `dex graph` subcommand covered this before.
+// hop depth. Reached via `dex trace --dir impact` (MCP: trace --dir impact);
+// it is no longer a standalone verb (#684).
 func cmdImpact(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("impact", flag.ContinueOnError)
 	setHelp(fs,
-		"Transitive blast-radius via callers (MCP: impact). Go is type-resolved; other langs name-based (tree-sitter, incomplete recall).",
-		"dex impact [flags] [<path>] <name>",
-		"dex impact NewServer",
-		"dex impact '(*Server).Run' --max-depth 4")
+		"Transitive blast-radius via callers (MCP: trace --dir impact). Go is type-resolved; other langs name-based (tree-sitter, incomplete recall).",
+		"dex trace [flags] [<path>] <name> --dir impact",
+		"dex trace NewServer --dir impact",
+		"dex trace '(*Server).Run' --dir impact --max-depth 4")
 	pkg := fs.String("package", "", "package path filter (when the same name is defined in multiple packages)")
 	maxDepth := fs.Int("max-depth", 0, "caller BFS depth (default 3, max 5)")
 	format := fs.String("format", "text", "output format: text | json")

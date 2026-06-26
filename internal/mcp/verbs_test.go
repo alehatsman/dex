@@ -16,7 +16,7 @@ var powerTools = []string{
 // they don't need an embedder or chat model, so a lean stubServer advertises
 // them regardless of DEX_EXPERT. notes joined this lane in #548 — persistent
 // memory needs no models and is useless if the agent can't write it.
-var defaultVerbs = []string{"map", "trace", "impact", "ask", "grep", "ls", "notes"}
+var defaultVerbs = []string{"map", "trace", "ask", "grep", "ls", "notes"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off
@@ -112,6 +112,16 @@ func TestTraceVerbDispatch(t *testing.T) {
 		}
 		if out.Status == "" {
 			t.Error("path routed but Status empty; handler not reached")
+		}
+	})
+
+	t.Run("impact routes", func(t *testing.T) {
+		_, out, _ := traceVerb(ctx, srv, nil, TraceInput{Symbol: "Foo", Direction: "impact"})
+		if out.Direction != "impact" {
+			t.Errorf("direction = %q, want impact", out.Direction)
+		}
+		if out.Status == "" {
+			t.Error("impact routed but Status empty; handler not reached")
 		}
 	})
 

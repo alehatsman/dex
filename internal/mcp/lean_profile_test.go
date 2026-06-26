@@ -16,16 +16,16 @@ var embedBackedTools = []string{
 }
 
 // zeroInferenceTools work with no embedder at all (ripgrep, the pre-computed
-// graph behind map/trace/impact, and the ask router which degrades to those
-// lanes). They are part of the default verb surface and must always be
-// advertised, lean or not. (Exact-symbol lookup still needs no embedder, but
-// it now lives in the DEX_EXPERT power tier, so it is not asserted here.)
+// graph behind map/trace — including trace --dir impact, and the ask router
+// which degrades to those lanes). They are part of the default verb surface and
+// must always be advertised, lean or not. (Exact-symbol lookup still needs no
+// embedder, but it now lives in the DEX_EXPERT power tier, so it is not asserted
+// here.)
 var zeroInferenceTools = []string{
 	"grep",
 	"ask",
 	"map",
 	"trace",
-	"impact",
 	"notes", // persistent memory, no embedder needed; default lane since #548
 }
 

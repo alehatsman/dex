@@ -57,8 +57,7 @@ each annotated `(MCP: <name>)` in `dex graph --help`).
 | `find`   | hybrid semantic top-k search                                        |
 | `lookup` | exact identifier lookup                                             |
 | `map`    | deterministic repo orientation map                                  |
-| `trace`  | call graph — `--dir callers\|callees\|path`                         |
-| `impact` | transitive caller blast-radius                                      |
+| `trace`  | call graph — `--dir callers\|callees\|path\|impact` (impact = transitive caller blast-radius) |
 | `locate` | one-call orientation around a `ref` (`path:line`) / `symbol` / `frame`: callers, tests, nearest doc, last commit, notes |
 | `review` | per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers + risk, tests, churn, author history, notes |
 | `refactor` | plan a type-precise rename → byte-exact edit triples you apply (never writes); Go-only v1 |
@@ -75,11 +74,12 @@ dex trace . Run --dir callers
 
 Start with `ask` — it routes the query and tells you what to read next. Every
 verb works on the CLI. As MCP tools the everyday set is `ask find map trace
-impact locate review refactor read grep ls shell notes`; the rest (`lookup deps diff
+locate review refactor read grep ls shell notes`; the rest (`lookup deps diff
 clusters routes smells cohort status budget session checkpoint`) is behind
 `DEX_EXPERT=1` to keep the agent's tool list small.
-Call-graph walks fold into `trace --dir callers|callees|path` — there are no
-standalone `callers`/`callees`/`path` MCP tools (they remain `dex graph` subs).
+Call-graph walks fold into `trace --dir callers|callees|path|impact` — there are
+no standalone `callers`/`callees`/`path`/`impact` MCP tools (callers/callees/path
+remain `dex graph` subs; impact rides `trace`).
 
 ## Config
 

@@ -41,8 +41,7 @@ Tool mapping (use these instead):
 - ask(question)            instead of free-form reasoning about code structure
 - map()                    instead of guessing layout — orient first in an unfamiliar repo
 - find(query, path_glob)   instead of Grep/rg for concept/intent searches
-- trace(symbol, direction) instead of manual cross-ref tracing (callers/callees/path)
-- impact(name)             instead of guessing an edit's blast radius
+- trace(symbol, direction) instead of manual cross-ref tracing — callers/callees/path, or direction=impact for an edit's blast radius
 - read(path)               instead of Read for large files (signatures + summaries)
 - shell(command)           instead of Bash for shell commands (compressed output)
 - grep(pattern)            instead of rg for exact regex matches
@@ -759,12 +758,15 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			Name:        "trace",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
-				"who calls it), 'callees' (what it calls), or 'path' (shortest call route to the `to` symbol). " +
+				"who calls it), 'callees' (what it calls), 'path' (shortest call route to the `to` symbol), or " +
+				"'impact' (transitive caller blast-radius up to max_depth (default 3): every reachable function with " +
+				"its hop depth + PageRank, a risk tier, and `tests_to_run` — the sibling tests of the blast-radius " +
+				"files, so change→verify is one call (#654)). " +
 				"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
 				"recall, so an empty result there is not proof of none — verify with grep. For a Go method that " +
-				"implements a project interface, callers also include the INTERFACE-dispatch call sites (calls through " +
-				"the interface value), each tagged with `via` naming the interface method — so dynamic dispatch isn't " +
-				"missed (#604). Accepts a bare name ('Foo'), " +
+				"implements a project interface, callers (and impact) also include the INTERFACE-dispatch call sites " +
+				"(calls through the interface value), each tagged with `via` naming the interface method — so dynamic " +
+				"dispatch isn't missed (#604). Accepts a bare name ('Foo'), " +
 				"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
 				"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
 		}, traceHandler(h))
@@ -791,19 +793,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			// callers|callees` is the single call-graph entry point (#575).
 		}
 
-		addTool(srv, &sdk.Tool{
-			Name:        "impact",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Transitive blast-radius analysis. Given a symbol, follows `calls` edges " +
-				"in the callers direction up to max_depth (default 3) and returns every reachable function " +
-				"with its hop depth and PageRank. Depth 1 = direct callers; depth 2 = their callers; etc. " +
-				"Use before editing a widely-called symbol to gauge the ripple. The walk follows Go " +
-				"interface dispatch too (#604): callers that reach a method through an interface it implements " +
-				"are in the blast radius and the risk tier, not just static callers. " +
-				"`tests_to_run` lists the sibling tests of the blast-radius files (the target's own test plus the " +
-				"shown callers'), so a change→verify loop is one call (#654). " +
-				"Same name resolution as `trace`. Returns 'no-graph' when calls edges haven't been indexed yet."),
-		}, h.graphImpact)
+		// impact is not a standalone tool — `trace --dir impact` is the single
+		// call-graph entry point (#684, folded like callers/callees/path #575).
 
 		// locate is in the default lane (#636 / GitHub #65 S1): one-call
 		// orientation around a code location. It composes the everyday lanes

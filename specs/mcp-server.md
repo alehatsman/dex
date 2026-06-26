@@ -49,8 +49,8 @@ service clients are the http-api spec's.
   are registered only when the backend they need is available:
   - The always-on lane (registered even with no embedder or chat model) is
     `ask`, `grep`, `ls`, and `shell`.
-  - The default verb lane (non-weak model) adds `map`, `trace`, `impact`,
-    `locate`, `review`, `refactor`, `read`, and `notes` — the everyday
+  - The default verb lane (non-weak model) adds `map`, `trace` (incl.
+    `--dir impact`), `locate`, `review`, `refactor`, `read`, and `notes` — the everyday
     navigation + reading verbs (`locate` for one-call orientation around a code
     location, `review` for per-hunk PR intelligence) plus persistent project
     memory (#548) and `refactor` for type-precise edit planning. `locate` and
@@ -80,7 +80,7 @@ service clients are the http-api spec's.
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
-  `ask`, `find`, `map`, `trace`, `impact`, `locate`, `review`, `refactor`, `read`, `grep`,
+  `ask`, `find`, `map`, `trace`, `locate`, `review`, `refactor`, `read`, `grep`,
   `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `diff`,
   `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`, `session`,
   `checkpoint`.
@@ -113,21 +113,22 @@ service clients are the http-api spec's.
   Supports `languages`, `path_glob`, and `exclude` filters.
 - WHEN `lookup` is called, dex performs a fast SQL symbol lookup (no embedding)
   and returns `not-found` when no chunk with that name exists.
-- WHEN a graph tool is called (`trace` with `--dir callers|callees|path`,
-  `impact`, `deps`, `diff`, `clusters`, `routes`, `smells`), dex reads the static
+- WHEN a graph tool is called (`trace` with `--dir callers|callees|path|impact`,
+  `deps`, `diff`, `clusters`, `routes`, `smells`), dex reads the static
   call/import graph (no embedding, no chat) and returns `no-graph` when the
-  relevant edges have not been indexed (`dex index . --graph=only`). `trace` and
-  `impact` accept a bare name, a qualified method (`(*Server).RunStdio`), or a
-  package-qualified name and return multiple matches for disambiguation. For a Go
+  relevant edges have not been indexed (`dex index . --graph=only`). `trace`
+  accepts a bare name, a qualified method (`(*Server).RunStdio`), or a
+  package-qualified name and returns multiple matches for disambiguation. For a Go
   method that implements a project interface, the call graph follows interface
-  DISPATCH (#604): `callers` (trace) additionally returns the call sites that
-  reach it through the interface method, each tagged with `via`; and `impact`
+  DISPATCH (#604): `--dir callers` additionally returns the call sites that
+  reach it through the interface method, each tagged with `via`; and `--dir impact`
   (transitive blast-radius BFS) + its risk tier count those dispatch-reached
   callers too — so dynamic dispatch isn't missed. A pure graph traversal over the
   existing `implements` edges + interface-method nodes (no go/types at query time).
-  `impact` also returns `tests_to_run`: the sibling tests (foo.go ↔ foo_test.go)
+  `--dir impact` also returns `tests_to_run`: the sibling tests (foo.go ↔ foo_test.go)
   of the blast-radius files — the target's own test plus the shown callers' — so
-  the change→verify loop ("you edited X; run these") is one call (#654).
+  the change→verify loop ("you edited X; run these") is one call (#654). impact
+  folded from a standalone tool into `trace --dir impact` (#684).
 - WHEN `read` reads or summarizes a file path, the path must resolve inside the
   project root; a path escaping the root is rejected so an MCP caller can't read
   arbitrary files. Files over 64 KB are truncated. `paths[]` (max 10) reads
@@ -259,7 +260,7 @@ service clients are the http-api spec's.
 - [x] `ask` with an empty question → session-start orientation (intent `orient`): deterministic L0+L1 codemap in `map`, byte-stable, single-sourced with `dex orient`/`dex map`; degrades to a `no-graph`/`no-index` hint, never an error (#348 / #316 story 6)
 - [x] Single `registerTools` path wires the surface for stdio, remote shim, and HTTP-MCP — no name/schema drift
 - [x] Capability-derived exposure (#283/#290): `find` gated on `embedAvailable`; `read` always registered (structural modes need no chat; `mode=summary` returns `needs-chat` when no chat model); power lane gated on `DEX_EXPERT`; weak model → only `ask`/`grep`/`ls`/`shell`
-- [x] Flat, prefix-free surface of up to 21 tools (#427): default `ask`/`find`/`map`/`trace`/`impact`/`read`/`grep`/`ls`/`shell`/`notes` + `DEX_EXPERT` power lane (no `DEX_TOOLS` tiers)
+- [x] Flat, prefix-free surface of up to 21 tools (#427): default `ask`/`find`/`map`/`trace` (incl. `--dir impact`, #684)/`read`/`grep`/`ls`/`shell`/`notes` + `DEX_EXPERT` power lane (no `DEX_TOOLS` tiers)
 - [x] `read mode=map` returns a structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
 - [x] `read paths[]` batch: max 10 files, same mode, concatenated `## path` output; path-traversal check per entry; etag/delta/skeleton modes
 - [x] `read` path traversal rejected (must resolve inside project root); files over 64 KB truncated

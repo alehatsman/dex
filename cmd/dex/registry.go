@@ -149,16 +149,12 @@ var verbs = []verbSpec{
 	},
 	{
 		name: "trace", group: groupQuery, args: "[<path>] <name>",
-		summary: "call-graph callers/callees/path",
+		summary: "call-graph callers/callees/path/impact",
 		flags: []flagSpec{
-			{name: "--dir", desc: "direction", arg: true, choices: []string{"callers", "callees", "path"}},
+			{name: "--dir", desc: "direction", arg: true, choices: []string{"callers", "callees", "path", "impact"}},
+			{name: "--max-depth", desc: "BFS depth (path/impact)", arg: true},
 			flagK, flagFormat, flagV,
 		},
-	},
-	{
-		name: "impact", group: groupQuery, args: "[<path>] <name>",
-		summary: "transitive caller blast-radius",
-		flags:   []flagSpec{flagK, flagFormat, flagV},
 	},
 	{
 		name: "locate", group: groupQuery, args: "[<path>] <symbol-or-path:line>",
