@@ -126,7 +126,10 @@ service clients are the http-api spec's.
   without using the index or a chat model; code files fall through to the symbol-
   map path.
 - WHEN `notes` is called, dex manages persistent project knowledge that survives
-  session resets: `action=add` (store a fact with an archetype and confidence),
+  session resets: `action=add` (store a fact with an archetype and confidence;
+  the response's `similar` list warns when a near-duplicate note already exists
+  — Jaccard word-overlap ≥ 0.5, the write-time companion to the GC merge pass —
+  so the author can `delete` the superseded one, #606),
   `action=list` (top-k by salience), `action=delete` (by id). Archetypes:
   Architecture | Gotcha | Convention | Decision | Observation | Dependency |
   Pattern | Fact. High-salience facts are injected into `ask` responses as

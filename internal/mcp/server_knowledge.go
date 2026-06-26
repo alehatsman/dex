@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/chat"
@@ -40,7 +41,17 @@ type KnowledgeOutput struct {
 	Hint   string                `json:"hint,omitempty"`
 	JSON   string                `json:"json,omitempty"` // export payload (action=export only)
 	Facts  []KnowledgeFactOutput `json:"facts,omitempty"`
+	// Similar lists existing notes that overlap the just-added body (action=add
+	// only, #606). A non-empty list is a warning, not an error: the agent can
+	// `delete` a superseded note or ignore the overlap.
+	Similar []KnowledgeFactOutput `json:"similar,omitempty"`
 }
+
+// knowledgeSimilarThreshold is the Jaccard word-overlap at which an existing
+// note is surfaced as a near-duplicate on add. Deliberately below the GC merge
+// threshold (0.85) so the author is warned BEFORE two notes would auto-merge,
+// while still requiring substantial overlap to avoid noise.
+const knowledgeSimilarThreshold = 0.5
 
 func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
 	p, hint := s.resolveProject(in.ProjectRoot)
@@ -68,6 +79,10 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		if arch == "" {
 			arch = "Observation"
 		}
+		// Near-duplicate check BEFORE insert, so the new note never matches
+		// itself (#606). Best-effort: a similarity-scan failure must not block
+		// the add.
+		similar, _ := st.KnowledgeSimilar(ctx, in.Body, knowledgeSimilarThreshold, 3)
 		rev, err := st.KnowledgeAdd(ctx, arch, in.Body, in.Confidence)
 		if err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
@@ -81,7 +96,15 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		} else if rev > 1 {
 			hint = fmt.Sprintf("Confirmed (revision %d, confirmed %d×).", rev+1, rev)
 		}
-		return nil, KnowledgeOutput{Status: "ok", Hint: hint}, nil
+		out := KnowledgeOutput{Status: "ok", Hint: hint}
+		for _, sf := range similar {
+			out.Similar = append(out.Similar, knowledgeFactOut(sf.KnowledgeFact))
+		}
+		if len(out.Similar) > 0 {
+			out.Hint += fmt.Sprintf(" ⚠ %d similar note(s) already exist (ids %s) — `delete` one if this supersedes it.",
+				len(out.Similar), similarIDs(out.Similar))
+		}
+		return nil, out, nil
 	case "delete":
 		if in.ID <= 0 {
 			return nil, KnowledgeOutput{Status: "error", Hint: "id is required for delete"}, nil
@@ -119,18 +142,33 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 	}
 	out := KnowledgeOutput{Status: "ok"}
 	for _, f := range facts {
-		out.Facts = append(out.Facts, KnowledgeFactOutput{
-			ID:            f.ID,
-			Archetype:     f.Archetype,
-			Body:          f.Body,
-			Confidence:    f.Confidence,
-			HitCount:      f.HitCount,
-			RevisionCount: f.RevisionCount,
-			Salience:      f.Salience,
-			UpdatedAt:     f.UpdatedAt.Format("2006-01-02 15:04:05"),
-		})
+		out.Facts = append(out.Facts, knowledgeFactOut(f))
 	}
 	return nil, out, nil
+}
+
+// knowledgeFactOut projects a stored fact into the wire shape, shared by the
+// list path and the add near-duplicate warning (#606).
+func knowledgeFactOut(f store.KnowledgeFact) KnowledgeFactOutput {
+	return KnowledgeFactOutput{
+		ID:            f.ID,
+		Archetype:     f.Archetype,
+		Body:          f.Body,
+		Confidence:    f.Confidence,
+		HitCount:      f.HitCount,
+		RevisionCount: f.RevisionCount,
+		Salience:      f.Salience,
+		UpdatedAt:     f.UpdatedAt.Format("2006-01-02 15:04:05"),
+	}
+}
+
+// similarIDs formats the ids of near-duplicate notes for the add hint.
+func similarIDs(facts []KnowledgeFactOutput) string {
+	ids := make([]string, len(facts))
+	for i, f := range facts {
+		ids[i] = "#" + strconv.FormatInt(f.ID, 10)
+	}
+	return strings.Join(ids, ", ")
 }
 
 // knowledgeExportRow is the portable JSON shape used for export/import.

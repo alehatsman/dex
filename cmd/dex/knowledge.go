@@ -152,24 +152,40 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	}
 	defer func() { _ = st.Close() }()
 
+	// Near-duplicate scan before insert so the new note doesn't match itself (#606).
+	similar, _ := st.KnowledgeSimilar(ctx, body, 0.5, 3)
 	rev, err := st.KnowledgeAdd(ctx, *archetype, body, *confidence)
 	if err != nil {
 		return err
 	}
 	if *format == "json" {
+		type simOut struct {
+			ID         int64   `json:"id"`
+			Archetype  string  `json:"archetype"`
+			Body       string  `json:"body"`
+			Similarity float64 `json:"similarity"`
+		}
+		sims := make([]simOut, 0, len(similar))
+		for _, sf := range similar {
+			sims = append(sims, simOut{sf.ID, sf.Archetype, sf.Body, sf.Similarity})
+		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Status        string `json:"status"`
-			Archetype     string `json:"archetype"`
-			Body          string `json:"body"`
-			RevisionCount int    `json:"revision_count"`
-		}{"ok", *archetype, body, rev})
+			Status        string   `json:"status"`
+			Archetype     string   `json:"archetype"`
+			Body          string   `json:"body"`
+			RevisionCount int      `json:"revision_count"`
+			Similar       []simOut `json:"similar,omitempty"`
+		}{"ok", *archetype, body, rev, sims})
 	}
 	if rev == 0 {
 		fmt.Printf("✓ stored [%s] %s\n", *archetype, body)
 	} else {
 		fmt.Printf("✓ updated [%s] %s (revision %d)\n", *archetype, body, rev)
+	}
+	for _, sf := range similar {
+		fmt.Printf("  ⚠ similar (%.0f%%) #%d [%s] %s\n", sf.Similarity*100, sf.ID, sf.Archetype, sf.Body)
 	}
 	return nil
 }

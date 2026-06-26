@@ -150,6 +150,52 @@ func (s *knowledgeStore) KnowledgeQuery(ctx context.Context, k int) ([]Knowledge
 	return scanFacts(rows)
 }
 
+// SimilarFact pairs a stored fact with its Jaccard word-overlap against a
+// candidate body, in [0,1].
+type SimilarFact struct {
+	KnowledgeFact
+	Similarity float64
+}
+
+// KnowledgeSimilar returns stored facts whose body word-set overlaps the
+// candidate body at or above threshold — the same Jaccard metric the GC merge
+// pass uses — best-match first, capped at max (0 = no cap). Byte-identical
+// bodies are excluded: those are the KnowledgeAdd upsert path, not a
+// near-duplicate. It is the write-time companion to the GC's after-the-fact
+// merge, surfaced on `notes add` so the author can supersede instead of
+// silently duplicating or contradicting an existing fact (#606).
+func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, threshold float64, max int) ([]SimilarFact, error) {
+	cand := wordSet(body)
+	if len(cand) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+		   FROM knowledge_facts`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	facts, err := scanFacts(rows)
+	if err != nil {
+		return nil, err
+	}
+	var out []SimilarFact
+	for _, f := range facts {
+		if f.Body == body {
+			continue // exact dup → KnowledgeAdd upsert handles it
+		}
+		if sim := jaccard(cand, wordSet(f.Body)); sim >= threshold {
+			out = append(out, SimilarFact{KnowledgeFact: f, Similarity: sim})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Similarity > out[j].Similarity })
+	if max > 0 && len(out) > max {
+		out = out[:max]
+	}
+	return out, nil
+}
+
 // KnowledgeCount returns the number of stored facts.
 func (s *knowledgeStore) KnowledgeCount(ctx context.Context) (int, error) {
 	var n int

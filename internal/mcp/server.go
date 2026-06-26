@@ -859,8 +859,9 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			Name: "notes",
 			Description: td("Persistent project memory — record and recall facts, patterns, and gotchas that " +
 				"survive session resets and reconnects (no embedding required). " +
-				"Actions: add (store a fact with an archetype and confidence), " +
-				"list (recall top-k facts ordered by salience), delete (remove a fact by id). " +
+				"Actions: add (store a fact with an archetype and confidence — the response's " +
+				"`similar` list warns when a near-duplicate note already exists so you can `delete` " +
+				"the superseded one), list (recall top-k facts ordered by salience), delete (remove a fact by id). " +
 				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
 				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
 				"as knowledge_facts."),
