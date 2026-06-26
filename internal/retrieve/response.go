@@ -63,8 +63,8 @@ func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, top
 			rel = "callees"
 		}
 		// Prefer the precise graph lane when it resolved calls edges.
-		// Falls back to the ripgrep `references` list (populated for
-		// non-Go languages where `calls` extraction isn't wired yet).
+		// Falls back to the BM25 chunk-search `references` list (populated
+		// for non-Go languages where `calls` extraction isn't wired yet).
 		if graphEdgeCount > 0 {
 			noun := "edge"
 			if graphEdgeCount != 1 {
@@ -77,7 +77,7 @@ func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, top
 			if refCount != 1 {
 				noun = "sites"
 			}
-			return fmt.Sprintf("The `references` field lists %d call %s (ripgrep-backed for non-Go targets). Walk them before reaching for grep.", refCount, noun)
+			return fmt.Sprintf("The `references` field lists %d call %s (BM25 chunk search for non-Go targets). Walk them before reaching for grep.", refCount, noun)
 		}
 		if len(symbols) > 0 {
 			return fmt.Sprintf("No %s found via graph or refs — start from %s (%s) and confirm the symbol is actually used.",
@@ -139,14 +139,13 @@ func readsSkimDirective(reads []SuggestedRead) string {
 // have strong signals (exact symbol found → don't grep); softer
 // otherwise. `graphIndexed` is true when the project has a graph
 // available. `hasRefs` softens the callers/callees message: when
-// either calls-edges populated `references` or ripgrep filled it as
-// fallback, the agent has the surface it needs, so the message
-// shifts from "verify with grep" to "do not re-grep, the list is
-// here."
+// either calls-edges or BM25 chunk search populated `references`,
+// the agent has the surface it needs, so the message shifts from
+// "verify with grep" to "do not re-grep, the list is here."
 func BuildAvoid(intent string, semHits []SemHit, symbols []SymHit, graphIndexed, hasRefs bool) string {
 	if intent == IntentCallers || intent == IntentCallees {
 		if hasRefs {
-			return "Do not grep for the identifier — the `references` field already lists call sites. For Go this comes from the static graph; for other languages it's a ripgrep-backed lexical list (verify edge cases by reading the snippets)."
+			return "Do not grep for the identifier — the `references` field already lists call sites. For Go this comes from the static graph; for other languages it's a BM25 chunk search over the bare symbol name (verify edge cases by reading the snippets)."
 		}
 		return "Do not trust the symbols list as exhaustive — Go `calls` edges are type-resolved, but Python/JS/TS/Rust/Java edges are name-based (tree-sitter) with incomplete recall. Verify with grep on the symbol name."
 	}

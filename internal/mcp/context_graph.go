@@ -16,7 +16,7 @@
 //	package_topology  — import edges between packages in the
 //	                    semantic neighborhood.
 //	callers           — incoming calls edges into matched symbols
-//	                    (Go-only; falls back to ripgrep usage list
+//	                    (Go-only; falls back to BM25 chunk search
 //	                    for other languages via context.go).
 //	callees           — outgoing calls edges from matched symbols.
 //
