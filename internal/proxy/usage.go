@@ -98,7 +98,7 @@ func scanSSEChunk(data []byte) ProviderUsage {
 			UsageMetadata struct {
 				PromptTokenCount     int64 `json:"promptTokenCount"`
 				CandidatesTokenCount int64 `json:"candidatesTokenCount"`
-				CachedContentTokens int64 `json:"cachedContentTokenCount"`
+				CachedContentTokens  int64 `json:"cachedContentTokenCount"`
 			} `json:"usageMetadata"`
 		}
 		if err := json.Unmarshal(d, &gemini); err == nil {

@@ -36,29 +36,29 @@ type ProjectStatus struct {
 	Dim              int    `json:"dim"`
 	EmbedModel       string `json:"embed_model,omitempty"`
 	LastIndexed      string `json:"last_indexed,omitempty"`
-	Indexing         bool   `json:"indexing,omitempty"`          // a re-index is underway; counts are mid-rebuild (#531)
+	Indexing         bool   `json:"indexing,omitempty"`           // a re-index is underway; counts are mid-rebuild (#531)
 	GitRecencyActive bool   `json:"git_recency_active,omitempty"` // git recency/dirty boost is wired for this project
 }
 
 type StatusOutput struct {
-	Endpoint          string          `json:"endpoint"`
-	Reachable         bool            `json:"reachable"`
-	Model             string          `json:"model"`
-	ChatEndpoint        string          `json:"chat_endpoint,omitempty"`
-	ChatReachable       bool            `json:"chat_reachable,omitempty"`
-	ChatModelAvailable  bool            `json:"chat_model_available,omitempty"`
-	ChatModel           string          `json:"chat_model,omitempty"`
-	RerankEndpoint    string          `json:"rerank_endpoint,omitempty"`
-	RerankReachable   bool            `json:"rerank_reachable,omitempty"`
-	RerankModel       string          `json:"rerank_model,omitempty"`
-	RerankBreaker     *BreakerStatus  `json:"rerank_breaker,omitempty"`
-	OllamaEndpoint    string          `json:"ollama_endpoint,omitempty"`
-	OllamaEmbedModels []string        `json:"ollama_embed_models,omitempty"`
-	OllamaChatModels  []string        `json:"ollama_chat_models,omitempty"`
-	Version           string          `json:"version"`
-	IndexDir          string          `json:"index_dir"`
-	Projects          []ProjectStatus `json:"projects,omitempty"`
-	Error             string          `json:"error,omitempty"`
+	Endpoint           string          `json:"endpoint"`
+	Reachable          bool            `json:"reachable"`
+	Model              string          `json:"model"`
+	ChatEndpoint       string          `json:"chat_endpoint,omitempty"`
+	ChatReachable      bool            `json:"chat_reachable,omitempty"`
+	ChatModelAvailable bool            `json:"chat_model_available,omitempty"`
+	ChatModel          string          `json:"chat_model,omitempty"`
+	RerankEndpoint     string          `json:"rerank_endpoint,omitempty"`
+	RerankReachable    bool            `json:"rerank_reachable,omitempty"`
+	RerankModel        string          `json:"rerank_model,omitempty"`
+	RerankBreaker      *BreakerStatus  `json:"rerank_breaker,omitempty"`
+	OllamaEndpoint     string          `json:"ollama_endpoint,omitempty"`
+	OllamaEmbedModels  []string        `json:"ollama_embed_models,omitempty"`
+	OllamaChatModels   []string        `json:"ollama_chat_models,omitempty"`
+	Version            string          `json:"version"`
+	IndexDir           string          `json:"index_dir"`
+	Projects           []ProjectStatus `json:"projects,omitempty"`
+	Error              string          `json:"error,omitempty"`
 }
 
 // healthChecker abstracts a client that can report reachability.

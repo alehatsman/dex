@@ -220,11 +220,11 @@ type Options struct {
 
 type Store struct {
 	db         *sql.DB
-	dim        atomic.Int64 // vector dimension; set once on first upsert, read concurrently
-	dimInit    sync.Mutex   // serializes first-write dim init so concurrent first UpsertMany calls don't double-init
-	noVec      atomic.Bool  // true when index is BM25-only (DEX_EMBED_ENGINE=none) — no vec0 table, nil vecs
-	embedModel atomic.Value // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
-	opts       Options      // immutable after Open
+	dim        atomic.Int64      // vector dimension; set once on first upsert, read concurrently
+	dimInit    sync.Mutex        // serializes first-write dim init so concurrent first UpsertMany calls don't double-init
+	noVec      atomic.Bool       // true when index is BM25-only (DEX_EMBED_ENGINE=none) — no vec0 table, nil vecs
+	embedModel atomic.Value      // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
+	opts       Options           // immutable after Open
 	gitRecency GitRecencyBonuser // non-nil when a project root is known at open time
 
 	knowledgeStore // knowledge-fact methods, keyed on Store.db

@@ -16,13 +16,13 @@ type ModelPricing struct {
 // defaultPricing covers the Claude models most commonly used with dex.
 // Prices are USD per 1M tokens as of 2026-06. Override via DEX_MODEL_PRICING_JSON.
 var defaultPricing = map[string]ModelPricing{
-	"claude-opus-4-7":               {15.00, 75.00, 1.50, 18.75},
-	"claude-sonnet-4-6":             {3.00, 15.00, 0.30, 3.75},
-	"claude-haiku-4-5":              {0.80, 4.00, 0.08, 1.00},
-	"claude-haiku-4-5-20251001":     {0.80, 4.00, 0.08, 1.00},
-	"claude-3-5-sonnet-20241022":    {3.00, 15.00, 0.30, 3.75},
-	"claude-3-5-haiku-20241022":     {0.80, 4.00, 0.08, 1.00},
-	"claude-3-opus-20240229":        {15.00, 75.00, 1.50, 18.75},
+	"claude-opus-4-7":            {15.00, 75.00, 1.50, 18.75},
+	"claude-sonnet-4-6":          {3.00, 15.00, 0.30, 3.75},
+	"claude-haiku-4-5":           {0.80, 4.00, 0.08, 1.00},
+	"claude-haiku-4-5-20251001":  {0.80, 4.00, 0.08, 1.00},
+	"claude-3-5-sonnet-20241022": {3.00, 15.00, 0.30, 3.75},
+	"claude-3-5-haiku-20241022":  {0.80, 4.00, 0.08, 1.00},
+	"claude-3-opus-20240229":     {15.00, 75.00, 1.50, 18.75},
 }
 
 // LoadPricing returns the effective pricing table: defaultPricing merged with any

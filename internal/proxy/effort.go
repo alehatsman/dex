@@ -123,7 +123,7 @@ func applyAnthropicEffort(root map[string]json.RawMessage, body []byte, effort E
 
 	budget := effortToBudgetTokens(effort)
 	thinking := map[string]any{
-		"type":         "enabled",
+		"type":          "enabled",
 		"budget_tokens": budget,
 	}
 	enc, err := json.Marshal(thinking)
