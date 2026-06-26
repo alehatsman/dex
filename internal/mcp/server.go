@@ -45,14 +45,16 @@ Tool mapping (use these instead):
 - read(path)               instead of Read for large files (signatures + summaries)
 - shell(command)           instead of Bash for shell commands (compressed output)
 - grep(pattern)            instead of rg for exact regex matches
+- notes(action)            instead of re-deriving facts — recall and persist durable project memory
 
 Workflow:
 1. Orient: ask(question) — routes intent, returns suggested_reads + next_action; map() for layout
 2. Locate: find for concepts; trace to follow the call graph
 3. Read: read for large files; native Read for small ones
 4. Shell: shell(command) for build/test output
+5. Remember: notes(action=list) to recall before exploring; notes(action=add) only for durable gotchas/decisions (not transient facts); when orientation reports "N notes pending review", run notes(action=review) and resolve it (merge/supersede/pin/delete)
 
-Power lanes (deps, diff, clusters, routes, smells, status, notes, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
+Power lanes (deps, diff, clusters, routes, smells, status, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
 Start every session by calling ask() with the task description.
 
