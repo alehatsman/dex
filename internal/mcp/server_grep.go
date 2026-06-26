@@ -20,12 +20,17 @@ type SearchGrepInput struct {
 	Path        string `json:"path,omitempty"         jsonschema:"relative subdirectory to restrict the search (default: project root)"`
 	Ext         string `json:"ext,omitempty"          jsonschema:"file extension filter without leading dot, e.g. go or ts"`
 	MaxResults  int    `json:"max_results,omitempty"  jsonschema:"maximum matches to return (default 50, max 200)"`
+	Context     int    `json:"context,omitempty"      jsonschema:"lines of surrounding context to include before AND after each match (like grep -C), 0-10; default 0"`
 }
 
 type GrepMatch struct {
 	Path    string `json:"path"`    // relative to project root
 	Line    int    `json:"line"`    // 1-indexed
 	Content string `json:"content"` // trimmed match line
+	// Before/After are up to `context` raw lines surrounding the match (#662),
+	// indentation preserved so the snippet reads naturally. Empty when context=0.
+	Before []string `json:"before,omitempty"`
+	After  []string `json:"after,omitempty"`
 }
 
 type SearchGrepOutput struct {
@@ -59,6 +64,13 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	maxResults := in.MaxResults
 	if maxResults <= 0 || maxResults > 200 {
 		maxResults = 50
+	}
+	ctxN := in.Context
+	if ctxN < 0 {
+		ctxN = 0
+	}
+	if ctxN > 10 {
+		ctxN = 10
 	}
 
 	prefix := strings.Trim(in.Path, "/")
@@ -152,13 +164,10 @@ outer:
 			continue
 		}
 		relPath, _ := filepath.Rel(p.Root, absPath)
-		for i, line := range strings.Split(string(data), "\n") {
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
 			if re.MatchString(line) {
-				matches = append(matches, GrepMatch{
-					Path:    relPath,
-					Line:    i + 1,
-					Content: strings.TrimSpace(line),
-				})
+				matches = append(matches, newGrepMatch(lines, i, relPath, ctxN))
 				if len(matches) >= maxResults {
 					truncated = true
 					break outer
@@ -198,4 +207,38 @@ outer:
 		out.Hint = ldHint
 	}
 	return nil, out, nil
+}
+
+// newGrepMatch builds a match for the line at index i, attaching up to ctxN
+// surrounding lines before and after (#662). lines is the file's split content.
+func newGrepMatch(lines []string, i int, relPath string, ctxN int) GrepMatch {
+	m := GrepMatch{Path: relPath, Line: i + 1, Content: strings.TrimSpace(lines[i])}
+	if ctxN > 0 {
+		m.Before = grepContextSlice(lines, i-ctxN, i)
+		m.After = grepContextSlice(lines, i+1, i+1+ctxN)
+	}
+	return m
+}
+
+// grepContextSlice returns lines[lo:hi] clamped to the file bounds, with a
+// single trailing empty element (the artifact of splitting a trailing newline)
+// dropped so EOF context doesn't show a phantom blank line.
+func grepContextSlice(lines []string, lo, hi int) []string {
+	if lo < 0 {
+		lo = 0
+	}
+	if hi > len(lines) {
+		hi = len(lines)
+	}
+	if lo >= hi {
+		return nil
+	}
+	seg := lines[lo:hi]
+	if n := len(seg); n > 0 && seg[n-1] == "" && hi == len(lines) {
+		seg = seg[:n-1]
+	}
+	if len(seg) == 0 {
+		return nil
+	}
+	return append([]string(nil), seg...)
 }

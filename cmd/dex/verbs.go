@@ -177,6 +177,7 @@ func cmdGrep(ctx context.Context, args []string) error {
 	ext := fs.String("ext", "", "file extension filter without leading dot, e.g. go or ts")
 	in := fs.String("in", "", "restrict to a subdirectory of the project")
 	maxResults := fs.Int("max-results", 0, "maximum matches (default 50, max 200)")
+	contextN := fs.Int("context", 0, "lines of context before/after each match (like grep -C), 0-10")
 	format := fs.String("format", "text", "output format: text | json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -202,6 +203,7 @@ func cmdGrep(ctx context.Context, args []string) error {
 		Path:        *in,
 		Ext:         *ext,
 		MaxResults:  *maxResults,
+		Context:     *contextN,
 		ProjectRoot: p.Root,
 	})
 	if err != nil {
@@ -220,7 +222,20 @@ func cmdGrep(ctx context.Context, args []string) error {
 		return nil
 	}
 	for _, m := range out.Matches {
+		if len(m.Before) == 0 && len(m.After) == 0 {
+			fmt.Printf("%s:%d: %s\n", m.Path, m.Line, m.Content)
+			continue
+		}
+		// Context view: a grep -C-style block with the match line marked ':'
+		// and context lines marked '-'.
+		for j, l := range m.Before {
+			fmt.Printf("%s-%d- %s\n", m.Path, m.Line-len(m.Before)+j, l)
+		}
 		fmt.Printf("%s:%d: %s\n", m.Path, m.Line, m.Content)
+		for j, l := range m.After {
+			fmt.Printf("%s-%d- %s\n", m.Path, m.Line+1+j, l)
+		}
+		fmt.Println("--")
 	}
 	if out.Truncated {
 		fmt.Fprintf(os.Stderr, "\n(%d matches, truncated)\n", out.Total)

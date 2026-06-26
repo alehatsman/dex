@@ -1046,6 +1046,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"falls back to walking the project directory and skipping .git/vendor/node_modules. " +
 			"Accepts an RE2 regex pattern, optional relative path prefix, and optional extension filter. " +
 			"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
+			"Pass `context` (1-10) to include that many lines before AND after each match (like grep -C) in " +
+			"`before`/`after` — see a match in context without a follow-up read. " +
 			"Returns 'no-matches' when nothing matches. Use ask for conceptual queries."),
 	}, h.searchGrep)
 

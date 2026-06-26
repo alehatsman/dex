@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -87,5 +88,56 @@ func TestSearchGrepFilePathExtExcluded(t *testing.T) {
 	}
 	if out.Status != "no-matches" {
 		t.Errorf("status = %q, want no-matches", out.Status)
+	}
+}
+
+// TestSearchGrepContext covers #662: context lines before/after each match,
+// clamped at file start/EOF, with the trailing-newline artifact dropped.
+func TestSearchGrepContext(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	s := newServer(srv.URL, t.TempDir())
+	projDir := t.TempDir()
+	body := "L1 alpha\nL2 beta\nL3 NEEDLE mid\nL4 delta\nL5 NEEDLE last\n"
+	if err := os.WriteFile(filepath.Join(projDir, "f.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	grep := func(ctxN int) []GrepMatch {
+		_, out, err := s.searchGrep(context.Background(), nil, SearchGrepInput{
+			Pattern: "NEEDLE", Path: "f.go", Context: ctxN, ProjectRoot: projDir,
+		})
+		if err != nil || out.Status != "ok" {
+			t.Fatalf("status=%q err=%v", out.Status, err)
+		}
+		return out.Matches
+	}
+
+	// context=0 → no before/after (default behaviour unchanged).
+	for _, m := range grep(0) {
+		if len(m.Before) != 0 || len(m.After) != 0 {
+			t.Errorf("context=0 should carry no context, got %+v", m)
+		}
+	}
+
+	ms := grep(2)
+	if len(ms) != 2 {
+		t.Fatalf("want 2 matches, got %d", len(ms))
+	}
+	// Match 1 at line 3: Before = L1,L2; After = L4,L5.
+	mid := ms[0]
+	if got := strings.Join(mid.Before, "|"); got != "L1 alpha|L2 beta" {
+		t.Errorf("mid Before = %q, want L1|L2", got)
+	}
+	if got := strings.Join(mid.After, "|"); got != "L4 delta|L5 NEEDLE last" {
+		t.Errorf("mid After = %q, want L4|L5", got)
+	}
+	// Match 2 at line 5 (last content line): After clamps to empty (the trailing
+	// "" from the final newline is dropped, not shown as a phantom blank line).
+	last := ms[1]
+	if got := strings.Join(last.Before, "|"); got != "L3 NEEDLE mid|L4 delta" {
+		t.Errorf("last Before = %q, want L3|L4", got)
+	}
+	if len(last.After) != 0 {
+		t.Errorf("last After should be empty at EOF, got %+v", last.After)
 	}
 }
