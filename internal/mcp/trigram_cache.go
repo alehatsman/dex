@@ -53,9 +53,11 @@ type trigramCache struct {
 // so narrowing against it silently drops files that exist now and grep returns
 // stable false-negative match counts until the TTL expires.
 //
-// For an unchanged file set, content/TTL staleness keeps the original
-// non-blocking behaviour: a background rebuild is triggered and the stale
-// index is returned for this call so a search never blocks on a rebuild.
+// For an unchanged file set, content/TTL staleness triggers a background
+// rebuild and returns nil for this call: the caller skips narrowing and
+// full-scans, so a search never blocks on a rebuild AND never narrows against
+// outdated postings (which would silently drop matches in a just-edited file,
+// #666). The next call uses the fresh index once the background build lands.
 func (c *trigramCache) getOrBuild(key trigramCacheKey, files []string) *trigram.Index {
 	v, _ := c.m.LoadOrStore(key, &trigramCacheEntry{})
 	entry, _ := v.(*trigramCacheEntry)
@@ -84,7 +86,13 @@ func (c *trigramCache) getOrBuild(key trigramCacheKey, files []string) *trigram.
 	}
 
 	// Same file set, but file contents/TTL went stale — trigger a background
-	// rebuild and return the stale index now.
+	// rebuild and return nil so the caller skips narrowing for THIS call and
+	// full-scans instead. Returning the stale index would narrow against
+	// outdated content: a match added to a just-edited file lacks the new
+	// trigrams in the stale postings, so it would be dropped — grep would miss
+	// it on the agent's edit→grep first try (#666). Full-scanning is sound and
+	// still non-blocking (no synchronous rebuild); the next call uses the fresh
+	// index once the background build lands.
 	entry.mu.Lock()
 	alreadyBuilding := entry.building
 	if !alreadyBuilding {
@@ -103,5 +111,5 @@ func (c *trigramCache) getOrBuild(key trigramCacheKey, files []string) *trigram.
 		}()
 	}
 
-	return idx
+	return nil
 }

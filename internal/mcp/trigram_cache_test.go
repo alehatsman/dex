@@ -79,3 +79,27 @@ func TestFilesFingerprint(t *testing.T) {
 		t.Error("nil and empty should match")
 	}
 }
+
+// TestTrigramCacheDeclinesWhenContentStale covers #666: when a file's CONTENT
+// changed (same file set), the cached index is stale, so getOrBuild must return
+// nil (decline narrowing) rather than serve the stale index — otherwise grep
+// narrows against outdated postings and drops a match added to the edited file.
+func TestTrigramCacheDeclinesWhenContentStale(t *testing.T) {
+	dir := t.TempDir()
+	a := writeTrigramFile(t, dir, "a.go", "package x\n\nfunc Original() {}\n")
+	b := writeTrigramFile(t, dir, "b.go", "package x\n\nvar unrelated = 1\n")
+
+	cache := &trigramCache{}
+	key := trigramCacheKey{root: dir}
+
+	if idx := cache.getOrBuild(key, []string{a, b}); idx == nil {
+		t.Fatal("first build must return an index")
+	}
+
+	// Edit a.go (longer content → size + mtime change → Stale). Same file SET.
+	writeTrigramFile(t, dir, "a.go", "package x\n\nfunc Original() {}\n\nfunc AddedSymbolXYZ() {}\n")
+
+	if idx := cache.getOrBuild(key, []string{a, b}); idx != nil {
+		t.Error("content-stale cache must return nil (decline narrowing) so grep full-scans, not narrow against stale postings")
+	}
+}

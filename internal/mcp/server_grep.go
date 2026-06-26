@@ -96,9 +96,12 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	// trigrams (pure regex metacharacters) or the index cannot narrow.
 	if len(filePaths) > 0 {
 		tgKey := trigramCacheKey{root: p.Root, prefix: prefix, ext: extFilter}
-		idx := s.tgCache.getOrBuild(tgKey, filePaths)
-		if narrowed, ok := idx.Narrow(rePattern); ok {
-			filePaths = narrowed
+		// nil index = the cache is content-stale and declined to narrow (#666);
+		// full-scan filePaths rather than narrow against outdated postings.
+		if idx := s.tgCache.getOrBuild(tgKey, filePaths); idx != nil {
+			if narrowed, ok := idx.Narrow(rePattern); ok {
+				filePaths = narrowed
+			}
 		}
 	}
 
