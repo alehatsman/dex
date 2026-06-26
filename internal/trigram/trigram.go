@@ -137,6 +137,13 @@ func (idx *Index) Narrow(query string) ([]string, bool) {
 		return nil, false
 	}
 
+	// An optional/star quantifier over a word literal (`colou?r`, `foo*`) makes a
+	// word-run trigram non-mandatory, so AND-intersecting it would soundlessly
+	// drop real matches. Decline to narrow and let the caller full-scan (#665).
+	if patternHasOptionalWordAtom(query) {
+		return nil, false
+	}
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -234,6 +241,60 @@ func reHasAlternation(re *syntax.Regexp) bool {
 	}
 	for _, sub := range re.Sub {
 		if reHasAlternation(sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// patternHasOptionalWordAtom reports whether the RE2 pattern applies an optional
+// quantifier (`?`, `*`, or `{0,…}`) to a subexpression containing a word-char
+// literal. wordTrigrams extracts trigrams from word runs of the raw pattern
+// string with no quantifier awareness, so such a quantifier makes an extracted
+// trigram non-mandatory — e.g. `colou?r` yields the trigram `lou`, but `color`
+// matches and lacks it, so AND-intersecting `lou` would soundlessly drop a real
+// match (#665). `.*` between literals stays safe (the star is over OpAnyChar,
+// not a word literal), as do char classes (their short runs yield no trigrams).
+// A parse miss is treated as having none — the caller already compiled it.
+func patternHasOptionalWordAtom(pattern string) bool {
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return false
+	}
+	return reHasOptionalWordAtom(re)
+}
+
+func reHasOptionalWordAtom(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpStar, syntax.OpQuest:
+		if len(re.Sub) > 0 && subHasWordLiteral(re.Sub[0]) {
+			return true
+		}
+	case syntax.OpRepeat:
+		if re.Min == 0 && len(re.Sub) > 0 && subHasWordLiteral(re.Sub[0]) {
+			return true
+		}
+	}
+	for _, sub := range re.Sub {
+		if reHasOptionalWordAtom(sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// subHasWordLiteral reports whether re's subtree contains a literal word
+// character ([A-Za-z0-9_]) — the kind wordTrigrams would extract a trigram from.
+func subHasWordLiteral(re *syntax.Regexp) bool {
+	if re.Op == syntax.OpLiteral {
+		for _, r := range re.Rune {
+			if r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_') {
+				return true
+			}
+		}
+	}
+	for _, sub := range re.Sub {
+		if subHasWordLiteral(sub) {
 			return true
 		}
 	}

@@ -198,3 +198,42 @@ func TestStale(t *testing.T) {
 		t.Error("fresh index reported stale immediately")
 	}
 }
+
+// TestNarrowOptionalWordAtomSound covers #665: a quantifier over a word literal
+// (colou?r, foo*) makes a word-run trigram non-mandatory, so AND-ing it is
+// unsound. Narrow must not return a candidate set that drops a real match.
+func TestNarrowOptionalWordAtomSound(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a := write("a.go", "var color = 1\n")   // matches colou?r (no u)
+	b := write("b.go", "var colour = 2\n")  // matches colou?r (with u)
+	c := write("c.go", "var nothing = 3\n") // no match
+	idx := Build([]string{a, b, c})
+
+	for _, pat := range []string{"colou?r", "foo*bar", "ab?cdef"} {
+		out, ok := idx.Narrow(pat)
+		if !ok {
+			continue // declined to narrow → caller full-scans, sound
+		}
+		got := map[string]bool{}
+		for _, f := range out {
+			got[f] = true
+		}
+		// When ok, the result must be a superset of every matching file. For
+		// colou?r both a (color) and b (colour) match; the other patterns don't
+		// match anything here, so the check that matters is colou?r ⊇ {a, b}.
+		if pat == "colou?r" {
+			for _, want := range []string{a, b} {
+				if !got[want] {
+					t.Errorf("Narrow(%q) dropped %s which matches — unsound under-narrow", pat, filepath.Base(want))
+				}
+			}
+		}
+	}
+}
