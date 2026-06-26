@@ -551,3 +551,102 @@ func TestPruneForeignFileReadByContent(t *testing.T) {
 		t.Errorf("expected the file-read stub (lines preserved), got %q", stub)
 	}
 }
+
+// TestPruneHistoryPreservesPairingInvariant locks the proxy's single
+// load-bearing correctness property (#652): pruning REWRITES messages in place
+// and never drops one, so every assistant tool_use keeps its matching user
+// tool_result. The Anthropic /v1/messages API rejects a request with an
+// orphaned tool_use or tool_result, so a regression here would 400 every long
+// conversation through the proxy. The test spans the prune boundary and checks
+// the invariant survives ACTUAL rewriting (old results are stubbed).
+func TestPruneHistoryPreservesPairingInvariant(t *testing.T) {
+	longOutput := strings.Repeat("file content line\n", 50) // >minPruneChars → eligible
+	var msgs []json.RawMessage
+	want := map[string]bool{}
+	for i := 0; i < 14; i++ { // 14 pairs = 28 messages, well past keepRecent+stride
+		id := fmt.Sprintf("tu_%d", i)
+		want[id] = true
+		msgs = append(msgs,
+			mustMarshal(map[string]any{
+				"role": "assistant",
+				"content": []any{
+					map[string]any{"type": "tool_use", "id": id, "name": "Read",
+						"input": map[string]any{"path": "x.go"}},
+				},
+			}),
+			mustMarshal(map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "tool_result", "tool_use_id": id, "content": longOutput},
+				},
+			}),
+		)
+	}
+
+	pruned := PruneHistory(msgs, 4)
+
+	// (1) No message dropped or added — the in-place-rewrite contract.
+	if len(pruned) != len(msgs) {
+		t.Fatalf("message count changed %d -> %d; pruning must rewrite in place, never drop a message", len(msgs), len(pruned))
+	}
+	// (2) Every tool_use still has its tool_result and vice versa, set unchanged.
+	uses := collectBlockIDs(pruned, "assistant", "tool_use", "id")
+	results := collectBlockIDs(pruned, "user", "tool_result", "tool_use_id")
+	if !equalStringSet(uses, results) {
+		t.Fatalf("tool_use/tool_result pairing broken after prune:\n  uses=%v\n  results=%v", keys(uses), keys(results))
+	}
+	if !equalStringSet(uses, want) {
+		t.Fatalf("tool_use id set changed across prune:\n  want=%v\n  got=%v", keys(want), keys(uses))
+	}
+	// (3) Non-vacuous: pruning actually happened (old-region results were stubbed),
+	// so the invariant is proven to survive REAL rewriting, not a no-op.
+	orig := strings.Count(string(mustMarshal(msgs)), "file content line")
+	got := strings.Count(string(mustMarshal(pruned)), "file content line")
+	if got >= orig {
+		t.Fatalf("expected old results stubbed; full-content occurrences not reduced (%d -> %d)", orig, got)
+	}
+}
+
+// collectBlockIDs gathers the idField of every blockType block in messages of
+// the given role.
+func collectBlockIDs(msgs []json.RawMessage, role, blockType, idField string) map[string]bool {
+	ids := map[string]bool{}
+	for _, raw := range msgs {
+		var m struct {
+			Role    string           `json:"role"`
+			Content []map[string]any `json:"content"`
+		}
+		if json.Unmarshal(raw, &m) != nil || m.Role != role {
+			continue
+		}
+		for _, blk := range m.Content {
+			if t, _ := blk["type"].(string); t != blockType {
+				continue
+			}
+			if id, ok := blk[idField].(string); ok && id != "" {
+				ids[id] = true
+			}
+		}
+	}
+	return ids
+}
+
+func equalStringSet(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
+func keys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
