@@ -988,7 +988,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"Use raw:true to skip compression. " +
 			"Runs via bash when available (falls back to POSIX sh), so pipefail and bash-only " +
 			"syntax work; override with DEX_SHELL. " +
-			"File-write redirects (> >>) and tee are blocked; use the Write tool instead. " +
+			"File-write redirects (> >>) and tee are blocked by default; use the Write tool instead, " +
+			"or set DEX_SHELL_ALLOW_WRITES=1 to permit them. " +
 			"Timeout: 60 s."),
 	}, h.shellRun)
 

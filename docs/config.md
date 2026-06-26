@@ -57,6 +57,7 @@ Grouped by role (all optional; defaults shown where notable).
 - `DEX_SERVE_TOKEN` — bearer token (required for non-loopback binds)
 - `DEX_SERVE_WATCH` — eager per-project watchers
 - `DEX_ALLOW_PATHS` — `shell` tool allow-list
+- `DEX_SHELL_ALLOW_WRITES=1` — let `shell` commands use file-write redirects (`>`, `>>`, `tee`, heredoc-to-file); blocked by default so agents reach for the Write tool
 
 **ONNX** (only with `-tags onnx`): `DEX_ONNXRUNTIME_LIB`, `DEX_ONNX_MODEL`,
 `DEX_ONNX_TOKENIZER`, `DEX_ONNX_DIM`, `DEX_ONNX_MODEL_ID`, `DEX_ONNX_MAX_SEQ`, …

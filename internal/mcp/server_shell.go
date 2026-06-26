@@ -457,9 +457,28 @@ func containsAuthFlow(output string) bool {
 
 // ── validation ────────────────────────────────────────────────────────────────
 
+// shellWritesEnv opts out of the file-write guard below. Unset (the default)
+// keeps redirects/tee/heredoc-to-file blocked so an agent reaches for the Write
+// tool; setting it to "1" or "true" lets power-user workflows (e.g. piping a
+// build log to a file inside a script) through, matching native Bash (#596).
+const shellWritesEnv = "DEX_SHELL_ALLOW_WRITES"
+
+// shellWritesAllowed reports whether the operator opted out of the file-write
+// guard via shellWritesEnv.
+func shellWritesAllowed() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(shellWritesEnv))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
 // shellValidate rejects commands that would write files via shell redirect,
-// tee, or heredoc-to-file.
+// tee, or heredoc-to-file — unless DEX_SHELL_ALLOW_WRITES opts out (#596).
 func shellValidate(command string) error {
+	if shellWritesAllowed() {
+		return nil
+	}
 	if hasFileWriteRedirect(command) {
 		return fmt.Errorf("shell: file-write redirect detected (> or >>); use the Write tool instead")
 	}

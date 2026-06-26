@@ -137,8 +137,9 @@ service clients are the http-api spec's.
   + files are surfaced in `ask` responses as `session_task`. No embedding required.
 - WHEN `shell` is called, dex executes a command and returns compressed output
   (the same pipeline as the indexer's log compression). File-write redirects
-  (`>`, `>>`) and `tee` are blocked — the caller must use the Write tool;
-  `raw:true` skips compression; timeout 60 s.
+  (`>`, `>>`) and `tee` are blocked by default — the caller must use the Write
+  tool — unless `DEX_SHELL_ALLOW_WRITES=1` opts out (#596); `raw:true` skips
+  compression; timeout 60 s.
 - WHEN `grep` is called, dex runs an RE2 pattern search over indexed project files
   (inheriting the project's ignore rules), falling back to a filesystem walk that
   skips `.git`, `vendor`, and `node_modules` when no index exists. Returns up to
@@ -212,7 +213,7 @@ service clients are the http-api spec's.
 - [x] `read` path traversal rejected (must resolve inside project root); files over 64 KB truncated
 - [x] `notes` actions add/list/delete; high-salience facts injected into `ask` as `knowledge_facts`
 - [x] `session` actions set_task/add_note/add_file/get/clear/snapshot/budget/heatmap; surfaced in `ask` as `session_task`
-- [x] `shell` blocks `>`/`>>`/`tee`; `raw:true` skip; 60 s timeout; compressed output
+- [x] `shell` blocks `>`/`>>`/`tee` (opt out: `DEX_SHELL_ALLOW_WRITES=1`); `raw:true` skip; 60 s timeout; compressed output
 - [x] `grep` RE2 search over indexed files; fs-walk fallback; `max_results` cap (default 50); `no-matches` status
 - [x] Read-only tools carry `readOnlyHint: true` MCP annotation
 - [x] Read-only by design (#551): no edit/write/apply verb; editing is the host agent's job, dex locates/explains. Deliberate boundary, not a gap.

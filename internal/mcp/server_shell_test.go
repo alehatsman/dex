@@ -312,6 +312,35 @@ func TestShellValidate(t *testing.T) {
 	}
 }
 
+// TestShellValidateAllowWritesOptIn covers #596: DEX_SHELL_ALLOW_WRITES lets
+// redirect/tee/heredoc-to-file through, and only the documented truthy values
+// flip the guard.
+func TestShellValidateAllowWritesOptIn(t *testing.T) {
+	blocked := []string{
+		"echo x > file.txt",
+		"cmd | tee output.log",
+		"cat <<EOF > file.py\nprint('x')\nEOF",
+	}
+
+	// Opted out: every previously-blocked command is now allowed.
+	for _, v := range []string{"1", "true", "YES"} {
+		t.Setenv("DEX_SHELL_ALLOW_WRITES", v)
+		for _, cmd := range blocked {
+			if err := shellValidate(cmd); err != nil {
+				t.Errorf("DEX_SHELL_ALLOW_WRITES=%s should allow %q, got %v", v, cmd, err)
+			}
+		}
+	}
+
+	// Non-truthy / empty values keep the guard on.
+	for _, v := range []string{"", "0", "false", "no"} {
+		t.Setenv("DEX_SHELL_ALLOW_WRITES", v)
+		if err := shellValidate("echo x > file.txt"); err == nil {
+			t.Errorf("DEX_SHELL_ALLOW_WRITES=%q should keep redirects blocked", v)
+		}
+	}
+}
+
 func TestClassifyCommand(t *testing.T) {
 	passthrough := []string{
 		"az login --use-device-code",
