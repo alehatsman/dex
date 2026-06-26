@@ -77,6 +77,11 @@ type SummarizeOutput struct {
 	// applied (single-file, fewer than 2 files had import blocks, or dedup
 	// was explicitly disabled).
 	ImportsDedupSavedLines int `json:"imports_dedup_saved_lines,omitempty"`
+	// ScopedNotes are notes BOUND to this file's path via their scope
+	// (gotcha-on-touch, #645/#650) — surfaced because you read the file, each
+	// tagged with the matching glob/path. The proactive "you're about to edit
+	// this, here's the gotcha" signal, on the verb agents touch files with most.
+	ScopedNotes []LocatedFact `json:"scoped_notes,omitempty"`
 }
 
 // maxSummarizeBytes caps the slice we send to the chat endpoint. Above
@@ -100,6 +105,29 @@ type summarizeWork struct {
 	etag       string
 	bt         *bounceTracker
 	out        SummarizeOutput
+}
+
+// attachScopedNotes surfaces notes whose scope binds out.Path (gotcha-on-touch,
+// #650). Best-effort and a no-op on error / empty path / error status. Invoked
+// via defer on summarize's named return so it covers every read mode uniformly;
+// the cached store keeps it cheap on the hot read path.
+func (s *Server) attachScopedNotes(ctx context.Context, dbPath string, out *SummarizeOutput) {
+	if out.Path == "" || out.Status == "error" || out.Status == "needs-chat" {
+		return
+	}
+	st, err := s.openStore(dbPath)
+	if err != nil {
+		return
+	}
+	scoped, err := st.KnowledgeByScope(ctx, out.Path, 5)
+	if err != nil {
+		return
+	}
+	for _, f := range scoped {
+		out.ScopedNotes = append(out.ScopedNotes, LocatedFact{
+			ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience, Scope: f.Scope,
+		})
+	}
 }
 
 func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (result *sdk.CallToolResult, out SummarizeOutput, err error) {
@@ -194,6 +222,11 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	cacheDir := p.CacheDir
 	sloTracker := s.sloFor(p.Root)
 	defer s.recordSummarizeMetrics(cacheDir, sloTracker, relTarget, &out)
+	// Proactive gotcha-on-touch (#645/#650): notes scoped to this file's path,
+	// surfaced whenever you read it — the moment right before you edit. Uniform
+	// across every read mode and the cached/unchanged early-outs via the named
+	// return. Cheap (openStore is cached) and best-effort.
+	defer s.attachScopedNotes(ctx, p.DBPath, &out)
 
 	var sessionID string
 	sessionID, earlyOut, done = s.summarizeCheckCached(req, in, relTarget, etag, isLLM, data, out)

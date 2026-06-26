@@ -62,3 +62,42 @@ func TestSummarizeRejectsUnknownMode(t *testing.T) {
 		t.Errorf("error path leaked full file content (token blow-up regression)")
 	}
 }
+
+// TestSummarizeSurfacesScopedNotes covers #650: reading a file surfaces notes
+// whose scope binds its path, tagged with the matching scope.
+func TestSummarizeSurfacesScopedNotes(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	t.Cleanup(srv.Close)
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\nfunc Greet(name string) string { return \"hi \" + name }\n")
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+	ctx := context.Background()
+
+	if _, _, err := s.knowledge(ctx, nil, KnowledgeInput{
+		ProjectRoot: root, Action: "add", Archetype: "Gotcha",
+		Body: "greet.go: prefix needs a trailing space", Scope: "greet.go",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Any read mode surfaces it — exercise full (raw, no index leg of its own).
+	_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "greet.go", ProjectRoot: root, Mode: "full"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.ScopedNotes) != 1 {
+		t.Fatalf("ScopedNotes = %d, want 1: %+v", len(out.ScopedNotes), out.ScopedNotes)
+	}
+	if out.ScopedNotes[0].Scope != "greet.go" || !strings.Contains(out.ScopedNotes[0].Body, "trailing space") {
+		t.Errorf("wrong scoped note: %+v", out.ScopedNotes[0])
+	}
+
+	// A different file must not surface greet.go's note.
+	writeFile(t, filepath.Join(projDir, "other.go"), "package main\n\nfunc Other() {}\n")
+	if _, o2, _ := s.summarize(ctx, nil, SummarizeInput{Path: "other.go", ProjectRoot: root, Mode: "full"}); len(o2.ScopedNotes) != 0 {
+		t.Errorf("other.go should surface no scoped notes, got %+v", o2.ScopedNotes)
+	}
+}

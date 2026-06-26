@@ -999,6 +999,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"If the file changed since the last read the server may return status=delta with a compact unified diff " +
 				"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
 				"Pass `task` (your current task from `session`) for automatic compression routing of the raw default. " +
+				"Any note whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch, #645) — read it before you edit. " +
 				"On error, returns 'chat-service-unreachable' or 'error'."),
 		}, h.summarize)
 	}
