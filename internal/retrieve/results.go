@@ -38,8 +38,11 @@ func isReadableRange(h SemHit) bool {
 // short, deduplicated list of file ranges the caller should open in
 // full. Strategy by intent:
 //
-//   - symbol_lookup, callers, callees: prefer symbol-lane definition
-//     sites; one read per definition.
+//   - symbol_lookup, callers, callees, assemble (with symbol hits):
+//     prefer symbol-lane definition sites; one read per definition.
+//     For assemble, exact name matches anchor the working set and
+//     prevent unrelated semantic hits (naming collisions) from
+//     misdirecting suggested_reads (#699).
 //   - architecture, package_topology: top 2-3 semantic hits across
 //     distinct files, widened to surrounding chunk extents. When `view`
 //     is populated, PageRank breaks ties within 0.05-wide score buckets
@@ -66,8 +69,13 @@ func PickSuggestedReads(intent string, semHits []SemHit, symbols []SymHit, symbo
 	seen := map[string]struct{}{}
 	out := make([]SuggestedRead, 0, maxReads)
 
-	// Pass 1: symbol definitions for symbol-driven intents.
-	if intent == IntentSymbolLookup || intent == IntentCallers || intent == IntentCallees {
+	// Pass 1: symbol definitions for symbol-driven intents and assemble.
+	// For assemble, exact symbol matches anchor the working set; semantic hits
+	// often collide with unrelated namespaces (e.g. "risk tier" pulling eval
+	// files in a codebase where both review and eval use "tier"), so symbol
+	// paths must lead suggested_reads when the symbol lane has hits.
+	if intent == IntentSymbolLookup || intent == IntentCallers || intent == IntentCallees ||
+		(intent == IntentAssemble && len(symbols) > 0) {
 		for _, sym := range symbols {
 			if sym.Path == "" {
 				continue
