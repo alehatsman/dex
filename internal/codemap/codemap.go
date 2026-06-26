@@ -297,16 +297,25 @@ func renderGrouped(title string, symbols []Symbol, size, budget int) string {
 	return b.String()
 }
 
+// OrientExtras carries the optional top-down sections appended to the L0+L1
+// orientation bundle (#581). Each is supplied by the caller from the graph and
+// must be pre-sorted for byte-stability; an empty field omits its section.
+// Grouping them in one struct lets new sections land without churning the
+// RenderOrient signature (and every caller) each time.
+type OrientExtras struct {
+	Entrypoints []string // file paths of main() functions — where execution starts
+	Externals   []string // external import paths — what the repo talks to
+}
+
 // RenderOrient composes the session-start orientation bundle: the L0 overview,
 // an L1 zoom into the most-central cluster (the first ShownL0 entry, ranked by
-// aggregate PageRank), and — when the project has classifiable third-party deps
-// — an "external dependencies by capability" section (#581). Deterministic and
-// zero-inference — the single home both `ask("")` and `dex map` (no --cluster)
-// render through, so they agree by construction (#348 / #316 story 6 / #574).
-// `externals` is the project's external import paths (sorted by the caller for
-// byte-stability); pass nil to omit the section. Returns just L0 (plus any
-// externals) when no cluster is shown (empty or unindexed graph).
-func RenderOrient(clusters []Cluster, externals []string, l0budget, l1budget int) string {
+// aggregate PageRank), then the top-down sections in `extras` — "entrypoints"
+// (where execution starts) and "external dependencies by capability" (#581).
+// Deterministic and zero-inference — the single home both `ask("")` and
+// `dex map` (no --cluster) render through, so they agree by construction
+// (#348 / #316 story 6 / #574). Returns just L0 (plus any extras) when no
+// cluster is shown (empty or unindexed graph).
+func RenderOrient(clusters []Cluster, extras OrientExtras, l0budget, l1budget int) string {
 	l0 := RenderL0(clusters, l0budget)
 	shown := ShownL0(clusters, l0budget)
 	var b strings.Builder
@@ -315,7 +324,12 @@ func RenderOrient(clusters []Cluster, externals []string, l0budget, l1budget int
 		b.WriteString("\n")
 		b.WriteString(RenderL1(shown[0], l1budget))
 	}
-	if ext := RenderExternals(externals, DefaultExternalsBudget); ext != "" {
+	// Entry → boundary: where it starts, then what it touches.
+	if ep := RenderEntrypoints(extras.Entrypoints, DefaultEntrypointsBudget); ep != "" {
+		b.WriteString("\n")
+		b.WriteString(ep)
+	}
+	if ext := RenderExternals(extras.Externals, DefaultExternalsBudget); ext != "" {
 		b.WriteString("\n")
 		b.WriteString(ext)
 	}

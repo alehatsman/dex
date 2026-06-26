@@ -95,10 +95,11 @@ service clients are the http-api spec's.
   with their original line range, and `no_inline:true` omits payloads.
 - WHEN `ask` is called with an empty question, it routes to session-start
   orientation (intent `orient`): a deterministic, zero-inference L0+L1 codemap
-  bundle (repo cluster overview, an L1 zoom into the most-central cluster, plus an
-  "external dependencies by capability" section — third-party/stdlib imports
-  bucketed into database/network/gpu-ml/serialization/crypto/process/cloud, #581)
-  is returned in the `map` field, so an agent names the right package before any
+  bundle (repo cluster overview, an L1 zoom into the most-central cluster, an
+  "entrypoints" section — the project's main() functions, where execution starts
+  — plus an "external dependencies by capability" section — third-party/stdlib
+  imports bucketed into database/network/gpu-ml/serialization/crypto/process/
+  cloud, #581) is returned in the `map` field, so an agent names the right package before any
   `find`. The bundle is byte-stable across calls (cache-friendly) and is rendered
   through the same path as `dex orient` and `dex map`. WHEN no call graph is
   indexed it degrades to a `no-graph`/`no-index` hint pointing at

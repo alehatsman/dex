@@ -91,8 +91,8 @@ func TestRenderOrientAppendsExternals(t *testing.T) {
 	cs := []Cluster{{ID: 1, Size: 2, Symbols: []Symbol{
 		{QualifiedName: "Run", Kind: "function", Pkg: "main", Path: "main.go", Line: 1, PageRank: 0.9},
 	}}}
-	withExt := RenderOrient(cs, []string{"github.com/mattn/go-sqlite3"}, 1000, 1000)
-	without := RenderOrient(cs, nil, 1000, 1000)
+	withExt := RenderOrient(cs, OrientExtras{Externals: []string{"github.com/mattn/go-sqlite3"}}, 1000, 1000)
+	without := RenderOrient(cs, OrientExtras{}, 1000, 1000)
 	if !strings.Contains(withExt, "external dependencies") {
 		t.Errorf("externals section missing:\n%s", withExt)
 	}

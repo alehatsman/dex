@@ -481,6 +481,32 @@ func (s *Store) ExternalImports(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
+// MainEntrypoints returns the file paths of the project's `main` functions —
+// where execution starts. Sorted (byte-stable for the orientation render) and
+// deduped. Empty for a library with no main (the orient section is then
+// omitted). Used by the orientation "entrypoints" section (#581).
+func (s *Store) MainEntrypoints(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT file_path FROM graph_nodes
+		WHERE kind = 'function' AND name = 'main' AND file_path != ''
+		  AND file_path NOT LIKE '%/testdata/%' AND file_path NOT LIKE 'testdata/%'
+		  AND file_path NOT LIKE '%/vendor/%' AND file_path NOT LIKE 'vendor/%'
+		ORDER BY file_path`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // SymbolEditSpan is the precise edit target for a graph node (#591): the
 // source file plus the symbol's byte span and declaration signature. A
 // refactor consumer resolves a node to this and applies a byte-range edit

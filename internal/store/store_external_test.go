@@ -37,3 +37,37 @@ func TestExternalImports(t *testing.T) {
 		}
 	}
 }
+
+func TestMainEntrypoints(t *testing.T) {
+	st, ctx := newStore(t)
+	now := time.Now()
+
+	rows := []GraphNodeRow{
+		{ID: "m1", Kind: "function", Name: "main", QualifiedName: "main", PackagePath: "example.com/proj/cmd/a", FilePath: "cmd/a/main.go"},
+		{ID: "m2", Kind: "function", Name: "main", QualifiedName: "main", PackagePath: "example.com/proj/cmd/b", FilePath: "cmd/b/main.go"},
+		// Not a main → excluded.
+		{ID: "f1", Kind: "function", Name: "helper", QualifiedName: "helper", PackagePath: "example.com/proj/cmd/a", FilePath: "cmd/a/main.go"},
+		// A "main"-named method (not a function) → excluded.
+		{ID: "x1", Kind: "method", Name: "main", QualifiedName: "(*T).main", PackagePath: "example.com/proj/internal/x", FilePath: "internal/x/x.go"},
+		// Test-fixture mains under testdata/ → excluded as noise.
+		{ID: "t1", Kind: "function", Name: "main", QualifiedName: "main", PackagePath: "p", FilePath: "internal/graph/testdata/rust_simple/src/main.rs"},
+		{ID: "t2", Kind: "function", Name: "main", QualifiedName: "main", PackagePath: "p", FilePath: "vendor/foo/main.go"},
+	}
+	if err := st.GraphUpsertNodes(ctx, rows, now); err != nil {
+		t.Fatal(err)
+	}
+
+	eps, err := st.MainEntrypoints(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"cmd/a/main.go", "cmd/b/main.go"}
+	if len(eps) != len(want) {
+		t.Fatalf("MainEntrypoints = %v, want %v", eps, want)
+	}
+	for i := range want {
+		if eps[i] != want[i] {
+			t.Errorf("MainEntrypoints[%d] = %q, want %q (sorted, only main functions)", i, eps[i], want[i])
+		}
+	}
+}

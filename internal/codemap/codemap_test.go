@@ -199,7 +199,7 @@ func TestShownL0_BudgetTruncatesAgreesWithRenderL0(t *testing.T) {
 // most-central cluster — the session-start orientation bundle (#348).
 func TestRenderOrient_ComposesL0PlusTopClusterL1(t *testing.T) {
 	cs := sampleClusters()
-	bundle := RenderOrient(cs, nil, 1000, 1000)
+	bundle := RenderOrient(cs, OrientExtras{}, 1000, 1000)
 
 	// L0 overview leads the bundle verbatim.
 	l0 := RenderL0(cs, 1000)
@@ -220,7 +220,7 @@ func TestRenderOrient_ComposesL0PlusTopClusterL1(t *testing.T) {
 // cache-friendly for a session (#348).
 func TestRenderOrient_Deterministic(t *testing.T) {
 	cs := sampleClusters()
-	if a, b := RenderOrient(cs, nil, 1000, 1000), RenderOrient(cs, nil, 1000, 1000); a != b {
+	if a, b := RenderOrient(cs, OrientExtras{}, 1000, 1000), RenderOrient(cs, OrientExtras{}, 1000, 1000); a != b {
 		t.Fatalf("orient bundle not byte-stable across calls:\n%q\n!=\n%q", a, b)
 	}
 }
@@ -228,7 +228,7 @@ func TestRenderOrient_Deterministic(t *testing.T) {
 // With no clusters there is nothing to zoom — orient degrades to L0 alone and
 // must not panic.
 func TestRenderOrient_EmptyDegradesToL0(t *testing.T) {
-	if got, want := RenderOrient(nil, nil, 150, 1000), RenderL0(nil, 150); got != want {
+	if got, want := RenderOrient(nil, OrientExtras{}, 150, 1000), RenderL0(nil, 150); got != want {
 		t.Fatalf("empty orient should equal L0 alone:\ngot  %q\nwant %q", got, want)
 	}
 }

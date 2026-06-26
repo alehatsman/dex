@@ -46,6 +46,10 @@ type CommunitiesOutput struct {
 	// fed to the orientation render's "external dependencies by capability"
 	// section (#581). Best-effort; empty when the graph has no import edges.
 	Externals []string `json:"externals,omitempty"`
+	// Entrypoints is the file paths of the project's main() functions, sorted —
+	// fed to the orientation render's "entrypoints" section (#581). Empty for a
+	// library with no main.
+	Entrypoints []string `json:"entrypoints,omitempty"`
 }
 
 func (s *Server) GraphCommunities(ctx context.Context, in CommunitiesInput) (CommunitiesOutput, error) {
@@ -104,6 +108,9 @@ func (s *Server) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, i
 	// (#581). Best-effort — a query failure must not fail the communities call.
 	if ext, err := st.ExternalImports(ctx); err == nil {
 		out.Externals = ext
+	}
+	if eps, err := st.MainEntrypoints(ctx); err == nil {
+		out.Entrypoints = eps
 	}
 	if len(communities) > k {
 		communities = communities[:k]
