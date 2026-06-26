@@ -24,12 +24,18 @@ const (
 	IntentArchitecture    = "architecture"
 	IntentPackageTopology = "package_topology"
 	IntentEditingContext  = "editing_context"
+	// IntentAssemble (#687) is an explicit-only mode: ask assembles a
+	// budget-bounded working set instead of answering. It is never auto-routed
+	// (no keyword/identifier heuristic selects it) — the agent opts in. Its
+	// retrieval reuses the default lanes; what differs is that symbol bodies are
+	// inlined by submodular keyword coverage and prose synthesis is suppressed.
+	IntentAssemble = "assemble"
 )
 
 var validIntents = map[string]struct{}{
 	IntentAuto: {}, IntentBehaviorSearch: {}, IntentSymbolLookup: {},
 	IntentCallers: {}, IntentCallees: {}, IntentArchitecture: {},
-	IntentPackageTopology: {}, IntentEditingContext: {},
+	IntentPackageTopology: {}, IntentEditingContext: {}, IntentAssemble: {},
 }
 
 // Identifier detection patterns. Conservative — false positives are

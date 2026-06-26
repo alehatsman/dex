@@ -22,7 +22,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 		`dex ask . --intent symbol_lookup "RateLimiter"`,
 		`dex ask . --format json "retry logic" | jq .suggested_reads`,
 	)
-	intent := fs.String("intent", "", "force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context")
+	intent := fs.String("intent", "", "force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context|assemble")
 	k := fs.Int("k", 8, "max hits per lane (capped at 30)")
 	format := fs.String("format", "text", "output format: text | json")
 	noInline := fs.Bool("no-inline", false, "skip inlining raw file contents into suggested_reads (stored chunk/file summaries are still emitted; use --format=json to inspect)")
@@ -33,7 +33,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 		return err
 	}
 	if !validIntent(*intent) {
-		return fmt.Errorf("invalid --intent=%q (want one of: auto, behavior_search, symbol_lookup, callers, callees, architecture, package_topology, editing_context)", *intent)
+		return fmt.Errorf("invalid --intent=%q (want one of: auto, behavior_search, symbol_lookup, callers, callees, architecture, package_topology, editing_context, assemble)", *intent)
 	}
 	if !validExpandMode(*expand) {
 		return fmt.Errorf("invalid --expand=%q (want off|on|full, or empty to use DEX_EXPAND_MODE)", *expand)

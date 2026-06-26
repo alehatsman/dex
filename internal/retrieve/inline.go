@@ -2,6 +2,7 @@ package retrieve
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/source"
 )
@@ -39,7 +40,9 @@ type InlineCaps struct {
 // InlineCapsFor returns the byte/line budget for an intent.
 func InlineCapsFor(intent string) InlineCaps {
 	switch intent {
-	case IntentArchitecture, IntentPackageTopology:
+	case IntentArchitecture, IntentPackageTopology, IntentAssemble:
+		// assemble (#687) is context-assembly: the caller wants a usable working
+		// set in one shot, so it gets the denser exploration-sized budget.
 		return InlineCaps{MaxLinesPerRead: 120, MaxBytesPerRead: 8 * 1024, TotalBytesCap: 40 * 1024}
 	default:
 		// Targeted intents (behavior_search / symbol_lookup / callers /
@@ -70,6 +73,14 @@ func InlineCapsFor(intent string) InlineCaps {
 // isTest classifies a path as test source — injected by the transport,
 // which owns path classification.
 func InlineContent(projectRoot, intent string, reads []SuggestedRead, syms []SymHit, sem []SemHit, isTest func(string) bool) {
+	InlineContentKeyed(projectRoot, intent, reads, syms, sem, nil, isTest)
+}
+
+// InlineContentKeyed is InlineContent with the query keywords the assemble
+// intent (#687) needs for submodular symbol selection. keywords is ignored for
+// every other intent. InlineContent is the keyword-free shim for callers that
+// don't assemble.
+func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms []SymHit, sem []SemHit, keywords []string, isTest func(string) bool) {
 	in := &inliner{
 		projectRoot: projectRoot,
 		intent:      intent,
@@ -80,10 +91,51 @@ func InlineContent(projectRoot, intent string, reads []SuggestedRead, syms []Sym
 	in.budget = in.caps.TotalBytesCap
 	in.fillReads(reads)
 	in.fillImports(reads)
-	if intent == IntentSymbolLookup {
+	switch intent {
+	case IntentSymbolLookup:
 		in.fillSymbolBodies(syms)
+	case IntentAssemble:
+		// Inline symbol bodies in submodular keyword-coverage order: the
+		// remaining byte budget then naturally selects the non-redundant subset
+		// that covers the most of the query per byte (#687).
+		in.fillSymbolBodiesOrdered(syms, coverageOrder(syms, keywords))
 	}
 	in.fillSemanticHits(sem)
+}
+
+// coverageOrder ranks symbol indices by submodular max-coverage of the query
+// keywords over each symbol's name + signature. Cost is the symbol's line span
+// (a fetch-free proxy for body size). With no keywords it falls back to natural
+// order so assemble still inlines bodies. Budget 0 = order all covering symbols;
+// the byte cap downstream does the real cut.
+func coverageOrder(syms []SymHit, keywords []string) []int {
+	if len(keywords) == 0 {
+		order := make([]int, len(syms))
+		for i := range syms {
+			order[i] = i
+		}
+		return order
+	}
+	lkw := make([]string, len(keywords))
+	for i, k := range keywords {
+		lkw[i] = strings.ToLower(k)
+	}
+	items := make([]Coverable, len(syms))
+	for i := range syms {
+		hay := strings.ToLower(syms[i].QualifiedName + " " + syms[i].Name + " " + syms[i].Signature)
+		var keys []string
+		for _, k := range lkw {
+			if k != "" && strings.Contains(hay, k) {
+				keys = append(keys, k)
+			}
+		}
+		cost := syms[i].EndLine - syms[i].StartLine + 1
+		if cost < 1 {
+			cost = 1
+		}
+		items[i] = Coverable{Keys: keys, Cost: cost}
+	}
+	return SelectMaxCoverage(items, 0)
 }
 
 // inliner carries the shared budget + read cache across InlineContent's
@@ -220,11 +272,26 @@ func (in *inliner) fillImports(reads []SuggestedRead) {
 // the agent reads the body next, so inlining eliminates an otherwise
 // certain follow-up Read.
 func (in *inliner) fillSymbolBodies(syms []SymHit) {
+	order := make([]int, len(syms))
 	for i := range syms {
+		order[i] = i
+	}
+	in.fillSymbolBodiesOrdered(syms, order)
+}
+
+// fillSymbolBodiesOrdered fills Body on symbols in the given index order,
+// stopping when the shared budget is spent. The order is natural rank for
+// symbol_lookup and submodular coverage order for assemble (#687); the
+// per-symbol fetch and budget accounting are identical either way.
+func (in *inliner) fillSymbolBodiesOrdered(syms []SymHit, order []int) {
+	for _, idx := range order {
 		if in.budget <= 0 {
 			return
 		}
-		s := &syms[i]
+		if idx < 0 || idx >= len(syms) {
+			continue
+		}
+		s := &syms[idx]
 		if s.Path == "" || s.StartLine <= 0 || s.EndLine < s.StartLine {
 			continue
 		}

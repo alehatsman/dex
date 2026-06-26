@@ -425,7 +425,7 @@ func TestInlineSuggestedReadsBasic(t *testing.T) {
 		"line 1\nline 2\nline 3\nline 4\nline 5\n")
 
 	reads := []SuggestedRead{{Path: "f.go", StartLine: 2, EndLine: 4, Reason: "x"}}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil, nil)
 
 	want := "line 2\nline 3\nline 4\n"
 	if reads[0].Content != want {
@@ -447,7 +447,7 @@ func TestInlineSuggestedReadsPerReadLineCap(t *testing.T) {
 	writeFile(t, filepath.Join(root, "big.go"), b.String())
 
 	reads := []SuggestedRead{{Path: "big.go", StartLine: 1, EndLine: 200}}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil, nil)
 
 	if !reads[0].Truncated {
 		t.Error("want truncated=true when range exceeds per-read cap")
@@ -485,7 +485,7 @@ func TestInlineSuggestedReadsTotalByteBudget(t *testing.T) {
 		{Path: "e.go", StartLine: 1, EndLine: 30},
 		{Path: "f.go", StartLine: 1, EndLine: 30},
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil, nil)
 
 	total := 0
 	for _, r := range reads {
@@ -510,7 +510,7 @@ func TestInlineContentSemanticHitsAlsoFilled(t *testing.T) {
 		{Path: "a.go", StartLine: 1, EndLine: 3},
 		{Path: "b.go", StartLine: 1, EndLine: 3},
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, sem)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, sem, nil)
 
 	if sem[0].Content == "" {
 		t.Error("semantic_hits[0] should be filled (cache-hit from suggested_reads)")
@@ -536,7 +536,7 @@ func TestInlineContentSharedBudgetDoesNotDoubleCharge(t *testing.T) {
 		{Path: "shared.go", StartLine: 1, EndLine: 3},
 		{Path: "other.go", StartLine: 1, EndLine: 3},
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, sem)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, sem, nil)
 
 	if reads[0].Content == "" || sem[0].Content == "" || sem[1].Content == "" {
 		t.Errorf("expected all three to be filled; got reads=%q sem0=%q sem1=%q",
@@ -563,7 +563,7 @@ func TestInlineContentScoreFloorOnLowSignalQueries(t *testing.T) {
 		{Path: "weaker.go", StartLine: 1, EndLine: 3, Score: 0.38}, // < noiseFloorScore → suppressed
 		// 0.41 is above the floor — would also be inlined.
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, nil, nil, sem)
+	inlineContent(root, retrieve.IntentBehaviorSearch, nil, nil, sem, nil)
 	if sem[0].Content == "" {
 		t.Error("top hit (score 0.42) should still inline — only sub-floor hits are suppressed")
 	}
@@ -577,7 +577,7 @@ func TestInlineContentScoreFloorOnLowSignalQueries(t *testing.T) {
 		{Path: "strong.go", StartLine: 1, EndLine: 3, Score: 0.80},
 		{Path: "weaker.go", StartLine: 1, EndLine: 3, Score: 0.38},
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, nil, nil, sem2)
+	inlineContent(root, retrieve.IntentBehaviorSearch, nil, nil, sem2, nil)
 	if sem2[1].Content == "" {
 		t.Error("low-score companion to a strong top should still inline (floor only fires on no-signal queries)")
 	}
@@ -586,7 +586,7 @@ func TestInlineContentScoreFloorOnLowSignalQueries(t *testing.T) {
 func TestInlineSuggestedReadsMissingFileGraceful(t *testing.T) {
 	root := t.TempDir()
 	reads := []SuggestedRead{{Path: "does-not-exist.go", StartLine: 1, EndLine: 5}}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil) // must not panic
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil, nil) // must not panic
 	if reads[0].Content != "" {
 		t.Errorf("missing file should leave content empty, got %q", reads[0].Content)
 	}
@@ -603,7 +603,7 @@ func TestInlineContentFillsSymbolBodyForSymbolLookup(t *testing.T) {
 	syms := []SymbolHit{
 		{QualifiedName: "Alpha", Path: "a.go", StartLine: 3, EndLine: 5},
 	}
-	inlineContent(root, retrieve.IntentSymbolLookup, nil, syms, nil)
+	inlineContent(root, retrieve.IntentSymbolLookup, nil, syms, nil, nil)
 	if syms[0].Body == "" {
 		t.Fatal("symbol body should be inlined for symbol_lookup intent")
 	}
@@ -641,7 +641,7 @@ func TestInlineContentFillsImportsForGoFile(t *testing.T) {
 		// Reads a function far from the import block (StartLine > 5).
 		{Path: "deep/foo.go", StartLine: 20, EndLine: 22, Reason: "test"},
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil, nil)
 	if reads[0].Imports == "" {
 		t.Fatal("Go imports should be inlined for a read starting away from the top")
 	}
@@ -660,7 +660,7 @@ func TestInlineContentSkipsImportsWhenReadCoversTop(t *testing.T) {
 		// StartLine=1 → the read already includes the import line.
 		{Path: "foo.go", StartLine: 1, EndLine: 5, Reason: "test"},
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil, nil)
 	if reads[0].Imports != "" {
 		t.Errorf("Imports should be omitted when the read already covers the top; got %q", reads[0].Imports)
 	}
@@ -672,7 +672,7 @@ func TestInlineContentSkipsImportsForUnknownLanguage(t *testing.T) {
 	reads := []SuggestedRead{
 		{Path: "foo.txt", StartLine: 20, EndLine: 22, Reason: "test"},
 	}
-	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, reads, nil, nil, nil)
 	if reads[0].Imports != "" {
 		t.Errorf("unknown language should produce empty Imports; got %q", reads[0].Imports)
 	}
@@ -687,7 +687,7 @@ func TestInlineContentSkipsSymbolBodyForOtherIntents(t *testing.T) {
 	}
 	// behavior_search should NOT fill bodies — signature+doc are
 	// considered sufficient and we save budget for semantic_hits.
-	inlineContent(root, retrieve.IntentBehaviorSearch, nil, syms, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, nil, syms, nil, nil)
 	if syms[0].Body != "" {
 		t.Errorf("non-symbol_lookup intent should leave Body empty; got %q", syms[0].Body)
 	}
@@ -778,7 +778,7 @@ func TestInlineContentSkipsTestSourceForNonEditing(t *testing.T) {
 
 	t.Run("behavior_search drops test content", func(t *testing.T) {
 		sem := mkHits()
-		inlineContent(projDir, retrieve.IntentBehaviorSearch, nil, nil, sem)
+		inlineContent(projDir, retrieve.IntentBehaviorSearch, nil, nil, sem, nil)
 		if sem[0].Content == "" {
 			t.Errorf("impl greet.go should be inlined; got empty")
 		}
@@ -789,7 +789,7 @@ func TestInlineContentSkipsTestSourceForNonEditing(t *testing.T) {
 
 	t.Run("architecture drops test content", func(t *testing.T) {
 		sem := mkHits()
-		inlineContent(projDir, retrieve.IntentArchitecture, nil, nil, sem)
+		inlineContent(projDir, retrieve.IntentArchitecture, nil, nil, sem, nil)
 		if sem[1].Content != "" {
 			t.Errorf("architecture: test should be path-only; got %d bytes", len(sem[1].Content))
 		}
@@ -797,7 +797,7 @@ func TestInlineContentSkipsTestSourceForNonEditing(t *testing.T) {
 
 	t.Run("editing_context keeps test content", func(t *testing.T) {
 		sem := mkHits()
-		inlineContent(projDir, retrieve.IntentEditingContext, nil, nil, sem)
+		inlineContent(projDir, retrieve.IntentEditingContext, nil, nil, sem, nil)
 		if sem[1].Content == "" {
 			t.Errorf("editing_context: sibling test should be inlined; got empty")
 		}
@@ -931,11 +931,11 @@ func TestInlineSuggestedReadsExplorationDenser(t *testing.T) {
 	writeFile(t, filepath.Join(root, "big.go"), b.String())
 
 	targeted := []SuggestedRead{{Path: "big.go", StartLine: 1, EndLine: 200}}
-	inlineContent(root, retrieve.IntentBehaviorSearch, targeted, nil, nil)
+	inlineContent(root, retrieve.IntentBehaviorSearch, targeted, nil, nil, nil)
 	targetedLines := strings.Count(targeted[0].Content, "\n")
 
 	exploration := []SuggestedRead{{Path: "big.go", StartLine: 1, EndLine: 200}}
-	inlineContent(root, retrieve.IntentArchitecture, exploration, nil, nil)
+	inlineContent(root, retrieve.IntentArchitecture, exploration, nil, nil, nil)
 	explorationLines := strings.Count(exploration[0].Content, "\n")
 
 	if !(explorationLines > targetedLines) {

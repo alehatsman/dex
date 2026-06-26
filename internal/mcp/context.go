@@ -33,7 +33,7 @@ import (
 type ContextInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	Question    string `json:"question" jsonschema:"free-text question about the codebase (e.g. 'where is filesystem event debouncing handled?', 'how does indexing work?', 'callers of (*Store).Search')"`
-	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context (default: auto)"`
+	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context|assemble (default: auto). assemble returns a budget-bounded working set — symbol bodies chosen by submodular keyword coverage, prose synthesis suppressed — instead of a prose answer (#687)"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
 	NoInline    bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
 	Expand      string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
@@ -391,7 +391,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	enrichGraph(&out, intent, graphView, out.SemanticHits, out.Symbols)
 	out.SuggestedReads = pickSuggestedReads(intent, out.SemanticHits, out.Symbols, symbolPaths, graphView)
 	if !in.NoInline {
-		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits)
+		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits, candidates.Identifiers)
 		out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
 	}
 	(&Enricher{projectRoot: p.Root, Store: st}).Enrich(ctx, intent, k, &out)
@@ -427,6 +427,8 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		return nil, out, nil
 	}
 
+	// synthesizeAnswer self-skips the assemble intent (#687): assemble returns the
+	// structured working set, not prose, so the bundle IS the answer.
 	s.synthesizeAnswer(ctx, logTok, intent, in.Question, &out)
 
 	// next_action was built deterministically from suggested_reads[0] before

@@ -8,12 +8,14 @@ import "github.com/alehatsman/dex/internal/retrieve"
 // and copies the inline overlay (Content/Body/Truncated/Imports) back
 // onto the wire slices in place. See retrieve.InlineContent for the
 // per-intent budget and fill model.
-func inlineContent(projectRoot, intent string, reads []SuggestedRead, syms []SymbolHit, sem []SemHit) {
+// keywords carries the query identifiers the assemble intent (#687) needs for
+// submodular symbol selection; it is ignored for every other intent (pass nil).
+func inlineContent(projectRoot, intent string, reads []SuggestedRead, syms []SymbolHit, sem []SemHit, keywords []string) {
 	nReads := toNeutralReads(reads)
 	nSyms := toNeutralSyms(syms)
 	nSem := toNeutralSems(sem)
 
-	retrieve.InlineContent(projectRoot, intent, nReads, nSyms, nSem, isTestPath)
+	retrieve.InlineContentKeyed(projectRoot, intent, nReads, nSyms, nSem, keywords, isTestPath)
 
 	for i := range reads {
 		reads[i].Content = nReads[i].Content

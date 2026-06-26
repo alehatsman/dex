@@ -21,7 +21,7 @@ func splitProjectArg(args []string) (path string, rest []string) {
 func validIntent(s string) bool {
 	switch s {
 	case "", "auto", "behavior_search", "symbol_lookup", "callers", "callees",
-		"architecture", "package_topology", "editing_context":
+		"architecture", "package_topology", "editing_context", "assemble":
 		return true
 	}
 	return false

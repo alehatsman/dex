@@ -45,6 +45,10 @@ const answerMaxEvidenceBytes = 12 * 1024
 // before the call completes. A cache hit returns the whole answer at once
 // and never calls logTok.
 func (s *Server) synthesizeAnswer(ctx context.Context, logTok func(string), intent, question string, out *ContextOutput) {
+	// assemble (#687) returns the structured working set, not prose — no synthesis.
+	if intent == retrieve.IntentAssemble {
+		return
+	}
 	if s.ChatClient == nil {
 		return
 	}

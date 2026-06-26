@@ -97,7 +97,12 @@ service clients are the http-api spec's.
   (behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context),
   composes the matching lanes, and returns a compact bundle (semantic hits,
   symbols, suggested reads with inlined contents, a `next_action`, an `avoid`
-  line); a caller MAY override the inferred intent. Inline content shares one
+  line); a caller MAY override the inferred intent. The explicit-only `assemble`
+  intent (#687, never auto-routed) turns `ask` into a context-assembler: it
+  inlines symbol bodies in submodular keyword-coverage order — the non-redundant
+  subset covering the most of the query per byte ((1 − 1/e) greedy) — under the
+  denser exploration byte budget, and suppresses prose synthesis so the
+  structured working set IS the answer. Inline content shares one
   per-intent byte pool across both lanes; oversize ranges arrive `truncated:true`
   with their original line range, and `no_inline:true` omits payloads.
 - WHEN `ask` is called with an empty question, it routes to session-start

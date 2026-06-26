@@ -55,7 +55,7 @@ var (
 
 	intentChoices = []string{
 		"auto", "behavior_search", "symbol_lookup", "callers", "callees",
-		"architecture", "package_topology", "editing_context",
+		"architecture", "package_topology", "editing_context", "assemble",
 	}
 	// readModeChoices is the canonical CLI `read --mode` set — the single source
 	// of truth for usage text, shell completion, and `cmdRead` validation.
