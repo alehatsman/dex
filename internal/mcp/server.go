@@ -182,6 +182,7 @@ type Server struct {
 	StoreOpts    store.Options        // applied to every Store opened by the server
 	Retrieve     retrieve.Service     // query-time ranking service; holds the cross-encoder + shared rerank cache (#473)
 	AutoWatch    AutoWatchConfig      // lazy per-project watcher; zero value disables
+	CCRDir       string               // optional override for the proxy CCR tee dir; defaults to ~/.cache/dex/proxy/tee (#630)
 
 	watcherState // project watcher goroutines
 	sessionState // per-MCP-session tracking (throttle, dedup, body handles)
@@ -1081,6 +1082,13 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"Pass `ref` (a git revision: HEAD~5, v1.0, a sha) to time-travel — read the file AS OF that commit, " +
 				"with mode=full (raw) or mode=signatures (the historical API); the file must still exist now (#644). " +
 				"Any note whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch, #645) — read it before you edit. " +
+				"Pass `slice` to extract a surgical subset of the content without sending the whole file: " +
+				"head:N (first N lines), tail:N (last N lines), range:L1-L2 (1-indexed inclusive), " +
+				"search:PATTERN (RE2 grep with ±3 context lines, groups separated by ---), " +
+				"json_path:EXPR (dot-path JSON extraction, e.g. $.dependencies). " +
+				"Slice composes with handle: the handle resolves to a range first, then slice extracts within it. " +
+				"Pass `ccr_hash` (a hex string from a dex:lc_expand:<hash> recovery marker) to retrieve an archived " +
+				"tool result from the proxy's CCR tee store; `slice` applies to the retrieved blob. " +
 				"On error, returns 'chat-service-unreachable' or 'error'."),
 		}, h.summarize)
 	}

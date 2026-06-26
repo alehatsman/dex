@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,6 +49,18 @@ type SummarizeInput struct {
 	// shared header and each file's block is replaced with a back-reference comment.
 	// Pass false to receive raw per-file output without any deduplication.
 	Dedup *bool `json:"dedup,omitempty" jsonschema:"set to false to disable Go import deduplication in batch reads (default: true, dedup is on for full/signatures modes with ≥2 Go files)"`
+	// Slice applies a surgical extraction to the file content before returning it,
+	// superseding mode when present. Supported specs (#630):
+	//   head:N          first N lines
+	//   tail:N          last N lines
+	//   range:L1-L2     lines L1–L2 (1-indexed, inclusive)
+	//   search:PATTERN  RE2 grep ± 3 context lines; groups separated by ---
+	//   json_path:EXPR  dot-path JSON extraction ($.a.b, $.a[0].b)
+	Slice string `json:"slice,omitempty" jsonschema:"surgical extraction: head:N (first N lines), tail:N (last N lines), range:L1-L2 (line slice), search:PATTERN (RE2 grep ±3 context lines), json_path:EXPR (JSON dot-path e.g. $.a.b[0])"`
+	// CCRHash retrieves a content-addressed blob written by the proxy's CCR tee
+	// store (dex:lc_expand:<hash> recovery markers). When set, path/paths/handle
+	// are ignored; Slice applies to the retrieved blob content (#630).
+	CCRHash string `json:"ccr_hash,omitempty" jsonschema:"content-addressed recovery hash (from a dex:lc_expand:<hash> marker in pruned proxy history); returns the archived tool result, with optional slice applied"`
 }
 
 type SummarizeOutput struct {
@@ -134,9 +147,10 @@ func (s *Server) attachScopedNotes(ctx context.Context, dbPath string, out *Summ
 
 func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (result *sdk.CallToolResult, out SummarizeOutput, err error) {
 
-	// Expansion handle (#344): decode to concrete path + line range, superseding
-	// any path/paths/lines the caller also passed.
-	in, bad := applyExpansionHandle(in)
+	// CCR blob expansion and handle decode (#344, #630): CCR short-circuits to the
+	// content-addressed store; a plain handle decodes to a concrete path+range.
+	// Both return a *SummarizeOutput on early-exit so one nil-check covers both.
+	in, bad := s.summarizePreFile(in)
 	if bad != nil {
 		return nil, *bad, nil
 	}
@@ -166,13 +180,9 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	if strings.TrimSpace(in.Path) == "" {
 		return nil, SummarizeOutput{Status: "error", Hint: "path is empty"}, nil
 	}
-	root := in.ProjectRoot
-	if root == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, SummarizeOutput{Status: "error", Hint: "could not determine project root; pass project_root explicitly"}, nil
-		}
-		root = wd
+	root, rootErr := resolveProjectRoot(in.ProjectRoot)
+	if rootErr != nil {
+		return nil, SummarizeOutput{Status: "error", Hint: rootErr.Error()}, nil
 	}
 	p, err := proj.Resolve(root, s.IndexDir)
 	if err != nil {
@@ -250,6 +260,14 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 
 	if earlyOut, done = s.summarizeExpandHandle(in, data, etag, sessionID, relTarget, out); done {
 		out = earlyOut
+		return
+	}
+
+	// Surgical slice (#630): apply spec to file content and return immediately,
+	// bypassing mode dispatch. This composes with handle-resolved ranges: a
+	// handle narrows to a line range first, then slice extracts within it.
+	if earlySlice, done := s.summarizeModeSlice(in, data, etag, sessionID, relTarget, out); done {
+		out = earlySlice
 		return
 	}
 
@@ -347,6 +365,107 @@ func applyExpansionHandle(in SummarizeInput) (SummarizeInput, *SummarizeOutput) 
 		in.Mode = fmt.Sprintf("lines:%d-%d", start, end)
 	}
 	return in, nil
+}
+
+// summarizePreFile is the combined pre-file-read gate (#344, #630).
+// It handles CCR blob expansion (ccr_hash present → return immediately) and
+// expansion handle decoding (handle present → rewrite path/range). A non-nil
+// *SummarizeOutput means the caller should return it unchanged.
+func (s *Server) summarizePreFile(in SummarizeInput) (SummarizeInput, *SummarizeOutput) {
+	if strings.TrimSpace(in.CCRHash) != "" {
+		out := s.summarizeCCR(in)
+		return in, &out
+	}
+	return applyExpansionHandle(in)
+}
+
+// summarizeModeSlice applies a Slice spec to file content and signals done=true
+// so the caller can bypass mode dispatch (#630). Returns done=false when no
+// Slice is set, letting the normal mode switch handle the request.
+func (s *Server) summarizeModeSlice(
+	in SummarizeInput, data []byte, etag, sessionID, relTarget string, out SummarizeOutput,
+) (earlyOut SummarizeOutput, done bool) {
+	spec := strings.TrimSpace(in.Slice)
+	if spec == "" {
+		return SummarizeOutput{}, false
+	}
+	sliced, hint, err := applySlice(data, spec)
+	if err != nil {
+		return SummarizeOutput{Status: "error", Hint: fmt.Sprintf("slice: %v", err)}, true
+	}
+	out.Status = "ok"
+	out.Etag = etag
+	out.Content = string(sliced)
+	out.Bytes = len(sliced)
+	out.Hint = hint
+	s.readCacheMark(sessionID, relTarget, etag)
+	return out, true
+}
+
+// resolveProjectRoot returns projectRoot if non-empty, otherwise falls back
+// to the working directory. The error message is already user-facing.
+func resolveProjectRoot(projectRoot string) (string, error) {
+	if projectRoot != "" {
+		return projectRoot, nil
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", errors.New("could not determine project root; pass project_root explicitly")
+	}
+	return wd, nil
+}
+
+// summarizeCCR retrieves a content-addressed blob from the proxy's CCR tee
+// store (#630). It applies Slice if set and returns the blob as plain content.
+func (s *Server) summarizeCCR(in SummarizeInput) SummarizeOutput {
+	hash := strings.TrimSpace(in.CCRHash)
+	content, ok := s.ccrGet(hash)
+	if !ok {
+		return SummarizeOutput{
+			Status: "not-found",
+			Hint:   fmt.Sprintf("CCR hash %q not found — the blob may have expired (TTL 24h) or the proxy CCR store is not enabled (DEX_PROXY_CCR)", hash),
+		}
+	}
+	if spec := strings.TrimSpace(in.Slice); spec != "" {
+		sliced, hint, err := applySlice([]byte(content), spec)
+		if err != nil {
+			return SummarizeOutput{Status: "error", Hint: fmt.Sprintf("slice: %v", err)}
+		}
+		return SummarizeOutput{
+			Status:  "ok",
+			Content: string(sliced),
+			Bytes:   len(sliced),
+			Hint:    fmt.Sprintf("CCR blob %s: %s", hash, hint),
+		}
+	}
+	return SummarizeOutput{
+		Status:  "ok",
+		Content: content,
+		Bytes:   len(content),
+		Hint:    fmt.Sprintf("CCR blob %s", hash),
+	}
+}
+
+// ccrGet reads a content-addressed blob from the proxy's tee store directory.
+// Returns ("", false) when the hash is absent, expired, or the dir is unreadable.
+// The dir is always ~/.cache/dex/proxy/tee (same path as internal/proxy.TeeStore).
+func (s *Server) ccrGet(hash string) (string, bool) {
+	if hash == "" {
+		return "", false
+	}
+	dir := s.CCRDir
+	if dir == "" {
+		cacheDir, err := os.UserCacheDir()
+		if err != nil {
+			return "", false
+		}
+		dir = filepath.Join(cacheDir, "dex", "proxy", "tee")
+	}
+	b, err := os.ReadFile(filepath.Join(dir, hash+".log"))
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
 }
 
 // summarizeBatch handles file_view when paths[] is provided.
