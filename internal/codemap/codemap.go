@@ -306,12 +306,16 @@ type OrientExtras struct {
 	Entrypoints []string     // file paths of main() functions — where execution starts
 	ImportEdges []ImportEdge // internal package→package imports — for the dependency-layer view
 	Externals   []string     // external import paths — what the repo talks to
+	Scale       Scale        // file/package/symbol/edge counts — the repo's size at a glance
 }
 
 // RenderOrient composes the session-start orientation bundle: the L0 overview,
 // an L1 zoom into the most-central cluster (the first ShownL0 entry, ranked by
-// aggregate PageRank), then the top-down sections in `extras` — "entrypoints"
-// (where execution starts) and "external dependencies by capability" (#581).
+// aggregate PageRank), then the top-down sections in `extras`, in scan order —
+// "entrypoints" (where execution starts) → dependency "layers" (how packages
+// stack) → "external dependencies by capability" (what the repo talks to) →
+// "scale" (how big it all is) (#581). Each section is budget-capped and omitted
+// when its data is empty, so a section's absence leaves the bundle byte-stable.
 // Deterministic and zero-inference — the single home both `ask("")` and
 // `dex map` (no --cluster) render through, so they agree by construction
 // (#348 / #316 story 6 / #574). Returns just L0 (plus any extras) when no
@@ -338,6 +342,11 @@ func RenderOrient(clusters []Cluster, extras OrientExtras, l0budget, l1budget in
 	if ext := RenderExternals(extras.Externals, DefaultExternalsBudget); ext != "" {
 		b.WriteString("\n")
 		b.WriteString(ext)
+	}
+	// Footer: how big is all of the above.
+	if sc := RenderScale(extras.Scale, DefaultScaleBudget); sc != "" {
+		b.WriteString("\n")
+		b.WriteString(sc)
 	}
 	return b.String()
 }

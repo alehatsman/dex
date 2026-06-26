@@ -550,6 +550,47 @@ func (s *Store) MainEntrypoints(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
+// GraphScale is a one-glance size summary of the indexed graph (#581 "scale"
+// orientation section): how many source files, project packages, declared
+// symbols, and call edges the repo holds. Counts exclude testdata/vendor so the
+// number reflects the project a reader is orienting in, not its fixtures.
+type GraphScale struct {
+	Files     int // source files (kind='file' nodes)
+	Packages  int // project packages (kind='package' nodes)
+	Symbols   int // declarations: function|method|struct|interface|type|class
+	CallEdges int // 'calls' edges — the call-graph density
+}
+
+// Empty reports whether the scale carries no signal (unindexed / graph-less),
+// so the orientation render can omit the section.
+func (g GraphScale) Empty() bool {
+	return g.Files == 0 && g.Packages == 0 && g.Symbols == 0 && g.CallEdges == 0
+}
+
+// GraphScale returns the project's size counts for the orientation "scale"
+// section. One round-trip via scalar subqueries; deterministic (pure counts), so
+// the rendered line stays byte-stable / cache-friendly. testdata and vendor are
+// excluded by the same path criteria the sibling orient queries use.
+func (s *Store) GraphScale(ctx context.Context) (GraphScale, error) {
+	const notFixture = `
+		AND file_path NOT LIKE '%/testdata/%' AND file_path NOT LIKE 'testdata/%'
+		AND file_path NOT LIKE '%/vendor/%' AND file_path NOT LIKE 'vendor/%'`
+	var g GraphScale
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+		  (SELECT count(*) FROM graph_nodes WHERE kind='file' AND file_path != ''`+notFixture+`),
+		  (SELECT count(*) FROM graph_nodes WHERE kind='package' AND package_path != ''
+		     AND package_path NOT LIKE '%testdata%' AND package_path NOT LIKE '%/vendor/%'),
+		  (SELECT count(*) FROM graph_nodes
+		     WHERE kind IN ('function','method','struct','interface','type','class')`+notFixture+`),
+		  (SELECT count(*) FROM graph_edges WHERE kind='calls')`).
+		Scan(&g.Files, &g.Packages, &g.Symbols, &g.CallEdges)
+	if err != nil {
+		return GraphScale{}, err
+	}
+	return g, nil
+}
+
 // SymbolEditSpan is the precise edit target for a graph node (#591): the
 // source file plus the symbol's byte span and declaration signature. A
 // refactor consumer resolves a node to this and applies a byte-range edit

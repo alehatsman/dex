@@ -126,7 +126,7 @@ func mapVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in Ma
 	// an auto-zoom into the most-central cluster (#574, the former `orient`).
 	// RenderOrient defaults the budgets when zero (150 L0, 1000 L1).
 	return nil, MapOutput{Status: "ok", Zoom: "orient", Map: codemap.RenderOrient(clusters,
-		codemap.OrientExtras{Entrypoints: comm.Entrypoints, ImportEdges: CodemapImportEdges(comm.ImportEdges), Externals: comm.Externals}, in.Budget, 0)}, nil
+		codemap.OrientExtras{Entrypoints: comm.Entrypoints, ImportEdges: CodemapImportEdges(comm.ImportEdges), Externals: comm.Externals, Scale: CodemapScale(comm.Scale)}, in.Budget, 0)}, nil
 }
 
 // adaptCommunities maps the MCP community projection into the renderer's input.

@@ -56,6 +56,9 @@ type CommunitiesOutput struct {
 	// ImportEdges is the internal package→package import graph — fed to the
 	// orientation render's dependency-"layers" section (#581).
 	ImportEdges []store.PackageImport `json:"import_edges,omitempty"`
+	// Scale is the project's size counts (files/packages/symbols/call edges) —
+	// fed to the orientation render's "scale" section (#581).
+	Scale store.GraphScale `json:"scale,omitempty"`
 }
 
 // CodemapImportEdges adapts store package-import edges to the codemap type fed
@@ -69,6 +72,17 @@ func CodemapImportEdges(pis []store.PackageImport) []codemap.ImportEdge {
 		out[i] = codemap.ImportEdge{From: e.From, To: e.To}
 	}
 	return out
+}
+
+// CodemapScale adapts store size counts to the codemap type fed to the
+// orientation "scale" render (#581).
+func CodemapScale(s store.GraphScale) codemap.Scale {
+	return codemap.Scale{
+		Files:     s.Files,
+		Packages:  s.Packages,
+		Symbols:   s.Symbols,
+		CallEdges: s.CallEdges,
+	}
 }
 
 func (s *Server) GraphCommunities(ctx context.Context, in CommunitiesInput) (CommunitiesOutput, error) {
@@ -133,6 +147,9 @@ func (s *Server) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, i
 	}
 	if ie, err := st.InternalPackageImports(ctx); err == nil {
 		out.ImportEdges = ie
+	}
+	if sc, err := st.GraphScale(ctx); err == nil {
+		out.Scale = sc
 	}
 	if len(communities) > k {
 		communities = communities[:k]

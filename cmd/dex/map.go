@@ -98,10 +98,10 @@ func cmdMap(ctx context.Context, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(map[string]any{"zoom": "orient", "map": codemap.RenderOrient(clusters,
-			codemap.OrientExtras{Entrypoints: out.Entrypoints, ImportEdges: mcp.CodemapImportEdges(out.ImportEdges), Externals: out.Externals}, *budget, 0)})
+			codemap.OrientExtras{Entrypoints: out.Entrypoints, ImportEdges: mcp.CodemapImportEdges(out.ImportEdges), Externals: out.Externals, Scale: mcp.CodemapScale(out.Scale)}, *budget, 0)})
 	}
 	fmt.Print(codemap.RenderOrient(clusters,
-		codemap.OrientExtras{Entrypoints: out.Entrypoints, ImportEdges: mcp.CodemapImportEdges(out.ImportEdges), Externals: out.Externals}, *budget, 0))
+		codemap.OrientExtras{Entrypoints: out.Entrypoints, ImportEdges: mcp.CodemapImportEdges(out.ImportEdges), Externals: out.Externals, Scale: mcp.CodemapScale(out.Scale)}, *budget, 0))
 	return nil
 }
 
