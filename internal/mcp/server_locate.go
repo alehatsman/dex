@@ -166,8 +166,10 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 			})
 		}
 	}
-	// Then semantic/salience recall on the symbol, deduped against the scoped set.
-	if facts, ferr := s.recallFacts(ctx, st, res.symbol, k, false); ferr == nil {
+	// Then semantic recall on the symbol, deduped against the scoped set.
+	// skipFallback=true: locate shows no notes rather than irrelevant top-salience
+	// ones when the symbol doesn't match any note semantically.
+	if facts, ferr := s.recallFacts(ctx, st, res.symbol, k, false, true); ferr == nil {
 		for _, f := range facts {
 			if seenNote[f.ID] {
 				continue

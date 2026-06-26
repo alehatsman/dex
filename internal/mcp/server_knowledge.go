@@ -349,9 +349,15 @@ func (s *Server) backfillFactVecs(ctx context.Context, st *store.Store) {
 // recallFacts returns up to k facts relevant to query. With a non-empty query
 // and a live embed client it ranks by hybrid semantic+quality+recency score
 // (backfilling any missing fact vectors first); otherwise it falls back to
-// top-salience facts. When bump is true the hit_count of each returned fact is
-// incremented (used by ask/overview injection, not by plain `list`).
-func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string, k int, bump bool) ([]store.KnowledgeFact, error) {
+// top-salience facts unless skipFallback is true. When bump is true the
+// hit_count of each returned fact is incremented (used by ask/overview
+// injection, not by plain `list`).
+//
+// Set skipFallback=true for symbol-oriented callers (locate, review): they
+// should show no notes rather than irrelevant top-salience ones when the
+// semantic search returns nothing.
+func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string, k int, bump bool, skipFallback ...bool) ([]store.KnowledgeFact, error) {
+	noFallback := len(skipFallback) > 0 && skipFallback[0]
 	var facts []store.KnowledgeFact
 	var err error
 	if strings.TrimSpace(query) != "" && s.EmbedClient != nil {
@@ -360,7 +366,7 @@ func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string,
 			facts, err = st.KnowledgeQueryVec(ctx, vecs[0], k)
 		}
 	}
-	if facts == nil && err == nil {
+	if facts == nil && err == nil && !noFallback {
 		facts, err = st.KnowledgeQuery(ctx, k)
 	}
 	if err != nil {
