@@ -85,12 +85,21 @@ func hasCacheControlMarker(raw json.RawMessage) bool {
 	return false
 }
 
-// cachedPrefixLen returns the index after the last cache_control marker,
-// scanning at message, content-block, and text levels.
-// Returns 0 if no marker found (prune freely).
-func cachedPrefixLen(messages []json.RawMessage) int {
+// cachedPrefixLen returns the position after the last cache_control marker
+// found within messages[0:boundary], scanning at message, content-block, and
+// text levels. Returns 0 if no marker exists in that range (prune freely).
+//
+// boundary is the start of the keep-recent zone (pruneStart result). Markers
+// beyond that point are ignored: Claude Code places cache_control on recent
+// messages for its own prompt caching, and AlignCacheBreakpoints strips and
+// replaces them after pruning. Without the boundary cap, a late marker would
+// set pruneFloor ≥ boundary and block all pruning on every request.
+func cachedPrefixLen(messages []json.RawMessage, boundary int) int {
 	last := 0
 	for i, raw := range messages {
+		if i >= boundary {
+			break
+		}
 		if hasCacheControlMarker(raw) {
 			last = i + 1
 		}
@@ -263,7 +272,7 @@ func pruneHistory(messages []json.RawMessage, keepRecent int, store *TeeStore) (
 
 	out := make([]json.RawMessage, len(messages))
 	boundary := pruneStart(len(messages), keepRecent)
-	pruneFloor := cachedPrefixLen(messages) // protect client-set cache_control prefix
+	pruneFloor := cachedPrefixLen(messages, boundary) // protect client-set cache_control prefix
 	var st PruneHistoryStats
 
 	for i, raw := range messages {

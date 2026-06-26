@@ -670,3 +670,81 @@ func keys(m map[string]bool) []string {
 	}
 	return out
 }
+
+// TestCachedPrefixLen_LateCacheControlDoesNotBlockPruning is a regression test
+// for the bug where cachedPrefixLen scanned the entire history and returned the
+// position-after-last cache_control marker. Claude Code places cache_control on
+// recent messages; this previously set pruneFloor ≥ boundary, blocking all pruning.
+func TestCachedPrefixLen_LateCacheControlDoesNotBlockPruning(t *testing.T) {
+	cacheMarked := func(id, name string) any {
+		return map[string]any{
+			"role": "assistant",
+			"content": []any{
+				map[string]any{
+					"type": "tool_use", "id": id, "name": name,
+					"input": map[string]any{"command": "ls"},
+					// cache_control on the LAST assistant turn — Claude Code style
+					"cache_control": map[string]any{"type": "ephemeral"},
+				},
+			},
+		}
+	}
+
+	longContent := strings.Repeat("func example() { return nil }\n", 25) // >200 chars
+
+	// Build 20 turns without cache_control, then 2 turns with cache_control at the end.
+	var msgs []json.RawMessage
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("s%d", i)
+		msgs = append(msgs,
+			mustMarshal(map[string]any{
+				"role": "assistant",
+				"content": []any{
+					map[string]any{"type": "tool_use", "id": id, "name": "Bash",
+						"input": map[string]any{"command": "cat"}},
+				},
+			}),
+			mustMarshal(map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "tool_result", "tool_use_id": id, "content": longContent},
+				},
+			}),
+		)
+	}
+	// Last two turns get cache_control (simulating Claude Code's dynamic placement).
+	for _, i := range []int{20, 21} {
+		id := fmt.Sprintf("s%d", i)
+		msgs = append(msgs,
+			mustMarshal(cacheMarked(id, "Bash")),
+			mustMarshal(map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "tool_result", "tool_use_id": id, "content": longContent},
+				},
+			}),
+		)
+	}
+
+	// Verify cachedPrefixLen returns 0: cache_control only on late messages
+	// (past boundary) so no prune-zone prefix is protected.
+	boundary := pruneStart(len(msgs), DefaultKeepRecent)
+	floor := cachedPrefixLen(msgs, boundary)
+	if floor != 0 {
+		t.Errorf("cachedPrefixLen = %d, want 0 (cache_control only past boundary=%d)", floor, boundary)
+	}
+
+	// Verify pruning actually fires and changes messages.
+	out, _ := PruneHistoryWithStats(msgs, DefaultKeepRecent)
+	changed := 0
+	for i := range out {
+		if string(out[i]) != string(msgs[i]) {
+			changed++
+		}
+	}
+	if changed == 0 {
+		boundary := pruneStart(len(msgs), DefaultKeepRecent)
+		t.Errorf("expected pruning to change messages in old region (boundary=%d, floor=%d, total=%d), but 0 changed",
+			boundary, floor, len(msgs))
+	}
+}
