@@ -79,7 +79,8 @@ func newEmbedClient(indexModel string) embed.Embedder {
 	conc := envInt("DEX_EMBED_CONCURRENCY", 4)
 	timeout := parseDuration("DEX_EMBED_TIMEOUT", envOr("DEX_EMBED_TIMEOUT", "60s"), 60*time.Second)
 	c := embed.NewWithConcurrency(url, model, batch, conc, timeout)
-	return embed.WithDimCap(c, envInt("DEX_EMBED_DIM", 0))
+	capped := embed.WithDimCap(c, envInt("DEX_EMBED_DIM", 0))
+	return embed.NewBreaker(capped, 3, 30*time.Second)
 }
 
 // newONNXEmbedder builds the in-process ONNX embedder from operator-provided

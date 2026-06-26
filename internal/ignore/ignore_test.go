@@ -358,9 +358,10 @@ func TestIsTestPath(t *testing.T) {
 		// Ruby
 		"spec/models/user_spec.rb": true,
 		"app/models/user.rb":       false,
-		// Generic fixture dirs
-		"testdata/sample.json": true,
-		"fixtures/keys.txt":    true,
+		// testdata/ and fixtures/ are NOT treated as test paths — they may
+		// contain real credentials alongside fake ones (#715 fix).
+		"testdata/sample.json": false,
+		"fixtures/keys.txt":    false,
 	}
 	for path, want := range cases {
 		if got := IsTestPath(path); got != want {

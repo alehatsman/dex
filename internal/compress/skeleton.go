@@ -79,6 +79,16 @@ func SkeletonPass(src []byte, path string, scopes []BodyScope) SkeletonResult {
 		fmt.Fprintf(&b, "// %d unexported function(s) omitted\n\n", unexported)
 	}
 
+	// Brace-free languages (Python, Ruby, Elixir) use indentation or
+	// do/end keywords instead of `{` for scope. skeletonFindOpenBrace will
+	// never find a brace, so treat every declaration as having a body at
+	// its first line — producing a signature + @B handle rather than an
+	// empty skeleton.
+	braceFree := strings.HasSuffix(path, ".py") ||
+		strings.HasSuffix(path, ".rb") ||
+		strings.HasSuffix(path, ".ex") ||
+		strings.HasSuffix(path, ".exs")
+
 	var bodies []BodyEntry
 	n := 1
 	for _, s := range funcs {
@@ -86,6 +96,10 @@ func SkeletonPass(src []byte, path string, scopes []BodyScope) SkeletonResult {
 		hi := min(s.EndLine-1, len(srcLines)-1)
 
 		braceIdx, hasBody := skeletonFindOpenBrace(srcLines, lo, hi)
+		if !hasBody && braceFree {
+			braceIdx = lo
+			hasBody = true
+		}
 		// A declaration with no body brace (an interface method spec, or an
 		// asm/external func declaration) has nothing to expand: it was already
 		// rendered in full inside its type block, so a @B handle would just
@@ -135,10 +149,21 @@ func SkeletonPass(src []byte, path string, scopes []BodyScope) SkeletonResult {
 // returns (startIdx, false).
 func skeletonFindOpenBrace(srcLines [][]byte, startIdx, endIdx int) (int, bool) {
 	depth := 0
+	// inBacktick persists across lines for multi-line JS/TS template literals.
+	inBacktick := false
 	for i := startIdx; i <= endIdx && i < len(srcLines); i++ {
 		line := srcLines[i]
 		for j := 0; j < len(line); j++ {
 			c := line[j]
+			// Inside a backtick template literal — scan until closing `.
+			if inBacktick {
+				if c == '\\' {
+					j++ // skip escaped char
+				} else if c == '`' {
+					inBacktick = false
+				}
+				continue
+			}
 			// Skip line comment remainder.
 			if c == '/' && j+1 < len(line) && line[j+1] == '/' {
 				break
@@ -154,6 +179,24 @@ func skeletonFindOpenBrace(srcLines [][]byte, startIdx, endIdx int) (int, bool) 
 					}
 					j++
 				}
+				continue
+			}
+			// Skip single-quoted string literal.
+			if c == '\'' {
+				j++
+				for j < len(line) {
+					if line[j] == '\\' {
+						j++ // skip escaped char
+					} else if line[j] == '\'' {
+						break
+					}
+					j++
+				}
+				continue
+			}
+			// Start of a backtick template literal (may span multiple lines).
+			if c == '`' {
+				inBacktick = true
 				continue
 			}
 			if c == '{' {

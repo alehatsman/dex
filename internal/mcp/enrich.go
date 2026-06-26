@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/alehatsman/dex/internal/gitenv"
 	"github.com/alehatsman/dex/internal/retrieve"
@@ -236,7 +237,13 @@ func readSignatureAndDoc(path string, startLine int, wantName string) (string, s
 	}
 	doc := strings.Join(docLines, "\n")
 	if len(doc) > maxDocBytes {
-		doc = doc[:maxDocBytes] + "…"
+		// Walk back to the nearest valid UTF-8 rune boundary before truncating
+		// so we don't split a multi-byte character and corrupt the JSON response.
+		i := maxDocBytes
+		for i > 0 && !utf8.RuneStart(doc[i]) {
+			i--
+		}
+		doc = doc[:i] + "…"
 	}
 	return sig, doc
 }

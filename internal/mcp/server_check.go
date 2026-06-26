@@ -159,6 +159,17 @@ func parseClaimRef(c ClaimRef) (path string, line int, sym string) {
 			sym = c.Symbol
 		}
 	default:
+		// Strip a trailing :col when the format is IDE-style path:line:col
+		// (both the rightmost and second-rightmost parts are numeric). Without
+		// this, col is misread as line and the real line number becomes part of
+		// the path (e.g. "server.go:42:100" → path="server.go:42", line=100).
+		if len(parts) >= 3 {
+			if _, e1 := strconv.Atoi(parts[len(parts)-1]); e1 == nil {
+				if _, e2 := strconv.Atoi(parts[len(parts)-2]); e2 == nil {
+					parts = parts[:len(parts)-1]
+				}
+			}
+		}
 		// "path:line:symbol" or longer — walk backwards: first non-int from right is symbol.
 		i := len(parts) - 1
 		if _, err := strconv.Atoi(parts[i]); err != nil {

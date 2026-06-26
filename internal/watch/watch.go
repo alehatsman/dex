@@ -74,6 +74,12 @@ type Watcher struct {
 	timer      *time.Timer
 	idleTimer  *time.Timer        // armed after a clean flush; nil otherwise
 	idleCancel context.CancelFunc // cancels the in-flight OnIdle, if any
+
+	// flushWG tracks in-flight timer goroutines so Run() can wait for them
+	// to complete before returning. This ensures any in-progress indexer.Run
+	// (and its deferred store cleanup) finishes before the caller's defer
+	// st.Close() fires — preventing "database closed" errors in markIndexing.
+	flushWG sync.WaitGroup
 }
 
 func New(idx *index.Indexer, ig *ignore.Matcher, root string, opt Options) *Watcher {
@@ -113,6 +119,15 @@ func (w *Watcher) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// Stop any pending timer and drain in-flight flush goroutines so
+			// that their deferred store cleanup (markIndexing/ClearIndexing)
+			// finishes before the caller's defer st.Close() fires.
+			w.mu.Lock()
+			if w.timer != nil && w.timer.Stop() {
+				w.flushWG.Done() // timer cancelled before firing; balance the Add
+			}
+			w.mu.Unlock()
+			w.flushWG.Wait()
 			return nil
 		case ev, ok := <-fw.Events:
 			if !ok {
@@ -179,7 +194,11 @@ func (w *Watcher) markDirty(ctx context.Context) {
 		w.idleCancel = nil
 	}
 	if w.timer != nil {
-		w.timer.Stop()
+		if w.timer.Stop() {
+			// Timer was cancelled before it fired; the goroutine won't run so
+			// balance the Add we're about to do for the new timer.
+			w.flushWG.Done()
+		}
 	}
 	delay := w.opts.Debounce
 	// Cap the deferral so a never-quiet stream of saves can't starve
@@ -193,7 +212,11 @@ func (w *Watcher) markDirty(ctx context.Context) {
 			}
 		}
 	}
-	w.timer = time.AfterFunc(delay, func() { w.flush(ctx) })
+	w.flushWG.Add(1)
+	w.timer = time.AfterFunc(delay, func() {
+		defer w.flushWG.Done()
+		w.flush(ctx)
+	})
 }
 
 func (w *Watcher) flush(ctx context.Context) {

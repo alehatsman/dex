@@ -183,6 +183,16 @@ func buildAnswerEvidence(intent string, out *ContextOutput) string {
 		budget -= len(s)
 		return budget > 0
 	}
+	// writeHdr writes a section header only when it fits in the remaining
+	// budget. Unlike write(), it never truncates mid-header — a partial path
+	// or dangling "---" confuses downstream models. Returns false (stop) when
+	// the header doesn't fit.
+	writeHdr := func(hdr string) bool {
+		if len(hdr) > budget {
+			return false
+		}
+		return write(hdr)
+	}
 
 	// For callers/callees the graph edges ARE the authoritative answer — lead
 	// with them so they survive the byte budget regardless of how rich the
@@ -212,22 +222,28 @@ func buildAnswerEvidence(intent string, out *ContextOutput) string {
 			hdr += fmt.Sprintf("  (%s)", r.Reason)
 		}
 		hdr += "\n"
-		if !write(hdr) || !write(r.Content+"\n") {
+		if !writeHdr(hdr) || !write(r.Content+"\n") {
 			return b.String()
 		}
 	}
 
 	// Semantic hits that weren't already promoted into suggested_reads.
-	seen := map[string]bool{}
+	// Key on (path, startLine) so a file appearing in SuggestedReads at
+	// lines 100-120 does not suppress a distinct SemanticHit at 300-350.
+	type pathLine struct {
+		path string
+		line int
+	}
+	seen := map[pathLine]bool{}
 	for _, r := range out.SuggestedReads {
-		seen[r.Path] = true
+		seen[pathLine{r.Path, r.StartLine}] = true
 	}
 	for _, h := range out.SemanticHits {
-		if h.Content == "" || seen[h.Path] {
+		if h.Content == "" || seen[pathLine{h.Path, h.StartLine}] {
 			continue
 		}
 		hdr := fmt.Sprintf("\n--- %s:%d-%d\n", h.Path, h.StartLine, h.EndLine)
-		if !write(hdr) || !write(h.Content+"\n") {
+		if !writeHdr(hdr) || !write(h.Content+"\n") {
 			return b.String()
 		}
 	}

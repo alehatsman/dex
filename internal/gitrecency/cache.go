@@ -146,7 +146,12 @@ func refreshRecency(root string) map[string]float32 {
 			continue
 		}
 		if ts, err := strconv.ParseInt(line, 10, 64); err == nil {
-			curTS = ts
+			// Accept only plausible Unix timestamps (post-2001). Integer-named
+			// files (e.g. "42", "1640000000") parse successfully but must not
+			// corrupt the recency clock for all subsequent files in the block.
+			if ts > 1_000_000_000 {
+				curTS = ts
+			}
 			continue
 		}
 		if curTS == 0 {

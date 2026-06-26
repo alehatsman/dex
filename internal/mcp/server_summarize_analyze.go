@@ -113,16 +113,31 @@ func (s *Server) summarizeModeAnalyze(w summarizeWork) (*sdk.CallToolResult, Sum
 func bodyScopesForSymbols(syms []store.GraphSymbol) []compress.BodyScope {
 	scopes := make([]compress.BodyScope, 0, len(syms))
 	for _, sym := range syms {
-		exported := len(sym.Name) > 0 && sym.Name[0] >= 'A' && sym.Name[0] <= 'Z'
 		scopes = append(scopes, compress.BodyScope{
 			Name:      sym.QualifiedName,
 			Kind:      sym.Kind,
-			Exported:  exported,
+			Exported:  isSymExported(sym.Name, sym.FilePath),
 			StartLine: sym.StartLine,
 			EndLine:   sym.EndLine,
 		})
 	}
 	return scopes
+}
+
+// isSymExported reports whether a symbol named name from filePath should be
+// treated as exported. Go uses uppercase-first; every other language dex
+// indexes uses either lowercase public names (Python, TypeScript, Rust) or
+// explicit modifiers (pub, export) that are not yet tracked in the index.
+// Treat all non-Go symbols as exported so the skeleton doesn't silently
+// discard the entire public API of non-Go files.
+func isSymExported(name, filePath string) bool {
+	if len(name) == 0 {
+		return false
+	}
+	if strings.HasSuffix(filePath, ".go") {
+		return name[0] >= 'A' && name[0] <= 'Z'
+	}
+	return true
 }
 
 // meanBitsPerChar is the Shannon entropy of content over its rune distribution

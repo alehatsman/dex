@@ -221,14 +221,24 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	// notes survive even a reindex triggered by a schema mismatch, when the
 	// migrate-gated open above fails. Best-effort.
 	savedNotes, _ := store.ExportKnowledgeRaw(ctx, p.DBPath)
-	if err := clearCacheKeepLock(p); err != nil {
-		return err
-	}
-	st, err := openStore(ctx, p.DBPath)
+
+	// Build into a temp DB adjacent to the real one. On success we clear the
+	// old cache and rename the temp into place atomically. On failure the temp
+	// is removed and the original index.db is left untouched, so a mid-run
+	// embed outage no longer leaves the project with zero chunks (#715).
+	newDBPath := p.DBPath + ".new"
+	_ = os.Remove(newDBPath) // clean up any leftover from a previous failed run
+	st, err := openStore(ctx, newDBPath)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	committed := false
+	defer func() {
+		_ = st.Close()
+		if !committed {
+			_ = os.Remove(newDBPath)
+		}
+	}()
 	// Restore rescued notes into the fresh store. KnowledgeAdd dedups by body so
 	// this is idempotent; embeddings backfill lazily on the next semantic recall.
 	restoreNotes(ctx, st, savedNotes)
@@ -254,17 +264,30 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "✓ reindexed %s\n", p.Root)
-	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
+	embedModel := st.EmbedModel()
 	if gstats != nil {
-		_ = reportGraphStats(p.Root, gstats, "text")
-	}
-	if gstats != nil {
-		if em := newEmbedClient(st.EmbedModel()); em != nil {
+		if em := newEmbedClient(embedModel); em != nil {
 			if _, err := embedGraphNodes(ctx, st, em, false); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ graph-embed failed for %s: %v\n", p.Root, err)
 			}
 		}
+	}
+
+	// All work succeeded. Close the temp store, swap it into place, then
+	// wipe the old cache (other ephemeral files like chunk vectors etc.).
+	_ = st.Close()
+	if err := clearCacheKeepLock(p); err != nil {
+		return err
+	}
+	if err := os.Rename(newDBPath, p.DBPath); err != nil {
+		return err
+	}
+	committed = true // prevent defer from removing the now-live DB
+
+	fmt.Fprintf(os.Stderr, "✓ reindexed %s\n", p.Root)
+	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
+	if gstats != nil {
+		_ = reportGraphStats(p.Root, gstats, "text")
 	}
 	return nil
 }

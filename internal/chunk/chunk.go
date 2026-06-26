@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	sitter "github.com/smacker/go-tree-sitter"
 )
@@ -208,7 +209,20 @@ func buildNestedChunk(relPath string, src []byte, n *sitter.Node, parentName str
 	endLine := max(lineOf(src, endByte-1), startLine)
 	name := nodeIdentifier(n, src)
 	if len(body) > MaxBytes {
-		body = body[:MaxBytes]
+		// Walk back to the nearest valid UTF-8 rune boundary so we don't
+		// split a multi-byte character and hand invalid UTF-8 to the embedder.
+		i := MaxBytes
+		for i > 0 && !utf8.RuneStart(body[i]) {
+			i--
+		}
+		body = body[:i]
+		// Recompute EndLine: it must reflect the truncated content, not the
+		// full node extent (which might be hundreds of lines further down).
+		if i > 0 {
+			endLine = max(lineOf(src, startByte+i-1), startLine)
+		} else {
+			endLine = startLine
+		}
 	}
 	return Chunk{
 		Path: relPath, Kind: n.Type(), Name: name, Parent: parentName,

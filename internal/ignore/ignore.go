@@ -313,18 +313,22 @@ func IndexableExt(path string) bool {
 	return IndexableExtensions[strings.ToLower(filepath.Ext(path))]
 }
 
-// IsTestPath returns true for file paths that conventionally hold
-// test code or fixtures. The indexer uses this to suppress the
-// secret-pattern skip: test files routinely embed fake credentials
+// IsTestPath returns true for file paths that conventionally hold test
+// code (not test data). The indexer uses this to suppress the
+// secret-pattern skip: test code files routinely embed fake credentials
 // (`AKIA0123456789ABCDEF`, dummy PEM blocks) as inputs to their own
-// detection logic, and refusing to index them was hiding real test
-// code from search. The pattern check still runs against
-// non-test files where a literal secret almost always is one.
+// detection logic, and refusing to index them was hiding real test code
+// from search. The pattern check still runs against non-test files where
+// a literal secret almost always is one.
+//
+// Note: `testdata/` and `fixtures/` directories are intentionally NOT
+// exempted — data files in those dirs may contain real credentials that
+// were accidentally committed alongside fake ones.
 func IsTestPath(relPath string) bool {
 	p := filepath.ToSlash(relPath)
 	base := filepath.Base(p)
 	for _, dir := range []string{
-		"tests/", "test/", "__tests__/", "spec/", "specs/", "testdata/", "fixtures/",
+		"tests/", "test/", "__tests__/", "spec/", "specs/",
 	} {
 		if strings.Contains("/"+p+"/", "/"+dir) {
 			return true
@@ -414,12 +418,14 @@ var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`SG\.[A-Za-z0-9_-]{22,}\.[A-Za-z0-9_-]+`), // SendGrid
 }
 
-// LooksLikeSecret returns true if the first 4 KB of data matches a
-// well-known secret pattern.
+// LooksLikeSecret returns true if the first 64 KB of data matches a
+// well-known secret pattern. Scanning only the first 4 KB (~58 lines)
+// was too shallow — a credential at line 90 of a 400-line file would
+// be missed entirely.
 func LooksLikeSecret(data []byte) bool {
 	head := data
-	if len(head) > 4096 {
-		head = head[:4096]
+	if len(head) > 64*1024 {
+		head = head[:64*1024]
 	}
 	for _, re := range secretPatterns {
 		if re.Match(head) {
