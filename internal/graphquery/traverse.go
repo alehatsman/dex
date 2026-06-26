@@ -286,9 +286,56 @@ func receiverType(qn string) string {
 	return strings.TrimPrefix(qn[1:closeIdx], "*")
 }
 
+// concreteImplementations returns the IDs of concrete methods that satisfy the
+// given interface-method node — the forward direction of interface dispatch.
+// Walk: ifaceMethod <-has_method- Interface <-implements- ConcreteType -has_method-> ConcreteMethod
+// with the same short name. Symmetric counterpart to InterfaceDispatchMethods.
+func concreteImplementations(view *View, ifaceMethodID string) []string {
+	n, ok := view.NodesByID[ifaceMethodID]
+	if !ok || n.Kind != graph.NodeMethod || n.Name == "" {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, e := range view.EdgesByDst[ifaceMethodID] {
+		if e.Kind != graph.EdgeHasMethod {
+			continue
+		}
+		iface, ok := view.NodesByID[e.SrcID]
+		if !ok {
+			continue
+		}
+		// Find all concrete types that implement this interface.
+		for _, implEdge := range view.EdgesByDst[iface.ID] {
+			if implEdge.Kind != graph.EdgeImplements {
+				continue
+			}
+			concreteType, ok := view.NodesByID[implEdge.SrcID]
+			if !ok {
+				continue
+			}
+			// Find methods of this concrete type with the same short name.
+			for _, methodEdge := range view.EdgesBySrc[concreteType.ID] {
+				if methodEdge.Kind != graph.EdgeHasMethod {
+					continue
+				}
+				m, ok := view.NodesByID[methodEdge.DstID]
+				if !ok || m.Name != n.Name {
+					continue
+				}
+				if !seen[m.ID] {
+					seen[m.ID] = true
+					out = append(out, m.ID)
+				}
+			}
+		}
+	}
+	return out
+}
+
 // BFSPath finds the shortest path from any seed node to any node in dstSet,
-// following `calls` and `imports` edges. Returns nil when no path exists
-// within maxDepth hops.
+// following `calls`, `imports`, and interface-dispatch edges. Returns nil when
+// no path exists within maxDepth hops.
 func BFSPath(view *View, seeds []Node, dstSet map[string]bool, maxDepth int) []Hop {
 	type item struct {
 		id       string
@@ -318,6 +365,20 @@ func BFSPath(view *View, seeds []Node, dstSet map[string]bool, maxDepth int) []H
 	}
 
 	var found string
+	enqueue := func(dstID string, cur item, ek graph.EdgeKind) (done bool) {
+		if visited[dstID] {
+			return false
+		}
+		visited[dstID] = true
+		parent[dstID] = item{id: cur.id, depth: cur.depth, edgeKind: ek}
+		if dstSet[dstID] {
+			found = dstID
+			return true
+		}
+		queue = append(queue, item{id: dstID, depth: cur.depth + 1, prevID: cur.id, edgeKind: ek})
+		return false
+	}
+
 	for len(queue) > 0 && found == "" {
 		cur := queue[0]
 		queue = queue[1:]
@@ -328,16 +389,20 @@ func BFSPath(view *View, seeds []Node, dstSet map[string]bool, maxDepth int) []H
 			if e.Kind != graph.EdgeCalls && e.Kind != graph.EdgeImports {
 				continue
 			}
-			if visited[e.DstID] {
-				continue
-			}
-			visited[e.DstID] = true
-			parent[e.DstID] = item{id: cur.id, depth: cur.depth, edgeKind: e.Kind}
-			if dstSet[e.DstID] {
-				found = e.DstID
+			if enqueue(e.DstID, cur, e.Kind) {
 				break
 			}
-			queue = append(queue, item{id: e.DstID, depth: cur.depth + 1, prevID: cur.id, edgeKind: e.Kind})
+			// For calls to interface methods, also follow dispatch to concrete impls.
+			if e.Kind == graph.EdgeCalls {
+				for _, concID := range concreteImplementations(view, e.DstID) {
+					if enqueue(concID, cur, graph.EdgeCalls) {
+						break
+					}
+				}
+				if found != "" {
+					break
+				}
+			}
 		}
 	}
 

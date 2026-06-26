@@ -196,6 +196,13 @@ func stripCStyleComments(lines []string) []string {
 		if strings.HasPrefix(trimmed, "/*") {
 			if !strings.Contains(trimmed, "*/") {
 				inBlock = true
+				continue
+			}
+			// same-line /* ... */ — drop only if the line is purely the comment;
+			// preserve lines that have code after the closing */.
+			closerIdx := strings.Index(trimmed, "*/")
+			if strings.TrimSpace(trimmed[closerIdx+2:]) != "" {
+				out = append(out, line)
 			}
 			continue
 		}

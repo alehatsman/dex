@@ -908,6 +908,10 @@ type SmellReport struct {
 	// signatures constrain many callers at once. Thresholds: in_degree >=
 	// minGodNodeCallers OR cross_pkg_callers >= minGodNodePkgCallers.
 	GodNodes []SmellSymbol
+	// TotalNodes is the total number of function/method nodes in the graph.
+	// Zero means the graph has not been indexed yet (as opposed to zero smells
+	// on a clean, properly-indexed codebase).
+	TotalNodes int
 }
 
 // Smells queries four code-quality signals directly from graph_nodes:
@@ -988,6 +992,11 @@ func (s *Store) Smells(ctx context.Context, minFuncLines, minFileSymbols, minGod
 	if r.GodNodes, err = scanSmellSymbols(rows); err != nil {
 		return r, err
 	}
+
+	// Count total function/method nodes so callers can distinguish "clean
+	// codebase" (TotalNodes > 0, no smells) from "no graph" (TotalNodes == 0).
+	_ = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM graph_nodes WHERE kind IN ('function','method')`).Scan(&r.TotalNodes)
 
 	return r, nil
 }

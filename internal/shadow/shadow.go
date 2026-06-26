@@ -75,22 +75,33 @@ func (r *Repo) env() []string {
 }
 
 // git runs a git subcommand against the shadow and returns trimmed stdout.
+// Stderr is captured separately so git warnings never corrupt stdout output
+// (SHA hashes, file lists, log lines).
 func (r *Repo) git(ctx context.Context, args ...string) (string, error) {
 	cctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "git", args...) // #nosec G204 — args are literals or reValidRef-validated refs
 	cmd.Env = r.env()
 	cmd.Dir = r.workTree // for .gitignore resolution; GIT_DIR env still pins the repo
-	out, err := cmd.CombinedOutput()
+	var errBuf strings.Builder
+	cmd.Stderr = &errBuf
+	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errBuf.String()))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-// initialized reports whether the shadow repo exists.
+// configSentinel is written after all git config calls succeed, so a
+// partial ensure (git init OK, a config call fails) is retried next time
+// rather than left in a dangerous unconfigured state.
+const configSentinel = "dex-config-done"
+
+// initialized reports whether the shadow repo is fully initialised — git init
+// AND all config applied. HEAD alone is not sufficient: git init creates HEAD
+// before config runs, so checking HEAD would skip config on a partial ensure.
 func (r *Repo) initialized() bool {
-	_, err := os.Stat(filepath.Join(r.gitDir, "HEAD"))
+	_, err := os.Stat(filepath.Join(r.gitDir, configSentinel))
 	return err == nil
 }
 
@@ -120,7 +131,13 @@ func (r *Repo) ensure(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	// Write the sentinel only after all config succeeds so a partial init is
+	// retried rather than silently skipped.
+	f, err := os.Create(filepath.Join(r.gitDir, configSentinel))
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // Snapshot stages the whole working tree into the shadow and commits it. When
@@ -212,6 +229,11 @@ func (r *Repo) Diff(ctx context.Context, from, to string) (string, error) {
 		if !reValidRef.MatchString(ref) {
 			return "", fmt.Errorf("invalid ref %q", ref)
 		}
+	}
+	// Verify the from ref exists before running the diff so a single-snapshot
+	// shadow returns a clear hint rather than a raw git fatal error.
+	if _, err := r.git(ctx, "rev-parse", "--verify", from); err != nil {
+		return "", fmt.Errorf("ref %q does not exist — need at least 2 snapshots for HEAD~1..HEAD diff", from)
 	}
 	return r.git(ctx, "diff", "--no-color", from+".."+to)
 }

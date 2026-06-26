@@ -218,11 +218,13 @@ func (e *javaExtractor) emitClassLikeNode(
 
 // emitMethodNode emits the method/constructor node plus its contains and
 // has_method edges, and registers it in the symbol table. It performs no
-// body traversal — call collection is the caller's concern. Returns the
-// node ID, or "" if the declaration has no usable name.
+// body traversal — call collection is the caller's concern. containerKind
+// is NodeClass for regular classes and NodeInterface for interface bodies —
+// the has_method edge src must match the registered container node kind.
+// Returns the node ID, or "" if the declaration has no usable name.
 func (e *javaExtractor) emitMethodNode(
 	n *sitter.Node, src []byte,
-	filePath, pkg, fileID, className string, isCtor bool,
+	filePath, pkg, fileID, className string, isCtor bool, containerKind NodeKind,
 ) string {
 	var methodName string
 	if isCtor {
@@ -284,7 +286,7 @@ func (e *javaExtractor) emitMethodNode(
 		StartLine: startLine,
 		EndLine:   endLine,
 	})
-	clsID := NodeID("", pkg, NodeClass, className)
+	clsID := NodeID("", pkg, containerKind, className)
 	e.edges = append(e.edges, Edge{
 		ID:        EdgeID(clsID, EdgeHasMethod, id, filePath, startLine),
 		Kind:      EdgeHasMethod,

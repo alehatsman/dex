@@ -211,7 +211,12 @@ func findInterface(pkgs []*packages.Package, ifaceName string) (*types.Interface
 	if i := strings.LastIndex(ifaceName, "."); i >= 0 {
 		pkgName, name = ifaceName[:i], ifaceName[i+1:]
 	}
-	for _, p := range pkgs {
+	// Sort packages by path for deterministic resolution of bare names that
+	// appear in more than one package — packages.Load order is unspecified.
+	sorted := make([]*packages.Package, len(pkgs))
+	copy(sorted, pkgs)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].PkgPath < sorted[j].PkgPath })
+	for _, p := range sorted {
 		if p.Types == nil {
 			continue
 		}
@@ -227,13 +232,20 @@ func findInterface(pkgs []*packages.Package, ifaceName string) (*types.Interface
 	return nil, nil, false
 }
 
-// allNamedTypes returns every named type declared in the loaded packages,
-// deduped by identity.
+// allNamedTypes returns every named type declared in packages that belong to
+// the main module, deduped by identity. NeedDeps loads transitive stdlib and
+// vendor packages for type resolution — without a main-module filter, a query
+// like cohort("Stringer") returns hundreds of stdlib implementors.
 func allNamedTypes(pkgs []*packages.Package) []*types.Named {
 	seen := map[*types.Named]bool{}
 	var out []*types.Named
 	for _, p := range pkgs {
 		if p.Types == nil {
+			continue
+		}
+		// Skip transitive dependencies — keep only packages that belong to
+		// the user's own module (Module != nil && Module.Main).
+		if p.Module == nil || !p.Module.Main {
 			continue
 		}
 		scope := p.Types.Scope()

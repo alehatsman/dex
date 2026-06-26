@@ -176,12 +176,14 @@ func (e *rustExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, e
 	return e.nodes, e.edges, e.warnings, nil
 }
 
-// addFunction registers a top-level fn or a method inside an impl.
-// receiverType is the type name when this fn lives inside an impl
-// block; "" for free functions.
+// addFunction registers a top-level fn or a method inside an impl or trait.
+// receiverType is the type/trait name when this fn lives inside an impl/trait
+// block; "" for free functions. receiverKind must be NodeClass for impl blocks
+// and NodeInterface for trait items so the has_method edge src matches the
+// registered container node.
 func (e *rustExtractor) addFunction(
 	n *sitter.Node, src []byte,
-	filePath, pkg, fileID, receiverType string,
+	filePath, pkg, fileID, receiverType string, receiverKind NodeKind,
 ) {
 	nameNode := n.ChildByFieldName("name")
 	if nameNode == nil {
@@ -233,7 +235,7 @@ func (e *rustExtractor) addFunction(
 		EndLine:   endLine,
 	})
 	if receiverType != "" {
-		recvID := NodeID("", pkg, NodeClass, receiverType)
+		recvID := NodeID("", pkg, receiverKind, receiverType)
 		e.edges = append(e.edges, Edge{
 			ID:        EdgeID(recvID, EdgeHasMethod, id, filePath, startLine),
 			Kind:      EdgeHasMethod,
@@ -574,9 +576,11 @@ func (e *rustExtractor) collectCalls(
 			return
 		}
 		switch n.Type() {
-		// Don't attribute calls inside nested items to the outer fn.
+		// Don't attribute calls inside nested fn/type definitions to the outer fn.
+		// closure_expression is intentionally absent: calls inside closures are
+		// attributed to the enclosing function rather than dropped.
 		case "function_item", "struct_item", "enum_item",
-			"trait_item", "impl_item", "closure_expression":
+			"trait_item", "impl_item":
 			return
 		case "call_expression":
 			fn := n.ChildByFieldName("function")

@@ -126,11 +126,11 @@ func (e *javaTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		return members[i].StartByte() < members[j].StartByte()
 	})
 	for _, n := range members {
-		className, ok := e.javaMethodClass(n, in.Source)
+		className, containerKind, ok := e.javaMethodClass(n, in.Source)
 		if !ok {
 			continue
 		}
-		e.emitMethodNode(n, in.Source, in.RelPath, pkg, fileID, className, n.Type() == "constructor_declaration")
+		e.emitMethodNode(n, in.Source, in.RelPath, pkg, fileID, className, n.Type() == "constructor_declaration", containerKind)
 	}
 
 	// Calls — attributed to the enclosing method's body (nearest
@@ -145,13 +145,13 @@ func (e *javaTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 // collectQueryCall attributes a single call (method_invocation /
 // object_creation_expression) to its enclosing method.
 func (e *javaTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePath, pkg string) {
-	// Nearest enclosing scope boundary. record_declaration is deliberately
-	// absent: a record body (like an anonymous-class class_body) is
-	// transparent, so calls in its field initializers attribute to the
-	// enclosing method.
+	// Nearest enclosing scope boundary. record_declaration and lambda_expression
+	// are deliberately absent: a record body (like an anonymous-class class_body)
+	// is transparent, and lambdas are transparent too — calls inside a lambda
+	// attribute to the enclosing method rather than being dropped.
 	boundary := firstAncestorOfType(n,
 		"class_declaration", "interface_declaration", "enum_declaration",
-		"method_declaration", "constructor_declaration", "lambda_expression")
+		"method_declaration", "constructor_declaration")
 	if boundary == nil {
 		return
 	}
@@ -159,7 +159,7 @@ func (e *javaTagsExtractor) collectQueryCall(n *sitter.Node, src []byte, filePat
 	if boundary.Type() != "method_declaration" && !isCtor {
 		return
 	}
-	className, ok := e.javaMethodClass(boundary, src)
+	className, _, ok := e.javaMethodClass(boundary, src)
 	if !ok {
 		return
 	}
@@ -206,37 +206,41 @@ func javaTopLevel(n *sitter.Node) bool {
 	return isTreeRoot(n.Parent())
 }
 
-// javaMethodClass returns the enclosing class name for a method or
-// constructor that is a direct member of a TOP-LEVEL type, and ok=false
-// otherwise. Members nested in local/anonymous types, or inside an enum's
-// enum_body_declarations, fail the body-type or top-level checks and so are
-// not modelled.
-func (e *javaTagsExtractor) javaMethodClass(method *sitter.Node, src []byte) (string, bool) {
+// javaMethodClass returns the enclosing type name and its NodeKind for a
+// method or constructor that is a direct member of a TOP-LEVEL type, and
+// ok=false otherwise. Members nested in local/anonymous types, or inside an
+// enum's enum_body_declarations, fail the body-type or top-level checks and
+// so are not modelled.
+func (e *javaTagsExtractor) javaMethodClass(method *sitter.Node, src []byte) (string, NodeKind, bool) {
 	body := method.Parent()
 	if body == nil {
-		return "", false
+		return "", "", false
 	}
 	// class_body covers class + record; interface_body covers interfaces.
 	// enum methods live in enum_body_declarations, which is not descended
 	// — excluded here by not matching either body type.
 	if t := body.Type(); t != "class_body" && t != "interface_body" {
-		return "", false
+		return "", "", false
 	}
 	typeDecl := body.Parent()
 	if typeDecl == nil {
-		return "", false
+		return "", "", false
 	}
+	var containerKind NodeKind
 	switch typeDecl.Type() {
-	case "class_declaration", "record_declaration", "interface_declaration":
+	case "class_declaration", "record_declaration":
+		containerKind = NodeClass
+	case "interface_declaration":
+		containerKind = NodeInterface
 	default:
-		return "", false
+		return "", "", false
 	}
 	if !javaTopLevel(typeDecl) {
-		return "", false
+		return "", "", false
 	}
 	name := nodeText(typeDecl.ChildByFieldName("name"), src)
 	if name == "" {
-		return "", false
+		return "", "", false
 	}
-	return name, true
+	return name, containerKind, true
 }

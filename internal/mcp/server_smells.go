@@ -134,8 +134,12 @@ func (s *Server) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsIn
 	}
 
 	if len(out.LongFunctions) == 0 && len(out.DeadExports) == 0 && len(out.GodFiles) == 0 && len(out.GodNodes) == 0 {
-		out.Hint = "no graph nodes indexed — run `dex index . --graph=only` to extract the call graph first."
-		out.Status = "no-graph"
+		if report.TotalNodes == 0 {
+			out.Hint = "no graph nodes indexed — run `dex index . --graph=only` to extract the call graph first."
+			out.Status = "no-graph"
+		} else {
+			out.Status = "ok"
+		}
 	}
 	return nil, out, nil
 }

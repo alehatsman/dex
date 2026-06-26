@@ -124,11 +124,11 @@ func (e *rustTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 	// Functions — free fns and impl/trait methods. addFunction emits the
 	// node, the contains/has_method edges, and collects the body's calls.
 	for _, n := range funcs {
-		recv, ok := e.rustFnReceiver(n, in.Source)
+		recv, recvKind, ok := e.rustFnReceiver(n, in.Source)
 		if !ok {
 			continue
 		}
-		e.addFunction(n, in.Source, in.RelPath, pkg, fileID, recv)
+		e.addFunction(n, in.Source, in.RelPath, pkg, fileID, recv, recvKind)
 	}
 	return nil
 }
@@ -139,41 +139,41 @@ func rustTopLevel(n *sitter.Node) bool {
 	return isTreeRoot(n.Parent())
 }
 
-// rustFnReceiver returns the receiver type for a function_item and whether
-// it is a graph node at all. A function is a node iff it is a free function
-// (direct child of the root) or a direct member of a TOP-LEVEL impl/trait
-// body. Functions nested in other functions, closures, or inline modules
-// are not nodes.
-func (e *rustTagsExtractor) rustFnReceiver(fn *sitter.Node, src []byte) (string, bool) {
+// rustFnReceiver returns the receiver type, its NodeKind (NodeClass for impl,
+// NodeInterface for trait), and whether the function is a graph node at all.
+// A function is a node iff it is a free function (direct child of the root)
+// or a direct member of a TOP-LEVEL impl/trait body. Functions nested in
+// other functions, closures, or inline modules are not nodes.
+func (e *rustTagsExtractor) rustFnReceiver(fn *sitter.Node, src []byte) (string, NodeKind, bool) {
 	parent := fn.Parent()
 	if parent == nil {
-		return "", false
+		return "", "", false
 	}
 	if isTreeRoot(parent) {
-		return "", true // free function
+		return "", NodeClass, true // free function — kind unused when recv is ""
 	}
 	if parent.Type() != "declaration_list" {
-		return "", false
+		return "", "", false
 	}
 	owner := parent.Parent()
 	if owner == nil || !rustTopLevel(owner) {
-		return "", false
+		return "", "", false
 	}
 	switch owner.Type() {
 	case "impl_item":
 		typeNode := owner.ChildByFieldName("type")
 		if typeNode == nil {
-			return "", false
+			return "", "", false
 		}
 		recv := rustTypeName(typeNode, src)
-		return recv, recv != ""
+		return recv, NodeClass, recv != ""
 	case "trait_item":
 		nameNode := owner.ChildByFieldName("name")
 		if nameNode == nil {
-			return "", false
+			return "", "", false
 		}
 		recv := nodeText(nameNode, src)
-		return recv, recv != ""
+		return recv, NodeInterface, recv != ""
 	}
-	return "", false
+	return "", "", false
 }

@@ -127,6 +127,11 @@ func (s *knowledgeStore) KnowledgeByScope(ctx context.Context, targetPath string
 		return nil, err
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Salience > out[j].Salience })
+	// Apply the default cap when max=0 (unspecified) to avoid flooding context
+	// on broad scopes. Callers that want uncapped results must pass max<0.
+	if max == 0 {
+		max = 10
+	}
 	if max > 0 && len(out) > max {
 		out = out[:max]
 	}
@@ -273,19 +278,30 @@ func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, thre
 }
 
 // KnowledgeExportAll returns every stored fact, UNCAPPED (KnowledgeQuery clamps
-// to 50), newest-confident first. For backup/restore — notably preserving the
-// knowledge store across a `dex reindex` that drops and rebuilds the DB, so the
-// user's accumulated notes survive (#647).
+// to 50), newest-confident first. Includes scope so the export→import round-trip
+// preserves gotcha-on-touch bindings (#645).
 func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFact, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope
 		   FROM knowledge_facts
 		   ORDER BY confidence DESC, updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	return scanFacts(rows)
+	var out []KnowledgeFact
+	for rows.Next() {
+		var f KnowledgeFact
+		var cNs, uNs int64
+		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &f.Scope); err != nil {
+			return nil, err
+		}
+		f.CreatedAt = time.Unix(0, cNs)
+		f.UpdatedAt = time.Unix(0, uNs)
+		f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // KnowledgeBackup is the portable note shape used to rescue notes across a
@@ -817,11 +833,11 @@ func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConf
 
 // knowledgeConsolidateSimilar merges facts within the same archetype whose body
 // word-sets overlap at or above cfg.JaccardMerge. The higher-confidence fact
-// survives, accumulating the other's hit_count; the duplicate is deleted (its
-// fact_vecs row cascades away via trigger).
+// survives, accumulating the other's hit_count and scope binding; the duplicate
+// is deleted (its fact_vecs row cascades away via trigger).
 func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, hit_count FROM knowledge_facts ORDER BY archetype, confidence DESC`)
+		`SELECT id, archetype, body, confidence, hit_count, scope FROM knowledge_facts ORDER BY archetype, confidence DESC`)
 	if err != nil {
 		return 0, err
 	}
@@ -831,12 +847,13 @@ func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg Kn
 		body      string
 		conf      float64
 		hits      int
+		scope     string
 		words     map[string]struct{}
 	}
 	var facts []fact
 	for rows.Next() {
 		var f fact
-		if err := rows.Scan(&f.id, &f.archetype, &f.body, &f.conf, &f.hits); err != nil {
+		if err := rows.Scan(&f.id, &f.archetype, &f.body, &f.conf, &f.hits, &f.scope); err != nil {
 			_ = rows.Close()
 			return 0, err
 		}
@@ -864,9 +881,13 @@ func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg Kn
 			}
 			// facts are confidence-desc within archetype, so i is always the keeper.
 			keeper, dup := &facts[i], &facts[j]
+			// Merge hit_count, confidence, and scope: if the keeper has no scope
+			// but the duplicate does, adopt the duplicate's scope so the binding
+			// is not silently lost when the duplicate is deleted.
 			if _, err := s.db.ExecContext(ctx,
-				`UPDATE knowledge_facts SET hit_count=hit_count+?, confidence=MAX(confidence, ?) WHERE id=?`,
-				dup.hits, dup.conf, keeper.id); err != nil {
+				`UPDATE knowledge_facts SET hit_count=hit_count+?, confidence=MAX(confidence, ?),
+				   scope=CASE WHEN scope='' AND ?!='' THEN ? ELSE scope END WHERE id=?`,
+				dup.hits, dup.conf, dup.scope, dup.scope, keeper.id); err != nil {
 				return merged, err
 			}
 			if err := s.KnowledgeDelete(ctx, dup.id); err != nil {

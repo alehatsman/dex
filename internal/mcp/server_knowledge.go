@@ -239,10 +239,15 @@ func similarIDs(facts []KnowledgeFactOutput) string {
 }
 
 // knowledgeExportRow is the portable JSON shape used for export/import.
+// Includes scope and ranking signals so a round-trip preserves gotcha-on-touch
+// bindings and salience ordering (#645, #678).
 type knowledgeExportRow struct {
-	Archetype  string  `json:"archetype"`
-	Body       string  `json:"body"`
-	Confidence float64 `json:"confidence"`
+	Archetype     string  `json:"archetype"`
+	Body          string  `json:"body"`
+	Confidence    float64 `json:"confidence"`
+	Scope         string  `json:"scope,omitempty"`
+	HitCount      int     `json:"hit_count,omitempty"`
+	RevisionCount int     `json:"revision_count,omitempty"`
 }
 
 func (s *Server) knowledgeExport(ctx context.Context, st *store.Store) (*sdk.CallToolResult, KnowledgeOutput, error) {
@@ -253,9 +258,12 @@ func (s *Server) knowledgeExport(ctx context.Context, st *store.Store) (*sdk.Cal
 	rows := make([]knowledgeExportRow, len(facts))
 	for i, f := range facts {
 		rows[i] = knowledgeExportRow{
-			Archetype:  f.Archetype,
-			Body:       f.Body,
-			Confidence: f.Confidence,
+			Archetype:     f.Archetype,
+			Body:          f.Body,
+			Confidence:    f.Confidence,
+			Scope:         f.Scope,
+			HitCount:      f.HitCount,
+			RevisionCount: f.RevisionCount,
 		}
 	}
 	data, err := json.MarshalIndent(rows, "", "  ")
@@ -283,7 +291,7 @@ func (s *Server) knowledgeImport(ctx context.Context, st *store.Store, body stri
 		if conf <= 0 {
 			conf = 0.7 // slightly below default 0.8 for imported facts
 		}
-		if _, err := st.KnowledgeAdd(ctx, arch, r.Body, conf); err != nil {
+		if _, err := st.KnowledgeAddScoped(ctx, arch, r.Body, conf, r.Scope); err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("import fact %q: %v", r.Body[:min(40, len(r.Body))], err)}, nil
 		}
 		s.embedFact(ctx, st, r.Body)
