@@ -294,7 +294,7 @@ type dispatchCaller struct {
 func interfaceDispatchCallers(view *graphquery.View, targets []graphquery.Node) []dispatchCaller {
 	var out []dispatchCaller
 	for _, t := range targets {
-		for _, imID := range interfaceDispatchMethods(view, t) {
+		for _, imID := range graphquery.InterfaceDispatchMethods(view, t) {
 			imNode, ok := view.NodesByID[imID]
 			if !ok {
 				continue
@@ -312,38 +312,6 @@ func interfaceDispatchCallers(view *graphquery.View, targets []graphquery.Node) 
 	return out
 }
 
-// interfaceDispatchMethods returns the IDs of the interface-method nodes a
-// concrete method satisfies — the dispatch targets a call through an interface
-// value lands on (#604). It walks method <-has_method- type -implements->
-// interface, then looks up the interface's method of the SAME name
-// ("(IfaceName).MethodName", the QN extractInterfaceMethods emits). The name
-// match means a type implementing several interfaces only picks up the ones
-// that actually declare this method. Returns nil for a non-method.
-func interfaceDispatchMethods(view *graphquery.View, t graphquery.Node) []string {
-	if t.Kind != graph.NodeMethod || t.Name == "" {
-		return nil
-	}
-	var out []string
-	seen := map[string]bool{}
-	for _, in := range view.EdgesByDst[t.ID] {
-		if in.Kind != graph.EdgeHasMethod {
-			continue
-		}
-		for _, imp := range view.EdgesBySrc[in.SrcID] {
-			if imp.Kind != graph.EdgeImplements {
-				continue
-			}
-			iface, ok := view.NodesByID[imp.DstID]
-			if !ok || iface.Name == "" {
-				continue
-			}
-			for _, m := range view.NodesByQualified["("+iface.Name+")."+t.Name] {
-				if !seen[m.ID] {
-					seen[m.ID] = true
-					out = append(out, m.ID)
-				}
-			}
-		}
-	}
-	return out
-}
+// interfaceDispatchMethods moved to graphquery.InterfaceDispatchMethods (#604)
+// so the impact/risk BFS can share it; the trace path calls it via
+// interfaceDispatchCallers above.

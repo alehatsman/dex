@@ -64,8 +64,8 @@ func TransitiveCallerCount(view *View, seeds []Node, maxDepth int) int {
 		if cur.depth >= maxDepth {
 			continue
 		}
-		for _, e := range view.EdgesByDst[cur.id] {
-			if e.Kind != graph.EdgeCalls || visited[e.SrcID] {
+		for _, e := range incomingCallEdges(view, cur.id) {
+			if visited[e.SrcID] {
 				continue
 			}
 			visited[e.SrcID] = true
@@ -74,6 +74,68 @@ func TransitiveCallerCount(view *View, seeds []Node, maxDepth int) int {
 		}
 	}
 	return count
+}
+
+// InterfaceDispatchMethods returns the IDs of the interface-method nodes a
+// concrete method satisfies — the dispatch targets a call through an interface
+// value lands on (#604). Walks method <-has_method- type -implements->
+// interface, then the interface's method of the SAME name ("(Iface).M", the QN
+// extractInterfaceMethods emits). The name match means a multi-interface type
+// only picks up interfaces that actually declare this method. Returns nil for a
+// non-method.
+func InterfaceDispatchMethods(view *View, t Node) []string {
+	if t.Kind != graph.NodeMethod || t.Name == "" {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, in := range view.EdgesByDst[t.ID] {
+		if in.Kind != graph.EdgeHasMethod {
+			continue
+		}
+		for _, imp := range view.EdgesBySrc[in.SrcID] {
+			if imp.Kind != graph.EdgeImplements {
+				continue
+			}
+			iface, ok := view.NodesByID[imp.DstID]
+			if !ok || iface.Name == "" {
+				continue
+			}
+			for _, m := range view.NodesByQualified["("+iface.Name+")."+t.Name] {
+				if !seen[m.ID] {
+					seen[m.ID] = true
+					out = append(out, m.ID)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// incomingCallEdges returns the `calls` edges into nodeID — both the direct
+// static callers AND the callers of the interface methods nodeID implements
+// (interface dispatch, #604). Shared by the impact/risk BFS so blast radius and
+// the risk count include the dynamic-dispatch reach, consistent with what
+// `trace --dir callers` surfaces.
+func incomingCallEdges(view *View, nodeID string) []Edge {
+	var out []Edge
+	for _, e := range view.EdgesByDst[nodeID] {
+		if e.Kind == graph.EdgeCalls {
+			out = append(out, e)
+		}
+	}
+	n, ok := view.NodesByID[nodeID]
+	if !ok {
+		return out
+	}
+	for _, imID := range InterfaceDispatchMethods(view, n) {
+		for _, e := range view.EdgesByDst[imID] {
+			if e.Kind == graph.EdgeCalls {
+				out = append(out, e)
+			}
+		}
+	}
+	return out
 }
 
 // Hop is one step in a resolved call/import path. Fields mirror the mcp wire
@@ -345,10 +407,7 @@ func ComputeImpact(view *View, seeds []Node, maxDepth int) []Reachable {
 		if cur.depth >= maxDepth {
 			continue
 		}
-		for _, e := range view.EdgesByDst[cur.id] {
-			if e.Kind != graph.EdgeCalls {
-				continue
-			}
+		for _, e := range incomingCallEdges(view, cur.id) {
 			if visited[e.SrcID] {
 				continue
 			}

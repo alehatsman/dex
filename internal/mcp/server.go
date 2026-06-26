@@ -797,7 +797,9 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			Description: td("Transitive blast-radius analysis. Given a symbol, follows `calls` edges " +
 				"in the callers direction up to max_depth (default 3) and returns every reachable function " +
 				"with its hop depth and PageRank. Depth 1 = direct callers; depth 2 = their callers; etc. " +
-				"Use before editing a widely-called symbol to gauge the ripple. " +
+				"Use before editing a widely-called symbol to gauge the ripple. The walk follows Go " +
+				"interface dispatch too (#604): callers that reach a method through an interface it implements " +
+				"are in the blast radius and the risk tier, not just static callers. " +
 				"Same name resolution as `trace`. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphImpact)
 

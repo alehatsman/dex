@@ -11,16 +11,14 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// TestTraceInterfaceDispatchCallers covers #604: tracing callers of a concrete
-// method that implements a project interface must ALSO surface the callers of
-// the interface method (which dispatch to it), tagged with Via — the static
-// `calls` graph alone lands those calls on the interface method node and misses
-// them.
-func TestTraceInterfaceDispatchCallers(t *testing.T) {
-	projDir := t.TempDir()
-	cacheDir := t.TempDir()
+// seedReaderFixture builds an indexed graph: interface Reader{Read}, *File
+// implementing it, useFile (static call to (*File).Read) and useReader (call to
+// (Reader).Read — dynamic dispatch). Returns the project dir + cache dir.
+func seedReaderFixture(t *testing.T) (projDir, cacheDir string) {
+	t.Helper()
+	projDir = t.TempDir()
+	cacheDir = t.TempDir()
 	writeFile(t, filepath.Join(projDir, "p.go"), "package p\n")
-
 	p, err := proj.Resolve(projDir, cacheDir)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +52,14 @@ func TestTraceInterfaceDispatchCallers(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Close()
+	return projDir, cacheDir
+}
 
+// TestTraceInterfaceDispatchCallers covers #604: tracing callers of a concrete
+// method that implements a project interface must ALSO surface the callers of
+// the interface method (which dispatch to it), tagged with Via.
+func TestTraceInterfaceDispatchCallers(t *testing.T) {
+	projDir, cacheDir := seedReaderFixture(t)
 	s := &Server{IndexDir: cacheDir}
 	out, err := s.GraphCallers(context.Background(), CallEdgeInput{Name: "(*File).Read", ProjectRoot: projDir})
 	if err != nil || out.Status != "ok" {
@@ -124,5 +129,33 @@ func TestTraceNoFalseDispatchForUnrelatedMethod(t *testing.T) {
 		if h.QualifiedName == "callRead" {
 			t.Errorf("Close must NOT pick up Read's interface callers (name mismatch), got %+v", h)
 		}
+	}
+}
+
+// TestImpactInterfaceDispatch covers the #604 impact follow-up: the blast
+// radius (and risk) of a method must include callers that reach it through an
+// interface, not only static callers.
+func TestImpactInterfaceDispatch(t *testing.T) {
+	projDir, cacheDir := seedReaderFixture(t)
+	s := &Server{IndexDir: cacheDir}
+
+	out, err := s.GraphImpact(context.Background(), ImpactInput{Name: "(*File).Read", ProjectRoot: projDir})
+	if err != nil || out.Status != "ok" {
+		t.Fatalf("GraphImpact: status=%q hint=%q err=%v", out.Status, out.Hint, err)
+	}
+	var hasStatic, hasDispatch bool
+	for _, n := range out.Nodes {
+		switch n.QualifiedName {
+		case "useFile":
+			hasStatic = true
+		case "useReader":
+			hasDispatch = true
+		}
+	}
+	if !hasStatic {
+		t.Error("impact should include the static caller useFile")
+	}
+	if !hasDispatch {
+		t.Error("impact must include the interface-dispatch caller useReader (#604 impact enrichment)")
 	}
 }
