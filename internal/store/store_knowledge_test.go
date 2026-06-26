@@ -46,7 +46,7 @@ func TestKnowledgeQueryVec_SemanticRanking(t *testing.T) {
 		}
 	}
 	// Query closest to beta.
-	got, err := st.KnowledgeQueryVec(ctx, []float32{0.1, 0.95, 0, 0}, 3)
+	got, err := st.KnowledgeQueryVec(ctx, []float32{0.1, 0.95, 0, 0}, 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,12 +64,42 @@ func TestKnowledgeQueryVec_FallbackWhenNoVecs(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No vectors stored → must fall back to salience query, not error.
-	got, err := st.KnowledgeQueryVec(ctx, []float32{1, 0, 0, 0}, 5)
+	got, err := st.KnowledgeQueryVec(ctx, []float32{1, 0, 0, 0}, 5, 0)
 	if err != nil {
 		t.Fatalf("expected salience fallback, got error: %v", err)
 	}
 	if len(got) != 1 || got[0].Body != "no embedding here" {
 		t.Errorf("fallback returned %+v, want the single fact", got)
+	}
+}
+
+// TestKnowledgeQueryVec_SimFloor guards #706: facts below minSim must be
+// excluded even when they're the only candidate (sparse knowledge base).
+func TestKnowledgeQueryVec_SimFloor(t *testing.T) {
+	st, ctx := newStore(t)
+	// One fact: vector pointing purely in the Y direction.
+	if _, err := st.KnowledgeAdd(ctx, "Gotcha", "review hunk cap", 0.9); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.KnowledgeUpsertVecByBody(ctx, "review hunk cap", []float32{0, 1, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	// Query in the X direction — near-zero cosine similarity with the Y-vector fact.
+	// With minSim=0.25 the floor filters it out; with minSim=0 it comes back.
+	got, err := st.KnowledgeQueryVec(ctx, []float32{1, 0, 0, 0}, 5, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("minSim=0.25: expected empty result for orthogonal query, got %d fact(s): %q", len(got), got[0].Body)
+	}
+	// Without a floor the same query returns the fact.
+	got, err = st.KnowledgeQueryVec(ctx, []float32{1, 0, 0, 0}, 5, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Errorf("minSim=0: expected 1 fact, got %d", len(got))
 	}
 }
 

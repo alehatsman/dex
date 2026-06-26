@@ -555,9 +555,14 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 // similarity to queryVec, query-independent quality (confidence × archetype
 // weight), and recency. Weights mirror lean-ctx: 0.6 / 0.25 / 0.15.
 //
+// minSim sets a cosine-similarity floor: facts with sim < minSim are dropped
+// before hybrid ranking. Pass 0 to disable (ask/list callers); pass ~0.25 for
+// skip-fallback callers (locate/review) that should show no note rather than
+// an irrelevant one when the knowledge base is sparse (#706).
+//
 // Falls back to salience-only KnowledgeQuery when queryVec is empty or no fact
 // embeddings exist yet (fresh store, or embed endpoint was offline at add time).
-func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float32, k int) ([]KnowledgeFact, error) {
+func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float32, k int, minSim float64) ([]KnowledgeFact, error) {
 	k = clampK(k)
 	if len(queryVec) == 0 {
 		return s.KnowledgeQuery(ctx, k)
@@ -589,7 +594,11 @@ func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float
 			_ = rows.Close()
 			return nil, err
 		}
-		sims[id] = 1 - dist // cosine distance ∈ [0,2] → similarity ∈ [-1,1]
+		sim := 1 - dist // cosine distance ∈ [0,2] → similarity ∈ [-1,1]
+		if sim < minSim {
+			continue // below similarity floor — skip before DB fetch (#706)
+		}
+		sims[id] = sim
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
@@ -598,7 +607,7 @@ func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float
 	}
 	_ = rows.Close()
 	if len(ids) == 0 {
-		return s.KnowledgeQuery(ctx, k)
+		return nil, nil // all below floor; skip-fallback callers get empty, not salience noise
 	}
 
 	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count FROM knowledge_facts WHERE id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args

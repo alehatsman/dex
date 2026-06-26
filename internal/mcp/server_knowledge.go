@@ -363,7 +363,14 @@ func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string,
 	if strings.TrimSpace(query) != "" && s.EmbedClient != nil {
 		s.backfillFactVecs(ctx, st)
 		if vecs, eerr := s.EmbedClient.Embed(ctx, []string{query}); eerr == nil && len(vecs) > 0 {
-			facts, err = st.KnowledgeQueryVec(ctx, vecs[0], k)
+			// skipFallback callers (locate/review) want no note rather than an
+			// irrelevant one from a sparse knowledge base (#706).
+			const minSimSkip = 0.25
+			minSim := 0.0
+			if noFallback {
+				minSim = minSimSkip
+			}
+			facts, err = st.KnowledgeQueryVec(ctx, vecs[0], k, minSim)
 		}
 	}
 	if facts == nil && err == nil && !noFallback {
