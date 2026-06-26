@@ -151,6 +151,38 @@ func (s *Store) SessionTrackFile(ctx context.Context, path, op string) error {
 	return nil
 }
 
+// SessionImport restores task, notes, and a file list into the current session
+// (creating one if none exists), for the session-handoff import path (#603). It
+// overwrites task and notes and upserts each file by path. File timestamps are
+// stamped now-i so the bundle's listed order is preserved by SessionGet's
+// touched_at DESC ordering (the first bundle file stays most-recent).
+func (s *Store) SessionImport(ctx context.Context, task, notes string, files []SessionFile) error {
+	id, err := s.ensureSession(ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UnixNano()
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET task=?, notes=?, updated_at=? WHERE id=?`,
+		task, notes, now, id); err != nil {
+		return err
+	}
+	for i, f := range files {
+		op := f.Op
+		if op == "" {
+			op = "read"
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO session_files(session_id, path, op, touched_at)
+			   VALUES(?,?,?,?)`,
+			id, f.Path, op, now-int64(i)); err != nil {
+			return err
+		}
+		_ = s.RecordCoAccess(ctx, f.Path)
+	}
+	return nil
+}
+
 // SessionClear deletes the current session (files cascade via FK).
 func (s *Store) SessionClear(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id=(SELECT MAX(id) FROM sessions)`)

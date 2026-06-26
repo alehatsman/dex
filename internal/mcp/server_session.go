@@ -2,6 +2,9 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -19,11 +22,12 @@ import (
 
 type SessionInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot | recap | budget | heatmap"`
+	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot | recap | budget | heatmap | export | import"`
 	Task        string `json:"task,omitempty"         jsonschema:"task description for set_task action"`
 	Note        string `json:"note,omitempty"         jsonschema:"note text for add_note action"`
 	File        string `json:"file,omitempty"         jsonschema:"relative file path for add_file action"`
 	Op          string `json:"op,omitempty"           jsonschema:"file operation: read (default) or write"`
+	Bundle      string `json:"bundle,omitempty"       jsonschema:"dex-session-v1 JSON bundle (from a prior export) to restore for the import action"`
 	WindowSize  int    `json:"window_size,omitempty"  jsonschema:"context window size in tokens for budget action (default 128000)"`
 	Budget      int    `json:"budget,omitempty"       jsonschema:"token budget for the recap action's digest (default 4000); the working set is packed cheapest-first until it is spent"`
 }
@@ -108,10 +112,14 @@ func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in Session
 		return s.sessionBudget(ctx, st, p.Root, in.WindowSize)
 	case "heatmap":
 		return s.sessionHeatmap(p.CacheDir)
+	case "export":
+		return s.sessionExport(ctx, st, p.Root)
+	case "import":
+		return s.sessionImport(ctx, st, p.Root, in.Bundle)
 	case "get", "":
 		// fall through to the read below
 	default:
-		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: set_task | add_note | add_file | get | clear | snapshot | recap | budget | heatmap", in.Action)}, nil
+		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: set_task | add_note | add_file | get | clear | snapshot | recap | budget | heatmap | export | import", in.Action)}, nil
 	}
 
 	ss, ok, err := st.SessionGet(ctx)
@@ -407,6 +415,170 @@ func formatDuration(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%ds", s)
 	}
+}
+
+// sessionBundleSchema versions the handoff bundle wire format (#603). Bump it
+// on any shape change so import can fail closed on an unknown schema rather than
+// silently mis-restoring.
+const sessionBundleSchema = "dex-session-v1"
+
+// sessionBundle is the export/import wire format for cross-reset session handoff
+// (#603). It carries only paths + content etags — never file content — so it is
+// safe to commit (e.g. .dex/session.json) for team handoff.
+type sessionBundle struct {
+	Schema     string       `json:"schema"`
+	Project    string       `json:"project,omitempty"` // sha256[:16] of the project root (privacy: hashed)
+	ExportedAt string       `json:"exported_at,omitempty"`
+	Task       string       `json:"task,omitempty"`
+	Notes      string       `json:"notes,omitempty"`
+	Files      []bundleFile `json:"files,omitempty"`
+}
+
+// bundleFile is one working-set file in a handoff bundle: its path, content etag
+// at export time (sha256[:16], for staleness detection on import), and op.
+type bundleFile struct {
+	Path string `json:"path"`
+	Etag string `json:"etag,omitempty"`
+	Op   string `json:"op,omitempty"`
+}
+
+// fileEtag returns sha256[:16] of a file's content — the same etag scheme the
+// read tool emits (server_summarize_setup.go) so an exported etag compares
+// equal to a later read's etag when the file is unchanged. ok=false when the
+// file can't be read (missing/permission), which import treats as "missing".
+func fileEtag(abs string) (etag string, ok bool) {
+	d, err := os.ReadFile(abs)
+	if err != nil {
+		return "", false
+	}
+	h := sha256.Sum256(d)
+	return hex.EncodeToString(h[:])[:16], true
+}
+
+// hashRoot is the privacy-preserving project identifier stamped into a bundle —
+// sha256[:16] of the absolute root, never the path itself.
+func hashRoot(root string) string {
+	h := sha256.Sum256([]byte(root))
+	return hex.EncodeToString(h[:])[:16]
+}
+
+// sessionExport serialises the current session into a dex-session-v1 bundle:
+// task, notes, and the deduped working-set files each stamped with its current
+// content etag. No file content is included — the bundle is paths + etags only,
+// safe to persist or hand off. Returns the JSON in Content.
+func (s *Server) sessionExport(ctx context.Context, st *store.Store, projectRoot string) (*sdk.CallToolResult, SessionOutput, error) {
+	ss, ok, err := st.SessionGet(ctx)
+	if err != nil {
+		return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	if !ok {
+		return nil, SessionOutput{Status: "ok", Hint: "no active session to export — start one with action=set_task"}, nil
+	}
+
+	b := sessionBundle{
+		Schema:     sessionBundleSchema,
+		Project:    hashRoot(projectRoot),
+		ExportedAt: time.Now().UTC().Format(time.RFC3339),
+		Task:       ss.Task,
+		Notes:      ss.Notes,
+	}
+	seen := make(map[string]struct{}, len(ss.Files))
+	for _, f := range ss.Files {
+		if _, dup := seen[f.Path]; dup {
+			continue
+		}
+		seen[f.Path] = struct{}{}
+		bf := bundleFile{Path: f.Path, Op: f.Op}
+		if et, ok := fileEtag(filepath.Join(projectRoot, f.Path)); ok {
+			bf.Etag = et
+		}
+		b.Files = append(b.Files, bf)
+	}
+
+	data, err := json.MarshalIndent(b, "", "  ")
+	if err != nil {
+		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("marshal bundle: %v", err)}, nil
+	}
+	return nil, SessionOutput{Status: "ok", Content: string(data), FileCount: len(b.Files)}, nil
+}
+
+// sessionImport rehydrates a fresh session from a dex-session-v1 bundle (#603):
+// it restores task/notes/files into the current session, then returns a recovery
+// digest (the recap working-set skeleton) with a handoff header. Etags are used
+// for staleness detection only — files whose content changed (or vanished) since
+// export are called out so the agent re-reads those first. It does NOT pre-warm
+// the read cache: a true reset leaves the agent without the bytes, so the first
+// read must deliver full content (and the normal read path marks it from there).
+func (s *Server) sessionImport(ctx context.Context, st *store.Store, projectRoot, bundleJSON string) (*sdk.CallToolResult, SessionOutput, error) {
+	if strings.TrimSpace(bundleJSON) == "" {
+		return nil, SessionOutput{Status: "error", Hint: "import requires the exported bundle in the `bundle` field"}, nil
+	}
+	var b sessionBundle
+	if err := json.Unmarshal([]byte(bundleJSON), &b); err != nil {
+		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("parse bundle: %v", err)}, nil
+	}
+	if b.Schema != sessionBundleSchema {
+		return nil, SessionOutput{Status: "error", Hint: fmt.Sprintf("unsupported bundle schema %q — want %q", b.Schema, sessionBundleSchema)}, nil
+	}
+
+	files := make([]store.SessionFile, 0, len(b.Files))
+	for _, f := range b.Files {
+		if f.Path == "" {
+			continue
+		}
+		files = append(files, store.SessionFile{Path: f.Path, Op: f.Op})
+	}
+	if err := st.SessionImport(ctx, b.Task, b.Notes, files); err != nil {
+		return nil, SessionOutput{Status: "error", Hint: err.Error()}, nil
+	}
+
+	// Integrity: which bundled files changed or vanished since export?
+	var stale, missing []string
+	for _, f := range b.Files {
+		if f.Etag == "" {
+			continue
+		}
+		cur, ok := fileEtag(filepath.Join(projectRoot, f.Path))
+		switch {
+		case !ok:
+			missing = append(missing, f.Path)
+		case cur != f.Etag:
+			stale = append(stale, f.Path)
+		}
+	}
+
+	// Render the recovery digest from the now-restored session, then prepend a
+	// handoff header + staleness warnings.
+	_, recap, _ := s.sessionRecap(ctx, st, projectRoot, 0)
+
+	var head strings.Builder
+	head.WriteString("# Session Handoff Imported\n\n")
+	fmt.Fprintf(&head, "Restored task + %d file(s) + notes", len(files))
+	if b.ExportedAt != "" {
+		fmt.Fprintf(&head, " from a bundle exported %s", b.ExportedAt)
+	}
+	head.WriteString(".\n\n")
+	if len(stale) > 0 {
+		head.WriteString("## Changed since handoff — re-read these first\n\n")
+		for _, p := range stale {
+			fmt.Fprintf(&head, "- %s\n", p)
+		}
+		head.WriteString("\n")
+	}
+	if len(missing) > 0 {
+		head.WriteString("## Missing since handoff\n\n")
+		for _, p := range missing {
+			fmt.Fprintf(&head, "- %s\n", p)
+		}
+		head.WriteString("\n")
+	}
+
+	return nil, SessionOutput{
+		Status:    "ok",
+		Content:   head.String() + recap.Content,
+		Task:      b.Task,
+		FileCount: len(files),
+	}, nil
 }
 
 // sessionHeatmap returns the file access heatmap for a project.

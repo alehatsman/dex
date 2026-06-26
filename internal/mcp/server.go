@@ -990,7 +990,9 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"add_file (track a file you read/wrote), get (retrieve the current session state), " +
 					"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
 					"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical), " +
-					"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files). " +
+					"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files), " +
+					"export (serialise task + working-set files (path+etag, no content) + notes into a dex-session-v1 bundle for handoff across a context reset), " +
+					"import (restore that bundle into a fresh session and return a recovery digest, flagging any files changed since export). " +
 					"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 					"don't lose context across reconnects. No embedding required."),
 			}, h.session)

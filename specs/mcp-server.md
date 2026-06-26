@@ -189,8 +189,15 @@ service clients are the http-api spec's.
 - WHEN `session` is called, dex manages per-project session memory across tool
   calls: `set_task`, `add_note`, `add_file`, `get`, `clear`, `snapshot` (recovery
   block after compaction), `budget` (context-window utilization estimate),
-  `heatmap` (per-file access frequency and compression savings). The task + notes
-  + files are surfaced in `ask` responses as `session_task`. No embedding required.
+  `heatmap` (per-file access frequency and compression savings), `export`
+  (serialise task + working-set files + notes into a `dex-session-v1` JSON bundle
+  — paths + content etags only, never file content, so it is safe to commit for
+  team handoff), `import` (restore a bundle into a fresh session and return a
+  recovery digest; etags drive staleness detection so files changed or vanished
+  since export are flagged for re-read first — import never pre-warms the read
+  cache, so the first read of a restored file still delivers full content, #603).
+  The task + notes + files are surfaced in `ask` responses as `session_task`. No
+  embedding required.
 - WHEN `checkpoint` is called (DEX_EXPERT), dex keeps a private SHADOW git history
   of the working tree under its cache dir (`<cache>/shadow`), fully isolated from
   the user's `.git` via a GIT_*-scrubbed env + explicit `GIT_DIR`/`GIT_WORK_TREE`
