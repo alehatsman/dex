@@ -303,8 +303,9 @@ func renderGrouped(title string, symbols []Symbol, size, budget int) string {
 // Grouping them in one struct lets new sections land without churning the
 // RenderOrient signature (and every caller) each time.
 type OrientExtras struct {
-	Entrypoints []string // file paths of main() functions — where execution starts
-	Externals   []string // external import paths — what the repo talks to
+	Entrypoints []string     // file paths of main() functions — where execution starts
+	ImportEdges []ImportEdge // internal package→package imports — for the dependency-layer view
+	Externals   []string     // external import paths — what the repo talks to
 }
 
 // RenderOrient composes the session-start orientation bundle: the L0 overview,
@@ -324,10 +325,15 @@ func RenderOrient(clusters []Cluster, extras OrientExtras, l0budget, l1budget in
 		b.WriteString("\n")
 		b.WriteString(RenderL1(shown[0], l1budget))
 	}
-	// Entry → boundary: where it starts, then what it touches.
+	// Entry → structure → boundary: where it starts, how it layers, what it
+	// touches.
 	if ep := RenderEntrypoints(extras.Entrypoints, DefaultEntrypointsBudget); ep != "" {
 		b.WriteString("\n")
 		b.WriteString(ep)
+	}
+	if ly := RenderLayers(extras.ImportEdges, DefaultLayersBudget); ly != "" {
+		b.WriteString("\n")
+		b.WriteString(ly)
 	}
 	if ext := RenderExternals(extras.Externals, DefaultExternalsBudget); ext != "" {
 		b.WriteString("\n")

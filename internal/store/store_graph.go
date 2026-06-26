@@ -481,6 +481,50 @@ func (s *Store) ExternalImports(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
+// PackageImport is one internal package→package dependency edge: `From`
+// imports `To`, both project packages (#581 layers).
+type PackageImport struct {
+	From string
+	To   string
+}
+
+// InternalPackageImports returns the project's internal package→package import
+// edges — `import` nodes whose imported path (qualified_name) is itself a
+// project package, paired with the importing package (package_path). External
+// imports and self-imports are excluded. Powers the orientation "layers"
+// section: a Kahn topo-sort of these edges into dependency layers (#581). Go
+// forbids import cycles so the graph is a DAG; tree-sitter langs may differ, so
+// the layerizer guards against cycles.
+func (s *Store) InternalPackageImports(ctx context.Context) ([]PackageImport, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT package_path AS importer, qualified_name AS imported
+		FROM graph_nodes
+		WHERE kind = 'import'
+		  AND package_path != '' AND qualified_name != ''
+		  AND qualified_name != package_path
+		  AND package_path NOT LIKE '%testdata%' AND qualified_name NOT LIKE '%testdata%'
+		  AND package_path NOT LIKE '%/vendor/%' AND qualified_name NOT LIKE '%/vendor/%'
+		  AND qualified_name IN (
+		    SELECT DISTINCT package_path FROM graph_nodes
+		    WHERE kind='package' AND package_path != ''
+		      AND package_path NOT LIKE '%testdata%' AND package_path NOT LIKE '%/vendor/%'
+		  )
+		ORDER BY importer, imported`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []PackageImport
+	for rows.Next() {
+		var e PackageImport
+		if err := rows.Scan(&e.From, &e.To); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // MainEntrypoints returns the file paths of the project's `main` functions —
 // where execution starts. Sorted (byte-stable for the orientation render) and
 // deduped. Empty for a library with no main (the orient section is then

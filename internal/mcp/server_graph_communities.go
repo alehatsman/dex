@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/alehatsman/dex/internal/codemap"
+	"github.com/alehatsman/dex/internal/store"
+
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -50,6 +53,22 @@ type CommunitiesOutput struct {
 	// fed to the orientation render's "entrypoints" section (#581). Empty for a
 	// library with no main.
 	Entrypoints []string `json:"entrypoints,omitempty"`
+	// ImportEdges is the internal package→package import graph — fed to the
+	// orientation render's dependency-"layers" section (#581).
+	ImportEdges []store.PackageImport `json:"import_edges,omitempty"`
+}
+
+// CodemapImportEdges adapts store package-import edges to the codemap type fed
+// to the orientation "layers" render (#581).
+func CodemapImportEdges(pis []store.PackageImport) []codemap.ImportEdge {
+	if len(pis) == 0 {
+		return nil
+	}
+	out := make([]codemap.ImportEdge, len(pis))
+	for i, e := range pis {
+		out[i] = codemap.ImportEdge{From: e.From, To: e.To}
+	}
+	return out
 }
 
 func (s *Server) GraphCommunities(ctx context.Context, in CommunitiesInput) (CommunitiesOutput, error) {
@@ -111,6 +130,9 @@ func (s *Server) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, i
 	}
 	if eps, err := st.MainEntrypoints(ctx); err == nil {
 		out.Entrypoints = eps
+	}
+	if ie, err := st.InternalPackageImports(ctx); err == nil {
+		out.ImportEdges = ie
 	}
 	if len(communities) > k {
 		communities = communities[:k]
