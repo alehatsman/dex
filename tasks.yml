@@ -40,7 +40,7 @@ modules:
   # ai-lint, fmt, tools, sync-config) silently ignore them. This is exactly
   # the set each prop used to be passed to by hand.
   goq:
-    source: "github.com/alehatsman/go-quality@v0.1.1"
+    source: "github.com/alehatsman/go-quality@v0.1.2"
     props:
       go_tags: "{{ GO_TAGS }}"
       pkg: "{{ PKG }}"
