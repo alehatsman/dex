@@ -163,10 +163,11 @@ linters:
         linters: [gosec]
         text: "G(505|401)"
 
-      # G202: SQL string concatenation in store_graph.go and store_search.go —
-      # same justification as store.go above: query strings are built from
-      # controlled internal inputs (placeholder counts, column names), not user data.
-      - path: internal/store/store_(graph|search)\.go
+      # G202: SQL string concatenation in store_graph.go, store_graph_fusion.go
+      # and store_search.go — same justification as store.go above: query strings
+      # are built from controlled internal inputs (placeholder counts, column
+      # names), not user data.
+      - path: internal/store/store_(graph|graph_fusion|search)\.go
         linters: [gosec]
         text: "G202"
 
