@@ -606,13 +606,6 @@ func (s *Store) initDimLocked(ctx context.Context, dim int64) error {
 	return nil
 }
 
-// initDim is the concurrency-safe wrapper around initDimLocked.
-func (s *Store) initDim(ctx context.Context, dim int64) error {
-	s.dimInit.Lock()
-	defer s.dimInit.Unlock()
-	return s.initDimLocked(ctx, dim)
-}
-
 // UpsertMany inserts a batch of chunks in a single transaction. One
 // commit per batch instead of one commit per chunk drops the no-op
 // fsync count by ~32× on a typical run and is well worth the slight
