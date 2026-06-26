@@ -116,3 +116,6 @@ func (n *noopSurface) budget(_ context.Context, _ *sdk.CallToolRequest, _ Budget
 func (n *noopSurface) check(_ context.Context, _ *sdk.CallToolRequest, _ CheckInput) (*sdk.CallToolResult, CheckOutput, error) {
 	return nil, CheckOutput{}, n.err()
 }
+func (n *noopSurface) refs(_ context.Context, _ *sdk.CallToolRequest, _ RefsInput) (*sdk.CallToolResult, RefsOutput, error) {
+	return nil, RefsOutput{}, n.err()
+}

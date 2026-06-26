@@ -110,6 +110,8 @@ func main() {
 		err = cmdRefactor(ctx, args)
 	case "cohort":
 		err = cmdCohort(ctx, args)
+	case "refs":
+		err = cmdRefs(ctx, args)
 	case "verify":
 		err = cmdVerify(ctx, args)
 	case "check":

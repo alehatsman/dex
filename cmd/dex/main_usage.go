@@ -33,6 +33,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex review [<path>]                    per-hunk PR intelligence — --ref|--branch|--pr
   dex refactor [<path>] <symbol> <to>    plan a type-precise rename (edit triples; never writes)
   dex cohort [<path>] <interface>        types that must change in lockstep with an interface
+  dex refs   [<path>] <action> <symbol>  type-precise Go symbol queries — references, implementations, supertypes, subtypes
   dex verify [<path>]                    run the tests a change implicates — working tree | --ref | --symbol
   dex check  [<path>] <ref...>           verify file:line[:symbol] references against the index
   dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
@@ -88,6 +89,7 @@ query (the CLI verbs share the MCP tool names, #354/#427):
     dex review [<path>]           per-hunk PR intelligence (MCP: review)
     dex refactor [<path>] <s> <t> plan a type-precise rename (MCP: refactor)
     dex cohort [<path>] <iface>   interface lockstep set (MCP: cohort)
+    dex refs   [<path>] <act> <s> type-precise symbol queries (MCP: refs)
     dex verify [<path>]           run tests a change implicates (MCP: verify)
     dex check  [<path>] <ref...>  verify file:line[:symbol] refs (MCP: check)
     (map / read / ask are already top-level — see below)

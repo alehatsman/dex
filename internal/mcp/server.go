@@ -737,6 +737,7 @@ type toolSurface interface {
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
 	checkpoint(context.Context, *sdk.CallToolRequest, CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error)
 	check(context.Context, *sdk.CallToolRequest, CheckInput) (*sdk.CallToolResult, CheckOutput, error)
+	refs(context.Context, *sdk.CallToolRequest, RefsInput) (*sdk.CallToolResult, RefsOutput, error)
 	shellRun(context.Context, *sdk.CallToolRequest, ShellInput) (*sdk.CallToolResult, ShellOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
@@ -990,6 +991,25 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"missing method names. Pure go/types — no index needed; Go-only (returns 'unsupported-language' " +
 					"otherwise). Reach for it before adding/removing an interface method to plan the lockstep edit."),
 			}, h.cohort)
+
+			// refs (#604 Tier 1): type-precise Go symbol queries via go/types.
+			// references — all def+use sites; implementations — concrete types
+			// satisfying an interface; supertypes — embedded interfaces / interfaces
+			// a type satisfies; subtypes — implementing types / embedding structs.
+			addTool(srv, &sdk.Tool{
+				Name:        "refs",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Type-precise Go symbol queries via go/types — no index needed; Go-only. " +
+					"Give a `symbol` (bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') " +
+					"and an `action`: " +
+					"'references' (all def + use sites across the module), " +
+					"'implementations' (concrete types satisfying an interface), " +
+					"'supertypes' (interfaces embedded by an interface, or interfaces a concrete type satisfies within the module), " +
+					"'subtypes' (types implementing an interface, or structs embedding a struct). " +
+					"Returns a list of {path, line, kind} sites. Returns 'unsupported-language' for non-Go. " +
+					"For interface implementors, `cohort` gives richer coverage-gap analysis; refs gives the raw query."),
+			}, h.refs)
+
 			// `path` is not a standalone tool — `trace --dir path --to <dst>`
 			// finds the shortest route between two symbols (#575).
 

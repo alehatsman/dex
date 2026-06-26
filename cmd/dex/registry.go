@@ -166,6 +166,14 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagFormat},
 	},
 	{
+		name: "refs", group: groupQuery, args: "[<path>] <action> <symbol>",
+		summary: "type-precise Go symbol queries — references, implementations, supertypes, subtypes",
+		flags: []flagSpec{
+			{name: "--action", desc: "references | implementations | supertypes | subtypes (also positional arg 1)", arg: true},
+			flagFormat,
+		},
+	},
+	{
 		name: "refactor", group: groupQuery, args: "[<path>] <symbol> <to>",
 		summary: "plan a type-precise rename (edit triples; never writes)",
 		flags: []flagSpec{

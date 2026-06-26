@@ -27,6 +27,7 @@ package mcp
 // POST /projects/{id}/impact       — body: ImpactInput
 // POST /projects/{id}/routes       — body: RoutesInput
 // POST /projects/{id}/smells       — body: SmellsInput
+// POST /projects/{id}/refs         — body: RefsInput
 // POST /projects/{id}/path         — body: PathInput
 // POST /projects/{id}/diff         — body: DiffInput
 // POST /projects/{id}/clusters     — body: CommunitiesInput
@@ -274,6 +275,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/impact", jsonHandler(opts.Projects, func(in *ImpactInput, r string) { in.ProjectRoot = r }, s.GraphImpact))
 	authed.HandleFunc("POST /v1/projects/{id}/routes", jsonHandler(opts.Projects, func(in *RoutesInput, r string) { in.ProjectRoot = r }, s.Routes))
 	authed.HandleFunc("POST /v1/projects/{id}/smells", jsonHandler(opts.Projects, func(in *SmellsInput, r string) { in.ProjectRoot = r }, s.Smells))
+	authed.HandleFunc("POST /v1/projects/{id}/refs", jsonHandler(opts.Projects, func(in *RefsInput, r string) { in.ProjectRoot = r }, s.Refs))
 	authed.HandleFunc("POST /v1/projects/{id}/path", jsonHandler(opts.Projects, func(in *PathInput, r string) { in.ProjectRoot = r }, s.GraphPath))
 	authed.HandleFunc("POST /v1/projects/{id}/diff", jsonHandler(opts.Projects, func(in *DiffInput, r string) { in.ProjectRoot = r }, s.GraphDiff))
 	authed.HandleFunc("POST /v1/projects/{id}/clusters", jsonHandler(opts.Projects, func(in *CommunitiesInput, r string) { in.ProjectRoot = r }, s.GraphCommunities))

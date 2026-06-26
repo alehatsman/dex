@@ -189,6 +189,10 @@ func (p projectScoped) check(ctx context.Context, req *sdk.CallToolRequest, in C
 	in.ProjectRoot = p.root
 	return p.s.check(ctx, req, in)
 }
+func (p projectScoped) refs(ctx context.Context, req *sdk.CallToolRequest, in RefsInput) (*sdk.CallToolResult, RefsOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.refs(ctx, req, in)
+}
 
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at
 // /v1/projects/{id}/mcp. One *sdk.Server is prebuilt per registry project (the
