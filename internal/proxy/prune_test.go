@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -416,8 +417,8 @@ func TestCacheControlBoundaryFloor(t *testing.T) {
 	// Indices 0-3: tool pair + padding + cache_control marker.
 	msgs := makeMessages(t,
 		toolUseMsg("id1", "Read"),
-		toolResultMsg("id1", fileContent),             // index 1 — inside floor, must NOT be pruned
-		map[string]any{"role": "user", "content": "p"}, // index 2
+		toolResultMsg("id1", fileContent),                // index 1 — inside floor, must NOT be pruned
+		map[string]any{"role": "user", "content": "p"},   // index 2
 		msgWithCacheControlInContent("cc block level 2"), // index 3 — last cache marker → pruneFloor=4
 		toolUseMsg("id2", "Read"),
 		toolResultMsg("id2", fileContent), // index 5 — in [4,16) → MUST be pruned
@@ -483,5 +484,70 @@ func TestClassifyTool(t *testing.T) {
 		if got != c.want {
 			t.Errorf("classifyTool(%q) = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestClassifyByContent covers the #615 content fallback: a foreign tool whose
+// result looks like source code is classified kindFileRead; everything else
+// stays kindUnknown (which prunes identically to a command).
+func TestClassifyByContent(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want toolKind
+	}{
+		{"go source", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hi\")\n}\n", kindFileRead},
+		{"python source", "import os\n\ndef handler(req):\n    return os.getcwd()\n", kindFileRead},
+		{"typescript source", "export function add(a: number, b: number): number {\n  return a + b;\n}\n", kindFileRead},
+		{"c source", "#include <stdio.h>\nint main(void) { return 0; }\n", kindFileRead},
+		{"prose with 'return'", "Please return the package to the front desk by Friday afternoon.", kindUnknown},
+		{"json config", "{\n  \"name\": \"dex\",\n  \"version\": \"1.0.0\"\n}\n", kindUnknown},
+		{"log output", "2026-06-26 10:00:01 INFO  starting server\n2026-06-26 10:00:02 WARN  slow query\n", kindUnknown},
+		// Regression: keywords mid-line must NOT match (line-start only, #615).
+		{"git log oneline", "a1b2c3d feat(graph): package filter accepts a path suffix (#583)\nd4e5f6a fix(read): handle empty file\n", kindUnknown},
+		{"markdown table", "| `func` | a function | no |\n| `import` | bring in a module | yes |\n", kindUnknown},
+		{"yaml with shell", "tasks:\n  build:\n    steps:\n      - shell: go build ./... (package main)\n", kindUnknown},
+		{"empty", "", kindUnknown},
+	}
+	for _, c := range cases {
+		if got := classifyByContent(c.body); got != c.want {
+			t.Errorf("classifyByContent(%s) = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestPruneForeignFileReadByContent is the end-to-end guard: a foreign MCP tool
+// (unknown name) returning source code must be pruned with the FILE-READ stub
+// (line count preserved), not the command head/tail summary (#615).
+func TestPruneForeignFileReadByContent(t *testing.T) {
+	var body strings.Builder
+	body.WriteString("package widget\n\nimport \"fmt\"\n\n")
+	for i := 0; i < 60; i++ {
+		fmt.Fprintf(&body, "func F%d() { fmt.Println(%d) }\n", i, i)
+	}
+	contentJSON, _ := json.Marshal(body.String())
+	blk := map[string]json.RawMessage{
+		"type":        json.RawMessage(`"tool_result"`),
+		"tool_use_id": json.RawMessage(`"t1"`),
+		"content":     contentJSON,
+	}
+	raw, _ := json.Marshal(blk)
+
+	// Foreign tool name with no read/command keyword → name-classify whiffs,
+	// content fallback must recognize the source body.
+	out, pruned, _ := rewriteBlock(raw, map[string]string{"t1": "load_document"}, nil)
+	if !pruned {
+		t.Fatal("expected the large source result to be pruned")
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	var stub string
+	if err := json.Unmarshal(got["content"], &stub); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stub, "file read") || !strings.Contains(stub, "lines") {
+		t.Errorf("expected the file-read stub (lines preserved), got %q", stub)
 	}
 }

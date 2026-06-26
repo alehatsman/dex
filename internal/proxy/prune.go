@@ -372,6 +372,13 @@ func rewriteBlock(raw json.RawMessage, toolNames map[string]string, store *TeeSt
 	}
 
 	kind := classifyTool(toolName)
+	// Name-based classification whiffs on foreign MCP tools whose names don't
+	// carry a read/command keyword (fetch_file, load_document, get_source).
+	// Fall back to the content of the result so a source-code body still gets
+	// the path-preserving file-read stub instead of a head/tail summary (#615).
+	if kind == kindUnknown {
+		kind = classifyByContent(text)
+	}
 	var stub string
 	switch kind {
 	case kindFileRead:
@@ -460,6 +467,61 @@ func classifyTool(name string) toolKind {
 		}
 	}
 	return kindUnknown
+}
+
+// sourceCodeKeywords are declaration tokens that LEAD a line in source across
+// the common languages. Matched case-insensitively against the start of a
+// trimmed line — declarations begin lines; a prose or commit-message mention of
+// "package" or "func" sits mid-line and must not match.
+var sourceCodeKeywords = []string{
+	"import ", "package ", "func ", "def ", "class ", "const ",
+	"public ", "private ", "protected ", "#include", "fn ", "impl ",
+	"struct ", "interface ", "function ", "namespace ", "export ",
+	"return ", "module ", "var ", "let ",
+}
+
+// classifyByContent is the fallback when name-based classification yields
+// kindUnknown (#615): a foreign tool whose RESULT looks like source code gets
+// the file-read stub (preserves path + line count + CCR tee). Anything else
+// stays kindUnknown — which prunes identically to kindCommand (head/tail
+// summary) — so command/log/doc output keeps its existing treatment.
+func classifyByContent(body string) toolKind {
+	if looksLikeSourceCode(body) {
+		return kindFileRead
+	}
+	return kindUnknown
+}
+
+// looksLikeSourceCode reports whether s reads like source: a declaration
+// keyword at the START of some line AND a density of structural punctuation.
+// Line-start matching keeps commit logs, markdown tables, and YAML — which
+// merely mention "package"/"func" mid-line — from false-positiving; the
+// structural gate keeps a lone prose line starting with "return …" out.
+func looksLikeSourceCode(s string) bool {
+	head := s
+	if len(head) > 4000 {
+		head = head[:4000]
+	}
+	hasDecl := false
+	for _, ln := range strings.Split(head, "\n") {
+		lower := strings.ToLower(strings.TrimSpace(ln))
+		for _, kw := range sourceCodeKeywords {
+			if strings.HasPrefix(lower, kw) {
+				hasDecl = true
+				break
+			}
+		}
+		if hasDecl {
+			break
+		}
+	}
+	if !hasDecl {
+		return false
+	}
+	structural := strings.Count(head, "{") + strings.Count(head, "}") +
+		strings.Count(head, ";") + strings.Count(head, "(") +
+		strings.Count(head, ")") + strings.Count(head, "=")
+	return structural >= 3
 }
 
 // countLines counts newline-delimited lines in s (at least 1 for non-empty).
