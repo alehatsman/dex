@@ -63,7 +63,6 @@ func (s *Server) check(ctx context.Context, _ *sdk.CallToolRequest, in CheckInpu
 	if err != nil {
 		return nil, CheckOutput{}, fmt.Errorf("open index: %w", err)
 	}
-	defer st.Close()
 
 	out := CheckOutput{Results: make([]ClaimResult, 0, len(in.Claims))}
 	for i, c := range in.Claims {

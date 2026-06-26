@@ -145,6 +145,35 @@ func TestCheckAbsolutePath(t *testing.T) {
 	}
 }
 
+// TestCheckDoesNotCloseCachedStore pins #712: check must not close the shared
+// cached store handle. Before the fix, defer st.Close() in check() closed the
+// handle returned by s.openStore (cached via sync.Once). A second call to check
+// on the same Server would receive the already-closed handle and return
+// "sql: database is closed".
+func TestCheckDoesNotCloseCachedStore(t *testing.T) {
+	s, root := checkFixture(t)
+	in := CheckInput{
+		ProjectRoot: root,
+		Claims:      []ClaimRef{{Ref: "main.go:3:Foo"}},
+	}
+	// First call warms the cache.
+	_, out, err := s.check(context.Background(), nil, in)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if out.Results[0].Status != "ok" {
+		t.Fatalf("first call: status = %q, want ok", out.Results[0].Status)
+	}
+	// Second call must succeed — if the cache was poisoned the store is closed.
+	_, out, err = s.check(context.Background(), nil, in)
+	if err != nil {
+		t.Fatalf("second call (cache poisoned?): %v", err)
+	}
+	if out.Results[0].Status != "ok" {
+		t.Errorf("second call: status = %q, want ok", out.Results[0].Status)
+	}
+}
+
 func TestCheckBatch(t *testing.T) {
 	s, root := checkFixture(t)
 	_, out, err := s.check(context.Background(), nil, CheckInput{
