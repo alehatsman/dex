@@ -50,6 +50,12 @@ type CallSite struct {
 	// function sits in the call graph. Empty for unremarkable peers.
 	// See formatRole for the threshold/tiering rules.
 	Role string `json:"role,omitempty"`
+	// Via is set on an interface-DISPATCH caller (#604): the qualified name of
+	// the interface method this call reaches the target through (e.g.
+	// "(toolSurface).Run"). The static `calls` edge lands on the interface
+	// method, not the concrete one, so without this expansion the caller is
+	// invisible. Empty for a direct static caller.
+	Via string `json:"via,omitempty"`
 	// Content is, by default, a small window centred on the call site (#486)
 	// — for a who-calls-X query the call expression is the answer, not the
 	// whole enclosing function. StartLine/EndLine still name the enclosing
@@ -149,6 +155,27 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	}
 
 	seen := map[string]bool{}
+	addHit := func(peer graphquery.Node, e graphquery.Edge, via string) {
+		// Dedup on (peer node id, call-site file+line). Different call sites from
+		// the same caller are distinct hits.
+		key := peer.ID + "@" + e.FilePath + ":" + fmt.Sprint(e.StartLine)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		out.Hits = append(out.Hits, CallSite{
+			QualifiedName: peer.QualifiedName,
+			Package:       peer.PackagePath,
+			Kind:          string(peer.Kind),
+			Path:          peer.FilePath,
+			StartLine:     peer.StartLine,
+			EndLine:       peer.EndLine,
+			CallSitePath:  e.FilePath,
+			CallSiteLine:  e.StartLine,
+			Role:          formatRole(peer.Name, peer.InDegree, peer.OutDegree, peer.CrossPkgCallers, peer.Betweenness),
+			Via:           via,
+		})
+	}
 	for _, t := range targets {
 		var edges []graphquery.Edge
 		if callers {
@@ -164,29 +191,19 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 			if !callers {
 				peerID = e.DstID
 			}
-			peer, ok := view.NodesByID[peerID]
-			if !ok {
-				continue
+			if peer, ok := view.NodesByID[peerID]; ok {
+				addHit(peer, e, "")
 			}
-			// Dedup on (peer node id, call-site file+line). Different
-			// call sites from the same caller are distinct hits.
-			key := peer.ID + "@" + e.FilePath + ":" + fmt.Sprint(e.StartLine)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			hit := CallSite{
-				QualifiedName: peer.QualifiedName,
-				Package:       peer.PackagePath,
-				Kind:          string(peer.Kind),
-				Path:          peer.FilePath,
-				StartLine:     peer.StartLine,
-				EndLine:       peer.EndLine,
-				CallSitePath:  e.FilePath,
-				CallSiteLine:  e.StartLine,
-				Role:          formatRole(peer.Name, peer.InDegree, peer.OutDegree, peer.CrossPkgCallers, peer.Betweenness),
-			}
-			out.Hits = append(out.Hits, hit)
+		}
+	}
+
+	// Interface-dispatch callers (#604): a call through an interface value lands
+	// on the interface method node in the graph, not the concrete method, so the
+	// static loop above misses it. Surfaced (tagged with `via`) for the callers
+	// direction only — a concrete method's callees are already static.
+	if callers {
+		for _, dc := range interfaceDispatchCallers(view, targets) {
+			addHit(dc.peer, dc.edge, dc.via)
 		}
 	}
 
@@ -238,25 +255,7 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	}
 
 	if len(out.Hits) == 0 {
-		rel := "callees"
-		if callers {
-			rel = "callers"
-		}
-		// On the name-based (tree-sitter) languages an empty result is
-		// low-confidence: recall is incomplete, so it is not proof there are
-		// no edges. Caveat both directions before the Go-specific hint below.
-		if h := nameBasedEmptyHint(targets, rel); h != "" {
-			out.Hint = h
-		} else if callers {
-			// #485: zero callers on an exported Go symbol is a correctness
-			// trap — it reads as "dead / safe to delete" but the symbol may be
-			// reached only via interface/reflection dispatch (the MCP SDK calls
-			// handlers through the toolSurface interface, leaving no static
-			// `calls` edge). Go edges are type-resolved, so this empty is exact.
-			if h := zeroCallerHint(view, targets); h != "" {
-				out.Hint = h
-			}
-		}
+		out.Hint = emptyCallHint(view, targets, callers)
 	}
 
 	// Risk classification is only meaningful for the callers direction — it
@@ -285,6 +284,24 @@ func notFoundHint(view *graphquery.View, name, pkgFilter string) string {
 	}
 	return fmt.Sprintf("no graph node matches name=%q — try the bare identifier or the "+
 		"receiver-qualified form like '(*Type).Method'", name)
+}
+
+// emptyCallHint explains a zero-hit calls result. On tree-sitter (name-based)
+// languages recall is incomplete, so an empty result is not proof of none; on
+// Go a zero-callers result on an exported symbol still warns about interface/
+// reflection dispatch (#485). Returns "" when there's nothing useful to say.
+func emptyCallHint(view *graphquery.View, targets []graphquery.Node, callers bool) string {
+	rel := "callees"
+	if callers {
+		rel = "callers"
+	}
+	if h := nameBasedEmptyHint(targets, rel); h != "" {
+		return h
+	}
+	if callers {
+		return zeroCallerHint(view, targets)
+	}
+	return ""
 }
 
 // inlineCallSites fills each hit's Content so the agent doesn't need a

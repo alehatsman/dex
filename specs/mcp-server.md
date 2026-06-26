@@ -114,7 +114,12 @@ service clients are the http-api spec's.
   (no embedding, no chat) and returns `no-graph` when the relevant edges have not
   been indexed (`dex index . --graph=only`). `callers`/`callees`/`impact`/`path`
   accept a bare name, a qualified method (`(*Server).RunStdio`), or a
-  package-qualified name and return multiple matches for disambiguation.
+  package-qualified name and return multiple matches for disambiguation. For a Go
+  method that implements a project interface, `callers` (trace) additionally
+  returns the interface-DISPATCH call sites — callers of the interface method,
+  which dynamically dispatch to the concrete one — each tagged with `via` naming
+  the interface method, so dynamic dispatch is not missed (#604, a pure graph
+  traversal over the existing `implements` edges + interface-method nodes).
 - WHEN `read` reads or summarizes a file path, the path must resolve inside the
   project root; a path escaping the root is rejected so an MCP caller can't read
   arbitrary files. Files over 64 KB are truncated. `paths[]` (max 10) reads

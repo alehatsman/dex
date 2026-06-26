@@ -277,3 +277,73 @@ func implementedInterfaces(view *graphquery.View, methodID string) []string {
 	sort.Strings(ifaces)
 	return ifaces
 }
+
+// dispatchCaller is one interface-dispatch call site: the calling node, the
+// `calls` edge into the interface method, and the interface method's qualified
+// name (for the CallSite.Via tag).
+type dispatchCaller struct {
+	peer graphquery.Node
+	edge graphquery.Edge
+	via  string
+}
+
+// interfaceDispatchCallers collects, for every target method, the callers of
+// the interface methods it satisfies — the dynamic-dispatch call sites the
+// static `calls` graph attributes to the interface, not the concrete method
+// (#604). Kept out of callEdges to hold that function under the complexity cap.
+func interfaceDispatchCallers(view *graphquery.View, targets []graphquery.Node) []dispatchCaller {
+	var out []dispatchCaller
+	for _, t := range targets {
+		for _, imID := range interfaceDispatchMethods(view, t) {
+			imNode, ok := view.NodesByID[imID]
+			if !ok {
+				continue
+			}
+			for _, e := range view.EdgesByDst[imID] {
+				if e.Kind != graph.EdgeCalls {
+					continue
+				}
+				if peer, ok := view.NodesByID[e.SrcID]; ok {
+					out = append(out, dispatchCaller{peer: peer, edge: e, via: imNode.QualifiedName})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// interfaceDispatchMethods returns the IDs of the interface-method nodes a
+// concrete method satisfies — the dispatch targets a call through an interface
+// value lands on (#604). It walks method <-has_method- type -implements->
+// interface, then looks up the interface's method of the SAME name
+// ("(IfaceName).MethodName", the QN extractInterfaceMethods emits). The name
+// match means a type implementing several interfaces only picks up the ones
+// that actually declare this method. Returns nil for a non-method.
+func interfaceDispatchMethods(view *graphquery.View, t graphquery.Node) []string {
+	if t.Kind != graph.NodeMethod || t.Name == "" {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, in := range view.EdgesByDst[t.ID] {
+		if in.Kind != graph.EdgeHasMethod {
+			continue
+		}
+		for _, imp := range view.EdgesBySrc[in.SrcID] {
+			if imp.Kind != graph.EdgeImplements {
+				continue
+			}
+			iface, ok := view.NodesByID[imp.DstID]
+			if !ok || iface.Name == "" {
+				continue
+			}
+			for _, m := range view.NodesByQualified["("+iface.Name+")."+t.Name] {
+				if !seen[m.ID] {
+					seen[m.ID] = true
+					out = append(out, m.ID)
+				}
+			}
+		}
+	}
+	return out
+}

@@ -761,7 +761,10 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
 				"who calls it), 'callees' (what it calls), or 'path' (shortest call route to the `to` symbol). " +
 				"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
-				"recall, so an empty result there is not proof of none — verify with grep. Accepts a bare name ('Foo'), " +
+				"recall, so an empty result there is not proof of none — verify with grep. For a Go method that " +
+				"implements a project interface, callers also include the INTERFACE-dispatch call sites (calls through " +
+				"the interface value), each tagged with `via` naming the interface method — so dynamic dispatch isn't " +
+				"missed (#604). Accepts a bare name ('Foo'), " +
 				"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
 				"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
 		}, traceHandler(h))
