@@ -106,6 +106,8 @@ func main() {
 		err = cmdTrace(ctx, args)
 	case "impact":
 		err = cmdImpact(ctx, args)
+	case "review":
+		err = cmdReview(ctx, args)
 	case "grep":
 		err = cmdGrep(ctx, args)
 	case "ls":

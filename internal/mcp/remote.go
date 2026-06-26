@@ -187,6 +187,12 @@ func (rc *remoteClient) locate(ctx context.Context, _ *sdk.CallToolRequest, in L
 	return nil, out, err
 }
 
+func (rc *remoteClient) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewInput) (*sdk.CallToolResult, ReviewOutput, error) {
+	var out ReviewOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/review"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	var out SearchOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/find"), in, &out)

@@ -50,8 +50,12 @@ service clients are the http-api spec's.
   - The always-on lane (registered even with no embedder or chat model) is
     `ask`, `grep`, `ls`, and `shell`.
   - The default verb lane (non-weak model) adds `map`, `trace`, `impact`,
-    `read`, and `notes` — the everyday navigation + reading verbs plus
-    persistent project memory (#548). `notes` needs no embedder or chat model,
+    `locate`, `review`, `read`, and `notes` — the everyday navigation + reading
+    verbs (`locate` for one-call orientation around a code location, `review`
+    for per-hunk PR intelligence) plus persistent project memory (#548). Both
+    `locate` and `review` are pure composition over the index and need no chat
+    model; their callers lane degrades to empty without a graph.
+    `notes` needs no embedder or chat model,
     and the read path (facts auto-injected into `ask`) is inert if the agent
     can never write, so the write verb headlines the default surface.
   - `find` (semantic search) is registered only WHEN a query-time embedder is
@@ -68,9 +72,9 @@ service clients are the http-api spec's.
     surface stays small unless an operator opts into the full set.
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
-  This yields a flat, prefix-free surface of up to 21 tools: the default
-  `ask`, `find`, `map`, `trace`, `impact`, `read`, `grep`, `ls`, `shell`,
-  `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `callers`,
+  This yields a flat, prefix-free surface: the default
+  `ask`, `find`, `map`, `trace`, `impact`, `locate`, `review`, `read`, `grep`,
+  `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `callers`,
   `callees`, `path`, `diff`, `clusters`, `routes`, `smells`, `status`,
   `session`.
 - WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing

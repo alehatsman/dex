@@ -652,6 +652,7 @@ func (e *Enricher) enrichBlame(ctx context.Context, paths []string, meta map[str
 			"--date=short",
 			"--", p,
 		)
+		cmd.Env = hermeticGitEnv() // don't let an inherited GIT_DIR redirect `-C projectRoot`
 		out, err := cmd.Output()
 		cancel()
 		if err != nil {

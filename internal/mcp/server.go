@@ -663,6 +663,7 @@ func (s *Server) RunStdio(ctx context.Context) error {
 type toolSurface interface {
 	contextRouter(context.Context, *sdk.CallToolRequest, ContextInput) (*sdk.CallToolResult, ContextOutput, error)
 	locate(context.Context, *sdk.CallToolRequest, LocateInput) (*sdk.CallToolResult, LocateOutput, error)
+	review(context.Context, *sdk.CallToolRequest, ReviewInput) (*sdk.CallToolResult, ReviewOutput, error)
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
 	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
 	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
@@ -810,6 +811,25 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
 				"Use this BEFORE fanning out trace/find/read to orient on a path:line, symbol, or panic frame."),
 		}, h.locate)
+
+		// review is in the default lane (#639 / GitHub #65 S2): per-hunk PR
+		// intelligence. Code review is delta-shaped while every other verb is
+		// state-shaped — review composes the diff with callers, tests, churn,
+		// author history, and notes per hunk so the agent spends its budget on
+		// judgment, not context assembly.
+		addTool(srv, &sdk.Tool{
+			Name:        "review",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Per-hunk intelligence for a diff or PR — use this when reviewing changes. " +
+				"Give one of `ref` ('HEAD~3..HEAD' or a single ref vs HEAD), `branch` (what it adds since " +
+				"diverging from the default branch), or `pr` (a GitHub PR number, resolved via `gh`). " +
+				"For each changed hunk review returns the touched symbols, their callers (+ a risk tier from " +
+				"caller blast radius and export status), and related notes; per file it adds sibling tests, the " +
+				"nearest doc, 30-day churn, last commit/author, and recent author history. " +
+				"Pass `compact: true` to drop low-risk hunks. Pure composition over the index; needs no chat " +
+				"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
+				"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
+		}, h.review)
 
 		// notes is in the default lane (#548): persistent project memory is the
 		// highest-leverage saver of repeat exploration, and the read path (facts

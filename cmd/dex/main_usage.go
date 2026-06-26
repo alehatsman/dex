@@ -31,6 +31,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex read   <file>                      read a file — default raw (no LLM); --mode for views/summary
   dex trace  [<path>] <name>             call graph — --dir callers|callees|path
   dex impact [<path>] <name>             transitive blast-radius (callers, by depth)
+  dex review [<path>]                    per-hunk PR intelligence — --ref|--branch|--pr
   dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
   dex grep   [<path>] <pattern>          exact RE2 regex search
   dex ls     [<path>]                    indexed file tree + chunk counts
@@ -83,6 +84,7 @@ query (the CLI verbs share the MCP tool names, #354/#427):
     dex lookup [<path>] <name>    exact identifier lookup (MCP: lookup)
     dex trace  [<path>] <name>    call graph via --dir callers|callees|path
     dex impact [<path>] <name>    transitive caller blast-radius
+    dex review [<path>]           per-hunk PR intelligence (MCP: review)
     (map / read / ask are already top-level — see below)
 
   dex ask [<path>] <q...>            one-shot router (MCP: ask). Picks intent,

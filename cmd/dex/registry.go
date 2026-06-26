@@ -160,6 +160,18 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagK, flagFormat, flagV},
 	},
 	{
+		name: "review", group: groupQuery, args: "[<path>]",
+		summary: "per-hunk PR intelligence",
+		flags: []flagSpec{
+			{name: "--ref", desc: "git range or single ref (default HEAD~1..HEAD)", arg: true},
+			{name: "--branch", desc: "review what a branch adds vs --base", arg: true},
+			{name: "--pr", desc: "GitHub PR number (via gh)", arg: true},
+			{name: "--base", desc: "base branch for --branch/--pr (default main)", arg: true},
+			{name: "--compact", desc: "drop low-risk hunks"},
+			flagK, flagFormat,
+		},
+	},
+	{
 		name: "grep", group: groupQuery, args: "[<path>] <pattern>",
 		summary: "exact RE2 regex search",
 		flags: []flagSpec{
