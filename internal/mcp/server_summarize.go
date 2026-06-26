@@ -218,15 +218,13 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	}
 	out.Path = relTarget
 
-	// Time-travel (#657): read realTarget as of a git ref instead of the working
-	// tree. summarizeReadFile already validated the path + escape check above, so
-	// --ref requires the file to exist now (reading a current file's history).
-	// Short-circuits before the cache/SLO/bounce machinery, so working-tree reads
-	// stay byte-identical — a contained, opt-in branch.
-	if strings.TrimSpace(in.Ref) != "" {
-		out = s.summarizeRefRead(ctx, in, realTarget, relTarget, mode)
-		out.Project = p.Root
-		return nil, out, nil
+	// Two early exits fire right after the content is read, before the
+	// cache/SLO/bounce machinery: a --ref time-travel read (#657) and a
+	// binary-file refusal (#674). Both leave working-tree text reads
+	// byte-identical — contained, opt-in branches.
+	if early, done := s.summarizePostRead(ctx, in, realTarget, relTarget, data, mode); done {
+		early.Project = p.Root
+		return nil, early, nil
 	}
 
 	cacheDir := p.CacheDir

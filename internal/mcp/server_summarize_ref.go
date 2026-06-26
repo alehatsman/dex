@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/source"
 	"github.com/alehatsman/dex/internal/summarize"
@@ -22,6 +24,31 @@ func (s *Server) setSummarizeModel(out *SummarizeOutput, isLLM bool) {
 	}
 }
 
+// summarizePostRead handles the early exits that fire right after a file's
+// content is read but before the cache/SLO/bounce machinery: a --ref
+// time-travel read (#657) and a binary-file refusal (#674). It returns
+// done=true with the output to send when either applies; the caller stamps
+// the project root. Keeping both branches here keeps the summarize dispatcher
+// under the complexity cap.
+func (s *Server) summarizePostRead(ctx context.Context, in SummarizeInput, realTarget, relTarget string, data []byte, mode ReadMode) (SummarizeOutput, bool) {
+	if strings.TrimSpace(in.Ref) != "" {
+		return s.summarizeRefRead(ctx, in, realTarget, relTarget, mode), true
+	}
+	// A binary file can't be meaningfully read in any text mode. dex skips
+	// binaries at index time; mirror that at read time and refuse with a clear
+	// status rather than dumping raw bytes (null bytes included) into the
+	// agent's context — pure token waste and potential transport corruption.
+	if ignore.LooksBinary(data) {
+		return SummarizeOutput{
+			Status: "binary",
+			Path:   relTarget,
+			Bytes:  len(data),
+			Hint:   fmt.Sprintf("binary file (%d bytes) — not shown; dex does not read binary content", len(data)),
+		}, true
+	}
+	return SummarizeOutput{}, false
+}
+
 // summarizeRefRead serves a read of realTarget as of in.Ref (#657 time-travel).
 // Content comes from git, not the working tree, so it supports only the
 // content-based modes: full (raw, with an optional line range) and signatures
@@ -33,6 +60,12 @@ func (s *Server) summarizeRefRead(ctx context.Context, in SummarizeInput, realTa
 	data, err := source.ReadAtRef(ctx, realTarget, in.Ref)
 	if err != nil {
 		return SummarizeOutput{Status: "error", Path: relTarget, Hint: err.Error()}
+	}
+	if ignore.LooksBinary(data) {
+		// A historical version can be binary too — refuse rather than dump raw
+		// bytes (#674).
+		return SummarizeOutput{Status: "binary", Path: relTarget, Bytes: len(data),
+			Hint: fmt.Sprintf("binary file (%d bytes) — not shown; dex does not read binary content", len(data))}
 	}
 	sliceB, _, _ := summarize.SliceLines(data, in.StartLine, in.EndLine)
 	slice := string(sliceB)

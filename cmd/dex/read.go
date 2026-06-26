@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/profiles"
 	"github.com/alehatsman/dex/internal/proj"
@@ -98,15 +99,15 @@ func cmdRead(ctx context.Context, args []string) error {
 	if serverReadMode(*mode) {
 		return readViaServer(ctx, projPath, path, *mode, *start, *end, *focus, *temp, *maxTok, *format, *verbose, "")
 	}
-	if *start < 0 || *end < 0 {
-		return fmt.Errorf("--start/--end must be non-negative")
-	}
-	if *start > 0 && *end > 0 && *end < *start {
-		return fmt.Errorf("--end (%d) is before --start (%d)", *end, *start)
+	if err := validateLineRange(*start, *end); err != nil {
+		return err
 	}
 
 	data, err := readSource(ctx, path, *ref)
 	if err != nil {
+		return err
+	}
+	if done, err := emitBinaryRefusal(path, data, *format); done {
 		return err
 	}
 	fullLines := strings.Split(string(data), "\n")
@@ -289,6 +290,36 @@ func printReadAnalysis(a *mcp.ReadAnalysis) {
 	if a.Handle != "" {
 		fmt.Printf("handle: %s  (expand later: read --handle %s --mode %s)\n", a.Handle, a.Handle, a.Recommendation)
 	}
+}
+
+// validateLineRange rejects negative --start/--end and an end that precedes a
+// start. Both bounds are 1-based; 0 means "open" (file start / end).
+func validateLineRange(start, end int) error {
+	if start < 0 || end < 0 {
+		return fmt.Errorf("--start/--end must be non-negative")
+	}
+	if start > 0 && end > 0 && end < start {
+		return fmt.Errorf("--end (%d) is before --start (%d)", end, start)
+	}
+	return nil
+}
+
+// emitBinaryRefusal mirrors the index-time binary skip on the read path: rather
+// than dumping raw bytes (null bytes included) into the agent's context, it
+// prints a one-line refusal and reports done=true (#674). Returns done=false
+// for text content so the caller proceeds normally.
+func emitBinaryRefusal(path string, data []byte, format string) (bool, error) {
+	if !ignore.LooksBinary(data) {
+		return false, nil
+	}
+	hint := fmt.Sprintf("binary file (%d bytes) — not shown; dex does not read binary content", len(data))
+	if format == "json" {
+		return true, json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"path": path, "status": "binary", "bytes": len(data), "hint": hint,
+		})
+	}
+	fmt.Fprintf(os.Stderr, "status: binary\nhint:   %s\n", hint)
+	return true, nil
 }
 
 // rangeText returns the [start,end] (1-based, inclusive) slice of lines joined
