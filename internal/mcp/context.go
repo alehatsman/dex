@@ -43,6 +43,7 @@ type ContextInput struct {
 	K           int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
 	NoInline    bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
 	Expand      string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
+	AnswerStyle string `json:"answer_style,omitempty" jsonschema:"controls chat synthesis: brief runs the LLM synthesis leg and returns an answer field; none skips synthesis entirely and returns only the evidence bundle. Default is none — pass brief to get a synthesized answer."`
 }
 
 // SemHit is a semantic-search result reduced to the wire shape the
@@ -443,14 +444,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		return nil, out, nil
 	}
 
-	// synthesizeAnswer self-skips the assemble intent (#687): assemble returns the
-	// structured working set, not prose, so the bundle IS the answer.
-	s.synthesizeAnswer(ctx, logTok, intent, in.Question, &out)
-
-	// next_action was built deterministically from suggested_reads[0] before
-	// the answer existed; realign it so it never points away from the file the
-	// answer leads with (#532).
-	reconcileNextActionWithAnswer(&out)
+	s.maybeAnswerStyle(ctx, logTok, intent, in, &out)
 
 	// Stamp expansion handles on every locator the bundle hands back (#344),
 	// after truncation so dropped hits don't get handles.

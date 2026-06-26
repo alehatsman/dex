@@ -28,6 +28,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 	noInline := fs.Bool("no-inline", false, "skip inlining raw file contents into suggested_reads (stored chunk/file summaries are still emitted; use --format=json to inspect)")
 	maxContentBytes := fs.Int("max-content-bytes", 0, "truncate content display at N bytes (0 = no limit; applies to text output only)")
 	expand := fs.String("expand", "", "query-side expansion (#252): off|on|full (empty defers to DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL; otherwise a no-op.")
+	answerStyle := fs.String("answer-style", "brief", "controls chat synthesis: brief runs LLM synthesis; none returns only the evidence bundle")
 	verbose := fs.Bool("v", false, "verbose: show wall-clock timing")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -37,6 +38,9 @@ func cmdAsk(ctx context.Context, args []string) error {
 	}
 	if !validExpandMode(*expand) {
 		return fmt.Errorf("invalid --expand=%q (want off|on|full, or empty to use DEX_EXPAND_MODE)", *expand)
+	}
+	if *answerStyle != "brief" && *answerStyle != "none" {
+		return fmt.Errorf("invalid --answer-style=%q (want brief|none)", *answerStyle)
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) == 0 {
@@ -64,6 +68,7 @@ func cmdAsk(ctx context.Context, args []string) error {
 		K:           *k,
 		NoInline:    *noInline,
 		Expand:      *expand,
+		AnswerStyle: *answerStyle,
 	}
 
 	// Stream the synthesized answer to stdout token-by-token when writing

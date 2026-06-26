@@ -38,8 +38,8 @@ func chatDownServer(t *testing.T, cacheDir string, chatClient chat.Chatter) *Ser
 // when the chat model is nil or unreachable, ask returns an evidence-only
 // bundle with status "ok" and an empty Answer — synthesis failure never breaks
 // ask. The healthy-chat subtest is the control: it proves the same question +
-// evidence DOES yield an Answer when chat is up, so the degraded assertions
-// aren't vacuously satisfied.
+// evidence DOES yield an Answer when chat is up and answer_style:"brief" is
+// set, so the degraded assertions aren't vacuously satisfied.
 func TestAskDegradesWhenChatDown(t *testing.T) {
 	projRoot, cacheDir := chatDownFixture(t)
 	ctx := context.Background()
@@ -56,7 +56,6 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 	}
 
 	t.Run("nil chat client", func(t *testing.T) {
-
 		s := chatDownServer(t, cacheDir, nil)
 		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, ProjectRoot: projRoot})
 		if err != nil {
@@ -69,7 +68,6 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 	})
 
 	t.Run("unreachable chat client", func(t *testing.T) {
-
 		// Closed port → chat.ErrUnreachable from Generate.
 		s := chatDownServer(t, cacheDir, chat.New(closedURL(t), "fake", 200*time.Millisecond))
 		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, ProjectRoot: projRoot})
@@ -82,8 +80,7 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 		}
 	})
 
-	t.Run("healthy chat control", func(t *testing.T) {
-
+	t.Run("healthy chat with answer_style none (default) skips synthesis", func(t *testing.T) {
 		chatSrv := fakeChat(t, "Authenticate validates a bearer token (auth.go).")
 		defer chatSrv.Close()
 		s := chatDownServer(t, cacheDir, chat.New(chatSrv.URL, "fake", 5*time.Second))
@@ -92,8 +89,22 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 			t.Fatalf("ask errored with healthy chat: %v", err)
 		}
 		assertEvidence(t, out)
+		if out.Answer != "" {
+			t.Errorf("Answer = %q, want empty (answer_style defaults to none)", out.Answer)
+		}
+	})
+
+	t.Run("healthy chat with answer_style brief synthesizes", func(t *testing.T) {
+		chatSrv := fakeChat(t, "Authenticate validates a bearer token (auth.go).")
+		defer chatSrv.Close()
+		s := chatDownServer(t, cacheDir, chat.New(chatSrv.URL, "fake", 5*time.Second))
+		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, ProjectRoot: projRoot, AnswerStyle: "brief"})
+		if err != nil {
+			t.Fatalf("ask errored with healthy chat: %v", err)
+		}
+		assertEvidence(t, out)
 		if out.Answer == "" {
-			t.Fatal("Answer is empty with a healthy chat client; degraded subtests would be vacuous")
+			t.Fatal("Answer is empty with answer_style:brief and healthy chat")
 		}
 	})
 }

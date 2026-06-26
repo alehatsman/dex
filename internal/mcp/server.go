@@ -1150,10 +1150,10 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		Name:        "ask",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: td("PRIMARY ENTRY POINT for code-understanding questions — and, by default, the ONLY dex tool you " +
-			"need. Call this BEFORE Grep/Glob/Read fan-out. When a chat model is configured it returns `answer`: a " +
-			"synthesized, citation-bearing prose response (`path:line`) grounded in the evidence below — read that " +
-			"first. `answer_model` names the model that produced it. The answer is absent only when the chat leg is " +
-			"unreachable, in which case fall back to the evidence bundle + `next_action`. " +
+			"need. Call this BEFORE Grep/Glob/Read fan-out. By default synthesis is OFF — the tool returns only the " +
+			"evidence bundle + `next_action` (no chat leg, no latency). Pass `answer_style: \"brief\"` to enable a " +
+			"synthesized, citation-bearing prose response (`path:line`) grounded in the evidence — `answer_model` " +
+			"names the model that produced it. " +
 			"Given a free-text question (and optional intent override), it picks a strategy, composes semantic search " +
 			"+ symbol lookup + graph expansion, and returns a compact bundle: `semantic_hits`, `symbols`, `suggested_reads` " +
 			"(both lanes carry their CONTENTS inlined by default — no follow-up Read needed in the common case), a prose " +

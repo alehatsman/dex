@@ -295,3 +295,17 @@ func buildAnswerEvidence(intent string, out *ContextOutput) string {
 
 	return b.String()
 }
+
+// maybeAnswerStyle runs the chat synthesis leg when answer_style is "brief".
+// Any other value (including the empty-string MCP default) skips synthesis so
+// the agent works directly from the evidence bundle.
+func (s *Server) maybeAnswerStyle(ctx context.Context, logTok func(string), intent string, in ContextInput, out *ContextOutput) {
+	if in.AnswerStyle != "brief" {
+		return
+	}
+	s.synthesizeAnswer(ctx, logTok, intent, in.Question, out)
+	// next_action was built deterministically from suggested_reads[0] before
+	// the answer existed; realign it so it never points away from the file the
+	// answer leads with (#532).
+	reconcileNextActionWithAnswer(out)
+}
