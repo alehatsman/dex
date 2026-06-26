@@ -40,6 +40,7 @@ const (
 	reviewMaxFiles    = 100 // cap files scanned (huge diffs)
 	reviewMaxHunks    = 200 // cap total hunks emitted; truncate past this
 	reviewMaxSymHunk  = 6   // cap symbols resolved per hunk
+	reviewMaxProbes   = 32  // cap ChunkAt lookups per hunk (strided over big hunks)
 	reviewCallerMed   = 10  // >= this many callers → at least medium risk
 	reviewCallerHigh  = 30  // >= this many callers → high risk
 	reviewGitTimeout  = 5 * time.Second
@@ -146,7 +147,7 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	diffText, err := gitDiffUnified(ctx, p.Root, rng)
 	if err != nil {
 		return nil, ReviewOutput{Status: "error", Project: p.Root, Range: rng,
-			Hint: fmt.Sprintf("git diff %s: %v", rng, err)}, nil
+			Hint: fmt.Sprintf("could not diff %q — check it is a valid git ref/range (try `git rev-parse %s`)", rng, rng)}, nil
 	}
 	files := review.ParseUnified(diffText)
 	if len(files) == 0 {
@@ -161,6 +162,12 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	}
 
 	out := ReviewOutput{Status: "ok", Project: p.Root, Range: rng}
+	// Hunk→symbol mapping resolves new-side line numbers against the CURRENT
+	// index (which reflects HEAD). When the range doesn't end at HEAD those line
+	// numbers don't line up, so symbols/callers/risk degrade silently — say so.
+	if !rangeEndsAtHEAD(rng) {
+		out.Hint = appendHint(out.Hint, "range does not end at HEAD; symbols/callers map against the current index and may be incomplete for older revisions")
+	}
 	e := &Enricher{projectRoot: p.Root}
 	// Cache caller/risk + notes per symbol — the same function often recurs
 	// across hunks and files, and traceVerb/recallFacts are the costly legs.
@@ -273,10 +280,19 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 func resolveHunkSymbols(ctx context.Context, st *store.Store, path string, h review.Hunk) []ReviewSymbol {
 	seen := map[string]bool{}
 	var out []ReviewSymbol
-	for _, line := range h.TouchedLines() {
+	// Probe ChunkAt at most reviewMaxProbes times, strided evenly across the
+	// hunk so a large added file (hundreds of new lines) costs a bounded number
+	// of lookups instead of one per line.
+	lines := h.TouchedLines()
+	stride := 1
+	if len(lines) > reviewMaxProbes {
+		stride = (len(lines) + reviewMaxProbes - 1) / reviewMaxProbes
+	}
+	for i := 0; i < len(lines); i += stride {
 		if len(out) >= reviewMaxSymHunk {
 			break
 		}
+		line := lines[i]
 		hit, err := st.ChunkAt(ctx, path, line)
 		if err != nil || hit.Name == "" {
 			continue
@@ -450,6 +466,19 @@ func hermeticGitEnv() []string {
 		out = append(out, kv)
 	}
 	return out
+}
+
+// rangeEndsAtHEAD reports whether a git range's right-hand side is HEAD (the
+// state the index reflects). resolveReviewRange always emits a range containing
+// ".." / "...", so the side after the last ".." is the head; an empty head
+// (e.g. "ref..") defaults to HEAD in git.
+func rangeEndsAtHEAD(rng string) bool {
+	head := rng
+	if i := strings.LastIndex(rng, ".."); i >= 0 {
+		head = rng[i+2:]
+	}
+	head = strings.TrimSpace(head)
+	return head == "" || head == "HEAD" || head == "@"
 }
 
 // gitDiffUnified runs `git diff --unified=0 <range>` in root and returns the raw

@@ -6,7 +6,7 @@ import "testing"
 // (internal/mcp/server.go) by hand. Both parity tests read from this single
 // list so the CLI↔MCP contract is guarded in both directions.
 var mcpToolSurface = []string{
-	"ask", "find", "lookup", "map", "trace", "impact", "review", "read",
+	"ask", "find", "lookup", "map", "trace", "impact", "locate", "review", "read",
 	"grep", "ls", "shell",
 	"deps", "diff", "clusters",
 	"smells", "routes",

@@ -108,6 +108,8 @@ func main() {
 		err = cmdImpact(ctx, args)
 	case "review":
 		err = cmdReview(ctx, args)
+	case "locate":
+		err = cmdLocate(ctx, args)
 	case "grep":
 		err = cmdGrep(ctx, args)
 	case "ls":

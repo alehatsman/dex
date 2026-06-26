@@ -38,6 +38,26 @@ func TestHunkRisk(t *testing.T) {
 	}
 }
 
+func TestRangeEndsAtHEAD(t *testing.T) {
+	cases := []struct {
+		rng  string
+		want bool
+	}{
+		{"HEAD~3..HEAD", true},
+		{"HEAD~1..HEAD", true},
+		{"abc123..", true},        // empty head → HEAD in git
+		{"main...feat/x", false},  // branch tip, not HEAD
+		{"HEAD~5..HEAD~1", false}, // older revision
+		{"v1.0.0..v2.0.0", false},
+		{"dev...HEAD", true},
+	}
+	for _, c := range cases {
+		if got := rangeEndsAtHEAD(c.rng); got != c.want {
+			t.Errorf("rangeEndsAtHEAD(%q) = %v, want %v", c.rng, got, c.want)
+		}
+	}
+}
+
 func TestDropLowRiskHunks(t *testing.T) {
 	in := []ReviewHunk{
 		{NewStart: 1, RiskTier: "low"},

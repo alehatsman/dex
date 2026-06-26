@@ -160,6 +160,15 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagK, flagFormat, flagV},
 	},
 	{
+		name: "locate", group: groupQuery, args: "[<path>] <symbol-or-path:line>",
+		summary: "one-call orientation around a code location",
+		flags: []flagSpec{
+			{name: "--frame", desc: "parse a raw stack-trace frame line", arg: true},
+			{name: "--issues", desc: "also list matching open GitHub issues (gh)"},
+			flagK, flagFormat,
+		},
+	},
+	{
 		name: "review", group: groupQuery, args: "[<path>]",
 		summary: "per-hunk PR intelligence",
 		flags: []flagSpec{
