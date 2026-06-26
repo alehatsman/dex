@@ -225,6 +225,10 @@ func readViaServer(ctx context.Context, projPath, file, mode string, start, end 
 		}
 		return nil
 	}
+	if out.Analysis != nil {
+		printReadAnalysis(out.Analysis)
+		return nil
+	}
 	// Whole-file structural modes (skeleton/map) report no line bounds; only
 	// show the range for the line-oriented modes that set one.
 	fmt.Printf("file:  %s (", out.Path)
@@ -245,6 +249,32 @@ func readViaServer(ctx context.Context, projPath, file, mode string, start, end 
 		fmt.Fprintf(os.Stderr, "\n(finish_reason=%s)\n", out.FinishReason)
 	}
 	return nil
+}
+
+// printReadAnalysis renders a mode=analyze result as a compact text table.
+func printReadAnalysis(a *mcp.ReadAnalysis) {
+	idx := "no"
+	if a.Indexed {
+		idx = "yes"
+	}
+	fmt.Printf("file:  %s (%d lines, %d bytes, indexed=%s)\n", a.Path, a.Lines, a.Bytes, idx)
+	fmt.Printf("entropy: %.2f bits/char · compressibility: %s\n\n", a.MeanBitsPerChar, a.Compressibility)
+	fmt.Printf("  %-12s %8s  %6s  %s\n", "mode", "tokens", "saved", "")
+	for _, m := range a.Modes {
+		tag := ""
+		if m.Lossy {
+			tag = "lossy"
+		}
+		if m.Note != "" {
+			tag = m.Note
+		}
+		fmt.Printf("  %-12s %8d  %5d%%  %s\n", m.Mode, m.Tokens, m.SavedPct, tag)
+	}
+	fmt.Printf("\nrecommendation: %s", a.Recommendation)
+	if a.Reason != "" {
+		fmt.Printf("  — %s", a.Reason)
+	}
+	fmt.Println()
 }
 
 // rangeText returns the [start,end] (1-based, inclusive) slice of lines joined

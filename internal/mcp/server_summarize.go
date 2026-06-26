@@ -20,7 +20,7 @@ type SummarizeInput struct {
 	Path         string   `json:"path,omitempty" jsonschema:"file path to summarize; relative paths are resolved against project_root; required when paths is not set"`
 	Paths        []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
 	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Mode         string   `json:"mode,omitempty" jsonschema:"read mode (default 'full'): 'full' (raw file content, no LLM), 'signatures' (indexed symbols + source lines, no LLM), 'skeleton' (exported type decls in full + function/method signatures with @B<n> body handles, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM), 'summary' (LLM-generated digest — the only mode needing a chat model; returns status='needs-chat' when none is wired)"`
+	Mode         string   `json:"mode,omitempty" jsonschema:"read mode (default 'full'): 'full' (raw file content, no LLM), 'signatures' (indexed symbols + source lines, no LLM), 'skeleton' (exported type decls in full + function/method signatures with @B<n> body handles, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM), 'analyze' (token-cost comparison of every mode + a recommended mode, NO file content — pick the cheapest sufficient view before paying to read it), 'summary' (LLM-generated digest — the only mode needing a chat model; returns status='needs-chat' when none is wired)"`
 	StartLine    int      `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
 	EndLine      int      `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
 	Focus        string   `json:"focus,omitempty" jsonschema:"optional steering — e.g. 'public API surface', 'side effects', 'error handling'"`
@@ -63,6 +63,9 @@ type SummarizeOutput struct {
 	Content      string   `json:"content,omitempty"`
 	FinishReason string   `json:"finish_reason,omitempty"`
 	Etag         string   `json:"etag,omitempty"` // sha256[:16] of file content; pass back on re-reads
+	// Analysis is populated only by mode=analyze (#623): a per-mode token-cost
+	// comparison + recommended mode, with no file content.
+	Analysis *ReadAnalysis `json:"analysis,omitempty"`
 	// StablePrefixTokens is the estimated token count of the stable-prefix
 	// section when cache_layout=stable_first reordering was applied to a batch
 	// call. Zero for single-file calls or when no stable files were found.
@@ -254,6 +257,8 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		result, out, err = s.summarizeModeAggressive(w)
 	case mode == ReadModeSkeleton:
 		result, out, err = s.summarizeModeSkeleton(w)
+	case mode == ReadModeAnalyze:
+		result, out, err = s.summarizeModeAnalyze(w)
 	case mode == ReadModeHandle:
 		// Cheapest terminal of the budget downgrade chain (#487): compact
 		// body-handle stub, never a fall-through to the full raw file.

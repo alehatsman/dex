@@ -127,7 +127,8 @@ query (the CLI verbs share the MCP tool names, #354/#427):
                                           a chosen cluster.
   dex read <file>                    read a file (MCP: read). Modes:
                                           full (default; raw, no LLM), signatures,
-                                          aggressive, entropy, auto, and summary
+                                          aggressive, entropy, auto, analyze (per-mode
+                                          token-cost comparison), and summary
                                           (LLM digest — needs a chat model).
                                           Flags: --mode, --start, --end, --focus,
                                           --temperature, --max-tokens, -v,

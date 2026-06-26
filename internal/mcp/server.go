@@ -966,6 +966,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"'signatures' = indexed symbols + source lines; 'skeleton' = exported type declarations in full plus " +
 				"function/method signatures with @B<n> body handles (expand one later via expand='@B<n>'); " +
 				"'map' = imports + exported symbols; 'lines:N-M' = raw line slice; " +
+				"'analyze' = a token-cost comparison of every mode plus a recommended mode and NO file content, so you " +
+				"can pick the cheapest sufficient view before paying to read it; " +
 				"'summary' = LLM-generated digest (the only mode needing a chat model — pass `focus` to steer, " +
 				"e.g. 'public API surface'; returns status='needs-chat' when no chat model is wired). " +
 				"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +

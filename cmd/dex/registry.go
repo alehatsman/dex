@@ -62,12 +62,12 @@ var (
 	// skeleton/map/summary delegate to Server.Summarize (see serverReadMode);
 	// the rest run locally. Parity with the MCP `read` tool's mode set is locked
 	// by read_parity_test.go.
-	readModeChoices = []string{"full", "signatures", "aggressive", "entropy", "auto", "skeleton", "map", "summary"}
+	readModeChoices = []string{"full", "signatures", "aggressive", "entropy", "auto", "skeleton", "map", "summary", "analyze"}
 
 	// serverReadModes are the read modes whose logic lives in the index +
 	// Server.Summarize handler; cmdRead delegates these instead of computing a
 	// view locally, so CLI output matches the MCP `read` tool exactly.
-	serverReadModes = map[string]bool{"skeleton": true, "map": true, "summary": true}
+	serverReadModes = map[string]bool{"skeleton": true, "map": true, "summary": true, "analyze": true}
 )
 
 // validReadMode reports whether m is an accepted CLI `read --mode`.

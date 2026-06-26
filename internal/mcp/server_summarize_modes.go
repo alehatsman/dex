@@ -147,18 +147,7 @@ func (s *Server) summarizeModeSkeleton(w summarizeWork) (*sdk.CallToolResult, Su
 		out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
 		return nil, out, nil
 	}
-	scopes := make([]compress.BodyScope, 0, len(syms))
-	for _, sym := range syms {
-		exported := len(sym.Name) > 0 && sym.Name[0] >= 'A' && sym.Name[0] <= 'Z'
-		scopes = append(scopes, compress.BodyScope{
-			Name:      sym.QualifiedName,
-			Kind:      sym.Kind,
-			Exported:  exported,
-			StartLine: sym.StartLine,
-			EndLine:   sym.EndLine,
-		})
-	}
-	res := compress.SkeletonPass(w.data, w.relTarget, scopes)
+	res := compress.SkeletonPass(w.data, w.relTarget, bodyScopesForSymbols(syms))
 	s.registerBodyHandles(w.sessionID, w.relTarget, w.etag, res.Bodies)
 	out := w.out
 	out.Status = "ok"

@@ -20,6 +20,10 @@ const (
 	ReadModeSummary    ReadMode = "summary"
 	ReadModeLines      ReadMode = "lines"
 	ReadModeHandle     ReadMode = "handle"
+	// ReadModeAnalyze returns a token-cost comparison of the other modes for a
+	// file plus a recommended mode — and NO file content (#623). It is the
+	// measured counterpart to estimateModeTokens' fixed-fraction heuristics.
+	ReadModeAnalyze ReadMode = "analyze"
 )
 
 func (m ReadMode) String() string { return string(m) }
@@ -91,7 +95,7 @@ func ParseReadMode(s string) (ReadMode, bool) {
 func AllReadModes() []ReadMode {
 	return []ReadMode{
 		ReadModeFull, ReadModeSignatures, ReadModeSkeleton, ReadModeMap,
-		ReadModeAggressive, ReadModeLines, ReadModeSummary,
+		ReadModeAggressive, ReadModeLines, ReadModeSummary, ReadModeAnalyze,
 	}
 }
 
