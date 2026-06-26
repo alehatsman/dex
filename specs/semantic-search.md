@@ -1,13 +1,13 @@
 ---
 id: semantic-search
 status: living
-last_verified: c331a3c
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/rerank/**"
   - "internal/store/store.go"
   - "internal/store/store_graph.go"
-  - "internal/store/rerank_cache.go"
+  - "internal/retrieve/rerank.go"
   - "internal/mcp/server.go"
 ---
 # Semantic Search

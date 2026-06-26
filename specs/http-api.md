@@ -1,11 +1,11 @@
 ---
 id: http-api
 status: living
-last_verified: 3a975eb
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/mcp/http.go"
-  - "internal/mcp/server_summaries.go"
+  - "internal/mcp/server_summarize.go"
   - "cmd/dex/serve.go"
 ---
 # HTTP API (dex serve)

@@ -1,7 +1,7 @@
 ---
 id: storage
 status: living
-last_verified: b1e4545
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/store/**"

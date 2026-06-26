@@ -1,7 +1,7 @@
 ---
 id: indexing
 status: living
-last_verified: fcd4397
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/index/**"

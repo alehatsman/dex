@@ -1,7 +1,7 @@
 ---
 id: ignore
 status: living
-last_verified: c7f0611
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/ignore/**"

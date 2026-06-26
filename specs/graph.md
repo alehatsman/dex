@@ -1,7 +1,7 @@
 ---
 id: graph
 status: living
-last_verified: 73aea8e
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/graph/**"

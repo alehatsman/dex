@@ -1,7 +1,7 @@
 ---
 id: watch
 status: living
-last_verified: c331a3c
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/watch/**"
