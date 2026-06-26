@@ -90,7 +90,15 @@ func resolveShellTimeout(secs int) time.Duration {
 // raw output for the same reason.
 const shellWrappedEnv = "DEX_SHELL_WRAPPED"
 
-var reAnsi = regexp.MustCompile(`\x1b\[[0-9;]*[mGKHF]`)
+// reAnsi matches the terminal escape sequences that leak into command output:
+//   - CSI: ESC '[' params(0x30-3F) intermediates(0x20-2F) final(0x40-7E) —
+//     covers SGR colour (m), cursor moves (A-H), erase (J/K), and private
+//     modes like cursor hide/show (?25l/?25h), not just the SGR subset.
+//   - OSC: ESC ']' … (BEL | ST) — window titles and hyperlinks.
+//
+// Both alternatives require the ESC byte, so plain text such as "[INFO]" is
+// never touched (#670).
+var reAnsi = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
 
 func stripANSI(s string) string { return reAnsi.ReplaceAllString(s, "") }
 

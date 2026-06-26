@@ -455,6 +455,30 @@ func TestStripANSI(t *testing.T) {
 	}
 }
 
+// TestStripANSIFullGrammar covers #670: beyond SGR colour, the stripper must
+// remove cursor moves, erase, private modes, and OSC sequences — and must
+// leave plain bracketed text (no ESC) alone.
+func TestStripANSIFullGrammar(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"sgr colour", "\x1b[31mred\x1b[0m", "red"},
+		{"erase display", "before\x1b[2Jafter", "beforeafter"},
+		{"cursor up", "line\x1b[1Aover", "lineover"},
+		{"cursor cols", "\x1b[3Gx", "x"},
+		{"private mode hide/show cursor", "\x1b[?25lspin\x1b[?25h", "spin"},
+		{"osc title BEL", "\x1b]0;my title\x07text", "text"},
+		{"osc hyperlink ST", "\x1b]8;;http://x\x1b\\link\x1b]8;;\x1b\\", "link"},
+		{"plain brackets untouched", "[INFO] started on port 8080", "[INFO] started on port 8080"},
+		{"no escapes untouched", "plain text 1 2 3", "plain text 1 2 3"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := stripANSI(c.in); got != c.want {
+				t.Errorf("stripANSI(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
 func TestShellRun_Basic(t *testing.T) {
 	s := &Server{}
 	out, err := s.ShellRun(t.Context(), ShellInput{Command: "echo hello"})
