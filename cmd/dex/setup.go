@@ -202,6 +202,18 @@ const rulesContent = `# dex — semantic search & context routing
 
 ## Proactive (call without being asked)
 - ` + "`ask(task)`" + ` at the start of every session to orient on the codebase
+
+## Session continuity (cuts re-exploration cost)
+
+At session start: ` + "`session(action=get)`" + ` — if a session exists with a task and notes,
+read that instead of re-exploring from scratch.
+
+After key discoveries: ` + "`session(action=add_note, note=\"...\")`" + ` — persists facts so
+` + "`find()`" + ` and ` + "`ask()`" + ` surface them in future sessions without re-reading files.
+
+When context is long: ` + "`session(action=budget)`" + ` — reports utilization and pressure.
+At pressure=compress or higher (>60%): ` + "`session(action=recap, budget=4000)`" + ` produces a
+compressed digest of the working set to restore context after compaction.
 <!-- /dex -->`
 
 // claudeRulesPath returns $CLAUDE_CONFIG_DIR/rules/dex.md, falling back to

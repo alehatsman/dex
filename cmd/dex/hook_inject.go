@@ -9,15 +9,18 @@ import (
 	"strings"
 	"time"
 
+	dexctx "github.com/alehatsman/dex/internal/ctx"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/store"
 )
 
 // hookInject handles UserPromptSubmit. It runs a dex ask query on the prompt
 // and emits {"additionalContext": "..."} so Claude sees relevant file paths
 // before processing the turn. Also prepends a one-time-per-session nudge when
-// routing rules are stale or drifted, and a per-prompt nudge when dex MCP
-// schemas have not yet been loaded via ToolSearch. Silent on any error.
+// routing rules are stale or drifted, a per-prompt nudge when dex MCP schemas
+// have not yet been loaded via ToolSearch, and an active-session block with
+// task/notes/budget pressure whenever a meaningful session exists.
 func hookInject(ctx context.Context) error {
 	raw := hookReadStdin()
 	if len(raw) == 0 {
@@ -39,12 +42,7 @@ func hookInject(ctx context.Context) error {
 		nudge += sn
 	}
 
-	// Skip very short prompts (confirmations, "yes", "ok", etc.) — not
-	// worth a round-trip to the index for sub-4-word inputs.
-	if len(strings.Fields(payload.Prompt)) < 4 {
-		return emitInjectContext(nudge, "")
-	}
-
+	// Resolve project — needed for both session context and ask() routing.
 	cwd, err := os.Getwd()
 	if err != nil {
 		return emitInjectContext(nudge, "")
@@ -63,6 +61,16 @@ func hookInject(ctx context.Context) error {
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// Session context (active task, notes, budget pressure) — injected on every
+	// turn when a meaningful session exists, independent of the ask() routing.
+	sessionCtx := buildSessionContext(tctx, p.DBPath, p.Root)
+
+	// Skip very short prompts (confirmations, "yes", "ok", etc.) — not
+	// worth a round-trip to the index for sub-4-word inputs.
+	if len(strings.Fields(payload.Prompt)) < 4 {
+		return emitInjectContext(nudge, sessionCtx)
+	}
+
 	s, _ := newServerFromEnv(base)
 	_, out, err := s.ContextRouter(tctx, mcp.ContextInput{
 		ProjectRoot: p.Root,
@@ -73,10 +81,93 @@ func hookInject(ctx context.Context) error {
 		NoInline: true,
 	})
 	if err != nil || out.Status != "ok" {
-		return emitInjectContext(nudge, "")
+		return emitInjectContext(nudge, sessionCtx)
 	}
 
-	return emitInjectContext(nudge, buildInjectContext(out))
+	return emitInjectContext(nudge, joinContext(sessionCtx, buildInjectContext(out)))
+}
+
+// buildSessionContext returns a compact "[DEX] Active session" block when the
+// current project's session has a task and contains notes or at least three
+// file touches. Also appends a budget pressure warning when context utilization
+// reaches compress (>60%) or higher. Returns "" when the session is empty,
+// the index does not exist, or any lookup fails.
+func buildSessionContext(ctx context.Context, dbPath, projectRoot string) string {
+	if _, err := os.Stat(dbPath); err != nil {
+		return "" // index not yet created
+	}
+	st, err := openStore(ctx, dbPath)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = st.Close() }()
+
+	ss, ok, err := st.SessionGet(ctx)
+	if err != nil || !ok || ss.Task == "" {
+		return ""
+	}
+
+	noteCount := 0
+	if ss.Notes != "" {
+		noteCount = strings.Count(ss.Notes, "\n") + 1
+	}
+	if noteCount == 0 && len(ss.Files) < 3 {
+		return "" // no substance yet — skip to avoid noise on freshly-started sessions
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "[DEX] Active session: %s\n", ss.Task)
+	if ss.Notes != "" {
+		notes := ss.Notes
+		if len(notes) > 600 {
+			notes = notes[:600] + "…"
+		}
+		fmt.Fprintf(&b, "Notes: %s\n", notes)
+	}
+	if len(ss.Files) > 0 {
+		fmt.Fprintf(&b, "Working set: %d file(s) — call session(action=get) for detail.\n", len(ss.Files))
+	}
+
+	if warn := sessionBudgetWarn(ss, projectRoot); warn != "" {
+		b.WriteString(warn)
+	}
+
+	return b.String()
+}
+
+// sessionBudgetWarn estimates context window utilization from session state
+// and returns a warning when pressure is compress (>60%) or higher.
+func sessionBudgetWarn(ss store.SessionState, projectRoot string) string {
+	used := dexctx.BytesToTokens(int64(len(ss.Task) + len(ss.Notes)))
+	seen := make(map[string]struct{}, len(ss.Files))
+	for _, f := range ss.Files {
+		if _, dup := seen[f.Path]; dup {
+			continue
+		}
+		seen[f.Path] = struct{}{}
+		abs := filepath.Join(projectRoot, f.Path)
+		if info, err := os.Stat(abs); err == nil {
+			used += dexctx.BytesToTokens(info.Size())
+		}
+	}
+	ledger := dexctx.Ledger{WindowSize: dexctx.DefaultWindowSize, UsedTokens: used}
+	if ledger.Pressure() == dexctx.PressureNormal {
+		return ""
+	}
+	return fmt.Sprintf("[DEX] Context pressure: %s (%.0f%% of %dk tokens) — call session(action=recap, budget=4000) to compress.\n",
+		ledger.Pressure(), ledger.Utilization()*100, ledger.WindowSize/1000)
+}
+
+// joinContext joins two non-empty strings with a newline separator.
+func joinContext(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + "\n" + b
+	}
 }
 
 // emitInjectContext encodes additionalContext combining nudge and ac.
