@@ -365,7 +365,10 @@ func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string,
 		if vecs, eerr := s.EmbedClient.Embed(ctx, []string{query}); eerr == nil && len(vecs) > 0 {
 			// skipFallback callers (locate/review) want no note rather than an
 			// irrelevant one from a sparse knowledge base (#706).
-			const minSimSkip = 0.25
+			// 0.5 empirically separates same-topic from same-codebase-but-unrelated
+			// pairs with qwen3-embedding:4b; 0.25 was too permissive (code-aware
+			// models score same-codebase concepts ~0.3-0.4 regardless of relevance).
+			const minSimSkip = 0.5
 			minSim := 0.0
 			if noFallback {
 				minSim = minSimSkip
