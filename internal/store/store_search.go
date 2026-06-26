@@ -165,10 +165,12 @@ func classifyQueryType(q string) queryType {
 	lower := strings.ToLower(q)
 
 	// Architecture: multi-token phrases about structure/design.
+	// "pipeline" and "layer" were removed: they fire on commit-message jargon
+	// ("CI pipeline", "query layer") and cause false positives in the eval.
 	archPhrases := []string{
 		"how does", "how is", "where is", "where are",
 		"architecture", "design pattern", "data flow", "control flow",
-		"module structure", "component", "pipeline", "layer",
+		"module structure", "component",
 	}
 	for _, p := range archPhrases {
 		if strings.Contains(lower, p) {

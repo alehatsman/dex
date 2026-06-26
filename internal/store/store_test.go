@@ -999,6 +999,9 @@ func TestClassifyQueryType(t *testing.T) {
 		{"retry logic for failed chunks", queryNL},
 		{"search for files that match a pattern", queryNL},
 		{"", queryNL},
+		// Regression: commit-message "pipeline" / "layer" must not trigger arch (#689).
+		{"repo-wide gofmt gate in the full CI pipeline", queryNL},
+		{"cover store_graph.go query layer", queryNL},
 	}
 	for _, tt := range tests {
 		got := classifyQueryType(tt.q)
