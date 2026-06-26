@@ -1,6 +1,10 @@
 package compress
 
-import "strings"
+import (
+	"encoding/json"
+	"io"
+	"strings"
+)
 
 // Lossless JSON compaction (#619). Pretty-printed JSON is typically 20–50%
 // insignificant whitespace. These helpers strip that whitespace with a plain
@@ -38,6 +42,16 @@ func LooksLikeJSON(s string) bool {
 // JSON of bare scalars (`1\n2` would merge to `12`); use CompactJSONL or
 // CompactJSONAuto for that.
 func CompactJSON(input string) (string, bool) {
+	// Only strip when the input genuinely IS JSON (one or more well-formed
+	// values, whitespace-only between them). Text that merely starts with '{'
+	// or '[' — a "[INFO] started on port 8080" log line, or JSON with trailing
+	// prose — must pass through untouched; stripping its whitespace as if it
+	// were JSON structure would corrupt it (#669). The decoder validates shape
+	// only; the byte-level strip below still produces the output, so key order,
+	// number formatting, and string internals are preserved verbatim.
+	if !isValidJSONStream(input) {
+		return input, false
+	}
 	var b strings.Builder
 	b.Grow(len(input))
 	inString := false
@@ -72,6 +86,29 @@ func CompactJSON(input string) (string, bool) {
 		return out, true
 	}
 	return input, false
+}
+
+// isValidJSONStream reports whether s is one or more well-formed JSON values
+// separated only by whitespace — exactly the shape CompactJSON can strip
+// losslessly (a single pretty document, or a concatenated object stream like
+// `go list -json ./...`). Decoding into RawMessage validates each value's
+// structure without re-serializing it, and trailing non-JSON bytes make the
+// final Decode fail rather than returning io.EOF, so JSON-with-trailing-prose
+// is correctly rejected.
+func isValidJSONStream(s string) bool {
+	dec := json.NewDecoder(strings.NewReader(s))
+	n := 0
+	for {
+		var raw json.RawMessage
+		switch err := dec.Decode(&raw); err {
+		case nil:
+			n++
+		case io.EOF:
+			return n > 0
+		default:
+			return false
+		}
+	}
 }
 
 // CompactJSONL compacts each newline-delimited JSON record independently,

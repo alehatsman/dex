@@ -172,3 +172,29 @@ func TestCompactJSONAuto(t *testing.T) {
 		t.Errorf("auto(text) = (%q, %v), want unchanged", got3, ok3)
 	}
 }
+
+// TestCompactJSONLeavesNonJSONUntouched covers #669: output that merely starts
+// with '[' or '{' but isn't valid JSON (log lines, etc.) must pass through
+// untouched — stripping its whitespace as if it were JSON structure corrupts it.
+func TestCompactJSONLeavesNonJSONUntouched(t *testing.T) {
+	nonJSON := []string{
+		"[INFO] server started on port 8080",
+		"[WARN] disk 80% full, cleaning up now",
+		"{ pid 1234 running } not json here",
+		`{"a":1} and then some trailing prose`,
+	}
+	for _, in := range nonJSON {
+		if got, ok := CompactJSON(in); ok || got != in {
+			t.Errorf("CompactJSON(%q) = (%q, %v); want it left untouched (input, false)", in, got, ok)
+		}
+	}
+	// Multi-line log where every line starts with '[' would take the JSONL path.
+	log := "[INFO] line one here\n[WARN] line two here\n"
+	if got, ok := CompactJSONAuto(log); ok || got != log {
+		t.Errorf("CompactJSONAuto(multiline log) = (%q, %v); want untouched", got, ok)
+	}
+	// Sanity: genuine JSON still compacts.
+	if got, ok := CompactJSON("{ \"a\": 1 }"); !ok || got != `{"a":1}` {
+		t.Errorf("valid JSON should still compact, got (%q, %v)", got, ok)
+	}
+}
