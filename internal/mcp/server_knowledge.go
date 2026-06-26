@@ -23,6 +23,7 @@ type KnowledgeInput struct {
 	ID          int64   `json:"id,omitempty"           jsonschema:"fact id for delete action"`
 	K           int     `json:"k,omitempty"            jsonschema:"max facts to return for list (default 10)"`
 	Query       string  `json:"query,omitempty"        jsonschema:"for list: a task/question to recall the most relevant facts for (semantic). Empty = top facts by salience."`
+	Scope       string  `json:"scope,omitempty"        jsonschema:"for add: bind this fact to a file glob / path / package (e.g. 'internal/mcp/*_test.go' or 'internal/store') so file verbs (locate) surface it proactively when they touch a matching path (#645). Empty = unscoped."`
 }
 
 type KnowledgeFactOutput struct {
@@ -83,7 +84,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		// itself (#606). Best-effort: a similarity-scan failure must not block
 		// the add.
 		similar, _ := st.KnowledgeSimilar(ctx, in.Body, knowledgeSimilarThreshold, 3)
-		rev, err := st.KnowledgeAdd(ctx, arch, in.Body, in.Confidence)
+		rev, err := st.KnowledgeAddScoped(ctx, arch, in.Body, in.Confidence, in.Scope)
 		if err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 		}

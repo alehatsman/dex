@@ -47,6 +47,10 @@ type LocatedFact struct {
 	Archetype string  `json:"archetype"`
 	Body      string  `json:"body"`
 	Salience  float64 `json:"salience"`
+	// Scope is set when this note surfaced because its scope matched the file
+	// being located (proactive gotcha-on-touch, #645), naming the glob/path it's
+	// bound to. Empty for a note recalled by semantic/salience match.
+	Scope string `json:"scope,omitempty"`
 }
 
 // LocateOutput is the orientation bundle. Beyond the resolved target every
@@ -149,8 +153,26 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	// Related notes — semantic match on the symbol name when an embedder is
 	// wired, falling back to top-salience facts otherwise (recallFacts handles
 	// the degradation internally).
+	seenNote := map[int64]bool{}
+	// Proactive gotcha-on-touch (#645) FIRST: notes SCOPED to this file's path —
+	// surfaced (and tagged with `scope`) because you touched the file, even if
+	// they wouldn't match the symbol semantically. The "you're editing X, here's
+	// the gotcha about X" signal leads.
+	if scoped, serr := st.KnowledgeByScope(ctx, res.path, k); serr == nil {
+		for _, f := range scoped {
+			seenNote[f.ID] = true
+			out.Notes = append(out.Notes, LocatedFact{
+				ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience, Scope: f.Scope,
+			})
+		}
+	}
+	// Then semantic/salience recall on the symbol, deduped against the scoped set.
 	if facts, ferr := s.recallFacts(ctx, st, res.symbol, k, false); ferr == nil {
 		for _, f := range facts {
+			if seenNote[f.ID] {
+				continue
+			}
+			seenNote[f.ID] = true
 			out.Notes = append(out.Notes, LocatedFact{
 				ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience,
 			})

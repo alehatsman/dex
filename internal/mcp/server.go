@@ -867,7 +867,9 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"survive session resets and reconnects (no embedding required). " +
 				"Actions: add (store a fact with an archetype and confidence — the response's " +
 				"`similar` list warns when a near-duplicate note already exists so you can `delete` " +
-				"the superseded one), list (recall top-k facts ordered by salience), delete (remove a fact by id). " +
+				"the superseded one; pass `scope` to bind the fact to a file glob/path/package so `locate` " +
+				"surfaces it proactively when it touches a matching file, #645), " +
+				"list (recall top-k facts ordered by salience), delete (remove a fact by id). " +
 				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
 				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
 				"as knowledge_facts."),

@@ -141,7 +141,10 @@ service clients are the http-api spec's.
   session resets: `action=add` (store a fact with an archetype and confidence;
   the response's `similar` list warns when a near-duplicate note already exists
   — Jaccard word-overlap ≥ 0.5, the write-time companion to the GC merge pass —
-  so the author can `delete` the superseded one, #606),
+  so the author can `delete` the superseded one, #606; an optional `scope` binds
+  the fact to a file glob / path / package — `internal/mcp/*_test.go`,
+  `internal/store` — so `locate` surfaces it proactively when it touches a
+  matching file, "gotcha-on-touch", #645),
   `action=list` (top-k by salience), `action=delete` (by id). Archetypes:
   Architecture | Gotcha | Convention | Decision | Observation | Dependency |
   Pattern | Fact. High-salience facts are injected into `ask` responses as

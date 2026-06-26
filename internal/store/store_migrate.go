@@ -18,7 +18,7 @@ import (
 // (signature, start_byte, end_byte, declaration_hash). Empty byte spans are
 // useless to a refactor consumer, so the upgrade is a reindex (the
 // fail-closed gate below), not an ALTER-with-defaults backfill.
-const schemaVersion = "3"
+const schemaVersion = "4"
 
 // chunkFTSContentExpr builds the SQL expression for a chunk's FTS `content`
 // document: the Contextual-BM25 prefix (context_text + newline, when present)
@@ -199,6 +199,7 @@ func schemaDDL() []string {
 		   hit_count      INTEGER NOT NULL DEFAULT 0,
 		   revision_count INTEGER NOT NULL DEFAULT 0,
 		   last_retrieved INTEGER NOT NULL DEFAULT 0,
+		   scope          TEXT NOT NULL DEFAULT '',
 		   UNIQUE(body)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_knowledge_confidence ON knowledge_facts(confidence DESC, updated_at DESC)`,

@@ -117,6 +117,7 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	)
 	archetype := fs.String("archetype", "Fact", "fact archetype: Architecture|Gotcha|Decision|Convention|Dependency|Pattern|Fact")
 	confidence := fs.Float64("confidence", 0, "confidence in (0,1] (default 0.8 when unset)")
+	scope := fs.String("scope", "", "bind to a file glob/path/package (e.g. 'internal/mcp/*_test.go'); file verbs surface it on touch (#645)")
 	format := fs.String("format", "text", "output format: text|json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -154,7 +155,7 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 
 	// Near-duplicate scan before insert so the new note doesn't match itself (#606).
 	similar, _ := st.KnowledgeSimilar(ctx, body, 0.5, 3)
-	rev, err := st.KnowledgeAdd(ctx, *archetype, body, *confidence)
+	rev, err := st.KnowledgeAddScoped(ctx, *archetype, body, *confidence, *scope)
 	if err != nil {
 		return err
 	}

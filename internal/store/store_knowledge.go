@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	pathpkg "path"
 	"sort"
 	"strings"
 	"time"
@@ -25,6 +26,11 @@ type KnowledgeFact struct {
 	HitCount      int
 	RevisionCount int
 	Salience      float64 // pre-computed: confidence * archetypeWeight * recency
+	// Scope optionally binds a fact to a file glob / path / package (#645), so a
+	// file verb can surface it when it touches a matching path. Empty = unscoped
+	// (the default; surfaces only through query-time recall). Populated only by
+	// KnowledgeByScope; other reads leave it empty.
+	Scope string
 }
 
 // archetypeWeight returns the base salience weight for a known archetype.
@@ -54,6 +60,14 @@ func archetypeWeight(a string) float64 {
 // updated_at without creating a duplicate. Returns the revision_count after
 // insert/update (0 = first time stored, 1 = first revision, etc.).
 func (s *knowledgeStore) KnowledgeAdd(ctx context.Context, archetype, body string, confidence float64) (int, error) {
+	return s.KnowledgeAddScoped(ctx, archetype, body, confidence, "")
+}
+
+// KnowledgeAddScoped is KnowledgeAdd with an optional `scope` (#645) — a file
+// glob / path / package the fact is about, so a file verb can surface it on
+// touch. Empty scope behaves exactly like KnowledgeAdd. On a body conflict the
+// scope is updated too (re-adding with a scope binds an existing fact).
+func (s *knowledgeStore) KnowledgeAddScoped(ctx context.Context, archetype, body string, confidence float64, scope string) (int, error) {
 	if confidence <= 0 {
 		confidence = 0.8
 	}
@@ -62,20 +76,82 @@ func (s *knowledgeStore) KnowledgeAdd(ctx context.Context, archetype, body strin
 	}
 	now := time.Now().UnixNano()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count)
-		   VALUES(?,?,?,?,?,0,0)
+		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope)
+		   VALUES(?,?,?,?,?,0,0,?)
 		   ON CONFLICT(body) DO UPDATE SET
 		     archetype=excluded.archetype,
 		     confidence=MAX(confidence, excluded.confidence),
 		     updated_at=excluded.updated_at,
-		     revision_count=revision_count+1`,
-		archetype, body, confidence, now, now)
+		     revision_count=revision_count+1,
+		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END`,
+		archetype, body, confidence, now, now, scope)
 	if err != nil {
 		return 0, err
 	}
 	var rev int
 	_ = s.db.QueryRowContext(ctx, `SELECT revision_count FROM knowledge_facts WHERE body=?`, body).Scan(&rev)
 	return rev, nil
+}
+
+// KnowledgeByScope returns the scoped facts whose scope matches targetPath
+// (#645) — a file glob (`internal/mcp/*_test.go`), a directory/package prefix
+// (`internal/mcp`), or an exact path — salience-ranked, capped at max. Unscoped
+// facts (scope=”) are never returned. Powers the proactive "gotcha-on-touch"
+// surfacing in file verbs.
+func (s *knowledgeStore) KnowledgeByScope(ctx context.Context, targetPath string, max int) ([]KnowledgeFact, error) {
+	if strings.TrimSpace(targetPath) == "" {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope
+		   FROM knowledge_facts WHERE scope != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []KnowledgeFact
+	for rows.Next() {
+		var f KnowledgeFact
+		var cNs, uNs int64
+		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &f.Scope); err != nil {
+			return nil, err
+		}
+		f.CreatedAt = time.Unix(0, cNs)
+		f.UpdatedAt = time.Unix(0, uNs)
+		f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
+		if scopeMatches(f.Scope, targetPath) {
+			out = append(out, f)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Salience > out[j].Salience })
+	if max > 0 && len(out) > max {
+		out = out[:max]
+	}
+	return out, nil
+}
+
+// scopeMatches reports whether a fact's scope binds targetPath. A scope with
+// glob metacharacters is matched (path.Match) against the full path and the
+// basename, so `*_test.go` and `internal/mcp/*_test.go` both work; a plain scope
+// matches an exact path or a directory/package prefix.
+func scopeMatches(scope, targetPath string) bool {
+	scope = strings.TrimSpace(scope)
+	if scope == "" || targetPath == "" {
+		return false
+	}
+	if strings.ContainsAny(scope, "*?[") {
+		if ok, _ := pathpkg.Match(scope, targetPath); ok {
+			return true
+		}
+		if ok, _ := pathpkg.Match(scope, pathpkg.Base(targetPath)); ok {
+			return true
+		}
+		return false
+	}
+	return targetPath == scope || strings.HasPrefix(targetPath, scope+"/")
 }
 
 // recencyFactor is a linear 90-day decay in [0,1]: a fact confirmed today
