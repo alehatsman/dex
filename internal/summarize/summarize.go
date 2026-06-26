@@ -102,9 +102,15 @@ func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []
 	}
 	// Only top-level named symbols (func/type/var/const) count as exported,
 	// not struct fields, imports, or file-level nodes.
+	// Go uses uppercase-first for export visibility; other languages expose all
+	// named top-level symbols as part of the public API.
+	isGoFile := strings.HasSuffix(relPath, ".go")
 	exported := func(sym store.GraphSymbol) bool {
 		if sym.Kind == "field" || sym.Kind == "import" || sym.Kind == "file" {
 			return false
+		}
+		if !isGoFile {
+			return len(sym.Name) > 0
 		}
 		return len(sym.Name) > 0 && sym.Name[0] >= 'A' && sym.Name[0] <= 'Z'
 	}
@@ -148,10 +154,16 @@ func formatMap(relPath string, syms []store.GraphSymbol, imports []string) strin
 		}
 		b.WriteByte('\n')
 	}
+	// Go uses uppercase-first for export visibility; other languages expose all
+	// named top-level symbols.
+	isGoFile := strings.HasSuffix(relPath, ".go")
 	var exportedLines strings.Builder
 	count := 0
 	for _, sym := range syms {
-		if len(sym.Name) == 0 || sym.Name[0] < 'A' || sym.Name[0] > 'Z' {
+		if len(sym.Name) == 0 {
+			continue
+		}
+		if isGoFile && (sym.Name[0] < 'A' || sym.Name[0] > 'Z') {
 			continue
 		}
 		fmt.Fprintf(&exportedLines, "  %s %s (lines %d-%d)\n", sym.Kind, sym.QualifiedName, sym.StartLine, sym.EndLine)

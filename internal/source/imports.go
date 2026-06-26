@@ -164,6 +164,7 @@ func extractPrefixImports(prefixes []string) func([]string) string {
 	return func(lines []string) string {
 		var out []string
 		started := false
+		parenDepth := 0
 		for _, l := range lines {
 			t := strings.TrimSpace(l)
 			match := false
@@ -176,6 +177,25 @@ func extractPrefixImports(prefixes []string) func([]string) string {
 			if match {
 				out = append(out, l)
 				started = true
+				for _, ch := range t {
+					if ch == '(' {
+						parenDepth++
+					} else if ch == ')' {
+						parenDepth--
+					}
+				}
+				continue
+			}
+			// Inside a multi-line parenthesized import: `from x import (\n    a,\n)`
+			if started && parenDepth > 0 {
+				out = append(out, l)
+				for _, ch := range t {
+					if ch == '(' {
+						parenDepth++
+					} else if ch == ')' {
+						parenDepth--
+					}
+				}
 				continue
 			}
 			if started && (t == "" || strings.HasPrefix(t, "#")) {
@@ -201,6 +221,7 @@ func extractPrefixImports(prefixes []string) func([]string) string {
 func ExtractJSImports(lines []string) string {
 	var out []string
 	started := false
+	braceDepth := 0
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
 		importish := strings.HasPrefix(t, "import ") ||
@@ -213,6 +234,25 @@ func ExtractJSImports(lines []string) string {
 		if importish {
 			out = append(out, l)
 			started = true
+			for _, ch := range t {
+				if ch == '{' {
+					braceDepth++
+				} else if ch == '}' {
+					braceDepth--
+				}
+			}
+			continue
+		}
+		// Inside a multi-line named import: `import {\n  A,\n  B,\n} from "mod"`
+		if started && braceDepth > 0 {
+			out = append(out, l)
+			for _, ch := range t {
+				if ch == '{' {
+					braceDepth++
+				} else if ch == '}' {
+					braceDepth--
+				}
+			}
 			continue
 		}
 		if started && t == "" {

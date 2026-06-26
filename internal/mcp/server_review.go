@@ -141,7 +141,7 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 
 	k := in.K
 	if k <= 0 {
-		k = 8
+		k = 30 // default matches cap so reviewCallerMed=10 and reviewCallerHigh=30 thresholds are reachable
 	}
 	if k > 30 {
 		k = 30

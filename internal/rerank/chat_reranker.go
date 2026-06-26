@@ -91,7 +91,11 @@ func (c *ChatReranker) Rerank(ctx context.Context, query string, docs []string) 
 	}
 	results := make([]result, len(docs))
 
-	sem := make(chan struct{}, c.Concurrency)
+	conc := c.Concurrency
+	if conc <= 0 {
+		conc = 1
+	}
+	sem := make(chan struct{}, conc)
 	var wg sync.WaitGroup
 	for i, doc := range docs {
 		wg.Add(1)
@@ -121,9 +125,14 @@ func (c *ChatReranker) Rerank(ctx context.Context, query string, docs []string) 
 		return nil, fmt.Errorf("%w: %v", ErrUnreachable, firstErr)
 	}
 
-	out := make([]Score, len(results))
+	// Omit failed pairs rather than assigning score=0: a zero score would
+	// place them above nothing but below every real result, obscuring which
+	// hits were actually evaluated.
+	var out []Score
 	for i, r := range results {
-		out[i] = Score{Index: i, Score: r.score}
+		if r.err == nil {
+			out = append(out, Score{Index: i, Score: r.score})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
 	return out, nil

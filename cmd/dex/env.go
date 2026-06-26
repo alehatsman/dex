@@ -164,7 +164,7 @@ func cmdEnv(_ context.Context, args []string) error {
 }
 
 func printEnvText(vars []effVar, withDoc bool) {
-	groupOrder := []string{"core", "chat", "rerank", "expand", "summary", "tuning"}
+	groupOrder := []string{"core", "chat", "rerank", "expand", "summary", "tuning", "watch"}
 	byGroup := map[string][]effVar{}
 	nameW, valW := 0, 0
 	for _, v := range vars {

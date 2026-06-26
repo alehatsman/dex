@@ -323,8 +323,8 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 
 	if stats, statsErr := st.Stats(ctx); statsErr == nil && !stats.LastIndex.IsZero() && time.Since(stats.LastIndex) > 24*time.Hour {
 		out.Stale = true
-		out.Hint = fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
-			time.Since(stats.LastIndex).Round(time.Hour), p.Root)
+		out.Hint = appendHint(out.Hint, fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
+			time.Since(stats.LastIndex).Round(time.Hour), p.Root))
 	}
 	// An active rebuild trumps age: evidence is being rewritten right now, so
 	// what we return is partial (#531).

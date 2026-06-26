@@ -112,6 +112,9 @@ func parseConfigFile(root string) (map[string]string, error) {
 // scalarStr renders a YAML scalar (string|bool|int|float) as the string a
 // DEX_* reader expects.
 func scalarStr(v any) string {
+	if v == nil {
+		return ""
+	}
 	switch t := v.(type) {
 	case string:
 		return t

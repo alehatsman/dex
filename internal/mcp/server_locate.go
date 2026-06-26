@@ -158,6 +158,8 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 			out.Risk = tr.Risk
 		} else if tr.Status == "no-graph" {
 			out.Hint = appendHint(out.Hint, "callers unavailable: "+tr.Hint)
+		} else if tr.Status == "not-found" {
+			out.Hint = appendHint(out.Hint, "symbol not in call graph — possibly unexported, not yet indexed, or graph needs reindex")
 		}
 	}
 
@@ -290,11 +292,28 @@ func resolveBySymbol(ctx context.Context, st *store.Store, sym string) locateTar
 				return locateTarget{status: "not-found", hint: fmt.Sprintf("lookup %q: %v", bare, err)}
 			}
 			if reReceiverPointer.MatchString(sym) && len(hits) > 1 {
-				for _, h := range hits {
-					if h.Kind == "method" || h.Kind == "function" {
-						hits = []store.Hit{h}
+				// Extract the receiver type (e.g. "Client" from "(*Client).Method")
+				// and prefer a hit whose signature mentions that type, so that
+				// (*Client).Method doesn't resolve to (*Server).Method.
+				rxType := ""
+				if m := reReceiverType.FindStringSubmatch(sym); m != nil {
+					rxType = m[1]
+				}
+				chosen := -1
+				for i, h := range hits {
+					if h.Kind != "method" && h.Kind != "function" {
+						continue
+					}
+					if chosen < 0 {
+						chosen = i // first method: fallback if no type match
+					}
+					if rxType != "" && strings.Contains(h.Signature, rxType) {
+						chosen = i
 						break
 					}
+				}
+				if chosen >= 0 {
+					hits = []store.Hit{hits[chosen]}
 				}
 			}
 		}
@@ -342,6 +361,10 @@ var frameLoc = regexp.MustCompile(`([^\s:()]+\.[A-Za-z0-9]+):(\d+)`)
 // reReceiverPointer matches the (*T). prefix in a receiver-qualified symbol like (*Server).Context.
 // Used to bias bare-name fallback toward method/function kinds over fields.
 var reReceiverPointer = regexp.MustCompile(`^\(\*[^)]+\)\.`)
+
+// reReceiverType extracts the type name from a pointer-receiver prefix:
+// "(*Client).Method" → "Client".
+var reReceiverType = regexp.MustCompile(`^\([*]?([^)]+)\)\.*`)
 
 // parseFrame extracts either a 'path:line' ref or a symbol from one raw stack
 // frame. A file location wins (it pins the exact site); otherwise the trailing

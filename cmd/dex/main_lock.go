@@ -79,17 +79,19 @@ func describeHolder(h *lock.Holder) string {
 }
 
 // clearCacheKeepLock removes everything inside p.CacheDir except the
-// lock file. Used by `reindex` so the indexer lock can be acquired
-// before the destructive sweep without removing the lockfile under
-// our own feet.
+// lock file and the live index (p.DBPath). Used by `reindex` after the
+// new index has been renamed into place, to sweep old ephemeral files
+// (WAL, SHM, chunk vectors, etc.) without touching the committed DB or
+// the lock.
 func clearCacheKeepLock(p *proj.Project) error {
 	entries, err := os.ReadDir(p.CacheDir)
 	if err != nil {
 		return err
 	}
 	lockBase := filepath.Base(p.LockPath)
+	dbBase := filepath.Base(p.DBPath)
 	for _, e := range entries {
-		if e.Name() == lockBase {
+		if e.Name() == lockBase || e.Name() == dbBase {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(p.CacheDir, e.Name())); err != nil {

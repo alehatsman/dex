@@ -125,15 +125,20 @@ func detectSemanticChunks(content string) []semChunk {
 func consumeBraceBlock(lines []string, start int) (end int, ident string) {
 	ident = extractIdentifier(strings.TrimSpace(lines[start]))
 	depth := 0
+	opened := false
 	for i := start; i < len(lines); i++ {
 		for _, ch := range lines[i] {
 			if ch == '{' {
 				depth++
+				opened = true
 			} else if ch == '}' {
 				depth--
 			}
 		}
-		if depth <= 0 && i > start {
+		// opened ensures we don't return immediately on a zero-brace line
+		// (e.g. a forward declaration). Single-line `func Foo() {}` sets
+		// opened=true and reaches depth=0 on the same line as start.
+		if opened && depth <= 0 {
 			return i + 1, ident
 		}
 	}

@@ -31,7 +31,7 @@ func (s *Server) orientResponse(ctx context.Context, in ContextInput) (*sdk.Call
 		return nil, out, nil
 	}
 	if comm.Status != "ok" {
-		out.Status = comm.Status
+		out.Status = "error"
 		out.Hint = comm.Hint
 		if out.Hint == "" {
 			out.Hint = "no call graph indexed — run `dex index . --graph=only`, or pass a question to search semantically."

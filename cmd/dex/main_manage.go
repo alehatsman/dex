@@ -274,15 +274,17 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	}
 
 	// All work succeeded. Close the temp store, swap it into place, then
-	// wipe the old cache (other ephemeral files like chunk vectors etc.).
+	// wipe old ephemeral files (WAL, SHM, chunk vectors, etc.).
+	// Rename first so the new index is committed before we clear anything;
+	// clearCacheKeepLock runs after and skips the just-committed p.DBPath.
 	_ = st.Close()
-	if err := clearCacheKeepLock(p); err != nil {
-		return err
-	}
 	if err := os.Rename(newDBPath, p.DBPath); err != nil {
 		return err
 	}
 	committed = true // prevent defer from removing the now-live DB
+	if err := clearCacheKeepLock(p); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(os.Stderr, "✓ reindexed %s\n", p.Root)
 	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
