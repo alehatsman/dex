@@ -187,6 +187,17 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "verify", group: groupQuery, args: "[<path>]",
+		summary: "run the tests a change implicates (working tree / --ref / --symbol)",
+		flags: []flagSpec{
+			{name: "--ref", desc: "test a git range instead of the working tree", arg: true},
+			{name: "--symbol", desc: "test a symbol's blast-radius instead of a diff", arg: true},
+			{name: "--command", desc: "override test command template ({{packages}})", arg: true},
+			{name: "--timeout", desc: "test-run timeout seconds", arg: true},
+			flagFormat,
+		},
+	},
+	{
 		name: "grep", group: groupQuery, args: "[<path>] <pattern>",
 		summary: "exact RE2 regex search",
 		flags: []flagSpec{

@@ -57,6 +57,11 @@ func (p projectScoped) cohort(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.cohort(ctx, req, in)
 }
 
+func (p projectScoped) verify(ctx context.Context, req *sdk.CallToolRequest, in VerifyInput) (*sdk.CallToolResult, VerifyOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.verify(ctx, req, in)
+}
+
 func (p projectScoped) checkpoint(ctx context.Context, req *sdk.CallToolRequest, in CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.checkpoint(ctx, req, in)

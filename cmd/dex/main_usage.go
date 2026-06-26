@@ -33,6 +33,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex review [<path>]                    per-hunk PR intelligence — --ref|--branch|--pr
   dex refactor [<path>] <symbol> <to>    plan a type-precise rename (edit triples; never writes)
   dex cohort [<path>] <interface>        types that must change in lockstep with an interface
+  dex verify [<path>]                    run the tests a change implicates — working tree | --ref | --symbol
   dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
   dex grep   [<path>] <pattern>          exact RE2 regex search
   dex ls     [<path>]                    indexed file tree + chunk counts
@@ -87,6 +88,7 @@ query (the CLI verbs share the MCP tool names, #354/#427):
     dex review [<path>]           per-hunk PR intelligence (MCP: review)
     dex refactor [<path>] <s> <t> plan a type-precise rename (MCP: refactor)
     dex cohort [<path>] <iface>   interface lockstep set (MCP: cohort)
+    dex verify [<path>]           run tests a change implicates (MCP: verify)
     (map / read / ask are already top-level — see below)
 
   dex ask [<path>] <q...>            one-shot router (MCP: ask). Picks intent,

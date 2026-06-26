@@ -205,6 +205,12 @@ func (rc *remoteClient) cohort(ctx context.Context, _ *sdk.CallToolRequest, in C
 	return nil, out, err
 }
 
+func (rc *remoteClient) verify(ctx context.Context, _ *sdk.CallToolRequest, in VerifyInput) (*sdk.CallToolResult, VerifyOutput, error) {
+	var out VerifyOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/verify"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) checkpoint(ctx context.Context, _ *sdk.CallToolRequest, in CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error) {
 	var out CheckpointOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/checkpoint"), in, &out)

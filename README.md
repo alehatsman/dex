@@ -60,6 +60,7 @@ each annotated `(MCP: <name>)` in `dex graph --help`).
 | `locate` | one-call orientation around a `ref` (`path:line`) / `symbol` / `frame`: callers, tests, nearest doc, last commit, notes |
 | `review` | per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers + risk, tests, churn, author history, notes |
 | `refactor` | plan a type-precise rename → byte-exact edit triples you apply (never writes); Go-only v1 |
+| `verify` | run the tests a change implicates (working tree / `ref` / `symbol`) → pass/fail + a staged gotcha on failure; Go-only v1 |
 | `read`   | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
 | `grep`   | exact regex match                                                   |
 | `ls`     | file-tree listing                                                   |

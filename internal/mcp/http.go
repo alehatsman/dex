@@ -261,6 +261,7 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/review", jsonHandler(opts.Projects, func(in *ReviewInput, r string) { in.ProjectRoot = r }, s.Review))
 	authed.HandleFunc("POST /v1/projects/{id}/refactor", jsonHandler(opts.Projects, func(in *RefactorInput, r string) { in.ProjectRoot = r }, s.Refactor))
 	authed.HandleFunc("POST /v1/projects/{id}/cohort", jsonHandler(opts.Projects, func(in *CohortInput, r string) { in.ProjectRoot = r }, s.Cohort))
+	authed.HandleFunc("POST /v1/projects/{id}/verify", jsonHandler(opts.Projects, func(in *VerifyInput, r string) { in.ProjectRoot = r }, s.Verify))
 	authed.HandleFunc("POST /v1/projects/{id}/find", jsonHandler(opts.Projects, func(in *SearchInput, r string) { in.ProjectRoot = r }, s.Search))
 	authed.HandleFunc("POST /v1/projects/{id}/lookup", jsonHandler(opts.Projects, func(in *FindSymbolInput, r string) { in.ProjectRoot = r }, s.FindSymbol))
 	authed.HandleFunc("POST /v1/projects/{id}/grep", jsonHandler(opts.Projects, func(in *SearchGrepInput, r string) { in.ProjectRoot = r }, s.SearchGrep))

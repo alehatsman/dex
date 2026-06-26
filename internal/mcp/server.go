@@ -665,6 +665,7 @@ type toolSurface interface {
 	review(context.Context, *sdk.CallToolRequest, ReviewInput) (*sdk.CallToolResult, ReviewOutput, error)
 	refactor(context.Context, *sdk.CallToolRequest, RefactorInput) (*sdk.CallToolResult, RefactorOutput, error)
 	cohort(context.Context, *sdk.CallToolRequest, CohortInput) (*sdk.CallToolResult, CohortOutput, error)
+	verify(context.Context, *sdk.CallToolRequest, VerifyInput) (*sdk.CallToolResult, VerifyOutput, error)
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
 	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
 	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
@@ -846,6 +847,22 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"'unsupported-language' otherwise); also 'not-found' / 'ambiguous' / 'stale'. Loads packages " +
 				"on-demand, so it is slower than the read verbs — reach for it when you're about to rename."),
 		}, h.refactor)
+
+		// verify is in the default lane (#686, epic #683): it closes the agent
+		// loop's missing half — change → verify → learn. Unlike every other query
+		// verb it is NOT read-only (it runs the test command), so no ReadOnlyHint.
+		addTool(srv, &sdk.Tool{
+			Name: "verify",
+			Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
+				"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
+				"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
+				"(its own test plus its callers', #654). Resolves changed files → Go packages and runs " +
+				"`go test` over them, routed through the shell pipeline so output is compressed and a failing " +
+				"run stages a `gotcha_candidate` you persist with `notes`. Override the command via `command` " +
+				"or $DEX_VERIFY_CMD with a '{{packages}}' placeholder (e.g. 'go test -tags sqlite_fts5 " +
+				"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
+				"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
+		}, h.verify)
 
 		// notes is in the default lane (#548): persistent project memory is the
 		// highest-leverage saver of repeat exploration, and the read path (facts
