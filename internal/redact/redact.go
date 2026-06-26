@@ -42,9 +42,27 @@ var rules = []rule{
 		repl: "${1}[REDACTED:GitHub token]",
 	},
 	{
+		// Any PEM private-key block — RSA, EC, DSA, OPENSSH (the modern
+		// ssh-keygen default), ENCRYPTED, plain PKCS#8, or PGP. The label
+		// between BEGIN/END and "PRIVATE KEY" varies; `[A-Z0-9 ]*` absorbs it.
 		name: "Private key block",
-		re:   regexp.MustCompile(`-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA )?PRIVATE KEY-----`),
+		re:   regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----`),
 		repl: "[REDACTED:Private key]",
+	},
+	{
+		name: "Slack token",
+		re:   regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`),
+		repl: "[REDACTED:Slack token]",
+	},
+	{
+		name: "Google API key",
+		re:   regexp.MustCompile(`AIza[0-9A-Za-z_\-]{35}`),
+		repl: "[REDACTED:Google API key]",
+	},
+	{
+		name: "Stripe key",
+		re:   regexp.MustCompile(`(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{20,}`),
+		repl: "[REDACTED:Stripe key]",
 	},
 	{
 		// Matches key=<32+char secret>, token=<secret>, etc.
