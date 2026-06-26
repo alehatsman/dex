@@ -800,6 +800,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"Use before editing a widely-called symbol to gauge the ripple. The walk follows Go " +
 				"interface dispatch too (#604): callers that reach a method through an interface it implements " +
 				"are in the blast radius and the risk tier, not just static callers. " +
+				"`tests_to_run` lists the sibling tests of the blast-radius files (the target's own test plus the " +
+				"shown callers'), so a change→verify loop is one call (#654). " +
 				"Same name resolution as `trace`. Returns 'no-graph' when calls edges haven't been indexed yet."),
 		}, h.graphImpact)
 

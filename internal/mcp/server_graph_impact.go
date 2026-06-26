@@ -52,6 +52,10 @@ type ImpactOutput struct {
 	// Risk is a four-tier classification of the symbol's edit blast radius:
 	// Low | Medium | High | Critical, derived from a BFS at depth 5.
 	Risk string `json:"risk,omitempty"`
+	// TestsToRun are the sibling tests (foo.go ↔ foo_test.go) of the blast-radius
+	// files — the target's own test plus the tests covering the displayed callers
+	// — so 'change X → run these' is one call (#654). Heuristic, best-effort.
+	TestsToRun []string `json:"tests_to_run,omitempty"`
 }
 
 // DepthElision summarises the PageRank tail dropped at one BFS depth.
@@ -149,6 +153,11 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 	riskCount := graphquery.TransitiveCallerCount(view, targets, 5)
 	out.Risk = graphquery.RiskLevel(riskCount)
 
+	// Tests to run for the displayed blast radius (#654): sibling tests of the
+	// target files plus the shown callers' files, so the change→verify loop is
+	// one call. Heuristic (foo.go ↔ foo_test.go), best-effort.
+	out.TestsToRun = impactTestsToRun(p.Root, out.Targets, out.Nodes)
+
 	// #485: a bare total:0 on a live, exported symbol reads as "dead / safe to
 	// delete" — but exported methods are routinely dispatched via an interface
 	// or reflection (e.g. the MCP SDK calls tool handlers through toolSurface),
@@ -165,6 +174,37 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 		}
 	}
 	return nil, out, nil
+}
+
+// impactTestsToRun gathers the sibling tests of the blast-radius files (#654):
+// the target declarations plus the displayed callers. Deduped + sorted;
+// best-effort (pairSiblingTests is the foo.go ↔ foo_test.go heuristic, so the
+// list is empty when no matching test files exist).
+func impactTestsToRun(root string, targets []TargetMatch, nodes []ImpactNode) []string {
+	e := &Enricher{projectRoot: root}
+	seenFile := map[string]bool{}
+	seenTest := map[string]bool{}
+	var out []string
+	add := func(path string) {
+		if path == "" || seenFile[path] {
+			return
+		}
+		seenFile[path] = true
+		for _, tf := range e.pairSiblingTests(path) {
+			if !seenTest[tf] {
+				seenTest[tf] = true
+				out = append(out, tf)
+			}
+		}
+	}
+	for _, t := range targets {
+		add(t.Path)
+	}
+	for _, n := range nodes {
+		add(n.Path)
+	}
+	sort.Strings(out)
+	return out
 }
 
 const maxImpactNodes = 200

@@ -125,6 +125,9 @@ service clients are the http-api spec's.
   (transitive blast-radius BFS) + its risk tier count those dispatch-reached
   callers too — so dynamic dispatch isn't missed. A pure graph traversal over the
   existing `implements` edges + interface-method nodes (no go/types at query time).
+  `impact` also returns `tests_to_run`: the sibling tests (foo.go ↔ foo_test.go)
+  of the blast-radius files — the target's own test plus the shown callers' — so
+  the change→verify loop ("you edited X; run these") is one call (#654).
 - WHEN `read` reads or summarizes a file path, the path must resolve inside the
   project root; a path escaping the root is rejected so an MCP caller can't read
   arbitrary files. Files over 64 KB are truncated. `paths[]` (max 10) reads
