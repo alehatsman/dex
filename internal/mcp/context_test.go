@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1158,25 +1157,17 @@ func TestContextRouterCallersAvoid(t *testing.T) {
 	if out.Intent != retrieve.IntentCallers {
 		t.Errorf("intent=%s, want callers", out.Intent)
 	}
-	// avoid branches on whether the references lane resolved usages.
-	// With the calls-edge graph live (Go-only) or rg available, refs
-	// should populate; otherwise we fall back to the Go-only-caveat
-	// variant. Both reference the calls/refs concept.
 	if out.Avoid == "" {
 		t.Errorf("expected non-empty avoid for callers intent")
 	}
 	if !strings.Contains(out.Avoid, "calls") && !strings.Contains(out.Avoid, "references") {
 		t.Errorf("avoid should mention `calls` or `references`: %q", out.Avoid)
 	}
-	// If rg is available, references should be populated for this fixture.
-	if hasRg() && len(out.References) == 0 {
-		t.Errorf("expected references for `Search` usages when rg is available; got 0")
+	// The fixture indexes a Go file so the call graph is live; references must
+	// be populated (Go call graph, not rg or BM25).
+	if len(out.References) == 0 {
+		t.Errorf("expected references for `Search` usages (Go call graph); got 0")
 	}
-}
-
-func hasRg() bool {
-	_, err := exec.LookPath("rg")
-	return err == nil
 }
 
 func TestContextRouterTruncatedReadFlagsNextAction(t *testing.T) {
