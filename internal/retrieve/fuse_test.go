@@ -76,6 +76,34 @@ func TestFuseWithSymbols_TopN(t *testing.T) {
 	}
 }
 
+func TestFuseWithSymbols_LaneProvenance(t *testing.T) {
+	// a.go: semantic-only (carries vector+bm25 from the store).
+	// c.go: in both lanes — must gain the symbol lane on top of vector+bm25.
+	// b.go: symbol-only — must carry just the symbol lane.
+	sem := []store.Hit{
+		{Path: "a.go", StartLine: 1, Score: 0.9, Lanes: store.LaneSet(0).With(store.LaneVector).With(store.LaneBM25)},
+		{Path: "c.go", StartLine: 5, Score: 0.5, Lanes: store.LaneSet(0).With(store.LaneVector).With(store.LaneBM25)},
+	}
+	sym := []store.Hit{
+		{Path: "c.go", StartLine: 5},
+		{Path: "b.go", StartLine: 1},
+	}
+	out := FuseWithSymbols(sem, sym, 5)
+	byPath := map[string]store.Hit{}
+	for _, h := range out {
+		byPath[h.Path] = h
+	}
+	if got := byPath["a.go"].Lanes; got.Has(store.LaneSymbol) {
+		t.Errorf("a.go should not carry the symbol lane, got %v", got.Names())
+	}
+	if got := byPath["c.go"].Lanes; !(got.Has(store.LaneVector) && got.Has(store.LaneBM25) && got.Has(store.LaneSymbol)) {
+		t.Errorf("c.go should carry vector+bm25+symbol, got %v", got.Names())
+	}
+	if got := byPath["b.go"].Lanes; !got.Has(store.LaneSymbol) || got.Has(store.LaneVector) {
+		t.Errorf("b.go should carry symbol only, got %v", got.Names())
+	}
+}
+
 func TestFuseWithSymbols_DeduplicatesByPathLine(t *testing.T) {
 	h := store.Hit{Path: "x.go", StartLine: 42, Score: 0.8}
 	out := FuseWithSymbols([]store.Hit{h}, []store.Hit{h}, 5)

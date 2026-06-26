@@ -178,7 +178,13 @@ func fuseWithGraphNeighbors(primary, graphHits []Hit, weightByPath map[string]fl
 	for i, h := range graphHits {
 		hk := hitKey{h.Path, h.StartLine}
 		scores[hk] += laneWeight * weightByPath[h.Path] / float32(kRRF+i+1)
-		if _, exists := byKey[hk]; !exists {
+		if existing, exists := byKey[hk]; exists {
+			// A primary hit that is also a graph neighbor — union the graph
+			// lane onto the kept (primary) representative for provenance (#707).
+			existing.Lanes = existing.Lanes.With(LaneGraph)
+			byKey[hk] = existing
+		} else {
+			h.Lanes = h.Lanes.With(LaneGraph)
 			byKey[hk] = h
 		}
 	}

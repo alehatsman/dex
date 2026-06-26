@@ -53,8 +53,13 @@ type SemHit struct {
 	Score     float32 `json:"score"`
 	Kind      string  `json:"kind,omitempty"`
 	Reason    string  `json:"reason,omitempty"`
-	Content   string  `json:"content,omitempty"`
-	Truncated bool    `json:"truncated,omitempty"`
+	// Lanes names the retrieval lanes that surfaced this hit — any of
+	// "vector", "bm25", "graph" (#707). A multi-lane hit is higher-confidence
+	// than a single-lane one; read those first rather than trusting list
+	// position. Pure provenance — it never reorders results.
+	Lanes     []string `json:"lanes,omitempty"`
+	Content   string   `json:"content,omitempty"`
+	Truncated bool     `json:"truncated,omitempty"`
 	// Handle is the opaque expansion handle for this hit's range (#344).
 	Handle string `json:"handle,omitempty"`
 	// SeenTurn is set (>0) when this exact range was already surfaced to the

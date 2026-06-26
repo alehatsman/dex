@@ -212,12 +212,13 @@ type queryJSONHit struct {
 	// SortScore is the authoritative key the hits are ordered by — compare
 	// this across hits, not Score. Folds rerank/cross-encoder/RRF into one
 	// monotonic value; the per-lane fields below are diagnostics.
-	SortScore   float32 `json:"sort_score"`
-	Score       float32 `json:"score"`
-	BM25Score   float32 `json:"bm25_score,omitempty"`
-	RRFScore    float32 `json:"rrf_score,omitempty"`
-	RerankScore float32 `json:"rerank_score,omitempty"`
-	Content     string  `json:"content"`
+	SortScore   float32  `json:"sort_score"`
+	Score       float32  `json:"score"`
+	BM25Score   float32  `json:"bm25_score,omitempty"`
+	RRFScore    float32  `json:"rrf_score,omitempty"`
+	RerankScore float32  `json:"rerank_score,omitempty"`
+	Lanes       []string `json:"lanes,omitempty"` // retrieval lanes that surfaced this hit (#707)
+	Content     string   `json:"content"`
 }
 
 func hitsToJSON(hits []store.Hit) []queryJSONHit {
@@ -233,6 +234,7 @@ func hitsToJSON(hits []store.Hit) []queryJSONHit {
 			BM25Score:   h.BM25Score,
 			RRFScore:    h.RRFScore,
 			RerankScore: h.RerankScore,
+			Lanes:       h.Lanes.Names(),
 			Content:     h.Content,
 		}
 	}

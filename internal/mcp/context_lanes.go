@@ -62,6 +62,7 @@ func (s *Server) runSemanticLane(ctx context.Context, st store.Searcher, embedTe
 			Kind:      h.Kind,
 			Score:     h.Score,
 			Reason:    h.Reason,
+			Lanes:     h.Lanes.Names(),
 		})
 	}
 	return out, embedFailed

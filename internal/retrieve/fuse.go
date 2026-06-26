@@ -34,8 +34,14 @@ func FuseWithSymbols(semantic, symbol []store.Hit, n int) []store.Hit {
 	for i, h := range symbol {
 		hk := hitKey{h.Path, h.StartLine}
 		scores[hk] += 1.0 / float32(kRRF+i+1)
-		if _, exists := byKey[hk]; !exists {
+		if existing, exists := byKey[hk]; exists {
+			// Hit matched a semantic lane too — record the agreement on the
+			// kept (semantic) representative rather than the symbol copy (#707).
+			existing.Lanes = existing.Lanes.With(store.LaneSymbol)
+			byKey[hk] = existing
+		} else {
 			h.Score = 1.0 // exact name match
+			h.Lanes = h.Lanes.With(store.LaneSymbol)
 			byKey[hk] = h
 		}
 	}

@@ -55,6 +55,12 @@ type SearchHit struct {
 	// RerankScore is the cross-encoder relevance score in [0, 1] when
 	// rerank ran. Zero when no reranker was wired or it failed open.
 	RerankScore float32 `json:"rerank_score,omitempty"`
+	// Lanes names the retrieval lanes that surfaced this hit — any of
+	// "vector", "bm25", "symbol", "graph" (#707). A hit several independent
+	// lanes agreed on is higher-confidence than a single-lane one, so prefer
+	// reading multi-lane hits first instead of trusting top-K position
+	// uniformly. Pure provenance — it never reorders results.
+	Lanes []string `json:"lanes,omitempty"`
 	// Role is a compact tag describing how the symbol sits in the call
 	// graph — e.g. "central:47/9pkg" (47 callers from 9 packages),
 	// "leaf" (no callees), "exported-unused" (exported but no callers).
@@ -235,6 +241,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 			BM25Score:   h.BM25Score,
 			RRFScore:    h.RRFScore,
 			RerankScore: h.RerankScore,
+			Lanes:       h.Lanes.Names(),
 			Role:        formatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness),
 			Content:     h.Content,
 		})

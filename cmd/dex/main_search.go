@@ -126,6 +126,9 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 				if h.RerankScore > 0 {
 					scores += fmt.Sprintf("  rerank=%.4f", h.RerankScore)
 				}
+				if lanes := h.Lanes.Names(); len(lanes) > 0 {
+					scores += "  lanes=" + strings.Join(lanes, ",")
+				}
 				fmt.Println(header)
 				fmt.Println("  " + scores)
 			} else {

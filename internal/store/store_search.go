@@ -69,6 +69,59 @@ type Hit struct {
 	// when the graph hasn't been built. Callers should prefer this over reading
 	// the source file when non-empty.
 	Signature string
+
+	// Lanes records which retrieval lanes surfaced this hit (vector, bm25,
+	// symbol, graph). It is pure provenance — never read by ranking — so an
+	// agent can weight a hit that several independent lanes agreed on above a
+	// single-lane hit, instead of trusting top-K position uniformly (#707).
+	// The set is unioned across the fusion stages: dense/BM25 at searchRaw,
+	// symbol at FuseWithSymbols, graph at fuseWithGraphNeighbors.
+	Lanes LaneSet
+}
+
+// Lane is one retrieval lane that can contribute a hit. A hit may surface
+// through several lanes at once; the union is recorded on Hit.Lanes.
+type Lane uint8
+
+const (
+	LaneVector Lane = 1 << iota // dense cosine KNN
+	LaneBM25                    // lexical FTS5/BM25
+	LaneSymbol                  // exact symbol-name lookup
+	LaneGraph                   // graph-proximity expansion
+)
+
+// LaneSet is a bitset of the lanes a hit surfaced through. The zero value is
+// the empty set (no lane recorded — e.g. a hit assembled outside the fusion
+// path).
+type LaneSet uint8
+
+// With returns the set with l added (union of a single lane).
+func (s LaneSet) With(l Lane) LaneSet { return s | LaneSet(l) }
+
+// Has reports whether l is in the set.
+func (s LaneSet) Has(l Lane) bool { return s&LaneSet(l) != 0 }
+
+// Names renders the set as lane tags in a stable order (vector, bm25, symbol,
+// graph). Returns nil for the empty set so callers can omit an empty `lanes`
+// field on the wire.
+func (s LaneSet) Names() []string {
+	if s == 0 {
+		return nil
+	}
+	var out []string
+	if s.Has(LaneVector) {
+		out = append(out, "vector")
+	}
+	if s.Has(LaneBM25) {
+		out = append(out, "bm25")
+	}
+	if s.Has(LaneSymbol) {
+		out = append(out, "symbol")
+	}
+	if s.Has(LaneGraph) {
+		out = append(out, "graph")
+	}
+	return out
 }
 
 // DisplayScore returns the single value the hit is actually ranked by, so a
@@ -508,11 +561,23 @@ func (s *Store) searchRaw(ctx context.Context, queryVec []float32, queryText str
 	}
 	sort.Slice(fused, func(i, j int) bool { return fused[i].score > fused[j].score })
 
+	// Lane provenance (#707): an id present in semRank surfaced through the
+	// dense leg, one in bm25Rank through the lexical leg; a hit in both is a
+	// two-lane agreement. Built from the rank maps (not semCosine, which is
+	// back-filled for BM25-only ids and would over-claim the vector lane).
+	lanes := make(map[int64]LaneSet, len(rrf))
+	for id := range semRank {
+		lanes[id] = lanes[id].With(LaneVector)
+	}
+	for id := range bm25Rank {
+		lanes[id] = lanes[id].With(LaneBM25)
+	}
+
 	// Hand back the FULL fused candidate pool (k*5, not trimmed to k) without
 	// any rerank, so the caller can fuse additional legs and then rerank the
 	// union exactly once. Trimming or reranking here would starve the
 	// downstream reranker of the candidate pool it needs (#473).
-	return s.fetchHits(ctx, fused, scoreContext{semCosine: semCosine, bm25Score: bm25Score})
+	return s.fetchHits(ctx, fused, scoreContext{semCosine: semCosine, bm25Score: bm25Score, lanes: lanes})
 }
 
 // inPlaceholders returns a comma-separated list of n SQL "?" bind vars,
@@ -773,6 +838,7 @@ type scoreContext struct {
 	bm25Score   map[int64]float32 // BM25 scores from the FTS leg
 	rrfScore    map[int64]float32 // RRF fusion scores (non-nil only on reranked path)
 	rerankScore map[int64]float32 // cross-encoder scores (non-nil only on reranked path)
+	lanes       map[int64]LaneSet // per-id lane provenance (vector/bm25); nil = stamp vector (#707)
 }
 
 // fetchHits issues one SELECT to get content for the ranked IDs, then
@@ -829,6 +895,14 @@ func (s *Store) fetchHits(ctx context.Context, ranked []scored, sc scoreContext)
 		}
 		if sc.rerankScore != nil {
 			h.RerankScore = sc.rerankScore[r.id]
+		}
+		// Lane provenance (#707). A populated map carries the exact lanes that
+		// surfaced each id (vector and/or bm25); a nil map means the caller ran
+		// a single-lane path where every hit came from the dense leg.
+		if sc.lanes != nil {
+			h.Lanes = sc.lanes[r.id]
+		} else {
+			h.Lanes = h.Lanes.With(LaneVector)
 		}
 		out = append(out, h)
 	}

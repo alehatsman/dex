@@ -51,6 +51,10 @@ type SemHit struct {
 	Kind      string
 	Score     float32
 	Reason    string
+	// Lanes records which retrieval lanes surfaced this hit (vector/bm25/
+	// graph for the semantic lane; symbol fusion is a separate surface in
+	// ask). Pure provenance so the agent can weight multi-lane agreement (#707).
+	Lanes store.LaneSet
 	// Content / Truncated are the inline overlay, populated by
 	// InlineContent. They are zero until the composition step charges
 	// the byte budget against this hit.
@@ -193,6 +197,7 @@ func (svc Service) SemanticLane(ctx context.Context, st store.Searcher, embedTex
 			Kind:      h.Kind,
 			Score:     score,
 			Reason:    h.Name,
+			Lanes:     h.Lanes,
 		})
 	}
 	return out, false
