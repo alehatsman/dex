@@ -1,11 +1,11 @@
 // dex — local semantic-search helper for Claude Code.
 //
-// The query-side verbs share the MCP tool names 1:1 (find, lookup, trace,
-// impact, map, read, ask). The build/maintenance commands are CLI-only.
+// The query-side verbs share the MCP tool names 1:1 (find, trace, map, read,
+// ask). The build/maintenance commands are CLI-only.
 //
 //	ask <path> <q...>             Primary entry point (MCP: ask).
-//	find <path> <q...>            Hybrid semantic top-k chunks (MCP: find).
-//	lookup <path> <name>          Exact identifier lookup (MCP: lookup).
+//	find <path> <q...>            Hybrid semantic top-k chunks; fuses exact
+//	                              symbol-name hits via RRF (MCP: find).
 //	graph neighbors <path> <file> <line>
 //	                              Vector neighbours of a chunk (CLI-only).
 //	graph deps <path> [--file|--package]
@@ -97,12 +97,10 @@ func main() {
 	case "map":
 		err = cmdMap(ctx, args)
 	// Verb front doors (#354/#427) — the CLI verbs share the MCP tool names:
-	// find / lookup / trace (map / read / ask already exist above). impact folded
-	// into `trace --dir impact` (#684).
+	// find / trace (map / read / ask already exist above). lookup dropped —
+	// subsumed by find/ask (#685); impact folded into `trace --dir impact` (#684).
 	case "find":
 		err = cmdFind(ctx, args)
-	case "lookup":
-		err = cmdLookup(ctx, args)
 	case "trace":
 		err = cmdTrace(ctx, args)
 	case "review":

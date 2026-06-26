@@ -71,7 +71,7 @@ service clients are the http-api spec's.
     for lazy selective reads, no file content, #623/#620) — need no
     chat model). Only `read mode=summary` (the LLM digest) needs a chat model;
     when none is wired it returns `status=needs-chat` rather than being hidden.
-  - The power lane (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`,
+  - The power lane (`deps`, `diff`, `clusters`, `routes`, `smells`,
     `cohort`, `status`, `budget`, `session`, `checkpoint`) is gated behind
     `DEX_EXPERT` — the default verbs above cover everyday work, so the stdio
     surface stays small unless an operator opts into the full set. (Call-graph
@@ -81,7 +81,7 @@ service clients are the http-api spec's.
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
   `ask`, `find`, `map`, `trace`, `locate`, `review`, `refactor`, `read`, `grep`,
-  `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `diff`,
+  `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `deps`, `diff`,
   `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`, `session`,
   `checkpoint`.
 - WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing
@@ -111,8 +111,10 @@ service clients are the http-api spec's.
 - WHEN `find` is called, dex embeds the query and returns top-k chunks; identifier
   tokens in the query are also looked up by exact symbol name and fused via RRF.
   Supports `languages`, `path_glob`, and `exclude` filters.
-- WHEN `lookup` is called, dex performs a fast SQL symbol lookup (no embedding)
-  and returns `not-found` when no chunk with that name exists.
+- WHERE exact identifier lookup is needed, `find` fuses exact symbol-name hits
+  via RRF (and `ask` detects identifiers and runs the same lookup), so there is
+  no standalone `lookup` MCP tool (#685). The fast no-embedding SQL symbol lookup
+  still backs `find`'s fusion, `locate`'s resolver, and the REST `/lookup` route.
 - WHEN a graph tool is called (`trace` with `--dir callers|callees|path|impact`,
   `deps`, `diff`, `clusters`, `routes`, `smells`), dex reads the static
   call/import graph (no embedding, no chat) and returns `no-graph` when the

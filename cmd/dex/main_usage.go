@@ -26,8 +26,7 @@ func usageConcise() {
 
 verbs (match the MCP tools — run "dex help all" for the full reference):
   dex map    [--cluster <id>] [<path>]   repo orientation: first-touch bundle, or --cluster to zoom
-  dex find   [<path>] <q...>             semantic + symbol search
-  dex lookup [<path>] <name>             exact identifier lookup
+  dex find   [<path>] <q...>             semantic + symbol search (subsumes exact lookup)
   dex read   <file>                      read a file — default raw (no LLM); --mode for views/summary
   dex trace  [<path>] <name>             call graph — --dir callers|callees|path|impact
   dex locate [<path>] <sym|path:line>    one-call orientation: callers, tests, doc, blame, notes
@@ -82,8 +81,7 @@ quickstart:
   <path> defaults to cwd on every query/graph command.
 
 query (the CLI verbs share the MCP tool names, #354/#427):
-    dex find   [<path>] <q...>    semantic + symbol search (MCP: find)
-    dex lookup [<path>] <name>    exact identifier lookup (MCP: lookup)
+    dex find   [<path>] <q...>    semantic + symbol search, fuses exact lookup (MCP: find)
     dex trace  [<path>] <name>    call graph via --dir callers|callees|path|impact
     dex locate [<path>] <target>  one-call orientation (MCP: locate)
     dex review [<path>]           per-hunk PR intelligence (MCP: review)
@@ -96,12 +94,10 @@ query (the CLI verbs share the MCP tool names, #354/#427):
                                           suggested_reads and a prose next_action.
                                           Flags: --intent, --k, --format=text|json,
                                           --no-inline, --max-content-bytes, -v
-  dex find [<path>] <q...>           hybrid semantic top-k chunks (MCP: find)
+  dex find [<path>] <q...>           hybrid semantic top-k chunks, fuses exact
+                                          symbol-name hits via RRF (MCP: find)
                                           Flags: --k, --rerank=off, --explain,
                                           --format=text|json, --max-content-bytes, -v
-  dex lookup [<path>] <name>         exact identifier lookup (MCP: lookup)
-                                          Flags: --k, --format=text|json,
-                                          --max-content-bytes, -v
   dex graph neighbors [<path>] <file> <line>
                                           vector neighbours of a chunk (CLI-only)
   dex graph deps [<path>] [flags]    package imports (MCP: deps)

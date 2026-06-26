@@ -52,7 +52,7 @@ Workflow:
 3. Read: read for large files; native Read for small ones
 4. Shell: shell(command) for build/test output
 
-Power lanes (lookup, deps, diff, clusters, routes, smells, status, notes, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
+Power lanes (deps, diff, clusters, routes, smells, status, notes, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
 Start every session by calling ask() with the task description.
 
@@ -772,15 +772,11 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, traceHandler(h))
 
 		if expert {
-			addTool(srv, &sdk.Tool{
-				Name:        "lookup",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Prefer `ask` — it detects identifiers in your question and runs this " +
-					"lookup automatically as part of a fused response. Use `lookup` directly only when you " +
-					"already have the exact identifier name and want nothing else. " +
-					"Fast SQL lookup — no embedding required. Returns 'not-found' when no chunk with that name exists."),
-			}, h.findSymbol)
-
+			// lookup is not a standalone tool — `find` already fuses exact
+			// symbol-name hits via RRF, and `ask` detects identifiers and runs
+			// the same lookup automatically. The findSymbol handler stays (it
+			// backs find's fusion, locate's resolver, and the REST /lookup
+			// route); only the redundant tool exposure is removed (#685).
 			addTool(srv, &sdk.Tool{
 				Name:        "deps",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},

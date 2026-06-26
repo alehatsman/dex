@@ -21,7 +21,7 @@ import (
 
 // expertEnabled reports whether the power-tool tier should be registered. The
 // default verb surface covers everyday work; operators opt into the raw lanes
-// (lookup/deps/callers/callees/path/diff/clusters/routes/smells/status/notes/
+// (deps/callers/callees/path/diff/clusters/routes/smells/status/notes/
 // session) with DEX_EXPERT. Parsed leniently: any value other than the usual
 // falsey strings enables it.
 func expertEnabled() bool {

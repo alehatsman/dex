@@ -125,11 +125,6 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "lookup", group: groupQuery, args: "[<path>] <name>",
-		summary: "exact identifier lookup",
-		flags:   []flagSpec{flagK, flagFormat, flagMaxCB, flagV},
-	},
-	{
 		name: "read", group: groupQuery, args: "<file>", fileArgs: true,
 		summary: "read a file (--mode full|signatures|summary…)",
 		flags: []flagSpec{

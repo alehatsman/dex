@@ -2,7 +2,7 @@
 
 Local semantic code search for [Claude Code](https://docs.claude.com/en/docs/claude-code)
 and the terminal. `dex` indexes a repo (chunks + embeddings + a call/import
-graph) and serves `ask` / `find` / `lookup` and graph navigation as MCP tools,
+graph) and serves `ask` / `find` / `trace` and graph navigation as MCP tools,
 so an agent reaches for one dex tool instead of grepping blind.
 
 ## Install
@@ -54,8 +54,7 @@ each annotated `(MCP: <name>)` in `dex graph --help`).
 | verb     | what it does                                                        |
 |----------|---------------------------------------------------------------------|
 | `ask`    | one-shot router: picks intent, fuses lanes, returns suggested reads + a cited answer |
-| `find`   | hybrid semantic top-k search                                        |
-| `lookup` | exact identifier lookup                                             |
+| `find`   | hybrid semantic top-k search — fuses exact symbol-name hits via RRF |
 | `map`    | deterministic repo orientation map                                  |
 | `trace`  | call graph — `--dir callers\|callees\|path\|impact` (impact = transitive caller blast-radius) |
 | `locate` | one-call orientation around a `ref` (`path:line`) / `symbol` / `frame`: callers, tests, nearest doc, last commit, notes |
@@ -74,7 +73,7 @@ dex trace . Run --dir callers
 
 Start with `ask` — it routes the query and tells you what to read next. Every
 verb works on the CLI. As MCP tools the everyday set is `ask find map trace
-locate review refactor read grep ls shell notes`; the rest (`lookup deps diff
+locate review refactor read grep ls shell notes`; the rest (`deps diff
 clusters routes smells cohort status budget session checkpoint`) is behind
 `DEX_EXPERT=1` to keep the agent's tool list small.
 Call-graph walks fold into `trace --dir callers|callees|path|impact` — there are

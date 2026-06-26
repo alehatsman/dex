@@ -45,9 +45,10 @@ typo into an actionable retry rather than a dead end.
   names the `dex index` command to run, rather than failing opaquely.
 - WHILE a result count cap applies, the caller may set it (default 10); both the
   exact-match query and the graph fallback honor it.
-- WHERE the same logic backs both surfaces, the `lookup` MCP tool and the
-  `dex lookup [<path>] <name>` CLI call one implementation, and the CLI
-  can emit text or JSON.
+- WHERE the same logic backs multiple surfaces: since #685 there is no standalone
+  `lookup` MCP tool or `dex lookup` CLI verb — exact symbol-search now backs
+  `find`'s RRF fusion, `ask`'s identifier detection, `locate`'s resolver, and the
+  REST `/lookup` route, all through one implementation.
 
 ## Non-goals
 
@@ -76,5 +77,5 @@ typo into an actionable retry rather than a dead end.
 - [x] Not-found returns a "did you mean" substring candidate list
 - [x] Empty-name → error; missing index → no-index status naming `dex index`
 - [x] Caller-settable result cap (default 10), honored by match + fallback
-- [x] Shared by `lookup` MCP tool and `dex lookup` CLI (text/JSON)
+- [x] Backs `find` RRF fusion, `locate` resolver, and REST `/lookup` (no standalone tool/CLI verb since #685)
 - [x] Verified against the code by the verify workflow (flip to `living`)

@@ -184,7 +184,7 @@ const rulesContent = `# dex — semantic search & context routing
 | Instead of | Use | When |
 |------------|-----|------|
 | Grep / rg (concept search) | ` + "`find(q, path)`" + ` | intent / keyword searches |
-| Grep / rg (exact name) | ` + "`lookup(name, path)`" + ` | exact identifier lookup |
+| Grep / rg (exact name) | ` + "`find(name, path)`" + ` | find fuses exact symbol-name hits (RRF) |
 | Read (large files >400 lines) | ` + "`read(file)`" + ` | signatures + summaries view |
 | Bash (build/test output) | ` + "`shell(command)`" + ` | compressed shell output |
 | Manual cross-ref tracing | ` + "`callers / callees`" + ` | call-graph navigation |
@@ -196,7 +196,7 @@ const rulesContent = `# dex — semantic search & context routing
 
 ## Workflow
 1. **Orient:** ` + "`ask(question)`" + ` — routes intent, returns suggested_reads + next_action
-2. **Locate:** ` + "`find`" + ` for concepts; ` + "`lookup`" + ` for exact names
+2. **Locate:** ` + "`find`" + ` for concepts and exact names (fuses symbol-name hits)
 3. **Read:** ` + "`read`" + ` for large files; native Read for small ones (<400 lines)
 4. **Shell:** ` + "`shell(command)`" + ` for build/test/grep output
 

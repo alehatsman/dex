@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/embed"
-	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -147,59 +146,6 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown format %q (want text|json)", *format)
 	}
-}
-
-// cmdSearchSymbol wraps the MCP `lookup` tool. Exact identifier
-// lookup against the indexed chunks — no embedding required.
-func cmdSearchSymbol(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("lookup", flag.ContinueOnError)
-	setHelp(fs,
-		"Exact identifier lookup (MCP: lookup).",
-		"dex lookup [flags] [<path>] <name>",
-		`dex lookup . "RateLimiter"`,
-		`dex lookup . --k=20 "func.*Handler"`,
-	)
-	k := fs.Int("k", 10, "max results to return")
-	format := fs.String("format", "text", "output format: text | json")
-	maxContentBytes := fs.Int("max-content-bytes", 1500, "truncate content display at N bytes (0 = no limit)")
-	_ = fs.Bool("v", false, "verbose (accepted, currently no-op)")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
-		return err
-	}
-	if *k < 1 {
-		return fmt.Errorf("invalid --k=%d (want a positive integer >= 1)", *k)
-	}
-	path, rest := splitProjectArg(fs.Args())
-	if len(rest) != 1 {
-		if len(rest) == 0 {
-			return fmt.Errorf("lookup needs a name (path defaults to cwd) — e.g. `dex lookup Watcher`")
-		}
-		return fmt.Errorf("lookup takes one <name> (got %d extra args)", len(rest)-1)
-	}
-	base, err := indexDir()
-	if err != nil {
-		return err
-	}
-	p, err := proj.Resolve(path, base)
-	if err != nil {
-		return err
-	}
-	s, _ := newServerFromEnv(base)
-	out, err := s.FindSymbol(ctx, mcp.FindSymbolInput{
-		Name:        rest[0],
-		ProjectRoot: p.Root,
-		K:           *k,
-	})
-	if err != nil {
-		return err
-	}
-	if *format == "json" {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(out)
-	}
-	printSearchHitResult(out.Status, out.Hint, out.Project, out.Hits, *maxContentBytes)
-	return nil
 }
 
 // ─── ask ──────────────────────────────────────────────────────────────────
