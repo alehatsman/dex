@@ -305,6 +305,7 @@ func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lan
 		FusionAlpha:    opts.FusionAlpha,
 		GraphWeight:    opts.GraphLaneWeight,
 		K:              k,
+		RerankEnabled:  opts.Rerank != nil,
 	}
 }
 

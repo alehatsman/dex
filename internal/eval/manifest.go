@@ -12,7 +12,7 @@ import (
 // ManifestSchemaVersion is bumped whenever the set of identity fields in
 // EvalManifest changes in a way that makes older manifests non-comparable.
 // A mismatch is itself an incompatibility (see Incompatible).
-const ManifestSchemaVersion = 1
+const ManifestSchemaVersion = 2
 
 // EvalManifest records the experiment identity of a Report: which golden
 // corpus was scored, under which retrieval configuration, against which code.
@@ -40,6 +40,7 @@ type EvalManifest struct {
 	FusionAlpha    float32 `json:"fusion_alpha"`            // dense-lane weight in linear mode
 	GraphWeight    float32 `json:"graph_weight"`            // graph-proximity lane multiplier
 	K              int     `json:"k"`                       // retrieval depth
+	RerankEnabled  bool    `json:"rerank_enabled"`          // true when a reranker was wired into storeOpts
 }
 
 // Incompatible returns the identity fields that differ between m and ref in a
@@ -64,6 +65,7 @@ func (m EvalManifest) Incompatible(ref EvalManifest) []string {
 	add("fusion_alpha", m.FusionAlpha, ref.FusionAlpha)
 	add("graph_weight", m.GraphWeight, ref.GraphWeight)
 	add("k", m.K, ref.K)
+	add("rerank_enabled", m.RerankEnabled, ref.RerankEnabled)
 	return diffs
 }
 

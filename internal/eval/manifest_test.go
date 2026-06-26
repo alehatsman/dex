@@ -52,6 +52,7 @@ func TestManifestIncompatible_DetectsIdentityChanges(t *testing.T) {
 		{"graph_weight", func(m *EvalManifest) { m.GraphWeight = 2.0 }},
 		{"query_corpus", func(m *EvalManifest) { m.QuerySetSHA256 = "different" }},
 		{"schema", func(m *EvalManifest) { m.SchemaVersion = 99 }},
+		{"rerank_enabled", func(m *EvalManifest) { m.RerankEnabled = true }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
