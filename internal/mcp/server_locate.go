@@ -254,9 +254,24 @@ func resolveBySymbol(ctx context.Context, st *store.Store, sym string) locateTar
 	// the exact-name index; fall back to the bare trailing identifier.
 	if len(hits) == 0 {
 		if bare := bareSymbolName(sym); bare != sym {
-			hits, err = st.FindSymbol(ctx, bare, 1)
+			// For receiver-qualified forms like (*T).Method, fetch more candidates
+			// so we can prefer method/function over field — a field named Context
+			// loses to a method named Context when the input is (*Server).Context.
+			k := 1
+			if reReceiverPointer.MatchString(sym) {
+				k = 20
+			}
+			hits, err = st.FindSymbol(ctx, bare, k)
 			if err != nil {
 				return locateTarget{status: "not-found", hint: fmt.Sprintf("lookup %q: %v", bare, err)}
+			}
+			if reReceiverPointer.MatchString(sym) && len(hits) > 1 {
+				for _, h := range hits {
+					if h.Kind == "method" || h.Kind == "function" {
+						hits = []store.Hit{h}
+						break
+					}
+				}
 			}
 		}
 	}
@@ -299,6 +314,10 @@ func parseRef(ref string) (path string, line int, ok bool) {
 
 // frameLoc matches a 'file.ext:line' anywhere inside a stack frame.
 var frameLoc = regexp.MustCompile(`([^\s:()]+\.[A-Za-z0-9]+):(\d+)`)
+
+// reReceiverPointer matches the (*T). prefix in a receiver-qualified symbol like (*Server).Context.
+// Used to bias bare-name fallback toward method/function kinds over fields.
+var reReceiverPointer = regexp.MustCompile(`^\(\*[^)]+\)\.`)
 
 // parseFrame extracts either a 'path:line' ref or a symbol from one raw stack
 // frame. A file location wins (it pins the exact site); otherwise the trailing

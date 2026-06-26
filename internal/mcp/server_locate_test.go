@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/store"
 )
 
 // locateFixture indexes a tiny Go project with a caller edge so the locate
@@ -227,5 +231,72 @@ func TestLocateSurfacesScopedNote(t *testing.T) {
 	}
 	if scoped.Scope != "greet.go" || !strings.Contains(scoped.Body, "pre-trim") {
 		t.Errorf("wrong scoped note: %+v", scoped)
+	}
+}
+
+// TestResolveBySymbolPrefersMethodForReceiverQualified guards #702: when the
+// symbol input is receiver-qualified (*T).X, resolveBySymbol must prefer
+// method/function graph nodes over field nodes even when the field has higher
+// pagerank. Without the fix the field would win because it's sorted first.
+func TestResolveBySymbolPrefersMethodForReceiverQualified(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	p, err := proj.Resolve(projDir, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		t.Skip("fts5 not available:", err)
+	}
+	defer st.Close()
+
+	now := time.Now()
+	// Insert two graph nodes with the same name "Do": a field (high pagerank)
+	// and a method (low pagerank). No chunk rows, so FindSymbol falls through
+	// to graph_nodes and the field would win by pagerank without the fix.
+	nodes := []store.GraphNodeRow{
+		{
+			ID: "field:Config.Do", Kind: "field", Name: "Do",
+			QualifiedName: "Config.Do", PackagePath: "pkg/a",
+			FilePath: "a/config.go", StartLine: 5, EndLine: 5, ContentHash: "h1",
+		},
+		{
+			ID: "method:B.Do", Kind: "method", Name: "Do",
+			QualifiedName: "(*B).Do", PackagePath: "pkg/b",
+			FilePath: "b/b.go", StartLine: 3, EndLine: 6, ContentHash: "h2",
+		},
+	}
+	if err := st.GraphUpsertNodes(ctx, nodes, now); err != nil {
+		t.Fatal(err)
+	}
+	// Give the field higher pagerank so it wins the default sort.
+	if err := st.GraphSetCentrality(ctx, []store.GraphCentralityRow{
+		{ID: "field:Config.Do", InDegree: 10, PageRank: 0.5},
+		{ID: "method:B.Do", InDegree: 1, PageRank: 0.01},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Receiver-qualified input must prefer the method despite lower pagerank.
+	got := resolveBySymbol(ctx, st, "(*B).Do")
+	if got.status != "ok" {
+		t.Fatalf("status=%q hint=%q", got.status, got.hint)
+	}
+	if got.kind != "method" && got.kind != "function" {
+		t.Errorf("kind=%q for (*B).Do, want method or function (field won instead)", got.kind)
+	}
+
+	// Bare input (no receiver) must be unaffected — field still wins by pagerank.
+	gotBare := resolveBySymbol(ctx, st, "Do")
+	if gotBare.status != "ok" {
+		t.Fatalf("bare status=%q hint=%q", gotBare.status, gotBare.hint)
+	}
+	if gotBare.kind != "field" {
+		t.Errorf("bare kind=%q for Do, want field (pagerank-ranked result)", gotBare.kind)
 	}
 }
