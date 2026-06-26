@@ -102,7 +102,10 @@ func refreshRecency(root string) map[string]float32 {
 	now := time.Now()
 	out := make(map[string]float32)
 
-	cmd := exec.Command("git", "log", "--name-only",
+	// core.quotePath=false: emit non-ASCII paths as raw UTF-8 rather than
+	// octal-escaped + quoted ("caf\303\251.go"), so the keys match the raw
+	// chunk paths the boost is looked up by (#668).
+	cmd := exec.Command("git", "-c", "core.quotePath=false", "log", "--name-only",
 		"--since=14.days", "--pretty=format:%ct", "--diff-filter=AM")
 	cmd.Dir = root
 	b, err := cmd.Output()
@@ -143,7 +146,7 @@ func refreshRecency(root string) map[string]float32 {
 // Degrades gracefully to an empty set when git is unavailable.
 func refreshDirty(root string) map[string]struct{} {
 	out := make(map[string]struct{})
-	cmd := exec.Command("git", "status", "--porcelain")
+	cmd := exec.Command("git", "-c", "core.quotePath=false", "status", "--porcelain")
 	cmd.Dir = root
 	b, err := cmd.Output()
 	if err != nil {

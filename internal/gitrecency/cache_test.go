@@ -210,3 +210,55 @@ func TestTTLCaching(t *testing.T) {
 		t.Error("TTL refresh happened before expiry; expected cache hit")
 	}
 }
+
+// TestNonASCIIPathsMatchRawChunkPaths covers #668: git quotes non-ASCII paths
+// by default (core.quotePath), so the boost map would key on the escaped form
+// ("caf\303\251.go") and never match the raw UTF-8 chunk path. Both refresh
+// helpers must pass -c core.quotePath=false so the keys come back raw.
+func TestNonASCIIPathsMatchRawChunkPaths(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = gitEnv("GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	const raw = "café.go" // contains a non-ASCII byte git would otherwise escape
+	if err := os.WriteFile(filepath.Join(dir, raw), []byte("package main"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "--", raw)
+	run("commit", "--no-verify", "-m", "add café")
+
+	// Recency: the committed file must be keyed on its raw path.
+	rec := refreshRecency(dir)
+	if _, ok := rec[raw]; !ok {
+		t.Errorf("refreshRecency keyed on a quoted path, not %q; got keys %v", raw, keysOf(rec))
+	}
+
+	// Dirty: leave a second non-ASCII file untracked.
+	const rawDirty = "naïve.go"
+	if err := os.WriteFile(filepath.Join(dir, rawDirty), []byte("package main"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	dirty := refreshDirty(dir)
+	if _, ok := dirty[rawDirty]; !ok {
+		t.Errorf("refreshDirty keyed on a quoted path, not %q; got %v", rawDirty, dirty)
+	}
+}
+
+func keysOf(m map[string]float32) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}
