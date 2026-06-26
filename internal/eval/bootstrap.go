@@ -128,7 +128,7 @@ func bootstrapMeanCI(deltas []float64, p BootstrapParams) (point, lo, hi float64
 	}
 	point = sum / float64(n)
 
-	rng := rand.New(rand.NewSource(p.Seed))
+	rng := rand.New(rand.NewSource(p.Seed)) //nolint:gosec // bootstrap sampling needs a seeded RNG for reproducibility, not a CSPRNG
 	means := make([]float64, p.Resamples)
 	for b := 0; b < p.Resamples; b++ {
 		var s float64
