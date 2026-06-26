@@ -1,7 +1,7 @@
 ---
 id: storage
 status: living
-last_verified: 621894f
+last_verified: c4b4bdc
 owners: [aleh]
 covers:
   - "internal/store/**"
@@ -74,6 +74,14 @@ query specs'.
   body) already exists, the store increments `revision_count` on the row rather
   than inserting a duplicate, so callers can distinguish a new fact ("Remembered.")
   from a repeated confirmation ("Confirmed (revision N).").
+- WHEN `dex summarize` writes a per-file prose summary, it stores it in
+  `file_summaries` keyed by path + `body_hash` (SHA-256 of the file's content),
+  so a re-summarize of an unchanged file is a no-op; when the file changes the
+  stale row is replaced rather than accumulated, so the table never holds
+  multiple summaries for the same path.
+- WHEN the on-disk `schemaVersion` differs from the binary's expected version,
+  the store rejects the open with `ErrSchemaVersionMismatch` and a reindex
+  hint — the index is never silently read with a mismatched schema.
 
 ## Non-goals
 
@@ -92,19 +100,19 @@ query specs'.
 
 ## Checklist
 
-- [ ] One SQLite file per project under `DEX_INDEX_DIR/<hash(realpath)>/index.db`,
+- [x] One SQLite file per project under `DEX_INDEX_DIR/<hash(realpath)>/index.db`,
   with self-describing meta (dim, embed model, project root, timestamps).
-- [ ] Chunk writes are transactional and idempotent on (path, content); FTS5 and
+- [x] Chunk writes are transactional and idempotent on (path, content); FTS5 and
   vector indexes stay in sync via triggers; the canonical vector lives on the
   chunk row.
-- [ ] Embedding dimension is fixed per index and model identity is enforced;
+- [x] Embedding dimension is fixed per index and model identity is enforced;
   mismatches are rejected with a reindex hint.
-- [ ] Build MUST use `-tags sqlite_fts5`; an FTS5-less binary fails on
+- [x] Build MUST use `-tags sqlite_fts5`; an FTS5-less binary fails on
   `migrate: no such module: fts5` and a reindex from such a binary wipes the
   index. (Enforced in `tasks.yml`/`Dockerfile`.)
-- [ ] Concurrent writers are bounded by WAL + busy-timeout; prune removes stale
+- [x] Concurrent writers are bounded by WAL + busy-timeout; prune removes stale
   chunks.
-- [ ] Hybrid read path (vector + BM25 fused) with graceful FTS-parse fallback and
+- [x] Hybrid read path (vector + BM25 fused) with graceful FTS-parse fallback and
   a bounded rerank cache.
 - [x] `knowledge_facts.revision_count` incremented on ON CONFLICT UPDATE; migrated
   on existing DBs via guarded `ALTER TABLE` + meta flag.
