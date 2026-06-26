@@ -59,6 +59,8 @@ each annotated `(MCP: <name>)` in `dex graph --help`).
 | `map`    | deterministic repo orientation map                                  |
 | `trace`  | call graph — `--dir callers\|callees\|path`                         |
 | `impact` | transitive caller blast-radius                                      |
+| `locate` | one-call orientation around a `ref` (`path:line`) / `symbol` / `frame`: callers, tests, nearest doc, last commit, notes |
+| `review` | per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers + risk, tests, churn, author history, notes |
 | `read`   | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
 | `grep`   | exact regex match                                                   |
 | `ls`     | file-tree listing                                                   |
@@ -72,8 +74,9 @@ dex trace . Run --dir callers
 
 Start with `ask` — it routes the query and tells you what to read next. Every
 verb works on the CLI. As MCP tools the everyday set is `ask find map trace
-impact read grep ls shell`; the rest (`lookup deps diff clusters routes smells
-notes session`) is behind `DEX_EXPERT=1` to keep the agent's tool list small.
+impact locate review read grep ls shell notes`; the rest (`lookup deps diff
+clusters routes smells session`) is behind `DEX_EXPERT=1` to keep the agent's
+tool list small.
 Call-graph walks fold into `trace --dir callers|callees|path` — there are no
 standalone `callers`/`callees`/`path` MCP tools (they remain `dex graph` subs).
 
