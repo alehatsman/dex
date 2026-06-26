@@ -23,6 +23,7 @@ it; see the README or `dex help all`.
 | `review` | Per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers (+ risk tier), tests, nearest doc, churn, author history, notes (+ per-file scope-bound notes, #645) | always (callers need graph) |
 | `refactor` | Plan a type-precise rename → byte-exact edit triples to apply yourself (never writes). Go-only v1 | Go toolchain |
 | `verify` | Run the tests a change implicates — working tree (default) / `ref` range / `symbol` blast-radius — and return pass/fail; routes through the shell pipeline so a failing run stages a `gotcha_candidate`. Override the command via `command` / `$DEX_VERIFY_CMD` (`{{packages}}`). Go-only v1 | Go toolchain |
+| `check`  | Verify a batch of `file:line[:symbol]` references against the index — returns `ok \| moved \| gone \| no_file \| parse_error` per claim; `moved` includes `found_at`. Use after code changes to confirm cited locations are still valid. | always |
 | `read`   | Read a file (see modes below) | always (`summary` needs chat) |
 | `grep`   | Exact regex over indexed files | always |
 | `shell`  | Run a command, return compressed output | always |

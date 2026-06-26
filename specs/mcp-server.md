@@ -50,7 +50,7 @@ service clients are the http-api spec's.
   - The always-on lane (registered even with no embedder or chat model) is
     `ask`, `grep`, `ls`, and `shell`.
   - The default verb lane (non-weak model) adds `map`, `trace` (incl.
-    `--dir impact`), `locate`, `review`, `refactor`, `verify`, `read`, and `notes` — the everyday
+    `--dir impact`), `locate`, `review`, `refactor`, `verify`, `check`, `read`, and `notes` — the everyday
     navigation + reading verbs (`locate` for one-call orientation around a code
     location, `review` for per-hunk PR intelligence) plus persistent project
     memory (#548) and `refactor` for type-precise edit planning. `locate` and
@@ -62,6 +62,10 @@ service clients are the http-api spec's.
     tests a change implicates (working-tree diff / `ref` range / `symbol`
     blast-radius → Go packages) through the shell pipeline, so a failing run
     stages a `gotcha_candidate` — closing change → verify → learn. Go-only in v1;
+    `check` (#708) is read-only: batch ref-verification of `file:line[:symbol]`
+    claims against the index — returns `ok|moved|gone|no_file|parse_error` per
+    claim, with `found_at` when a symbol has moved within the same file. Use it
+    after code edits to confirm cited locations are still valid.
     the command template is `command` / `$DEX_VERIFY_CMD` overridable.
     `notes` needs no embedder or chat model,
     and the read path (facts auto-injected into `ask`) is inert if the agent
@@ -85,7 +89,7 @@ service clients are the http-api spec's.
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
-  `ask`, `find`, `map`, `trace`, `locate`, `review`, `refactor`, `verify`, `read`, `grep`,
+  `ask`, `find`, `map`, `trace`, `locate`, `review`, `refactor`, `verify`, `check`, `read`, `grep`,
   `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `deps`, `diff`,
   `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`, `session`,
   `checkpoint`.

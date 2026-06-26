@@ -61,6 +61,7 @@ each annotated `(MCP: <name>)` in `dex graph --help`).
 | `review` | per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers + risk, tests, churn, author history, notes |
 | `refactor` | plan a type-precise rename → byte-exact edit triples you apply (never writes); Go-only v1 |
 | `verify` | run the tests a change implicates (working tree / `ref` / `symbol`) → pass/fail + a staged gotcha on failure; Go-only v1 |
+| `check`  | verify `file:line[:symbol]` refs against the index → `ok \| moved \| gone \| no_file \| parse_error` |
 | `read`   | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
 | `grep`   | exact regex match                                                   |
 | `ls`     | file-tree listing                                                   |
