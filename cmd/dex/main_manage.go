@@ -165,7 +165,7 @@ func cmdReindex(ctx context.Context, args []string) error {
 // (#647). Best-effort and idempotent (KnowledgeAdd dedups by body); a per-fact
 // failure is skipped, never fatal to the reindex. Embeddings backfill lazily on
 // the next semantic recall.
-func restoreNotes(ctx context.Context, st *store.Store, facts []store.KnowledgeFact) {
+func restoreNotes(ctx context.Context, st *store.Store, facts []store.KnowledgeBackup) {
 	if len(facts) == 0 {
 		return
 	}
@@ -208,15 +208,16 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	// Read the embed model recorded in the existing index before clearing it.
 	// Preserved as the default so a plain `dex reindex` (no DEX_EMBED_MODEL)
 	// stays consistent with the original build and won't produce a dim mismatch.
-	// While the old store is open, also rescue the knowledge store (#647) — the
-	// clear below drops the whole DB, and the user's notes live in it.
 	var priorEmbedModel string
-	var savedNotes []store.KnowledgeFact
 	if prior, err := openStore(ctx, p.DBPath); err == nil {
 		priorEmbedModel = prior.EmbedModel()
-		savedNotes, _ = prior.KnowledgeExportAll(ctx) // best-effort
 		_ = prior.Close()
 	}
+	// Rescue the knowledge store (#647/#648) — the clear below drops the whole DB
+	// and the user's notes live in it. The read is migrate-FREE (raw sqlite), so
+	// notes survive even a reindex triggered by a schema mismatch, when the
+	// migrate-gated open above fails. Best-effort.
+	savedNotes, _ := store.ExportKnowledgeRaw(ctx, p.DBPath)
 	if err := clearCacheKeepLock(p); err != nil {
 		return err
 	}

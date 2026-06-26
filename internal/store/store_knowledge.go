@@ -212,6 +212,44 @@ func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFac
 	return scanFacts(rows)
 }
 
+// KnowledgeBackup is the minimal portable note shape used to rescue notes
+// across a reindex — including one triggered BY a schema-version mismatch (#648).
+type KnowledgeBackup struct {
+	Archetype  string
+	Body       string
+	Confidence float64
+}
+
+// ExportKnowledgeRaw reads all notes directly from a sqlite index file WITHOUT
+// running migrations, so notes survive even a reindex caused by a schema-version
+// mismatch (when the normal store.Open fail-closes). archetype/body/confidence
+// have existed in every schemaVersion, so the read is version-independent. The
+// sqlite-vec extension is auto-registered at package init, so a DB carrying a
+// vec0 table still opens. Best-effort: returns nil (no error) when the file or
+// the knowledge_facts table is absent/unreadable.
+func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, error) {
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, nil
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.QueryContext(ctx,
+		`SELECT archetype, body, confidence FROM knowledge_facts ORDER BY id`)
+	if err != nil {
+		return nil, nil // file/table missing or unreadable → nothing to rescue
+	}
+	defer func() { _ = rows.Close() }()
+	var out []KnowledgeBackup
+	for rows.Next() {
+		var b KnowledgeBackup
+		if err := rows.Scan(&b.Archetype, &b.Body, &b.Confidence); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
 // KnowledgeCount returns the number of stored facts.
 func (s *knowledgeStore) KnowledgeCount(ctx context.Context) (int, error) {
 	var n int

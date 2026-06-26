@@ -1,6 +1,9 @@
 package store
 
 import (
+	"context"
+	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -69,5 +72,67 @@ func TestMainEntrypoints(t *testing.T) {
 		if eps[i] != want[i] {
 			t.Errorf("MainEntrypoints[%d] = %q, want %q (sorted, only main functions)", i, eps[i], want[i])
 		}
+	}
+}
+
+func TestExportKnowledgeRawSurvivesSchemaMismatch(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "x.db")
+
+	// Build a store, add notes, close.
+	st, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Skip("fts5 not available:", err)
+	}
+	for _, b := range []string{"alpha note", "beta note", "gamma note"} {
+		if _, err := st.KnowledgeAdd(ctx, "Gotcha", b, 0.8); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = st.Close()
+
+	// Corrupt the stored schema_version so the migrate-gated Open fail-closes —
+	// exactly the state a future schema bump (the notes-evolution cluster) puts
+	// an existing index in.
+	raw, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, `UPDATE meta SET value='99999' WHERE key='schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+
+	// The normal open must now fail (proves we're in the mismatch state).
+	if _, err := Open(ctx, dbPath); err == nil {
+		t.Fatal("expected store.Open to fail on the corrupted schema_version")
+	}
+
+	// The raw export must STILL rescue every note.
+	got, err := ExportKnowledgeRaw(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("ExportKnowledgeRaw: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("rescued %d notes across the schema mismatch, want 3", len(got))
+	}
+	bodies := map[string]bool{}
+	for _, b := range got {
+		bodies[b.Body] = true
+		if b.Archetype != "Gotcha" || b.Confidence <= 0 {
+			t.Errorf("garbled note: %+v", b)
+		}
+	}
+	for _, want := range []string{"alpha note", "beta note", "gamma note"} {
+		if !bodies[want] {
+			t.Errorf("missing rescued note %q", want)
+		}
+	}
+}
+
+func TestExportKnowledgeRawMissingFile(t *testing.T) {
+	got, err := ExportKnowledgeRaw(context.Background(), filepath.Join(t.TempDir(), "nope.db"))
+	if err != nil || got != nil {
+		t.Errorf("missing file should yield (nil, nil), got (%v, %v)", got, err)
 	}
 }
