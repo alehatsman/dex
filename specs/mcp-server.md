@@ -1,14 +1,14 @@
 ---
 id: mcp-server
 status: living
-last_verified: 49b3786
+last_verified: 621894f
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"
   - "internal/mcp/context.go"
   - "internal/mcp/answer.go"
   - "internal/mcp/server_graph.go"
-  - "internal/mcp/server_noncode_map.go"
+  - "internal/compress/noncode_map.go"
   - "internal/mcp/server_knowledge.go"
   - "internal/mcp/server_session.go"
   - "internal/mcp/server_grep.go"
