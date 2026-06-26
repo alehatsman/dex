@@ -35,6 +35,9 @@ func (n *noopSurface) refactor(_ context.Context, _ *sdk.CallToolRequest, _ Refa
 func (n *noopSurface) cohort(_ context.Context, _ *sdk.CallToolRequest, _ CohortInput) (*sdk.CallToolResult, CohortOutput, error) {
 	return nil, CohortOutput{}, n.err()
 }
+func (n *noopSurface) checkpoint(_ context.Context, _ *sdk.CallToolRequest, _ CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error) {
+	return nil, CheckpointOutput{}, n.err()
+}
 func (n *noopSurface) search(_ context.Context, _ *sdk.CallToolRequest, _ SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	return nil, SearchOutput{}, n.err()
 }

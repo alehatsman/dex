@@ -90,7 +90,8 @@ func serverReadMode(m string) bool { return serverReadModes[m] }
 // (#521). These tools stay off the `verbs` registry by design — the MCP-only
 // contract is locked by verb_parity_test.go.
 var mcpOnlyToolHints = map[string]string{
-	"session": "session is available via the MCP tool surface, not the CLI — it recaps an active MCP connection's working set (DEX_EXPERT power lane).",
+	"session":    "session is available via the MCP tool surface, not the CLI — it recaps an active MCP connection's working set (DEX_EXPERT power lane).",
+	"checkpoint": "checkpoint is available via the MCP tool surface, not the CLI — it keeps a shadow-git history of an agent's work-in-progress (snapshot/log/diff; DEX_EXPERT power lane).",
 }
 
 // mcpOnlyToolHint returns the MCP-only help message for cmd, if any.

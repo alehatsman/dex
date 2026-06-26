@@ -29,7 +29,7 @@ it; see the README or `dex help all`.
 | `ls`     | File-tree listing | always |
 | `shell`  | Run a command, return compressed output | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask`; `add` warns (`similar`) on a near-duplicate note | always |
-| `deps` `diff` `clusters` `routes` `smells` `cohort` `session` | Graph/analysis power lane | graph (`cohort`: Go toolchain) |
+| `deps` `diff` `clusters` `routes` `smells` `cohort` `session` `checkpoint` | Graph/analysis power lane (`checkpoint`: shadow-git work history) | graph (`cohort`: Go toolchain) |
 
 ## Capability-derived exposure
 

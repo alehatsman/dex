@@ -76,8 +76,8 @@ dex trace . Run --dir callers
 Start with `ask` — it routes the query and tells you what to read next. Every
 verb works on the CLI. As MCP tools the everyday set is `ask find map trace
 impact locate review refactor read grep ls shell notes`; the rest (`lookup deps diff
-clusters routes smells session`) is behind `DEX_EXPERT=1` to keep the agent's
-tool list small.
+clusters routes smells cohort session checkpoint`) is behind `DEX_EXPERT=1` to keep
+the agent's tool list small.
 Call-graph walks fold into `trace --dir callers|callees|path` — there are no
 standalone `callers`/`callees`/`path` MCP tools (they remain `dex graph` subs).
 

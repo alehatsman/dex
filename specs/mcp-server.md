@@ -71,16 +71,16 @@ service clients are the http-api spec's.
     chat model). Only `read mode=summary` (the LLM digest) needs a chat model;
     when none is wired it returns `status=needs-chat` rather than being hidden.
   - The power lane (`lookup`, `deps`, `callers`, `callees`, `path`, `diff`,
-    `clusters`, `routes`, `smells`, `cohort`, `status`, `session`) is gated behind
-    `DEX_EXPERT` — the default verbs above cover everyday work, so the stdio
-    surface stays small unless an operator opts into the full set.
+    `clusters`, `routes`, `smells`, `cohort`, `status`, `session`, `checkpoint`) is
+    gated behind `DEX_EXPERT` — the default verbs above cover everyday work, so the
+    stdio surface stays small unless an operator opts into the full set.
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
   `ask`, `find`, `map`, `trace`, `impact`, `locate`, `review`, `refactor`, `read`, `grep`,
   `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `callers`,
   `callees`, `path`, `diff`, `clusters`, `routes`, `smells`, `cohort`, `status`,
-  `session`.
+  `session`, `checkpoint`.
 - WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing
   (`path:line`) prose answer grounded in the evidence bundle; WHEN the chat leg
   is unreachable the answer is omitted and the caller falls back to the evidence
@@ -139,6 +139,14 @@ service clients are the http-api spec's.
   block after compaction), `budget` (context-window utilization estimate),
   `heatmap` (per-file access frequency and compression savings). The task + notes
   + files are surfaced in `ask` responses as `session_task`. No embedding required.
+- WHEN `checkpoint` is called (DEX_EXPERT), dex keeps a private SHADOW git history
+  of the working tree under its cache dir (`<cache>/shadow`), fully isolated from
+  the user's `.git` via a GIT_*-scrubbed env + explicit `GIT_DIR`/`GIT_WORK_TREE`
+  (the #341 isolation contract): `snapshot` commits the current tree (idempotent —
+  no commit when unchanged), `log` lists checkpoints newest-first, `diff` returns a
+  byte-capped unified diff between two checkpoints (default `HEAD~1..HEAD`). dex
+  only READS the user's tree — there is no restore action; the user's repository is
+  never read or mutated (#551, #608).
 - WHEN `shell` is called, dex executes a command and returns compressed output
   (the same pipeline as the indexer's log compression). Output is routed by a
   tiered policy — passthrough (dev servers / auth flows, untouched) · verbatim

@@ -686,6 +686,7 @@ type toolSurface interface {
 	searchGrep(context.Context, *sdk.CallToolRequest, SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error)
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
+	checkpoint(context.Context, *sdk.CallToolRequest, CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error)
 	shellRun(context.Context, *sdk.CallToolRequest, ShellInput) (*sdk.CallToolResult, ShellOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
@@ -956,6 +957,17 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 					"don't lose context across reconnects. No embedding required."),
 			}, h.session)
+
+			addTool(srv, &sdk.Tool{
+				Name: "checkpoint",
+				Description: td("Private shadow git history of the working tree — checkpoint and review your " +
+					"own work-in-progress WITHOUT touching the user's .git (a separate repo under dex's cache). " +
+					"Actions: snapshot (commit the current working tree to the shadow; idempotent — no commit when " +
+					"unchanged; returns sha + files_changed), log (list checkpoints, newest first; limit default 20/max 200), " +
+					"diff (unified diff between two checkpoints, default HEAD~1..HEAD; from/to override; byte-capped). " +
+					"Use it to review what you've changed across a session, or to snapshot before a risky refactor. " +
+					"Read-only on the user's tree (dex never writes it, #551): apply any rollback yourself from the diff."),
+			}, h.checkpoint)
 		}
 
 		addTool(srv, &sdk.Tool{

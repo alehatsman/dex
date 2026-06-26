@@ -10,7 +10,7 @@ var mcpToolSurface = []string{
 	"grep", "ls", "shell",
 	"deps", "diff", "clusters",
 	"smells", "routes", "cohort",
-	"status", "notes", "session", "budget",
+	"status", "notes", "session", "budget", "checkpoint",
 }
 
 // TestMCPToolCLIParity locks every MCP `read`/graph/query tool to a reachable
@@ -50,6 +50,9 @@ func TestMCPToolCLIParity(t *testing.T) {
 		// budget reports per-session counters (slo.Tracker + heatmap) — a CLI
 		// invocation has no agent session and no in-memory counters to report.
 		"budget": true,
+		// checkpoint manages an agent's shadow-git work history — a session-scoped
+		// concept with no CLI analogue (#608), surfaced via mcpOnlyToolHints.
+		"checkpoint": true,
 	}
 
 	for _, tool := range mcpTools {
