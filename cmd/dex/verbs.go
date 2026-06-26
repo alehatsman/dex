@@ -245,68 +245,6 @@ func cmdGrep(ctx context.Context, args []string) error {
 	return nil
 }
 
-// cmdLs lists the indexed file tree with chunk counts (MCP: ls), delegating to
-// SearchTree. The leading [path] is the project root (defaults to cwd); --in
-// narrows to a subdirectory.
-func cmdLs(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("ls", flag.ContinueOnError)
-	setHelp(fs,
-		"List the indexed file tree with chunk counts (MCP: ls).",
-		"dex ls [flags] [<path>]",
-		"dex ls",
-		"dex ls --in internal/mcp --depth 2")
-	in := fs.String("in", "", "restrict to a subdirectory of the project")
-	depth := fs.Int("depth", 0, "max directory depth shown individually (default 3, 0 = unlimited)")
-	format := fs.String("format", "text", "output format: text | json")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
-		return err
-	}
-	path, rest := splitProjectArg(fs.Args())
-	if len(rest) != 0 {
-		return fmt.Errorf("ls takes no args besides an optional project path (got %d); use --in for a subdirectory", len(rest))
-	}
-	base, err := indexDir()
-	if err != nil {
-		return err
-	}
-	p, err := proj.Resolve(path, base)
-	if err != nil {
-		return err
-	}
-	s, _ := newServerFromEnv(base)
-	out, err := s.SearchTree(ctx, mcp.SearchTreeInput{
-		Path:        *in,
-		Depth:       *depth,
-		ProjectRoot: p.Root,
-	})
-	if err != nil {
-		return err
-	}
-	if *format == "json" {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(out)
-	}
-	if out.Status != "ok" {
-		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
-		if out.Hint != "" {
-			fmt.Fprintf(os.Stderr, "hint: %s\n", out.Hint)
-		}
-		return nil
-	}
-	if out.Text != "" {
-		fmt.Print(out.Text)
-		if !strings.HasSuffix(out.Text, "\n") {
-			fmt.Println()
-		}
-		return nil
-	}
-	for _, e := range out.Entries {
-		fmt.Printf("  %6d  %s\n", e.Chunks, e.Path)
-	}
-	return nil
-}
-
 // cmdShell runs a command and returns compressed output (MCP: shell), delegating
 // to ShellRun so the CLI and tool share one compression policy. Flags must
 // precede the command; every token after the first non-flag is the verbatim

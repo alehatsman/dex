@@ -18,7 +18,6 @@
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
 //	read <file>                   Read a file (MCP: read). Default mode=full is raw (no LLM); mode=summary is an LLM digest.
 //	grep <path> <pattern>         Exact RE2 regex search over project files (MCP: grep).
-//	ls <path>                     Indexed file tree with chunk counts (MCP: ls).
 //	shell <command...>            Run a command with compressed output (MCP: shell).
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
@@ -115,8 +114,6 @@ func main() {
 		err = cmdVerify(ctx, args)
 	case "grep":
 		err = cmdGrep(ctx, args)
-	case "ls":
-		err = cmdLs(ctx, args)
 	case "shell":
 		err = cmdShell(ctx, args)
 	case "env":

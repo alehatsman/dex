@@ -25,7 +25,6 @@ it; see the README or `dex help all`.
 | `verify` | Run the tests a change implicates — working tree (default) / `ref` range / `symbol` blast-radius — and return pass/fail; routes through the shell pipeline so a failing run stages a `gotcha_candidate`. Override the command via `command` / `$DEX_VERIFY_CMD` (`{{packages}}`). Go-only v1 | Go toolchain |
 | `read`   | Read a file (see modes below) | always (`summary` needs chat) |
 | `grep`   | Exact regex over indexed files | always |
-| `ls`     | File-tree listing | always |
 | `shell`  | Run a command, return compressed output | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask`; `add` warns (`similar`) on a near-duplicate note | always |
 | `deps` `diff` `clusters` `routes` `smells` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`checkpoint`: shadow-git work history) | graph (`cohort`: Go toolchain) |
@@ -35,7 +34,7 @@ it; see the README or `dex help all`.
 A tool is registered only when the backend it needs is available, so the surface
 matches the deployment:
 
-- **Always on** (no models at all): `ask`, `grep`, `ls`, `shell`.
+- **Always on** (no models at all): `ask`, `grep`, `shell`.
 - **Default verbs** (non-weak model): add `map`, `trace` (incl. `--dir impact`), `locate`, `review`, `refactor`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.

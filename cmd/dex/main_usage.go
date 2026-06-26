@@ -36,7 +36,6 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex verify [<path>]                    run the tests a change implicates — working tree | --ref | --symbol
   dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
   dex grep   [<path>] <pattern>          exact RE2 regex search
-  dex ls     [<path>]                    indexed file tree + chunk counts
   dex shell  <command...>                run a command with compressed output
 
 detail / power lanes:

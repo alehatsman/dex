@@ -208,15 +208,6 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "ls", group: groupQuery, args: "[<path>]",
-		summary: "indexed file tree + chunk counts",
-		flags: []flagSpec{
-			{name: "--in", desc: "restrict to a subdirectory", arg: true},
-			{name: "--depth", desc: "max directory depth", arg: true},
-			flagFormat,
-		},
-	},
-	{
 		name: "shell", group: groupQuery, args: "<command...>",
 		summary: "run a command with compressed output",
 		flags: []flagSpec{

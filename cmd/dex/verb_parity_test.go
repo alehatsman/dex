@@ -7,14 +7,14 @@ import "testing"
 // list so the CLI↔MCP contract is guarded in both directions.
 var mcpToolSurface = []string{
 	"ask", "find", "map", "trace", "locate", "review", "refactor", "read",
-	"grep", "ls", "shell",
+	"grep", "shell",
 	"deps", "diff", "clusters",
 	"smells", "routes", "cohort", "verify",
 	"status", "notes", "session", "budget", "checkpoint",
 }
 
 // TestMCPToolCLIParity locks every MCP `read`/graph/query tool to a reachable
-// CLI path (issue #494). grep/ls/shell regressed silently into MCP-only tools
+// CLI path (issue #494). grep/shell regressed silently into MCP-only tools
 // while the README still advertised them as CLI verbs; this test fails if any
 // MCP tool loses its CLI front door again.
 //

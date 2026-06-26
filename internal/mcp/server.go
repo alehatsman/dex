@@ -718,7 +718,7 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // the non-semantic lanes. `read` is always registered (its structural modes
 // need no chat); only `read mode=summary` needs a chat model and returns
 // status='needs-chat' when chatAvailable is false. When weakModel is true the
-// full tool surface is hidden and only ask, grep, ls, and shell are exposed.
+// full tool surface is hidden and only ask, grep, and shell are exposed.
 func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
 	_ = chatAvailable // read no longer gates on chat; summary degrades at call time
 	td := func(s string) string { return compressToolDesc(s, descMode) }
@@ -1028,17 +1028,6 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"low-confidence `gotcha_candidate` — confirm it with `notes` (action=add) to persist the pitfall. " +
 			"Timeout: 60 s."),
 	}, h.shellRun)
-
-	addTool(srv, &sdk.Tool{
-		Name:        "ls",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("List indexed files under a directory path. Returns individual files within " +
-			"`depth` directory levels (default 3) and aggregates deeper files into their parent dirs " +
-			"(dirs shown with trailing / and a summed chunk count). " +
-			"No embedding required — reads directly from the index. " +
-			"Use for orientation in an unfamiliar codebase before calling ask or read. " +
-			"Returns 'no-index' when the project hasn't been indexed yet."),
-	}, h.searchTree)
 
 	addTool(srv, &sdk.Tool{
 		Name:        "grep",
