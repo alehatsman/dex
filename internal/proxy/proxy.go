@@ -204,6 +204,18 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			// leak it upstream. The upstream Authorization / x-api-key is left
 			// untouched.
 			pr.Out.Header.Del(ProxyTokenHeader)
+			// Strip Accept-Encoding so Go's transport owns compression
+			// negotiation. Without this, the client's (Claude Code's) header
+			// is forwarded to Anthropic; Anthropic honours it and returns a
+			// gzip-compressed SSE body; Go's transport (seeing an
+			// application-set Accept-Encoding) does NOT auto-decompress; and
+			// the usageTeeWriter scans gzip bytes instead of raw SSE lines,
+			// yielding zero usage for every turn. When we remove
+			// Accept-Encoding here, the transport adds "gzip" itself, Anthropic
+			// gzips, the transport auto-decompresses (res.Uncompressed=true),
+			// the reverseproxy strips Content-Encoding from the downstream
+			// response, and the tee writer sees plain SSE bytes.
+			pr.Out.Header.Del("Accept-Encoding")
 		},
 		// Fail open: upstream errors must not crash the proxy.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, e error) {

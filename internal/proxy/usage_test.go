@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -224,5 +225,78 @@ func TestStatsEndpointUsageTokens(t *testing.T) {
 	}
 	if snap.CacheReadTokens != 5 {
 		t.Errorf("cache_read_tokens = %d, want 5", snap.CacheReadTokens)
+	}
+}
+
+// TestStatsEndpointUsageTokensGzipSSE is the production-failure regression test
+// (#695). Anthropic returns Content-Encoding: gzip when the request includes
+// Accept-Encoding. The proxy must strip Accept-Encoding from the outgoing
+// request so Go's transport auto-decompresses the response before the tee
+// writer scans it — otherwise the tee writer sees gzip bytes and records 0
+// for every usage field.
+func TestStatsEndpointUsageTokensGzipSSE(t *testing.T) {
+	sseBody := strings.Join([]string{
+		"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":150,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":20}}}\n",
+		"\n",
+		"data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":40}}\n",
+		"\n",
+		"data: [DONE]\n",
+	}, "")
+
+	up := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The proxy strips the client's Accept-Encoding header so Go's
+		// transport can add its own "gzip" and auto-decompress. The upstream
+		// should therefore NOT see the original multi-value client header.
+		if ae := r.Header.Get("Accept-Encoding"); ae == "gzip, deflate, br" {
+			t.Errorf("proxy forwarded client Accept-Encoding verbatim (%q); "+
+				"want it stripped so transport handles decompression", ae)
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+
+		// Compress the SSE body with gzip, mimicking what Anthropic does when
+		// Accept-Encoding: gzip was present in the original client request.
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+		gz := gzip.NewWriter(w)
+		_, _ = io.WriteString(gz, sseBody)
+		_ = gz.Close()
+	})
+
+	front, _ := newTestProxy(t, up)
+
+	// Send a request with Accept-Encoding — exactly as Claude Code (Node.js)
+	// does. The proxy must strip it before forwarding to the upstream.
+	reqBody := `{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`
+	req, _ := http.NewRequest(http.MethodPost, front.URL+"/v1/messages",
+		strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	statsResp, err := http.Get(front.URL + "/stats")
+	if err != nil {
+		t.Fatalf("GET /stats: %v", err)
+	}
+	defer statsResp.Body.Close()
+
+	var snap Snapshot
+	if err := json.NewDecoder(statsResp.Body).Decode(&snap); err != nil {
+		t.Fatalf("decode /stats: %v", err)
+	}
+
+	if snap.InputTokens != 150 {
+		t.Errorf("input_tokens = %d, want 150", snap.InputTokens)
+	}
+	if snap.OutputTokens != 40 {
+		t.Errorf("output_tokens = %d, want 40", snap.OutputTokens)
+	}
+	if snap.CacheReadTokens != 20 {
+		t.Errorf("cache_read_tokens = %d, want 20", snap.CacheReadTokens)
 	}
 }
