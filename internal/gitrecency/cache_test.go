@@ -255,6 +255,61 @@ func TestNonASCIIPathsMatchRawChunkPaths(t *testing.T) {
 	}
 }
 
+// TestRefreshIgnoresInheritedGitDir locks #680: refreshRecency/refreshDirty must
+// honor cmd.Dir even when the process inherits a GIT_DIR pointing at a different
+// repo (as a pre-push hook child does from a linked worktree). Without the
+// hermetic env scrub, GIT_DIR overrides cmd.Dir for repo discovery and the
+// boosts key on the WRONG repo's files (observed: real dex files leaking in).
+func TestRefreshIgnoresInheritedGitDir(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+	commit := func(dir, file, msg string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, file), []byte("package main"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"add", "--", file}, {"commit", "--no-verify", "-m", msg}} {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = dir
+			cmd.Env = gitEnv("GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+				"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+		}
+	}
+
+	// The repo whose signals we want; commit one file + leave one dirty.
+	want := t.TempDir()
+	initGitRepo(t, want)
+	commit(want, "only_here.go", "want")
+	if err := os.WriteFile(filepath.Join(want, "dirty_here.go"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A decoy repo with a different file; an inherited GIT_DIR points here.
+	decoy := t.TempDir()
+	initGitRepo(t, decoy)
+	commit(decoy, "decoy.go", "decoy")
+	t.Setenv("GIT_DIR", filepath.Join(decoy, ".git"))
+
+	rec := refreshRecency(want)
+	if _, ok := rec["only_here.go"]; !ok {
+		t.Errorf("refreshRecency followed inherited GIT_DIR instead of cmd.Dir=%q; got %v", want, keysOf(rec))
+	}
+	if _, ok := rec["decoy.go"]; ok {
+		t.Error("refreshRecency leaked the decoy repo's file — inherited GIT_DIR was honored (#680)")
+	}
+	if dirty := refreshDirty(want); len(dirty) > 0 {
+		if _, ok := dirty["dirty_here.go"]; !ok {
+			t.Errorf("refreshDirty followed inherited GIT_DIR instead of cmd.Dir; got %v", dirty)
+		}
+	} else {
+		t.Error("refreshDirty returned nothing — likely read the decoy repo (clean) via inherited GIT_DIR")
+	}
+}
+
 func keysOf(m map[string]float32) []string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
