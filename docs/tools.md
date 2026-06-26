@@ -63,7 +63,7 @@ no tiers.
 | `skeleton` | exported decls in full + function signatures with `@B<n>` body handles | no |
 | `map` | imports + exported symbols | no |
 | `aggressive` | maximal lossy compression: strips comments and low-entropy lines (declaration + control-flow lines protected) | no |
-| `lines:N-M` | a raw line slice | no |
+| `lines:N-M` | a raw line slice; also `lines:N` (single line), `lines:N-` (line N → end of file), `lines:-M` (first M lines) | no |
 | `analyze` | token-cost comparison of every mode + a recommended mode + a `handle`; **no file content** — pick the cheapest view first, or analyze many files then expand only the ones you need via `read(handle=…, mode=…)` (#620) | no |
 | `summary` | LLM-generated digest (`--focus` to steer) | **yes** |
 
@@ -76,6 +76,11 @@ The CLI `read` verb adds two local conveniences with no MCP equivalent —
 tool's session-scoped `expand` (`@B<n>` body handles) and internal `handle`
 downgrade have no CLI form: handles live in per-session server memory. CLI↔MCP
 mode parity is locked by `cmd/dex/read_parity_test.go`.
+
+Line ranges differ in spelling between the two: the CLI uses the `--start` /
+`--end` flags (1-based, `0` = open), while the MCP tool uses the `lines:*` mode
+string. So `read --start=10 --end=40` ≡ `mode=lines:10-40`, `--start=10 --end=0`
+≡ `lines:10-`, and `--start=0 --end=20` ≡ `lines:-20`.
 
 ## Response contract
 
