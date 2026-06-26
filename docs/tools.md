@@ -17,7 +17,6 @@ it; see the README or `dex help all`.
 |----------|---------|---------|
 | `ask`    | One-shot router: picks intent, fuses lanes, returns `suggested_reads`, a `next_action`, and (with chat) a cited answer | always |
 | `find`   | Hybrid semantic + lexical top-k search | embedder |
-| `lookup` | Exact identifier lookup | always |
 | `map`    | Deterministic repo orientation map | always |
 | `trace`  | Call graph: `--dir callers\|callees\|path` | graph |
 | `impact` | Transitive caller blast-radius | graph |
@@ -29,7 +28,7 @@ it; see the README or `dex help all`.
 | `ls`     | File-tree listing | always |
 | `shell`  | Run a command, return compressed output | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask`; `add` warns (`similar`) on a near-duplicate note | always |
-| `deps` `diff` `clusters` `routes` `smells` `cohort` `session` `checkpoint` | Graph/analysis power lane (`checkpoint`: shadow-git work history) | graph (`cohort`: Go toolchain) |
+| `lookup` `deps` `diff` `clusters` `routes` `smells` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`checkpoint`: shadow-git work history) | graph (`cohort`: Go toolchain) |
 
 ## Capability-derived exposure
 
@@ -41,7 +40,7 @@ matches the deployment:
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
 - **Power lane** (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`, `cohort`,
-  `session`): behind `DEX_EXPERT=1`, to keep the everyday agent tool list small.
+  `status`, `budget`, `session`, `checkpoint`): behind `DEX_EXPERT=1`, to keep the everyday agent tool list small.
   Call-graph walks (callers/callees/shortest path) are not standalone tools —
   `trace --dir callers|callees|path` is the single entry point. (On the CLI
   every verb, plus the full `dex graph <sub>` set, is always available.)

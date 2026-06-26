@@ -71,17 +71,19 @@ service clients are the http-api spec's.
     for lazy selective reads, no file content, #623/#620) — need no
     chat model). Only `read mode=summary` (the LLM digest) needs a chat model;
     when none is wired it returns `status=needs-chat` rather than being hidden.
-  - The power lane (`lookup`, `deps`, `callers`, `callees`, `path`, `diff`,
-    `clusters`, `routes`, `smells`, `cohort`, `status`, `session`, `checkpoint`) is
-    gated behind `DEX_EXPERT` — the default verbs above cover everyday work, so the
-    stdio surface stays small unless an operator opts into the full set.
+  - The power lane (`lookup`, `deps`, `diff`, `clusters`, `routes`, `smells`,
+    `cohort`, `status`, `budget`, `session`, `checkpoint`) is gated behind
+    `DEX_EXPERT` — the default verbs above cover everyday work, so the stdio
+    surface stays small unless an operator opts into the full set. (Call-graph
+    queries are NOT standalone tools: `callers`/`callees`/`path` are reached via
+    `trace --dir`, #575.)
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
   `ask`, `find`, `map`, `trace`, `impact`, `locate`, `review`, `refactor`, `read`, `grep`,
-  `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `callers`,
-  `callees`, `path`, `diff`, `clusters`, `routes`, `smells`, `cohort`, `status`,
-  `session`, `checkpoint`.
+  `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `diff`,
+  `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`, `session`,
+  `checkpoint`.
 - WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing
   (`path:line`) prose answer grounded in the evidence bundle; WHEN the chat leg
   is unreachable the answer is omitted and the caller falls back to the evidence
@@ -109,11 +111,11 @@ service clients are the http-api spec's.
   Supports `languages`, `path_glob`, and `exclude` filters.
 - WHEN `lookup` is called, dex performs a fast SQL symbol lookup (no embedding)
   and returns `not-found` when no chunk with that name exists.
-- WHEN a graph tool is called (`deps`, `callers`, `callees`, `impact`, `path`,
-  `diff`, `clusters`, `routes`, `smells`), dex reads the static call/import graph
-  (no embedding, no chat) and returns `no-graph` when the relevant edges have not
-  been indexed (`dex index . --graph=only`). `callers`/`callees`/`impact`/`path`
-  accept a bare name, a qualified method (`(*Server).RunStdio`), or a
+- WHEN a graph tool is called (`trace` with `--dir callers|callees|path`,
+  `impact`, `deps`, `diff`, `clusters`, `routes`, `smells`), dex reads the static
+  call/import graph (no embedding, no chat) and returns `no-graph` when the
+  relevant edges have not been indexed (`dex index . --graph=only`). `trace` and
+  `impact` accept a bare name, a qualified method (`(*Server).RunStdio`), or a
   package-qualified name and return multiple matches for disambiguation. For a Go
   method that implements a project interface, the call graph follows interface
   DISPATCH (#604): `callers` (trace) additionally returns the call sites that
