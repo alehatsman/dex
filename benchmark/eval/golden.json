@@ -1,11 +1,36 @@
 {
   "repo": "dex",
-  "head": "efe85b411f133d4133bd5a987aa4ff7b0da9f45b",
+  "head": "06881116482fc495b7dbc59015a61b743588e1d7",
   "gen_opts": {
     "max_commits": 500,
     "max_files": 5
   },
   "queries": [
+    {
+      "id": "06881116",
+      "query": "track reranker state in EvalManifest (#692)",
+      "relevant_files": [
+        "cmd/dex/eval.go",
+        "internal/eval/manifest.go",
+        "internal/eval/manifest_test.go"
+      ]
+    },
+    {
+      "id": "447cbcb4",
+      "query": "improve not-found hint with symbol kind (#691)",
+      "relevant_files": [
+        "internal/cohesion/cohesion.go",
+        "internal/cohesion/cohesion_test.go"
+      ]
+    },
+    {
+      "id": "d579f5c5",
+      "query": "cap non-code files at reviewMaxHunksNoCode=3 hunks (#690)",
+      "relevant_files": [
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_review_test.go"
+      ]
+    },
     {
       "id": "efe85b41",
       "query": "drop 'pipeline'+'layer' from arch classifier; refresh baseline",
@@ -2898,28 +2923,6 @@
         "internal/index/index_test.go",
         "internal/store/store.go",
         "internal/store/store_test.go"
-      ]
-    },
-    {
-      "id": "2fe9465a",
-      "query": "prefetch grounding + git subjects before workers (#224)",
-      "relevant_files": [
-        "internal/index/index.go"
-      ]
-    },
-    {
-      "id": "0b1b3597",
-      "query": "dirty-dir incremental cascade (#222)",
-      "relevant_files": [
-        "internal/index/index_test.go"
-      ]
-    },
-    {
-      "id": "13d8e412",
-      "query": "raise default SummaryConcurrency 4→8 for dual-GPU setups (issue #228)",
-      "relevant_files": [
-        "cmd/dex/env.go",
-        "cmd/dex/main.go"
       ]
     }
   ]
