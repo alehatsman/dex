@@ -564,12 +564,22 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 // embeddings exist yet (fresh store, or embed endpoint was offline at add time).
 func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float32, k int, minSim float64) ([]KnowledgeFact, error) {
 	k = clampK(k)
+	// strict mode: skip-fallback callers (locate/review) get nil when no
+	// vector search is possible so the caller decides — not a silent salience
+	// result that bypasses their noFallback guard (#706).
+	strict := minSim > 0
 	if len(queryVec) == 0 {
+		if strict {
+			return nil, nil
+		}
 		return s.KnowledgeQuery(ctx, k)
 	}
 	var cnt int
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM fact_vecs`).Scan(&cnt); err != nil || cnt == 0 {
-		return s.KnowledgeQuery(ctx, k) // table absent or empty → salience fallback
+		if strict {
+			return nil, nil // table absent or empty; let caller decide (no salience leak)
+		}
+		return s.KnowledgeQuery(ctx, k)
 	}
 
 	// Pull a candidate pool by cosine distance, wider than k so the hybrid
@@ -583,6 +593,9 @@ func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float
 		 WHERE embedding MATCH ? AND k = ?
 		 ORDER BY distance`, encodeVec(queryVec), pool)
 	if err != nil {
+		if strict {
+			return nil, nil
+		}
 		return s.KnowledgeQuery(ctx, k)
 	}
 	sims := make(map[int64]float64)

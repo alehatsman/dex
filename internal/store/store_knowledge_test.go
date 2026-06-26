@@ -63,13 +63,22 @@ func TestKnowledgeQueryVec_FallbackWhenNoVecs(t *testing.T) {
 	if _, err := st.KnowledgeAdd(ctx, "Gotcha", "no embedding here", 0.9); err != nil {
 		t.Fatal(err)
 	}
-	// No vectors stored → must fall back to salience query, not error.
+	// No vectors stored, minSim=0 → must fall back to salience query, not error.
 	got, err := st.KnowledgeQueryVec(ctx, []float32{1, 0, 0, 0}, 5, 0)
 	if err != nil {
 		t.Fatalf("expected salience fallback, got error: %v", err)
 	}
 	if len(got) != 1 || got[0].Body != "no embedding here" {
 		t.Errorf("fallback returned %+v, want the single fact", got)
+	}
+	// With minSim>0 (strict mode) and no vectors, must return empty not salience
+	// noise — the caller (recallFacts skipFallback=true) decides (#706).
+	got, err = st.KnowledgeQueryVec(ctx, []float32{1, 0, 0, 0}, 5, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("strict mode with no vecs: expected empty, got %d fact(s)", len(got))
 	}
 }
 
