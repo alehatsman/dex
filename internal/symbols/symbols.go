@@ -379,7 +379,10 @@ func querySubtypes(res Result, pkgs []*packages.Package, fset *token.FileSet, pr
 
 			var match bool
 			if isIface {
-				iface := named.Underlying().(*types.Interface)
+				iface, ok := named.Underlying().(*types.Interface)
+				if !ok {
+					continue // should not happen: isIface guards this
+				}
 				if subIface, ok := n.Underlying().(*types.Interface); ok {
 					// Sub-interface: extends named by being a superset of its methods.
 					match = types.Implements(subIface, iface) && subIface != iface
