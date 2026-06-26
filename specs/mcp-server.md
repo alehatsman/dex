@@ -155,7 +155,9 @@ service clients are the http-api spec's.
   so the author can `delete` the superseded one, #606; an optional `scope` binds
   the fact to a file glob / path / package — `internal/mcp/*_test.go`,
   `internal/store` — so `locate` surfaces it proactively when it touches a
-  matching file, "gotcha-on-touch", #645),
+  matching file, "gotcha-on-touch", #645; when `scope` is omitted but the body
+  names a real project file/glob, the add response's `scope_suggestion` proposes
+  one so the binding is discoverable, #658),
   `action=list` (top-k by salience; pass `scope=<path>` to instead return the
   notes whose scope binds that path — what would surface on touching it, #653),
   `action=delete` (by id). Archetypes:

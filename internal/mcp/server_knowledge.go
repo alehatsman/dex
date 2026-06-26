@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -49,6 +51,10 @@ type KnowledgeOutput struct {
 	// only, #606). A non-empty list is a warning, not an error: the agent can
 	// `delete` a superseded note or ignore the overlap.
 	Similar []KnowledgeFactOutput `json:"similar,omitempty"`
+	// ScopeSuggestion is a project file/glob the just-added (unscoped) note seems
+	// to be about (#658) — re-add with scope=<this> so file verbs surface it on
+	// touch (gotcha-on-touch). Empty when the note named no real path.
+	ScopeSuggestion string `json:"scope_suggestion,omitempty"`
 }
 
 // knowledgeSimilarThreshold is the Jaccard word-overlap at which an existing
@@ -108,6 +114,15 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 			out.Hint += fmt.Sprintf(" ⚠ %d similar note(s) already exist (ids %s) — `delete` one if this supersedes it.",
 				len(out.Similar), similarIDs(out.Similar))
 		}
+		// Gotcha-on-touch adoption (#658): if the note names a project file/glob
+		// but wasn't scoped, suggest binding it so locate/review/read surface it
+		// on touch. Non-blocking — the note is already stored.
+		if in.Scope == "" {
+			if sug := suggestScope(p.Root, in.Body); sug != "" {
+				out.ScopeSuggestion = sug
+				out.Hint += fmt.Sprintf(" 💡 re-add with scope=%q so this surfaces when a verb touches it (gotcha-on-touch).", sug)
+			}
+		}
 		return nil, out, nil
 	case "delete":
 		if in.ID <= 0 {
@@ -164,6 +179,38 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		out.Facts = append(out.Facts, knowledgeFactOut(f))
 	}
 	return nil, out, nil
+}
+
+// scopeTokenRe matches runs of path/glob characters in note text.
+var scopeTokenRe = regexp.MustCompile(`[A-Za-z0-9_./*?\-]+`)
+
+// suggestScope returns the first project file path or glob named in body that's
+// worth binding a note to (#658), or "" when the note names no real path. A
+// token must contain a '/' (a path) or a glob char ('*'/'?'); a bare word like
+// "server" or even "foo.go" is too ambiguous to suggest. A glob is returned
+// as-is (an explicit scope intent); a plain path is returned only when it
+// resolves to a real file or directory under root, so incidental mentions of
+// external or nonexistent paths never produce a suggestion.
+func suggestScope(root, body string) string {
+	seen := map[string]bool{}
+	for _, raw := range scopeTokenRe.FindAllString(body, -1) {
+		tok := strings.Trim(raw, "./-")
+		if tok == "" || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		hasGlob := strings.ContainsAny(tok, "*?")
+		if !strings.Contains(tok, "/") && !hasGlob {
+			continue // too ambiguous
+		}
+		if hasGlob {
+			return tok
+		}
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(tok))); err == nil {
+			return tok
+		}
+	}
+	return ""
 }
 
 // knowledgeFactOut projects a stored fact into the wire shape, shared by the
