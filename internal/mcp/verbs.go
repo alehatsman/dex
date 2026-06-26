@@ -45,16 +45,34 @@ type MapInput struct {
 	TopK        int    `json:"top_k,omitempty" jsonschema:"max symbols pulled per cluster (default 25)"`
 	Around      string `json:"around,omitempty" jsonschema:"render a task-focused region around this symbol — its callers ∪ callees — instead of the repo overview; mutually exclusive with cluster and around_diff"`
 	AroundDiff  string `json:"around_diff,omitempty" jsonschema:"render the blast radius of a git diff: the ref to diff against (e.g. 'HEAD~1'); mutually exclusive with cluster and around"`
+	Task        string `json:"task,omitempty" jsonschema:"current task description — when set, every indexed file is scored against this task and returned as l0_files/l1_files/l2_count with per-file recommended_mode; requires an embed client (degrades to the normal topology map when none is wired)"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 }
 
+// TaskFile is one entry in the task-filtered read list returned by map when
+// task is set (#609). Score is the cosine similarity (boosted by git recency
+// and session bounce) and Mode is the recommended read mode.
+type TaskFile struct {
+	Path  string  `json:"path"`
+	Score float32 `json:"score"`
+	Mode  string  `json:"mode"` // "full" | "signatures" | "skeleton"
+}
+
 // MapOutput carries the rendered markdown map plus a status. Map holds the same
-// text a human sees from `dex map`; agents can read it directly.
+// text a human sees from `dex map`; agents can read it directly. When task is
+// set the task-filtered fields (L0Files/L1Files/L2Count/GitBoosted) are
+// populated instead.
 type MapOutput struct {
 	Status string `json:"status"` // "ok" | "no-index" | "no-graph" | "not-found" | "error"
 	Hint   string `json:"hint,omitempty"`
-	Zoom   string `json:"zoom,omitempty"` // "orient" | "l1" | "around"
+	Zoom   string `json:"zoom,omitempty"` // "orient" | "l1" | "around" | "task"
 	Map    string `json:"map,omitempty"`
+	// Task-filtered fields — populated when MapInput.Task is set.
+	Task       string     `json:"task,omitempty"`
+	L0Files    []TaskFile `json:"l0_files,omitempty"`
+	L1Files    []TaskFile `json:"l1_files,omitempty"`
+	L2Count    int        `json:"l2_count,omitempty"`
+	GitBoosted []string   `json:"git_boosted,omitempty"`
 }
 
 // mapHandler adapts mapVerb to the SDK handler shape, capturing h.
@@ -76,6 +94,15 @@ func (s *Server) Map(ctx context.Context, in MapInput) (MapOutput, error) {
 // the codemap renderer — no model is called. It mirrors the assembly in
 // `dex map` (cmd/dex/map.go) so the MCP verb and the CLI agree.
 func mapVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in MapInput) (*sdk.CallToolResult, MapOutput, error) {
+	// #609: task-filtered read list. When a task is provided and the handler is
+	// a *Server (so we have embed + store access), score every indexed file and
+	// return L0/L1/L2 buckets with per-file recommended_mode. Degrades to the
+	// normal topology map when no embedder is wired or on non-*Server surfaces.
+	if in.Task != "" {
+		if srv, ok := h.(*Server); ok {
+			return srv.taskMap(ctx, in)
+		}
+	}
 	// #347 story 5: task-conditioned region. `around`/`around_diff` render the
 	// call-graph neighborhood of a symbol or the blast radius of a diff instead
 	// of the Louvain L0/L1 overview, so they branch off before the community

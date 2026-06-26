@@ -75,6 +75,29 @@ func (c *Cache) Bonus(pathFor map[int64]string, rrfK int) map[int64]float32 {
 	return out
 }
 
+// FileScores returns the decayed git-recency boost for each path in the slice.
+// The returned map contains only paths with a positive boost; missing entries
+// mean no recent-commit signal (score 0). Safe when c is nil (returns nil).
+func (c *Cache) FileScores(paths []string) map[string]float32 {
+	if c == nil || c.root == "" || len(paths) == 0 {
+		return nil
+	}
+	rec := c.recencyMap()
+	if len(rec) == 0 {
+		return nil
+	}
+	var out map[string]float32
+	for _, p := range paths {
+		if v, ok := rec[p]; ok && v > 0 {
+			if out == nil {
+				out = make(map[string]float32, len(paths))
+			}
+			out[p] = v
+		}
+	}
+	return out
+}
+
 func (c *Cache) recencyMap() map[string]float32 {
 	c.recMu.Lock()
 	defer c.recMu.Unlock()
