@@ -107,8 +107,12 @@ type Reachable struct {
 //	"(*T).Foo" / "T.Foo"   — receiver-qualified; matches by QualifiedName
 //	"pkg.Foo"              — package-tail-qualified; PackagePath must end with /pkg or equal pkg
 //
-// Multiple matches are returned so the caller can disambiguate. The
-// optional `pkgFilter` collapses ambiguity by full package path.
+// Multiple matches are returned so the caller can disambiguate. The optional
+// `pkgFilter` collapses ambiguity by package: it matches the full import path
+// ("github.com/gotify/server/v2/config") OR any path suffix on a "/" boundary
+// ("config", "v2/config") — the same tail convention the "pkg.Foo" symbol form
+// uses, so an agent that types the short package name is no longer told the
+// symbol doesn't exist (#583).
 func ResolveCallTargets(view *View, name, pkgFilter string) []Node {
 	name = strings.TrimSpace(name)
 	pkgFilter = strings.TrimSpace(pkgFilter)
@@ -123,12 +127,7 @@ func ResolveCallTargets(view *View, name, pkgFilter string) []Node {
 			return false
 		}
 	}
-	pkgOK := func(n Node) bool {
-		if pkgFilter == "" {
-			return true
-		}
-		return n.PackagePath == pkgFilter
-	}
+	pkgOK := func(n Node) bool { return pkgFilterMatches(n.PackagePath, pkgFilter) }
 	out := []Node{}
 	seen := map[string]bool{}
 	add := func(n Node) {
@@ -168,6 +167,39 @@ func ResolveCallTargets(view *View, name, pkgFilter string) []Node {
 		}
 	}
 	return out
+}
+
+// pkgFilterMatches reports whether a node's package path satisfies the
+// user-supplied `package` filter. An empty filter matches everything. A
+// non-empty filter matches the full path, or any path suffix that begins on a
+// "/" segment boundary — so "config" and "v2/config" both select
+// "github.com/gotify/server/v2/config" while "fig" does not (#583). This is the
+// same tail-qualification convention ResolveCallTargets uses for "pkg.Foo".
+func pkgFilterMatches(pkgPath, filter string) bool {
+	if filter == "" {
+		return true
+	}
+	return pkgPath == filter || strings.HasSuffix(pkgPath, "/"+filter)
+}
+
+// PkgFilterCandidates returns the distinct package paths in which `name`
+// resolves when no package filter is applied, sorted. A non-empty result means
+// the name DOES exist — so when a filtered ResolveCallTargets came back empty,
+// the caller can tell the agent "the name is fine, your package filter excluded
+// it; here are the packages it lives in" instead of the misleading bare
+// not-found that sends the agent mangling the symbol form (#583).
+func PkgFilterCandidates(view *View, name string) []string {
+	seen := map[string]bool{}
+	var pkgs []string
+	for _, n := range ResolveCallTargets(view, name, "") {
+		if n.PackagePath == "" || seen[n.PackagePath] {
+			continue
+		}
+		seen[n.PackagePath] = true
+		pkgs = append(pkgs, n.PackagePath)
+	}
+	sort.Strings(pkgs)
+	return pkgs
 }
 
 // pkgTail returns the last path segment of a package path

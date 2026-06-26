@@ -126,7 +126,7 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	targets := graphquery.ResolveCallTargets(view, in.Name, in.Package)
 	if len(targets) == 0 {
 		return nil, CallEdgeOutput{Status: "not-found", Project: p.Root,
-			Hint: fmt.Sprintf("no graph node matches name=%q — try the bare identifier or the receiver-qualified form like '(*Type).Method'", in.Name)}, nil
+			Hint: notFoundHint(view, in.Name, in.Package)}, nil
 	}
 
 	k := in.K
@@ -269,6 +269,22 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	inlineCallSites(out.Hits, p.Root, in.Verbose)
 
 	return nil, out, nil
+}
+
+// notFoundHint builds the not-found hint shared by trace/impact/path. When a
+// package filter was supplied and the bare name DOES resolve in other packages,
+// it names those packages — the filter was too narrow, not the symbol missing
+// (#583). Without that signal it falls back to the generic spelling hint.
+func notFoundHint(view *graphquery.View, name, pkgFilter string) string {
+	if strings.TrimSpace(pkgFilter) != "" {
+		if cands := graphquery.PkgFilterCandidates(view, name); len(cands) > 0 {
+			return fmt.Sprintf("name=%q exists but no definition is in package=%q — it lives in %s; "+
+				"pass one of those (a path suffix like the tail segment works) or drop the package filter",
+				name, pkgFilter, strings.Join(cands, ", "))
+		}
+	}
+	return fmt.Sprintf("no graph node matches name=%q — try the bare identifier or the "+
+		"receiver-qualified form like '(*Type).Method'", name)
 }
 
 // inlineCallSites fills each hit's Content so the agent doesn't need a

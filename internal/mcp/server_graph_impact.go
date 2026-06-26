@@ -98,7 +98,7 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 	targets := graphquery.ResolveCallTargets(view, in.Name, in.Package)
 	if len(targets) == 0 {
 		return nil, ImpactOutput{Status: "not-found", Project: p.Root,
-			Hint: fmt.Sprintf("no graph node matches name=%q", in.Name)}, nil
+			Hint: notFoundHint(view, in.Name, in.Package)}, nil
 	}
 
 	maxDepth := in.MaxDepth

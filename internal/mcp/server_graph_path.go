@@ -74,12 +74,12 @@ func (s *Server) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathI
 	srcs := graphquery.ResolveCallTargets(view, in.Src, in.Package)
 	if len(srcs) == 0 {
 		return nil, PathOutput{Status: "not-found", Project: p.Root,
-			Hint: fmt.Sprintf("no graph node matches src=%q", in.Src)}, nil
+			Hint: notFoundHint(view, in.Src, in.Package)}, nil
 	}
 	dsts := graphquery.ResolveCallTargets(view, in.Dst, in.Package)
 	if len(dsts) == 0 {
 		return nil, PathOutput{Status: "not-found", Project: p.Root,
-			Hint: fmt.Sprintf("no graph node matches dst=%q", in.Dst)}, nil
+			Hint: notFoundHint(view, in.Dst, in.Package)}, nil
 	}
 
 	maxDepth := in.MaxDepth
