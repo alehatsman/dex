@@ -229,7 +229,7 @@ type PruneHistoryStats struct {
 //
 //   - file/source reads → honest re-read stub (no partial excerpt — that misleads)
 //   - command/log/search output → head/tail summary (first 3 + last 2 lines)
-//   - already-compressed dex results (saved_pct > 0) → kept verbatim
+//   - already-compressed dex results (saved_pct > 0) → compact reference stub
 //   - <lc_safe>-marked content → kept verbatim
 //   - test/build output → kept verbatim (error context is load-bearing)
 //
@@ -428,9 +428,28 @@ func rewriteBlock(raw json.RawMessage, toolNames map[string]string, store *TeeSt
 	text := extractToolResultText(contentRaw)
 
 	// Preserve checks run before the length gate so that dex results with
-	// saved_pct > 0 and <lc_safe> content are protected even when short.
+	// saved_pct > 0 and <lc_safe> content are handled even when short.
 	if shouldPreserveResult(text) {
-		return raw, false, true // kept verbatim — count as preserved
+		// Dex results: compact to a short reference stub so old ask/find/shell
+		// results don't hold thousands of tokens in the history forever.
+		// Only applied when the stub is actually shorter than the original;
+		// very small dex results are kept verbatim (no savings to be had).
+		// <lc_safe> content must reach the model verbatim and is kept as-is.
+		if isDexResult(text) {
+			if stub, ok := compactDexStub(text, toolName); ok && len(stub) < len(text) {
+				newContent, err := json.Marshal(stub)
+				if err != nil {
+					return raw, false, true // fail-open: preserve
+				}
+				blk["content"] = newContent
+				out, err := json.Marshal(blk)
+				if err != nil {
+					return raw, false, true
+				}
+				return out, true, false
+			}
+		}
+		return raw, false, true // <lc_safe>, tiny dex result, or compaction failed: keep verbatim
 	}
 
 	if len(text) < minPruneChars {

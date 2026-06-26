@@ -387,8 +387,11 @@ func checkProxy(ctx context.Context) doctorCheck {
 	proxyTok := strings.TrimSpace(os.Getenv("DEX_PROXY_TOKEN"))
 	if snap, err := proxy.FetchStats(statsCtx, addr, proxyTok); err == nil && snap.RequestsTotal > 0 {
 		pct := snap.CompressionRatio * 100
-		detail = fmt.Sprintf("%s  (reachable, %d req, %d tokens saved, %.1f%%)",
-			base, snap.RequestsTotal, snap.TokensSaved, pct)
+		detail = fmt.Sprintf("%s  (reachable, %d req, %d saved, %.1f%%, %d preserved)",
+			base, snap.RequestsTotal, snap.TokensSaved, pct, snap.TokensPreserved)
+		if snap.TokensPreserved > 0 && snap.TokensSaved == 0 {
+			hints = append(hints, "proxy preserves <lc_safe>/test results verbatim — enable terse tool descriptions to reduce per-request cost: dex proxy --tool-desc terse")
+		}
 	}
 
 	return doctorCheck{name: "proxy", status: docOK, detail: detail, hints: hints}
