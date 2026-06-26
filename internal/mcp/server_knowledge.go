@@ -18,7 +18,7 @@ import (
 
 type KnowledgeInput struct {
 	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string  `json:"action"                 jsonschema:"add | list | delete | export | import | consolidate | gc"`
+	Action      string  `json:"action"                 jsonschema:"add | list | delete | review | pin | unpin | export | import | consolidate | gc"`
 	Archetype   string  `json:"archetype,omitempty"    jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default)"`
 	Body        string  `json:"body,omitempty"         jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
 	Confidence  float64 `json:"confidence,omitempty"   jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
@@ -55,6 +55,9 @@ type KnowledgeOutput struct {
 	// to be about (#658) — re-add with scope=<this> so file verbs surface it on
 	// touch (gotcha-on-touch). Empty when the note named no real path.
 	ScopeSuggestion string `json:"scope_suggestion,omitempty"`
+	// Review carries advisory cleanup proposals (action=review only, #633). The
+	// agent reads them and decides — dex never auto-applies these.
+	Review *store.KnowledgeReviewResult `json:"review,omitempty"`
 }
 
 // knowledgeSimilarThreshold is the Jaccard word-overlap at which an existing
@@ -139,6 +142,10 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 			return nil, KnowledgeOutput{Status: "error", Hint: "body must be a JSON array [{archetype,body,confidence},...] for import"}, nil
 		}
 		return s.knowledgeImport(ctx, st, in.Body)
+	case "review":
+		return s.knowledgeReview(ctx, st)
+	case "pin", "unpin":
+		return s.knowledgePin(ctx, st, in)
 	case "consolidate":
 		return s.knowledgeConsolidate(ctx, st)
 	case "gc":
@@ -152,7 +159,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 	case "list", "":
 		// fall through to read
 	default:
-		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | export | import | consolidate | gc", in.Action)}, nil
+		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | review | pin | unpin | export | import | consolidate | gc", in.Action)}, nil
 	}
 
 	// Scope-filtered list (#653): notes whose scope binds the given path — what
@@ -298,6 +305,66 @@ func (s *Server) knowledgeImport(ctx context.Context, st *store.Store, body stri
 		imported++
 	}
 	return nil, KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf("imported %d facts", imported)}, nil
+}
+
+// knowledgeReview returns advisory cleanup proposals (action=review, #633).
+// Read-only — dex never auto-applies them.
+func (s *Server) knowledgeReview(ctx context.Context, st *store.Store) (*sdk.CallToolResult, KnowledgeOutput, error) {
+	res, err := st.KnowledgeReview(ctx)
+	if err != nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	hint := "Knowledge store is tidy — nothing to review."
+	if res.Total > 0 {
+		hint = fmt.Sprintf("%d proposal(s): %d merge, %d overlap, %d stale. Read-only — apply with delete/add/pin.",
+			res.Total, len(res.Merge), len(res.Overlap), len(res.Stale))
+	}
+	return nil, KnowledgeOutput{Status: "ok", Hint: hint, Review: &res}, nil
+}
+
+// knowledgePin sets or clears a fact's pinned flag (action=pin|unpin, #633).
+func (s *Server) knowledgePin(ctx context.Context, st *store.Store, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
+	if in.ID <= 0 {
+		return nil, KnowledgeOutput{Status: "error", Hint: "id is required for pin/unpin"}, nil
+	}
+	if err := st.KnowledgeSetPinned(ctx, in.ID, in.Action == "pin"); err != nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	return nil, KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf("%sned fact #%d.", in.Action, in.ID)}, nil
+}
+
+// defaultNotesReviewThreshold is the proposal count at/above which session-start
+// orientation nudges to run `dex notes review` (#633).
+const defaultNotesReviewThreshold = 5
+
+// notesReviewThreshold reads DEX_NOTES_REVIEW_THRESHOLD (values < 1 fall back to
+// the default).
+func notesReviewThreshold() int {
+	if v := os.Getenv("DEX_NOTES_REVIEW_THRESHOLD"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			return n
+		}
+	}
+	return defaultNotesReviewThreshold
+}
+
+// pendingReviewCount returns how many `notes review` proposals the store holds,
+// best-effort (0 on any error). It only drives the advisory session-start nudge,
+// so it must never block or fail orientation. The store handle is owned by the
+// server (openStore is cached) — do not close it here.
+func (s *Server) pendingReviewCount(ctx context.Context, dbPath string) int {
+	if _, err := os.Stat(dbPath); err != nil {
+		return 0
+	}
+	st, err := s.openStore(dbPath)
+	if err != nil {
+		return 0
+	}
+	res, err := st.KnowledgeReview(ctx)
+	if err != nil {
+		return 0
+	}
+	return res.Total
 }
 
 // knowledgeCap is the soft ceiling on stored facts. Crossing it on add

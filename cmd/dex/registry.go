@@ -256,7 +256,7 @@ var verbs = []verbSpec{
 		flags: []flagSpec{flagK, flagFormat, flagV},
 	},
 	{
-		name: "notes", group: groupGraph, args: "add|list|delete|gc",
+		name: "notes", group: groupGraph, args: "add|list|delete|review|pin|unpin|gc",
 		summary: "per-project notes",
 		subs: []subSpec{
 			{"add", "store a fact"},

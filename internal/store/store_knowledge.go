@@ -31,6 +31,11 @@ type KnowledgeFact struct {
 	// (the default; surfaces only through query-time recall). Populated only by
 	// KnowledgeByScope; other reads leave it empty.
 	Scope string
+	// Pinned marks a fact the author declared permanent (#633): exempt from
+	// confidence decay, cap eviction, and `notes review` staleness proposals.
+	// Populated only by reads that select it (KnowledgeReview); other reads
+	// leave it false.
+	Pinned bool
 }
 
 // archetypeWeight returns the base salience weight for a known archetype.
@@ -319,6 +324,7 @@ type KnowledgeBackup struct {
 	UpdatedAt     int64 // unix nanos; 0 when the source schema predates the column
 	HitCount      int
 	RevisionCount int
+	Pinned        bool // #633; false when the source schema predates the column
 }
 
 // rawColumns returns the set of column names on table, read straight from
@@ -360,7 +366,7 @@ func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, 
 	if !cols["archetype"] {
 		return nil, nil // table missing or unreadable → nothing to rescue
 	}
-	// Build a fixed 8-column projection: present columns select directly, absent
+	// Build a fixed 9-column projection: present columns select directly, absent
 	// ones fall back to a literal default so the scan signature never changes.
 	col := func(name, def string) string {
 		if cols[name] {
@@ -373,7 +379,8 @@ func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, 
 		col("created_at", "0") + `, ` +
 		col("updated_at", "0") + `, ` +
 		col("hit_count", "0") + `, ` +
-		col("revision_count", "0") +
+		col("revision_count", "0") + `, ` +
+		col("pinned", "0") +
 		` FROM knowledge_facts ORDER BY id`
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -384,7 +391,7 @@ func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, 
 	for rows.Next() {
 		var b KnowledgeBackup
 		if err := rows.Scan(&b.Archetype, &b.Body, &b.Confidence, &b.Scope,
-			&b.CreatedAt, &b.UpdatedAt, &b.HitCount, &b.RevisionCount); err != nil {
+			&b.CreatedAt, &b.UpdatedAt, &b.HitCount, &b.RevisionCount, &b.Pinned); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
@@ -414,16 +421,17 @@ func (s *knowledgeStore) KnowledgeRestore(ctx context.Context, b KnowledgeBackup
 		b.UpdatedAt = b.CreatedAt
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope)
-		   VALUES(?,?,?,?,?,?,?,?)
+		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope, pinned)
+		   VALUES(?,?,?,?,?,?,?,?,?)
 		   ON CONFLICT(body) DO UPDATE SET
 		     archetype=excluded.archetype,
 		     confidence=MAX(confidence, excluded.confidence),
 		     updated_at=MAX(updated_at, excluded.updated_at),
 		     hit_count=MAX(hit_count, excluded.hit_count),
 		     revision_count=MAX(revision_count, excluded.revision_count),
-		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END`,
-		b.Archetype, b.Body, b.Confidence, b.CreatedAt, b.UpdatedAt, b.HitCount, b.RevisionCount, b.Scope)
+		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END,
+		     pinned=CASE WHEN excluded.pinned=1 THEN 1 ELSE pinned END`,
+		b.Archetype, b.Body, b.Confidence, b.CreatedAt, b.UpdatedAt, b.HitCount, b.RevisionCount, b.Scope, b.Pinned)
 	return err
 }
 
@@ -697,7 +705,7 @@ func int64sToAny(xs []int64) []any {
 type KnowledgeGCConfig struct {
 	DecayPerDay     float64 // confidence lost per elapsed day since the last GC, before protection (default 0.01)
 	ConfidenceFloor float64 // decay never pushes confidence below this (default 0.05)
-	JaccardMerge    float64 // word-overlap ≥ this merges two facts of the same archetype (default 0.85)
+	JaccardMerge    float64 // word-overlap ≥ this AUTO-merges two facts of the same archetype (default 0.95, #633)
 	MaxFacts        int     // evict lowest-confidence facts beyond this cap (default 1000; ≤0 keeps the default; negative disables)
 }
 
@@ -709,7 +717,10 @@ func (c *KnowledgeGCConfig) applyDefaults() {
 		c.ConfidenceFloor = 0.05
 	}
 	if c.JaccardMerge <= 0 {
-		c.JaccardMerge = 0.85
+		// #633: only near-identical bodies auto-merge unattended. The looser
+		// 0.85–0.95 band is surfaced as a `notes review` proposal for the
+		// agent to judge (supersede / keep-both / relate) — never auto-deleted.
+		c.JaccardMerge = 0.95
 	}
 	if c.MaxFacts == 0 {
 		c.MaxFacts = 1000
@@ -761,6 +772,7 @@ func (s *knowledgeStore) KnowledgeGC(ctx context.Context, cfg KnowledgeGCConfig)
 // knowledgeDecay reduces each fact's confidence in proportion to the days
 // elapsed since the last GC, divided by a protection factor that grows with
 // hit_count, and further softened for facts retrieved within the last week.
+// Pinned facts (#633) are exempt — never selected, never decayed.
 // On the first ever GC it just records the baseline timestamp (no decay).
 func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConfig, now time.Time) (int, error) {
 	var lastGCStr string
@@ -785,7 +797,7 @@ func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConf
 	}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, confidence, hit_count, last_retrieved FROM knowledge_facts`)
+		`SELECT id, confidence, hit_count, last_retrieved FROM knowledge_facts WHERE pinned=0`)
 	if err != nil {
 		return 0, err
 	}
@@ -832,12 +844,14 @@ func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConf
 }
 
 // knowledgeConsolidateSimilar merges facts within the same archetype whose body
-// word-sets overlap at or above cfg.JaccardMerge. The higher-confidence fact
-// survives, accumulating the other's hit_count and scope binding; the duplicate
-// is deleted (its fact_vecs row cascades away via trigger).
+// word-sets overlap at or above cfg.JaccardMerge (default 0.95 — only near-
+// identical bodies). The higher-confidence fact survives, accumulating the
+// other's hit_count and scope binding; the duplicate is deleted (its fact_vecs
+// row cascades away via trigger). A pinned duplicate (#633) is never deleted —
+// the author declared it permanent, so it is skipped as a merge target.
 func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, hit_count, scope FROM knowledge_facts ORDER BY archetype, confidence DESC`)
+		`SELECT id, archetype, body, confidence, hit_count, scope, pinned FROM knowledge_facts ORDER BY archetype, confidence DESC`)
 	if err != nil {
 		return 0, err
 	}
@@ -848,12 +862,13 @@ func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg Kn
 		conf      float64
 		hits      int
 		scope     string
+		pinned    bool
 		words     map[string]struct{}
 	}
 	var facts []fact
 	for rows.Next() {
 		var f fact
-		if err := rows.Scan(&f.id, &f.archetype, &f.body, &f.conf, &f.hits, &f.scope); err != nil {
+		if err := rows.Scan(&f.id, &f.archetype, &f.body, &f.conf, &f.hits, &f.scope, &f.pinned); err != nil {
 			_ = rows.Close()
 			return 0, err
 		}
@@ -875,6 +890,9 @@ func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg Kn
 		for j := i + 1; j < len(facts); j++ {
 			if deleted[j] || facts[i].archetype != facts[j].archetype {
 				continue
+			}
+			if facts[j].pinned {
+				continue // pinned duplicate is permanent — never auto-deleted
 			}
 			if jaccard(facts[i].words, facts[j].words) < cfg.JaccardMerge {
 				continue
@@ -901,7 +919,9 @@ func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg Kn
 }
 
 // knowledgeEvict drops the lowest-confidence facts when the store exceeds the
-// configured cap. Ties break toward the least-recently-retrieved.
+// configured cap. Ties break toward the least-recently-retrieved. Pinned facts
+// (#633) are never evicted — they still count toward the cap, but the cap is a
+// soft ceiling, so a store full of pinned facts simply stops shrinking.
 func (s *knowledgeStore) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
 	if cfg.MaxFacts <= 0 {
 		return 0, nil
@@ -917,6 +937,7 @@ func (s *knowledgeStore) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConf
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM knowledge_facts WHERE id IN (
 		   SELECT id FROM knowledge_facts
+		   WHERE pinned=0
 		   ORDER BY confidence ASC, last_retrieved ASC, updated_at ASC
 		   LIMIT ?)`, excess)
 	if err != nil {
@@ -924,6 +945,131 @@ func (s *knowledgeStore) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConf
 	}
 	n, _ := res.RowsAffected()
 	return int(n), nil
+}
+
+// KnowledgeSetPinned sets or clears the pinned flag on a fact (#633). A pinned
+// fact is exempt from confidence decay, cap eviction, and `notes review`
+// staleness proposals. Returns an error if no fact has the given id.
+func (s *knowledgeStore) KnowledgeSetPinned(ctx context.Context, id int64, pinned bool) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE knowledge_facts SET pinned=? WHERE id=?`, pinned, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("no fact with id %d", id)
+	}
+	return nil
+}
+
+// Review thresholds (#633). Advisory only — KnowledgeReview never mutates; the
+// agent reads the proposals and decides. The merge band starts below the GC
+// auto-merge threshold (0.95) so the 0.85–0.95 overlap that GC no longer
+// auto-deletes surfaces here for the agent to judge.
+const (
+	reviewMergeJaccard   = 0.85 // ≥ this AND same archetype → propose merge/supersede
+	reviewOverlapJaccard = 0.5  // ≥ this (any archetype) → propose overlap review
+	reviewStaleDays      = 30   // unpinned, zero-hit, older than this → propose stale
+)
+
+// ReviewProposal is one advisory cleanup suggestion. It never mutates the store.
+type ReviewProposal struct {
+	Kind       string   `json:"kind"`                 // "merge" | "overlap" | "stale"
+	IDs        []int64  `json:"ids"`                  // fact id(s) involved
+	Bodies     []string `json:"bodies"`               // their bodies, for the agent to judge
+	Similarity float64  `json:"similarity,omitempty"` // word-overlap, for merge/overlap
+	Reason     string   `json:"reason"`               // one-line hint
+}
+
+// KnowledgeReviewResult groups proposals by kind. Total is the proposal count,
+// consumed by the session-start nudge.
+type KnowledgeReviewResult struct {
+	Merge   []ReviewProposal `json:"merge"`
+	Overlap []ReviewProposal `json:"overlap"`
+	Stale   []ReviewProposal `json:"stale"`
+	Total   int              `json:"total"`
+}
+
+// KnowledgeReview computes advisory cleanup proposals over the fact store
+// WITHOUT mutating anything (#633): near-duplicate merges, looser overlaps for
+// the agent to judge (supersede / keep-both / relate), and stale unpinned
+// facts. It is the read-only companion to KnowledgeGC — the agent acts on the
+// output; dex never auto-mutates on these heuristics. O(n²) over a ≤1000-row
+// store, comfortably sub-millisecond.
+func (s *knowledgeStore) KnowledgeReview(ctx context.Context) (KnowledgeReviewResult, error) {
+	var res KnowledgeReviewResult
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, archetype, body, updated_at, hit_count, scope, pinned FROM knowledge_facts`)
+	if err != nil {
+		return res, err
+	}
+	type rfact struct {
+		id        int64
+		archetype string
+		body      string
+		updatedAt int64
+		hits      int
+		scope     string
+		pinned    bool
+		words     map[string]struct{}
+	}
+	var facts []rfact
+	for rows.Next() {
+		var f rfact
+		if err := rows.Scan(&f.id, &f.archetype, &f.body, &f.updatedAt, &f.hits, &f.scope, &f.pinned); err != nil {
+			_ = rows.Close()
+			return res, err
+		}
+		f.words = wordSet(f.body)
+		facts = append(facts, f)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return res, err
+	}
+	_ = rows.Close()
+
+	for i := range facts {
+		for j := i + 1; j < len(facts); j++ {
+			a, b := facts[i], facts[j]
+			sim := jaccard(a.words, b.words)
+			switch {
+			case a.archetype == b.archetype && sim >= reviewMergeJaccard:
+				res.Merge = append(res.Merge, ReviewProposal{
+					Kind: "merge", IDs: []int64{a.id, b.id},
+					Bodies: []string{a.body, b.body}, Similarity: sim,
+					Reason: fmt.Sprintf("near-duplicate %s facts (overlap %.2f) — merge or supersede", a.archetype, sim),
+				})
+			case sim >= reviewOverlapJaccard:
+				res.Overlap = append(res.Overlap, ReviewProposal{
+					Kind: "overlap", IDs: []int64{a.id, b.id},
+					Bodies: []string{a.body, b.body}, Similarity: sim,
+					Reason: fmt.Sprintf("overlapping facts (overlap %.2f) — supersede, keep both, or relate", sim),
+				})
+			case a.scope != "" && a.scope == b.scope:
+				res.Overlap = append(res.Overlap, ReviewProposal{
+					Kind: "overlap", IDs: []int64{a.id, b.id},
+					Bodies: []string{a.body, b.body},
+					Reason: fmt.Sprintf("two facts share scope %q — check for redundancy", a.scope),
+				})
+			}
+		}
+	}
+
+	cutoff := time.Now().Add(-reviewStaleDays * 24 * time.Hour).UnixNano()
+	for _, f := range facts {
+		if f.pinned || f.hits > 0 || f.updatedAt == 0 || f.updatedAt > cutoff {
+			continue
+		}
+		ageDays := int(time.Since(time.Unix(0, f.updatedAt)).Hours() / 24)
+		res.Stale = append(res.Stale, ReviewProposal{
+			Kind: "stale", IDs: []int64{f.id}, Bodies: []string{f.body},
+			Reason: fmt.Sprintf("%dd old, never retrieved — evict, rewrite, or pin", ageDays),
+		})
+	}
+
+	res.Total = len(res.Merge) + len(res.Overlap) + len(res.Stale)
+	return res, nil
 }
 
 // wordSet returns the set of lowercased alphanumeric tokens (length > 2) in s.

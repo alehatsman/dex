@@ -18,7 +18,9 @@ import (
 // (signature, start_byte, end_byte, declaration_hash). Empty byte spans are
 // useless to a refactor consumer, so the upgrade is a reindex (the
 // fail-closed gate below), not an ALTER-with-defaults backfill.
-const schemaVersion = "4"
+// v5 (#633): knowledge_facts gains `pinned` — a fact the author marked
+// permanent, exempt from decay, eviction, and staleness proposals.
+const schemaVersion = "5"
 
 // chunkFTSContentExpr builds the SQL expression for a chunk's FTS `content`
 // document: the Contextual-BM25 prefix (context_text + newline, when present)
@@ -200,6 +202,7 @@ func schemaDDL() []string {
 		   revision_count INTEGER NOT NULL DEFAULT 0,
 		   last_retrieved INTEGER NOT NULL DEFAULT 0,
 		   scope          TEXT NOT NULL DEFAULT '',
+		   pinned         INTEGER NOT NULL DEFAULT 0,
 		   UNIQUE(body)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_knowledge_confidence ON knowledge_facts(confidence DESC, updated_at DESC)`,

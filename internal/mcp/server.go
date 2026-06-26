@@ -949,7 +949,10 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"the superseded one; pass `scope` to bind the fact to a file glob/path/package so `locate` " +
 				"surfaces it proactively when it touches a matching file, #645 — and if you omit `scope` but the " +
 				"note names a real project file/glob, the response's `scope_suggestion` proposes one), " +
-				"list (recall top-k facts ordered by salience), delete (remove a fact by id). " +
+				"list (recall top-k facts ordered by salience), delete (remove a fact by id), " +
+				"review (read-only: suggest near-duplicate merges, overlaps to judge, and stale facts — " +
+				"dex never auto-applies these, you act on them), pin/unpin (mark a fact permanent — exempt " +
+				"from decay, eviction, and staleness proposals, #633). " +
 				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
 				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
 				"as knowledge_facts."),

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/alehatsman/dex/internal/codemap"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -46,5 +47,8 @@ func (s *Server) orientResponse(ctx context.Context, in ContextInput) (*sdk.Call
 		codemap.DefaultL0Budget, codemap.DefaultL1Budget)
 	out.NextAction = "Name the cluster matching your task, then find(\"<concept>\", \"<pkg>\") within it — you're already oriented; skip the broad map() call."
 	out.Avoid = "Don't fan out grep/Read to discover layout — the map above already routes you to the right package."
+	if n := s.pendingReviewCount(ctx, p.DBPath); n >= notesReviewThreshold() {
+		out.NextAction += fmt.Sprintf(" ⚠ %d notes pending review — run `dex notes review` to tidy memory (#633).", n)
+	}
 	return nil, out, nil
 }

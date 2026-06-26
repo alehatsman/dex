@@ -20,9 +20,11 @@ func TestJaccard(t *testing.T) {
 
 func TestKnowledgeGC_ConsolidatesSimilar(t *testing.T) {
 	st, ctx := newStore(t)
-	// Two near-identical facts (same archetype) + one distinct.
+	// Two facts with identical word-sets (same archetype) + one distinct. The
+	// default auto-merge threshold is 0.95 (#633), so only near-identical bodies
+	// consolidate — the trailing period differs the body text but not the words.
 	_, _ = st.KnowledgeAdd(ctx, "Gotcha", "store tests need the sqlite_fts5 build tag", 0.9)
-	_, _ = st.KnowledgeAdd(ctx, "Gotcha", "store tests need the sqlite_fts5 build tag set", 0.7)
+	_, _ = st.KnowledgeAdd(ctx, "Gotcha", "store tests need the sqlite_fts5 build tag.", 0.7)
 	_, _ = st.KnowledgeAdd(ctx, "Decision", "config is parsed from yaml", 0.8)
 
 	res, err := st.KnowledgeGC(ctx, KnowledgeGCConfig{})
