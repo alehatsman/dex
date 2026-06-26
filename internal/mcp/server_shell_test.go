@@ -464,6 +464,43 @@ func TestShellRun_NonZeroExit(t *testing.T) {
 	if out.ExitCode != 42 {
 		t.Fatalf("expected exit 42, got %d", out.ExitCode)
 	}
+	// A bare exit with no recognizable failure text stages nothing (#601).
+	if out.GotchaCandidate != nil {
+		t.Errorf("unrecognized failure must not stage a candidate, got %+v", out.GotchaCandidate)
+	}
+}
+
+// TestShellRun_GotchaCandidate covers #601 end-to-end through the shell path:
+// a non-zero exit whose output carries a known failure signature surfaces a
+// staged Gotcha candidate; a success does not.
+func TestShellRun_GotchaCandidate(t *testing.T) {
+	s := &Server{}
+
+	// printf the signature, then exit non-zero — no toolchain dependency.
+	out, err := s.ShellRun(t.Context(), ShellInput{
+		Command: "printf 'undefined: Bar\\n'; exit 2",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.ExitCode != 2 {
+		t.Fatalf("expected exit 2, got %d", out.ExitCode)
+	}
+	if out.GotchaCandidate == nil {
+		t.Fatal("expected a gotcha candidate for a recognized build failure")
+	}
+	if out.GotchaCandidate.Class != "build" || out.GotchaCandidate.Archetype != "Gotcha" {
+		t.Errorf("candidate = %+v, want class=build archetype=Gotcha", out.GotchaCandidate)
+	}
+
+	// Success: no candidate.
+	ok, err := s.ShellRun(t.Context(), ShellInput{Command: "printf 'undefined: Bar\\n'"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok.GotchaCandidate != nil {
+		t.Errorf("exit 0 must not stage a candidate, got %+v", ok.GotchaCandidate)
+	}
 }
 
 func TestShellRun_JSONCompaction(t *testing.T) {

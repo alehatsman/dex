@@ -139,7 +139,12 @@ service clients are the http-api spec's.
   (the same pipeline as the indexer's log compression). File-write redirects
   (`>`, `>>`) and `tee` are blocked by default — the caller must use the Write
   tool — unless `DEX_SHELL_ALLOW_WRITES=1` opts out (#596); `raw:true` skips
-  compression; timeout 60 s.
+  compression; timeout 60 s. WHEN a command exits non-zero and its output
+  matches a known failure signature (build, test, panic, permission, network,
+  …), the response carries a low-confidence `gotcha_candidate` (archetype
+  `Gotcha`) the agent can confirm via `notes action=add` (#601); the scan is
+  pure regex over the already-compressed output, gated on the non-zero exit, and
+  omitted otherwise.
 - WHEN `grep` is called, dex runs an RE2 pattern search over indexed project files
   (inheriting the project's ignore rules), falling back to a filesystem walk that
   skips `.git`, `vendor`, and `node_modules` when no index exists. Returns up to

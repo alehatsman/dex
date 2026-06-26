@@ -990,6 +990,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"syntax work; override with DEX_SHELL. " +
 			"File-write redirects (> >>) and tee are blocked by default; use the Write tool instead, " +
 			"or set DEX_SHELL_ALLOW_WRITES=1 to permit them. " +
+			"On a non-zero exit whose output matches a known failure signature, the response carries a " +
+			"low-confidence `gotcha_candidate` — confirm it with `notes` (action=add) to persist the pitfall. " +
 			"Timeout: 60 s."),
 	}, h.shellRun)
 

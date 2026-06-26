@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/compress"
+	"github.com/alehatsman/dex/internal/gotcha"
 	"github.com/alehatsman/dex/internal/redact"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -57,6 +58,10 @@ type ShellOutput struct {
 	OriginalLines int    `json:"original_lines,omitempty"`
 	OutputLines   int    `json:"output_lines,omitempty"`
 	SavedPct      int    `json:"saved_pct,omitempty"`
+	// GotchaCandidate is a low-confidence Gotcha staged from a recognized
+	// failure signature when the command exits non-zero (#601). nil on success
+	// or when no known pattern matched. The agent confirms it via `notes add`.
+	GotchaCandidate *gotcha.Candidate `json:"gotcha_candidate,omitempty"`
 }
 
 const (
@@ -581,7 +586,17 @@ func (s *Server) ShellRun(ctx context.Context, in ShellInput) (ShellOutput, erro
 	return out, err
 }
 
-func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
+func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellInput) (res *sdk.CallToolResult, out ShellOutput, err error) {
+	// Stage a Gotcha candidate from any non-zero exit, uniformly across every
+	// return path below (#601). Runs after the output is assembled so it sees
+	// the compressed text the agent sees; nil unless a known failure signature
+	// matched, so the field is omitted on success and on unrecognized failures.
+	defer func() {
+		if err == nil && out.ExitCode != 0 {
+			out.GotchaCandidate = gotcha.Detect(in.Command, out.Output, out.ExitCode)
+		}
+	}()
+
 	if strings.TrimSpace(in.Command) == "" {
 		return nil, ShellOutput{}, fmt.Errorf("command is required")
 	}
