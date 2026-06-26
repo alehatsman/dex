@@ -65,6 +65,10 @@ type Stats struct {
 	// re-injected pruned bytes, and the total tool_result blocks restored.
 	RequestsCCRRecovered atomic.Int64
 	CCRBlocksRestored    atomic.Int64
+
+	// Cold-prefix repack counter (#598): number of times the cold-gap detector
+	// latched repacking mode (at most 1 per session in normal usage).
+	ColdRepackLatched atomic.Int64
 }
 
 // Snapshot is a JSON-serializable point-in-time view of Stats.
@@ -119,6 +123,10 @@ type Snapshot struct {
 	// content-addressed store, and the total blocks restored.
 	RequestsCCRRecovered int64 `json:"requests_ccr_recovered"`
 	CCRBlocksRestored    int64 `json:"ccr_blocks_restored"`
+
+	// Cold-prefix repack counter (#598): how many times the cold-gap detector
+	// triggered repacking mode (at most 1 per session in normal usage).
+	ColdRepackLatched int64 `json:"cold_repack_latched"`
 
 	// LogPath is the absolute path of the per-session JSONL budget event log
 	// (#60). Empty when no BudgetLog is configured.
@@ -208,6 +216,11 @@ func (s *Stats) recordCCR(restored int) {
 	}
 }
 
+// recordColdRepack increments the cold-repack latch counter (#598).
+func (s *Stats) recordColdRepack() {
+	s.ColdRepackLatched.Add(1)
+}
+
 // recordCost adds costUSD to the running session cost total.
 func (s *Stats) recordCost(costUSD float64) {
 	if costUSD > 0 {
@@ -287,6 +300,8 @@ func (s *Stats) Snapshot() Snapshot {
 
 		RequestsCCRRecovered: s.RequestsCCRRecovered.Load(),
 		CCRBlocksRestored:    s.CCRBlocksRestored.Load(),
+
+		ColdRepackLatched: s.ColdRepackLatched.Load(),
 
 		SessionCostUSD: float64(s.SessionCostMicroUSD.Load()) / 1_000_000,
 	}

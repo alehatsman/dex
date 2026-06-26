@@ -51,9 +51,16 @@ layer, not a feature surface.
      (no-op when CCR is off).
   4. **ApplyEffort** — injects a reasoning-budget field (opt-in; no-op when
      `DEX_PROXY_EFFORT` is unset).
-  5. **CompressToolDescriptions** — rewrites tool `description` fields in the
-     `tools` array (no-op in `full` mode, the default).
-  6. **AlignCacheBreakpoints** — strips any client-set `cache_control` markers
+  5. **ColdPrefixRepack** — if no `/v1/messages` request has been forwarded for
+     ≥ 600 seconds (2 × Anthropic's 5-minute cache TTL), latches a
+     `repacking` flag and escalates tool-description compression from `full`
+     to `terse` for this and all subsequent turns. The first request in a
+     session never triggers repack (requires a prior touch). Always-on; no
+     flag required.
+  6. **CompressToolDescriptions** — rewrites tool `description` fields in the
+     `tools` array (no-op in `full` mode, the default; escalated to `terse`
+     when the cold-prefix repack flag is latched).
+  7. **AlignCacheBreakpoints** — strips any client-set `cache_control` markers
      and re-places up to 4 `cache_control:{type:"ephemeral"}` breakpoints on
      the stable prefix.
 
@@ -159,12 +166,13 @@ layer, not a feature surface.
 - [x] Binds loopback (`127.0.0.1:8788`) by default; non-loopback rejected at startup unless `DEX_PROXY_TOKEN` set
 - [x] `DEX_PROXY_TOKEN` gates all routes via `X-Dex-Proxy-Token`; 401 on missing/wrong token
 - [x] API key forwarded untouched; bodies never logged; `X-Forwarded-*` and `X-Dex-Proxy-Token` stripped outbound; `Accept-Encoding` stripped for clean SSE tee
-- [x] Pipeline order: RouteModel → PruneRequestBody → CCR → ApplyEffort → CompressToolDescriptions → AlignCacheBreakpoints
+- [x] Pipeline order: RouteModel → PruneRequestBody → CCR → ApplyEffort → ColdPrefixRepack → CompressToolDescriptions → AlignCacheBreakpoints
 - [x] PruneRequestBody: `DefaultKeepRecent=10` messages kept verbatim; boundary rounded to `PruneStride=16`; `minPruneChars=200`; `<lc_safe>`, already-compressed, and test/build results preserved; file reads → re-read stub; commands → head/tail
 - [x] CCR (off by default): file-read stubs carry `dex:lc_expand:<16-hex>` marker; bytes stored under `~/.cache/dex/proxy/tee/`; 24-hour TTL; `ccrMinBytes=512`; fail-open
 - [x] RouteModel (off by default): rewrites `model` by token-count thresholds (low<2 000→haiku, mid<20 000→sonnet); configurable via flags/env
 - [x] ApplyEffort (off by default): injects provider-specific reasoning-budget field; skips if client already set it or model not a reasoning model; fail-open
-- [x] CompressToolDescriptions: full (no-op)/terse/lazy; `name`+`input_schema` untouched; deterministic output; clamped to `full` when `ENABLE_TOOL_SEARCH` set
+- [x] ColdPrefixRepack (always-on): tracks last-touch time in `~/.cache/dex/proxy/cold_prefix_touch.json` (atomic write-rename, 30 s throttle); latches `repacking` flag when elapsed > 600 s; never acts on first sighting; escalates `full` → `terse` tool-description mode once latched; `cold_repack_latched` counter in `/stats`
+- [x] CompressToolDescriptions: full (no-op)/terse/lazy; `name`+`input_schema` untouched; deterministic output; clamped to `full` when `ENABLE_TOOL_SEARCH` set; effective mode may be escalated by ColdPrefixRepack
 - [x] AlignCacheBreakpoints: strips client markers, places up to 4; model-dependent minimum prefix; runs after pruning
 - [x] `GET /stats` returns JSON `Snapshot`; `dex proxy --stats` fetches and prints it
 - [x] `POST /compact` records compaction event in budget log

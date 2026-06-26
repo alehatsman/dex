@@ -90,6 +90,9 @@ type Options struct {
 	// compute the output/input ratio and feed it into the adaptive compression
 	// policy (#610).
 	FeedbackHook func(outputTokens, inputTokens int64)
+	// ColdPrefix tracks per-session cache-expiry state and latches a repack
+	// flag when a cold gap is detected (#598). Nil creates a default tracker.
+	ColdPrefix *ColdPrefixTracker
 }
 
 // Run starts the loopback proxy and blocks until ctx is cancelled or the
@@ -131,7 +134,13 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
-	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook, opts.Effort, ccr, opts.FeedbackHook)
+	// Cold-prefix repack tracker (#598). Always-on: nil creates a default.
+	coldPrefix := opts.ColdPrefix
+	if coldPrefix == nil {
+		coldPrefix = NewColdPrefixTracker()
+	}
+
+	handler := newProxyHandler(upstreamURL, opts.Logger, opts.Stats, opts.Token, opts.ToolDescMode, opts.RouteConfig, opts.EditFailHook, opts.BudgetLog, opts.Pricing, opts.CostHook, opts.Effort, ccr, opts.FeedbackHook, coldPrefix)
 
 	httpSrv := &http.Server{
 		Addr:              opts.Addr,
@@ -193,7 +202,7 @@ func FetchStats(ctx context.Context, addr, token string) (Snapshot, error) {
 //   - GET /stats → JSON Snapshot (no PII, no bodies)
 //   - POST /compact → record a PreCompact event in the budget log
 //   - everything else → compress + forward to upstream
-func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64), effort EffortLevel, ccr *TeeStore, feedbackHook func(outputTokens, inputTokens int64)) http.Handler {
+func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token string, toolDescMode ToolDescMode, routeCfg ModelRouteConfig, editFailHook func(string), budgetLog *BudgetLog, pricing map[string]ModelPricing, costHook func(float64), effort EffortLevel, ccr *TeeStore, feedbackHook func(outputTokens, inputTokens int64), coldPrefix *ColdPrefixTracker) http.Handler {
 	rp := &httputil.ReverseProxy{
 		// FlushInterval -1 flushes each chunk as it arrives — mandatory for
 		// SSE so the agent sees tokens stream rather than waiting on a buffer.
@@ -330,11 +339,29 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 				paths = append(paths, "effort:"+effortStats.Effort)
 			}
 
+			// Cold-prefix repack (#598): when the provider's cache has likely
+			// expired (no activity for > coldThreshold), escalate tool-description
+			// compression from full → terse so the cold turn pays fewer tokens
+			// and the re-cached prefix is smaller. The flag latches once latched
+			// so all subsequent turns stay on the compressed prefix.
+			effectiveToolDescMode := toolDescMode
+			if coldPrefix != nil {
+				if coldPrefix.ShouldRepack() {
+					coldPrefix.SetRepacking()
+					stats.recordColdRepack()
+					paths = append(paths, "cold-repack")
+				}
+				if coldPrefix.IsRepacking() && toolDescMode == ToolDescFull {
+					effectiveToolDescMode = ToolDescTerse
+				}
+				coldPrefix.Touch()
+			}
+
 			// Tool-description compression runs before cache alignment so the
 			// cache pass marks breakpoints on the final (compressed) tools
 			// block. The mode is static per session, so the tools prefix stays
 			// byte-identical turn-over-turn and keeps the cache warm.
-			toolCompressed, toolDescStats := CompressToolDescriptions(current, toolDescMode)
+			toolCompressed, toolDescStats := CompressToolDescriptions(current, effectiveToolDescMode)
 			if toolDescStats.Applied {
 				current = toolCompressed
 				paths = append(paths, "tooldesc")
