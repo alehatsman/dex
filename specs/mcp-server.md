@@ -50,11 +50,14 @@ service clients are the http-api spec's.
   - The always-on lane (registered even with no embedder or chat model) is
     `ask`, `grep`, `ls`, and `shell`.
   - The default verb lane (non-weak model) adds `map`, `trace`, `impact`,
-    `locate`, `review`, `read`, and `notes` — the everyday navigation + reading
-    verbs (`locate` for one-call orientation around a code location, `review`
-    for per-hunk PR intelligence) plus persistent project memory (#548). Both
-    `locate` and `review` are pure composition over the index and need no chat
-    model; their callers lane degrades to empty without a graph.
+    `locate`, `review`, `refactor`, `read`, and `notes` — the everyday
+    navigation + reading verbs (`locate` for one-call orientation around a code
+    location, `review` for per-hunk PR intelligence) plus persistent project
+    memory (#548) and `refactor` for type-precise edit planning. `locate` and
+    `review` are pure composition over the index and need no chat model; their
+    callers lane degrades to empty without a graph. `refactor` needs no index at
+    all — it loads source on-demand via go/packages and returns byte-exact edit
+    triples (read-only #551: it never writes; the agent applies the edits).
     `notes` needs no embedder or chat model,
     and the read path (facts auto-injected into `ask`) is inert if the agent
     can never write, so the write verb headlines the default surface.
@@ -73,7 +76,7 @@ service clients are the http-api spec's.
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
-  `ask`, `find`, `map`, `trace`, `impact`, `locate`, `review`, `read`, `grep`,
+  `ask`, `find`, `map`, `trace`, `impact`, `locate`, `review`, `refactor`, `read`, `grep`,
   `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `lookup`, `deps`, `callers`,
   `callees`, `path`, `diff`, `clusters`, `routes`, `smells`, `status`,
   `session`.

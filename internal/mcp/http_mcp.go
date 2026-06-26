@@ -47,6 +47,11 @@ func (p projectScoped) review(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.review(ctx, req, in)
 }
 
+func (p projectScoped) refactor(ctx context.Context, req *sdk.CallToolRequest, in RefactorInput) (*sdk.CallToolResult, RefactorOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.refactor(ctx, req, in)
+}
+
 func (p projectScoped) search(ctx context.Context, req *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.search(ctx, req, in)

@@ -664,6 +664,7 @@ type toolSurface interface {
 	contextRouter(context.Context, *sdk.CallToolRequest, ContextInput) (*sdk.CallToolResult, ContextOutput, error)
 	locate(context.Context, *sdk.CallToolRequest, LocateInput) (*sdk.CallToolResult, LocateOutput, error)
 	review(context.Context, *sdk.CallToolRequest, ReviewInput) (*sdk.CallToolResult, ReviewOutput, error)
+	refactor(context.Context, *sdk.CallToolRequest, RefactorInput) (*sdk.CallToolResult, RefactorOutput, error)
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
 	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
 	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
@@ -830,6 +831,24 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
 				"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
 		}, h.review)
+
+		// refactor is in the default lane (#638 / GitHub #65 S3): type-precise
+		// edit planning. dex stays read-only (#551) — refactor never writes; it
+		// returns byte-precise edit triples the agent applies with Edit. v1 is
+		// rename_symbol for Go, planned on-demand via go/packages (no index).
+		addTool(srv, &sdk.Tool{
+			Name:        "refactor",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Plan a type-precise rename and get back byte-exact edit triples to apply yourself " +
+				"(dex never writes files). Set `op` to 'rename_symbol' (default), `symbol` to the target " +
+				"(bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') and `to` to " +
+				"the new name. Returns every (path, start_byte, end_byte, replacement) edit across the module, " +
+				"resolved by the Go type checker — a method rename touches only that type's method, never " +
+				"same-named methods elsewhere. Apply edits highest-offset-first per file. The `etag` echoes the " +
+				"touched files' hash; pass it back to detect a stale plan. Go-only in v1 (returns " +
+				"'unsupported-language' otherwise); also 'not-found' / 'ambiguous' / 'stale'. Loads packages " +
+				"on-demand, so it is slower than the read verbs — reach for it when you're about to rename."),
+		}, h.refactor)
 
 		// notes is in the default lane (#548): persistent project memory is the
 		// highest-leverage saver of repeat exploration, and the read path (facts

@@ -193,6 +193,12 @@ func (rc *remoteClient) review(ctx context.Context, _ *sdk.CallToolRequest, in R
 	return nil, out, err
 }
 
+func (rc *remoteClient) refactor(ctx context.Context, _ *sdk.CallToolRequest, in RefactorInput) (*sdk.CallToolResult, RefactorOutput, error) {
+	var out RefactorOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/refactor"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	var out SearchOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/find"), in, &out)

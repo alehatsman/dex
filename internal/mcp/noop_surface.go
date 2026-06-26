@@ -29,6 +29,9 @@ func (n *noopSurface) locate(_ context.Context, _ *sdk.CallToolRequest, _ Locate
 func (n *noopSurface) review(_ context.Context, _ *sdk.CallToolRequest, _ ReviewInput) (*sdk.CallToolResult, ReviewOutput, error) {
 	return nil, ReviewOutput{}, n.err()
 }
+func (n *noopSurface) refactor(_ context.Context, _ *sdk.CallToolRequest, _ RefactorInput) (*sdk.CallToolResult, RefactorOutput, error) {
+	return nil, RefactorOutput{}, n.err()
+}
 func (n *noopSurface) search(_ context.Context, _ *sdk.CallToolRequest, _ SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	return nil, SearchOutput{}, n.err()
 }

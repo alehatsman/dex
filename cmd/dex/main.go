@@ -110,6 +110,8 @@ func main() {
 		err = cmdReview(ctx, args)
 	case "locate":
 		err = cmdLocate(ctx, args)
+	case "refactor":
+		err = cmdRefactor(ctx, args)
 	case "grep":
 		err = cmdGrep(ctx, args)
 	case "ls":

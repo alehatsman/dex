@@ -169,6 +169,15 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "refactor", group: groupQuery, args: "[<path>] <symbol> <to>",
+		summary: "plan a type-precise rename (edit triples; never writes)",
+		flags: []flagSpec{
+			{name: "--op", desc: "operation (v1: rename_symbol)", arg: true},
+			{name: "--etag", desc: "prior plan etag (detects stale)", arg: true},
+			flagFormat,
+		},
+	},
+	{
 		name: "review", group: groupQuery, args: "[<path>]",
 		summary: "per-hunk PR intelligence",
 		flags: []flagSpec{
