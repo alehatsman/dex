@@ -285,7 +285,7 @@ func searchFiles(dir string, exts []string, patterns []*regexp.Regexp) (string, 
 		if !matched {
 			return nil
 		}
-		f, err := os.Open(path)
+		f, err := os.Open(path) //nolint:gosec // eval-only, pinned corpus — not user-controlled
 		if err != nil {
 			return nil //nolint:nilerr
 		}

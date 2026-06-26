@@ -69,7 +69,7 @@ func (c *Client) Shutdown() error {
 }
 
 // DidOpen notifies the server that a file is open (required before queries).
-func (c *Client) DidOpen(ctx context.Context, uri, languageID, text string) error {
+func (c *Client) DidOpen(_ context.Context, uri, languageID, text string) error {
 	return c.notify("textDocument/didOpen", map[string]any{
 		"textDocument": map[string]any{
 			"uri":        uri,
