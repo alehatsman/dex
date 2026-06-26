@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/throttle"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -49,7 +50,7 @@ func (s *Server) SearchGrep(ctx context.Context, in SearchGrepInput) (SearchGrep
 	return out, err
 }
 
-func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) { //nolint:cyclop
+func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
 	p, hint := s.resolveProject(in.ProjectRoot)
 	if hint != "" {
 		return nil, SearchGrepOutput{Status: "error", Hint: hint}, nil
@@ -84,71 +85,10 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	if prefix == "." {
 		prefix = ""
 	}
-	// Validate an explicit path exists before searching — otherwise a typo'd
-	// path silently falls through to walking the whole project root and returns
-	// a misleading "no-matches". Accept both directories and a single file (the
-	// `rg pattern file.go` idiom, and what sibling tools accept); reject only
-	// genuinely missing paths, and say so honestly.
-	var prefixIsFile bool
-	if prefix != "" {
-		info, statErr := os.Stat(filepath.Join(p.Root, prefix))
-		if statErr != nil {
-			return nil, SearchGrepOutput{Status: "not-found", Project: p.Root,
-				Hint: fmt.Sprintf("path %q does not exist under %s", prefix, p.Root)}, nil
-		}
-		prefixIsFile = !info.IsDir()
-	}
 	extFilter := strings.TrimPrefix(in.Ext, ".")
-
-	// Build the file list. A single-file path scopes the scan to exactly that
-	// file (an ext filter excluding it yields an empty set → no-matches, never a
-	// whole-repo walk); a directory uses the index when available and falls back
-	// to walking the fs.
-	var filePaths []string
-	if prefixIsFile {
-		if extFilter == "" || strings.HasSuffix(prefix, "."+extFilter) {
-			filePaths = append(filePaths, filepath.Join(p.Root, prefix))
-		}
-	} else if _, statErr := os.Stat(p.DBPath); !errors.Is(statErr, os.ErrNotExist) {
-		st, openErr := s.openStore(p.DBPath)
-		if openErr == nil {
-			if files, treeErr := st.FileTree(ctx, prefix); treeErr == nil {
-				for _, f := range files {
-					if extFilter != "" && !strings.HasSuffix(f.Path, "."+extFilter) {
-						continue
-					}
-					filePaths = append(filePaths, filepath.Join(p.Root, f.Path))
-				}
-			}
-		}
-	}
-	if !prefixIsFile && len(filePaths) == 0 {
-		searchRoot := p.Root
-		if prefix != "" {
-			searchRoot = filepath.Join(p.Root, prefix)
-		}
-		if err := filepath.Walk(searchRoot, func(path string, info os.FileInfo, walkErr error) error {
-			if walkErr != nil {
-				if path == searchRoot {
-					return walkErr // propagate root-level errors (e.g. path doesn't exist)
-				}
-				return nil // skip inaccessible subdirectories
-			}
-			if info.IsDir() {
-				switch info.Name() {
-				case ".git", "vendor", "node_modules", ".dex":
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if extFilter != "" && !strings.HasSuffix(path, "."+extFilter) {
-				return nil
-			}
-			filePaths = append(filePaths, path)
-			return nil
-		}); err != nil {
-			return nil, SearchGrepOutput{Status: "not-found", Hint: fmt.Sprintf("cannot walk %s: %v", searchRoot, err)}, nil
-		}
+	filePaths, early := s.grepFileList(ctx, p, prefix, extFilter)
+	if early != nil {
+		return nil, *early, nil
 	}
 
 	// Narrow the candidate set using the trigram index before reading files.
@@ -214,6 +154,73 @@ outer:
 		out.Hint = ldHint
 	}
 	return nil, out, nil
+}
+
+// grepFileList resolves the candidate files for a grep scan. A single-file
+// prefix scopes to exactly that file (an ext filter excluding it yields an
+// empty set → no-matches, never a whole-repo walk); a directory uses the index
+// when available and falls back to a filesystem walk. A non-nil return is a
+// terminal output (a genuinely missing path) the caller returns as-is — a
+// typo'd path must fail loud, not silently walk the whole root (#73).
+func (s *Server) grepFileList(ctx context.Context, p *proj.Project, prefix, extFilter string) ([]string, *SearchGrepOutput) {
+	var prefixIsFile bool
+	if prefix != "" {
+		info, statErr := os.Stat(filepath.Join(p.Root, prefix))
+		if statErr != nil {
+			return nil, &SearchGrepOutput{Status: "not-found", Project: p.Root,
+				Hint: fmt.Sprintf("path %q does not exist under %s", prefix, p.Root)}
+		}
+		prefixIsFile = !info.IsDir()
+	}
+
+	var filePaths []string
+	if prefixIsFile {
+		if extFilter == "" || strings.HasSuffix(prefix, "."+extFilter) {
+			filePaths = append(filePaths, filepath.Join(p.Root, prefix))
+		}
+	} else if _, statErr := os.Stat(p.DBPath); !errors.Is(statErr, os.ErrNotExist) {
+		if st, openErr := s.openStore(p.DBPath); openErr == nil {
+			if files, treeErr := st.FileTree(ctx, prefix); treeErr == nil {
+				for _, f := range files {
+					if extFilter != "" && !strings.HasSuffix(f.Path, "."+extFilter) {
+						continue
+					}
+					filePaths = append(filePaths, filepath.Join(p.Root, f.Path))
+				}
+			}
+		}
+	}
+	if prefixIsFile || len(filePaths) > 0 {
+		return filePaths, nil
+	}
+
+	searchRoot := p.Root
+	if prefix != "" {
+		searchRoot = filepath.Join(p.Root, prefix)
+	}
+	if err := filepath.Walk(searchRoot, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			if path == searchRoot {
+				return walkErr // propagate root-level errors (e.g. path doesn't exist)
+			}
+			return nil // skip inaccessible subdirectories
+		}
+		if info.IsDir() {
+			switch info.Name() {
+			case ".git", "vendor", "node_modules", ".dex":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if extFilter != "" && !strings.HasSuffix(path, "."+extFilter) {
+			return nil
+		}
+		filePaths = append(filePaths, path)
+		return nil
+	}); err != nil {
+		return nil, &SearchGrepOutput{Status: "not-found", Hint: fmt.Sprintf("cannot walk %s: %v", searchRoot, err)}
+	}
+	return filePaths, nil
 }
 
 // newGrepMatch builds a match for the line at index i, attaching up to ctxN
