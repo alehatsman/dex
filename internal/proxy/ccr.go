@@ -191,6 +191,163 @@ func parseExpandMarker(text string) string {
 	return m[1]
 }
 
+// CollapseReReads is the active over-pruning recovery trigger (#640, Option 2).
+// For each file-read tool_result in the keep-recent window whose (redacted)
+// content is already in the tee store, it replaces the bulky block content with
+// the compact recovery marker dex:lc_expand:<hash>. The companion ExpandMarkers
+// pass — run immediately after, pre-send — restores the exact stored bytes, so
+// the model still sees full content while the volatile tail carries a smaller
+// turn-over-turn footprint. Returns the rewritten body and the number of blocks
+// collapsed. Fail-open: any parse/marshal error returns the body unchanged.
+//
+// Cache safety is the load-bearing invariant. The collapse window is the
+// VOLATILE tail (index >= len(messages)-keepRecent) — exactly the region
+// AlignCacheBreakpoints never marks. The stable, cacheable prefix (everything
+// before that boundary) is left byte-identical, so a collapse can never perturb
+// a cached breakpoint. Note this boundary is the un-strided len-keepRecent, NOT
+// pruneStart (which rounds DOWN and would reach into the cached prefix).
+func (ts *TeeStore) CollapseReReads(body []byte, keepRecent int) ([]byte, int) {
+	if ts == nil {
+		return body, 0
+	}
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(body, &raw) != nil {
+		return body, 0
+	}
+	msgsRaw, ok := raw["messages"]
+	if !ok {
+		return body, 0
+	}
+	var messages []json.RawMessage
+	if json.Unmarshal(msgsRaw, &messages) != nil {
+		return body, 0
+	}
+
+	if keepRecent < 0 {
+		keepRecent = 0
+	}
+	boundary := len(messages) - keepRecent
+	if boundary < 0 {
+		boundary = 0
+	}
+
+	toolNames := buildToolNameMap(messages)
+	collapsed := 0
+	changed := false
+	for i := boundary; i < len(messages); i++ {
+		rewritten, n := ts.collapseMessage(messages[i], toolNames)
+		if n > 0 {
+			messages[i] = rewritten
+			collapsed += n
+			changed = true
+		}
+	}
+	if !changed {
+		return body, 0
+	}
+
+	newMsgs, err := json.Marshal(messages)
+	if err != nil {
+		return body, 0
+	}
+	raw["messages"] = newMsgs
+	out, err := json.Marshal(raw)
+	if err != nil {
+		return body, 0
+	}
+	return out, collapsed
+}
+
+// collapseMessage collapses recoverable file-read tool_result blocks in one
+// user message. toolNames resolves each block's tool kind.
+func (ts *TeeStore) collapseMessage(raw json.RawMessage, toolNames map[string]string) (json.RawMessage, int) {
+	var msg map[string]json.RawMessage
+	if json.Unmarshal(raw, &msg) != nil {
+		return raw, 0
+	}
+	var role string
+	if r, ok := msg["role"]; !ok || json.Unmarshal(r, &role) != nil || role != "user" {
+		return raw, 0
+	}
+	contentRaw, ok := msg["content"]
+	if !ok {
+		return raw, 0
+	}
+	var blocks []json.RawMessage
+	if json.Unmarshal(contentRaw, &blocks) != nil {
+		return raw, 0 // bare string — no blocks to collapse
+	}
+
+	collapsed := 0
+	for i, blkRaw := range blocks {
+		rewritten, ok := ts.collapseBlock(blkRaw, toolNames)
+		if ok {
+			blocks[i] = rewritten
+			collapsed++
+		}
+	}
+	if collapsed == 0 {
+		return raw, 0
+	}
+
+	newContent, err := json.Marshal(blocks)
+	if err != nil {
+		return raw, 0
+	}
+	msg["content"] = newContent
+	out, err := json.Marshal(msg)
+	if err != nil {
+		return raw, 0
+	}
+	return out, collapsed
+}
+
+// collapseBlock replaces a recoverable file-read tool_result's content with a
+// recovery marker. It collapses only when the block is a file-read result (same
+// classification the pruner tees on) whose redacted content is already in the
+// store — so collapse→expand reconstructs exactly the stored bytes.
+func (ts *TeeStore) collapseBlock(raw json.RawMessage, toolNames map[string]string) (json.RawMessage, bool) {
+	var blk map[string]json.RawMessage
+	if json.Unmarshal(raw, &blk) != nil {
+		return raw, false
+	}
+	var typ string
+	if t, ok := blk["type"]; !ok || json.Unmarshal(t, &typ) != nil || typ != "tool_result" {
+		return raw, false
+	}
+	var toolUseID string
+	if idRaw, ok := blk["tool_use_id"]; ok {
+		_ = json.Unmarshal(idRaw, &toolUseID)
+	}
+	if classifyTool(toolNames[toolUseID]) != kindFileRead {
+		return raw, false
+	}
+	contentRaw, ok := blk["content"]
+	if !ok {
+		return raw, false
+	}
+	text := extractToolResultText(contentRaw)
+	// Already collapsed (carries a marker) — idempotent no-op.
+	if parseExpandMarker(text) != "" {
+		return raw, false
+	}
+	// Hash over the REDACTED bytes so the lookup key matches what Put stored.
+	hash := hashContent(redact.Mask(text))
+	if _, ok := ts.Get(hash); !ok {
+		return raw, false // not teed — nothing to recover
+	}
+	newContent, err := json.Marshal(marker(hash))
+	if err != nil {
+		return raw, false
+	}
+	blk["content"] = newContent
+	out, err := json.Marshal(blk)
+	if err != nil {
+		return raw, false
+	}
+	return out, true
+}
+
 // ExpandMarkers reconstructs pruned content in the keep-recent window: for each
 // tool_result there carrying a dex:lc_expand:<hash> marker whose bytes are
 // still in the store, the block content is replaced with the recovered bytes.

@@ -235,6 +235,189 @@ func TestPruneTeeAndExpand_NoNegation(t *testing.T) {
 	}
 }
 
+// TestCollapseReReads_RoundTrip is the Option 2 (#640) identity guard: a
+// keep-window file-read whose bytes are already teed collapses to a marker,
+// and the companion ExpandMarkers pass restores the exact stored bytes —
+// collapse∘expand is identity (modulo redaction, which is a no-op on clean
+// content).
+func TestCollapseReReads_RoundTrip(t *testing.T) {
+	ts := newTestStore(t)
+	original := strings.Repeat("re-read file body line\n", 40) // > ccrMinBytes, redaction no-op
+	hash, ok := ts.Put(original)
+	if !ok {
+		t.Fatal("Put ok=false")
+	}
+
+	// Single read-result message; few messages → boundary 0 → in-window.
+	body := mustJSON(t, map[string]any{
+		"model": "claude-sonnet-4-6",
+		"messages": []any{
+			map[string]any{"role": "assistant", "content": []any{
+				map[string]any{"type": "tool_use", "id": "t1", "name": "Read",
+					"input": map[string]any{"file_path": "/a.go"}},
+			}},
+			map[string]any{"role": "user", "content": []any{
+				map[string]any{"type": "tool_result", "tool_use_id": "t1", "content": original},
+			}},
+		},
+	})
+
+	collapsed, n := ts.CollapseReReads(body, DefaultKeepRecent)
+	if n != 1 {
+		t.Fatalf("collapsed = %d, want 1", n)
+	}
+	// The collapsed block must carry the marker and be far smaller.
+	stub := nthToolResultText(t, collapsed, 0)
+	if parseExpandMarker(stub) != hash {
+		t.Fatalf("collapsed block missing the expected marker: %q", stub)
+	}
+	if len(collapsed) >= len(body) {
+		t.Fatalf("collapse did not shrink body: %d >= %d", len(collapsed), len(body))
+	}
+
+	// Expand restores the exact stored bytes.
+	expanded, restored := ts.ExpandMarkers(collapsed, DefaultKeepRecent)
+	if restored != 1 {
+		t.Fatalf("restored = %d, want 1", restored)
+	}
+	if got := nthToolResultText(t, expanded, 0); got != original {
+		t.Fatalf("collapse∘expand not identity:\n got %q\nwant %q", got, original)
+	}
+}
+
+// TestCollapseReReads_NoHashNoCollapse: a keep-window read whose bytes were
+// never teed is left untouched (fail-closed on miss).
+func TestCollapseReReads_NoHashNoCollapse(t *testing.T) {
+	ts := newTestStore(t)
+	body := mustJSON(t, map[string]any{
+		"model": "claude-sonnet-4-6",
+		"messages": []any{
+			map[string]any{"role": "assistant", "content": []any{
+				map[string]any{"type": "tool_use", "id": "t1", "name": "Read",
+					"input": map[string]any{"file_path": "/a.go"}},
+			}},
+			map[string]any{"role": "user", "content": []any{
+				map[string]any{"type": "tool_result", "tool_use_id": "t1",
+					"content": strings.Repeat("never teed\n", 60)},
+			}},
+		},
+	})
+	out, n := ts.CollapseReReads(body, DefaultKeepRecent)
+	if n != 0 {
+		t.Fatalf("collapsed = %d, want 0 for un-teed content", n)
+	}
+	if string(out) != string(body) {
+		t.Fatal("body mutated when nothing was collapsible")
+	}
+}
+
+// TestCollapseReReads_CachePrefixUntouched proves the cache-safety invariant:
+// collapsing keep-window re-reads leaves every message in the stable prefix
+// (index < len-keepRecent) byte-identical, so a cache breakpoint placed there
+// is never busted.
+func TestCollapseReReads_CachePrefixUntouched(t *testing.T) {
+	ts := newTestStore(t)
+	body := stubbedReReadBody(t, ts) // tees the old copy, builds old+window reads
+
+	keepRecent := DefaultKeepRecent
+	var before struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &before); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	boundary := len(before.Messages) - keepRecent
+
+	collapsed, n := ts.CollapseReReads(body, keepRecent)
+	if n == 0 {
+		t.Fatal("expected at least one keep-window collapse")
+	}
+	var after struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(collapsed, &after); err != nil {
+		t.Fatalf("unmarshal collapsed: %v", err)
+	}
+	if len(after.Messages) != len(before.Messages) {
+		t.Fatalf("message count changed: %d -> %d", len(before.Messages), len(after.Messages))
+	}
+	for i := 0; i < boundary; i++ {
+		if string(after.Messages[i]) != string(before.Messages[i]) {
+			t.Fatalf("stable-prefix message %d was mutated by collapse (cache busted)", i)
+		}
+	}
+}
+
+// TestCollapseExpand_ReReadReclaim is the end-to-end Option 2 path mirroring the
+// proxy pipeline: an old-region read is pruned+teed, the same file re-read in
+// the keep-window is collapsed to a marker (reclaiming the #561 ReReadTokens),
+// then ExpandMarkers restores it pre-send — net: a smaller volatile tail, full
+// content preserved, old-region pruning never negated.
+func TestCollapseExpand_ReReadReclaim(t *testing.T) {
+	ts := newTestStore(t)
+	body := stubbedReReadBody(t, ts)
+
+	// Prune first (as proxy.go does): tees + stubs the old-region copy.
+	pruned, saved, _ := PruneRequestBody(body, DefaultKeepRecent, ts)
+	if saved <= 0 {
+		t.Fatal("expected pruning to save bytes")
+	}
+
+	// Collapse the keep-window re-read of the now-teed file.
+	collapsed, nCollapse := ts.CollapseReReads(pruned, DefaultKeepRecent)
+	if nCollapse == 0 {
+		t.Fatal("expected the keep-window re-read to collapse")
+	}
+	if len(collapsed) >= len(pruned) {
+		t.Fatalf("collapse did not reclaim bytes: %d >= %d", len(collapsed), len(pruned))
+	}
+
+	// Expand restores exact bytes; counts must agree (collapse∘expand identity).
+	expanded, restored := ts.ExpandMarkers(collapsed, DefaultKeepRecent)
+	if restored != nCollapse {
+		t.Fatalf("restored %d != collapsed %d", restored, nCollapse)
+	}
+	// The keep-window read content is whole again after expansion.
+	if !strings.Contains(string(expanded), "source line of code") {
+		t.Fatal("expanded body lost the re-read content")
+	}
+}
+
+// stubbedReReadBody builds a /v1/messages body with a file read in the OLD
+// region and a re-read of the SAME content in the keep-window, padded so the
+// old copy lands in the prune zone. It pre-tees the content into ts so a
+// collapse pass will hash-hit. Returns the marshaled body.
+func stubbedReReadBody(t *testing.T, ts *TeeStore) []byte {
+	t.Helper()
+	bulky := strings.Repeat("source line of code\n", 40) // > minPruneChars and ccrMinBytes
+	if _, ok := ts.Put(bulky); !ok {
+		t.Fatal("pre-tee Put ok=false")
+	}
+
+	read := func(id string) []any {
+		return []any{
+			map[string]any{"role": "assistant", "content": []any{
+				map[string]any{"type": "tool_use", "id": id, "name": "Read",
+					"input": map[string]any{"file_path": "/a.go"}},
+			}},
+			map[string]any{"role": "user", "content": []any{
+				map[string]any{"type": "tool_result", "tool_use_id": id, "content": bulky},
+			}},
+		}
+	}
+
+	var msgs []any
+	msgs = append(msgs, read("old")...) // indices 0,1 — old region
+	// Pad to 26 messages so pruneStart(26,10)=16: the old read (idx 1) lands in
+	// the prune zone, and the re-read (idx 25) in the keep-window (>=16).
+	for i := 0; i < 22; i++ {
+		msgs = append(msgs, map[string]any{"role": "user", "content": "pad"})
+	}
+	msgs = append(msgs, read("win")...) // indices 24,25 — keep-window re-read
+
+	return mustJSON(t, map[string]any{"model": "claude-sonnet-4-6", "messages": msgs})
+}
+
 // --- helpers ---
 
 func mustJSON(t *testing.T, v any) []byte {

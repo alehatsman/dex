@@ -288,6 +288,14 @@ func newProxyHandler(upstream *url.URL, logger *slog.Logger, stats *Stats, token
 			// GC self-throttles, so calling it per request is cheap.
 			if ccr != nil {
 				ccr.MaybeGC()
+				// Option 2 (#640): actively collapse keep-window re-reads of
+				// already-teed files to markers, then let ExpandMarkers restore
+				// the exact bytes pre-send. Collapse touches only the volatile
+				// tail (len-keepRecent .. end), so the cache-stable prefix that
+				// AlignCacheBreakpoints marks below stays byte-identical.
+				if collapsed, n := ccr.CollapseReReads(current, DefaultKeepRecent); n > 0 {
+					current = collapsed
+				}
 				expanded, restored := ccr.ExpandMarkers(current, DefaultKeepRecent)
 				if restored > 0 {
 					current = expanded
