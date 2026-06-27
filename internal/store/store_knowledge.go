@@ -18,7 +18,7 @@ type knowledgeStore struct{ db *sql.DB }
 // KnowledgeFact is one persisted fact about the project.
 type KnowledgeFact struct {
 	ID            int64
-	Archetype     string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact
+	Archetype     string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | Hypothesis | Inference | VerifiedFact
 	Body          string
 	Confidence    float64 // 0–1
 	CreatedAt     time.Time
@@ -36,6 +36,21 @@ type KnowledgeFact struct {
 	// Populated only by reads that select it (KnowledgeReview); other reads
 	// leave it false.
 	Pinned bool
+	// Active is false when the fact has been superseded by another (#606).
+	// Inactive facts are excluded from all recall queries; they survive on disk
+	// for audit. Populated only by KnowledgeReview; other reads always return
+	// active facts.
+	Active bool
+	// SupersededBy is the id of the fact that replaced this one (#606). Zero
+	// when not superseded. Populated only by KnowledgeReview.
+	SupersededBy int64
+	// Evidence marks facts derived from code inspection (#618). Evidence facts
+	// decay at half the archetype's base rate, since code-level observations
+	// are more durable than runtime hypotheses.
+	Evidence bool
+	// ValidUntil is the expiry time for time-bounded facts (#618). Zero means
+	// no expiry. Facts past their ValidUntil are excluded from recall.
+	ValidUntil time.Time
 }
 
 // archetypeWeight returns the base salience weight for a known archetype.
@@ -55,8 +70,40 @@ func archetypeWeight(a string) float64 {
 		return 1.0
 	case "Fact":
 		return 1.0
+	case "VerifiedFact":
+		return 1.6 // high-confidence, code-verified; also pinned-by-archetype from decay
+	case "Inference":
+		return 0.9 // derived; plausible but not directly observed
+	case "Hypothesis":
+		return 0.7 // unverified; evicts quickly via fast decay
 	default:
 		return 1.0
+	}
+}
+
+// archetypeDecayRate returns the daily confidence decay rate for an archetype.
+// Structural facts (Architecture, Decision) decay slowly; transient observations
+// (Hypothesis) decay quickly. Evidence facts halve this rate at call-site.
+func archetypeDecayRate(a string) float64 {
+	switch a {
+	case "Architecture":
+		return 0.005
+	case "Decision":
+		return 0.006
+	case "Convention":
+		return 0.007
+	case "Gotcha":
+		return 0.008
+	case "Dependency", "Pattern", "Fact":
+		return 0.010
+	case "VerifiedFact":
+		return 0.003 // very slow — verified until explicitly superseded
+	case "Inference":
+		return 0.012
+	case "Hypothesis":
+		return 0.020 // fast — hypothesis ages out quickly if not confirmed
+	default:
+		return 0.010
 	}
 }
 
@@ -68,33 +115,139 @@ func (s *knowledgeStore) KnowledgeAdd(ctx context.Context, archetype, body strin
 	return s.KnowledgeAddScoped(ctx, archetype, body, confidence, "")
 }
 
+// KnowledgeAddOpts carries optional fields for KnowledgeAddFull.
+type KnowledgeAddOpts struct {
+	Scope      string
+	Evidence   bool
+	ValidUntil time.Time // zero = no expiry
+}
+
 // KnowledgeAddScoped is KnowledgeAdd with an optional `scope` (#645) — a file
 // glob / path / package the fact is about, so a file verb can surface it on
 // touch. Empty scope behaves exactly like KnowledgeAdd. On a body conflict the
 // scope is updated too (re-adding with a scope binds an existing fact).
 func (s *knowledgeStore) KnowledgeAddScoped(ctx context.Context, archetype, body string, confidence float64, scope string) (int, error) {
+	return s.KnowledgeAddFull(ctx, archetype, body, confidence, KnowledgeAddOpts{Scope: scope})
+}
+
+// KnowledgeAddFull is the full-featured add: scope, evidence flag, and
+// valid_until expiry. Re-adding a superseded fact re-activates it
+// (explicit re-confirmation beats prior supersession).
+func (s *knowledgeStore) KnowledgeAddFull(ctx context.Context, archetype, body string, confidence float64, opts KnowledgeAddOpts) (int, error) {
 	if confidence <= 0 {
 		confidence = 0.8
 	}
 	if confidence > 1 {
 		confidence = 1
 	}
+	evidence := 0
+	if opts.Evidence {
+		evidence = 1
+	}
+	var validUntil int64
+	if !opts.ValidUntil.IsZero() {
+		validUntil = opts.ValidUntil.UnixNano()
+	}
 	now := time.Now().UnixNano()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope)
-		   VALUES(?,?,?,?,?,0,0,?)
+		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope, active, valid_until, evidence)
+		   VALUES(?,?,?,?,?,0,0,?,1,?,?)
 		   ON CONFLICT(body) DO UPDATE SET
 		     archetype=excluded.archetype,
 		     confidence=MAX(confidence, excluded.confidence),
 		     updated_at=excluded.updated_at,
 		     revision_count=revision_count+1,
-		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END`,
-		archetype, body, confidence, now, now, scope)
+		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END,
+		     active=1,
+		     superseded_by=NULL,
+		     valid_until=excluded.valid_until,
+		     evidence=excluded.evidence`,
+		archetype, body, confidence, now, now, opts.Scope, validUntil, evidence)
 	if err != nil {
 		return 0, err
 	}
 	var rev int
 	_ = s.db.QueryRowContext(ctx, `SELECT revision_count FROM knowledge_facts WHERE body=?`, body).Scan(&rev)
+	return rev, nil
+}
+
+// KnowledgeSupersede stores a new fact and atomically marks the given
+// supersededID inactive. If the new fact body already exists it is updated
+// (re-confirmation). Returns the revision count of the new fact.
+// The superseded fact remains on disk for audit but is excluded from all
+// recall queries.
+func (s *knowledgeStore) KnowledgeSupersede(ctx context.Context, supersededID int64, archetype, body string, confidence float64, opts KnowledgeAddOpts) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Verify the superseded fact exists and is active.
+	var active int
+	if err := tx.QueryRowContext(ctx, `SELECT active FROM knowledge_facts WHERE id=?`, supersededID).Scan(&active); err != nil {
+		return 0, fmt.Errorf("superseded fact #%d not found: %w", supersededID, err)
+	}
+
+	// Add or update the new fact.
+	rev, err := s.addInTx(ctx, tx, archetype, body, confidence, opts)
+	if err != nil {
+		return 0, err
+	}
+
+	// Fetch the new fact's id.
+	var newID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM knowledge_facts WHERE body=?`, body).Scan(&newID); err != nil {
+		return 0, fmt.Errorf("fetch new fact id: %w", err)
+	}
+
+	// Mark the old fact superseded.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE knowledge_facts SET active=0, superseded_by=? WHERE id=?`,
+		newID, supersededID,
+	); err != nil {
+		return 0, err
+	}
+
+	return rev, tx.Commit()
+}
+
+// addInTx is KnowledgeAddFull inside an existing transaction.
+func (s *knowledgeStore) addInTx(ctx context.Context, tx *sql.Tx, archetype, body string, confidence float64, opts KnowledgeAddOpts) (int, error) {
+	if confidence <= 0 {
+		confidence = 0.8
+	}
+	if confidence > 1 {
+		confidence = 1
+	}
+	evidence := 0
+	if opts.Evidence {
+		evidence = 1
+	}
+	var validUntil int64
+	if !opts.ValidUntil.IsZero() {
+		validUntil = opts.ValidUntil.UnixNano()
+	}
+	now := time.Now().UnixNano()
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope, active, valid_until, evidence)
+		   VALUES(?,?,?,?,?,0,0,?,1,?,?)
+		   ON CONFLICT(body) DO UPDATE SET
+		     archetype=excluded.archetype,
+		     confidence=MAX(confidence, excluded.confidence),
+		     updated_at=excluded.updated_at,
+		     revision_count=revision_count+1,
+		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END,
+		     active=1,
+		     superseded_by=NULL,
+		     valid_until=excluded.valid_until,
+		     evidence=excluded.evidence`,
+		archetype, body, confidence, now, now, opts.Scope, validUntil, evidence)
+	if err != nil {
+		return 0, err
+	}
+	var rev int
+	_ = tx.QueryRowContext(ctx, `SELECT revision_count FROM knowledge_facts WHERE body=?`, body).Scan(&rev)
 	return rev, nil
 }
 
@@ -107,9 +260,10 @@ func (s *knowledgeStore) KnowledgeByScope(ctx context.Context, targetPath string
 	if strings.TrimSpace(targetPath) == "" {
 		return nil, nil
 	}
+	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope
-		   FROM knowledge_facts WHERE scope != ''`)
+		   FROM knowledge_facts WHERE scope != '' AND `+activeFilter(now))
 	if err != nil {
 		return nil, err
 	}
@@ -181,9 +335,16 @@ func recencyFactor(updatedAt time.Time) float64 {
 }
 
 // qualityWeight is the query-independent salience signal:
-// confidence × archetype weight (max ≈ 1.5).
+// confidence × archetype weight (max ≈ 1.6).
 func qualityWeight(f KnowledgeFact) float64 {
 	return f.Confidence * archetypeWeight(f.Archetype)
+}
+
+// activeFilter is the WHERE clause fragment that excludes superseded and
+// expired facts. Must be ANDed into every recall query.
+// valid_until=0 means no expiry.
+func activeFilter(nowNs int64) string {
+	return fmt.Sprintf("active=1 AND (valid_until=0 OR valid_until>%d)", nowNs)
 }
 
 // scanFacts reads KnowledgeFact rows in the column order used by the queries
@@ -219,14 +380,16 @@ func clampK(k int) int {
 	return k
 }
 
-// KnowledgeQuery returns the top-k facts ordered by salience
+// KnowledgeQuery returns the top-k active, non-expired facts ordered by salience
 // (confidence × archetype weight × recency decay).
 // Pass k<=0 for the default (10).
 func (s *knowledgeStore) KnowledgeQuery(ctx context.Context, k int) ([]KnowledgeFact, error) {
 	k = clampK(k)
+	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
 		   FROM knowledge_facts
+		   WHERE `+activeFilter(now)+`
 		   ORDER BY confidence DESC, updated_at DESC
 		   LIMIT ?`, k)
 	if err != nil {
@@ -255,9 +418,10 @@ func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, thre
 	if len(cand) == 0 {
 		return nil, nil
 	}
+	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
-		   FROM knowledge_facts`)
+		   FROM knowledge_facts WHERE `+activeFilter(now))
 	if err != nil {
 		return nil, err
 	}
@@ -282,13 +446,15 @@ func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, thre
 	return out, nil
 }
 
-// KnowledgeExportAll returns every stored fact, UNCAPPED (KnowledgeQuery clamps
-// to 50), newest-confident first. Includes scope so the export→import round-trip
-// preserves gotcha-on-touch bindings (#645).
+// KnowledgeExportAll returns every active, non-expired fact, UNCAPPED
+// (KnowledgeQuery clamps to 50), newest-confident first. Includes scope so the
+// export→import round-trip preserves gotcha-on-touch bindings (#645).
 func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFact, error) {
+	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope
 		   FROM knowledge_facts
+		   WHERE `+activeFilter(now)+`
 		   ORDER BY confidence DESC, updated_at DESC`)
 	if err != nil {
 		return nil, err
@@ -315,6 +481,9 @@ func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFac
 // the created_at / updated_at / hit_count / revision_count that feed Salience.
 // Dropping these on restore silently unscopes notes and resets their ranking
 // signal (#678).
+// v6 additions: evidence (#618) and valid_until (#618) are preserved.
+// superseded_by is NOT exported — the FK is id-based and would be meaningless
+// after the row-ids change on a reindex. Only active facts are exported.
 type KnowledgeBackup struct {
 	Archetype     string
 	Body          string
@@ -324,7 +493,9 @@ type KnowledgeBackup struct {
 	UpdatedAt     int64 // unix nanos; 0 when the source schema predates the column
 	HitCount      int
 	RevisionCount int
-	Pinned        bool // #633; false when the source schema predates the column
+	Pinned        bool  // #633; false when the source schema predates the column
+	Evidence      bool  // #618; false when the source schema predates the column
+	ValidUntil    int64 // #618; 0 = no expiry or when predates the column
 }
 
 // rawColumns returns the set of column names on table, read straight from
@@ -374,14 +545,22 @@ func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, 
 		}
 		return def + " AS " + name
 	}
+	// Only rescue active facts — inactive (superseded) ones are intentionally
+	// soft-deleted and should not be restored.
+	activeExpr := ""
+	if cols["active"] {
+		activeExpr = " WHERE active=1"
+	}
 	query := `SELECT archetype, body, confidence, ` +
 		col("scope", "''") + `, ` +
 		col("created_at", "0") + `, ` +
 		col("updated_at", "0") + `, ` +
 		col("hit_count", "0") + `, ` +
 		col("revision_count", "0") + `, ` +
-		col("pinned", "0") +
-		` FROM knowledge_facts ORDER BY id`
+		col("pinned", "0") + `, ` +
+		col("evidence", "0") + `, ` +
+		col("valid_until", "0") +
+		` FROM knowledge_facts` + activeExpr + ` ORDER BY id`
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, nil // file/table missing or unreadable → nothing to rescue
@@ -390,10 +569,13 @@ func ExportKnowledgeRaw(ctx context.Context, dbPath string) ([]KnowledgeBackup, 
 	var out []KnowledgeBackup
 	for rows.Next() {
 		var b KnowledgeBackup
+		var pinned, evidence int
 		if err := rows.Scan(&b.Archetype, &b.Body, &b.Confidence, &b.Scope,
-			&b.CreatedAt, &b.UpdatedAt, &b.HitCount, &b.RevisionCount, &b.Pinned); err != nil {
+			&b.CreatedAt, &b.UpdatedAt, &b.HitCount, &b.RevisionCount, &pinned, &evidence, &b.ValidUntil); err != nil {
 			return nil, err
 		}
+		b.Pinned = pinned != 0
+		b.Evidence = evidence != 0
 		out = append(out, b)
 	}
 	return out, rows.Err()
@@ -420,9 +602,17 @@ func (s *knowledgeStore) KnowledgeRestore(ctx context.Context, b KnowledgeBackup
 	if b.UpdatedAt == 0 {
 		b.UpdatedAt = b.CreatedAt
 	}
+	evidence := 0
+	if b.Evidence {
+		evidence = 1
+	}
+	pinned := 0
+	if b.Pinned {
+		pinned = 1
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope, pinned)
-		   VALUES(?,?,?,?,?,?,?,?,?)
+		`INSERT INTO knowledge_facts(archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope, pinned, evidence, valid_until)
+		   VALUES(?,?,?,?,?,?,?,?,?,?,?)
 		   ON CONFLICT(body) DO UPDATE SET
 		     archetype=excluded.archetype,
 		     confidence=MAX(confidence, excluded.confidence),
@@ -430,8 +620,10 @@ func (s *knowledgeStore) KnowledgeRestore(ctx context.Context, b KnowledgeBackup
 		     hit_count=MAX(hit_count, excluded.hit_count),
 		     revision_count=MAX(revision_count, excluded.revision_count),
 		     scope=CASE WHEN excluded.scope != '' THEN excluded.scope ELSE scope END,
-		     pinned=CASE WHEN excluded.pinned=1 THEN 1 ELSE pinned END`,
-		b.Archetype, b.Body, b.Confidence, b.CreatedAt, b.UpdatedAt, b.HitCount, b.RevisionCount, b.Scope, b.Pinned)
+		     pinned=CASE WHEN excluded.pinned=1 THEN 1 ELSE pinned END,
+		     evidence=CASE WHEN excluded.evidence=1 THEN 1 ELSE evidence END,
+		     valid_until=CASE WHEN excluded.valid_until!=0 THEN excluded.valid_until ELSE valid_until END`,
+		b.Archetype, b.Body, b.Confidence, b.CreatedAt, b.UpdatedAt, b.HitCount, b.RevisionCount, b.Scope, pinned, evidence, b.ValidUntil)
 	return err
 }
 
@@ -556,9 +748,10 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 	if limit <= 0 {
 		limit = 128
 	}
+	nowNs := time.Now().UnixNano()
 	q := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
 	        FROM knowledge_facts f
-	       WHERE NOT EXISTS (SELECT 1 FROM fact_vecs v WHERE v.rowid = f.id)
+	       WHERE ` + activeFilter(nowNs) + ` AND NOT EXISTS (SELECT 1 FROM fact_vecs v WHERE v.rowid = f.id)
 	       ORDER BY updated_at DESC
 	       LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, q, limit)
@@ -566,7 +759,7 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 		// fact_vecs missing → treat all facts as missing.
 		rows, err = s.db.QueryContext(ctx,
 			`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
-			   FROM knowledge_facts ORDER BY updated_at DESC LIMIT ?`, limit)
+			   FROM knowledge_facts WHERE `+activeFilter(nowNs)+` ORDER BY updated_at DESC LIMIT ?`, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -647,7 +840,8 @@ func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float
 		return nil, nil // all below floor; skip-fallback callers get empty, not salience noise
 	}
 
-	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count FROM knowledge_facts WHERE id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args
+	nowNs := time.Now().UnixNano()
+	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count FROM knowledge_facts WHERE ` + activeFilter(nowNs) + ` AND id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args
 	frows, err := s.db.QueryContext(ctx, factQ, int64sToAny(ids)...)
 	if err != nil {
 		return nil, err
@@ -796,8 +990,11 @@ func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConf
 		return 0, nil // clock went backwards or no time passed; leave confidences and last_gc
 	}
 
+	// VerifiedFact archetype is decay-exempt (like pinned), because the author
+	// explicitly declared it verified. It decays only via explicit supersession.
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, confidence, hit_count, last_retrieved FROM knowledge_facts WHERE pinned=0`)
+		`SELECT id, archetype, confidence, hit_count, last_retrieved, evidence
+		   FROM knowledge_facts WHERE pinned=0 AND active=1 AND archetype!='VerifiedFact'`)
 	if err != nil {
 		return 0, err
 	}
@@ -808,15 +1005,21 @@ func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConf
 	var updates []decayRow
 	for rows.Next() {
 		var id int64
+		var archetype string
 		var conf float64
 		var hitCount int
 		var lastRetrieved int64
-		if err := rows.Scan(&id, &conf, &hitCount, &lastRetrieved); err != nil {
+		var evidence int
+		if err := rows.Scan(&id, &archetype, &conf, &hitCount, &lastRetrieved, &evidence); err != nil {
 			_ = rows.Close()
 			return 0, err
 		}
+		rate := archetypeDecayRate(archetype)
+		if evidence != 0 {
+			rate *= 0.5 // code-inspection facts decay at half speed
+		}
 		protect := 1 + math.Log(1+float64(hitCount))
-		decay := cfg.DecayPerDay * elapsedDays / protect
+		decay := rate * elapsedDays / protect
 		if lastRetrieved > 0 && now.Sub(time.Unix(0, lastRetrieved)) < 7*24*time.Hour {
 			decay *= 0.3 // recently useful → fade slower
 		}
@@ -851,7 +1054,7 @@ func (s *knowledgeStore) knowledgeDecay(ctx context.Context, cfg KnowledgeGCConf
 // the author declared it permanent, so it is skipped as a merge target.
 func (s *knowledgeStore) knowledgeConsolidateSimilar(ctx context.Context, cfg KnowledgeGCConfig) (int, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, hit_count, scope, pinned FROM knowledge_facts ORDER BY archetype, confidence DESC`)
+		`SELECT id, archetype, body, confidence, hit_count, scope, pinned FROM knowledge_facts WHERE active=1 ORDER BY archetype, confidence DESC`)
 	if err != nil {
 		return 0, err
 	}
@@ -937,7 +1140,7 @@ func (s *knowledgeStore) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConf
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM knowledge_facts WHERE id IN (
 		   SELECT id FROM knowledge_facts
-		   WHERE pinned=0
+		   WHERE pinned=0 AND active=1
 		   ORDER BY confidence ASC, last_retrieved ASC, updated_at ASC
 		   LIMIT ?)`, excess)
 	if err != nil {
@@ -998,8 +1201,9 @@ type KnowledgeReviewResult struct {
 // store, comfortably sub-millisecond.
 func (s *knowledgeStore) KnowledgeReview(ctx context.Context) (KnowledgeReviewResult, error) {
 	var res KnowledgeReviewResult
+	nowNs := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, updated_at, hit_count, scope, pinned FROM knowledge_facts`)
+		`SELECT id, archetype, body, updated_at, hit_count, scope, pinned FROM knowledge_facts WHERE `+activeFilter(nowNs))
 	if err != nil {
 		return res, err
 	}

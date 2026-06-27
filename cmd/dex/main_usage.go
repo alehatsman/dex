@@ -156,13 +156,17 @@ build / maintenance:
                                           or --out. Flags: --mode=auto|aggressive|
                                           entropy|terse|json|off, --ext, --format=text|json
   dex notes add|list|delete|review   CLI access to the per-project knowledge
-     |pin|unpin|gc                         store (MCP: notes). add stores
-                                          a fact (--archetype, --confidence),
-                                          list shows top-k by salience (--k),
-                                          delete removes by id, review suggests
-                                          merges/overlaps/stale (read-only),
-                                          pin/unpin mark a fact permanent, gc
-                                          runs decay + consolidate + evict.
+     |pin|unpin|gc|relate|relations        store (MCP: notes). add stores a
+                                          fact (--archetype, --confidence,
+                                          --supersedes, --valid-until,
+                                          --evidence); list shows top-k by
+                                          salience (--k); delete removes by id;
+                                          review suggests merges/overlaps/stale
+                                          (read-only); pin/unpin mark permanent;
+                                          gc runs decay+consolidate+evict;
+                                          relate creates typed edges (--from,
+                                          --to, --kind); relations lists edges
+                                          (--id) or emits Mermaid (--diagram).
                                           query/rm are accepted aliases.
                                           Flags: --format=text|json
   dex nuke   <path>                  delete the on-disk index for a project

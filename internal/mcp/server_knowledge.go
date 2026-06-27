@@ -10,22 +10,42 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alehatsman/dex/internal/chat"
+	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type KnowledgeInput struct {
-	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string  `json:"action"                 jsonschema:"add | list | delete | review | pin | unpin | export | import | consolidate | gc"`
-	Archetype   string  `json:"archetype,omitempty"    jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default)"`
-	Body        string  `json:"body,omitempty"         jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
-	Confidence  float64 `json:"confidence,omitempty"   jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
-	ID          int64   `json:"id,omitempty"           jsonschema:"fact id for delete action"`
-	K           int     `json:"k,omitempty"            jsonschema:"max facts to return for list (default 10)"`
-	Query       string  `json:"query,omitempty"        jsonschema:"for list: a task/question to recall the most relevant facts for (semantic). Empty = top facts by salience."`
-	Scope       string  `json:"scope,omitempty"        jsonschema:"for add: bind this fact to a file glob / path / package (e.g. 'internal/mcp/*_test.go' or 'internal/store') so file verbs (locate/review/read) surface it proactively when they touch a matching path (#645). For list: a path to filter by — returns only notes whose scope binds it, i.e. what would surface on touching it (#653). Empty = unscoped / unfiltered."`
+	ProjectRoot string  `json:"project_root,omitempty"  jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	Action      string  `json:"action"                  jsonschema:"add | list | delete | review | pin | unpin | export | import | consolidate | gc | supersede | relate | relations"`
+	Archetype   string  `json:"archetype,omitempty"     jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default) | Hypothesis | Inference | VerifiedFact"`
+	Body        string  `json:"body,omitempty"          jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
+	Confidence  float64 `json:"confidence,omitempty"    jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
+	ID          int64   `json:"id,omitempty"            jsonschema:"fact id for delete action; for relations: the fact whose edges to list"`
+	K           int     `json:"k,omitempty"             jsonschema:"max facts to return for list (default 10)"`
+	Query       string  `json:"query,omitempty"         jsonschema:"for list: a task/question to recall the most relevant facts for (semantic). Empty = top facts by salience."`
+	Scope       string  `json:"scope,omitempty"         jsonschema:"for add: bind this fact to a file glob / path / package (e.g. 'internal/mcp/*_test.go' or 'internal/store') so file verbs (locate/review/read) surface it proactively when they touch a matching path (#645). For list: a path to filter by — returns only notes whose scope binds it, i.e. what would surface on touching it (#653). Empty = unscoped / unfiltered."`
+	// SupersedesID is the id of the fact this new note replaces (#606). Setting
+	// this calls KnowledgeSupersede: the new note is added and the old one is
+	// marked inactive immediately (not waiting for decay). Use action=add with
+	// supersedes_id instead of action=supersede for a one-step upsert.
+	SupersedesID int64 `json:"supersedes_id,omitempty" jsonschema:"for add: id of the existing fact this new note replaces — marks the old fact inactive immediately (#606)"`
+	// ValidUntil is an RFC3339 or date-only (2006-01-02) expiry for time-bounded
+	// facts (#618). After this date the fact is excluded from recall. Zero / empty
+	// means no expiry. Example: \"2026-12-01\".
+	ValidUntil string `json:"valid_until,omitempty"   jsonschema:"for add: RFC3339 or YYYY-MM-DD expiry after which the fact is excluded from recall (e.g. 2026-12-01). Empty = no expiry (#618)."`
+	// Evidence marks facts derived from code inspection (#618). Evidence facts
+	// decay at half the normal archetype rate.
+	Evidence bool `json:"evidence,omitempty"      jsonschema:"for add: true if this fact was derived from direct code inspection (halves decay rate, #618)"`
+	// Relate fields for action=relate (#621).
+	RelateFrom int64  `json:"relate_from,omitempty"   jsonschema:"for relate: source fact id"`
+	RelateTo   int64  `json:"relate_to,omitempty"     jsonschema:"for relate: target fact id"`
+	RelateKind string `json:"relate_kind,omitempty"   jsonschema:"for relate: DependsOn|RelatedTo|Supports|Contradicts|Supersedes"`
+	// Diagram requests a Mermaid graph for action=relations when ID=0 (#621).
+	Diagram bool `json:"diagram,omitempty"       jsonschema:"for relations: return a Mermaid diagram of all edges instead of a list"`
 }
 
 type KnowledgeFactOutput struct {
@@ -40,6 +60,21 @@ type KnowledgeFactOutput struct {
 	// Scope is the file glob/path/package this note is bound to (#645); set on
 	// scope-filtered list (#653), empty for an unscoped note.
 	Scope string `json:"scope,omitempty"`
+	// Evidence indicates a code-inspection–derived fact (slower decay, #618).
+	Evidence bool `json:"evidence,omitempty"`
+	// ValidUntil is the expiry date (RFC3339) for time-bounded facts (#618).
+	// Empty when no expiry is set.
+	ValidUntil string `json:"valid_until,omitempty"`
+}
+
+// KnowledgeRelationOutput is one edge in the relation graph (#621).
+type KnowledgeRelationOutput struct {
+	FromID    int64   `json:"from_id"`
+	ToID      int64   `json:"to_id"`
+	Kind      string  `json:"kind"`
+	Strength  float64 `json:"strength"`
+	Count     int     `json:"count"`
+	CreatedAt string  `json:"created_at"`
 }
 
 type KnowledgeOutput struct {
@@ -58,6 +93,10 @@ type KnowledgeOutput struct {
 	// Review carries advisory cleanup proposals (action=review only, #633). The
 	// agent reads them and decides — dex never auto-applies these.
 	Review *store.KnowledgeReviewResult `json:"review,omitempty"`
+	// Relations is the edge list for action=relate/relations (#621).
+	Relations []KnowledgeRelationOutput `json:"relations,omitempty"`
+	// Diagram is the Mermaid source for action=relations with diagram=true (#621).
+	Diagram string `json:"diagram,omitempty"`
 }
 
 // knowledgeSimilarThreshold is the Jaccard word-overlap at which an existing
@@ -85,48 +124,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 
 	switch in.Action {
 	case "add":
-		if in.Body == "" {
-			return nil, KnowledgeOutput{Status: "error", Hint: "body is empty"}, nil
-		}
-		arch := in.Archetype
-		if arch == "" {
-			arch = "Observation"
-		}
-		// Near-duplicate check BEFORE insert, so the new note never matches
-		// itself (#606). Best-effort: a similarity-scan failure must not block
-		// the add.
-		similar, _ := st.KnowledgeSimilar(ctx, in.Body, knowledgeSimilarThreshold, 3)
-		rev, err := st.KnowledgeAddScoped(ctx, arch, in.Body, in.Confidence, in.Scope)
-		if err != nil {
-			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
-		}
-		s.embedFact(ctx, st, in.Body)
-		s.maybeEvict(ctx, st)
-		s.activityKnowledgeRecorded(p.Root)
-		hint := "Remembered."
-		if rev == 1 {
-			hint = "Confirmed (revision 2)."
-		} else if rev > 1 {
-			hint = fmt.Sprintf("Confirmed (revision %d, confirmed %d×).", rev+1, rev)
-		}
-		out := KnowledgeOutput{Status: "ok", Hint: hint}
-		for _, sf := range similar {
-			out.Similar = append(out.Similar, knowledgeFactOut(sf.KnowledgeFact))
-		}
-		if len(out.Similar) > 0 {
-			out.Hint += fmt.Sprintf(" ⚠ %d similar note(s) already exist (ids %s) — `delete` one if this supersedes it.",
-				len(out.Similar), similarIDs(out.Similar))
-		}
-		// Gotcha-on-touch adoption (#658): if the note names a project file/glob
-		// but wasn't scoped, suggest binding it so locate/review/read surface it
-		// on touch. Non-blocking — the note is already stored.
-		if in.Scope == "" {
-			if sug := suggestScope(p.Root, in.Body); sug != "" {
-				out.ScopeSuggestion = sug
-				out.Hint += fmt.Sprintf(" 💡 re-add with scope=%q so this surfaces when a verb touches it (gotcha-on-touch).", sug)
-			}
-		}
-		return nil, out, nil
+		return s.knowledgeAdd(ctx, st, p, in)
 	case "delete":
 		if in.ID <= 0 {
 			return nil, KnowledgeOutput{Status: "error", Hint: "id is required for delete"}, nil
@@ -156,10 +154,14 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		return nil, KnowledgeOutput{Status: "ok", Hint: fmt.Sprintf(
 			"gc: decayed %d, merged %d, evicted %d, %d facts remain.",
 			res.Decayed, res.Merged, res.Evicted, res.Remaining)}, nil
+	case "relate":
+		return s.knowledgeRelate(ctx, st, in)
+	case "relations":
+		return s.knowledgeRelations(ctx, st, in)
 	case "list", "":
 		// fall through to read
 	default:
-		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | review | pin | unpin | export | import | consolidate | gc", in.Action)}, nil
+		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | review | pin | unpin | export | import | consolidate | gc | supersede | relate | relations", in.Action)}, nil
 	}
 
 	// Scope-filtered list (#653): notes whose scope binds the given path — what
@@ -223,7 +225,7 @@ func suggestScope(root, body string) string {
 // knowledgeFactOut projects a stored fact into the wire shape, shared by the
 // list path and the add near-duplicate warning (#606).
 func knowledgeFactOut(f store.KnowledgeFact) KnowledgeFactOutput {
-	return KnowledgeFactOutput{
+	out := KnowledgeFactOutput{
 		ID:            f.ID,
 		Archetype:     f.Archetype,
 		Body:          f.Body,
@@ -233,7 +235,138 @@ func knowledgeFactOut(f store.KnowledgeFact) KnowledgeFactOutput {
 		Salience:      f.Salience,
 		UpdatedAt:     f.UpdatedAt.Format("2006-01-02 15:04:05"),
 		Scope:         f.Scope,
+		Evidence:      f.Evidence,
 	}
+	if !f.ValidUntil.IsZero() {
+		out.ValidUntil = f.ValidUntil.Format("2006-01-02")
+	}
+	return out
+}
+
+// parseDate parses a ValidUntil string as RFC3339 or YYYY-MM-DD (UTC midnight).
+func parseDate(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	t, err := time.ParseInLocation("2006-01-02", s, time.UTC)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("expected RFC3339 or YYYY-MM-DD, got %q", s)
+	}
+	return t, nil
+}
+
+// knowledgeAdd handles action=add (#606 #618).
+func (s *Server) knowledgeAdd(ctx context.Context, st *store.Store, p *proj.Project, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
+	if in.Body == "" {
+		return nil, KnowledgeOutput{Status: "error", Hint: "body is empty"}, nil
+	}
+	arch := in.Archetype
+	if arch == "" {
+		arch = "Observation"
+	}
+	opts := store.KnowledgeAddOpts{Scope: in.Scope, Evidence: in.Evidence}
+	if in.ValidUntil != "" {
+		t, err := parseDate(in.ValidUntil)
+		if err != nil {
+			return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("valid_until: %v", err)}, nil
+		}
+		opts.ValidUntil = t
+	}
+	similar, _ := st.KnowledgeSimilar(ctx, in.Body, knowledgeSimilarThreshold, 3)
+	var (
+		rev int
+		err error
+	)
+	if in.SupersedesID > 0 {
+		rev, err = st.KnowledgeSupersede(ctx, in.SupersedesID, arch, in.Body, in.Confidence, opts)
+	} else {
+		rev, err = st.KnowledgeAddFull(ctx, arch, in.Body, in.Confidence, opts)
+	}
+	if err != nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	s.embedFact(ctx, st, in.Body)
+	s.maybeEvict(ctx, st)
+	s.activityKnowledgeRecorded(p.Root)
+	hint := addHint(in.SupersedesID, rev)
+	out := KnowledgeOutput{Status: "ok", Hint: hint}
+	for _, sf := range similar {
+		out.Similar = append(out.Similar, knowledgeFactOut(sf.KnowledgeFact))
+	}
+	if len(out.Similar) > 0 {
+		out.Hint += fmt.Sprintf(" ⚠ %d similar note(s) already exist (ids %s) — use supersedes_id to replace one.",
+			len(out.Similar), similarIDs(out.Similar))
+	}
+	if in.Scope == "" {
+		if sug := suggestScope(p.Root, in.Body); sug != "" {
+			out.ScopeSuggestion = sug
+			out.Hint += fmt.Sprintf(" 💡 re-add with scope=%q so this surfaces when a verb touches it (gotcha-on-touch).", sug)
+		}
+	}
+	return nil, out, nil
+}
+
+func addHint(supersedesID int64, rev int) string {
+	if supersedesID > 0 {
+		return fmt.Sprintf("Remembered. Note #%d marked inactive (superseded).", supersedesID)
+	}
+	if rev == 1 {
+		return "Confirmed (revision 2)."
+	}
+	if rev > 1 {
+		return fmt.Sprintf("Confirmed (revision %d, confirmed %d×).", rev+1, rev)
+	}
+	return "Remembered."
+}
+
+// knowledgeRelate handles action=relate.
+func (s *Server) knowledgeRelate(ctx context.Context, st *store.Store, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
+	if in.RelateFrom <= 0 || in.RelateTo <= 0 {
+		return nil, KnowledgeOutput{Status: "error", Hint: "relate_from and relate_to are required"}, nil
+	}
+	if in.RelateKind == "" {
+		return nil, KnowledgeOutput{Status: "error", Hint: "relate_kind is required: DependsOn|RelatedTo|Supports|Contradicts|Supersedes"}, nil
+	}
+	if err := st.KnowledgeRelate(ctx, in.RelateFrom, in.RelateTo, in.RelateKind); err != nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	return nil, KnowledgeOutput{
+		Status: "ok",
+		Hint:   fmt.Sprintf("Edge #%d -[%s]→ #%d recorded.", in.RelateFrom, in.RelateKind, in.RelateTo),
+	}, nil
+}
+
+// knowledgeRelations handles action=relations.
+func (s *Server) knowledgeRelations(ctx context.Context, st *store.Store, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
+	if in.Diagram {
+		mermaid, err := st.KnowledgeRelationDiagram(ctx, 0.0)
+		if err != nil {
+			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+		}
+		return nil, KnowledgeOutput{Status: "ok", Diagram: mermaid}, nil
+	}
+	if in.ID <= 0 {
+		return nil, KnowledgeOutput{Status: "error", Hint: "id is required for relations (or set diagram=true for full graph)"}, nil
+	}
+	rels, err := st.KnowledgeRelations(ctx, in.ID)
+	if err != nil {
+		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	out := KnowledgeOutput{Status: "ok"}
+	for _, r := range rels {
+		out.Relations = append(out.Relations, KnowledgeRelationOutput{
+			FromID:    r.FromID,
+			ToID:      r.ToID,
+			Kind:      string(r.Kind),
+			Strength:  r.Strength,
+			Count:     r.Count,
+			CreatedAt: r.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+	if len(out.Relations) == 0 {
+		out.Hint = fmt.Sprintf("Fact #%d has no relations yet.", in.ID)
+	}
+	return nil, out, nil
 }
 
 // similarIDs formats the ids of near-duplicate notes for the add hint.

@@ -60,6 +60,12 @@ func canonicalArchetype(s string) (string, bool) {
 		return "Pattern", true
 	case "fact":
 		return "Fact", true
+	case "hypothesis":
+		return "Hypothesis", true
+	case "inference":
+		return "Inference", true
+	case "verifiedfact", "verified-fact", "verified_fact":
+		return "VerifiedFact", true
 	}
 	return "", false
 }

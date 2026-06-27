@@ -8,13 +8,21 @@ import (
 
 func TestCanonicalArchetype(t *testing.T) {
 	ok := map[string]string{
-		"Architecture": "Architecture",
-		"gotcha":       "Gotcha",
-		"DECISION":     "Decision",
-		"  convention": "Convention",
-		"dependency":   "Dependency",
-		"Pattern":      "Pattern",
-		"fact":         "Fact",
+		"Architecture":  "Architecture",
+		"gotcha":        "Gotcha",
+		"DECISION":      "Decision",
+		"  convention":  "Convention",
+		"dependency":    "Dependency",
+		"Pattern":       "Pattern",
+		"fact":          "Fact",
+		"hypothesis":    "Hypothesis",
+		"Hypothesis":    "Hypothesis",
+		"inference":     "Inference",
+		"INFERENCE":     "Inference",
+		"verified-fact": "VerifiedFact",
+		"VerifiedFact":  "VerifiedFact",
+		"verifiedfact":  "VerifiedFact",
+		"verified_fact": "VerifiedFact",
 	}
 	for in, want := range ok {
 		got, valid := canonicalArchetype(in)

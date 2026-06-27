@@ -266,13 +266,15 @@ var verbs = []verbSpec{
 		flags: []flagSpec{flagK, flagFormat, flagV},
 	},
 	{
-		name: "notes", group: groupGraph, args: "add|list|delete|review|pin|unpin|gc",
+		name: "notes", group: groupGraph, args: "add|list|delete|review|pin|unpin|gc|relate|relations",
 		summary: "per-project notes",
 		subs: []subSpec{
 			{"add", "store a fact"},
 			{"list", "top-k facts by salience"},
 			{"delete", "delete a fact by id"},
 			{"gc", "decay + consolidate + evict"},
+			{"relate", "create/reinforce a typed edge between facts"},
+			{"relations", "list edges for a fact, or full Mermaid diagram"},
 		},
 		flags: []flagSpec{flagFormat},
 	},

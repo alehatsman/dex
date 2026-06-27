@@ -20,7 +20,10 @@ import (
 // fail-closed gate below), not an ALTER-with-defaults backfill.
 // v5 (#633): knowledge_facts gains `pinned` — a fact the author marked
 // permanent, exempt from decay, eviction, and staleness proposals.
-const schemaVersion = "5"
+// v6 (#606/#618/#621): knowledge_facts gains active/superseded_by (supersession),
+// valid_until (temporal windows), evidence (slower decay for code-inspection
+// facts); new knowledge_relations table for typed, Hebbian-strengthened edges.
+const schemaVersion = "6"
 
 // chunkFTSContentExpr builds the SQL expression for a chunk's FTS `content`
 // document: the Contextual-BM25 prefix (context_text + newline, when present)
@@ -191,6 +194,11 @@ func schemaDDL() []string {
 		// body (UNIQUE constraint). Salience computed on read; last_retrieved (#225)
 		// tracks last surfacing (distinct from updated_at = last confirmed) to slow
 		// decay on frequently-recalled facts.
+		// active=0 means the fact was superseded and is excluded from all recall
+		// queries. superseded_by points at the fact that replaced it (#606).
+		// valid_until (unix nanos, 0=no expiry) excludes time-bounded facts after
+		// their window closes (#618). evidence=1 marks facts derived from code
+		// inspection and halves their effective decay rate (#618).
 		`CREATE TABLE IF NOT EXISTS knowledge_facts (
 		   id             INTEGER PRIMARY KEY AUTOINCREMENT,
 		   archetype      TEXT NOT NULL DEFAULT 'Observation',
@@ -203,9 +211,26 @@ func schemaDDL() []string {
 		   last_retrieved INTEGER NOT NULL DEFAULT 0,
 		   scope          TEXT NOT NULL DEFAULT '',
 		   pinned         INTEGER NOT NULL DEFAULT 0,
+		   active         INTEGER NOT NULL DEFAULT 1,
+		   superseded_by  INTEGER DEFAULT NULL REFERENCES knowledge_facts(id),
+		   valid_until    INTEGER NOT NULL DEFAULT 0,
+		   evidence       INTEGER NOT NULL DEFAULT 0,
 		   UNIQUE(body)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_knowledge_confidence ON knowledge_facts(confidence DESC, updated_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_active ON knowledge_facts(active, confidence DESC)`,
+		// knowledge_relations — typed, Hebbian-strengthened edges between facts.
+		// strength saturates at 1.0 via: strength += reinforcement*(1-strength).
+		// count tracks how many times the edge was explicitly reinforced (#621).
+		`CREATE TABLE IF NOT EXISTS knowledge_relations (
+		   from_id    INTEGER NOT NULL REFERENCES knowledge_facts(id),
+		   to_id      INTEGER NOT NULL REFERENCES knowledge_facts(id),
+		   kind       TEXT NOT NULL,
+		   strength   REAL NOT NULL DEFAULT 1.0,
+		   count      INTEGER NOT NULL DEFAULT 1,
+		   created_at INTEGER NOT NULL,
+		   PRIMARY KEY(from_id, to_id, kind)
+		 )`,
 		// agents / agent_messages — multi-agent coordination bus. Agents announce
 		// themselves, post findings, and read peers' messages. category groups
 		// messages by semantic kind (e.g. "finding", "plan", "error"); the FTS5
