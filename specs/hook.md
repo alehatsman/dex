@@ -28,10 +28,12 @@ passes through on any error.
 
 - WHEN `dex setup` runs it writes a routing-rules block (between
   `# dex — semantic search & context routing` and `<!-- /dex -->` markers,
-  tagged `<!-- dex-rules-v2 -->`) to `$CLAUDE_CONFIG_DIR/rules/dex.md`
-  (defaulting to `~/.claude/rules/dex.md`). The write is idempotent: if the
-  deployed block equals the canonical `rulesContent` constant, the file is left
-  unchanged.
+  tagged `<!-- dex-rules-v3 -->`) to `$CLAUDE_CONFIG_DIR/rules/dex.md`
+  (defaulting to `~/.claude/rules/dex.md`). The block is a thin pointer: the
+  authoritative tool mapping ships as MCP server instructions (generated from
+  the binary), so the static block only nudges toward them rather than copying
+  them. The write is idempotent: if the deployed block equals the canonical
+  `rulesContent` constant, the file is left unchanged.
 - WHEN the deployed block contains the start marker but a different version
   string or drifted content, `dex setup` replaces only the dex block,
   preserving surrounding content.

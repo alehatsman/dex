@@ -46,7 +46,7 @@ func TestBuildRulesContent(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "dex.md")
 		// Same markers + version string as canonical, but mutated body — exactly
 		// the stuck state from #350.
-		drifted := strings.Replace(rulesContent, "compressed shell output", "compressed shell out", 1)
+		drifted := strings.Replace(rulesContent, "MCP server instructions", "MCP server instruction", 1)
 		if drifted == rulesContent {
 			t.Fatal("test setup failed: canonical text changed, fixture no longer drifts")
 		}

@@ -174,46 +174,22 @@ func cmdSetup(ctx context.Context, args []string) error {
 const (
 	rulesMarker    = "# dex — semantic search & context routing"
 	rulesEndMarker = "<!-- /dex -->"
-	rulesVersion   = "<!-- dex-rules-v2 -->"
+	rulesVersion   = "<!-- dex-rules-v3 -->"
 )
 
+// rulesContent is a deliberately thin pointer block. dex injects the full,
+// authoritative tool mapping + workflow live as MCP server instructions
+// (generated from the installed binary, so they never drift). Duplicating them
+// here only invites the staleness this block used to carry — keep it minimal
+// and let the MCP instructions be the single source of truth.
 const rulesContent = `# dex — semantic search & context routing
-<!-- dex-rules-v2 -->
+<!-- dex-rules-v3 -->
 
-## Tool Mapping (prefer dex tools over native equivalents)
-| Instead of | Use | When |
-|------------|-----|------|
-| Grep / rg (concept search) | ` + "`find(q, path_glob)`" + ` | intent / keyword searches |
-| Grep / rg (exact name) | ` + "`find(name, path_glob)`" + ` | find fuses exact symbol-name hits (RRF) |
-| Read (large files >400 lines) | ` + "`read(file)`" + ` | signatures + summaries view |
-| Bash (build/test output) | ` + "`shell(command)`" + ` | compressed shell output |
-| Manual cross-ref tracing | ` + "`callers / callees`" + ` | call-graph navigation |
-| Manual import scanning | ` + "`deps(path)`" + ` | dependency edges |
-| Manual path tracing A→B | ` + "`path(src, dst)`" + ` | shortest call/import path |
-| Manual "what breaks if I change X" | ` + "`diff([ref])`" + ` | blast-radius of a git diff |
-| "What are the major modules?" | ` + "`clusters`" + ` | Louvain call-graph clusters |
-| Code quality / dead-code sweep | ` + "`smells`" + ` | long funcs, dead exports, god-nodes |
-
-## Workflow
-1. **Orient:** ` + "`ask(question)`" + ` — routes intent, returns suggested_reads + next_action
-2. **Locate:** ` + "`find`" + ` for concepts and exact names (fuses symbol-name hits)
-3. **Read:** ` + "`read`" + ` for large files; native Read for small ones (<400 lines)
-4. **Shell:** ` + "`shell(command)`" + ` for build/test/grep output
-
-## Proactive (call without being asked)
-- ` + "`ask(task)`" + ` at the start of every session to orient on the codebase
-
-## Session continuity (cuts re-exploration cost)
-
-At session start: ` + "`session(action=get)`" + ` — if a session exists with a task and notes,
-read that instead of re-exploring from scratch.
-
-After key discoveries: ` + "`session(action=add_note, note=\"...\")`" + ` — persists facts so
-` + "`find()`" + ` and ` + "`ask()`" + ` surface them in future sessions without re-reading files.
-
-When context is long: ` + "`session(action=budget)`" + ` — reports utilization and pressure.
-At pressure=compress or higher (>60%): ` + "`session(action=recap, budget=4000)`" + ` produces a
-compressed digest of the working set to restore context after compaction.
+dex is active as an MCP server. Its tool mapping and workflow are injected live
+as MCP server instructions, generated from the installed binary so they never
+drift — prefer those over any static copy of them. Start each session by calling
+` + "`ask()`" + ` with the task description; use ` + "`map()`" + ` to orient in an unfamiliar repo.
+Power lanes (deps, diff, clusters, smells, session, …) are gated behind DEX_EXPERT.
 <!-- /dex -->`
 
 // claudeRulesPath returns $CLAUDE_CONFIG_DIR/rules/dex.md, falling back to
