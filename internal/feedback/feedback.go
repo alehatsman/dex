@@ -75,13 +75,24 @@ func IsConsumeTool(name string) bool {
 // ReadLog parses hooks.jsonl into events. Malformed lines are skipped (the log
 // is appended live and a partial final line is normal).
 func ReadLog(path string) ([]Event, error) {
-	f, err := os.Open(path)
+	out, err := scanJSONL[Event](path)
 	if err != nil {
 		return nil, fmt.Errorf("open observe log: %w (run some sessions first, or pass --log)", err)
 	}
+	return out, nil
+}
+
+// scanJSONL reads a JSONL file into a slice of T. Malformed and empty lines are
+// skipped (these logs are appended live; a partial final line is normal). One
+// scanner for every feedback log — a second drifting copy is the #734 bug class.
+func scanJSONL[T any](path string) ([]T, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
 	defer func() { _ = f.Close() }()
 
-	var out []Event
+	var out []T
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
@@ -89,11 +100,11 @@ func ReadLog(path string) ([]Event, error) {
 		if len(line) == 0 {
 			continue
 		}
-		var e Event
-		if json.Unmarshal(line, &e) != nil {
+		var v T
+		if json.Unmarshal(line, &v) != nil {
 			continue
 		}
-		out = append(out, e)
+		out = append(out, v)
 	}
 	return out, sc.Err()
 }

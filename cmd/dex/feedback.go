@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/eval"
 	"github.com/alehatsman/dex/internal/feedback"
@@ -46,6 +47,8 @@ func runFeedback(_ context.Context, args []string) error {
 	asJSON := fs.Bool("json", false, "emit the report as JSON")
 	mineCurated := fs.Bool("mine-curated", false, "emit GoldenQuery candidates mined from missed asks (JSON array, review before adding to curated.json)")
 	projectPath := fs.String("project", ".", "project root — used to make absolute opened paths relative (for --mine-curated)")
+	shadow := fs.Bool("shadow", false, "A/B the #731 shadow reweight: join feedback_shadow.jsonl against the observe log and report whether the shadow top-k caught more opened files than served")
+	shadowLog := fs.String("shadow-log", "", "path to feedback_shadow.jsonl (default: $XDG_DATA_HOME/dex/feedback_shadow.jsonl)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -57,6 +60,10 @@ func runFeedback(_ context.Context, args []string) error {
 	events, err := feedback.ReadLog(path)
 	if err != nil {
 		return err
+	}
+
+	if *shadow {
+		return runFeedbackShadow(os.Stdout, events, *shadowLog, *window, *asJSON)
 	}
 
 	if *mineCurated {
@@ -227,3 +234,43 @@ func printFeedbackReport(w io.Writer, r feedbackReport) {
 }
 
 func pct(f float64) string { return fmt.Sprintf("%.0f%%", f*100) }
+
+// runFeedbackShadow joins the #731 shadow log against the observe log and
+// reports whether the shadow (lane-agreement reweighted) top-k caught more of
+// the files the agent actually opened than the served (static) top-k. This is
+// the instrument the #731 data gate turns on: the default reweight stays off
+// until this prints a sustained "win-candidate".
+func runFeedbackShadow(w io.Writer, events []feedbackEvent, shadowLog string, window int, asJSON bool) error {
+	path := shadowLog
+	if path == "" {
+		path = feedback.DefaultShadowLogPath()
+	}
+	records, err := feedback.ReadShadowLog(path)
+	if err != nil {
+		return err
+	}
+	rep := feedback.AnalyzeShadow(events, records, window)
+	rep.ShadowLogPath = path
+
+	if asJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(rep)
+	}
+	printShadowReport(w, rep)
+	return nil
+}
+
+func printShadowReport(w io.Writer, r feedback.ShadowReport) {
+	fmt.Fprintf(w, "shadow log: %s\n", r.ShadowLogPath)
+	fmt.Fprintf(w, "records: %d   matched to an ask: %d   divergent top-k: %d\n\n",
+		r.Records, r.Matched, r.Reordered)
+	fmt.Fprintf(w, "served open-rate: %s  (%d/%d top-k slots opened)\n",
+		pct(r.ServedOpenRate), r.ServedOpened, r.ServedSlots)
+	fmt.Fprintf(w, "shadow open-rate: %s  (%d/%d top-k slots opened)\n",
+		pct(r.ShadowOpenRate), r.ShadowOpened, r.ShadowSlots)
+	if r.Reordered > 0 {
+		fmt.Fprintf(w, "\non divergent asks: shadow wins %d  /  losses %d\n", r.ShadowWins, r.ShadowLosses)
+	}
+	fmt.Fprintf(w, "\nverdict: %s\n%s\n", strings.ToUpper(r.Verdict), r.Note)
+}

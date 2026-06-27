@@ -50,18 +50,12 @@ func (s *Server) feedbackThrottle() (*feedback.Throttle, *shadowLogger) {
 // LORO-calibrated #317) top-k vs the shadow (lane-agreement reweighted) top-k,
 // the signal that drove the reweight, and a divergence summary. Operators
 // accumulate these and only flip the reweight to live if shadow rankings
-// correlate with a higher open-rate without an nDCG regression.
-type shadowRecord struct {
-	TS           int64    `json:"ts"`
-	Intent       string   `json:"intent"`
-	OpenRate     float64  `json:"open_rate"`
-	N            int      `json:"n"`
-	ServedTopK   []string `json:"served_topk"`
-	ShadowTopK   []string `json:"shadow_topk"`
-	TopKJaccard  float64  `json:"topk_jaccard"`   // set overlap of the two top-k
-	MaxRankShift int      `json:"max_rank_shift"` // largest position change, shared paths
-	Reordered    bool     `json:"reordered"`
-}
+// correlate with a higher open-rate without an nDCG regression — the verdict
+// `dex feedback --shadow` (feedback.AnalyzeShadow) computes.
+//
+// The type lives in internal/feedback so the writer here and the checker there
+// share one definition (a second drifting copy is the #734 bug class).
+type shadowRecord = feedback.ShadowRecord
 
 // recordShadow computes the shadow ranking under the live lane-agreement
 // reweight and logs it against the served order. hits is the served (static)
