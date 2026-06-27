@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Setup git hooks for dex development.
 #
-#   pre-commit → mooncake task ci-fast
-#     Fast gate (<5s on warm cache): go vet, gofmt on staged files,
-#     ai-lint on staged files. Catches cheap mistakes before they land.
+#   pre-commit → go build + mooncake task ci-fast
+#     Fast gate (<5s on warm cache): compile check, go vet, gofmt on staged
+#     files, ai-lint on staged files. Catches cheap mistakes before they land.
 #
 #   pre-push → mooncake task ci
 #     Full gate: repo-wide gofmt + build + test + lint + vuln + arch-snapshot + budget + dupl.
@@ -34,6 +34,14 @@ cd "$REPO_ROOT"
 if ! command -v mooncake >/dev/null 2>&1; then
   echo "pre-commit: 'mooncake' is required but not installed." >&2
   echo "            See: https://github.com/alehatsman/mooncake" >&2
+  exit 1
+fi
+
+echo "pre-commit: [0/1] go build (compile check)..."
+if ! go build -tags sqlite_fts5 ./...; then
+  echo "" >&2
+  echo "pre-commit: ✗ compile failed. Fix the build error and re-commit," >&2
+  echo "            or 'git commit --no-verify' to bypass (not recommended)." >&2
   exit 1
 fi
 
@@ -89,7 +97,7 @@ fi
 cat <<EOM
 
 Installed:
-  pre-commit     → 'mooncake task ci-fast' (~seconds). vet + gofmt + ai-lint.
+  pre-commit     → go build + 'mooncake task ci-fast' (~seconds). compile + vet + gofmt + ai-lint.
   pre-push       → 'mooncake task ci' (~1 min). Full build + test + lint + vuln
                    + arch-snapshot + dupl before commits leave the machine.
 
