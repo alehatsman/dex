@@ -405,6 +405,27 @@ func (s *knowledgeStore) KnowledgeQuery(ctx context.Context, k int) ([]Knowledge
 	return scanFacts(rows)
 }
 
+// KnowledgeQueryArchetype returns the top-k active, non-expired facts whose
+// archetype matches the given string, ordered by salience. Pass k<=0 for the
+// default (10). Used by recallFacts when the caller specifies an archetype
+// filter — avoids the post-filter empty-result bug (#804) by pushing the
+// filter down to SQL.
+func (s *knowledgeStore) KnowledgeQueryArchetype(ctx context.Context, archetype string, k int) ([]KnowledgeFact, error) {
+	k = clampK(k)
+	now := time.Now().UnixNano()
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
+		   FROM knowledge_facts
+		   WHERE `+activeFilter(now)+` AND archetype = ?
+		   ORDER BY confidence DESC, updated_at DESC
+		   LIMIT ?`, archetype, k)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanFacts(rows)
+}
+
 // SimilarFact pairs a stored fact with its Jaccard word-overlap against a
 // candidate body, in [0,1].
 type SimilarFact struct {

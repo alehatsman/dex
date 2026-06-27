@@ -209,15 +209,13 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 	if in.K > 50 {
 		kHint = "k capped at 50 — the maximum"
 	}
-	facts, err := s.recallFacts(ctx, st, in.Query, in.K, false)
+	facts, err := s.recallFacts(ctx, st, in.Query, in.K, false, in.Archetype)
 	if err != nil {
 		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 	}
 	out := KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{}, Hint: kHint}
 	for _, f := range facts {
-		if in.Archetype == "" || f.Archetype == in.Archetype {
-			out.Facts = append(out.Facts, knowledgeFactOut(f))
-		}
+		out.Facts = append(out.Facts, knowledgeFactOut(f))
 	}
 	return nil, out, nil
 }
@@ -613,10 +611,13 @@ func (s *Server) backfillFactVecs(ctx context.Context, st *store.Store) {
 // hit_count of each returned fact is incremented (used by ask/overview
 // injection, not by plain `list`).
 //
+// archetype, when non-empty, restricts the fallback path to facts of that
+// archetype via a SQL WHERE clause (#804), and post-filters the semantic path.
+//
 // Set skipFallback=true for symbol-oriented callers (locate, review): they
 // should show no notes rather than irrelevant top-salience ones when the
 // semantic search returns nothing.
-func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string, k int, bump bool, skipFallback ...bool) ([]store.KnowledgeFact, error) {
+func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string, k int, bump bool, archetype string, skipFallback ...bool) ([]store.KnowledgeFact, error) {
 	noFallback := len(skipFallback) > 0 && skipFallback[0]
 	var facts []store.KnowledgeFact
 	var err error
@@ -634,10 +635,27 @@ func (s *Server) recallFacts(ctx context.Context, st *store.Store, query string,
 				minSim = minSimSkip
 			}
 			facts, err = st.KnowledgeQueryVec(ctx, vecs[0], k, minSim)
+			// Post-filter semantic results by archetype when requested — the vec
+			// index has no archetype column, so filtering happens here (#804).
+			if archetype != "" && len(facts) > 0 {
+				filtered := facts[:0]
+				for _, f := range facts {
+					if f.Archetype == archetype {
+						filtered = append(filtered, f)
+					}
+				}
+				facts = filtered
+			}
 		}
 	}
 	if facts == nil && err == nil && !noFallback {
-		facts, err = st.KnowledgeQuery(ctx, k)
+		// Push archetype filter to SQL so top-k by salience doesn't crowd out
+		// minority archetypes before the caller can filter (#804).
+		if archetype != "" {
+			facts, err = st.KnowledgeQueryArchetype(ctx, archetype, k)
+		} else {
+			facts, err = st.KnowledgeQuery(ctx, k)
+		}
 	}
 	if err != nil {
 		return nil, err

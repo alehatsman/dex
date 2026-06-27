@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -190,6 +191,57 @@ func TestKnowledgeByID_NullSupersedeBy(t *testing.T) {
 	}
 	if f.SupersededBy != 0 {
 		t.Errorf("SupersededBy = %d, want 0 for non-superseded fact", f.SupersededBy)
+	}
+}
+
+// TestKnowledgeQueryArchetype pins #804: notes(list, archetype=X) without a
+// query must return only facts of that archetype, not an empty slice when
+// top-k by salience are all a different archetype.
+func TestKnowledgeQueryArchetype(t *testing.T) {
+	st, ctx := newStore(t)
+
+	// Seed 5 VerifiedFact notes (high confidence) and 2 Gotcha notes (lower).
+	for i := range 5 {
+		if _, err := st.KnowledgeAdd(ctx, "VerifiedFact", fmt.Sprintf("fact %d", i), 0.95); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.KnowledgeAdd(ctx, "Gotcha", "gotcha one", 0.6); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.KnowledgeAdd(ctx, "Gotcha", "gotcha two", 0.55); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without archetype filter, top-5 are all VerifiedFact (they outrank the
+	// lower-confidence Gotcha notes), so a post-query Gotcha filter on the
+	// top-k would yield nothing — the #804 bug.
+	all, err := st.KnowledgeQuery(ctx, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range all {
+		if f.Archetype != "VerifiedFact" {
+			t.Errorf("KnowledgeQuery top-5 contains non-VerifiedFact %q (id=%d)", f.Archetype, f.ID)
+		}
+	}
+
+	// With the SQL-level archetype filter, must return both Gotcha notes.
+	got, err := st.KnowledgeQueryArchetype(ctx, "Gotcha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("KnowledgeQueryArchetype(Gotcha): got %d facts, want 2", len(got))
+	}
+	wantBodies := map[string]bool{"gotcha one": true, "gotcha two": true}
+	for _, f := range got {
+		if f.Archetype != "Gotcha" {
+			t.Errorf("got archetype %q, want Gotcha", f.Archetype)
+		}
+		if !wantBodies[f.Body] {
+			t.Errorf("unexpected fact body %q", f.Body)
+		}
 	}
 }
 

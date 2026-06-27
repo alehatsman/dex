@@ -418,7 +418,7 @@ func cachedNotes(ctx context.Context, s *Server, st *store.Store, symbol string,
 		return n
 	}
 	var notes []LocatedFact
-	if facts, err := s.recallFacts(ctx, st, symbol, k, false, true); err == nil {
+	if facts, err := s.recallFacts(ctx, st, symbol, k, false, "", true); err == nil {
 		for _, f := range facts {
 			notes = append(notes, LocatedFact{ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience})
 		}

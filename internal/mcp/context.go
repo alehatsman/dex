@@ -319,7 +319,7 @@ func (s *Server) loadContextFacts(ctx context.Context, st *store.Store, in Conte
 	// that actually match it, not whatever scores highest by archetype weight. This
 	// keeps off-topic, high-salience notes (e.g. bulky VerifiedFact session logs that
 	// cosine ~0.3-0.4) out of every unrelated ask (#785).
-	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true, true); err == nil && len(facts) > 0 {
+	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true, "", true); err == nil && len(facts) > 0 {
 		for _, f := range facts {
 			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+capFactBody(f.Body))
 		}
