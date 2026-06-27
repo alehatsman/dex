@@ -23,13 +23,19 @@ import (
 // summary when a chat model is wired, else the raw full file. Already-complete
 // modes (full/summary) are left untouched. `skeleton` is deterministic by
 // contract (no chat model), so it escalates to raw `full`, never an LLM summary
-// (#483).
+// (#483). `analyze` is a meta-mode (token-cost comparison, no file content)
+// that must never call the LLM regardless of bounce history (#752).
 func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string, mode ReadMode, isLLM bool) (ReadMode, bool) {
 	if !bt.shouldForceFull(sessionID, relTarget) || mode.IsComplete() {
 		return mode, isLLM
 	}
 	if mode == ReadModeSkeleton {
 		return ReadModeFull, false
+	}
+	// analyze is a meta-mode (token-cost comparison, no file content); bounce
+	// escalation must never promote it to an LLM call (#752).
+	if mode == ReadModeAnalyze {
+		return mode, isLLM
 	}
 	if s.ChatClient != nil {
 		return ReadModeSummary, true

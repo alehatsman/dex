@@ -3,6 +3,8 @@ package mcp
 import (
 	"testing"
 	"time"
+
+	"github.com/alehatsman/dex/internal/chat"
 )
 
 func TestBounceTracker_NoBounce(t *testing.T) {
@@ -48,6 +50,27 @@ func TestBounceTracker_SessionIsolation(t *testing.T) {
 	bt.recordRead("s2", "store.go") // different session
 	if bt.shouldForceFull("s2", "store.go") {
 		t.Error("bounce should not cross session boundaries")
+	}
+}
+
+func TestEscalateOnBounce_AnalyzeNeverPromotedToLLM(t *testing.T) {
+	// mode=analyze must never be escalated to summary (LLM) on bounce (#752).
+	// Wire a chat client so other modes would escalate; verify analyze stays analyze.
+	bt := newBounceTracker()
+	bt.recordCompressed("s1", "analyze.go")
+	bt.recordRead("s1", "analyze.go") // triggers shouldForceFull
+
+	chatSrv := fakeChat(t, "should not be called")
+	defer chatSrv.Close()
+	srv := newServer("http://127.0.0.1:1", t.TempDir())
+	srv.ChatClient = chat.New(chatSrv.URL, "fake", 30*time.Second)
+
+	mode, isLLM := srv.escalateOnBounce(bt, "s1", "analyze.go", ReadModeAnalyze, false)
+	if mode != ReadModeAnalyze {
+		t.Errorf("want ReadModeAnalyze, got %s", mode)
+	}
+	if isLLM {
+		t.Error("analyze bounce must not set isLLM=true")
 	}
 }
 
