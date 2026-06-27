@@ -63,7 +63,7 @@
     {
       "id": "c10",
       "query": "how does the proxy track token usage and prune messages",
-      "relevant_files": ["cmd/dex/proxy.go", "internal/proxy/proxy.go", "internal/proxy/prune.go"],
+      "relevant_files": ["internal/proxy/usage.go", "internal/proxy/prune.go"],
       "class": "behavior"
     },
     {
@@ -110,7 +110,7 @@
     },
     {
       "id": "c18",
-      "query": "how does dex handle schema migrations and version bumps",
+      "query": "how does Store.migrate apply DDL schema updates",
       "relevant_files": ["internal/store/store_migrate.go"],
       "class": "behavior"
     },
