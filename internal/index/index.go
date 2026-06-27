@@ -65,6 +65,12 @@ func New(p *proj.Project, st *store.Store, em embed.Embedder, ig *ignore.Matcher
 	return &Indexer{Proj: p, Store: st, Embed: em, Ignore: ig, Options: opt}
 }
 
+// pathTask is a single file dispatched from the walker to the worker pool.
+type pathTask struct {
+	rel  string
+	path string
+}
+
 // Run walks the project, chunks new/changed files, embeds, and upserts.
 // Files unchanged since the last index get their last_seen_at bumped but
 // are not re-embedded. Stale rows (files removed) are pruned at the end.
@@ -117,12 +123,6 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		return err
 	}
 
-	var (
-		toEmbed      []pending
-		seen         int
-		embedSkipped int // chunks dropped by a skipped embed batch (see pass-2)
-	)
-
 	prevStats, statsErr := ix.Store.Stats(ctx)
 	var lastIndexed time.Time
 	if statsErr == nil {
@@ -147,15 +147,12 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	if conc <= 0 {
 		conc = runtime.GOMAXPROCS(0)
 	}
-	type pathTask struct {
-		rel  string
-		path string
-	}
 	pathCh := make(chan pathTask, conc*4)
 	resultCh := make(chan slowFile, conc*4)
 	var (
 		skipped    atomic.Int64
 		mtimeSkips atomic.Int64
+		mtimeSeen  int // mtime fast-path chunk count (walk goroutine only, no sync needed)
 	)
 
 	var workers sync.WaitGroup
@@ -163,50 +160,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			for task := range pathCh {
-				// Honour cancellation between files: a long index over a
-				// 10k-file repo would otherwise drain pathCh fully even
-				// after Ctrl-C — workers keep reading queued tasks until
-				// the channel closes.
-				if ctx.Err() != nil {
-					return
-				}
-				data, err := os.ReadFile(task.path)
-				if err != nil {
-					continue
-				}
-				if ignore.LooksBinary(data) {
-					skipped.Add(1)
-					continue
-				}
-				// Skip files whose content matches a known secret
-				// pattern — but allow-list test fixtures, which
-				// routinely embed fake credentials as inputs to
-				// their own detection logic.
-				if !ignore.IsTestPath(task.rel) && ignore.LooksLikeSecret(data) {
-					ix.Options.Logger.Warn("skip (matches secret pattern)", "path", task.rel)
-					skipped.Add(1)
-					continue
-				}
-				chunks, err := chunk.Chunks(ctx, task.rel, data)
-				if err != nil {
-					if ix.Options.Verbose {
-						ix.Options.Logger.Info("chunk error", "path", task.rel, "err", err)
-					}
-					// Touch existing chunks so they survive PruneUnseen.
-					// Without this, a parse-error file loses its chunks on
-					// the first run, then the mtime fast-path skips it on
-					// every subsequent run (no chunks to touch → slow path
-					// → parse fails again → permanent absence from index).
-					_, _ = ix.Store.TouchPath(ctx, task.rel, startTime)
-					continue
-				}
-				select {
-				case resultCh <- slowFile{rel: task.rel, data: data, chunks: chunks}:
-				case <-ctx.Done():
-					return
-				}
-			}
+			ix.fileWorker(ctx, pathCh, resultCh, startTime, &skipped)
 		}()
 	}
 
@@ -223,7 +177,119 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		}
 	}()
 
-	walkErr := filepath.WalkDir(ix.Proj.Root, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(ix.Proj.Root, ix.walkVisit(ctx, lastIndexed, startTime, pathCh, &skipped, &mtimeSkips, &mtimeSeen))
+	close(pathCh)
+	workers.Wait()
+	close(resultCh)
+	collector.Wait()
+	if walkErr != nil {
+		return fmt.Errorf("walk: %w", walkErr)
+	}
+	ix.Options.Logger.Info("index: walk done",
+		"slow_files", len(slowFiles),
+		"mtime_fast_path", mtimeSkips.Load(),
+		"skipped", skipped.Load(),
+		logx.DurMS(time.Since(startTime)))
+	if ix.Options.Progress != nil {
+		total := len(slowFiles) + int(mtimeSkips.Load())
+		ix.Options.Progress("walk", total, total)
+	}
+
+	// Pass 2: SHA dedup + build embed queue.
+	toEmbed, slowSeen, err := ix.buildPending(ctx, slowFiles, startTime)
+	if err != nil {
+		return err
+	}
+	seen := mtimeSeen + slowSeen
+
+	// Pass 3: embed and upsert.
+	embedSkipped, err := ix.runEmbedPhase(ctx, toEmbed, startTime)
+	if err != nil {
+		return err
+	}
+
+	pruned, err := ix.Store.PruneUnseen(ctx, startTime)
+	if err != nil {
+		return err
+	}
+	if pruned > 0 {
+		ix.Options.Logger.Info("index: pruned stale chunks", logx.Count(int(pruned)))
+	}
+	if err := ix.Store.SetLastIndexedAt(ctx, startTime); err != nil {
+		return err
+	}
+	ix.Options.Logger.Info("index: done",
+		logx.Phase("done"), "chunks_seen", seen,
+		"files_fast_path", mtimeSkips.Load(),
+		"embedded", len(toEmbed)-embedSkipped,
+		"embed_skipped", embedSkipped,
+		"pruned", pruned,
+		"skipped", skipped.Load(),
+		logx.DurMS(time.Since(startTime)))
+	return nil
+}
+
+// fileWorker drains pathCh, reads each file, detects binary/secret content,
+// parses chunks, and sends results to resultCh. One goroutine per worker slot.
+func (ix *Indexer) fileWorker(ctx context.Context, pathCh <-chan pathTask, resultCh chan<- slowFile, startTime time.Time, skipped *atomic.Int64) {
+	for task := range pathCh {
+		// Honour cancellation between files: a long index over a
+		// 10k-file repo would otherwise drain pathCh fully even
+		// after Ctrl-C — workers keep reading queued tasks until
+		// the channel closes.
+		if ctx.Err() != nil {
+			return
+		}
+		data, err := os.ReadFile(task.path) //nolint:gosec // path comes from WalkDir under project root
+		if err != nil {
+			continue
+		}
+		if ignore.LooksBinary(data) {
+			skipped.Add(1)
+			continue
+		}
+		// Skip files whose content matches a known secret
+		// pattern — but allow-list test fixtures, which
+		// routinely embed fake credentials as inputs to
+		// their own detection logic.
+		if !ignore.IsTestPath(task.rel) && ignore.LooksLikeSecret(data) {
+			ix.Options.Logger.Warn("skip (matches secret pattern)", "path", task.rel)
+			skipped.Add(1)
+			continue
+		}
+		chunks, err := chunk.Chunks(ctx, task.rel, data)
+		if err != nil {
+			if ix.Options.Verbose {
+				ix.Options.Logger.Info("chunk error", "path", task.rel, "err", err)
+			}
+			// Touch existing chunks so they survive PruneUnseen.
+			// Without this, a parse-error file loses its chunks on
+			// the first run, then the mtime fast-path skips it on
+			// every subsequent run (no chunks to touch → slow path
+			// → parse fails again → permanent absence from index).
+			_, _ = ix.Store.TouchPath(ctx, task.rel, startTime)
+			continue
+		}
+		select {
+		case resultCh <- slowFile{rel: task.rel, data: data, chunks: chunks}:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// walkVisit returns the fs.WalkDirFunc used by Run's Pass 1. It handles
+// directory pruning, ignore matching, symlink rejection, mtime fast-path
+// (cheap chunks-seen bump), and queuing slow-path files onto pathCh.
+// mtimeSeen is written from the walk goroutine only (no sync required).
+func (ix *Indexer) walkVisit(
+	ctx context.Context,
+	lastIndexed, startTime time.Time,
+	pathCh chan<- pathTask,
+	skipped, mtimeSkips *atomic.Int64,
+	mtimeSeen *int,
+) fs.WalkDirFunc {
+	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if ix.Options.Verbose {
 				ix.Options.Logger.Info("walk error", "path", path, "err", err)
@@ -293,7 +359,7 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		if !lastIndexed.IsZero() && info.ModTime().Before(lastIndexed) {
 			rows, terr := ix.Store.TouchPath(ctx, rel, startTime)
 			if terr == nil && rows > 0 {
-				seen += int(rows)
+				*mtimeSeen += int(rows)
 				mtimeSkips.Add(1)
 				return nil
 			}
@@ -305,38 +371,25 @@ func (ix *Indexer) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 		return nil
-	})
-	close(pathCh)
-	workers.Wait()
-	close(resultCh)
-	collector.Wait()
-	if walkErr != nil {
-		return fmt.Errorf("walk: %w", walkErr)
 	}
-	ix.Options.Logger.Info("index: walk done",
-		"slow_files", len(slowFiles),
-		"mtime_fast_path", mtimeSkips.Load(),
-		"skipped", skipped.Load(),
-		logx.DurMS(time.Since(startTime)))
-	if ix.Options.Progress != nil {
-		total := len(slowFiles) + int(mtimeSkips.Load())
-		ix.Options.Progress("walk", total, total)
-	}
+}
 
-	// Pass 2: one batch query for all slow-path files instead of N per-file
-	// queries.
+// buildPending runs Pass 2: one batch SHA query for all slow-path files,
+// deduplicates against the store, and returns the chunks that need embedding.
+// seen is the total chunk count across all slow files (for the final log).
+func (ix *Indexer) buildPending(ctx context.Context, slowFiles []slowFile, startTime time.Time) (toEmbed []pending, seen int, err error) {
 	slowPaths := make([]string, len(slowFiles))
 	for i, sf := range slowFiles {
 		slowPaths[i] = sf.rel
 	}
 	existingBatch, err := ix.Store.ExistingSHAsBatch(ctx, slowPaths)
 	if err != nil {
-		return fmt.Errorf("existing SHAs: %w", err)
+		return nil, 0, fmt.Errorf("existing SHAs: %w", err)
 	}
 
 	for _, sf := range slowFiles {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, 0, err
 		}
 		existing := existingBatch[sf.rel]
 		seen += len(sf.chunks)
@@ -348,129 +401,114 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		// into the SHA; the first occurrence keeps the plain content hash so
 		// non-duplicate chunks (the overwhelming majority) are unaffected.
 		dupCount := make(map[string]int, len(sf.chunks))
-
 		for _, c := range sf.chunks {
 			base := chunkSHA(c.Content)
 			sha := dedupSHA(base, dupCount[base])
 			dupCount[base]++
 			if existing[sha] {
 				if err := ix.Store.TouchSeen(ctx, sf.rel, sha, c.Name, c.StartLine, c.EndLine, startTime); err != nil {
-					return err
+					return nil, 0, err
 				}
 				continue
 			}
 			toEmbed = append(toEmbed, pending{rel: sf.rel, chunk: c, sha: sha})
 		}
-
 	}
+	return toEmbed, seen, nil
+}
 
-	if len(toEmbed) > 0 {
-		// Embed and upsert one batch at a time. If a later batch fails
-		// (timeout, embedding service crash), earlier batches survive
-		// in the store and the next index run skips them via
-		// content-sha matching — no wasted GPU time on retry.
-		batchSize := 32
-		if ix.Embed != nil {
-			if bs := ix.Embed.BatchSize(); bs > 0 {
-				batchSize = bs
-			}
+// runEmbedPhase runs Pass 3: embed toEmbed in batches and upsert each batch.
+// Returns the number of chunks skipped due to batch failures.
+func (ix *Indexer) runEmbedPhase(ctx context.Context, toEmbed []pending, startTime time.Time) (embedSkipped int, err error) {
+	if len(toEmbed) == 0 {
+		return 0, nil
+	}
+	// Embed and upsert one batch at a time. If a later batch fails
+	// (timeout, embedding service crash), earlier batches survive
+	// in the store and the next index run skips them via
+	// content-sha matching — no wasted GPU time on retry.
+	batchSize := 32
+	if ix.Embed != nil {
+		if bs := ix.Embed.BatchSize(); bs > 0 {
+			batchSize = bs
 		}
-		if batchSize <= 0 {
-			batchSize = 32
+	}
+	if batchSize <= 0 {
+		batchSize = 32
+	}
+	totalBatches := (len(toEmbed) + batchSize - 1) / batchSize
+	ix.Options.Logger.Info("index: embedding",
+		logx.Phase("embed"), "chunks", len(toEmbed),
+		"batches", totalBatches,
+		"batch_size", batchSize)
+	var skippedBatches int
+	var lastBatchErr error
+	embedStart := time.Now()
+	for start := 0; start < len(toEmbed); start += batchSize {
+		// Bail between batches so Ctrl-C during a long embed pass
+		// returns within one batch's wall-clock instead of waiting
+		// for the http client's per-call timeout to fire.
+		if err := ctx.Err(); err != nil {
+			return embedSkipped, err
 		}
-		totalBatches := (len(toEmbed) + batchSize - 1) / batchSize
-		ix.Options.Logger.Info("index: embedding",
-			logx.Phase("embed"), "chunks", len(toEmbed),
-			"batches", totalBatches,
-			"batch_size", batchSize)
-		var skippedBatches int
-		var lastBatchErr error
-		embedStart := time.Now()
-		for start := 0; start < len(toEmbed); start += batchSize {
-			// Bail between batches so Ctrl-C during a long embed pass
-			// returns within one batch's wall-clock instead of waiting
-			// for the http client's per-call timeout to fire.
-			if err := ctx.Err(); err != nil {
-				return err
+		end := start + batchSize
+		if end > len(toEmbed) {
+			end = len(toEmbed)
+		}
+		batch := toEmbed[start:end]
+		batchStart := time.Now()
+		if err := ix.embedAndUpsertBatch(ctx, batch, startTime); err != nil {
+			// A canceled/expired context is fatal: the operator asked to
+			// stop (Ctrl-C) or the whole run is timing out — surface it,
+			// don't mask it as a per-batch skip.
+			if ctx.Err() != nil {
+				return embedSkipped, err
 			}
-			end := start + batchSize
-			if end > len(toEmbed) {
-				end = len(toEmbed)
-			}
-			batch := toEmbed[start:end]
-			batchStart := time.Now()
-			if err := ix.embedAndUpsertBatch(ctx, batch, startTime); err != nil {
-				// A canceled/expired context is fatal: the operator asked to
-				// stop (Ctrl-C) or the whole run is timing out — surface it,
-				// don't mask it as a per-batch skip.
-				if ctx.Err() != nil {
-					return err
-				}
-				// Isolate the failure: one bad batch (an embed error that
-				// survived #436's retry, or a transient SQLite BUSY on upsert)
-				// must not throw away every other batch's GPU work. Log, count,
-				// and continue. These are new chunks (their row is created only
-				// by the batch's UpsertMany), so a skip leaves no row behind —
-				// nothing for PruneUnseen to act on — and the next run re-queues
-				// them via content-sha matching. Same recoverable state as a
-				// crash mid-embed, minus the lost work on the good batches.
-				lastBatchErr = err
-				skippedBatches++
-				embedSkipped += len(batch)
-				ix.Options.Logger.Warn("index: embed batch failed, skipping",
-					"batch", start/batchSize+1,
-					"batch_total", totalBatches,
-					"chunks", len(batch),
-					"err", err)
-				if ix.Options.Progress != nil {
-					ix.Options.Progress("embed", end, len(toEmbed))
-				}
-				continue
-			}
-			ix.Options.Logger.Info("index: embed batch",
+			// Isolate the failure: one bad batch (an embed error that
+			// survived #436's retry, or a transient SQLite BUSY on upsert)
+			// must not throw away every other batch's GPU work. Log, count,
+			// and continue. These are new chunks (their row is created only
+			// by the batch's UpsertMany), so a skip leaves no row behind —
+			// nothing for PruneUnseen to act on — and the next run re-queues
+			// them via content-sha matching. Same recoverable state as a
+			// crash mid-embed, minus the lost work on the good batches.
+			lastBatchErr = err
+			skippedBatches++
+			embedSkipped += len(batch)
+			ix.Options.Logger.Warn("index: embed batch failed, skipping",
 				"batch", start/batchSize+1,
 				"batch_total", totalBatches,
 				"chunks", len(batch),
-				logx.DurMS(time.Since(batchStart)))
+				"err", err)
 			if ix.Options.Progress != nil {
 				ix.Options.Progress("embed", end, len(toEmbed))
 			}
+			continue
 		}
-		// All batches failed → the backend is down, not a sporadic bad file.
-		// Isolation must not silently turn a total outage into a "success"
-		// that embedded nothing, so fail loud in that case.
-		if skippedBatches > 0 && skippedBatches == totalBatches {
-			return fmt.Errorf("embed pass: all %d batch(es) failed; last error: %w", totalBatches, lastBatchErr)
+		ix.Options.Logger.Info("index: embed batch",
+			"batch", start/batchSize+1,
+			"batch_total", totalBatches,
+			"chunks", len(batch),
+			logx.DurMS(time.Since(batchStart)))
+		if ix.Options.Progress != nil {
+			ix.Options.Progress("embed", end, len(toEmbed))
 		}
-		if skippedBatches > 0 {
-			ix.Options.Logger.Warn("index: embed pass completed with skipped batches",
-				"skipped_batches", skippedBatches,
-				"batch_total", totalBatches,
-				"skipped_chunks", embedSkipped)
-		}
-		ix.Options.Logger.Info("index: embedding done",
-			logx.DurMS(time.Since(embedStart)))
 	}
-
-	pruned, err := ix.Store.PruneUnseen(ctx, startTime)
-	if err != nil {
-		return err
+	// All batches failed → the backend is down, not a sporadic bad file.
+	// Isolation must not silently turn a total outage into a "success"
+	// that embedded nothing, so fail loud in that case.
+	if skippedBatches > 0 && skippedBatches == totalBatches {
+		return embedSkipped, fmt.Errorf("embed pass: all %d batch(es) failed; last error: %w", totalBatches, lastBatchErr)
 	}
-	if pruned > 0 {
-		ix.Options.Logger.Info("index: pruned stale chunks", logx.Count(int(pruned)))
+	if skippedBatches > 0 {
+		ix.Options.Logger.Warn("index: embed pass completed with skipped batches",
+			"skipped_batches", skippedBatches,
+			"batch_total", totalBatches,
+			"skipped_chunks", embedSkipped)
 	}
-	if err := ix.Store.SetLastIndexedAt(ctx, startTime); err != nil {
-		return err
-	}
-	ix.Options.Logger.Info("index: done",
-		logx.Phase("done"), "chunks_seen", seen,
-		"files_fast_path", mtimeSkips.Load(),
-		"embedded", len(toEmbed)-embedSkipped,
-		"embed_skipped", embedSkipped,
-		"pruned", pruned,
-		"skipped", skipped.Load(),
-		logx.DurMS(time.Since(startTime)))
-	return nil
+	ix.Options.Logger.Info("index: embedding done",
+		logx.DurMS(time.Since(embedStart)))
+	return embedSkipped, nil
 }
 
 // markIndexing stamps the indexing-in-progress marker and returns a cleanup
