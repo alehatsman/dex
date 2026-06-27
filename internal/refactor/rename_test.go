@@ -159,3 +159,36 @@ func TestPlanRename_ConflictWarning(t *testing.T) {
 		t.Error("expected a conflict warning when renaming to an existing scope name")
 	}
 }
+
+func TestPlanRename_IncludesTestFiles(t *testing.T) {
+	root := writeModule(t)
+	// Write an internal test file that calls Greet.
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("a_test.go", `package main
+
+import "testing"
+
+func TestGreet(t *testing.T) { _ = Greet("t") }
+`)
+	res, err := PlanRename(context.Background(), root, "Greet", "Welcome", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("status = %q, want ok (hint: %q)", res.Status, res.Hint)
+	}
+	hasTest := false
+	for _, e := range res.Edits {
+		if strings.HasSuffix(e.Path, "_test.go") {
+			hasTest = true
+		}
+	}
+	if !hasTest {
+		t.Errorf("edits = %+v: no _test.go edit — test-file usages must be included (#773)", res.Edits)
+	}
+}

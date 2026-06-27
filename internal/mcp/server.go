@@ -380,7 +380,11 @@ func (s *Server) lookupBodyHandle(sessionID, key string) (bodyHandle, bool) {
 
 // readCacheCheck returns true when this session has previously received
 // relPath at exactly this etag, meaning the model already has the content.
-func (s *Server) readCacheCheck(sessionID, relPath, etag string) bool {
+// readCacheCheck returns true when sessionID already received relPath (in the
+// given mode) at etag — so the caller can short-circuit with "unchanged".
+// mode is included in the key so switching modes on the same file never
+// returns "unchanged" when new output is expected (#770).
+func (s *Server) readCacheCheck(sessionID, relPath, etag, mode string) bool {
 	if sessionID == "" {
 		return false
 	}
@@ -389,11 +393,11 @@ func (s *Server) readCacheCheck(sessionID, relPath, etag string) bool {
 	if s.readCache == nil {
 		return false
 	}
-	return s.readCache[sessionID][relPath] == etag
+	return s.readCache[sessionID][relPath+"\x00"+mode] == etag
 }
 
-// readCacheMark records that sessionID has received relPath at etag.
-func (s *Server) readCacheMark(sessionID, relPath, etag string) {
+// readCacheMark records that sessionID has received relPath (in mode) at etag.
+func (s *Server) readCacheMark(sessionID, relPath, etag, mode string) {
 	if sessionID == "" {
 		return
 	}
@@ -405,7 +409,7 @@ func (s *Server) readCacheMark(sessionID, relPath, etag string) {
 	if s.readCache[sessionID] == nil {
 		s.readCache[sessionID] = make(map[string]string)
 	}
-	s.readCache[sessionID][relPath] = etag
+	s.readCache[sessionID][relPath+"\x00"+mode] = etag
 }
 
 // readCacheGetContent returns the raw file bytes last delivered for (sessionID, relPath).

@@ -100,6 +100,13 @@ func verifyOneClaim(ctx context.Context, st *store.Store, c ClaimRef) ClaimResul
 		if sym != "" {
 			hits, err := st.FindSymbolInPath(ctx, path, sym)
 			if err != nil || len(hits) == 0 {
+				// FindSymbolInPath only covers indexed chunk names (funcs, types).
+				// Unexported consts/vars live in orphan chunks — scan raw bodies (#774).
+				if symbolInChunkBodies(ctx, st, path, sym) {
+					res.SymbolAt = sym
+					res.Status = "ok"
+					return res
+				}
 				res.Status = "gone"
 				return res
 			}
@@ -224,4 +231,46 @@ func findSymbolInFile(ctx context.Context, st *store.Store, path, sym string) st
 		return ""
 	}
 	return fmt.Sprintf("%s:%d", hits[0].Path, hits[0].StartLine)
+}
+
+// symbolInChunkBodies scans all chunk bodies for path looking for sym as a
+// whole-word match. Used as a fallback for unexported consts/vars, which are
+// not indexed as named chunks but do appear in orphan chunk text (#774).
+func symbolInChunkBodies(ctx context.Context, st *store.Store, path, sym string) bool {
+	bodies, err := st.ChunkBodiesByPath(ctx, path)
+	if err != nil {
+		return false
+	}
+	for _, b := range bodies {
+		if bodyContainsWord(b.Content, sym) {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyContainsWord reports whether word appears as a whole identifier in text.
+func bodyContainsWord(text, word string) bool {
+	n := len(word)
+	if n == 0 {
+		return false
+	}
+	i := 0
+	for {
+		j := strings.Index(text[i:], word)
+		if j < 0 {
+			return false
+		}
+		j += i
+		before := j > 0 && isIdentByte(text[j-1])
+		after := j+n < len(text) && isIdentByte(text[j+n])
+		if !before && !after {
+			return true
+		}
+		i = j + 1
+	}
+}
+
+func isIdentByte(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }

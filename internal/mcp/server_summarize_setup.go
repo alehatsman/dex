@@ -143,7 +143,7 @@ func (s *Server) summarizeCheckCached(
 			sessionID = id
 		}
 	}
-	if in.Etag != "" && in.Etag == etag && s.readCacheCheck(sessionID, relTarget, etag) {
+	if in.Etag != "" && in.Etag == etag && s.readCacheCheck(sessionID, relTarget, etag, in.Mode) {
 		return sessionID, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, true
 	}
 	if in.Expand == "" && !(isFull && s.ChatClient != nil) {
@@ -153,7 +153,7 @@ func (s *Server) summarizeCheckCached(
 				out.Etag = etag
 				out.Bytes = len(data)
 				out.Content = delta
-				s.readCacheMark(sessionID, relTarget, etag)
+				s.readCacheMark(sessionID, relTarget, etag, in.Mode)
 				s.readCacheSetContent(sessionID, relTarget, data)
 				return sessionID, out, true
 			}
@@ -185,7 +185,7 @@ func (s *Server) summarizeExpandHandle(
 	out.Bytes = len(slice)
 	out.Content = string(slice)
 	out.Hint = fmt.Sprintf("body expansion of %s (lines %d-%d)", in.Expand, sliceStart, sliceEnd)
-	s.readCacheMark(sessionID, relTarget, etag)
+	s.readCacheMark(sessionID, relTarget, etag, in.Mode)
 	return out, true
 }
 

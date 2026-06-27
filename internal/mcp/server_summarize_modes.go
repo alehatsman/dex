@@ -36,7 +36,7 @@ func (s *Server) summarizeModeLines(w summarizeWork, mode ReadMode) (*sdk.CallTo
 	out.Status = "ok"
 	out.Etag = w.etag
 	out.Content = string(slice)
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	s.sessionAutoFile(w.p.DBPath, w.relTarget)
 	return nil, out, nil
 }
@@ -62,7 +62,7 @@ func (s *Server) summarizeModeSignatures(w summarizeWork) (*sdk.CallToolResult, 
 	out.Etag = w.etag
 	out.Content = content
 	out.Bytes = len(content)
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	w.bt.recordCompressed(w.sessionID, w.relTarget)
 	s.sessionAutoFile(w.p.DBPath, w.relTarget)
 	return nil, out, nil
@@ -75,7 +75,7 @@ func (s *Server) summarizeModeMap(w summarizeWork) (*sdk.CallToolResult, Summari
 		out.Etag = w.etag
 		out.Content = content
 		out.Bytes = len(content)
-		s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+		s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 		return nil, out, nil
 	}
 	st, err := s.openStore(w.p.DBPath)
@@ -102,7 +102,7 @@ func (s *Server) summarizeModeMap(w summarizeWork) (*sdk.CallToolResult, Summari
 	out.Etag = w.etag
 	out.Content = content
 	out.Bytes = len(content)
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	w.bt.recordCompressed(w.sessionID, w.relTarget)
 	s.sessionAutoFile(w.p.DBPath, w.relTarget)
 	return nil, out, nil
@@ -126,7 +126,7 @@ func (s *Server) summarizeModeAggressive(w summarizeWork) (*sdk.CallToolResult, 
 		out.Hint = fmt.Sprintf("aggressive: %d → %d lines (%.0f%% reduction)",
 			origLines, compLines, float64(origLines-compLines)*100/float64(origLines))
 	}
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	w.bt.recordCompressed(w.sessionID, w.relTarget)
 	s.sessionAutoFile(w.p.DBPath, w.relTarget)
 	return nil, out, nil
@@ -154,7 +154,7 @@ func (s *Server) summarizeModeSkeleton(w summarizeWork) (*sdk.CallToolResult, Su
 	out.Etag = w.etag
 	out.Content = remap.Replace(res.Text)
 	out.Bytes = len(out.Content)
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	w.bt.recordCompressed(w.sessionID, w.relTarget)
 	s.sessionAutoFile(w.p.DBPath, w.relTarget)
 	return nil, out, nil
@@ -206,7 +206,7 @@ func (s *Server) summarizeModeHandle(w summarizeWork) (*sdk.CallToolResult, Summ
 			out.Content = fmt.Sprintf("HANDLE %s (%d lines, %d symbols) — budget too small for a fuller view; request a body by @Bn handle or re-read with a larger budget_tokens\n%s%s",
 				w.relTarget, lineCount, len(syms), strings.Join(names, "\n"), more)
 			out.Bytes = len(out.Content)
-			s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+			s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 			w.bt.recordCompressed(w.sessionID, w.relTarget)
 			s.sessionAutoFile(w.p.DBPath, w.relTarget)
 			return nil, out, nil
@@ -217,7 +217,7 @@ func (s *Server) summarizeModeHandle(w summarizeWork) (*sdk.CallToolResult, Summ
 	out.Content = fmt.Sprintf("HANDLE %s (%d lines) — budget too small for a fuller view; re-read with a larger budget_tokens or mode=map",
 		w.relTarget, lineCount)
 	out.Bytes = len(out.Content)
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	w.bt.recordCompressed(w.sessionID, w.relTarget)
 	return nil, out, nil
 }
@@ -241,7 +241,7 @@ func (s *Server) summarizeModeRaw(w summarizeWork) (*sdk.CallToolResult, Summari
 	if lineCount := bytes.Count(w.data, []byte("\n")) + 1; lineCount > 250 {
 		out.Hint = fmt.Sprintf("⚠ Large file (%d lines): pass mode=skeleton, mode=signatures, or mode=map to reduce tokens, or mode=summary for an LLM digest.", lineCount)
 	}
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	return nil, out, nil
 }
 
@@ -292,7 +292,7 @@ func (s *Server) summarizeModeSummary(w summarizeWork) (*sdk.CallToolResult, Sum
 		out.Etag = w.etag
 		out.Content = string(slice)
 		out.Hint = hint
-		s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+		s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 		return nil, out, nil
 	}
 
@@ -303,7 +303,7 @@ func (s *Server) summarizeModeSummary(w summarizeWork) (*sdk.CallToolResult, Sum
 	if resp.Model != "" {
 		out.Model = resp.Model
 	}
-	s.readCacheMark(w.sessionID, w.relTarget, w.etag)
+	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
 	s.activityRecord(w.p.Root, 1)
 	return nil, out, nil
 }

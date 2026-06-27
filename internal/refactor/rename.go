@@ -44,6 +44,7 @@ func PlanRename(ctx context.Context, projectRoot, symbol, to, etag string) (Rena
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports |
 			packages.NeedDeps | packages.NeedModule,
+		Tests:   true, // include _test.go internal and external test packages (#773)
 		Dir:     projectRoot,
 		Context: ctx,
 		Fset:    fset,
@@ -140,9 +141,14 @@ func resolveTarget(pkgs []*packages.Package, symbol string) (types.Object, strin
 	}
 
 	// Bare name: search top-level scopes, then methods, across all packages.
+	// Skip test-variant packages (ID contains "[") — with Tests:true these are
+	// supersets of the regular package and would produce duplicate objects for
+	// the same symbol, triggering a false "ambiguous" report (#773).
+	// collectEdits still walks all packages (including variants) so usages in
+	// _test.go files are included in the edits.
 	var matches []types.Object
 	for _, p := range pkgs {
-		if p.Types == nil {
+		if p.Types == nil || strings.Contains(p.ID, "[") {
 			continue
 		}
 		if obj := p.Types.Scope().Lookup(symbol); obj != nil {
@@ -258,9 +264,22 @@ func namedTypes(pkgs []*packages.Package, typeName string) []*types.Named {
 // all uses) across all loaded packages and turns each into an EditTriple.
 // Matching is by types.Object identity, so a method rename touches only that
 // exact method — not same-named methods on other types (type-resolved).
+// With Tests:true, test-variant packages type-check separately and the "same"
+// symbol is a distinct pointer — we also match by (name, declaration pos) to
+// capture usages in _test.go files (#773).
 func collectEdits(pkgs []*packages.Package, fset *token.FileSet, target types.Object, to, root string) []EditTriple {
 	seen := map[string]bool{} // dedupe by abs-path:offset across package variants
 	var edits []EditTriple
+
+	sameTarget := func(obj types.Object) bool {
+		if obj == target {
+			return true
+		}
+		// Test variants share the same fset so token.Pos is comparable.
+		return obj != nil && target != nil &&
+			obj.Name() == target.Name() &&
+			obj.Pos() == target.Pos()
+	}
 
 	record := func(id *ast.Ident) {
 		startPos := fset.Position(id.Pos())
@@ -287,12 +306,12 @@ func collectEdits(pkgs []*packages.Package, fset *token.FileSet, target types.Ob
 			continue
 		}
 		for id, obj := range p.TypesInfo.Defs {
-			if obj == target {
+			if sameTarget(obj) {
 				record(id)
 			}
 		}
 		for id, obj := range p.TypesInfo.Uses {
-			if obj == target {
+			if sameTarget(obj) {
 				record(id)
 			}
 		}

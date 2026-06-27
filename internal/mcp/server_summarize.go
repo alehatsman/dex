@@ -312,7 +312,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 			out.Etag = etag
 			out.Bytes = len(data)
 			out.Content = summary
-			s.readCacheMark(sessionID, relTarget, etag)
+			s.readCacheMark(sessionID, relTarget, etag, string(mode))
 			return nil, out, nil
 		}
 	}
@@ -423,7 +423,7 @@ func (s *Server) summarizeModeSlice(
 	out.Content = string(sliced)
 	out.Bytes = len(sliced)
 	out.Hint = hint
-	s.readCacheMark(sessionID, relTarget, etag)
+	s.readCacheMark(sessionID, relTarget, etag, in.Mode)
 	return out, true
 }
 

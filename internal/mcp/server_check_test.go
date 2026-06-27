@@ -231,3 +231,58 @@ func TestCheckFileSymbol_Missing(t *testing.T) {
 		t.Errorf("file:symbol for missing symbol: status = %q, want gone", r.Status)
 	}
 }
+
+// TestCheckUnexportedConst: "file:unexportedConst" should return ok, not gone (#774).
+// Unexported consts/vars are not indexed as named chunks so FindSymbolInPath
+// returns empty — the fix scans orphan chunk bodies for a whole-word match.
+func TestCheckUnexportedConst(t *testing.T) {
+	idxDir := t.TempDir()
+	projDir := t.TempDir()
+
+	p, err := proj.Resolve(projDir, idxDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(context.Background(), p.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertMany(context.Background(), []store.PendingChunk{
+		// Named chunk for the exported func.
+		{Path: "main.go", Kind: "fn", Name: "Foo", StartLine: 1, EndLine: 3, ContentSHA: "h1", Content: "func Foo(){}"},
+		// Orphan chunk holding the unexported const — not a named symbol.
+		{Path: "main.go", Kind: "orphan", Name: "", StartLine: 5, EndLine: 6, ContentSHA: "h2", Content: "const myConst = 42"},
+	}, time.Now()); err != nil {
+		_ = st.Close()
+		t.Fatal(err)
+	}
+	_ = st.Close()
+
+	s := &Server{IndexDir: idxDir}
+	_, out, err := s.check(context.Background(), nil, CheckInput{
+		ProjectRoot: projDir,
+		Claims:      []ClaimRef{{Ref: "main.go:myConst"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := out.Results[0]
+	if r.Status != "ok" {
+		t.Errorf("unexported const check: status = %q, want ok — orphan chunk bodies must be scanned (#774)", r.Status)
+	}
+
+	// A completely absent symbol should still be "gone".
+	_, out2, err := s.check(context.Background(), nil, CheckInput{
+		ProjectRoot: projDir,
+		Claims:      []ClaimRef{{Ref: "main.go:nopeSym"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out2.Results[0].Status != "gone" {
+		t.Errorf("absent symbol: status = %q, want gone", out2.Results[0].Status)
+	}
+}
