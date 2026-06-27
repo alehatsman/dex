@@ -61,7 +61,7 @@ type shadowRecord = feedback.ShadowRecord
 // reweight and logs it against the served order. hits is the served (static)
 // order and is NOT mutated. No-op when shadow mode is off, the signal is empty,
 // or there are too few hits to compare.
-func (s *Server) recordShadow(intent string, hits []SemHit) {
+func (s *Server) recordShadow(intent, question string, hits []SemHit) {
 	th, logger := s.feedbackThrottle()
 	if th == nil || logger == nil || len(hits) < 2 {
 		return
@@ -75,6 +75,7 @@ func (s *Server) recordShadow(intent string, hits []SemHit) {
 	rec := shadowRecord{
 		TS:           time.Now().Unix(),
 		Intent:       intent,
+		Query:        question,
 		OpenRate:     openRate,
 		N:            n,
 		ServedTopK:   served,
@@ -114,33 +115,47 @@ func shadowReorder(hits []SemHit, openRate float64, n int) []SemHit {
 	return out
 }
 
+// topPaths returns the first k DISTINCT file paths in hit order. A single file
+// surfaces as several chunk hits; the top-k is about which FILES the ranking
+// would suggest, so duplicates collapse to their highest-ranked occurrence.
+// Without the dedup the open-rate denominator inflates — five slots for one
+// file — and a single opened file counts up to k times (#743).
 func topPaths(hits []SemHit, k int) []string {
-	if len(hits) < k {
-		k = len(hits)
-	}
-	out := make([]string, k)
-	for i := 0; i < k; i++ {
-		out[i] = hits[i].Path
+	out := make([]string, 0, k)
+	seen := make(map[string]struct{}, k)
+	for _, h := range hits {
+		if _, dup := seen[h.Path]; dup {
+			continue
+		}
+		seen[h.Path] = struct{}{}
+		out = append(out, h.Path)
+		if len(out) == k {
+			break
+		}
 	}
 	return out
 }
 
 // jaccard is the set overlap of two path lists: |A∩B| / |A∪B|. 1.0 means the
 // shadow and served top-k hold the same files (order aside); lower means the
-// reweight pulled different files into the top-k.
+// reweight pulled different files into the top-k. Robust to duplicate entries
+// in either list (counts distinct files only — see #743).
 func jaccard(a, b []string) float64 {
-	set := make(map[string]struct{}, len(a))
+	setA := make(map[string]struct{}, len(a))
 	for _, p := range a {
-		set[p] = struct{}{}
+		setA[p] = struct{}{}
+	}
+	setB := make(map[string]struct{}, len(b))
+	for _, p := range b {
+		setB[p] = struct{}{}
 	}
 	inter := 0
-	for _, p := range b {
-		if _, ok := set[p]; ok {
+	for p := range setB {
+		if _, ok := setA[p]; ok {
 			inter++
 		}
-		set[p] = struct{}{}
 	}
-	union := len(set)
+	union := len(setA) + len(setB) - inter
 	if union == 0 {
 		return 1.0
 	}

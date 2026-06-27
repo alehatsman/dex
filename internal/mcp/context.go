@@ -422,7 +422,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	enrichGraph(&out, intent, graphView, out.SemanticHits, out.Symbols)
 	// #731: shadow-mode lane-agreement reweight — logged for A/B, never served.
 	// No-op unless DEX_FEEDBACK_SHADOW=1. Lane provenance is final post-enrich.
-	s.recordShadow(intent, out.SemanticHits)
+	s.recordShadow(intent, in.Question, out.SemanticHits)
 	out.SuggestedReads = pickSuggestedReads(intent, out.SemanticHits, out.Symbols, symbolPaths, graphView)
 	inlineWorkingSet(p.Root, intent, graphView, &out, candidates.Identifiers, in.Question, in.NoInline)
 	(&Enricher{projectRoot: p.Root, Store: st, Spread: st}).Enrich(ctx, intent, k, &out)

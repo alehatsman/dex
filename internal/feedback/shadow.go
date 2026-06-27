@@ -20,6 +20,7 @@ import "fmt"
 type ShadowRecord struct {
 	TS           int64    `json:"ts"`
 	Intent       string   `json:"intent"`
+	Query        string   `json:"query,omitempty"` // raw question — the join key (#743)
 	OpenRate     float64  `json:"open_rate"`
 	N            int      `json:"n"`
 	ServedTopK   []string `json:"served_topk"`
@@ -72,6 +73,7 @@ func ReadShadowLog(path string) ([]ShadowRecord, error) {
 // ahead from the ask's position for the files the agent opened.
 type askSlot struct {
 	intent  string
+	query   string
 	ts      int64
 	session []Event
 	pos     int
@@ -85,7 +87,7 @@ func askSlots(events []Event) []*askSlot {
 	for _, s := range splitSessions(events) {
 		for i, e := range s {
 			if IsAskTool(e.ToolName) {
-				slots = append(slots, &askSlot{intent: e.Intent, ts: e.TS, session: s, pos: i})
+				slots = append(slots, &askSlot{intent: e.Intent, query: e.Query, ts: e.TS, session: s, pos: i})
 			}
 		}
 	}
@@ -136,25 +138,43 @@ func AnalyzeShadow(events []Event, shadow []ShadowRecord, window int) ShadowRepo
 	return rep
 }
 
-// matchSlot returns the nearest unused ask slot with the same intent within the
-// timestamp tolerance, or nil. Conservative: a mismatch leaves the record
-// unmatched rather than crediting it to the wrong ask.
+// matchSlot joins a shadow record to the unused ask slot that produced it. When
+// the record carries a query (#743) the join keys on exact query equality — an
+// exact, ts-skew-proof key — and timestamp only disambiguates repeats of the
+// same question. Legacy records with no query fall back to the original
+// intent + nearest-timestamp-within-tolerance match. Conservative either way: a
+// mismatch leaves the record unmatched rather than crediting the wrong ask.
 func matchSlot(slots []*askSlot, rec ShadowRecord) *askSlot {
+	byQuery := rec.Query != ""
 	var best *askSlot
-	bestDelta := shadowMatchToleranceSec + 1
+	var bestDelta int64
 	for _, sl := range slots {
-		if sl.used || sl.intent != rec.Intent {
+		if sl.used {
 			continue
 		}
-		d := rec.TS - sl.ts
-		if d < 0 {
-			d = -d
+		if byQuery {
+			if sl.query != rec.Query {
+				continue
+			}
+		} else if sl.intent != rec.Intent {
+			continue
 		}
-		if d <= shadowMatchToleranceSec && d < bestDelta {
+		d := absInt64(rec.TS - sl.ts)
+		if !byQuery && d > shadowMatchToleranceSec {
+			continue
+		}
+		if best == nil || d < bestDelta {
 			best, bestDelta = sl, d
 		}
 	}
 	return best
+}
+
+func absInt64(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // countOpened counts how many of paths were opened by a consume tool after the

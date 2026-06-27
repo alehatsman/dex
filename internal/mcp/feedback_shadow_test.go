@@ -41,7 +41,7 @@ func TestRecordShadowOffByDefault(t *testing.T) {
 	t.Setenv("DEX_FEEDBACK_SHADOW", "")
 	s := &Server{}
 	// Must not panic, must not write anything — shadow disabled.
-	s.recordShadow("behavior_search", []SemHit{
+	s.recordShadow("behavior_search", "where is X", []SemHit{
 		{Path: "a.go", Score: 1, Lanes: []string{"vector"}},
 		{Path: "b.go", Score: 0.5, Lanes: []string{"bm25"}},
 	})
@@ -68,7 +68,7 @@ func TestRecordShadowWritesWhenEnabled(t *testing.T) {
 	}
 
 	s := &Server{}
-	s.recordShadow("behavior_search", []SemHit{
+	s.recordShadow("behavior_search", "how does indexing work", []SemHit{
 		{Path: "a.go", Score: 1.0, Lanes: []string{"vector"}},
 		{Path: "b.go", Score: 0.9, Lanes: []string{"vector", "bm25"}},
 	})
@@ -95,5 +95,51 @@ func TestRecordShadowWritesWhenEnabled(t *testing.T) {
 	}
 	if len(rec.ServedTopK) != 2 {
 		t.Errorf("served_topk = %v, want 2 entries", rec.ServedTopK)
+	}
+	if rec.Query != "how does indexing work" {
+		t.Errorf("query = %q, want the question (the #743 join key)", rec.Query)
+	}
+}
+
+func TestTopPathsDedupsDistinctFiles(t *testing.T) {
+	// Several chunk hits of the same file must collapse to one top-k slot (#743).
+	hits := []SemHit{
+		{Path: "a.go"}, {Path: "a.go"}, {Path: "b.go"}, {Path: "a.go"}, {Path: "c.go"},
+	}
+	got := topPaths(hits, 5)
+	want := []string{"a.go", "b.go", "c.go"}
+	if len(got) != len(want) {
+		t.Fatalf("topPaths = %v, want distinct %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("topPaths = %v, want %v (first occurrence order)", got, want)
+		}
+	}
+}
+
+func TestJaccardStaysInUnitRange(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b []string
+		want float64
+	}{
+		{"identical", []string{"a", "b"}, []string{"b", "a"}, 1.0},
+		{"disjoint", []string{"a"}, []string{"b"}, 0.0},
+		{"half", []string{"a", "b"}, []string{"a", "c"}, 1.0 / 3.0},
+		{"both empty", nil, nil, 1.0},
+		// Duplicate-laden lists must never exceed 1.0 (the old bug returned 5.0).
+		{"dups", []string{"a", "a", "a"}, []string{"a", "a", "a"}, 1.0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := jaccard(tc.a, tc.b)
+			if got < 0 || got > 1 {
+				t.Fatalf("jaccard out of [0,1]: %v", got)
+			}
+			if got != tc.want {
+				t.Fatalf("jaccard(%v,%v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
 	}
 }

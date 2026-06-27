@@ -128,6 +128,45 @@ func TestAnalyzeShadowGreedyMatch(t *testing.T) {
 	}
 }
 
+// TestAnalyzeShadowJoinsOnQuery proves the query key (#743) joins records that
+// the intent+ts fallback would miss: same query, but the ts is far outside the
+// 30s tolerance and the intent differs.
+func TestAnalyzeShadowJoinsOnQuery(t *testing.T) {
+	events := []Event{
+		{ToolName: "mcp__dex__ask", Intent: "behavior_search", Query: "where is X", TS: 100},
+		read("c"),
+	}
+	rec := ShadowRecord{
+		TS: 9999, Intent: "symbol_lookup", Query: "where is X", // ts+intent both mismatch
+		ServedTopK: []string{"a", "b"},
+		ShadowTopK: []string{"a", "c"},
+	}
+	r := AnalyzeShadow(events, []ShadowRecord{rec}, 0)
+	if r.Matched != 1 {
+		t.Fatalf("Matched = %d, want 1 (joined on query despite ts/intent skew)", r.Matched)
+	}
+	if r.ShadowWins != 1 {
+		t.Fatalf("ShadowWins = %d, want 1", r.ShadowWins)
+	}
+}
+
+// TestAnalyzeShadowQueryDisambiguatesRepeats checks that two records of the
+// same query each claim the nearest-ts ask rather than colliding.
+func TestAnalyzeShadowQueryDisambiguatesRepeats(t *testing.T) {
+	events := []Event{
+		{ToolName: "mcp__dex__ask", Query: "q", TS: 100}, read("c"),
+		{ToolName: "mcp__dex__ask", Query: "q", TS: 500}, read("d"),
+	}
+	recs := []ShadowRecord{
+		{TS: 102, Query: "q", ServedTopK: []string{"a"}, ShadowTopK: []string{"c"}},
+		{TS: 498, Query: "q", ServedTopK: []string{"a"}, ShadowTopK: []string{"d"}},
+	}
+	r := AnalyzeShadow(events, recs, 0)
+	if r.Matched != 2 {
+		t.Fatalf("Matched = %d, want 2 (each record claims its nearest-ts ask)", r.Matched)
+	}
+}
+
 func TestReadShadowLog(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "feedback_shadow.jsonl")
