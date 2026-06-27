@@ -313,11 +313,33 @@ func (s *Server) loadContextFacts(ctx context.Context, st *store.Store, in Conte
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
 		out.SessionTask = ss.Task
 	}
-	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true); err == nil && len(facts) > 0 {
+	// skipFallback=true routes ask through the 0.5 relevance floor (KnowledgeQueryVec
+	// strict mode) and drops the top-salience fallback: a query injects only facts
+	// that actually match it, not whatever scores highest by archetype weight. This
+	// keeps off-topic, high-salience notes (e.g. bulky VerifiedFact session logs that
+	// cosine ~0.3-0.4) out of every unrelated ask (#785).
+	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true, true); err == nil && len(facts) > 0 {
 		for _, f := range facts {
-			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+f.Body)
+			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+capFactBody(f.Body))
 		}
 	}
+}
+
+// maxInjectedFactBody bounds how much of one fact body ask inlines into
+// knowledge_facts. The relevance floor keeps off-topic facts out, but an
+// on-topic giant (a multi-KB note body) would still blow the response budget,
+// so each injected body is clipped to this many runes (#785).
+const maxInjectedFactBody = 600
+
+// capFactBody clips an over-long fact body for injection, appending a marker so
+// the truncation is visible. Operates on runes to avoid splitting a multibyte
+// character.
+func capFactBody(body string) string {
+	r := []rune(body)
+	if len(r) <= maxInjectedFactBody {
+		return body
+	}
+	return strings.TrimRight(string(r[:maxInjectedFactBody]), " ") + " …(truncated)"
 }
 
 func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolRequest, in ContextInput, tokenSink func(string)) (*sdk.CallToolResult, ContextOutput, error) {
