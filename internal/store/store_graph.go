@@ -467,6 +467,7 @@ func (s *Store) GraphQualifiedNameAt(ctx context.Context, path string, line int)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT qualified_name FROM graph_nodes
 		WHERE file_path = ? AND start_line <= ? AND end_line >= ?
+		  AND kind NOT IN ('file', 'import', 'package', 'module', 'document')
 		ORDER BY (end_line - start_line) ASC LIMIT 1`,
 		path, line, line).Scan(&qn)
 	if err != nil {

@@ -181,7 +181,11 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		if err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 		}
-		return nil, KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{knowledgeFactOut(f)}}, nil
+		fo := knowledgeFactOut(f)
+		if in.Archetype != "" && fo.Archetype != in.Archetype {
+			return nil, KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{}}, nil
+		}
+		return nil, KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{fo}}, nil
 	}
 
 	// Scope-filtered list (#653): notes whose scope binds the given path — what
@@ -194,7 +198,9 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		}
 		out := KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{}}
 		for _, f := range facts {
-			out.Facts = append(out.Facts, knowledgeFactOut(f))
+			if in.Archetype == "" || f.Archetype == in.Archetype {
+				out.Facts = append(out.Facts, knowledgeFactOut(f))
+			}
 		}
 		return nil, out, nil
 	}
@@ -209,7 +215,9 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 	}
 	out := KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{}, Hint: kHint}
 	for _, f := range facts {
-		out.Facts = append(out.Facts, knowledgeFactOut(f))
+		if in.Archetype == "" || f.Archetype == in.Archetype {
+			out.Facts = append(out.Facts, knowledgeFactOut(f))
+		}
 	}
 	return nil, out, nil
 }

@@ -146,7 +146,8 @@ func (s *Server) summarizeCheckCached(
 	if in.Etag != "" && in.Etag == etag && s.readCacheCheck(sessionID, relTarget, etag, in.Mode) {
 		return sessionID, SummarizeOutput{Status: "unchanged", Project: out.Project, Path: relTarget, Etag: etag}, true
 	}
-	if in.Expand == "" && !(isFull && s.ChatClient != nil) {
+	hasLineRange := in.StartLine != 0 || in.EndLine != 0 || in.Slice != ""
+	if in.Expand == "" && !hasLineRange && !(isFull && s.ChatClient != nil) {
 		if prevData, ok := s.readCacheGetContent(sessionID, relTarget); ok {
 			if delta, worth := computeLineDelta(prevData, data); worth {
 				out.Status = "delta"

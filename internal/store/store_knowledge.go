@@ -1182,12 +1182,41 @@ func (s *knowledgeStore) knowledgeEvict(ctx context.Context, cfg KnowledgeGCConf
 	if excess <= 0 {
 		return 0, nil
 	}
-	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM knowledge_facts WHERE id IN (
-		   SELECT id FROM knowledge_facts
-		   WHERE pinned=0 AND active=1
-		   ORDER BY confidence ASC, last_retrieved ASC, updated_at ASC
-		   LIMIT ?)`, excess)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM knowledge_facts
+		 WHERE pinned=0 AND active=1
+		 ORDER BY confidence ASC, last_retrieved ASC, updated_at ASC
+		 LIMIT ?`, excess)
+	if err != nil {
+		return 0, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	ph := inPlaceholders(len(ids))
+	if _, err := s.db.ExecContext(ctx, //nolint:gosec // placeholder count generated; ids passed as bind args
+		`DELETE FROM knowledge_relations WHERE from_id IN (`+ph+`) OR to_id IN (`+ph+`)`,
+		append(args, args...)...); err != nil {
+		return 0, err
+	}
+	res, err := s.db.ExecContext(ctx, //nolint:gosec // placeholder count generated; ids passed as bind args
+		`DELETE FROM knowledge_facts WHERE id IN (`+ph+`)`, args...)
 	if err != nil {
 		return 0, err
 	}

@@ -15,7 +15,7 @@ import (
 
 // CheckInput is the input for the check verb — a batch of file:line[:symbol] claims.
 type CheckInput struct {
-	ProjectRoot string     `json:"project_root"`
+	ProjectRoot string     `json:"project_root,omitempty"`
 	Claims      []ClaimRef `json:"claims"`
 }
 
