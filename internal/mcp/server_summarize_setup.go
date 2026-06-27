@@ -29,13 +29,11 @@ func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string
 	if !bt.shouldForceFull(sessionID, relTarget) || mode.IsComplete() {
 		return mode, isLLM
 	}
-	if mode == ReadModeSkeleton {
-		return ReadModeFull, false
-	}
-	// analyze is a meta-mode (token-cost comparison, no file content); bounce
-	// escalation must never promote it to an LLM call (#752).
 	if mode == ReadModeAnalyze {
 		return mode, isLLM
+	}
+	if mode == ReadModeSkeleton {
+		return ReadModeFull, false
 	}
 	if s.ChatClient != nil {
 		return ReadModeSummary, true

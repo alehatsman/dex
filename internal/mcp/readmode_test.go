@@ -19,6 +19,7 @@ func TestReadModeClassification(t *testing.T) {
 		{ReadModeMap, false, false, false, true, true, true, true},
 		{ReadModeAggressive, false, false, false, true, false, true, true},
 		{ReadModeSummary, false, true, true, true, false, false, true},
+		{ReadModeAnalyze, false, false, false, false, false, false, true},
 		{ReadModeHandle, false, false, false, false, false, true, true},
 		{ReadMode("lines:1-50"), true, false, false, false, false, true, true},
 		{ReadModeLines, false, false, false, false, false, false, false}, // bare "lines" stand-in: never dispatched

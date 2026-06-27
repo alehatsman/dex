@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -262,5 +263,42 @@ func TestMeanBitsPerChar(t *testing.T) {
 	// Mixed content has positive entropy.
 	if got := meanBitsPerChar("package main\nfunc F() {}\n"); got <= 0 {
 		t.Errorf("mixed → %v, want > 0", got)
+	}
+}
+
+// TestAnalyzeNotBounceEscalated guards against #752: escalateOnBounce must not
+// convert mode=analyze to mode=summary (LLM) when the bounce tracker fires.
+func TestAnalyzeNotBounceEscalated(t *testing.T) {
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "sample.go"), analyzeFixture)
+	seedAnalyzeGraph(t, projDir, cacheDir)
+
+	// Wire a non-functional chat client: if escalateOnBounce mistakenly
+	// escalates analyze → summary, summarize would try to call it and either
+	// return status="needs-chat" (unreachable) or an error.
+	s := &Server{
+		IndexDir:   cacheDir,
+		ChatClient: chat.New("http://127.0.0.1:0", "fake", time.Second),
+	}
+	ctx := context.Background()
+
+	// First read in a compressed mode — seeds recordCompressed in the bounce tracker.
+	s.summarize(ctx, nil, SummarizeInput{Path: "sample.go", ProjectRoot: projDir, Mode: "signatures"}) //nolint:errcheck
+
+	// Second read in analyze mode — bounce tracker fires; bug: escalated to summary.
+	_, out, err := s.summarize(ctx, nil, SummarizeInput{
+		Path:        "sample.go",
+		ProjectRoot: projDir,
+		Mode:        "analyze",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Analysis == nil {
+		t.Fatalf("analyze must return an Analysis after bounce; status=%q hint=%q", out.Status, out.Hint)
+	}
+	if out.Content != "" {
+		t.Errorf("analyze must NOT return file content, got %d bytes", len(out.Content))
 	}
 }
