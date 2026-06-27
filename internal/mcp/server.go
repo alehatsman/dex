@@ -57,9 +57,9 @@ Workflow:
 4. Shell: shell(command) for build/test output
 5. Remember: notes(action=list) to recall before exploring; notes(action=add) only for durable gotchas/decisions (not transient facts); when orientation reports "N notes pending review", run notes(action=review) and resolve it (merge/supersede/pin/delete)
 
-Power lanes (deps, diff, clusters, routes, smells, status, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
+Power lanes (deps, diff, clusters, routes, smells, cohort, refs, status, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
-Start every session by calling ask() with the task description.
+Start every session by calling ask() with the task description. dex's strength is navigation (where/what/how-connected); for exact ground truth — line numbers, exit codes, literal file content — confirm against the source (grep/read) rather than trusting a ranked summary.
 
 IMPORTANT: dex MCP tools are deferred — their schemas are not loaded until you call ToolSearch. Before using any dex tool for the first time each session, call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__find,mcp__dex__grep,mcp__dex__read" to load the schemas. Do this before any other action.`
 }

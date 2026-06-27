@@ -212,8 +212,9 @@ env:
 
 exit codes:
   0    success
-  1    runtime error (index not found, embed unreachable, etc.)
-  2    usage error (bad flags, missing arguments, unknown command)
+  1    error — runtime (index not found, embed unreachable) or usage
+       (bad flags, missing arguments); verify/check also exit 1 on failure
+  2    unknown command
   130  interrupted (SIGINT / Ctrl-C)
 
   dex setup --check exits 1 when setup is incomplete.`)

@@ -52,13 +52,28 @@ func cmdCheck(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Compute failure once, independent of render format, so JSON mode
+	// (the mode scripts/CI use) signals failure via exit code too.
+	anyBad := false
+	for _, r := range out.Results {
+		if checkStatusFailed(r.Status) {
+			anyBad = true
+			break
+		}
+	}
+
 	if *format == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(out)
+		if err := enc.Encode(out); err != nil {
+			return err
+		}
+		if anyBad {
+			os.Exit(1)
+		}
+		return nil
 	}
 
-	anyBad := false
 	for _, r := range out.Results {
 		switch r.Status {
 		case "ok":
@@ -69,16 +84,12 @@ func cmdCheck(ctx context.Context, args []string) error {
 			fmt.Printf("ok      %s  — %s\n", r.Ref, sym)
 		case "moved":
 			fmt.Printf("moved   %s  → %s\n", r.Ref, r.FoundAt)
-			anyBad = true
 		case "gone":
 			fmt.Printf("gone    %s\n", r.Ref)
-			anyBad = true
 		case "no_file":
 			fmt.Printf("no_file %s\n", r.Ref)
-			anyBad = true
 		case "parse_error":
 			fmt.Printf("parse?  %s\n", r.Ref)
-			anyBad = true
 		default:
 			fmt.Printf("%-8s %s\n", strings.TrimRight(r.Status, " "), r.Ref)
 		}
@@ -87,4 +98,15 @@ func cmdCheck(ctx context.Context, args []string) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+// checkStatusFailed reports whether a check result status counts as a
+// verification failure. It is the single source of truth for the non-zero
+// exit code, consulted before the text/JSON render split so both modes agree.
+func checkStatusFailed(status string) bool {
+	switch status {
+	case "moved", "gone", "no_file", "parse_error":
+		return true
+	}
+	return false
 }

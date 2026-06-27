@@ -57,7 +57,15 @@ func cmdVerify(ctx context.Context, args []string) error {
 	if *format == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(out)
+		if err := enc.Encode(out); err != nil {
+			return err
+		}
+		// Mirror text-mode exit semantics: a completed run that did not
+		// pass exits non-zero so JSON consumers (CI/agents) can gate on it.
+		if verifyFailed(out.Status, out.Passed) {
+			os.Exit(1)
+		}
+		return nil
 	}
 	if out.Status != "ok" {
 		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
@@ -75,8 +83,15 @@ func cmdVerify(ctx context.Context, args []string) error {
 	if !out.Passed && out.GotchaCandidate != nil {
 		fmt.Fprintf(os.Stderr, "\ngotcha candidate [%s]: %s\n", out.GotchaCandidate.Trigger, out.GotchaCandidate.OutputFragment)
 	}
-	if !out.Passed {
+	if verifyFailed(out.Status, out.Passed) {
 		os.Exit(1)
 	}
 	return nil
+}
+
+// verifyFailed reports whether a completed verify run counts as a failure
+// (drives the non-zero exit in both text and JSON render paths). A run whose
+// status is not "ok" did not complete and is reported without a failure exit.
+func verifyFailed(status string, passed bool) bool {
+	return status == "ok" && !passed
 }
