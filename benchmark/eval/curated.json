@@ -27,7 +27,7 @@
     {
       "id": "c04",
       "query": "how does the chunker split source files into indexed chunks",
-      "relevant_files": ["internal/chunk/chunk.go", "internal/chunk/chunk_lang.go"],
+      "relevant_files": ["internal/chunk/chunk.go"],
       "class": "behavior"
     },
     {
@@ -164,9 +164,9 @@
     },
     {
       "id": "c27",
-      "query": "how does the MCP server register tools and route incoming requests",
+      "query": "where is RunStdio defined",
       "relevant_files": ["internal/mcp/server.go"],
-      "class": "architecture"
+      "class": "symbol"
     },
     {
       "id": "c28",
