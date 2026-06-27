@@ -262,7 +262,7 @@ func (s *knowledgeStore) KnowledgeByScope(ctx context.Context, targetPath string
 	}
 	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope, valid_until
 		   FROM knowledge_facts WHERE scope != '' AND `+activeFilter(now))
 	if err != nil {
 		return nil, err
@@ -271,12 +271,15 @@ func (s *knowledgeStore) KnowledgeByScope(ctx context.Context, targetPath string
 	var out []KnowledgeFact
 	for rows.Next() {
 		var f KnowledgeFact
-		var cNs, uNs int64
-		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &f.Scope); err != nil {
+		var cNs, uNs, vuNs int64
+		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &f.Scope, &vuNs); err != nil {
 			return nil, err
 		}
 		f.CreatedAt = time.Unix(0, cNs)
 		f.UpdatedAt = time.Unix(0, uNs)
+		if vuNs != 0 {
+			f.ValidUntil = time.Unix(0, vuNs)
+		}
 		f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
 		if scopeMatches(f.Scope, targetPath) {
 			out = append(out, f)
@@ -357,12 +360,15 @@ func scanFacts(rows interface {
 	var out []KnowledgeFact
 	for rows.Next() {
 		var f KnowledgeFact
-		var cNs, uNs int64
-		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount); err != nil {
+		var cNs, uNs, vuNs int64
+		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &vuNs); err != nil {
 			return nil, err
 		}
 		f.CreatedAt = time.Unix(0, cNs)
 		f.UpdatedAt = time.Unix(0, uNs)
+		if vuNs != 0 {
+			f.ValidUntil = time.Unix(0, vuNs)
+		}
 		f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
 		out = append(out, f)
 	}
@@ -387,7 +393,7 @@ func (s *knowledgeStore) KnowledgeQuery(ctx context.Context, k int) ([]Knowledge
 	k = clampK(k)
 	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
 		   FROM knowledge_facts
 		   WHERE `+activeFilter(now)+`
 		   ORDER BY confidence DESC, updated_at DESC
@@ -420,7 +426,7 @@ func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, thre
 	}
 	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
 		   FROM knowledge_facts WHERE `+activeFilter(now))
 	if err != nil {
 		return nil, err
@@ -452,7 +458,7 @@ func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, thre
 func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFact, error) {
 	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, scope, valid_until
 		   FROM knowledge_facts
 		   WHERE `+activeFilter(now)+`
 		   ORDER BY confidence DESC, updated_at DESC`)
@@ -463,12 +469,15 @@ func (s *knowledgeStore) KnowledgeExportAll(ctx context.Context) ([]KnowledgeFac
 	var out []KnowledgeFact
 	for rows.Next() {
 		var f KnowledgeFact
-		var cNs, uNs int64
-		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &f.Scope); err != nil {
+		var cNs, uNs, vuNs int64
+		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &f.Scope, &vuNs); err != nil {
 			return nil, err
 		}
 		f.CreatedAt = time.Unix(0, cNs)
 		f.UpdatedAt = time.Unix(0, uNs)
+		if vuNs != 0 {
+			f.ValidUntil = time.Unix(0, vuNs)
+		}
 		f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
 		out = append(out, f)
 	}
@@ -783,7 +792,7 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 		limit = 128
 	}
 	nowNs := time.Now().UnixNano()
-	q := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+	q := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
 	        FROM knowledge_facts f
 	       WHERE ` + activeFilter(nowNs) + ` AND NOT EXISTS (SELECT 1 FROM fact_vecs v WHERE v.rowid = f.id)
 	       ORDER BY updated_at DESC
@@ -792,7 +801,7 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 	if err != nil {
 		// fact_vecs missing → treat all facts as missing.
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count
+			`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
 			   FROM knowledge_facts WHERE `+activeFilter(nowNs)+` ORDER BY updated_at DESC LIMIT ?`, limit)
 		if err != nil {
 			return nil, err
@@ -875,7 +884,7 @@ func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float
 	}
 
 	nowNs := time.Now().UnixNano()
-	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count FROM knowledge_facts WHERE ` + activeFilter(nowNs) + ` AND id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args
+	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until FROM knowledge_facts WHERE ` + activeFilter(nowNs) + ` AND id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args
 	frows, err := s.db.QueryContext(ctx, factQ, int64sToAny(ids)...)
 	if err != nil {
 		return nil, err

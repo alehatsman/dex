@@ -74,6 +74,12 @@ func cmdMap(ctx context.Context, args []string) error {
 	if out.Status != "ok" {
 		return reportMapStatus(out.Status, out.Hint)
 	}
+	if len(out.Communities) == 0 {
+		if out.Hint != "" {
+			fmt.Fprintln(os.Stderr, out.Hint)
+		}
+		return nil
+	}
 
 	clusters := adaptCommunities(out.Communities)
 
