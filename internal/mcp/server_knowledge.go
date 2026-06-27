@@ -416,7 +416,17 @@ func (s *Server) knowledgeExport(ctx context.Context, st *store.Store) (*sdk.Cal
 func (s *Server) knowledgeImport(ctx context.Context, st *store.Store, body string) (*sdk.CallToolResult, KnowledgeOutput, error) {
 	var rows []knowledgeExportRow
 	if err := json.Unmarshal([]byte(body), &rows); err != nil {
-		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("parse JSON: %v — expected [{archetype,body,confidence},...]", err)}, nil
+		// MCP content-envelope: the body param may arrive as a JSON-stringified
+		// string wrapping the actual array (the same double-encode pattern seen in
+		// #734 / parseAskResponse). Try to unwrap one string layer before failing.
+		var inner string
+		if json.Unmarshal([]byte(body), &inner) == nil {
+			if err2 := json.Unmarshal([]byte(inner), &rows); err2 != nil {
+				return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("parse JSON: %v — expected [{archetype,body,confidence},...]", err2)}, nil
+			}
+		} else {
+			return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("parse JSON: %v — expected [{archetype,body,confidence},...]", err)}, nil
+		}
 	}
 	imported := 0
 	for _, r := range rows {
