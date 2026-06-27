@@ -170,8 +170,9 @@ func (svc Service) SemanticLane(ctx context.Context, st store.Searcher, embedTex
 			}
 			slog.Warn("embed error (degrading to BM25-only)", "err", err)
 			// Fall through with queryVec=nil so st.Search runs BM25-only.
+		} else {
+			queryVec = vecs[0]
 		}
-		queryVec = vecs[0]
 	}
 	hits, err := st.Search(ctx, queryVec, ftsText, k)
 	if err != nil {
