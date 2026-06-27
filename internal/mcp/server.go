@@ -925,11 +925,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"doc (CLAUDE.md/doc.go/README.md walking up), the file's last commit + author, and related " +
 				"project notes — in one response. Pass `issues: true` to also list matching open GitHub issues " +
 				"via `gh` (best-effort). " +
-				"Pass `claims` — a list of {ref:'file:line', symbol?} citations — to instead BATCH-VERIFY them " +
-				"in one call (#708): `results[]` reports each as 'ok' (symbol still at the cited line), 'moved' " +
-				"(symbol drifted — `found_at` gives the corrected line), 'gone' (symbol absent from the file), or " +
-				"'no_file' (path missing). No callers/tests/blame, no model call — a cheap index lookup to confirm " +
-				"locations carried from notes/memory still hold before recommending them. " +
+				"To batch-verify many cited 'file:line[:symbol]' locations in one call (e.g. confirm citations " +
+				"from notes/memory still resolve), use the `check` verb instead. " +
 				"Pure composition over the index; needs no chat model. Degrades cleanly: " +
 				"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
 				"Reach for locate when you already have a concrete path:line, symbol, or panic frame to orient on — " +
