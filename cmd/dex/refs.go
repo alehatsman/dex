@@ -15,14 +15,14 @@ import (
 // cmdRefs is the front door for type-precise symbol queries (MCP: refs):
 // references, implementations, supertypes, subtypes — all via go/types, no index.
 func cmdRefs(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("refs", flag.ContinueOnError)
+	fs := flag.NewFlagSet("xref", flag.ContinueOnError)
 	setHelp(fs,
 		"Type-precise Go symbol queries via go/types (MCP: refs): references, implementations, supertypes, subtypes.",
-		"dex refs [flags] [<path>] <action> <symbol>",
-		"dex refs references mcp.NewServer",
-		"dex refs implementations toolSurface",
-		"dex refs supertypes (*Server).Run",
-		"dex refs subtypes Animal --format json")
+		"dex xref [flags] [<path>] <action> <symbol>",
+		"dex xref references mcp.NewServer",
+		"dex xref implementations toolSurface",
+		"dex xref supertypes (*Server).Run",
+		"dex xref subtypes Animal --format json")
 	format := fs.String("format", "text", "output format: text | json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
@@ -30,7 +30,7 @@ func cmdRefs(ctx context.Context, args []string) error {
 
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) < 2 {
-		return fmt.Errorf("refs needs <action> and <symbol> (got %d arg(s)); path defaults to cwd\n"+
+		return fmt.Errorf("xref needs <action> and <symbol> (got %d arg(s)); path defaults to cwd\n"+
 			"  actions: references, implementations, supertypes, subtypes", len(rest))
 	}
 	action, symbol := rest[0], strings.Join(rest[1:], " ")
@@ -61,10 +61,10 @@ func cmdRefs(ctx context.Context, args []string) error {
 		return nil
 	}
 	if len(out.Sites) == 0 {
-		fmt.Printf("refs %s %s — no results\n", out.Action, out.Symbol)
+		fmt.Printf("xref %s %s — no results\n", out.Action, out.Symbol)
 		return nil
 	}
-	fmt.Printf("refs %s %s — %d result(s):\n", out.Action, out.Symbol, len(out.Sites))
+	fmt.Printf("xref %s %s — %d result(s):\n", out.Action, out.Symbol, len(out.Sites))
 	for _, s := range out.Sites {
 		fmt.Printf("  %s:%d  [%s]\n", s.Path, s.Line, s.Kind)
 	}
