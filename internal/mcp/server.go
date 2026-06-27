@@ -851,7 +851,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Orient in an unfamiliar codebase: a deterministic, multi-zoom map of the " +
 				"project's top packages/dirs and how they connect — no embedding or chat required. " +
-				"Call this FIRST when you don't yet know where things live, before find/ask fan-out. " +
+				"Secondary to ask (the primary entry point): reach for map when you want a model-free " +
+				"topology of a totally unfamiliar repo rather than an answer to a question. " +
 				"Returns 'no-index' when the project hasn't been indexed yet."),
 		}, mapHandler(h))
 
@@ -931,7 +932,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"locations carried from notes/memory still hold before recommending them. " +
 				"Pure composition over the index; needs no chat model. Degrades cleanly: " +
 				"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
-				"Use this BEFORE fanning out trace/find/read to orient on a path:line, symbol, or panic frame."),
+				"Reach for locate when you already have a concrete path:line, symbol, or panic frame to orient on — " +
+				"ask remains the primary entry point for open-ended questions."),
 		}, h.locate)
 
 		// review is in the default lane (#639 / GitHub #65 S2): per-hunk PR
