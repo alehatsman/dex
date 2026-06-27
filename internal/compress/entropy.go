@@ -69,6 +69,14 @@ func EntropyFilter(lines []string, threshold float64) []string {
 				continue
 			}
 		}
+		// Preserve isolated closing-brace lines (#805): }, };, );, }) — each is
+		// a structural delimiter that Shannon entropy scores at 0 (single unique
+		// char). Unlike standalone tokens, closing braces are never deduplicated
+		// because each one closes a distinct scope.
+		if isClosingBraceLine(trimmed) {
+			out = append(out, line)
+			continue
+		}
 		score := lineScore(line, seenTrigrams, windowTrigrams(lineTg, i))
 		if score >= threshold {
 			out = append(out, line)

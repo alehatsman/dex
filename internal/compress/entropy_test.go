@@ -319,6 +319,47 @@ func TestEntropyFilter_PreservesStandaloneToken(t *testing.T) {
 	}
 }
 
+// TestEntropyFilter_PreservesIsolatedClosingBraces pins #805: isolated closing
+// brace lines (}, };, );, })) score 0 in Shannon entropy and were dropped by
+// the filter. Each one closes a distinct scope and must survive.
+func TestEntropyFilter_PreservesIsolatedClosingBraces(t *testing.T) {
+	// Mirrors the reproduction from #805: tail -10 of a Go file where lines 8
+	// and 10 are isolated `}` — dropped before the fix.
+	lines := []string{
+		"func jaccardWords(a, b string) float64 {",
+		"\tinter := 0",
+		"\tfor w := range wordsOf(a) {",
+		"\t\tif wordsOf(b)[w] {",
+		"\t\t\tinter++",
+		"\t\t}",
+		"\t}",
+		"\tif union == 0 {",
+		"\t\treturn 1",
+		"\t}",
+		"\treturn float64(inter) / float64(union)",
+		"}",
+	}
+	got := EntropyFilter(lines, EntropyThresholdStandard)
+	if got == nil {
+		return // filter declined — lines trivially preserved
+	}
+	closingCount := 0
+	for _, l := range got {
+		if isClosingBraceLine(strings.TrimSpace(l)) {
+			closingCount++
+		}
+	}
+	origClosing := 0
+	for _, l := range lines {
+		if isClosingBraceLine(strings.TrimSpace(l)) {
+			origClosing++
+		}
+	}
+	if closingCount < origClosing {
+		t.Errorf("closing braces dropped: got %d, want %d; output: %q", closingCount, origClosing, got)
+	}
+}
+
 func TestIsStandaloneToken(t *testing.T) {
 	cases := []struct {
 		in   string
