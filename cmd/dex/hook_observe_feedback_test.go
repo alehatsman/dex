@@ -77,6 +77,42 @@ func TestParseAskResponseTextForm(t *testing.T) {
 	}
 }
 
+// Real harness form (#734): Claude Code forwards the MCP result with the
+// bundle JSON *stringified* inside a content-block text field. The structured
+// fields are one decode below the surface — the parser must lift them.
+func TestParseAskResponseContentEnvelope(t *testing.T) {
+	bundle := `{"intent":"behavior_search","content_bytes_inlined":5787,"suggested_reads":[{"path":"internal/mcp/server.go","start_line":720,"end_line":760},{"path":"cmd/dex/feedback.go"}],"avoid":"Do not read entire files."}`
+	env, err := json.Marshal(map[string]any{
+		"content": []any{map[string]any{"type": "text", "text": bundle}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, inlined, intent := parseAskResponse(env)
+	if !slices.Contains(paths, "internal/mcp/server.go") || !slices.Contains(paths, "cmd/dex/feedback.go") {
+		t.Errorf("stringified-bundle paths not lifted: %v", paths)
+	}
+	if inlined != 5787 {
+		t.Errorf("inlined = %d, want 5787", inlined)
+	}
+	if intent != "behavior_search" {
+		t.Errorf("intent = %q, want behavior_search", intent)
+	}
+}
+
+// A bare stringified bundle (no envelope) must also resolve.
+func TestParseAskResponseBareStringBundle(t *testing.T) {
+	bundle := `{"intent":"editing_context","content_bytes_inlined":42,"suggested_reads":[{"path":"a.go"}]}`
+	raw, err := json.Marshal(bundle) // a JSON string whose value is itself JSON
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, inlined, intent := parseAskResponse(raw)
+	if !slices.Contains(paths, "a.go") || inlined != 42 || intent != "editing_context" {
+		t.Errorf("bare stringified bundle not parsed: paths=%v inlined=%d intent=%q", paths, inlined, intent)
+	}
+}
+
 func TestParseAskResponseEmpty(t *testing.T) {
 	paths, inlined, intent := parseAskResponse(nil)
 	if paths != nil || inlined != 0 || intent != "" {
