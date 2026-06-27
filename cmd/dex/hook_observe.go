@@ -35,9 +35,10 @@ func hookObserve() error {
 	// event is one line of hooks.jsonl. paths carries the join keys the
 	// feedback consumer needs (#724): for a read/edit tool it is the file
 	// consumed (from tool_input); for an ask call it is the suggested_reads
-	// the bundle recommended (from tool_response). inlined_bytes and intent
-	// are ask-only. event names a session boundary (Stop / PreCompact) so the
-	// consumer can window the join; it is omitted for the common PostToolUse.
+	// the bundle recommended (from tool_response). inlined_bytes, intent, and
+	// query are ask-only. event names a session boundary (Stop / PreCompact)
+	// so the consumer can window the join; it is omitted for the common
+	// PostToolUse. query is recorded for curated-golden miss-mining (#732).
 	type event struct {
 		TS       int64    `json:"ts"`
 		Event    string   `json:"event,omitempty"`
@@ -46,6 +47,7 @@ func hookObserve() error {
 		Paths    []string `json:"paths,omitempty"`
 		Inlined  int      `json:"inlined_bytes,omitempty"`
 		Intent   string   `json:"intent,omitempty"`
+		Query    string   `json:"query,omitempty"`
 	}
 	ev := event{TS: time.Now().Unix()}
 	if hookEventName != "" && hookEventName != "PostToolUse" {
@@ -62,6 +64,7 @@ func hookObserve() error {
 	case isAskTool(ev.ToolName):
 		// Recommendations the bundle made — joined against later reads.
 		ev.Paths, ev.Inlined, ev.Intent = parseAskResponse(v["tool_response"])
+		ev.Query = parseAskInput(v["tool_input"])
 	case isConsumeTool(ev.ToolName):
 		// A file the agent actually opened — the consumption side of the join.
 		ev.Paths = pathsFromInput(v["tool_input"])

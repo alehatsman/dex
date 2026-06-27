@@ -65,6 +65,21 @@ var (
 	askIntentRe   = regexp.MustCompile(`intent["\s:]+"?([a-z_]+)`)
 )
 
+// parseAskInput extracts the question text from an ask tool_input so the
+// observer can record it for curated-golden miss-mining (#732).
+func parseAskInput(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var ti struct {
+		Question string `json:"question"`
+	}
+	if json.Unmarshal(raw, &ti) != nil {
+		return ""
+	}
+	return ti.Question
+}
+
 // parseAskResponse extracts the suggested-read paths, inlined byte count, and
 // routed intent from an ask tool_response. It is tolerant of how the response
 // is wrapped: it walks the decoded JSON for any nested suggested_reads array

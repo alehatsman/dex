@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/alehatsman/dex/internal/eval"
 )
 
 // `dex feedback` reads the observe log (hooks.jsonl) the PostToolUse hook
@@ -39,6 +42,7 @@ type feedbackEvent struct {
 	Paths    []string `json:"paths,omitempty"`
 	Inlined  int      `json:"inlined_bytes,omitempty"`
 	Intent   string   `json:"intent,omitempty"`
+	Query    string   `json:"query,omitempty"` // ask-only: question text for miss-mining (#732)
 }
 
 type intentStat struct {
@@ -67,6 +71,8 @@ func runFeedback(_ context.Context, args []string) error {
 	logPath := fs.String("log", "", "path to hooks.jsonl (default: $XDG_DATA_HOME/dex/hooks.jsonl)")
 	window := fs.Int("window", 0, "max consume events to look ahead per suggested read within a session (0 = whole session)")
 	asJSON := fs.Bool("json", false, "emit the report as JSON")
+	mineCurated := fs.Bool("mine-curated", false, "emit GoldenQuery candidates mined from missed asks (JSON array, review before adding to curated.json)")
+	projectPath := fs.String("project", ".", "project root — used to make absolute opened paths relative (for --mine-curated)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -79,6 +85,18 @@ func runFeedback(_ context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	if *mineCurated {
+		root, absErr := filepath.Abs(*projectPath)
+		if absErr != nil {
+			return fmt.Errorf("feedback --mine-curated: resolve project path: %w", absErr)
+		}
+		candidates := mineCuratedCandidates(events, *window, root)
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(candidates)
+	}
+
 	rep := computeFeedback(events, *window)
 	rep.LogPath = path
 
@@ -227,6 +245,135 @@ func ratio(n, d int) float64 {
 		return 0
 	}
 	return float64(n) / float64(d)
+}
+
+// mineCuratedCandidates scans the observe log for asks whose suggested_reads
+// did NOT include files the agent subsequently opened. Each (query, missed-file)
+// pair is a candidate for a new curated golden entry. Candidates are merged
+// across sessions by query: the same query missing the same file in multiple
+// sessions accumulates a higher session_count, which the JSON output sorts by
+// descending so the most-missed pairs appear first for human review.
+//
+// The output is []eval.GoldenQuery so the caller can paste directly into
+// benchmark/eval/curated.json after reviewing. Absolute paths are made
+// relative to root; paths that cannot be made relative are kept as-is.
+func mineCuratedCandidates(events []feedbackEvent, window int, root string) []eval.GoldenQuery {
+	type candidate struct {
+		files    map[string]struct{}
+		sessions int
+	}
+	// key = query text (exact match)
+	byQuery := map[string]*candidate{}
+	queryOrder := []string{} // insertion order for stable output
+
+	// Split into sessions, same logic as computeFeedback.
+	var sessions [][]feedbackEvent
+	var cur []feedbackEvent
+	for _, e := range events {
+		if e.Event != "" {
+			if len(cur) > 0 {
+				sessions = append(sessions, cur)
+				cur = nil
+			}
+			continue
+		}
+		cur = append(cur, e)
+	}
+	if len(cur) > 0 {
+		sessions = append(sessions, cur)
+	}
+
+	for _, s := range sessions {
+		for i, e := range s {
+			if !isAskTool(e.ToolName) || e.Query == "" {
+				continue
+			}
+			suggested := make(map[string]struct{}, len(e.Paths))
+			for _, p := range e.Paths {
+				suggested[filepath.Clean(p)] = struct{}{}
+			}
+
+			// Collect consume-tool opens after this ask (within window).
+			var missed []string
+			consumed := 0
+			for j := i + 1; j < len(s); j++ {
+				if !isConsumeTool(s[j].ToolName) {
+					continue
+				}
+				for _, op := range s[j].Paths {
+					rel := relPath(root, op)
+					if _, inSuggested := suggested[filepath.Clean(rel)]; !inSuggested {
+						if _, inSuggested2 := suggested[filepath.Clean(op)]; !inSuggested2 {
+							missed = append(missed, rel)
+						}
+					}
+				}
+				consumed++
+				if window > 0 && consumed >= window {
+					break
+				}
+			}
+			if len(missed) == 0 {
+				continue
+			}
+
+			c, exists := byQuery[e.Query]
+			if !exists {
+				c = &candidate{files: map[string]struct{}{}}
+				byQuery[e.Query] = c
+				queryOrder = append(queryOrder, e.Query)
+			}
+			c.sessions++
+			for _, f := range missed {
+				c.files[f] = struct{}{}
+			}
+		}
+	}
+
+	// Sort queries by session_count desc, then alphabetically for stability.
+	sort.Slice(queryOrder, func(i, j int) bool {
+		ci, cj := byQuery[queryOrder[i]], byQuery[queryOrder[j]]
+		if ci.sessions != cj.sessions {
+			return ci.sessions > cj.sessions
+		}
+		return queryOrder[i] < queryOrder[j]
+	})
+
+	out := make([]eval.GoldenQuery, 0, len(queryOrder))
+	for _, q := range queryOrder {
+		c := byQuery[q]
+		files := make([]string, 0, len(c.files))
+		for f := range c.files {
+			files = append(files, f)
+		}
+		sort.Strings(files)
+		out = append(out, eval.GoldenQuery{
+			ID:            queryID(q),
+			Query:         q,
+			RelevantFiles: files,
+		})
+	}
+	return out
+}
+
+// relPath makes path relative to root. If path is already relative or
+// Rel fails, it returns path unchanged.
+func relPath(root, path string) string {
+	if !filepath.IsAbs(path) {
+		return path
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return path
+	}
+	return rel
+}
+
+// queryID returns an 8-char hex prefix of the SHA-256 of the query string,
+// used as the GoldenQuery.ID for mined candidates.
+func queryID(q string) string {
+	h := sha256.Sum256([]byte(q))
+	return fmt.Sprintf("m%x", h[:3]) // "m" prefix marks mined; 6 hex chars = 3 bytes
 }
 
 func printFeedbackReport(w io.Writer, r feedbackReport) {
