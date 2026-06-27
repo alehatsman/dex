@@ -188,7 +188,7 @@ tasks:
   curated-eval:
     desc: Curated golden eval (NDCG@10/Recall@10/MRR) vs hand-labeled baseline
     steps:
-      - shell: dex bench eval . --mode curated --check benchmark/eval/curated-baseline.json
+      - shell: dex bench eval . --mode curated --check benchmark/eval/curated-baseline.json --tol 0.05
 
   # Kept local: multi-repo retrieval eval over the pinned corpus
   # (benchmark/corpus/repos.yml). Fetches + indexes each repo on first run

@@ -65,6 +65,7 @@ Flags:
                    on a per-query-type bucket regression — not only the
                    aggregate. Both HEADs and the manifest are recorded in the
                    report so runs are only ever compared like-for-like.
+  --tol 0.05            with --check: regression tolerance (default 0.02). Raise to 0.05 for embedding-model variance.
   --allow-incompatible  with --check: compare despite an incompatible manifest
   --allow-stale-golden  compare even when the golden HEAD != current repo HEAD
   --alpha-sweep   sweep FusionLinear α from 0.1 to 1.0 in 0.1 steps, printing
@@ -131,6 +132,7 @@ func runEval(ctx context.Context, args []string) error {
 	faithfulness := fs.Bool("faithfulness", false, "answer-faithfulness gate (#550): synthesize an ask answer per query and score how well it is grounded in the retrieved evidence. Requires a chat model (DEX_CHAT_URL/DEX_CHAT_MODEL).")
 	allowStale := fs.Bool("allow-stale-golden", false, "compare even when the golden set's HEAD differs from the current repo HEAD (deliberate historical comparison). Without it, --check fails on a stale golden set.")
 	allowIncompat := fs.Bool("allow-incompatible", false, "with --check: compare even when the reference report's experiment manifest (lane/model/mode/k/fusion/query-corpus) is incompatible. Without it, the check fails closed.")
+	checkTol := fs.Float64("tol", 0.02, "with --check: regression tolerance (0–1). Default 0.02 (2%). Raise to 0.05 when the embedding model has inter-run variance.")
 
 	// Project path is the first non-flag arg; allow flags after it.
 	projectPath, flagArgs := splitEvalArgs(args)
@@ -269,7 +271,7 @@ func runEval(ctx context.Context, args []string) error {
 	}
 
 	if *checkPath != "" {
-		if err := checkEvalRegression(rep, *checkPath, *allowIncompat); err != nil {
+		if err := checkEvalRegression(rep, *checkPath, *allowIncompat, *checkTol); err != nil {
 			return fmt.Errorf("dex bench eval: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench eval: regression check passed")
@@ -340,7 +342,7 @@ func resolveEvalProject(path string) (*proj.Project, error) {
 // compatibility: an incompatible reference (different lane/model/mode/k/fusion
 // or query corpus) fails closed unless allowIncompat is set, so the metric
 // comparison is only ever run on genuinely comparable numbers.
-func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool) error {
+func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool, tol float64) error {
 	data, err := os.ReadFile(refPath)
 	if err != nil {
 		return fmt.Errorf("read reference %q: %w", refPath, err)
@@ -365,10 +367,7 @@ func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool
 		fmt.Fprintln(os.Stderr, "dex bench eval: warning: reference report predates experiment manifests — comparing metrics only; regenerate the baseline to enable the compatibility gate")
 	}
 
-	const (
-		tol       = 0.02
-		minBucket = 5
-	)
+	const minBucket = 5
 	regs := current.Regressions(ref, tol)
 	byType, bucketDelta := current.ByTypeRegressions(ref, tol, minBucket)
 	regs = append(regs, byType...)
