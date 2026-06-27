@@ -130,6 +130,17 @@ func (s *Server) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, i
 	}
 
 	if len(communities) == 0 {
+		// Distinguish "graph not built" from "filter too strict" (#772).
+		// Query with minMembers=1 to check whether any community data exists.
+		if minMembers > 1 {
+			if any, err2 := st.GraphCommunities(ctx, 1, 1); err2 == nil && len(any) > 0 {
+				return nil, CommunitiesOutput{
+					Status: "ok", Project: p.Root, Total: 0,
+					Communities: []Community{},
+					Hint:        fmt.Sprintf("no communities with ≥%d members — try a lower min_members value.", minMembers),
+				}, nil
+			}
+		}
 		return nil, CommunitiesOutput{
 			Status: "no-graph", Project: p.Root,
 			Hint: "no community data — run `dex index . --graph=only` to build the call graph and compute communities.",

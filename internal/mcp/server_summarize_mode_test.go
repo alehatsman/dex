@@ -54,8 +54,9 @@ func TestSummarizeRejectsUnknownMode(t *testing.T) {
 	if out.Status != "error" {
 		t.Fatalf("status = %q, want \"error\" for unrecognized mode", out.Status)
 	}
-	if !strings.Contains(out.Hint, "unrecognized read mode") {
-		t.Errorf("hint = %q, want it to flag the unrecognized mode", out.Hint)
+	// entropy is a CLI-only mode; the hint should explain that, not just say unknown.
+	if !strings.Contains(out.Hint, "CLI-only") && !strings.Contains(out.Hint, "unrecognized") {
+		t.Errorf("hint = %q, want it to flag the mode as CLI-only or unrecognized", out.Hint)
 	}
 	// The raw file content must NOT leak through on the error path.
 	if strings.Contains(out.Content, "filler line") {

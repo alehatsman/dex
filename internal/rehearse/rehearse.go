@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -108,14 +109,16 @@ func buildOverlay(root string, in Input) (map[string][]byte, string, error) {
 
 	// Whole-file replacements first.
 	for _, wf := range in.Files {
-		abs := filepath.Join(root, filepath.FromSlash(wf.Path))
+		// TrimLeft strips a leading '/' so project-relative paths like
+		// "/internal/foo.go" work the same as "internal/foo.go" (#767).
+		abs := filepath.Join(root, filepath.FromSlash(strings.TrimLeft(wf.Path, "/")))
 		overlay[abs] = []byte(wf.Contents)
 	}
 
 	// Splice edits grouped by file, applied highest-offset-first.
 	byFile := map[string][]EditTriple{}
 	for _, e := range in.Edits {
-		abs := filepath.Join(root, filepath.FromSlash(e.Path))
+		abs := filepath.Join(root, filepath.FromSlash(strings.TrimLeft(e.Path, "/")))
 		if _, already := overlay[abs]; already {
 			continue // WholeFile wins
 		}

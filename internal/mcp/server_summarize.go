@@ -168,6 +168,19 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	// CLI-only mode (e.g. "entropy") would silently blow the token budget (#528).
 	// Auto-selected modes come from trusted sources and are always valid.
 	if explicitMode && !ValidReadMode(mode) {
+		// Give specific guidance for CLI-only modes (#768/#776).
+		if mode == "entropy" {
+			return nil, SummarizeOutput{
+				Status: "error",
+				Hint:   "mode \"entropy\" is CLI-only (drops low-information lines); use aggressive for a similar lossy pass via the MCP tool",
+			}, nil
+		}
+		if mode == "auto" {
+			return nil, SummarizeOutput{
+				Status: "error",
+				Hint:   "mode \"auto\" is CLI-only; omit the mode field to let dex auto-select based on file type and budget",
+			}, nil
+		}
 		modes := ReadModes()
 		for i, m := range modes {
 			if m == "lines" {

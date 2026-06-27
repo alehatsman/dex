@@ -57,6 +57,9 @@ var functionWords = map[string]bool{
 }
 
 // abbreviations maps verbose words to compact equivalents for Level 2.
+// Entries that overlap with Go keywords, types, builtins, stdlib package
+// names, or common identifier names are intentionally excluded to avoid
+// corrupting Go source when the shell tool cats a .go file (#761/#781).
 var abbreviations = map[string]string{
 	"configuration":   "cfg",
 	"directory":       "dir",
@@ -73,25 +76,16 @@ var abbreviations = map[string]string{
 	"responses":       "resps",
 	"request":         "req",
 	"requests":        "reqs",
-	"interface":       "iface",
-	"interfaces":      "ifaces",
 	"implementation":  "impl",
 	"implementations": "impls",
-	"initialize":      "init",
 	"information":     "info",
-	"package":         "pkg",
-	"packages":        "pkgs",
 	"number":          "num",
 	"numbers":         "nums",
-	"string":          "str",
-	"strings":         "strs",
 	"boolean":         "bool",
 	"database":        "db",
 	"databases":       "dbs",
 	"environment":     "env",
 	"environments":    "envs",
-	"variable":        "var",
-	"variables":       "vars",
 	"temporary":       "tmp",
 	"address":         "addr",
 	"addresses":       "addrs",
@@ -102,10 +96,7 @@ var abbreviations = map[string]string{
 	"pointer":         "ptr",
 	"buffer":          "buf",
 	"buffers":         "bufs",
-	"length":          "len",
 	"iterator":        "iter",
-	"output":          "out",
-	"input":           "in",
 }
 
 // TerseCompress applies up to `level` deterministic compression passes to
