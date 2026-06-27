@@ -172,6 +172,16 @@ tasks:
     steps:
       - shell: dex bench eval . --k 10 --check benchmark/eval/baseline.json
 
+  # Kept local: curated hand-labeled eval (NDCG@10/Recall@10/MRR over
+  # benchmark/eval/curated.json). Labels are human-verified and cover patterns
+  # that git history can't express (doc files, cross-package behavior questions).
+  # Same infrastructure requirements as `eval`. Refresh the baseline with:
+  #   dex bench eval . --mode curated --output json > benchmark/eval/curated-baseline.json
+  curated-eval:
+    desc: Curated golden eval (NDCG@10/Recall@10/MRR) vs hand-labeled baseline
+    steps:
+      - shell: dex bench eval . --mode curated --check benchmark/eval/curated-baseline.json
+
   # Kept local: multi-repo retrieval eval over the pinned corpus
   # (benchmark/corpus/repos.yml). Fetches + indexes each repo on first run
   # (cached after), scores per (repo, set), and fails on a >0.02 drop in ANY
