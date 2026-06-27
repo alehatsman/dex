@@ -316,7 +316,7 @@ func IndexableExt(path string) bool {
 // IsTestPath returns true for file paths that conventionally hold test
 // code (not test data). The indexer uses this to suppress the
 // secret-pattern skip: test code files routinely embed fake credentials
-// (`AKIA0123456789ABCDEF`, dummy PEM blocks) as inputs to their own
+// (`akia0123456789abcdef`, dummy PEM blocks) as inputs to their own
 // detection logic, and refusing to index them was hiding real test code
 // from search. The pattern check still runs against non-test files where
 // a literal secret almost always is one.
