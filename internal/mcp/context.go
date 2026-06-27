@@ -432,7 +432,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		graphEdgeCount, len(out.References), hasBlameAnnotations(out.Annotations))
 	// #725: nudge edit-intent toward assemble, and caveat a partial assemble set.
 	out.NextAction = assembleNextActionHint(intent, out.NextAction, out.Concerns,
-		len(out.SuggestedReads), len(out.Symbols))
+		len(out.SuggestedReads), out.Symbols)
 	// If the directive's primary read was truncated at inline time,
 	// flag that so the agent knows the inlined Content isn't the full
 	// chunk and can Read the original line range for the rest.

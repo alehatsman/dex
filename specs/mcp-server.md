@@ -119,7 +119,12 @@ service clients are the http-api spec's.
   whose body was inlined is about the concern — same name+signature haystack
   the submodular selector scored) and `dropped` (the byte budget left no symbol
   body about the concern). WHEN any concern is dropped, `next_action` states the
-  set is partial — an honest partial beats a false floor.
+  set is partial — an honest partial beats a false floor. WHEN the partial set
+  still holds an inlined anchor, that caveat upgrades to a concrete chained
+  directive (#729) — "trace callees of `<anchor>` (or raise k) to pull the
+  dropped concerns in" — handing the caller the next graph move rather than
+  only flagging incompleteness; with no inlined anchor (the pure-prose miss,
+  nsyms=0) it stays generic, since there is nothing in the set to chain from.
 - WHERE intent routes to `editing_context` (edit/modify/refactor/extend
   phrasing) AND the result spans more than one site, `next_action` nudges the
   caller toward `intent=assemble` (#725) — so the "batch reads" instinct reaches

@@ -170,12 +170,12 @@ func equalStrs(a, b []string) bool {
 func TestAssembleNextActionHintEditingNudge(t *testing.T) {
 	base := "Read foo.go before editing."
 	// Multi-site shape → nudge toward assemble.
-	got := assembleNextActionHint(retrieve.IntentEditingContext, base, nil, 2, 1)
+	got := assembleNextActionHint(retrieve.IntentEditingContext, base, nil, 2, []SymbolHit{{}})
 	if !strings.Contains(got, "intent=assemble") {
 		t.Errorf("multi-site editing_context should nudge assemble, got %q", got)
 	}
 	// Single site → no nudge.
-	if got := assembleNextActionHint(retrieve.IntentEditingContext, base, nil, 1, 0); got != base {
+	if got := assembleNextActionHint(retrieve.IntentEditingContext, base, nil, 1, nil); got != base {
 		t.Errorf("single-site editing_context must not nudge, got %q", got)
 	}
 }
@@ -183,13 +183,53 @@ func TestAssembleNextActionHintEditingNudge(t *testing.T) {
 func TestAssembleNextActionHintDroppedConcerns(t *testing.T) {
 	base := "Working set assembled: 3 symbol bodies inlined."
 	c := &AssembleConcerns{Covered: []string{"parse"}, Dropped: []string{"prune", "history"}}
-	got := assembleNextActionHint(retrieve.IntentAssemble, base, c, 0, 3)
+	// No inlined anchor in the set → generic caveat, no chained directive.
+	syms := []SymbolHit{{QualifiedName: "pkg.Parse"}} // Body == "" → not an anchor
+	got := assembleNextActionHint(retrieve.IntentAssemble, base, c, 0, syms)
 	if !strings.Contains(got, "DROPPED") || !strings.Contains(got, "1 of 3") {
 		t.Errorf("dropped concerns must surface a caveat with counts, got %q", got)
 	}
+	if strings.Contains(got, "Trace callees") {
+		t.Errorf("no inlined anchor must not chain a trace directive, got %q", got)
+	}
 	// Fully covered → no caveat appended.
 	full := &AssembleConcerns{Covered: []string{"parse"}}
-	if got := assembleNextActionHint(retrieve.IntentAssemble, base, full, 0, 3); got != base {
+	if got := assembleNextActionHint(retrieve.IntentAssemble, base, full, 0, syms); got != base {
 		t.Errorf("fully-covered set must not append a caveat, got %q", got)
+	}
+}
+
+// #729: a partial set with an inlined anchor upgrades the generic caveat to a
+// concrete chained directive naming the anchor to trace callees of.
+func TestAssembleNextActionHintChainedDirective(t *testing.T) {
+	base := "Working set assembled: 2 symbol bodies inlined."
+	c := &AssembleConcerns{Covered: []string{"parse"}, Dropped: []string{"prune"}}
+	syms := []SymbolHit{
+		{QualifiedName: "pkg.Stub"},                        // not inlined
+		{QualifiedName: "pkg.Parse", Body: "func Parse"},   // first inlined anchor
+		{QualifiedName: "pkg.Other", Body: "func Other()"}, // later inlined
+	}
+	got := assembleNextActionHint(retrieve.IntentAssemble, base, c, 0, syms)
+	if !strings.Contains(got, "Trace callees of pkg.Parse") {
+		t.Errorf("partial set with anchor must chain a concrete trace directive on the first inlined symbol, got %q", got)
+	}
+	if !strings.Contains(got, "DROPPED") || !strings.Contains(got, "[prune]") {
+		t.Errorf("chained directive must still name the dropped concerns, got %q", got)
+	}
+	if !strings.Contains(got, "Do not treat this set as complete") {
+		t.Errorf("chained directive must keep the honest-partial framing, got %q", got)
+	}
+}
+
+func TestFirstInlinedAnchor(t *testing.T) {
+	if got := firstInlinedAnchor(nil); got != "" {
+		t.Errorf("empty set → no anchor, got %q", got)
+	}
+	if got := firstInlinedAnchor([]SymbolHit{{QualifiedName: "a"}, {QualifiedName: "b"}}); got != "" {
+		t.Errorf("no inlined bodies → no anchor, got %q", got)
+	}
+	syms := []SymbolHit{{QualifiedName: "a"}, {QualifiedName: "b", Body: "x"}, {QualifiedName: "c", Body: "y"}}
+	if got := firstInlinedAnchor(syms); got != "b" {
+		t.Errorf("anchor = first inlined symbol, want b, got %q", got)
 	}
 }
