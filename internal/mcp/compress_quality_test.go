@@ -74,6 +74,28 @@ func TestEscalateOnBounce_AnalyzeNeverPromotedToLLM(t *testing.T) {
 	}
 }
 
+func TestEscalateOnBounce_MapNeverPromotedToLLM(t *testing.T) {
+	// mode=map must never be escalated to summary (LLM) on bounce (#802).
+	// Map is an explicit index view (imports+exports), not a compressed content
+	// substitute — bouncing it to LLM summary violates the stated mode contract.
+	bt := newBounceTracker()
+	bt.recordCompressed("s1", "orient.go")
+	bt.recordRead("s1", "orient.go") // triggers shouldForceFull
+
+	chatSrv := fakeChat(t, "should not be called")
+	defer chatSrv.Close()
+	srv := newServer("http://127.0.0.1:1", t.TempDir())
+	srv.ChatClient = chat.New(chatSrv.URL, "fake", 30*time.Second)
+
+	mode, isLLM := srv.escalateOnBounce(bt, "s1", "orient.go", ReadModeMap, false)
+	if mode != ReadModeMap {
+		t.Errorf("want ReadModeMap, got %s", mode)
+	}
+	if isLLM {
+		t.Error("map bounce must not set isLLM=true")
+	}
+}
+
 func TestSelectAffordableMode_NoBudget(t *testing.T) {
 	// No budget = no downgrade.
 	got := selectAffordableMode(ReadModeFull, 10000, 0)

@@ -103,7 +103,6 @@ func (s *Server) summarizeModeMap(w summarizeWork) (*sdk.CallToolResult, Summari
 	out.Content = content
 	out.Bytes = len(content)
 	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
-	w.bt.recordCompressed(w.sessionID, w.relTarget)
 	s.sessionAutoFile(w.p.DBPath, w.relTarget)
 	return nil, out, nil
 }
