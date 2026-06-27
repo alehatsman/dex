@@ -4,14 +4,17 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/alehatsman/dex/internal/chat"
@@ -687,21 +690,77 @@ func (s *Server) runWatcher(p *proj.Project) {
 	s.watchers.Delete(p.ID)
 }
 
+// mcpResumeStateEnv carries a JSON-serialized sdk.ServerSessionState across
+// a SIGUSR1 exec-reload so the new binary resumes the MCP session without a
+// re-initialization handshake (Claude Code sees no reconnect gap).
+const mcpResumeStateEnv = "DEX_MCP_RESUME_STATE"
+
 func (s *Server) RunStdio(ctx context.Context) error {
 	s.runCtx = ctx
 	defer s.watcherWG.Wait()
 	defer s.waitSessionWrites() // flush pending session records before returning
 
-	srv := sdk.NewServer(&sdk.Implementation{
+	sdkSrv := sdk.NewServer(&sdk.Implementation{
 		Name:    "dex",
 		Version: Version,
 	}, &sdk.ServerOptions{
 		Instructions: ServerInstructions(),
 	})
 
-	registerTools(srv, s, s.ChatClient != nil, s.EmbedClient != nil, profiles.Active("").StrictAnchors(), descriptionModeFromEnv())
+	registerTools(sdkSrv, s, s.ChatClient != nil, s.EmbedClient != nil, profiles.Active("").StrictAnchors(), descriptionModeFromEnv())
 
-	return srv.Run(ctx, &sdk.StdioTransport{})
+	// Restore session state from a prior exec-reload (set by the SIGUSR1
+	// handler below). Clear it immediately so child processes don't inherit it.
+	var opts *sdk.ServerSessionOptions
+	if raw := os.Getenv(mcpResumeStateEnv); raw != "" {
+		_ = os.Unsetenv(mcpResumeStateEnv)
+		var state sdk.ServerSessionState
+		if err := json.Unmarshal([]byte(raw), &state); err == nil && state.InitializeParams != nil {
+			opts = &sdk.ServerSessionOptions{State: &state}
+		}
+	}
+
+	ss, err := sdkSrv.Connect(ctx, &sdk.StdioTransport{}, opts)
+	if err != nil {
+		return err
+	}
+
+	// On SIGUSR1, exec-reload: replace this process with the newly installed
+	// binary. The stdin/stdout pipe is inherited so Claude Code sees no
+	// disconnection. The new binary picks up the session via mcpResumeStateEnv.
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGUSR1)
+		defer signal.Stop(ch)
+		select {
+		case <-ctx.Done():
+		case <-ch:
+			if params := ss.InitializeParams(); params != nil {
+				state := sdk.ServerSessionState{
+					InitializeParams:  params,
+					InitializedParams: new(sdk.InitializedParams),
+				}
+				if b, err := json.Marshal(state); err == nil {
+					exe, _ := os.Executable()
+					env := append(os.Environ(), mcpResumeStateEnv+"="+string(b))
+					syscall.Exec(exe, os.Args, env) //nolint:errcheck,gosec
+				}
+			}
+			// Fallback if state is unavailable: exit cleanly so the client reconnects.
+			os.Exit(0)
+		}
+	}()
+
+	ssClosed := make(chan error, 1)
+	go func() { ssClosed <- ss.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = ss.Close()
+		<-ssClosed
+		return ctx.Err()
+	case err := <-ssClosed:
+		return err
+	}
 }
 
 // toolSurface is the set of tool handlers registerTools wires onto an MCP

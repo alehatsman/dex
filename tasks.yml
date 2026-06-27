@@ -119,11 +119,16 @@ tasks:
             ln -sf "$HOME/.local/bin/{{ BIN }}" "$HOME/bin/{{ BIN }}"
             echo "✓ Symlinked $HOME/bin/{{ BIN }} -> $HOME/.local/bin/{{ BIN }}"
           fi
-          count=$(pgrep -x dex | wc -l | tr -d ' ')
-          if [ "$count" -gt 0 ]; then
-            pkill -x dex || true
-            echo "✓ Restarted $count dex process(es) — MCP clients will reconnect automatically"
+          # Signal dex mcp (stdio) processes to exec-reload with the new binary
+          # in-place — same PID, same stdin/stdout pipe, no Claude Code reconnect gap.
+          mcp_count=$(pgrep -f "dex mcp" | wc -l | tr -d ' ')
+          if [ "$mcp_count" -gt 0 ]; then
+            pkill --signal SIGUSR1 -f "dex mcp" || true
+            echo "✓ Signalled $mcp_count dex mcp process(es) to exec-reload"
           fi
+          # Restart systemd-managed HTTP services normally.
+          systemctl --user restart dex-serve dex-proxy dex-summary-router 2>/dev/null || true
+          echo "✓ Restarted systemd services"
 
   clean:
     desc: Remove the built binary
