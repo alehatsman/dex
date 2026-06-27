@@ -49,8 +49,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/alehatsman/dex/internal/mcp"
 )
 
 func main() {
@@ -77,117 +75,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	var err error
-	switch cmd {
-	case "index", "idx":
-		err = cmdIndexDispatch(ctx, args)
-	case "status":
-		// Top-level alias for `dex index status` (#501) — the command
-		// agents/humans reach for first. Same handler, identical output.
-		err = cmdIndexStatus(ctx, args)
-	case "ask":
-		err = cmdAsk(ctx, args)
-	case "summarize":
-		err = cmdSummarize(ctx, args)
-	case "read":
-		err = cmdRead(ctx, args)
-	case "graph":
-		err = cmdGraph(ctx, args)
-	case "map":
-		err = cmdMap(ctx, args)
-	// Verb front doors (#354/#427) — the CLI verbs share the MCP tool names:
-	// find / trace (map / read / ask already exist above). lookup dropped —
-	// subsumed by find/ask (#685); impact folded into `trace --dir impact` (#684).
-	case "find":
-		err = cmdFind(ctx, args)
-	case "trace":
-		err = cmdTrace(ctx, args)
-	case "review":
-		err = cmdReview(ctx, args)
-	case "locate":
-		err = cmdLocate(ctx, args)
-	case "refactor":
-		err = cmdRefactor(ctx, args)
-	case "rehearse":
-		err = cmdRehearse(ctx, args)
-	case "cohort":
-		err = cmdCohort(ctx, args)
-	case "xref", "refs":
-		err = cmdRefs(ctx, args)
-	case "verify":
-		err = cmdVerify(ctx, args)
-	case "check":
-		err = cmdCheck(ctx, args)
-	case "grep":
-		err = cmdGrep(ctx, args)
-	case "shell":
-		err = cmdShell(ctx, args)
-	case "env":
-		err = cmdEnv(ctx, args)
-	case "compact", "bundle", "dump":
-		err = cmdCompact(ctx, args)
-	case "nuke":
-		err = cmdNuke(ctx, args)
-	case "reindex":
-		err = cmdReindex(ctx, args)
-	case "mcp":
-		err = cmdMCP(ctx, args)
-	case "serve":
-		err = cmdServe(ctx, args)
-	case "proxy":
-		err = cmdProxy(ctx, args)
-	case "watch":
-		err = cmdWatch(ctx, args)
-	case "clone":
-		err = cmdClone(ctx, args)
-	case "hook":
-		err = cmdHook(ctx, args)
-	case "notes":
-		err = cmdKnowledge(ctx, args)
-	case "compress":
-		err = cmdCompress(args)
-	case "compress-stdin":
-		err = cmdCompressStdin(args)
-	case "shell-hook":
-		err = cmdShellHook(args)
-	case "setup":
-		err = cmdSetup(ctx, args)
-	case "doctor":
-		err = cmdDoctor(ctx, args)
-	case "completion":
-		err = cmdCompletion(args)
-	case "bench":
-		err = runBench(ctx, args)
-	case "feedback":
-		err = runFeedback(ctx, args)
-	case "config":
-		err = cmdConfig(args)
-	case "version", "-V", "--version", "-v":
-		// -v/-V/--version as the top-level command map to `version` (#505).
-		// A bare `dex -v` is unambiguous here; the per-subcommand `-v`
-		// verbose flag (e.g. `dex find -v`) is parsed by each subcommand's
-		// own flagset and never reaches this switch.
-		fmt.Println(mcp.Version)
-		return
-	case "-h", "--help":
-		usageConcise()
-		return
-	case "help":
-		if len(args) > 0 && args[0] == "all" {
-			usageFull()
-		} else {
-			usageConcise()
-		}
-		return
-	default:
-		if hint, ok := mcpOnlyToolHint(cmd); ok {
-			fmt.Fprintln(os.Stderr, hint)
-			os.Exit(2)
-		}
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		usageConcise()
-		os.Exit(2)
-	}
+	err := dispatchCmd(ctx, cmd, args)
 	if err != nil {
 		// `-h` returns flag.ErrHelp via flag.ContinueOnError. The FlagSet
 		// already printed its usage block; suppress the redundant

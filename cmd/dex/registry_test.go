@@ -26,30 +26,36 @@ var metaCommands = map[string]bool{
 	"-v": true, "-V": true, "--version": true, "-h": true, "--help": true, "help": true,
 }
 
-// dispatchCases extracts every string literal in a `case "x":` clause of the
-// top-level switch inside func main(). This is the actual command surface the
-// binary responds to; the registry must mirror it exactly.
+// dispatchCases extracts every command string from main_dispatch.go: string
+// literals in `case "x":` clauses (version/help special cases) and string
+// keys in the dispatch map (`"cmd": handler`). This is the actual command
+// surface the binary responds to; the registry must mirror it exactly.
 func dispatchCases(t *testing.T) map[string]bool {
 	t.Helper()
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "main.go", nil, 0)
+	f, err := parser.ParseFile(fset, "main_dispatch.go", nil, 0)
 	if err != nil {
-		t.Fatalf("parse main.go: %v", err)
+		t.Fatalf("parse main_dispatch.go: %v", err)
 	}
 	cases := map[string]bool{}
 	ast.Inspect(f, func(n ast.Node) bool {
-		cc, ok := n.(*ast.CaseClause)
-		if !ok {
-			return true
-		}
-		for _, expr := range cc.List {
-			lit, ok := expr.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				continue
+		switch x := n.(type) {
+		case *ast.CaseClause:
+			for _, expr := range x.List {
+				lit, ok := expr.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					continue
+				}
+				if s, err := strconv.Unquote(lit.Value); err == nil {
+					cases[s] = true
+				}
 			}
-			s, err := strconv.Unquote(lit.Value)
-			if err == nil {
-				cases[s] = true
+		case *ast.KeyValueExpr:
+			lit, ok := x.Key.(*ast.BasicLit)
+			if ok && lit.Kind == token.STRING {
+				if s, err := strconv.Unquote(lit.Value); err == nil {
+					cases[s] = true
+				}
 			}
 		}
 		return true
