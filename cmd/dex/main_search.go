@@ -105,9 +105,16 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	}
 	switch *format {
 	case "json":
+		var lastIndexed time.Time
+		if stats, err := st.Stats(ctx); err == nil {
+			lastIndexed = stats.LastIndex
+		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(hitsToJSON(hits))
+		return enc.Encode(findJSONOutput{
+			Hits:     hitsToJSON(hits),
+			Envelope: buildFindEnvelope(hits, lastIndexed),
+		})
 	case "", "text":
 		for i, h := range hits {
 			loc := fmt.Sprintf("%s:%d-%d", h.Path, h.StartLine, h.EndLine)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/output"
 	"github.com/alehatsman/dex/internal/store"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -78,6 +79,54 @@ type LocateOutput struct {
 	LastAuthor string        `json:"last_author,omitempty"`
 	Notes      []LocatedFact `json:"notes,omitempty"`
 	Issues     []string      `json:"issues,omitempty"`
+
+	// Shared machine-readable contract (#816): confidence in the resolution,
+	// the line-level evidence span, index staleness, blast-radius risk flags,
+	// and suggested follow-ups — finalized on every return path.
+	output.Envelope
+}
+
+// finalizeLocateEnvelope fills the shared envelope from the resolved bundle and
+// the index's last-indexed time. It runs on every return path (deferred), so an
+// error / no-index / not-found response still carries a valid, low-confidence
+// contract rather than a zero envelope.
+func finalizeLocateEnvelope(out *LocateOutput, lastIndexed time.Time) {
+	switch out.Status {
+	case "ok":
+		out.Confidence = output.Confidence{
+			Level: output.LevelHigh,
+			Basis: []string{"symbol resolved from index"},
+		}
+		if out.Path != "" && out.StartLine > 0 {
+			end := out.EndLine
+			if end < out.StartLine {
+				end = out.StartLine
+			}
+			out.Evidence = []output.EvidenceSpan{{
+				Path: out.Path, Start: out.StartLine, End: end,
+				Symbol: out.Symbol, Kind: output.SpanExact,
+			}}
+		}
+		if out.Risk != "" {
+			out.RiskFlags = []string{"blast-radius: " + out.Risk}
+		}
+		out.Stale = output.AgeStale(lastIndexed)
+		if out.Symbol != "" {
+			out.NextCalls = []output.NextCall{{
+				Tool:   "trace",
+				Args:   out.Symbol + " --dir callees",
+				Reason: "follow what the resolved symbol calls",
+			}}
+		}
+	default:
+		// no-index / not-found / error: best-effort, no resolved span.
+		out.Confidence = output.Confidence{Level: output.LevelLow}
+		if out.Hint != "" {
+			out.Confidence.Gaps = []string{out.Hint}
+		}
+		out.Stale = output.AgeStale(lastIndexed)
+	}
+	out.Envelope.Normalize()
 }
 
 // Locate runs the locate verb for callers without an SDK request — the REST
@@ -88,7 +137,12 @@ func (s *Server) Locate(ctx context.Context, in LocateInput) (LocateOutput, erro
 	return out, err
 }
 
-func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateInput) (*sdk.CallToolResult, LocateOutput, error) {
+func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateInput) (ctr *sdk.CallToolResult, out LocateOutput, err error) {
+	// Finalize the shared envelope on every return path, including the early
+	// error/no-index exits below (#816).
+	var lastIndexed time.Time
+	defer func() { finalizeLocateEnvelope(&out, lastIndexed) }()
+
 	if strings.TrimSpace(in.Ref) == "" && strings.TrimSpace(in.Symbol) == "" && strings.TrimSpace(in.Frame) == "" {
 		return nil, LocateOutput{Status: "error", Hint: "locate needs one of: ref, symbol, frame", Callers: []CallSite{}}, nil
 	}
@@ -104,6 +158,9 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	if err != nil {
 		return nil, LocateOutput{Status: "error", Hint: fmt.Sprintf("open index: %v", err), Callers: []CallSite{}}, nil
 	}
+	if stats, serr := st.Stats(ctx); serr == nil {
+		lastIndexed = stats.LastIndex
+	}
 
 	k := in.K
 	if k <= 0 {
@@ -113,7 +170,7 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 		k = 30
 	}
 
-	out := LocateOutput{Status: "ok", Project: p.Root, Callers: []CallSite{}}
+	out = LocateOutput{Status: "ok", Project: p.Root, Callers: []CallSite{}}
 	res := s.resolveLocateTarget(ctx, st, p.Root, in)
 	if res.status != "ok" {
 		out.Status = res.status

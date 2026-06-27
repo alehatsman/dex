@@ -167,15 +167,7 @@ func cmdRead(ctx context.Context, args []string) error {
 	}
 
 	if *format == "json" {
-		rep := struct {
-			Path        string `json:"path"`
-			Mode        string `json:"mode"`
-			Start       int    `json:"start,omitempty"`
-			End         int    `json:"end,omitempty"`
-			TotalLines  int    `json:"total_lines"`
-			OutputLines int    `json:"output_lines"`
-			Content     string `json:"content"`
-		}{
+		rep := readJSONOutput{
 			Path:        path,
 			Mode:        resolved,
 			Start:       *start,
@@ -183,6 +175,7 @@ func cmdRead(ctx context.Context, args []string) error {
 			TotalLines:  len(fullLines),
 			OutputLines: strings.Count(content, "\n") + 1,
 			Content:     content,
+			Envelope:    buildReadEnvelope(path, resolved, *start, *end, len(fullLines)),
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
