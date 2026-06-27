@@ -103,6 +103,20 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		return fmt.Errorf("seen time: %w", err)
 	}
 
+	// If the previous run's indexing marker is still present it means that run
+	// was interrupted mid-flight (e.g. an exec-reload via SIGUSR1 killed the
+	// process before it could defer-clear the marker). A partial run leaves
+	// some files with incomplete chunk sets — touching those chunks via the
+	// mtime fast-path would preserve the partial state. Force a full reindex
+	// by clearing lastIndexedAt so no file qualifies for the mtime fast-path
+	// this run (#806).
+	if inProg, _ := ix.Store.IndexingInProgress(ctx); inProg {
+		ix.Options.Logger.Info("index: detected interrupted previous run — forcing full reindex to repair partial chunks (#806)")
+		if cerr := ix.Store.ClearLastIndexedAt(ctx); cerr != nil {
+			ix.Options.Logger.Warn("index: could not clear lastIndexedAt after interrupted run", "err", cerr)
+		}
+	}
+
 	// Publish an "indexing in progress" marker so concurrent readers (e.g. a
 	// `dex serve` daemon on the same DB) can warn that results are partial
 	// rather than serving a half-rebuilt index as authoritative (#531).

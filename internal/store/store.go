@@ -381,6 +381,15 @@ func (s *Store) FileTree(ctx context.Context, prefix string) ([]FileEntry, error
 	return out, rows.Err()
 }
 
+// ClearLastIndexedAt removes the last-indexed timestamp, causing the next
+// Run to treat no mtime fast-path as valid and perform a full slow-path
+// reindex. Used to recover from an interrupted index run (#806).
+func (s *Store) ClearLastIndexedAt(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM meta WHERE key='`+metaLastIndexedAt+`'`)
+	return err
+}
+
 // SetLastIndexedAt records the wall-clock time of the most recent
 // successful (full or incremental) re-index.
 func (s *Store) SetLastIndexedAt(ctx context.Context, t time.Time) error {
