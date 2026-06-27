@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 )
@@ -41,17 +40,6 @@ type KnowledgeRelation struct {
 	Strength  float64 // saturates at 1.0 via Hebbian update
 	Count     int     // times the edge was explicitly reinforced
 	CreatedAt time.Time
-}
-
-// hebbianReinforce computes the updated strength after one reinforcement.
-// Uses the saturating formula: s' = s + α*(1-s), α=0.1.
-// A fresh edge starts at strength=1.0 (max); reinforcing it is a no-op beyond
-// the first time since it's already at the ceiling. The formula is here for
-// future use when we initialise edges at lower strengths.
-func hebbianReinforce(current float64) float64 {
-	const alpha = 0.1
-	next := current + alpha*(1-current)
-	return math.Min(next, 1.0)
 }
 
 // KnowledgeRelate creates an edge from→to of the given kind, or reinforces

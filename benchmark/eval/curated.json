@@ -1,6 +1,6 @@
 {
   "repo": "dex",
-  "head": "c4be5bbe2cf631965f969c88f011fc65f390e639",
+  "head": "cc80a9e",
   "gen_opts": {
     "max_commits": 0,
     "max_files": 0
@@ -9,79 +9,182 @@
     {
       "id": "c01",
       "query": "how does dex watch files for changes",
-      "relevant_files": [
-        "internal/watch/watch.go",
-        "specs/watch.md"
-      ]
+      "relevant_files": ["internal/watch/watch.go", "specs/watch.md"],
+      "class": "behavior"
     },
     {
       "id": "c02",
       "query": "where does Store.Search fuse BM25 and cosine scores",
-      "relevant_files": [
-        "internal/store/store_search.go",
-        "internal/store/store.go"
-      ]
+      "relevant_files": ["internal/store/store_search.go", "internal/store/store.go"],
+      "class": "behavior"
     },
     {
       "id": "c03",
       "query": "how does the eval golden set get mined from git history",
-      "relevant_files": [
-        "internal/eval/golden.go"
-      ]
+      "relevant_files": ["internal/eval/golden.go"],
+      "class": "behavior"
     },
     {
       "id": "c04",
       "query": "how does the chunker split source files into indexed chunks",
-      "relevant_files": [
-        "internal/chunk/chunk.go",
-        "internal/chunk/chunk_lang.go"
-      ]
+      "relevant_files": ["internal/chunk/chunk.go", "internal/chunk/chunk_lang.go"],
+      "class": "behavior"
     },
     {
       "id": "c05",
       "query": "how does dex rerank search results with a cross-encoder",
-      "relevant_files": [
-        "internal/rerank/client.go"
-      ]
+      "relevant_files": ["internal/rerank/client.go"],
+      "class": "behavior"
     },
     {
       "id": "c06",
-      "query": "where does the ask verb build its retrieval context",
-      "relevant_files": [
-        "internal/mcp/context.go",
-        "internal/mcp/server.go"
-      ]
+      "query": "how does contextRouter compose retrieval lanes for an ask query",
+      "relevant_files": ["internal/mcp/context.go"],
+      "class": "behavior"
     },
     {
       "id": "c07",
       "query": "how does dex acquire the per-project lock to prevent concurrent indexing",
-      "relevant_files": [
-        "cmd/dex/main_lock.go",
-        "internal/lock/lock.go"
-      ]
+      "relevant_files": ["cmd/dex/main_lock.go", "internal/lock/lock.go"],
+      "class": "behavior"
     },
     {
       "id": "c08",
       "query": "how does dex compute PageRank scores for graph nodes",
-      "relevant_files": [
-        "internal/graph/centrality.go"
-      ]
+      "relevant_files": ["internal/graph/centrality.go"],
+      "class": "behavior"
     },
     {
       "id": "c09",
       "query": "how does the file indexer walk and embed chunks",
-      "relevant_files": [
-        "internal/index/index.go"
-      ]
+      "relevant_files": ["internal/index/index.go"],
+      "class": "behavior"
     },
     {
       "id": "c10",
       "query": "how does the proxy track token usage and prune messages",
-      "relevant_files": [
-        "cmd/dex/proxy.go",
-        "internal/proxy/proxy.go",
-        "internal/proxy/prune.go"
-      ]
+      "relevant_files": ["cmd/dex/proxy.go", "internal/proxy/proxy.go", "internal/proxy/prune.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c11",
+      "query": "where is EvalManifest defined",
+      "relevant_files": ["internal/eval/manifest.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c12",
+      "query": "where is GoldenQuery defined",
+      "relevant_files": ["internal/eval/golden.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c13",
+      "query": "where is the FusionLinear constant defined",
+      "relevant_files": ["internal/store/store.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c14",
+      "query": "where is ExtractGo defined",
+      "relevant_files": ["internal/graph/go.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c15",
+      "query": "where is feedbackEvent defined",
+      "relevant_files": ["cmd/dex/feedback.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c16",
+      "query": "where is ResolveIntent defined",
+      "relevant_files": ["internal/retrieve/intent.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c17",
+      "query": "where is IndexableExt defined",
+      "relevant_files": ["internal/ignore/ignore.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c18",
+      "query": "how does dex handle schema migrations and version bumps",
+      "relevant_files": ["internal/store/store_migrate.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c19",
+      "query": "how does the graph extractor build call edges for Go source files",
+      "relevant_files": ["internal/graph/go.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c20",
+      "query": "how does dex expand a query using hypothetical document answers",
+      "relevant_files": ["internal/retrieve/expand.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c21",
+      "query": "how does the rerank circuit breaker handle cross-encoder failures",
+      "relevant_files": ["internal/rerank/breaker.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c22",
+      "query": "how does the submodular selection algorithm pick files to inline",
+      "relevant_files": ["internal/retrieve/submodular.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c23",
+      "query": "how does dex summarize source files on demand",
+      "relevant_files": ["cmd/dex/main_summarize.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c24",
+      "query": "how does the proxy detect cold prefix messages and trigger repacking",
+      "relevant_files": ["internal/proxy/cold_prefix.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c25",
+      "query": "how does the check verb verify symbol or file references",
+      "relevant_files": ["cmd/dex/check.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c26",
+      "query": "how does the cohort verb find all implementors of an interface",
+      "relevant_files": ["cmd/dex/cohort.go", "internal/mcp/server_cohort.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c27",
+      "query": "how does the MCP server register tools and route incoming requests",
+      "relevant_files": ["internal/mcp/server.go"],
+      "class": "architecture"
+    },
+    {
+      "id": "c28",
+      "query": "how does the index walk a project directory and emit chunks to the store",
+      "relevant_files": ["internal/index/index.go", "cmd/dex/main_index.go"],
+      "class": "behavior"
+    },
+    {
+      "id": "c29",
+      "query": "where is Store.SeenTime defined",
+      "relevant_files": ["internal/store/store.go"],
+      "class": "symbol"
+    },
+    {
+      "id": "c30",
+      "query": "how does the retrieval service compose multiple search lanes",
+      "relevant_files": ["internal/retrieve/service.go"],
+      "class": "architecture"
     }
   ]
 }

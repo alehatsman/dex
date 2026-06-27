@@ -1,26 +1,26 @@
 {
   "k": 10,
-  "n": 10,
-  "mean_ndcg": 0.6405286937115809,
-  "mean_recall": 0.9,
-  "mean_recall_pool": 1,
-  "mrr": 0.645,
+  "n": 30,
+  "mean_ndcg": 0.7561032750371782,
+  "mean_recall": 0.95,
+  "mean_recall_pool": 0.9666666666666667,
+  "mrr": 0.7383333333333333,
   "by_type": {
     "architecture": {
       "k": 10,
-      "n": 8,
-      "mean_ndcg": 0.6670668243453614,
-      "mean_recall": 0.9375,
-      "mean_recall_pool": 1,
-      "mrr": 0.6562499999999999
+      "n": 29,
+      "mean_ndcg": 0.7535015041907491,
+      "mean_recall": 0.9482758620689655,
+      "mean_recall_pool": 0.9655172413793104,
+      "mrr": 0.729310344827586
     },
     "nl": {
       "k": 10,
-      "n": 2,
-      "mean_ndcg": 0.5343761711764594,
-      "mean_recall": 0.75,
+      "n": 1,
+      "mean_ndcg": 0.8315546295836226,
+      "mean_recall": 1,
       "mean_recall_pool": 1,
-      "mrr": 0.6
+      "mrr": 1
     }
   },
   "queries": [
@@ -38,16 +38,17 @@
         "cmd/dex/main_watch.go",
         "internal/watch/watch.go",
         "cmd/dex/main_mcp.go",
+        "cmd/dex/main_usage.go",
         "specs/mcp-server.md",
         "docs/architecture.md",
-        "cmd/dex/main_usage.go",
-        "cmd/dex/eval.go"
+        "specs/ignore.md"
       ],
       "ndcg": 0.8503449055347547,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture"
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c02",
@@ -72,7 +73,8 @@
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "nl"
+      "type": "nl",
+      "class": "behavior"
     },
     {
       "id": "c03",
@@ -96,7 +98,8 @@
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture"
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c04",
@@ -121,7 +124,8 @@
       "recall": 0.5,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture"
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c05",
@@ -145,32 +149,33 @@
       "recall": 1,
       "recall_pool": 1,
       "rr": 0.16666666666666666,
-      "type": "architecture"
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c06",
-      "query": "where does the ask verb build its retrieval context",
+      "query": "how does contextRouter compose retrieval lanes for an ask query",
       "relevant": [
-        "internal/mcp/context.go",
-        "internal/mcp/server.go"
+        "internal/mcp/context.go"
       ],
       "ranked_files": [
         "specs/ask.md",
-        "specs/mcp-server.md",
         "cmd/dex/main_ask.go",
+        "specs/mcp-server.md",
         "internal/retrieve/intent.go",
+        "specs/symbol-search.md",
         "internal/mcp/context.go",
-        "internal/mcp/verbs.go",
-        "internal/retrieve/answer.go",
-        "internal/eval/faithfulness.go",
-        "internal/retrieve/expand.go",
-        "cmd/dex/hook_observe_feedback.go"
+        "cmd/dex/eval.go",
+        "internal/mcp/server_degrade_chat_test.go",
+        "internal/bench/compress/corpus.go",
+        "internal/mcp/enrich.go"
       ],
-      "ndcg": 0.23719771276929624,
-      "recall": 0.5,
+      "ndcg": 0.3562071871080222,
+      "recall": 1,
       "recall_pool": 1,
-      "rr": 0.2,
-      "type": "nl"
+      "rr": 0.16666666666666666,
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c07",
@@ -181,21 +186,22 @@
       ],
       "ranked_files": [
         "cmd/dex/main_lock.go",
-        "specs/indexing.md",
+        "specs/constitution.md",
+        "cmd/dex/main_usage.go",
+        "specs/storage.md",
+        "docs/architecture.md",
         "cmd/dex/main_clients.go",
         "internal/lock/lock.go",
-        "docs/architecture.md",
-        "specs/storage.md",
-        "specs/mcp-server.md",
-        "docs/config.md",
-        "cmd/dex/env.go",
-        "specs/watch.md"
+        "specs/watch.md",
+        "cmd/dex/main_manage.go",
+        "specs/multi-repo-ask.md"
       ],
-      "ndcg": 0.8772153153380494,
+      "ndcg": 0.8175295903539446,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture"
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c08",
@@ -204,7 +210,6 @@
         "internal/graph/centrality.go"
       ],
       "ranked_files": [
-        "internal/eval/skew/skew.go",
         "docs/architecture.md",
         "specs/graph.md",
         "internal/graph/centrality.go",
@@ -213,13 +218,15 @@
         "specs/semantic-search.md",
         "cmd/dex/bench_skew.go",
         "internal/graph/centrality_test.go",
-        "internal/graphquery/view.go"
+        "internal/graphquery/view.go",
+        "internal/mcp/context_test.go"
       ],
-      "ndcg": 0.43067655807339306,
+      "ndcg": 0.5,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.25,
-      "type": "architecture"
+      "rr": 0.3333333333333333,
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c09",
@@ -228,22 +235,23 @@
         "internal/index/index.go"
       ],
       "ranked_files": [
-        "specs/indexing.md",
         "internal/index/index.go",
+        "specs/indexing.md",
+        "specs/storage.md",
         "docs/architecture.md",
-        "internal/index/index_test.go",
+        "cmd/dex/main_usage.go",
         "cmd/dex/main_index.go",
-        "cmd/dex/main_config.go",
-        "specs/semantic-search.md",
-        "specs/watch.md",
-        "specs/embedding.md",
-        "internal/index/degradation_test.go"
+        "internal/chunk/chunk.go",
+        "specs/review.md",
+        "internal/store/store_search.go",
+        "specs/watch.md"
       ],
-      "ndcg": 0.6309297535714574,
+      "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.5,
-      "type": "architecture"
+      "rr": 1,
+      "type": "architecture",
+      "class": "behavior"
     },
     {
       "id": "c10",
@@ -255,30 +263,533 @@
       ],
       "ranked_files": [
         "specs/proxy.md",
+        "internal/proxy/prune.go",
+        "internal/proxy/usage.go",
+        "internal/proxy/proxy.go",
+        "internal/proxy/overprune.go",
+        "internal/proxy/metrics.go",
+        "cmd/dex/proxy.go",
+        "internal/proxy/cache.go",
+        "internal/proxy/baseline.go",
+        "internal/tokens/tokens.go"
+      ],
+      "ndcg": 0.6546154994739983,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.5,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c11",
+      "query": "where is EvalManifest defined",
+      "relevant": [
+        "internal/eval/manifest.go"
+      ],
+      "ranked_files": [
+        "internal/eval/manifest.go",
+        "cmd/dex/eval.go",
+        "internal/eval/corpus/manifest.go",
+        "tasks.yml",
+        "cmd/dex/main_usage.go",
+        "cmd/dex/doctor.go",
+        "internal/retrieve/answer.go",
+        "internal/eval/report.go",
+        "internal/eval/metrics.go",
+        "cmd/dex/env.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c12",
+      "query": "where is GoldenQuery defined",
+      "relevant": [
+        "internal/eval/golden.go"
+      ],
+      "ranked_files": [
+        "internal/eval/golden.go",
+        "internal/eval/cochange/cochange.go",
+        "cmd/dex/eval.go",
+        "cmd/dex/feedback.go",
+        "internal/eval/orphan.go",
+        "internal/store/store_search.go",
+        "internal/bench/nav/nav.go",
+        "internal/eval/runner.go",
+        "internal/eval/blastradius.go",
+        "internal/eval/manifest.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c13",
+      "query": "where is the FusionLinear constant defined",
+      "relevant": [
+        "internal/store/store.go"
+      ],
+      "ranked_files": [
+        "internal/store/store.go",
+        "cmd/dex/main_config.go",
+        "internal/store/calibration.yml",
+        "internal/store/store_search.go",
+        "internal/store/calibration.go",
+        "cmd/dex/eval.go",
+        "internal/store/store_graph_fusion.go",
+        "specs/multi-repo-ask.md",
+        "tasks.yml",
+        "internal/eval/trace/trace.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c14",
+      "query": "where is ExtractGo defined",
+      "relevant": [
+        "internal/graph/go.go"
+      ],
+      "ranked_files": [
+        "internal/graph/go.go",
+        "internal/graph/graph.go",
+        "internal/source/imports.go",
+        "internal/graph/sitter_java.go",
+        "internal/graph/sitter_python.go",
+        "internal/graph/sitter.go",
+        "internal/chunk/chunk_summary.go",
+        "internal/graph/sitter_rust.go",
+        "internal/mcp/server_review.go",
+        "internal/compress/go_imports.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c15",
+      "query": "where is feedbackEvent defined",
+      "relevant": [
+        "cmd/dex/feedback.go"
+      ],
+      "ranked_files": [
+        "cmd/dex/feedback.go",
+        "cmd/dex/feedback_test.go",
+        "internal/compress/adaptive.go",
         "internal/proxy/proxy_test.go",
+        "cmd/dex/hook_observe_feedback.go",
+        "cmd/dex/hook_observe.go",
+        "cmd/dex/registry.go",
+        "specs/hook.md",
+        "internal/proxy/budgetlog.go",
+        "internal/compress/adaptive_test.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c16",
+      "query": "where is ResolveIntent defined",
+      "relevant": [
+        "internal/retrieve/intent.go"
+      ],
+      "ranked_files": [
+        "internal/retrieve/intent.go",
+        "internal/graph/sitter_python.go",
+        "internal/compress/adaptive.go",
+        "internal/graph/sitter_java.go",
+        "internal/graph/sitter_rust.go",
+        "internal/mcp/context.go",
+        "internal/mcp/server_locate.go",
+        "internal/retrieve/graph.go",
+        "internal/graph/sitter_jsts.go",
+        "internal/retrieve/response.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c17",
+      "query": "where is IndexableExt defined",
+      "relevant": [
+        "internal/ignore/ignore.go"
+      ],
+      "ranked_files": [
+        "cmd/dex/main_usage.go",
+        "internal/compress/adaptive.go",
+        "specs/indexing.md",
+        "specs/constitution.md",
+        "specs/review.md",
+        "cmd/dex/doctor.go",
+        "cmd/dex/registry.go",
+        "specs/ignore.md",
+        "cmd/dex/main_manage.go",
+        "docs/architecture.md"
+      ],
+      "ndcg": 0,
+      "recall": 0,
+      "recall_pool": 0,
+      "rr": 0,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c18",
+      "query": "how does dex handle schema migrations and version bumps",
+      "relevant": [
+        "internal/store/store_migrate.go"
+      ],
+      "ranked_files": [
+        "internal/store/store_migrate.go",
+        "cmd/dex/setup.go",
+        "internal/store/store.go",
+        "cmd/dex/main_usage.go",
+        "specs/hook.md",
+        "docs/architecture.md",
+        "README.md",
+        "specs/constitution.md",
+        "tasks.yml",
+        "specs/storage.md"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c19",
+      "query": "how does the graph extractor build call edges for Go source files",
+      "relevant": [
+        "internal/graph/go.go"
+      ],
+      "ranked_files": [
+        "internal/graph/go.go",
+        "specs/graph.md",
+        "cmd/dex/graph.go",
+        "internal/graph/sitter.go",
+        "internal/graph/sitter_java.go",
+        "internal/graph/graph.go",
+        "docs/architecture.md",
+        "internal/mcp/server_graph_calls.go",
+        "internal/eval/cochange/cochange.go",
+        "internal/retrieve/graph.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c20",
+      "query": "how does dex expand a query using hypothetical document answers",
+      "relevant": [
+        "internal/retrieve/expand.go"
+      ],
+      "ranked_files": [
+        "internal/mcp/context.go",
+        "internal/retrieve/expand.go",
+        "cmd/dex/main_ask.go",
+        "cmd/dex/eval.go",
+        "cmd/dex/env.go",
+        "docs/config.md",
+        "cmd/dex/main_clients.go",
+        "specs/semantic-search.md",
+        "docs/tools.md",
+        "cmd/dex/expand_nil_test.go"
+      ],
+      "ndcg": 0.6309297535714574,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.5,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c21",
+      "query": "how does the rerank circuit breaker handle cross-encoder failures",
+      "relevant": [
+        "internal/rerank/breaker.go"
+      ],
+      "ranked_files": [
+        "specs/semantic-search.md",
+        "internal/rerank/breaker.go",
+        "tasks.yml",
+        "internal/retrieve/rerank.go",
+        "internal/rerank/client.go",
+        "internal/bench/compress/corpus.go",
+        "internal/store/calibration.yml",
+        "cmd/dex/main_clients.go",
+        "internal/embed/breaker.go",
+        "docs/architecture.md"
+      ],
+      "ndcg": 0.6309297535714574,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.5,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c22",
+      "query": "how does the submodular selection algorithm pick files to inline",
+      "relevant": [
+        "internal/retrieve/submodular.go"
+      ],
+      "ranked_files": [
+        "internal/retrieve/submodular.go",
+        "internal/retrieve/inline.go",
+        "tasks.yml",
+        "internal/mcp/server_summarize_analyze.go",
+        "internal/mcp/context_inline.go",
+        "internal/mcp/server_summarize.go",
+        "cmd/dex/main_usage.go",
+        "internal/bench/compress/corpus.go",
+        "internal/store/store_search.go",
+        "internal/mcp/compress_quality.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c23",
+      "query": "how does dex summarize source files on demand",
+      "relevant": [
+        "cmd/dex/main_summarize.go"
+      ],
+      "ranked_files": [
+        "cmd/dex/main_usage.go",
+        "internal/mcp/server_summarize_ref.go",
+        "internal/store/store_migrate.go",
+        "cmd/dex/main_summarize.go",
+        "docs/tools.md",
+        "README.md",
+        "cmd/dex/registry.go",
+        "cmd/dex/setup.go",
+        "specs/constitution.md",
+        "specs/mcp-server.md"
+      ],
+      "ndcg": 0.43067655807339306,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.25,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c24",
+      "query": "how does the proxy detect cold prefix messages and trigger repacking",
+      "relevant": [
+        "internal/proxy/cold_prefix.go"
+      ],
+      "ranked_files": [
+        "internal/proxy/cold_prefix.go",
+        "specs/proxy.md",
+        "internal/proxy/metrics.go",
+        "internal/proxy/overprune.go",
+        "internal/proxy/prune.go",
         "cmd/dex/proxy.go",
         "internal/proxy/proxy.go",
-        "cmd/dex/doctor.go",
-        "internal/proxy/metrics.go",
-        "internal/proxy/usage_test.go",
-        "internal/proxy/prune_test.go",
-        "internal/proxy/prune.go",
-        "internal/proxy/cache.go"
+        "internal/proxy/cache.go",
+        "internal/proxy/baseline.go",
+        "cmd/dex/doctor.go"
       ],
-      "ndcg": 0.578013682371755,
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c25",
+      "query": "how does the check verb verify symbol or file references",
+      "relevant": [
+        "cmd/dex/check.go"
+      ],
+      "ranked_files": [
+        "internal/mcp/server.go",
+        "cmd/dex/registry.go",
+        "internal/mcp/server_check.go",
+        "internal/mcp/server_refs.go",
+        "cmd/dex/check.go",
+        "internal/mcp/server_verify.go",
+        "specs/mcp-server.md",
+        "specs/refs.md",
+        "README.md",
+        "cmd/dex/main_usage.go"
+      ],
+      "ndcg": 0.38685280723454163,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.2,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c26",
+      "query": "how does the cohort verb find all implementors of an interface",
+      "relevant": [
+        "cmd/dex/cohort.go",
+        "internal/mcp/server_cohort.go"
+      ],
+      "ranked_files": [
+        "cmd/dex/cohort.go",
+        "internal/cohesion/cohesion.go",
+        "internal/mcp/server.go",
+        "specs/refs.md",
+        "docs/design/604-lsp-symbol-queries.md",
+        "internal/mcp/server_refs.go",
+        "internal/mcp/server_cohort.go",
+        "internal/graphquery/traverse.go",
+        "cmd/dex/main_usage.go",
+        "internal/symbols/symbols.go"
+      ],
+      "ndcg": 0.8175295903539446,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c27",
+      "query": "how does the MCP server register tools and route incoming requests",
+      "relevant": [
+        "internal/mcp/server.go"
+      ],
+      "ranked_files": [
+        "specs/mcp-server.md",
+        "cmd/dex/main_mcp.go",
+        "specs/http-api.md",
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_graph.go",
+        "cmd/dex/registry.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server_attention.go",
+        "internal/mcp/server_routes.go"
+      ],
+      "ndcg": 0.38685280723454163,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.2,
+      "type": "architecture",
+      "class": "architecture"
+    },
+    {
+      "id": "c28",
+      "query": "how does the index walk a project directory and emit chunks to the store",
+      "relevant": [
+        "internal/index/index.go",
+        "cmd/dex/main_index.go"
+      ],
+      "ranked_files": [
+        "internal/index/index.go",
+        "internal/store/store_migrate.go",
+        "cmd/dex/main_index.go",
+        "cmd/dex/main_manage.go",
+        "internal/store/store.go",
+        "specs/storage.md",
+        "specs/watch.md",
+        "cmd/dex/main_usage.go",
+        "docs/architecture.md",
+        "cmd/dex/doctor.go"
+      ],
+      "ndcg": 0.9197207891481877,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "behavior"
+    },
+    {
+      "id": "c29",
+      "query": "where is Store.SeenTime defined",
+      "relevant": [
+        "internal/store/store.go"
+      ],
+      "ranked_files": [
+        "internal/store/store.go",
+        "internal/store/store_graph.go",
+        "internal/graph/persist.go",
+        "internal/mcp/seen.go",
+        "internal/store/store_knowledge.go",
+        "internal/store/store_coaccess.go",
+        "internal/mcp/server_review.go",
+        "internal/throttle/throttle.go",
+        "internal/retrieve/answer.go",
+        "internal/store/store_search.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture",
+      "class": "symbol"
+    },
+    {
+      "id": "c30",
+      "query": "how does the retrieval service compose multiple search lanes",
+      "relevant": [
+        "internal/retrieve/service.go"
+      ],
+      "ranked_files": [
+        "internal/retrieve/intent.go",
+        "internal/mcp/context_lanes.go",
+        "internal/retrieve/service.go",
+        "specs/ask.md",
+        "internal/store/store_search.go",
+        "internal/store/store.go",
+        "specs/symbol-search.md",
+        "internal/mcp/server_search.go",
+        "internal/bench/compress/corpus.go",
+        "internal/mcp/context.go"
+      ],
+      "ndcg": 0.5,
       "recall": 1,
       "recall_pool": 1,
       "rr": 0.3333333333333333,
-      "type": "architecture"
+      "type": "architecture",
+      "class": "architecture"
     }
   ],
   "manifest": {
     "schema_version": 2,
     "golden_mode": "curated",
-    "golden_sha256": "1115e78f02d1105435ef0b85aa9880d28eae1c6e8046f50a649d556ea82e9b01",
-    "golden_head": "c4be5bbe2cf631965f969c88f011fc65f390e639",
-    "repo_head": "0836c57cd3beba2322a373c4c5b6e8a66bad046a",
-    "query_set_sha256": "711195af3618056ce044eb8c160f771def701054862e723c357a97b50f5ef000",
+    "golden_sha256": "2f4b58538af52cf2a6404fea9836ebfc1cfbefe7cb4a3e14dc1ac77cff41b555",
+    "golden_head": "cc80a9e",
+    "repo_head": "aa33982c6e1f50540623c473dcc0f3f206579ad4",
+    "query_set_sha256": "aa512fe2a749cd489b8834785aee5e9313911f041b519e029f1539dda08ab320",
     "lane": "full",
     "embed_model": "qwen3-embedding:0.6b",
     "embed_dim": 1024,
