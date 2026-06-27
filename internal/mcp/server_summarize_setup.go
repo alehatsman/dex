@@ -21,12 +21,13 @@ import (
 // escalateOnBounce re-escalates a compressed read to the complete view when the
 // bounce tracker detects the agent re-reading the same file (#98): the LLM
 // summary when a chat model is wired, else the raw full file. Already-complete
-// modes (full/summary) are left untouched. `skeleton` is deterministic by
-// contract (no chat model), so it escalates to raw `full`, never an LLM summary
-// (#483). `analyze` is a meta-mode (token-cost comparison, no file content)
-// that must never call the LLM regardless of bounce history (#752). `map` is
-// an explicit index view (imports+exports), never a compressed substitute for
-// full content — bouncing it to LLM summary violates the mode contract (#802).
+// modes (full/summary) are left untouched. `signatures` and `skeleton` are
+// deterministic by contract (no chat model), so they escalate to raw `full`,
+// never an LLM summary (#483, #807). `analyze` is a meta-mode (token-cost
+// comparison, no file content) that must never call the LLM regardless of
+// bounce history (#752). `map` is an explicit index view (imports+exports),
+// never a compressed substitute for full content — bouncing it to LLM summary
+// violates the mode contract (#802).
 func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string, mode ReadMode, isLLM bool) (ReadMode, bool) {
 	if !bt.shouldForceFull(sessionID, relTarget) || mode.IsComplete() {
 		return mode, isLLM
@@ -34,7 +35,7 @@ func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string
 	if mode == ReadModeAnalyze || mode == ReadModeMap {
 		return mode, isLLM
 	}
-	if mode == ReadModeSkeleton {
+	if mode == ReadModeSignatures || mode == ReadModeSkeleton {
 		return ReadModeFull, false
 	}
 	if s.ChatClient != nil {

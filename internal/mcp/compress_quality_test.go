@@ -96,6 +96,30 @@ func TestEscalateOnBounce_MapNeverPromotedToLLM(t *testing.T) {
 	}
 }
 
+func TestEscalateOnBounce_SignaturesNeverPromotedToLLM(t *testing.T) {
+	// mode=signatures must never be escalated to summary (LLM) on bounce
+	// (#807, residual of #802). signatures is a deterministic index view
+	// (signatures + source lines, no chat model) — like skeleton it escalates
+	// to raw full, never an LLM summary. Wire a chat client so the fall-through
+	// path would escalate; verify signatures goes to full instead.
+	bt := newBounceTracker()
+	bt.recordCompressed("s1", "store.go")
+	bt.recordRead("s1", "store.go") // triggers shouldForceFull
+
+	chatSrv := fakeChat(t, "should not be called")
+	defer chatSrv.Close()
+	srv := newServer("http://127.0.0.1:1", t.TempDir())
+	srv.ChatClient = chat.New(chatSrv.URL, "fake", 30*time.Second)
+
+	mode, isLLM := srv.escalateOnBounce(bt, "s1", "store.go", ReadModeSignatures, false)
+	if mode != ReadModeFull {
+		t.Errorf("want ReadModeFull, got %s", mode)
+	}
+	if isLLM {
+		t.Error("signatures bounce must not set isLLM=true")
+	}
+}
+
 func TestSelectAffordableMode_NoBudget(t *testing.T) {
 	// No budget = no downgrade.
 	got := selectAffordableMode(ReadModeFull, 10000, 0)
