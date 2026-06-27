@@ -101,6 +101,55 @@ func TestRecordShadowWritesWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestApplyLiveReweightIsIdentityWhenOff(t *testing.T) {
+	t.Setenv("DEX_FEEDBACK_LIVE", "")
+	s := &Server{}
+	hits := []SemHit{
+		{Path: "a.go", Score: 1.0, Lanes: []string{"vector", "bm25"}},
+		{Path: "b.go", Score: 0.9, Lanes: []string{"vector"}},
+	}
+	got := s.applyLiveReweight("behavior_search", hits)
+	if got[0].Path != "a.go" || got[1].Path != "b.go" {
+		t.Errorf("live-off should preserve order, got %s,%s", got[0].Path, got[1].Path)
+	}
+}
+
+func TestApplyLiveReweightReordersWithSignal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("DEX_FEEDBACK_LIVE", "1")
+	t.Setenv("DEX_FEEDBACK_SHADOW", "") // live-only: throttle built, no shadow log
+
+	logDir := filepath.Join(dir, "dex")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 100 ask events with no opens = total miss at high n → strong reweight signal.
+	f, err := os.Create(filepath.Join(logDir, "hooks.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := []byte(`{"tool_name":"mcp__dex__ask","intent":"behavior_search","paths":["x.go"]}` + "\n")
+	for i := 0; i < 100; i++ {
+		if _, err := f.Write(line); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	s := &Server{}
+	hits := []SemHit{
+		{Path: "single.go", Score: 1.00, Lanes: []string{"vector"}},
+		{Path: "agree.go", Score: 0.95, Lanes: []string{"vector", "bm25"}},
+	}
+	got := s.applyLiveReweight("behavior_search", hits)
+	// Total miss at high n → cross-lane hit promoted above single-lane.
+	if got[0].Path != "agree.go" {
+		t.Errorf("live reweight should promote cross-lane hit, got %s first", got[0].Path)
+	}
+}
+
 func TestTopPathsDedupsDistinctFiles(t *testing.T) {
 	// Several chunk hits of the same file must collapse to one top-k slot (#743).
 	hits := []SemHit{

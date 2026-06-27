@@ -11,37 +11,43 @@ import (
 )
 
 // feedbackState is the in-process "throttle" substrate (#731): a live reader
-// over the observe log plus a shadow logger. The reader turns the gauge `dex
-// feedback` computes offline into a signal resident in the server process; the
-// shadow logger records what the fused ranking WOULD be under a lane-agreement
-// reweight, alongside the served ranking, for A/B.
+// over the observe log plus an optional shadow logger. The reader turns the
+// gauge `dex feedback` computes offline into a signal resident in the server.
 //
-// It NEVER changes what ask serves. The reweight stays in shadow until a
-// measured open-rate win clears the data gate the issue records — the whole
-// point is to gather that evidence before flipping any default. Everything here
-// is gated behind DEX_FEEDBACK_SHADOW=1 and is a zero-cost no-op when off.
+// Two gates:
+//   - DEX_FEEDBACK_SHADOW=1: log static-vs-reweighted ranking per ask (A/B).
+//   - DEX_FEEDBACK_LIVE=1:   actually serve the reweighted hits (#783, data
+//     gate cleared 2026-06-27: nDCG non-regression confirmed, shadow WIN-CANDIDATE).
+//
+// Both are zero-cost no-ops when off. Shadow logging continues in live mode so
+// dex feedback --shadow keeps tracking static-vs-reweighted as a regression
+// check after the flip.
 type feedbackState struct {
 	fbOnce     sync.Once
 	fbThrottle *feedback.Throttle
 	fbShadow   *shadowLogger
 }
 
-// shadowEnabled reports whether shadow-mode feedback reweighting is on. Off by
-// default: the default ask path never builds the reader or touches the log.
+// shadowEnabled reports whether shadow-mode A/B logging is on.
 func shadowEnabled() bool { return os.Getenv("DEX_FEEDBACK_SHADOW") == "1" }
 
-// feedbackThrottle lazily builds the live reader + shadow logger on first use
-// when shadow mode is on, and returns (nil, nil) otherwise so callers can skip
-// the whole path with one cheap branch.
+// liveEnabled reports whether the lane-agreement reweight is served to callers.
+func liveEnabled() bool { return os.Getenv("DEX_FEEDBACK_LIVE") == "1" }
+
+// feedbackThrottle lazily builds the live reader (and shadow logger when shadow
+// is on) on first use when either shadow or live mode is active. Returns
+// (nil, nil) when both are off so callers can skip the whole path cheaply.
 func (s *Server) feedbackThrottle() (*feedback.Throttle, *shadowLogger) {
-	if !shadowEnabled() {
+	if !shadowEnabled() && !liveEnabled() {
 		return nil, nil
 	}
 	s.fbOnce.Do(func() {
 		if lp := feedback.DefaultLogPath(); lp != "" {
 			s.fbThrottle = feedback.NewThrottle(lp, 0, 30*time.Second)
 		}
-		s.fbShadow = newShadowLogger(feedback.DefaultShadowLogPath())
+		if shadowEnabled() {
+			s.fbShadow = newShadowLogger(feedback.DefaultShadowLogPath())
+		}
 	})
 	return s.fbThrottle, s.fbShadow
 }
@@ -85,6 +91,22 @@ func (s *Server) recordShadow(intent, question string, hits []SemHit) {
 	}
 	rec.Reordered = rec.MaxRankShift > 0
 	logger.append(rec)
+}
+
+// applyLiveReweight returns hits re-scored by the live lane-agreement signal
+// when DEX_FEEDBACK_LIVE=1, and the original slice otherwise. Designed to be
+// called immediately after recordShadow so the shadow log captures the
+// static-vs-reweighted delta even during live serving.
+func (s *Server) applyLiveReweight(intent string, hits []SemHit) []SemHit {
+	if !liveEnabled() {
+		return hits
+	}
+	th, _ := s.feedbackThrottle()
+	if th == nil {
+		return hits
+	}
+	openRate, n := th.IntentSignal(intent)
+	return shadowReorder(hits, openRate, n)
 }
 
 // shadowReorder re-scores each hit by its served score times the bounded
