@@ -1,0 +1,290 @@
+{
+  "k": 10,
+  "n": 10,
+  "mean_ndcg": 0.6970662247988557,
+  "mean_recall": 0.9,
+  "mean_recall_pool": 0.9,
+  "mrr": 0.6866666666666668,
+  "by_type": {
+    "architecture": {
+      "k": 10,
+      "n": 9,
+      "mean_ndcg": 0.6723268287600411,
+      "mean_recall": 0.8888888888888888,
+      "mean_recall_pool": 0.8888888888888888,
+      "mrr": 0.6518518518518519
+    },
+    "nl": {
+      "k": 10,
+      "n": 1,
+      "mean_ndcg": 0.9197207891481877,
+      "mean_recall": 1,
+      "mean_recall_pool": 1,
+      "mrr": 1
+    }
+  },
+  "queries": [
+    {
+      "id": "c01",
+      "query": "how does dex watch files for changes",
+      "relevant": [
+        "internal/watch/watch.go",
+        "specs/watch.md"
+      ],
+      "ranked_files": [
+        "specs/watch.md",
+        "specs/indexing.md",
+        "cmd/dex/env.go",
+        "cmd/dex/main_watch.go",
+        "internal/watch/watch.go",
+        "cmd/dex/main_mcp.go",
+        "specs/mcp-server.md",
+        "docs/architecture.md",
+        "cmd/dex/main_usage.go",
+        "cmd/dex/eval.go"
+      ],
+      "ndcg": 0.8503449055347547,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture"
+    },
+    {
+      "id": "c02",
+      "query": "where does Store.Search fuse BM25 and cosine scores",
+      "relevant": [
+        "internal/store/store_search.go",
+        "internal/store/store.go"
+      ],
+      "ranked_files": [
+        "internal/store/store_search.go",
+        "internal/bench/perf/run.go",
+        "internal/store/store.go",
+        "internal/bench/compress/corpus.go",
+        "internal/retrieve/fuse.go",
+        "docs/architecture.md",
+        "internal/retrieve/service.go",
+        "internal/store/bm25_quality.go",
+        "internal/mcp/enrich.go",
+        "internal/store/calibration.yml"
+      ],
+      "ndcg": 0.9197207891481877,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "nl"
+    },
+    {
+      "id": "c03",
+      "query": "how does the eval golden set get mined from git history",
+      "relevant": [
+        "internal/eval/golden.go"
+      ],
+      "ranked_files": [
+        "internal/eval/golden.go",
+        "cmd/dex/eval.go",
+        "internal/eval/corpus/manifest.go",
+        "internal/eval/metrics.go",
+        "tasks.yml",
+        "internal/eval/manifest.go",
+        "internal/eval/corpus/run.go",
+        "internal/eval/corpus/gencache.go",
+        "cmd/dex/bench_cochange.go",
+        "cmd/dex/main_usage.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture"
+    },
+    {
+      "id": "c04",
+      "query": "how does the chunker split source files into indexed chunks",
+      "relevant": [
+        "internal/chunk/chunk.go",
+        "internal/chunk/chunk_lang.go"
+      ],
+      "ranked_files": [
+        "internal/chunk/chunk.go",
+        "internal/index/index.go",
+        "internal/chunk/chunk_window.go",
+        "internal/summarize/semchunks.go",
+        "cmd/dex/main_usage.go",
+        "cmd/dex/registry.go",
+        "docs/architecture.md",
+        "cmd/dex/main_index.go",
+        "specs/indexing.md",
+        "internal/chunk/chunk_lang.go"
+      ],
+      "ndcg": 0.7903864795495062,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture"
+    },
+    {
+      "id": "c05",
+      "query": "how does dex rerank search results with a cross-encoder",
+      "relevant": [
+        "internal/rerank/client.go"
+      ],
+      "ranked_files": [
+        "internal/bench/compress/corpus.go",
+        "internal/rerank/client.go",
+        "tasks.yml",
+        "docs/deployment.md",
+        "README.md",
+        "cmd/dex/main_usage.go",
+        "cmd/dex/main_config.go",
+        "docs/config.md",
+        "docs/architecture.md",
+        "cmd/dex/env.go"
+      ],
+      "ndcg": 0.6309297535714574,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.5,
+      "type": "architecture"
+    },
+    {
+      "id": "c06",
+      "query": "where is the MCP ask tool handler implemented",
+      "relevant": [
+        "internal/mcp/context.go",
+        "internal/mcp/server.go"
+      ],
+      "ranked_files": [
+        "cmd/dex/hook_observe_feedback.go",
+        "cmd/dex/main_search.go",
+        "specs/mcp-server.md",
+        "specs/ask.md",
+        "internal/mcp/server.go",
+        "internal/mcp/context.go",
+        "internal/mcp/verbs.go",
+        "cmd/dex/main_ask.go",
+        "cmd/dex/doctor.go",
+        "internal/mcp/http.go"
+      ],
+      "ndcg": 0.4556051495874604,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.2,
+      "type": "architecture"
+    },
+    {
+      "id": "c07",
+      "query": "how does dex acquire the per-project lock to prevent concurrent indexing",
+      "relevant": [
+        "internal/lock/lock.go"
+      ],
+      "ranked_files": [
+        "cmd/dex/main_lock.go",
+        "cmd/dex/main_usage.go",
+        "specs/constitution.md",
+        "docs/architecture.md",
+        "cmd/dex/main_clients.go",
+        "internal/lock/lock.go",
+        "specs/mcp-server.md",
+        "specs/watch.md",
+        "cmd/dex/main_manage.go",
+        "specs/indexing.md"
+      ],
+      "ndcg": 0.3562071871080222,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.16666666666666666,
+      "type": "architecture"
+    },
+    {
+      "id": "c08",
+      "query": "how does dex compute PageRank scores for graph nodes",
+      "relevant": [
+        "internal/graph/centrality.go"
+      ],
+      "ranked_files": [
+        "internal/mcp/server_graph_deps.go",
+        "internal/graphquery/view.go",
+        "internal/eval/skew/skew.go",
+        "cmd/dex/main_usage.go",
+        "specs/graph.md",
+        "docs/architecture.md",
+        "internal/retrieve/graph.go",
+        "internal/graphquery/packages.go",
+        "internal/codemap/codemap.go",
+        "internal/store/store_graph.go"
+      ],
+      "ndcg": 0,
+      "recall": 0,
+      "recall_pool": 0,
+      "rr": 0,
+      "type": "architecture"
+    },
+    {
+      "id": "c09",
+      "query": "how does the file indexer walk and embed chunks",
+      "relevant": [
+        "internal/index/index.go"
+      ],
+      "ranked_files": [
+        "internal/index/index.go",
+        "specs/indexing.md",
+        "cmd/dex/main_usage.go",
+        "docs/architecture.md",
+        "cmd/dex/main_index.go",
+        "cmd/dex/registry.go",
+        "internal/chunk/chunk.go",
+        "internal/store/store_search.go",
+        "specs/watch.md",
+        "internal/watch/watch.go"
+      ],
+      "ndcg": 1,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture"
+    },
+    {
+      "id": "c10",
+      "query": "how does the proxy track token usage and prune messages",
+      "relevant": [
+        "internal/proxy/proxy.go",
+        "internal/proxy/prune.go",
+        "internal/proxy/usage.go"
+      ],
+      "ranked_files": [
+        "internal/proxy/prune.go",
+        "internal/proxy/usage.go",
+        "internal/proxy/overprune.go",
+        "internal/proxy/proxy.go",
+        "internal/proxy/metrics.go",
+        "cmd/dex/proxy.go",
+        "internal/proxy/baseline.go",
+        "internal/proxy/cache.go",
+        "internal/proxy/security.go",
+        "internal/tokens/tokens.go"
+      ],
+      "ndcg": 0.9674679834891693,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
+      "type": "architecture"
+    }
+  ],
+  "manifest": {
+    "schema_version": 2,
+    "golden_mode": "curated",
+    "golden_sha256": "642364a4b9d3221b3c8d7e1bf461958d2c0983aa7e54a5ea14eb9735ed9a8810",
+    "golden_head": "c4be5bbe2cf631965f969c88f011fc65f390e639",
+    "repo_head": "e9dd7c37a7310d192db92c54a1cea58f2f5cfffd",
+    "query_set_sha256": "d4ce56d685045fd5821b943a91b72023b05c397dc78ca41dba448a59c5e4bbd4",
+    "lane": "full",
+    "embed_model": "qwen3-embedding:0.6b",
+    "embed_dim": 1024,
+    "fusion_mode": "linear",
+    "fusion_alpha": 0.7,
+    "graph_weight": 0,
+    "k": 10,
+    "rerank_enabled": true
+  }
+}
