@@ -39,6 +39,7 @@ func TestShadowReorderNoSignalIsIdentity(t *testing.T) {
 
 func TestRecordShadowOffByDefault(t *testing.T) {
 	t.Setenv("DEX_FEEDBACK_SHADOW", "")
+	t.Setenv("DEX_FEEDBACK_LIVE", "")
 	s := &Server{}
 	// Must not panic, must not write anything — shadow disabled.
 	s.recordShadow("behavior_search", "where is X", []SemHit{
