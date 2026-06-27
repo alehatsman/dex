@@ -32,6 +32,7 @@ verbs (match the MCP tools — run "dex help all" for the full reference):
   dex locate [<path>] <sym|path:line>    one-call orientation: callers, tests, doc, blame, notes
   dex review [<path>]                    per-hunk PR intelligence — --ref|--branch|--pr
   dex refactor [<path>] <symbol> <to>    plan a type-precise rename (edit triples; never writes)
+  dex rehearse [<path>]                  type-check a hypothetical edit in-memory (never writes) — --edits|--file
   dex cohort [<path>] <interface>        types that must change in lockstep with an interface
   dex refs   [<path>] <action> <symbol>  type-precise Go symbol queries — references, implementations, supertypes, subtypes
   dex verify [<path>]                    run the tests a change implicates — working tree | --ref | --symbol

@@ -108,6 +108,8 @@ func main() {
 		err = cmdLocate(ctx, args)
 	case "refactor":
 		err = cmdRefactor(ctx, args)
+	case "rehearse":
+		err = cmdRehearse(ctx, args)
 	case "cohort":
 		err = cmdCohort(ctx, args)
 	case "refs":

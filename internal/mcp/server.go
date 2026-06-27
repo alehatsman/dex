@@ -715,6 +715,7 @@ type toolSurface interface {
 	locate(context.Context, *sdk.CallToolRequest, LocateInput) (*sdk.CallToolResult, LocateOutput, error)
 	review(context.Context, *sdk.CallToolRequest, ReviewInput) (*sdk.CallToolResult, ReviewOutput, error)
 	refactor(context.Context, *sdk.CallToolRequest, RefactorInput) (*sdk.CallToolResult, RefactorOutput, error)
+	rehearse(context.Context, *sdk.CallToolRequest, RehearseInput) (*sdk.CallToolResult, RehearseOutput, error)
 	cohort(context.Context, *sdk.CallToolRequest, CohortInput) (*sdk.CallToolResult, CohortOutput, error)
 	verify(context.Context, *sdk.CallToolRequest, VerifyInput) (*sdk.CallToolResult, VerifyOutput, error)
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
@@ -906,6 +907,27 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"'unsupported-language' otherwise); also 'not-found' / 'ambiguous' / 'stale'. Loads packages " +
 				"on-demand, so it is slower than the read verbs — reach for it when you're about to rename."),
 		}, h.refactor)
+
+		// rehearse is in the default lane (#730): type-check a hypothetical edit
+		// in-memory before applying. dex stays read-only (#551) — rehearse never
+		// writes files; it uses go/packages Overlay to apply edits in-memory and
+		// reports new type errors + broken files + tests to run. Closes the chain:
+		//   refactor (plan) → rehearse (prove compiles) → Edit (apply) → verify (test).
+		// v1 is Go-only, on-demand (no index needed).
+		addTool(srv, &sdk.Tool{
+			Name:        "rehearse",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Type-check a hypothetical edit in-memory and return new type errors, broken " +
+				"files, and tests to run — without writing anything. Closes the chain: " +
+				"`refactor` (plan) → `rehearse` (prove it compiles) → `Edit` (apply) → `verify` (test). " +
+				"Pass `edits` as byte-range splices — the same shape `refactor` emits (path, start_byte, " +
+				"end_byte, replacement), applied highest-offset-first per file. Or pass `files` as whole-file " +
+				"replacements (path + contents); `files` takes precedence over `edits` for the same path. " +
+				"Returns `compiles` (bool), `diagnostics` (new type errors only — pre-existing errors are " +
+				"diffed out), `broken_files` (paths with new errors), and `tests_to_run` (sibling test files). " +
+				"Go-only in v1 (returns 'unsupported-language' for non-Go roots); also 'no-edits' when no " +
+				"edits/files are supplied. Loads packages on-demand — slower than the read verbs."),
+		}, h.rehearse)
 
 		// verify is in the default lane (#686, epic #683): it closes the agent
 		// loop's missing half — change → verify → learn. Unlike every other query

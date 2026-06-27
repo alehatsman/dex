@@ -199,6 +199,12 @@ func (rc *remoteClient) refactor(ctx context.Context, _ *sdk.CallToolRequest, in
 	return nil, out, err
 }
 
+func (rc *remoteClient) rehearse(ctx context.Context, _ *sdk.CallToolRequest, in RehearseInput) (*sdk.CallToolResult, RehearseOutput, error) {
+	var out RehearseOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/rehearse"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) cohort(ctx context.Context, _ *sdk.CallToolRequest, in CohortInput) (*sdk.CallToolResult, CohortOutput, error) {
 	var out CohortOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/cohort"), in, &out)

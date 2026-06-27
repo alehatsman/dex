@@ -183,6 +183,16 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "rehearse", group: groupQuery, args: "[<path>]",
+		summary: "type-check a hypothetical edit in-memory (never writes)",
+		flags: []flagSpec{
+			{name: "--edits", desc: "JSON array of {path,start_byte,end_byte,replacement} splices", arg: true},
+			{name: "--file", desc: "project-relative path for a whole-file replacement", arg: true},
+			{name: "--contents", desc: "new file contents for --file", arg: true},
+			flagFormat,
+		},
+	},
+	{
 		name: "review", group: groupQuery, args: "[<path>]",
 		summary: "per-hunk PR intelligence",
 		flags: []flagSpec{
