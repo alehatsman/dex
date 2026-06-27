@@ -62,8 +62,8 @@
     },
     {
       "id": "c10",
-      "query": "how does the proxy track token usage and prune messages",
-      "relevant_files": ["internal/proxy/usage.go", "internal/proxy/prune.go"],
+      "query": "how does scanSSEChunk parse provider usage fields",
+      "relevant_files": ["internal/proxy/usage.go"],
       "class": "behavior"
     },
     {
@@ -185,6 +185,12 @@
       "query": "how does the retrieval service compose multiple search lanes",
       "relevant_files": ["internal/retrieve/service.go"],
       "class": "architecture"
+    },
+    {
+      "id": "c31",
+      "query": "how does PruneRequestBody trim message history to fit token budget",
+      "relevant_files": ["internal/proxy/prune.go"],
+      "class": "behavior"
     }
   ]
 }
