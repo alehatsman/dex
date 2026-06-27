@@ -78,7 +78,13 @@ func cmdCompact(_ context.Context, args []string) (err error) {
 		}()
 	}
 
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+	return filepath.WalkDir(root, compactWalkVisit(root, osRoot, w, matcher, *maxBytes, *strip))
+}
+
+// compactWalkVisit returns the fs.WalkDirFunc used by cmdCompact.
+// All filter/write logic lives here so cmdCompact stays at low complexity.
+func compactWalkVisit(root string, osRoot *os.Root, w io.Writer, matcher *ignore.Matcher, maxBytes int64, strip bool) fs.WalkDirFunc {
+	return func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -105,8 +111,8 @@ func cmdCompact(_ context.Context, args []string) (err error) {
 		if ferr != nil {
 			return ferr
 		}
-		if fi.Size() > *maxBytes {
-			fmt.Fprintf(os.Stderr, "skip %s (%d bytes > --max-bytes=%d)\n", rel, fi.Size(), *maxBytes)
+		if fi.Size() > maxBytes {
+			fmt.Fprintf(os.Stderr, "skip %s (%d bytes > --max-bytes=%d)\n", rel, fi.Size(), maxBytes)
 			return nil
 		}
 		data, rerr := osRoot.ReadFile(rel)
@@ -120,10 +126,9 @@ func cmdCompact(_ context.Context, args []string) (err error) {
 			fmt.Fprintf(os.Stderr, "skip %s (looks like a secret)\n", rel)
 			return nil
 		}
-		if *strip {
+		if strip {
 			data = stripContent(data, path)
 		}
-
 		relSlash := filepath.ToSlash(rel)
 		if _, werr := fmt.Fprintf(w, "===== %s =====\n", relSlash); werr != nil {
 			return werr
@@ -137,7 +142,7 @@ func cmdCompact(_ context.Context, args []string) (err error) {
 			}
 		}
 		return nil
-	})
+	}
 }
 
 // stripContent drops blank lines, trailing whitespace, and line

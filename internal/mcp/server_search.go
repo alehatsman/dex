@@ -170,16 +170,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// by exact name, and RRF-fuse with the semantic results. Runs in the
 	// same request with no extra embedding round-trip — FindSymbol is a
 	// pure SQL index scan.
-	idents := retrieve.ExtractIdentifiers(in.Query)
-	if len(idents) > 0 {
-		symPool := candidateK * 3
-		if symPool < 15 {
-			symPool = 15
-		}
-		if symHits := collectSymbolHits(ctx, st, idents, symPool); len(symHits) > 0 {
-			hits = retrieve.FuseWithSymbols(hits, symHits, candidateK)
-		}
-	}
+	hits = collectSearchSymbolLeg(ctx, st, in.Query, hits, candidateK)
 
 	// Graph-proximity lane: spreading activation from session-recent files and
 	// the current semantic hits. Silently skips when no session exists or the
@@ -227,6 +218,49 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	if ldHint != "" && out.Hint == "" {
 		out.Hint = ldHint
 	}
+	searchBuildHits(hits, in, ldLevel, ldHint, &out)
+
+	// When a language/path_glob filter is what emptied the result, the
+	// diagnostic takes precedence over softer nudges: it tells the caller
+	// the query did match, the filter just rejected everything (issue #512).
+	if filteredToEmpty && len(out.Hits) == 0 {
+		out.Hint = filterMissHint(in.Languages, exts, in.PathGlob, preFilterHits)
+	}
+
+	// Stamp expansion handles on the final hit set (#344) — after truncation
+	// so we don't mint handles for hits we drop.
+	stampSearchHandles(out.Hits)
+
+	// SLO monitoring: record this tool call and check thresholds.
+	tr := s.sloFor(p.Root)
+	tr.RecordToolCall()
+	out.Hint = appendSLOAnnotation(out.Hint, tr)
+	// Surface any k override last so it leads the hint and survives the
+	// branch-specific hint assignments above (#543).
+	out.Hint = prependHint(out.Hint, kHint)
+	return nil, out, nil
+}
+
+// collectSearchSymbolLeg fuses exact-name symbol hits into the semantic result
+// set via RRF. A no-op when the query contains no identifier-shaped tokens.
+func collectSearchSymbolLeg(ctx context.Context, st *store.Store, query string, hits []store.Hit, candidateK int) []store.Hit {
+	idents := retrieve.ExtractIdentifiers(query)
+	if len(idents) == 0 {
+		return hits
+	}
+	symPool := candidateK * 3
+	if symPool < 15 {
+		symPool = 15
+	}
+	if symHits := collectSymbolHits(ctx, st, idents, symPool); len(symHits) > 0 {
+		hits = retrieve.FuseWithSymbols(hits, symHits, candidateK)
+	}
+	return hits
+}
+
+// searchBuildHits appends filtered SearchHits into out and applies loop-detect
+// reduction when ldLevel == throttle.Reduce.
+func searchBuildHits(hits []store.Hit, in SearchInput, ldLevel throttle.Level, ldHint string, out *SearchOutput) {
 	for _, h := range hits {
 		if excluded(h.Path, in.Exclude) {
 			continue
@@ -250,26 +284,6 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		out.Hits = out.Hits[:5]
 		out.Hint = ldHint + " [reduced: showing top 5]"
 	}
-
-	// When a language/path_glob filter is what emptied the result, the
-	// diagnostic takes precedence over softer nudges: it tells the caller
-	// the query did match, the filter just rejected everything (issue #512).
-	if filteredToEmpty && len(out.Hits) == 0 {
-		out.Hint = filterMissHint(in.Languages, exts, in.PathGlob, preFilterHits)
-	}
-
-	// Stamp expansion handles on the final hit set (#344) — after truncation
-	// so we don't mint handles for hits we drop.
-	stampSearchHandles(out.Hits)
-
-	// SLO monitoring: record this tool call and check thresholds.
-	tr := s.sloFor(p.Root)
-	tr.RecordToolCall()
-	out.Hint = appendSLOAnnotation(out.Hint, tr)
-	// Surface any k override last so it leads the hint and survives the
-	// branch-specific hint assignments above (#543).
-	out.Hint = prependHint(out.Hint, kHint)
-	return nil, out, nil
 }
 
 // appendSLOAnnotation appends any SLO annotation to hint (space-joined).

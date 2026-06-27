@@ -292,6 +292,34 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	return s.contextRouterStream(ctx, req, in, nil)
 }
 
+// contextRouterCheckStale updates out with stale/indexing annotations.
+func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextOutput, root string) {
+	if stats, statsErr := st.Stats(ctx); statsErr == nil && !stats.LastIndex.IsZero() && time.Since(stats.LastIndex) > 24*time.Hour {
+		out.Stale = true
+		out.Hint = appendHint(out.Hint, fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
+			time.Since(stats.LastIndex).Round(time.Hour), root))
+	}
+	// An active rebuild trumps age: evidence is being rewritten right now, so
+	// what we return is partial (#531).
+	if indexing, note := indexingNotice(ctx, st); indexing {
+		out.Stale = true
+		out.Indexing = true
+		out.Hint = note
+	}
+}
+
+// loadContextFacts loads the session task and knowledge facts into out.
+func (s *Server) loadContextFacts(ctx context.Context, st *store.Store, in ContextInput, out *ContextOutput) {
+	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
+		out.SessionTask = ss.Task
+	}
+	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true); err == nil && len(facts) > 0 {
+		for _, f := range facts {
+			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+f.Body)
+		}
+	}
+}
+
 func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolRequest, in ContextInput, tokenSink func(string)) (*sdk.CallToolResult, ContextOutput, error) {
 	if strings.TrimSpace(in.Question) == "" {
 		// Empty question = session-start orientation: return the deterministic
@@ -343,27 +371,8 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		return nil, out, nil
 	}
 
-	if stats, statsErr := st.Stats(ctx); statsErr == nil && !stats.LastIndex.IsZero() && time.Since(stats.LastIndex) > 24*time.Hour {
-		out.Stale = true
-		out.Hint = appendHint(out.Hint, fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
-			time.Since(stats.LastIndex).Round(time.Hour), p.Root))
-	}
-	// An active rebuild trumps age: evidence is being rewritten right now, so
-	// what we return is partial (#531).
-	if indexing, note := indexingNotice(ctx, st); indexing {
-		out.Stale = true
-		out.Indexing = true
-		out.Hint = note
-	}
-
-	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
-		out.SessionTask = ss.Task
-	}
-	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true); err == nil && len(facts) > 0 {
-		for _, f := range facts {
-			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+f.Body)
-		}
-	}
+	contextRouterCheckStale(ctx, st, &out, p.Root)
+	s.loadContextFacts(ctx, st, in, &out)
 
 	// enrichGraph sets out.Graph only when it has something to emit.
 	// An absent `graph` key signals "no graph indexed, or this intent

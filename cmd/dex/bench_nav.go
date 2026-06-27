@@ -441,43 +441,7 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 		link(e.DstID, e.SrcID)
 	}
 
-	type seedTask struct {
-		id    string
-		query string
-		label string
-		files []string
-	}
-	var seeds []seedTask
-	usedQuery := map[string]bool{}
-	for id := range isHub {
-		own := idFile[id]
-		fileSet := map[string]bool{}
-		for nb := range adj[id] {
-			f := idFile[nb]
-			if f == "" || f == own {
-				continue
-			}
-			fileSet[f] = true
-		}
-		if len(fileSet) < navBreadthMinNeighbors {
-			continue
-		}
-		qual := idQual[id]
-		query := qual
-		if idx := strings.LastIndexAny(qual, "./"); idx >= 0 && idx < len(qual)-1 {
-			query = qual[idx+1:]
-		}
-		if query == "" || usedQuery[query] {
-			continue // keep find queries unique so results map back cleanly
-		}
-		usedQuery[query] = true
-		files := make([]string, 0, len(fileSet))
-		for f := range fileSet {
-			files = append(files, f)
-		}
-		sort.Strings(files)
-		seeds = append(seeds, seedTask{id: id, query: query, label: "neighborhood of " + qual, files: files})
-	}
+	seeds := buildBreadthSeeds(isHub, idFile, idQual, adj)
 	if len(seeds) == 0 {
 		return nil, nav.AroundModel{}, fmt.Errorf("no hub symbols with >= %d neighbor files", navBreadthMinNeighbors)
 	}
@@ -548,6 +512,51 @@ func buildBreadthTasks(ctx context.Context, st *store.Store, em embed.Embedder, 
 		})
 	}
 	return tasks, around, nil
+}
+
+type seedTask struct {
+	id    string
+	query string
+	label string
+	files []string
+}
+
+// buildBreadthSeeds builds the hub-symbol seed list for the breadth bench lane.
+// Each seed is a hub function/method with ≥navBreadthMinNeighbors neighbour files;
+// query strings are unique so find() results map back cleanly.
+func buildBreadthSeeds(isHub map[string]bool, idFile, idQual map[string]string, adj map[string]map[string]bool) []seedTask {
+	var seeds []seedTask
+	usedQuery := map[string]bool{}
+	for id := range isHub {
+		own := idFile[id]
+		fileSet := map[string]bool{}
+		for nb := range adj[id] {
+			f := idFile[nb]
+			if f == "" || f == own {
+				continue
+			}
+			fileSet[f] = true
+		}
+		if len(fileSet) < navBreadthMinNeighbors {
+			continue
+		}
+		qual := idQual[id]
+		query := qual
+		if idx := strings.LastIndexAny(qual, "./"); idx >= 0 && idx < len(qual)-1 {
+			query = qual[idx+1:]
+		}
+		if query == "" || usedQuery[query] {
+			continue
+		}
+		usedQuery[query] = true
+		files := make([]string, 0, len(fileSet))
+		for f := range fileSet {
+			files = append(files, f)
+		}
+		sort.Strings(files)
+		seeds = append(seeds, seedTask{id: id, query: query, label: "neighborhood of " + qual, files: files})
+	}
+	return seeds
 }
 
 // navReorientSessionSize is how many consecutive golden queries form one

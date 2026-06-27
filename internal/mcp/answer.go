@@ -209,7 +209,33 @@ func buildAnswerEvidence(intent string, out *ContextOutput) string {
 		reads = sortSuggestedReadsByAttention(reads)
 	}
 
-	// Curated reads carry the richest signal (inlined source slices).
+	if !appendSuggestedReadsSection(writeHdr, write, reads) {
+		return b.String()
+	}
+	if !appendSemanticHitsSection(writeHdr, write, out.SuggestedReads, out.SemanticHits) {
+		return b.String()
+	}
+	if !appendSymbolsSection(write, out.Symbols) {
+		return b.String()
+	}
+
+	// Graph edges in their default trailing position (callers/callees already led).
+	if !leadGraph {
+		appendGraphEdges(write, out)
+	}
+
+	// Session context appended last: code content forms a stable prefix for
+	// LLM provider KV-cache; dynamic task/facts only invalidate the tail.
+	if !appendSessionContextSection(write, out.SessionTask, out.KnowledgeFacts) {
+		return b.String()
+	}
+
+	return b.String()
+}
+
+// appendSuggestedReadsSection writes curated reads into the evidence block.
+// Returns false when the byte budget is exhausted.
+func appendSuggestedReadsSection(writeHdr, write func(string) bool, reads []SuggestedRead) bool {
 	for _, r := range reads {
 		if strings.TrimSpace(r.Content) == "" {
 			continue
@@ -223,77 +249,83 @@ func buildAnswerEvidence(intent string, out *ContextOutput) string {
 		}
 		hdr += "\n"
 		if !writeHdr(hdr) || !write(r.Content+"\n") {
-			return b.String()
+			return false
 		}
 	}
+	return true
+}
 
-	// Semantic hits that weren't already promoted into suggested_reads.
-	// Key on (path, startLine) so a file appearing in SuggestedReads at
-	// lines 100-120 does not suppress a distinct SemanticHit at 300-350.
+// appendSemanticHitsSection writes semantic hits that weren't already promoted
+// into suggested_reads. Keyed on (path, startLine) to avoid duplicate slices.
+// Returns false when the byte budget is exhausted.
+func appendSemanticHitsSection(writeHdr, write func(string) bool, reads []SuggestedRead, hits []SemHit) bool {
 	type pathLine struct {
 		path string
 		line int
 	}
 	seen := map[pathLine]bool{}
-	for _, r := range out.SuggestedReads {
+	for _, r := range reads {
 		seen[pathLine{r.Path, r.StartLine}] = true
 	}
-	for _, h := range out.SemanticHits {
+	for _, h := range hits {
 		if h.Content == "" || seen[pathLine{h.Path, h.StartLine}] {
 			continue
 		}
 		hdr := fmt.Sprintf("\n--- %s:%d-%d\n", h.Path, h.StartLine, h.EndLine)
 		if !writeHdr(hdr) || !write(h.Content+"\n") {
-			return b.String()
+			return false
 		}
 	}
+	return true
+}
 
-	// Symbol signatures + docs: the API contract without bodies.
-	if len(out.Symbols) > 0 {
-		if !write("\nSYMBOLS:\n") {
-			return b.String()
+// appendSymbolsSection writes symbol signatures + docs into the evidence block.
+// Returns false when the byte budget is exhausted.
+func appendSymbolsSection(write func(string) bool, symbols []SymbolHit) bool {
+	if len(symbols) == 0 {
+		return true
+	}
+	if !write("\nSYMBOLS:\n") {
+		return false
+	}
+	for _, sym := range symbols {
+		line := fmt.Sprintf("- %s", sym.QualifiedName)
+		if sym.Kind != "" {
+			line += " (" + sym.Kind + ")"
 		}
-		for _, sym := range out.Symbols {
-			line := fmt.Sprintf("- %s", sym.QualifiedName)
-			if sym.Kind != "" {
-				line += " (" + sym.Kind + ")"
-			}
-			if sym.Path != "" {
-				line += fmt.Sprintf(" %s:%d", sym.Path, sym.StartLine)
-			}
-			if sym.Signature != "" {
-				line += " — " + strings.TrimSpace(sym.Signature)
-			}
-			if !write(line + "\n") {
-				return b.String()
-			}
+		if sym.Path != "" {
+			line += fmt.Sprintf(" %s:%d", sym.Path, sym.StartLine)
+		}
+		if sym.Signature != "" {
+			line += " — " + strings.TrimSpace(sym.Signature)
+		}
+		if !write(line + "\n") {
+			return false
 		}
 	}
+	return true
+}
 
-	// Graph edges in their default trailing position (callers/callees already led).
-	if !leadGraph {
-		appendGraphEdges(write, out)
+// appendSessionContextSection writes the session task + knowledge facts into
+// the evidence block. Returns false when the byte budget is exhausted.
+func appendSessionContextSection(write func(string) bool, task string, facts []string) bool {
+	if task == "" && len(facts) == 0 {
+		return true
 	}
-
-	// Session context appended last: code content forms a stable prefix for
-	// LLM provider KV-cache; dynamic task/facts only invalidate the tail.
-	if out.SessionTask != "" || len(out.KnowledgeFacts) > 0 {
-		if !write("\nSESSION CONTEXT:\n") {
-			return b.String()
-		}
-		if out.SessionTask != "" {
-			if !write(fmt.Sprintf("Task: %s\n", out.SessionTask)) {
-				return b.String()
-			}
-		}
-		for _, f := range out.KnowledgeFacts {
-			if !write(fmt.Sprintf("- %s\n", f)) {
-				return b.String()
-			}
+	if !write("\nSESSION CONTEXT:\n") {
+		return false
+	}
+	if task != "" {
+		if !write(fmt.Sprintf("Task: %s\n", task)) {
+			return false
 		}
 	}
-
-	return b.String()
+	for _, f := range facts {
+		if !write(fmt.Sprintf("- %s\n", f)) {
+			return false
+		}
+	}
+	return true
 }
 
 // maybeAnswerStyle runs the chat synthesis leg when answer_style is "brief".

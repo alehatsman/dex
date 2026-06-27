@@ -38,50 +38,12 @@ func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, top
 	}
 	switch intent {
 	case IntentSymbolLookup:
-		// Only claim "the definition" when a symbol actually matched —
-		// reads[0] without symbols is a semantic neighbor, not the
-		// definition the user asked about.
-		if len(symbols) > 0 && len(reads) > 0 {
-			// Multiple definitions across distinct paths is a real
-			// shape for ambiguous names (`Options` exists in chat,
-			// graph, index, store, watch packages). Signal that — singular
-			// "the definition" hides matches the agent should know
-			// about.
-			if distinctSymbolPaths(symbols) > 1 {
-				return fmt.Sprintf("%d definitions across files — closest is %s lines %d-%d; consult the full `symbols` array for the rest.",
-					distinctSymbolPaths(symbols), reads[0].Path, reads[0].StartLine, reads[0].EndLine)
-			}
-			return fmt.Sprintf("Read %s lines %d-%d to see the definition.", reads[0].Path, reads[0].StartLine, reads[0].EndLine)
-		}
-		if len(symbols) == 0 && len(reads) > 0 {
-			return fmt.Sprintf("No exact symbol match — the closest semantic neighbor is %s lines %d-%d. Verify there before assuming the identifier exists.",
-				reads[0].Path, reads[0].StartLine, reads[0].EndLine)
+		if a := buildSymbolLookupNextAction(reads, symbols); a != "" {
+			return a
 		}
 	case IntentCallers, IntentCallees:
-		rel := "callers"
-		if intent == IntentCallees {
-			rel = "callees"
-		}
-		// Prefer the precise graph lane when it resolved calls edges.
-		// Falls back to the BM25 chunk-search `references` list (populated
-		// for non-Go languages where `calls` extraction isn't wired yet).
-		if graphEdgeCount > 0 {
-			noun := "edge"
-			if graphEdgeCount != 1 {
-				noun = "edges"
-			}
-			return fmt.Sprintf("Read the `graph.edges` list — it carries %d %s %s from the static graph; open each `to` node for its body.", graphEdgeCount, rel, noun)
-		}
-		if refCount > 0 {
-			noun := "site"
-			if refCount != 1 {
-				noun = "sites"
-			}
-			return fmt.Sprintf("The `references` field lists %d call %s (BM25 chunk search for non-Go targets). Walk them before reaching for grep.", refCount, noun)
-		}
-		if len(symbols) > 0 {
-			return fmt.Sprintf("No %s found via graph or refs — start from %s (%s) and confirm the symbol is actually used.",
-				rel, symbols[0].Path, symbols[0].QualifiedName)
+		if a := buildCallerCalleeNextAction(intent, reads, symbols, graphEdgeCount, refCount); a != "" {
+			return a
 		}
 	case IntentPackageTopology:
 		if graphEdgeCount > 0 {
@@ -110,6 +72,47 @@ func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, top
 	}
 	if len(symbols) > 0 {
 		return fmt.Sprintf("Inspect %s in %s.", symbols[0].QualifiedName, symbols[0].Path)
+	}
+	return ""
+}
+
+func buildSymbolLookupNextAction(reads []SuggestedRead, symbols []SymHit) string {
+	if len(symbols) > 0 && len(reads) > 0 {
+		if distinctSymbolPaths(symbols) > 1 {
+			return fmt.Sprintf("%d definitions across files — closest is %s lines %d-%d; consult the full `symbols` array for the rest.",
+				distinctSymbolPaths(symbols), reads[0].Path, reads[0].StartLine, reads[0].EndLine)
+		}
+		return fmt.Sprintf("Read %s lines %d-%d to see the definition.", reads[0].Path, reads[0].StartLine, reads[0].EndLine)
+	}
+	if len(symbols) == 0 && len(reads) > 0 {
+		return fmt.Sprintf("No exact symbol match — the closest semantic neighbor is %s lines %d-%d. Verify there before assuming the identifier exists.",
+			reads[0].Path, reads[0].StartLine, reads[0].EndLine)
+	}
+	return ""
+}
+
+func buildCallerCalleeNextAction(intent string, _ []SuggestedRead, symbols []SymHit, graphEdgeCount, refCount int) string {
+	rel := "callers"
+	if intent == IntentCallees {
+		rel = "callees"
+	}
+	if graphEdgeCount > 0 {
+		noun := "edge"
+		if graphEdgeCount != 1 {
+			noun = "edges"
+		}
+		return fmt.Sprintf("Read the `graph.edges` list — it carries %d %s %s from the static graph; open each `to` node for its body.", graphEdgeCount, rel, noun)
+	}
+	if refCount > 0 {
+		noun := "site"
+		if refCount != 1 {
+			noun = "sites"
+		}
+		return fmt.Sprintf("The `references` field lists %d call %s (BM25 chunk search for non-Go targets). Walk them before reaching for grep.", refCount, noun)
+	}
+	if len(symbols) > 0 {
+		return fmt.Sprintf("No %s found via graph or refs — start from %s (%s) and confirm the symbol is actually used.",
+			rel, symbols[0].Path, symbols[0].QualifiedName)
 	}
 	return ""
 }

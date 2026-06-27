@@ -211,26 +211,8 @@ func runEval(ctx context.Context, args []string) error {
 		return err
 	}
 
-	if *alphaSweep && *graphSweep {
-		return fmt.Errorf("dex bench eval: --alpha-sweep and --graph-sweep are mutually exclusive")
-	}
-	if *alphaSweep {
-		if err := runAlphaSweep(ctx, p, em, gs, *k, *emitCalib); err != nil {
-			return fmt.Errorf("dex bench eval: alpha sweep: %w", err)
-		}
-		return nil
-	}
-	if *graphSweep {
-		if *emitCalib != "" {
-			return fmt.Errorf("dex bench eval: --emit-calibration is not supported with --graph-sweep (graph-lane removal is a separate decision, see #470)")
-		}
-		if err := runGraphSweep(ctx, p, em, gs, *k); err != nil {
-			return fmt.Errorf("dex bench eval: graph sweep: %w", err)
-		}
-		return nil
-	}
-	if *emitCalib != "" {
-		return fmt.Errorf("dex bench eval: --emit-calibration requires --alpha-sweep")
+	if done, sweepErr := runEvalSweeps(ctx, p, em, gs, *k, *alphaSweep, *graphSweep, *emitCalib); done || sweepErr != nil {
+		return sweepErr
 	}
 	if *faithfulness {
 		if err := runFaithfulnessEval(ctx, st, em, gs, *k, *outputFmt, *checkPath); err != nil {
@@ -410,6 +392,34 @@ func evalEmbedForLane(lane, model string) (embed.Embedder, error) {
 	default:
 		return nil, fmt.Errorf("dex bench eval: unknown --lane %q (want full|bm25|onnx)", lane)
 	}
+}
+
+// runEvalSweeps handles the --alpha-sweep / --graph-sweep / --emit-calibration
+// sub-modes of bench eval. Returns done=true when a sweep was selected and ran
+// (caller should return sweepErr). Returns done=false when no sweep flag was set.
+func runEvalSweeps(ctx context.Context, p *proj.Project, em embed.Embedder, gs eval.GoldenSet, k int, alphaSweep, graphSweep bool, emitCalib string) (done bool, err error) {
+	if alphaSweep && graphSweep {
+		return true, fmt.Errorf("dex bench eval: --alpha-sweep and --graph-sweep are mutually exclusive")
+	}
+	if alphaSweep {
+		if err := runAlphaSweep(ctx, p, em, gs, k, emitCalib); err != nil {
+			return true, fmt.Errorf("dex bench eval: alpha sweep: %w", err)
+		}
+		return true, nil
+	}
+	if graphSweep {
+		if emitCalib != "" {
+			return true, fmt.Errorf("dex bench eval: --emit-calibration is not supported with --graph-sweep (graph-lane removal is a separate decision, see #470)")
+		}
+		if err := runGraphSweep(ctx, p, em, gs, k); err != nil {
+			return true, fmt.Errorf("dex bench eval: graph sweep: %w", err)
+		}
+		return true, nil
+	}
+	if emitCalib != "" {
+		return true, fmt.Errorf("dex bench eval: --emit-calibration requires --alpha-sweep")
+	}
+	return false, nil
 }
 
 // runAlphaSweep opens the store once per configuration (RRF baseline + FusionLinear

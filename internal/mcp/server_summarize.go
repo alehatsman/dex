@@ -303,29 +303,35 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		realTarget: realTarget, relTarget: relTarget,
 		sessionID: sessionID, etag: etag, bt: bt, out: out,
 	}
+	result, out, err = s.summarizeModeDispatch(w, mode)
+	return
+}
+
+// summarizeModeDispatch routes a read to the concrete mode handler.
+// The switch here is the single canonical mapping from ReadMode to handler.
+func (s *Server) summarizeModeDispatch(w summarizeWork, mode ReadMode) (*sdk.CallToolResult, SummarizeOutput, error) {
 	switch {
 	case mode == ReadModeSummary:
-		result, out, err = s.summarizeModeSummary(w)
+		return s.summarizeModeSummary(w)
 	case mode.IsLines():
-		result, out, err = s.summarizeModeLines(w, mode)
+		return s.summarizeModeLines(w, mode)
 	case mode == ReadModeSignatures:
-		result, out, err = s.summarizeModeSignatures(w)
+		return s.summarizeModeSignatures(w)
 	case mode == ReadModeMap:
-		result, out, err = s.summarizeModeMap(w)
+		return s.summarizeModeMap(w)
 	case mode == ReadModeAggressive:
-		result, out, err = s.summarizeModeAggressive(w)
+		return s.summarizeModeAggressive(w)
 	case mode == ReadModeSkeleton:
-		result, out, err = s.summarizeModeSkeleton(w)
+		return s.summarizeModeSkeleton(w)
 	case mode == ReadModeAnalyze:
-		result, out, err = s.summarizeModeAnalyze(w)
+		return s.summarizeModeAnalyze(w)
 	case mode == ReadModeHandle:
 		// Cheapest terminal of the budget downgrade chain (#487): compact
 		// body-handle stub, never a fall-through to the full raw file.
-		result, out, err = s.summarizeModeHandle(w)
+		return s.summarizeModeHandle(w)
 	default: // full — raw file content, no LLM, no compression.
-		result, out, err = s.summarizeModeRaw(w)
+		return s.summarizeModeRaw(w)
 	}
-	return
 }
 
 // ReadModes returns the user-facing `read` modes the Summarize dispatch above
