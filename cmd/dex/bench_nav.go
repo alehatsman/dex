@@ -273,7 +273,7 @@ func buildNavMapModel(ctx context.Context, root string, l0budget, l1budget int, 
 	if out.Status != "ok" {
 		return nav.MapModel{}, nav.RoutingModel{}, nav.BreadthModel{}, fmt.Errorf("graph communities status %q", out.Status)
 	}
-	clusters := adaptCommunities(out.Communities)
+	clusters := mcp.AdaptCommunities(out.Communities)
 	if len(clusters) == 0 {
 		return nav.MapModel{}, nav.RoutingModel{}, nav.BreadthModel{}, fmt.Errorf("no clusters in graph")
 	}

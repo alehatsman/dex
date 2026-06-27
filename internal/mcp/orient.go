@@ -40,7 +40,7 @@ func (s *Server) orientResponse(ctx context.Context, in ContextInput) (*sdk.Call
 		return nil, out, nil
 	}
 
-	clusters := adaptCommunities(comm.Communities)
+	clusters := AdaptCommunities(comm.Communities)
 	out.Status = "ok"
 	out.Map = codemap.RenderOrient(clusters,
 		codemap.OrientExtras{Entrypoints: comm.Entrypoints, ImportEdges: CodemapImportEdges(comm.ImportEdges), Externals: comm.Externals, Scale: CodemapScale(comm.Scale)},

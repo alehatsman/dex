@@ -144,7 +144,7 @@ func mapVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in Ma
 		return nil, MapOutput{Status: "ok", Hint: comm.Hint}, nil
 	}
 
-	clusters := adaptCommunities(comm.Communities)
+	clusters := AdaptCommunities(comm.Communities)
 	if in.Cluster != nil {
 		c, ok := findCluster(clusters, *in.Cluster)
 		if !ok {
@@ -159,10 +159,10 @@ func mapVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in Ma
 		codemap.OrientExtras{Entrypoints: comm.Entrypoints, ImportEdges: CodemapImportEdges(comm.ImportEdges), Externals: comm.Externals, Scale: CodemapScale(comm.Scale)}, in.Budget, in.Budget)}, nil
 }
 
-// adaptCommunities maps the MCP community projection into the renderer's input.
-// (Mirrors cmd/dex/map.go; the adapter must live here, not in codemap, because
-// codemap is imported by mcp — referencing mcp.Community there would cycle.)
-func adaptCommunities(comms []Community) []codemap.Cluster {
+// AdaptCommunities maps the MCP community projection into the renderer's input.
+// cmd/dex delegates here so the logic lives in one place; it cannot live in
+// codemap because codemap is imported by mcp, which would create a cycle.
+func AdaptCommunities(comms []Community) []codemap.Cluster {
 	clusters := make([]codemap.Cluster, 0, len(comms))
 	for _, c := range comms {
 		syms := make([]codemap.Symbol, 0, len(c.Members))

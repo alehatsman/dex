@@ -81,7 +81,7 @@ func cmdMap(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	clusters := adaptCommunities(out.Communities)
+	clusters := mcp.AdaptCommunities(out.Communities)
 
 	if *cluster >= 0 {
 		c, ok := findCluster(clusters, *cluster)
@@ -109,26 +109,6 @@ func cmdMap(ctx context.Context, args []string) error {
 	fmt.Print(codemap.RenderOrient(clusters,
 		codemap.OrientExtras{Entrypoints: out.Entrypoints, ImportEdges: mcp.CodemapImportEdges(out.ImportEdges), Externals: out.Externals, Scale: mcp.CodemapScale(out.Scale)}, *budget, 0))
 	return nil
-}
-
-// adaptCommunities maps the MCP community projection into the renderer's input.
-func adaptCommunities(comms []mcp.Community) []codemap.Cluster {
-	clusters := make([]codemap.Cluster, 0, len(comms))
-	for _, c := range comms {
-		syms := make([]codemap.Symbol, 0, len(c.Members))
-		for _, m := range c.Members {
-			syms = append(syms, codemap.Symbol{
-				QualifiedName: m.QualifiedName,
-				Kind:          m.Kind,
-				Pkg:           m.Package,
-				Path:          m.Path,
-				Line:          m.StartLine,
-				PageRank:      m.PageRank,
-			})
-		}
-		clusters = append(clusters, codemap.Cluster{ID: c.ID, Size: c.Size, Symbols: syms})
-	}
-	return clusters
 }
 
 func findCluster(clusters []codemap.Cluster, id int) (codemap.Cluster, bool) {
