@@ -1,26 +1,26 @@
 {
   "k": 10,
   "n": 10,
-  "mean_ndcg": 0.6970662247988557,
+  "mean_ndcg": 0.6405286937115809,
   "mean_recall": 0.9,
-  "mean_recall_pool": 0.9,
-  "mrr": 0.6866666666666668,
+  "mean_recall_pool": 1,
+  "mrr": 0.645,
   "by_type": {
     "architecture": {
       "k": 10,
-      "n": 9,
-      "mean_ndcg": 0.6723268287600411,
-      "mean_recall": 0.8888888888888888,
-      "mean_recall_pool": 0.8888888888888888,
-      "mrr": 0.6518518518518519
+      "n": 8,
+      "mean_ndcg": 0.6670668243453614,
+      "mean_recall": 0.9375,
+      "mean_recall_pool": 1,
+      "mrr": 0.6562499999999999
     },
     "nl": {
       "k": 10,
-      "n": 1,
-      "mean_ndcg": 0.9197207891481877,
-      "mean_recall": 1,
+      "n": 2,
+      "mean_ndcg": 0.5343761711764594,
+      "mean_recall": 0.75,
       "mean_recall_pool": 1,
-      "mrr": 1
+      "mrr": 0.6
     }
   },
   "queries": [
@@ -58,17 +58,17 @@
       ],
       "ranked_files": [
         "internal/store/store_search.go",
-        "internal/bench/perf/run.go",
+        "specs/semantic-search.md",
+        "docs/architecture.md",
+        "internal/store/store_degrade_test.go",
+        "internal/retrieve/service.go",
         "internal/store/store.go",
+        "internal/store/store_test.go",
         "internal/bench/compress/corpus.go",
         "internal/retrieve/fuse.go",
-        "docs/architecture.md",
-        "internal/retrieve/service.go",
-        "internal/store/bm25_quality.go",
-        "internal/mcp/enrich.go",
-        "internal/store/calibration.yml"
+        "internal/eval/runner.go"
       ],
-      "ndcg": 0.9197207891481877,
+      "ndcg": 0.8315546295836226,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
@@ -82,15 +82,15 @@
       ],
       "ranked_files": [
         "internal/eval/golden.go",
-        "cmd/dex/eval.go",
         "internal/eval/corpus/manifest.go",
-        "internal/eval/metrics.go",
-        "tasks.yml",
-        "internal/eval/manifest.go",
+        "cmd/dex/eval.go",
         "internal/eval/corpus/run.go",
+        "internal/eval/blastradius.go",
+        "internal/eval/metrics.go",
         "internal/eval/corpus/gencache.go",
-        "cmd/dex/bench_cochange.go",
-        "cmd/dex/main_usage.go"
+        "tasks.yml",
+        "cmd/dex/corpus.go",
+        "cmd/dex/bench_cochange.go"
       ],
       "ndcg": 1,
       "recall": 1,
@@ -107,18 +107,18 @@
       ],
       "ranked_files": [
         "internal/chunk/chunk.go",
-        "internal/index/index.go",
-        "internal/chunk/chunk_window.go",
-        "internal/summarize/semchunks.go",
-        "cmd/dex/main_usage.go",
-        "cmd/dex/registry.go",
-        "docs/architecture.md",
-        "cmd/dex/main_index.go",
         "specs/indexing.md",
-        "internal/chunk/chunk_lang.go"
+        "internal/store/store_test.go",
+        "internal/index/index_test.go",
+        "internal/mcp/server_tree.go",
+        "specs/review.md",
+        "internal/chunk/chunk_window.go",
+        "internal/chunk/chunk_coverage_test.go",
+        "docs/architecture.md",
+        "internal/store/store.go"
       ],
-      "ndcg": 0.7903864795495062,
-      "recall": 1,
+      "ndcg": 0.6131471927654585,
+      "recall": 0.5,
       "recall_pool": 1,
       "rr": 1,
       "type": "architecture"
@@ -130,70 +130,71 @@
         "internal/rerank/client.go"
       ],
       "ranked_files": [
+        "specs/semantic-search.md",
+        "internal/retrieve/service.go",
+        "internal/retrieve/rerank.go",
         "internal/bench/compress/corpus.go",
-        "internal/rerank/client.go",
-        "tasks.yml",
-        "docs/deployment.md",
-        "README.md",
-        "cmd/dex/main_usage.go",
         "cmd/dex/main_config.go",
-        "docs/config.md",
-        "docs/architecture.md",
-        "cmd/dex/env.go"
-      ],
-      "ndcg": 0.6309297535714574,
-      "recall": 1,
-      "recall_pool": 1,
-      "rr": 0.5,
-      "type": "architecture"
-    },
-    {
-      "id": "c06",
-      "query": "where is the MCP ask tool handler implemented",
-      "relevant": [
-        "internal/mcp/context.go",
-        "internal/mcp/server.go"
-      ],
-      "ranked_files": [
-        "cmd/dex/hook_observe_feedback.go",
+        "internal/rerank/client.go",
         "cmd/dex/main_search.go",
-        "specs/mcp-server.md",
-        "specs/ask.md",
-        "internal/mcp/server.go",
-        "internal/mcp/context.go",
-        "internal/mcp/verbs.go",
-        "cmd/dex/main_ask.go",
-        "cmd/dex/doctor.go",
-        "internal/mcp/http.go"
-      ],
-      "ndcg": 0.4556051495874604,
-      "recall": 1,
-      "recall_pool": 1,
-      "rr": 0.2,
-      "type": "architecture"
-    },
-    {
-      "id": "c07",
-      "query": "how does dex acquire the per-project lock to prevent concurrent indexing",
-      "relevant": [
-        "internal/lock/lock.go"
-      ],
-      "ranked_files": [
-        "cmd/dex/main_lock.go",
-        "cmd/dex/main_usage.go",
-        "specs/constitution.md",
-        "docs/architecture.md",
         "cmd/dex/main_clients.go",
-        "internal/lock/lock.go",
-        "specs/mcp-server.md",
-        "specs/watch.md",
-        "cmd/dex/main_manage.go",
-        "specs/indexing.md"
+        "internal/store/store_search.go",
+        "docs/architecture.md"
       ],
       "ndcg": 0.3562071871080222,
       "recall": 1,
       "recall_pool": 1,
       "rr": 0.16666666666666666,
+      "type": "architecture"
+    },
+    {
+      "id": "c06",
+      "query": "where does the ask verb build its retrieval context",
+      "relevant": [
+        "internal/mcp/context.go",
+        "internal/mcp/server.go"
+      ],
+      "ranked_files": [
+        "specs/ask.md",
+        "specs/mcp-server.md",
+        "cmd/dex/main_ask.go",
+        "internal/retrieve/intent.go",
+        "internal/mcp/context.go",
+        "internal/mcp/verbs.go",
+        "internal/retrieve/answer.go",
+        "internal/eval/faithfulness.go",
+        "internal/retrieve/expand.go",
+        "cmd/dex/hook_observe_feedback.go"
+      ],
+      "ndcg": 0.23719771276929624,
+      "recall": 0.5,
+      "recall_pool": 1,
+      "rr": 0.2,
+      "type": "nl"
+    },
+    {
+      "id": "c07",
+      "query": "how does dex acquire the per-project lock to prevent concurrent indexing",
+      "relevant": [
+        "cmd/dex/main_lock.go",
+        "internal/lock/lock.go"
+      ],
+      "ranked_files": [
+        "cmd/dex/main_lock.go",
+        "specs/indexing.md",
+        "cmd/dex/main_clients.go",
+        "internal/lock/lock.go",
+        "docs/architecture.md",
+        "specs/storage.md",
+        "specs/mcp-server.md",
+        "docs/config.md",
+        "cmd/dex/env.go",
+        "specs/watch.md"
+      ],
+      "ndcg": 0.8772153153380494,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 1,
       "type": "architecture"
     },
     {
@@ -203,21 +204,21 @@
         "internal/graph/centrality.go"
       ],
       "ranked_files": [
-        "internal/mcp/server_graph_deps.go",
-        "internal/graphquery/view.go",
         "internal/eval/skew/skew.go",
-        "cmd/dex/main_usage.go",
-        "specs/graph.md",
         "docs/architecture.md",
-        "internal/retrieve/graph.go",
-        "internal/graphquery/packages.go",
-        "internal/codemap/codemap.go",
-        "internal/store/store_graph.go"
+        "specs/graph.md",
+        "internal/graph/centrality.go",
+        "internal/eval/skew/skew_test.go",
+        "internal/store/store_graph.go",
+        "specs/semantic-search.md",
+        "cmd/dex/bench_skew.go",
+        "internal/graph/centrality_test.go",
+        "internal/graphquery/view.go"
       ],
-      "ndcg": 0,
-      "recall": 0,
-      "recall_pool": 0,
-      "rr": 0,
+      "ndcg": 0.43067655807339306,
+      "recall": 1,
+      "recall_pool": 1,
+      "rr": 0.25,
       "type": "architecture"
     },
     {
@@ -227,57 +228,57 @@
         "internal/index/index.go"
       ],
       "ranked_files": [
-        "internal/index/index.go",
         "specs/indexing.md",
-        "cmd/dex/main_usage.go",
+        "internal/index/index.go",
         "docs/architecture.md",
+        "internal/index/index_test.go",
         "cmd/dex/main_index.go",
-        "cmd/dex/registry.go",
-        "internal/chunk/chunk.go",
-        "internal/store/store_search.go",
+        "cmd/dex/main_config.go",
+        "specs/semantic-search.md",
         "specs/watch.md",
-        "internal/watch/watch.go"
+        "specs/embedding.md",
+        "internal/index/degradation_test.go"
       ],
-      "ndcg": 1,
+      "ndcg": 0.6309297535714574,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 1,
+      "rr": 0.5,
       "type": "architecture"
     },
     {
       "id": "c10",
       "query": "how does the proxy track token usage and prune messages",
       "relevant": [
+        "cmd/dex/proxy.go",
         "internal/proxy/proxy.go",
-        "internal/proxy/prune.go",
-        "internal/proxy/usage.go"
+        "internal/proxy/prune.go"
       ],
       "ranked_files": [
-        "internal/proxy/prune.go",
-        "internal/proxy/usage.go",
-        "internal/proxy/overprune.go",
-        "internal/proxy/proxy.go",
-        "internal/proxy/metrics.go",
+        "specs/proxy.md",
+        "internal/proxy/proxy_test.go",
         "cmd/dex/proxy.go",
-        "internal/proxy/baseline.go",
-        "internal/proxy/cache.go",
-        "internal/proxy/security.go",
-        "internal/tokens/tokens.go"
+        "internal/proxy/proxy.go",
+        "cmd/dex/doctor.go",
+        "internal/proxy/metrics.go",
+        "internal/proxy/usage_test.go",
+        "internal/proxy/prune_test.go",
+        "internal/proxy/prune.go",
+        "internal/proxy/cache.go"
       ],
-      "ndcg": 0.9674679834891693,
+      "ndcg": 0.578013682371755,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 1,
+      "rr": 0.3333333333333333,
       "type": "architecture"
     }
   ],
   "manifest": {
     "schema_version": 2,
     "golden_mode": "curated",
-    "golden_sha256": "642364a4b9d3221b3c8d7e1bf461958d2c0983aa7e54a5ea14eb9735ed9a8810",
+    "golden_sha256": "1115e78f02d1105435ef0b85aa9880d28eae1c6e8046f50a649d556ea82e9b01",
     "golden_head": "c4be5bbe2cf631965f969c88f011fc65f390e639",
-    "repo_head": "e9dd7c37a7310d192db92c54a1cea58f2f5cfffd",
-    "query_set_sha256": "d4ce56d685045fd5821b943a91b72023b05c397dc78ca41dba448a59c5e4bbd4",
+    "repo_head": "0836c57cd3beba2322a373c4c5b6e8a66bad046a",
+    "query_set_sha256": "711195af3618056ce044eb8c160f771def701054862e723c357a97b50f5ef000",
     "lane": "full",
     "embed_model": "qwen3-embedding:0.6b",
     "embed_dim": 1024,
