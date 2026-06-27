@@ -174,6 +174,25 @@ func TestKnowledgeExportAllUncapped(t *testing.T) {
 	}
 }
 
+// Regression: KnowledgeByID must not crash when superseded_by IS NULL (#789).
+func TestKnowledgeByID_NullSupersedeBy(t *testing.T) {
+	st, ctx := newStore(t)
+	if _, err := st.KnowledgeAdd(ctx, "Fact", "a plain fact", 0.9); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := st.KnowledgeQuery(ctx, 10)
+	if err != nil || len(facts) == 0 {
+		t.Fatalf("KnowledgeQuery: err=%v facts=%d", err, len(facts))
+	}
+	f, err := st.KnowledgeByID(ctx, facts[0].ID)
+	if err != nil {
+		t.Fatalf("KnowledgeByID: %v", err)
+	}
+	if f.SupersededBy != 0 {
+		t.Errorf("SupersededBy = %d, want 0 for non-superseded fact", f.SupersededBy)
+	}
+}
+
 func itoa3(i int) string {
 	return string(rune('0'+i/100%10)) + string(rune('0'+i/10%10)) + string(rune('0'+i%10))
 }

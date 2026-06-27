@@ -666,14 +666,16 @@ func (s *knowledgeStore) KnowledgeByID(ctx context.Context, id int64) (Knowledge
 	var f KnowledgeFact
 	var cNs, uNs, vuNs int64
 	var vuValid bool
+	var supersededBy sql.NullInt64
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, archetype, body, confidence, created_at, updated_at,
 		        hit_count, revision_count, scope, pinned, active, superseded_by,
 		        evidence, CASE WHEN valid_until IS NULL THEN 0 ELSE valid_until END, valid_until IS NOT NULL
 		 FROM knowledge_facts WHERE id=?`, id,
 	).Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs,
-		&f.HitCount, &f.RevisionCount, &f.Scope, &f.Pinned, &f.Active, &f.SupersededBy,
+		&f.HitCount, &f.RevisionCount, &f.Scope, &f.Pinned, &f.Active, &supersededBy,
 		&f.Evidence, &vuNs, &vuValid)
+	f.SupersededBy = supersededBy.Int64
 	if errors.Is(err, sql.ErrNoRows) {
 		return KnowledgeFact{}, errors.New("fact not found")
 	}
