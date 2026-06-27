@@ -23,7 +23,7 @@ Offline code-retrieval eval. Scores the live Search path against a golden set
 of (query → relevant files) pairs mined from the repo's own git history, and
 reports NDCG@k, Recall@k and MRR.
 
-Four golden-set flavors (--mode):
+Five golden-set flavors (--mode):
   git-history  (default) query = commit subject, relevant = files it touched.
                Measures direct code retrieval.
   blast-radius query = a code excerpt from an anchor file, relevant = the OTHER
@@ -38,16 +38,21 @@ Four golden-set flavors (--mode):
                import, const, or var declaration. Relevant = the file
                containing that declaration. Targets the "orphan" chunks
                that commit-history probes miss.
+  curated      hand-labeled (query → relevant files) pairs, committed under
+               benchmark/eval/curated.json. Unlike the mined modes, labels are
+               verified by a human and cover patterns that git history cannot
+               express (doc files, cross-package behavior questions). --gen is
+               not supported for this mode.
 
 The golden set is committed (default benchmark/eval/golden.json, or
-blast-radius.json / structural.json for the corresponding --mode) so the
-query set — and therefore the metrics — are stable across runs. Regenerate
-with --gen to refresh the labels.
+blast-radius.json / structural.json / curated.json for the corresponding
+--mode) so the query set — and therefore the metrics — are stable across runs.
+Regenerate with --gen to refresh the mined labels (not applicable to curated).
 
 Flags:
   --gen            (re)generate the golden set from git history and write it to
                    --golden, then exit (does not score)
-  --mode flavor    golden-set flavor when generating: git-history | blast-radius | structural | orphan
+  --mode flavor    golden-set flavor: git-history | blast-radius | structural | orphan | curated
   --golden path    golden-set JSON (default: <project>/benchmark/eval/golden.json)
   --k int          retrieval depth (default: 10)
   --max-commits N  commits to scan when generating (default: 500)
@@ -99,6 +104,8 @@ func goldenPathForMode(root, mode string) string {
 		name = "structural.json"
 	case "orphan":
 		name = "orphan.json"
+	case "curated":
+		name = "curated.json"
 	}
 	return filepath.Join(root, "benchmark", "eval", name)
 }
@@ -140,9 +147,9 @@ func runEval(ctx context.Context, args []string) error {
 		return fmt.Errorf("dex bench eval: %w", err)
 	}
 
-	validModes := map[string]bool{"git-history": true, "blast-radius": true, "structural": true, "orphan": true}
+	validModes := map[string]bool{"git-history": true, "blast-radius": true, "structural": true, "orphan": true, "curated": true}
 	if !validModes[*mode] {
-		return fmt.Errorf("dex bench eval: unknown --mode %q (want git-history|blast-radius|structural|orphan)", *mode)
+		return fmt.Errorf("dex bench eval: unknown --mode %q (want git-history|blast-radius|structural|orphan|curated)", *mode)
 	}
 
 	gPath := *goldenPath
@@ -151,7 +158,16 @@ func runEval(ctx context.Context, args []string) error {
 	}
 
 	if *gen {
+		if *mode == "curated" {
+			return fmt.Errorf("dex bench eval: --gen is not supported for --mode curated (the set is hand-labeled; edit %s directly)", gPath)
+		}
 		return generateEvalGolden(ctx, p.Root, gPath, *mode, *maxCommits, *maxFiles, *maxPerKind)
+	}
+
+	// Curated sets are hand-labeled and not tied to a specific HEAD — skip the
+	// stale-golden check that would fail --check runs as the repo advances.
+	if *mode == "curated" {
+		*allowStale = true
 	}
 
 	gs, err := eval.LoadGolden(gPath)

@@ -1,0 +1,86 @@
+{
+  "repo": "dex",
+  "head": "c4be5bbe2cf631965f969c88f011fc65f390e639",
+  "gen_opts": {
+    "max_commits": 0,
+    "max_files": 0
+  },
+  "queries": [
+    {
+      "id": "c01",
+      "query": "how does dex watch files for changes",
+      "relevant_files": [
+        "internal/watch/watch.go",
+        "specs/watch.md"
+      ]
+    },
+    {
+      "id": "c02",
+      "query": "where does Store.Search fuse BM25 and cosine scores",
+      "relevant_files": [
+        "internal/store/store_search.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "c03",
+      "query": "how does the eval golden set get mined from git history",
+      "relevant_files": [
+        "internal/eval/golden.go"
+      ]
+    },
+    {
+      "id": "c04",
+      "query": "how does the chunker split source files into indexed chunks",
+      "relevant_files": [
+        "internal/chunk/chunk.go",
+        "internal/chunk/chunk_lang.go"
+      ]
+    },
+    {
+      "id": "c05",
+      "query": "how does dex rerank search results with a cross-encoder",
+      "relevant_files": [
+        "internal/rerank/client.go"
+      ]
+    },
+    {
+      "id": "c06",
+      "query": "where is the MCP ask tool handler implemented",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "c07",
+      "query": "how does dex acquire the per-project lock to prevent concurrent indexing",
+      "relevant_files": [
+        "internal/lock/lock.go"
+      ]
+    },
+    {
+      "id": "c08",
+      "query": "how does dex compute PageRank scores for graph nodes",
+      "relevant_files": [
+        "internal/graph/centrality.go"
+      ]
+    },
+    {
+      "id": "c09",
+      "query": "how does the file indexer walk and embed chunks",
+      "relevant_files": [
+        "internal/index/index.go"
+      ]
+    },
+    {
+      "id": "c10",
+      "query": "how does the proxy track token usage and prune messages",
+      "relevant_files": [
+        "internal/proxy/proxy.go",
+        "internal/proxy/prune.go",
+        "internal/proxy/usage.go"
+      ]
+    }
+  ]
+}
