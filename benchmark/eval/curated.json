@@ -110,7 +110,7 @@
     },
     {
       "id": "c18",
-      "query": "how does Store.migrate apply DDL schema updates",
+      "query": "how does dex handle schema migrations and version bumps",
       "relevant_files": ["internal/store/store_migrate.go"],
       "class": "behavior"
     },
