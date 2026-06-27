@@ -121,9 +121,12 @@ tasks:
           fi
           # Signal dex mcp (stdio) processes to exec-reload with the new binary
           # in-place — same PID, same stdin/stdout pipe, no Claude Code reconnect gap.
-          mcp_count=$(pgrep -f "dex mcp" | wc -l | tr -d ' ')
-          if [ "$mcp_count" -gt 0 ]; then
-            pkill --signal SIGUSR1 -f "dex mcp" || true
+          # Use ps+awk (binary path ends in /dex, argv[1] == mcp) to avoid matching
+          # the bash process running this script, whose cmdline contains "dex mcp".
+          dex_mcp_pids=$(ps -eo pid,args | awk '$3 == "mcp" && $2 ~ /\/dex$/ {print $1}')
+          if [ -n "$dex_mcp_pids" ]; then
+            echo "$dex_mcp_pids" | xargs kill -SIGUSR1 2>/dev/null || true
+            mcp_count=$(echo "$dex_mcp_pids" | wc -l | tr -d ' ')
             echo "✓ Signalled $mcp_count dex mcp process(es) to exec-reload"
           fi
           # Restart systemd-managed HTTP services normally.
