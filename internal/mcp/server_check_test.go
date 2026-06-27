@@ -198,3 +198,36 @@ func TestCheckBatch(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckFileSymbol_Exists: "file:symbol" with an existing symbol → ok.
+func TestCheckFileSymbol_Exists(t *testing.T) {
+	s, root := checkFixture(t)
+	_, out, err := s.check(context.Background(), nil, CheckInput{
+		ProjectRoot: root,
+		Claims:      []ClaimRef{{Ref: "main.go:Foo"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := out.Results[0]
+	if r.Status != "ok" {
+		t.Errorf("file:symbol for existing symbol: status = %q, want ok (symbol_at=%q)", r.Status, r.SymbolAt)
+	}
+}
+
+// TestCheckFileSymbol_Missing: "file:symbol" with a non-existent symbol → gone.
+// Before the fix this returned "ok", masking the missing symbol.
+func TestCheckFileSymbol_Missing(t *testing.T) {
+	s, root := checkFixture(t)
+	_, out, err := s.check(context.Background(), nil, CheckInput{
+		ProjectRoot: root,
+		Claims:      []ClaimRef{{Ref: "main.go:NonExistent"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := out.Results[0]
+	if r.Status != "gone" {
+		t.Errorf("file:symbol for missing symbol: status = %q, want gone", r.Status)
+	}
+}

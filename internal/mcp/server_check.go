@@ -96,7 +96,15 @@ func verifyOneClaim(ctx context.Context, st *store.Store, c ClaimRef) ClaimResul
 	}
 
 	if line <= 0 {
-		// No line given: just confirm the file is indexed.
+		// No line given. If a symbol was specified, verify it exists in this file.
+		if sym != "" {
+			hits, err := st.FindSymbolInPath(ctx, path, sym)
+			if err != nil || len(hits) == 0 {
+				res.Status = "gone"
+				return res
+			}
+			res.SymbolAt = hits[0].Name
+		}
 		res.Status = "ok"
 		return res
 	}
