@@ -16,6 +16,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -506,7 +507,82 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	// an earlier turn and drop their content, so we don't resend bytes the agent
 	// already holds.
 	s.applySeenContext(sessionKey(req), &out)
+
+	// Final safety net: keep the whole serialized bundle under a hard ceiling.
+	// The inline byte pool bounds suggested_reads + semantic_hits, but graph and
+	// knowledge_facts are appended outside it, so a dense graph on top of a full
+	// exploration pool could still overflow the MCP tool-result limit (#784).
+	clampResponseEnvelope(&out, intent)
 	return nil, out, nil
+}
+
+// envelopeCeilingBytes is the hard cap on one ask response's serialized size,
+// derived from the intent's inline pool budget plus headroom for the lanes that
+// sit outside the pool (graph, knowledge_facts, annotations, answer). It stays
+// well under the MCP tool-result token ceiling — a ~62 KB bundle has overflowed
+// it in practice (#784).
+func envelopeCeilingBytes(intent string) int {
+	const outOfPoolHeadroom = 10 * 1024
+	return retrieve.InlineCapsFor(intent).TotalBytesCap + outOfPoolHeadroom
+}
+
+// clampResponseEnvelope trims the bundle to fit envelopeCeilingBytes, shedding
+// the lowest-value lanes first. The graph is a structural hint the agent can
+// rebuild with trace(), so it goes before any inlined code: edges first (the
+// bulk), then the nodes. If that is still not enough, inlined Content is
+// dropped from the lowest-ranked semantic hits — tail first, never the top
+// hit — leaving their locators so the agent can Read them. A no-op in the
+// common case, where the bundle is already under budget.
+func clampResponseEnvelope(out *ContextOutput, intent string) {
+	ceiling := envelopeCeilingBytes(intent)
+	if envelopeSizeBytes(out) <= ceiling {
+		return
+	}
+	trimmed := false
+	if out.Graph != nil && len(out.Graph.Edges) > 0 {
+		out.Graph.Edges = nil
+		trimmed = true
+	}
+	if out.Graph != nil && envelopeSizeBytes(out) > ceiling {
+		out.Graph = nil
+		trimmed = true
+	}
+	for envelopeSizeBytes(out) > ceiling {
+		i := lastInlinedSemHit(out.SemanticHits)
+		if i < 0 {
+			break // nothing left to shed but the top hit
+		}
+		out.SemanticHits[i].Content = ""
+		out.SemanticHits[i].Truncated = true
+		trimmed = true
+	}
+	if trimmed {
+		out.NextAction = strings.TrimSpace(out.NextAction +
+			" [dex] Response trimmed to fit the size budget — graph and/or inlined tails dropped; trace() or Read the locators for the rest.")
+	}
+}
+
+// envelopeSizeBytes is the serialized length the caller will receive. A marshal
+// error (which should not happen for this struct) returns 0 so the clamp is a
+// no-op rather than trimming a bundle it cannot measure.
+func envelopeSizeBytes(out *ContextOutput) int {
+	b, err := json.Marshal(out)
+	if err != nil {
+		return 0
+	}
+	return len(b)
+}
+
+// lastInlinedSemHit returns the index of the lowest-ranked semantic hit that
+// still carries inlined Content, or -1 when only the top hit (index 0) does.
+// Trimming tail-first preserves the highest-scoring evidence.
+func lastInlinedSemHit(hits []SemHit) int {
+	for i := len(hits) - 1; i >= 1; i-- {
+		if hits[i].Content != "" {
+			return i
+		}
+	}
+	return -1
 }
 
 // resolveLogSink returns the token sink to use for answer streaming.
