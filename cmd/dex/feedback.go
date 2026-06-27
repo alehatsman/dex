@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -11,60 +10,34 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/alehatsman/dex/internal/eval"
+	"github.com/alehatsman/dex/internal/feedback"
 )
 
 // `dex feedback` reads the observe log (hooks.jsonl) the PostToolUse hook
 // writes and turns it into a relevance signal on real traffic (#724). The
-// log was write-only until this consumer existed: nothing measured whether
-// the reads `ask` recommended were the reads the agent actually opened.
+// reader and ask-vs-read join live in internal/feedback (the single in-process
+// home, shared with the live reweighter #731); this file is the CLI gauge over
+// them.
 //
-// It computes, per session (segmented by the Stop / PreCompact boundary
-// events the hook records):
+// It reports, per session (segmented by the Stop / PreCompact boundary events
+// the hook records):
 //
-//   - suggested-read open-rate: of the reads `ask` recommended, what
-//     fraction the agent opened afterward — the core "is ask pointing where
-//     the agent goes" number, broken down by routed intent;
+//   - suggested-read open-rate: of the reads `ask` recommended, what fraction
+//     the agent opened afterward — broken down by routed intent;
 //   - inline-reopen rate: of `ask` calls that inlined content, what fraction
-//     were followed by re-opening a recommended file anyway (inline bytes
-//     spent without saving the read).
+//     were followed by re-opening a recommended file anyway.
 //
 // The pruned-then-re-read (CCR) rate is already measured proxy-side
 // (rereads_after_stub in the proxy request log); see `dex proxy --stats`.
 
-type feedbackEvent struct {
-	TS       int64    `json:"ts"`
-	Event    string   `json:"event,omitempty"`
-	ToolName string   `json:"tool_name,omitempty"`
-	Tokens   int      `json:"tokens,omitempty"`
-	Paths    []string `json:"paths,omitempty"`
-	Inlined  int      `json:"inlined_bytes,omitempty"`
-	Intent   string   `json:"intent,omitempty"`
-	Query    string   `json:"query,omitempty"` // ask-only: question text for miss-mining (#732)
-}
-
-type intentStat struct {
-	Asks      int     `json:"asks"`
-	Suggested int     `json:"suggested"`
-	Opened    int     `json:"opened"`
-	OpenRate  float64 `json:"open_rate"`
-}
-
-type feedbackReport struct {
-	LogPath          string                `json:"log_path"`
-	Events           int                   `json:"events"`
-	Sessions         int                   `json:"sessions"`
-	Asks             int                   `json:"asks"`
-	SuggestedReads   int                   `json:"suggested_reads"`
-	OpenedReads      int                   `json:"opened_reads"`
-	OpenRate         float64               `json:"open_rate"`
-	InlinedAsks      int                   `json:"inlined_asks"`
-	InlineReopened   int                   `json:"inline_reopened"`
-	InlineReopenRate float64               `json:"inline_reopen_rate"`
-	ByIntent         map[string]intentStat `json:"by_intent,omitempty"`
-}
+// Type aliases keep the CLI's JSON contract (and #732's --mine-curated) bound
+// to the canonical types in internal/feedback.
+type (
+	feedbackEvent  = feedback.Event
+	feedbackReport = feedback.Report
+)
 
 func runFeedback(_ context.Context, args []string) error {
 	fs := flag.NewFlagSet("feedback", flag.ContinueOnError)
@@ -81,7 +54,7 @@ func runFeedback(_ context.Context, args []string) error {
 	if path == "" {
 		path = filepath.Join(hookLogDir(), "hooks.jsonl")
 	}
-	events, err := readFeedbackLog(path)
+	events, err := feedback.ReadLog(path)
 	if err != nil {
 		return err
 	}
@@ -97,7 +70,7 @@ func runFeedback(_ context.Context, args []string) error {
 		return enc.Encode(candidates)
 	}
 
-	rep := computeFeedback(events, *window)
+	rep := feedback.Compute(events, *window)
 	rep.LogPath = path
 
 	if *asJSON {
@@ -107,144 +80,6 @@ func runFeedback(_ context.Context, args []string) error {
 	}
 	printFeedbackReport(os.Stdout, rep)
 	return nil
-}
-
-// readFeedbackLog parses hooks.jsonl into events. Malformed lines are skipped
-// (the log is appended live and a partial final line is normal).
-func readFeedbackLog(path string) ([]feedbackEvent, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open observe log: %w (run some sessions first, or pass --log)", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	var out []feedbackEvent
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for sc.Scan() {
-		line := sc.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		var e feedbackEvent
-		if json.Unmarshal(line, &e) != nil {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out, sc.Err()
-}
-
-// computeFeedback joins ask recommendations against subsequent reads. The
-// log is split into sessions on boundary events (Stop / PreCompact); the
-// join never crosses a boundary, so a read in a later session can't be
-// credited to an earlier session's ask. window bounds the lookahead in
-// consume events per suggested read (0 = rest of session).
-func computeFeedback(events []feedbackEvent, window int) feedbackReport {
-	rep := feedbackReport{Events: len(events), ByIntent: map[string]intentStat{}}
-
-	var sessions [][]feedbackEvent
-	var cur []feedbackEvent
-	for _, e := range events {
-		if e.Event != "" { // boundary event ends the current session
-			if len(cur) > 0 {
-				sessions = append(sessions, cur)
-				cur = nil
-			}
-			continue
-		}
-		cur = append(cur, e)
-	}
-	if len(cur) > 0 {
-		sessions = append(sessions, cur)
-	}
-	rep.Sessions = len(sessions)
-
-	for _, s := range sessions {
-		for i, e := range s {
-			if !isAskTool(e.ToolName) || len(e.Paths) == 0 {
-				continue
-			}
-			rep.Asks++
-			st := rep.ByIntent[e.Intent]
-			st.Asks++
-
-			openedAny := false
-			for _, sp := range e.Paths {
-				rep.SuggestedReads++
-				st.Suggested++
-				if sessionOpens(s, i+1, sp, window) {
-					rep.OpenedReads++
-					st.Opened++
-					openedAny = true
-				}
-			}
-			rep.ByIntent[e.Intent] = st
-
-			if e.Inlined > 0 {
-				rep.InlinedAsks++
-				if openedAny {
-					rep.InlineReopened++
-				}
-			}
-		}
-	}
-
-	if rep.SuggestedReads > 0 {
-		rep.OpenRate = ratio(rep.OpenedReads, rep.SuggestedReads)
-	}
-	if rep.InlinedAsks > 0 {
-		rep.InlineReopenRate = ratio(rep.InlineReopened, rep.InlinedAsks)
-	}
-	for k, st := range rep.ByIntent {
-		if st.Suggested > 0 {
-			st.OpenRate = ratio(st.Opened, st.Suggested)
-		}
-		rep.ByIntent[k] = st
-	}
-	return rep
-}
-
-// sessionOpens reports whether suggested path sp is opened by a consume tool
-// at an index after from, within window consume events (window <= 0 = to end
-// of session).
-func sessionOpens(s []feedbackEvent, from int, sp string, window int) bool {
-	consumed := 0
-	for j := from; j < len(s); j++ {
-		if !isConsumeTool(s[j].ToolName) {
-			continue
-		}
-		for _, op := range s[j].Paths {
-			if pathMatch(sp, op) {
-				return true
-			}
-		}
-		consumed++
-		if window > 0 && consumed >= window {
-			break
-		}
-	}
-	return false
-}
-
-// pathMatch reports whether a suggested path and an opened path refer to the
-// same file. ask emits repo-relative paths; Read often passes an absolute
-// path — so a component-boundary suffix match either direction counts.
-func pathMatch(suggested, opened string) bool {
-	a := filepath.Clean(suggested)
-	b := filepath.Clean(opened)
-	if a == b {
-		return true
-	}
-	sep := string(filepath.Separator)
-	return strings.HasSuffix(b, sep+a) || strings.HasSuffix(a, sep+b)
-}
-
-func ratio(n, d int) float64 {
-	if d == 0 {
-		return 0
-	}
-	return float64(n) / float64(d)
 }
 
 // mineCuratedCandidates scans the observe log for asks whose suggested_reads
@@ -266,26 +101,9 @@ func mineCuratedCandidates(events []feedbackEvent, window int, root string) []ev
 	byQuery := map[string]*candidate{}
 	queryOrder := []string{} // insertion order for stable output
 
-	// Split into sessions, same logic as computeFeedback.
-	var sessions [][]feedbackEvent
-	var cur []feedbackEvent
-	for _, e := range events {
-		if e.Event != "" {
-			if len(cur) > 0 {
-				sessions = append(sessions, cur)
-				cur = nil
-			}
-			continue
-		}
-		cur = append(cur, e)
-	}
-	if len(cur) > 0 {
-		sessions = append(sessions, cur)
-	}
-
-	for _, s := range sessions {
+	for _, s := range feedback.SplitSessions(events) {
 		for i, e := range s {
-			if !isAskTool(e.ToolName) || e.Query == "" {
+			if !feedback.IsAskTool(e.ToolName) || e.Query == "" {
 				continue
 			}
 			suggested := make(map[string]struct{}, len(e.Paths))
@@ -297,7 +115,7 @@ func mineCuratedCandidates(events []feedbackEvent, window int, root string) []ev
 			var missed []string
 			consumed := 0
 			for j := i + 1; j < len(s); j++ {
-				if !isConsumeTool(s[j].ToolName) {
+				if !feedback.IsConsumeTool(s[j].ToolName) {
 					continue
 				}
 				for _, op := range s[j].Paths {

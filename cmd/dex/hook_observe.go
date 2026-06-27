@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/alehatsman/dex/internal/feedback"
 )
 
 const toolSearch = "ToolSearch"
@@ -61,11 +63,11 @@ func hookObserve() error {
 		ev.Tokens = len(raw) / 4 // rough 4-bytes-per-token estimate
 	}
 	switch {
-	case isAskTool(ev.ToolName):
+	case feedback.IsAskTool(ev.ToolName):
 		// Recommendations the bundle made — joined against later reads.
 		ev.Paths, ev.Inlined, ev.Intent = parseAskResponse(v["tool_response"])
 		ev.Query = parseAskInput(v["tool_input"])
-	case isConsumeTool(ev.ToolName):
+	case feedback.IsConsumeTool(ev.ToolName):
 		// A file the agent actually opened — the consumption side of the join.
 		ev.Paths = pathsFromInput(v["tool_input"])
 	}
@@ -139,13 +141,6 @@ func notifyProxyCompact() {
 	_ = resp.Body.Close()
 }
 
-func hookLogDir() string {
-	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-		return filepath.Join(xdg, "dex")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".local", "share", "dex")
-}
+// hookLogDir resolves the observe-log directory via the shared resolver in
+// internal/feedback (one home for both the writer here and the live reader).
+func hookLogDir() string { return feedback.DefaultLogDir() }

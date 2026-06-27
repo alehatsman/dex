@@ -186,10 +186,11 @@ type Server struct {
 	AutoWatch    AutoWatchConfig      // lazy per-project watcher; zero value disables
 	CCRDir       string               // optional override for the proxy CCR tee dir; defaults to ~/.cache/dex/proxy/tee (#630)
 
-	watcherState // project watcher goroutines
-	sessionState // per-MCP-session tracking (throttle, dedup, body handles)
-	cacheState   // in-memory read/content/answer caches
-	patternState // loop and bounce-thrash detection
+	watcherState  // project watcher goroutines
+	sessionState  // per-MCP-session tracking (throttle, dedup, body handles)
+	cacheState    // in-memory read/content/answer caches
+	patternState  // loop and bounce-thrash detection
+	feedbackState // live feedback reader + shadow reweight A/B (#731)
 }
 
 // sloFor returns the per-project SLO tracker. Config is loaded once from

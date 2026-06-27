@@ -6,22 +6,8 @@ import (
 	"testing"
 )
 
-func TestIsAskAndConsumeTools(t *testing.T) {
-	if !isAskTool("mcp__dex__ask") || !isAskTool("ask") {
-		t.Error("ask tools not recognized")
-	}
-	if isAskTool("Read") || isAskTool("mcp__dex__find") {
-		t.Error("non-ask tool misclassified as ask")
-	}
-	for _, c := range []string{"Read", "Edit", "Write", "NotebookEdit", "mcp__dex__read"} {
-		if !isConsumeTool(c) {
-			t.Errorf("%q should be a consume tool", c)
-		}
-	}
-	if isConsumeTool("Bash") || isConsumeTool("mcp__dex__ask") {
-		t.Error("non-consume tool misclassified")
-	}
-}
+// Tool classification (IsAskTool / IsConsumeTool) now lives in
+// internal/feedback and is tested there.
 
 func TestPathsFromInput(t *testing.T) {
 	got := pathsFromInput(json.RawMessage(`{"file_path":"/abs/x.go","other":1}`))

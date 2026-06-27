@@ -17,21 +17,8 @@ import (
 // Both are best-effort and fail soft: a shape we don't recognize yields no
 // paths rather than an error, so the hook never blocks a tool call.
 
-// isAskTool reports whether name is a dex `ask` call (the MCP tool is
-// mcp__dex__ask; the bare name covers a future rename or a direct caller).
-func isAskTool(name string) bool {
-	return name == "ask" || strings.HasSuffix(name, "__ask")
-}
-
-// isConsumeTool reports whether name is a tool that opens a file by path —
-// the consumption side of the suggested-read join.
-func isConsumeTool(name string) bool {
-	switch name {
-	case "Read", "Edit", "MultiEdit", "Write", "NotebookEdit":
-		return true
-	}
-	return strings.HasSuffix(name, "__read") // mcp__dex__read
-}
+// Tool classification (isAskTool / isConsumeTool) lives in internal/feedback —
+// the single home shared with the join and the live reweighter (#731).
 
 // pathsFromInput pulls the file path(s) a consume tool targeted out of its
 // tool_input. Read/Edit/Write use file_path, NotebookEdit notebook_path,
