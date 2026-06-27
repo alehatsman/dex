@@ -103,22 +103,32 @@ func Rehearse(ctx context.Context, projectRoot string, in Input) (Result, error)
 }
 
 // buildOverlay constructs the go/packages Overlay map.
+// overlayAbs resolves a caller-supplied path to an absolute path under root.
+// It handles:
+//   - relative paths:              "internal/foo.go"
+//   - project-relative with slash: "/internal/foo.go"  (#767)
+//   - fully absolute under root:   "/home/user/proj/internal/foo.go"  (#792)
+func overlayAbs(root, p string) string {
+	if filepath.IsAbs(p) && strings.HasPrefix(p, root+string(filepath.Separator)) {
+		p = p[len(root)+1:]
+	}
+	return filepath.Join(root, filepath.FromSlash(strings.TrimLeft(p, "/")))
+}
+
 // WholeFile entries take precedence; EditTriples are spliced into the real file.
 func buildOverlay(root string, in Input) (map[string][]byte, string, error) {
 	overlay := make(map[string][]byte)
 
 	// Whole-file replacements first.
 	for _, wf := range in.Files {
-		// TrimLeft strips a leading '/' so project-relative paths like
-		// "/internal/foo.go" work the same as "internal/foo.go" (#767).
-		abs := filepath.Join(root, filepath.FromSlash(strings.TrimLeft(wf.Path, "/")))
+		abs := overlayAbs(root, wf.Path)
 		overlay[abs] = []byte(wf.Contents)
 	}
 
 	// Splice edits grouped by file, applied highest-offset-first.
 	byFile := map[string][]EditTriple{}
 	for _, e := range in.Edits {
-		abs := filepath.Join(root, filepath.FromSlash(strings.TrimLeft(e.Path, "/")))
+		abs := overlayAbs(root, e.Path)
 		if _, already := overlay[abs]; already {
 			continue // WholeFile wins
 		}

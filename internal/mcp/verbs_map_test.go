@@ -97,4 +97,17 @@ func TestMapVerbDispatch(t *testing.T) {
 			t.Errorf("out = {%q, zoom %q}, want {ok, orient}", out.Status, out.Zoom)
 		}
 	})
+
+	t.Run("empty communities with hint surfaces hint not graph-empty msg (#791)", func(t *testing.T) {
+		want := "no communities with ≥200 members — try a lower min_members value."
+		empty := CommunitiesOutput{Status: "ok", Hint: want}
+		fake := &captureCommSurface{Server: stubServer(t), out: empty}
+		_, out, err := mapVerb(ctx, fake, nil, MapInput{MinMembers: 200})
+		if err != nil {
+			t.Fatalf("mapVerb: %v", err)
+		}
+		if out.Hint != want {
+			t.Errorf("hint = %q, want %q", out.Hint, want)
+		}
+	})
 }

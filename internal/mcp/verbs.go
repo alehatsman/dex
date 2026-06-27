@@ -140,6 +140,9 @@ func mapVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in Ma
 	if comm.Status != "ok" {
 		return nil, MapOutput{Status: comm.Status, Hint: comm.Hint}, nil
 	}
+	if len(comm.Communities) == 0 && comm.Hint != "" {
+		return nil, MapOutput{Status: "ok", Hint: comm.Hint}, nil
+	}
 
 	clusters := adaptCommunities(comm.Communities)
 	if in.Cluster != nil {

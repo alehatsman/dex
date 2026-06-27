@@ -86,7 +86,7 @@ type KnowledgeOutput struct {
 	Status string                `json:"status"` // "ok" | "no-index" | "error"
 	Hint   string                `json:"hint,omitempty"`
 	JSON   string                `json:"json,omitempty"` // export payload (action=export only)
-	Facts  []KnowledgeFactOutput `json:"facts,omitempty"`
+	Facts  []KnowledgeFactOutput `json:"facts"`
 	// Similar lists existing notes that overlap the just-added body (action=add
 	// only, #606). A non-empty list is a warning, not an error: the agent can
 	// `delete` a superseded note or ignore the overlap.

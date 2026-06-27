@@ -91,6 +91,32 @@ func TestRehearse_CompilationError(t *testing.T) {
 	}
 }
 
+// TestRehearse_AbsolutePath confirms that a fully-absolute path under the
+// project root is resolved correctly (#792).
+func TestRehearse_AbsolutePath(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\ngo 1.21\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "foo.go"), []byte("package x\n\nfunc Hello() string { return \"hello\" }\n"), 0o644)
+
+	// Pass the fully-absolute path — the overlay must apply and the type error
+	// must be detected (not silently ignored).
+	abs := filepath.Join(dir, "foo.go")
+	res, err := rehearse.Rehearse(context.Background(), dir, rehearse.Input{
+		Files: []rehearse.WholeFile{
+			{Path: abs, Contents: "package x\n\nfunc Hello() string { return 42 }\n"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("expected status ok, got %q: %s", res.Status, res.Hint)
+	}
+	if res.Compiles {
+		t.Error("expected Compiles=false — overlay with absolute path must apply")
+	}
+}
+
 // TestRehearse_CleanHypothetical confirms a valid replacement compiles.
 func TestRehearse_CleanHypothetical(t *testing.T) {
 	dir := t.TempDir()
