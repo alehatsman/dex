@@ -2,8 +2,8 @@
 // Infinity, vLLM with a reranker model). It is the relevance-side
 // companion to internal/embed and internal/chat: where embed turns text
 // into vectors for bi-encoder retrieval, rerank scores (query, doc)
-// pairs jointly with cross-attention to reorder the fused candidate
-// pool that store.Search produces.
+// pairs jointly with a cross-encoder (cross-attention) to reorder the
+// fused candidate pool that store.Search produces.
 //
 // The request body matches Cohere (`documents` + `top_n`), but the
 // path is the open-source convention `/rerank`. Cohere's own API uses

@@ -46,7 +46,7 @@
     },
     {
       "id": "c06",
-      "query": "where is the MCP ask tool handler implemented",
+      "query": "where does the ask verb build its retrieval context",
       "relevant_files": [
         "internal/mcp/context.go",
         "internal/mcp/server.go"
@@ -56,6 +56,7 @@
       "id": "c07",
       "query": "how does dex acquire the per-project lock to prevent concurrent indexing",
       "relevant_files": [
+        "cmd/dex/main_lock.go",
         "internal/lock/lock.go"
       ]
     },
@@ -77,9 +78,9 @@
       "id": "c10",
       "query": "how does the proxy track token usage and prune messages",
       "relevant_files": [
+        "cmd/dex/proxy.go",
         "internal/proxy/proxy.go",
-        "internal/proxy/prune.go",
-        "internal/proxy/usage.go"
+        "internal/proxy/prune.go"
       ]
     }
   ]
