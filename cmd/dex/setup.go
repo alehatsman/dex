@@ -183,8 +183,8 @@ const rulesContent = `# dex — semantic search & context routing
 ## Tool Mapping (prefer dex tools over native equivalents)
 | Instead of | Use | When |
 |------------|-----|------|
-| Grep / rg (concept search) | ` + "`find(q, path)`" + ` | intent / keyword searches |
-| Grep / rg (exact name) | ` + "`find(name, path)`" + ` | find fuses exact symbol-name hits (RRF) |
+| Grep / rg (concept search) | ` + "`find(q, path_glob)`" + ` | intent / keyword searches |
+| Grep / rg (exact name) | ` + "`find(name, path_glob)`" + ` | find fuses exact symbol-name hits (RRF) |
 | Read (large files >400 lines) | ` + "`read(file)`" + ` | signatures + summaries view |
 | Bash (build/test output) | ` + "`shell(command)`" + ` | compressed shell output |
 | Manual cross-ref tracing | ` + "`callers / callees`" + ` | call-graph navigation |

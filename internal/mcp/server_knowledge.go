@@ -20,7 +20,7 @@ import (
 
 type KnowledgeInput struct {
 	ProjectRoot string  `json:"project_root,omitempty"  jsonschema:"absolute path to the project root; defaults to the server's working directory"`
-	Action      string  `json:"action"                  jsonschema:"add | list | delete | review | pin | unpin | export | import | consolidate | gc | supersede | relate | relations"`
+	Action      string  `json:"action"                  jsonschema:"add | list | delete | review | pin | unpin | export | import | consolidate | gc | relate | relations"`
 	Archetype   string  `json:"archetype,omitempty"     jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default) | Hypothesis | Inference | VerifiedFact"`
 	Body        string  `json:"body,omitempty"          jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
 	Confidence  float64 `json:"confidence,omitempty"    jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
@@ -40,6 +40,11 @@ type KnowledgeInput struct {
 	// Evidence marks facts derived from code inspection (#618). Evidence facts
 	// decay at half the normal archetype rate.
 	Evidence bool `json:"evidence,omitempty"      jsonschema:"for add: true if this fact was derived from direct code inspection (halves decay rate, #618)"`
+	// GC tuning — only used for action=gc.
+	GCDecayPerDay  float64 `json:"gc_decay_per_day,omitempty"   jsonschema:"for gc: confidence decay per day applied to stale facts (default 0.01)"`
+	GCFloor        float64 `json:"gc_floor,omitempty"           jsonschema:"for gc: confidence floor below which a fact is evicted (default 0.05)"`
+	GCJaccardMerge float64 `json:"gc_jaccard_merge,omitempty"   jsonschema:"for gc: Jaccard similarity threshold for dedup-merging bodies (default 0.85)"`
+	GCMaxFacts     int     `json:"gc_max_facts,omitempty"       jsonschema:"for gc: cap on total active facts; oldest low-confidence facts evicted when exceeded (default 500)"`
 	// Relate fields for action=relate (#621).
 	RelateFrom int64  `json:"relate_from,omitempty"   jsonschema:"for relate: source fact id"`
 	RelateTo   int64  `json:"relate_to,omitempty"     jsonschema:"for relate: target fact id"`
@@ -147,7 +152,13 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 	case "consolidate":
 		return s.knowledgeConsolidate(ctx, st)
 	case "gc":
-		res, err := st.KnowledgeGC(ctx, store.KnowledgeGCConfig{})
+		cfg := store.KnowledgeGCConfig{
+			DecayPerDay:     in.GCDecayPerDay,
+			ConfidenceFloor: in.GCFloor,
+			JaccardMerge:    in.GCJaccardMerge,
+			MaxFacts:        in.GCMaxFacts,
+		}
+		res, err := st.KnowledgeGC(ctx, cfg)
 		if err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 		}
@@ -161,7 +172,16 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 	case "list", "":
 		// fall through to read
 	default:
-		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | review | pin | unpin | export | import | consolidate | gc | supersede | relate | relations", in.Action)}, nil
+		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf("unknown action %q — want: add | list | delete | review | pin | unpin | export | import | consolidate | gc | relate | relations", in.Action)}, nil
+	}
+
+	// Direct ID lookup: return the exact fact without recall scoring (#764).
+	if in.ID > 0 {
+		f, err := st.KnowledgeByID(ctx, in.ID)
+		if err != nil {
+			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
+		}
+		return nil, KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{knowledgeFactOut(f)}}, nil
 	}
 
 	// Scope-filtered list (#653): notes whose scope binds the given path — what
@@ -172,18 +192,22 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 		if err != nil {
 			return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 		}
-		out := KnowledgeOutput{Status: "ok"}
+		out := KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{}}
 		for _, f := range facts {
 			out.Facts = append(out.Facts, knowledgeFactOut(f))
 		}
 		return nil, out, nil
 	}
 
+	var kHint string
+	if in.K > 50 {
+		kHint = "k capped at 50 — the maximum"
+	}
 	facts, err := s.recallFacts(ctx, st, in.Query, in.K, false)
 	if err != nil {
 		return nil, KnowledgeOutput{Status: "error", Hint: err.Error()}, nil
 	}
-	out := KnowledgeOutput{Status: "ok"}
+	out := KnowledgeOutput{Status: "ok", Facts: []KnowledgeFactOutput{}, Hint: kHint}
 	for _, f := range facts {
 		out.Facts = append(out.Facts, knowledgeFactOut(f))
 	}
@@ -213,7 +237,13 @@ func suggestScope(root, body string) string {
 			continue // too ambiguous
 		}
 		if hasGlob {
-			return tok
+			// A '/' anchors the glob to a directory; a '.' indicates a file-extension
+			// pattern (*.go, *_test.go). A bare *Name with neither is a Go pointer
+			// receiver type, not a valid path glob (#766).
+			if strings.Contains(tok, "/") || strings.Contains(tok, ".") {
+				return tok
+			}
+			continue
 		}
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(tok))); err == nil {
 			return tok
@@ -263,6 +293,10 @@ func (s *Server) knowledgeAdd(ctx context.Context, st *store.Store, p *proj.Proj
 	arch := in.Archetype
 	if arch == "" {
 		arch = "Observation"
+	} else if !validArchetype(arch) {
+		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf(
+			"invalid archetype %q — want one of: Architecture, Gotcha, Decision, Convention, Dependency, Pattern, Fact, Observation, Hypothesis, Inference, VerifiedFact",
+			arch)}, nil
 	}
 	opts := store.KnowledgeAddOpts{Scope: in.Scope, Evidence: in.Evidence}
 	if in.ValidUntil != "" {
@@ -704,4 +738,16 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// validArchetype reports whether the supplied archetype string names one of the
+// known knowledge-fact archetypes (#762). Comparison is case-sensitive because
+// the store and the CLI enforce the canonical capitalisation.
+func validArchetype(s string) bool {
+	switch s {
+	case "Architecture", "Gotcha", "Decision", "Convention", "Dependency",
+		"Pattern", "Fact", "Observation", "Hypothesis", "Inference", "VerifiedFact":
+		return true
+	}
+	return false
 }

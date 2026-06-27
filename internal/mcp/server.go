@@ -61,7 +61,7 @@ Power lanes (deps, diff, clusters, routes, smells, status, session) are gated be
 
 Start every session by calling ask() with the task description.
 
-IMPORTANT: dex MCP tools are deferred — their schemas are not loaded until you call ToolSearch. Before using any dex tool for the first time each session, call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__ls,mcp__dex__find,mcp__dex__grep,mcp__dex__read" to load the schemas. Do this before any other action.`
+IMPORTANT: dex MCP tools are deferred — their schemas are not loaded until you call ToolSearch. Before using any dex tool for the first time each session, call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__find,mcp__dex__grep,mcp__dex__read" to load the schemas. Do this before any other action.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.

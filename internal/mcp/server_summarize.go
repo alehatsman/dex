@@ -168,9 +168,15 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	// CLI-only mode (e.g. "entropy") would silently blow the token budget (#528).
 	// Auto-selected modes come from trusted sources and are always valid.
 	if explicitMode && !ValidReadMode(mode) {
+		modes := ReadModes()
+		for i, m := range modes {
+			if m == "lines" {
+				modes[i] = "lines:N-M"
+			}
+		}
 		return nil, SummarizeOutput{
 			Status: "error",
-			Hint:   fmt.Sprintf("unrecognized read mode %q; valid: %s (use lines:N-M for a line range)", mode, strings.Join(ReadModes(), ", ")),
+			Hint:   fmt.Sprintf("unrecognized read mode %q; valid: %s", mode, strings.Join(modes, ", ")),
 		}, nil
 	}
 

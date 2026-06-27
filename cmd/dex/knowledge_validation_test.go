@@ -15,6 +15,9 @@ func TestCanonicalArchetype(t *testing.T) {
 		"dependency":    "Dependency",
 		"Pattern":       "Pattern",
 		"fact":          "Fact",
+		"Observation":   "Observation",
+		"observation":   "Observation",
+		"OBSERVATION":   "Observation",
 		"hypothesis":    "Hypothesis",
 		"Hypothesis":    "Hypothesis",
 		"inference":     "Inference",
@@ -30,7 +33,7 @@ func TestCanonicalArchetype(t *testing.T) {
 			t.Errorf("canonicalArchetype(%q) = (%q, %v), want (%q, true)", in, got, valid, want)
 		}
 	}
-	for _, bad := range []string{"", "Bogus", "Observation", "note", "arch"} {
+	for _, bad := range []string{"", "Bogus", "note", "arch"} {
 		if got, valid := canonicalArchetype(bad); valid {
 			t.Errorf("canonicalArchetype(%q) = (%q, true), want invalid", bad, got)
 		}
@@ -79,6 +82,7 @@ func TestNotesAddAcceptsValidFlags(t *testing.T) {
 
 	for _, args := range [][]string{
 		{"--archetype", "gotcha", "a valid fact"},
+		{"--archetype", "Observation", "an observation"},
 		{"--archetype", "Decision", "--confidence=0.9", "another fact"},
 		{"a fact with default archetype and confidence"},
 	} {

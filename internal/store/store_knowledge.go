@@ -634,8 +634,13 @@ func (s *knowledgeStore) KnowledgeCount(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// KnowledgeDelete removes a fact by id.
+// KnowledgeDelete removes a fact by id, pruning any knowledge_relations that
+// reference it first (SQLite FK cascade is not available without a schema
+// rebuild, so we do it explicitly — #756).
 func (s *knowledgeStore) KnowledgeDelete(ctx context.Context, id int64) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM knowledge_relations WHERE from_id=? OR to_id=?`, id, id); err != nil {
+		return fmt.Errorf("delete relations for fact %d: %w", id, err)
+	}
 	res, err := s.db.ExecContext(ctx, `DELETE FROM knowledge_facts WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -644,6 +649,35 @@ func (s *knowledgeStore) KnowledgeDelete(ctx context.Context, id int64) error {
 		return errors.New("fact not found")
 	}
 	return nil
+}
+
+// KnowledgeByID returns a single fact by its primary key.
+// Returns (zero, errors.New("fact not found")) when no row exists.
+func (s *knowledgeStore) KnowledgeByID(ctx context.Context, id int64) (KnowledgeFact, error) {
+	var f KnowledgeFact
+	var cNs, uNs, vuNs int64
+	var vuValid bool
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, archetype, body, confidence, created_at, updated_at,
+		        hit_count, revision_count, scope, pinned, active, superseded_by,
+		        evidence, CASE WHEN valid_until IS NULL THEN 0 ELSE valid_until END, valid_until IS NOT NULL
+		 FROM knowledge_facts WHERE id=?`, id,
+	).Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs,
+		&f.HitCount, &f.RevisionCount, &f.Scope, &f.Pinned, &f.Active, &f.SupersededBy,
+		&f.Evidence, &vuNs, &vuValid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return KnowledgeFact{}, errors.New("fact not found")
+	}
+	if err != nil {
+		return KnowledgeFact{}, err
+	}
+	f.CreatedAt = time.Unix(0, cNs)
+	f.UpdatedAt = time.Unix(0, uNs)
+	if vuValid {
+		f.ValidUntil = time.Unix(0, vuNs)
+	}
+	f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
+	return f, nil
 }
 
 // KnowledgeBump increments the hit_count for a fact and records the retrieval
