@@ -220,8 +220,19 @@ func classifyQueryType(q string) queryType {
 	// Architecture: multi-token phrases about structure/design.
 	// "pipeline" and "layer" were removed: they fire on commit-message jargon
 	// ("CI pipeline", "query layer") and cause false positives in the eval.
+	//
+	// "where is" is handled specially: "where is IndexableExt defined" is a
+	// symbol lookup, not an architecture query. looksLikeDefinitionQuery carves
+	// out the single-identifier case before falling through to architecture.
+	if strings.Contains(lower, "where is") || strings.Contains(lower, "where are") {
+		fields := strings.Fields(q)
+		if looksLikeDefinitionQuery(fields) {
+			return querySymbol
+		}
+		return queryArchitecture
+	}
 	archPhrases := []string{
-		"how does", "how is", "where is", "where are",
+		"how does", "how is",
 		"architecture", "design pattern", "data flow", "control flow",
 		"module structure", "component",
 	}
@@ -246,7 +257,39 @@ func classifyQueryType(q string) queryType {
 		return querySymbol
 	}
 
+	// Natural-language definition lookup: "find X", "locate X", etc.
+	// (The "where is X" variant is already handled above.)
+	if looksLikeDefinitionQuery(fields) {
+		return querySymbol
+	}
+
 	return queryNL
+}
+
+// lookupStopWords are function/location words used in natural-language symbol
+// lookups ("where is X defined"). They carry no semantic signal beyond intent.
+var lookupStopWords = map[string]bool{
+	"where": true, "is": true, "defined": true, "declared": true,
+	"located": true, "implemented": true, "find": true, "locate": true,
+	"what": true, "the": true, "are": true, "function": true,
+	"method": true, "struct": true, "type": true, "class": true,
+	"interface": true, "in": true, "at": true,
+}
+
+// looksLikeDefinitionQuery returns true when the query has exactly one
+// identifier token and all other tokens are lookup stop-words (so the intent
+// is clearly "find the definition of X").
+func looksLikeDefinitionQuery(fields []string) bool {
+	identCount := 0
+	for _, f := range fields {
+		lower := strings.ToLower(f)
+		if looksLikeIdentifier(f) {
+			identCount++
+		} else if !lookupStopWords[lower] {
+			return false // unexpected non-stop word — not a definition query
+		}
+	}
+	return identCount == 1
 }
 
 // looksLikeIdentifier returns true for tokens that match common code

@@ -981,16 +981,24 @@ func TestClassifyQueryType(t *testing.T) {
 		q    string
 		want queryType
 	}{
-		// Symbol queries
+		// Symbol queries — bare identifiers
 		{"SearchInput", querySymbol},
 		{"(*Store).Search", querySymbol},
 		{"store.Hit", querySymbol},
 		{"server_compress", querySymbol},
 		{"MY_CONST", querySymbol},
 		{"Store Search", querySymbol},
+		// Symbol queries — natural-language definition lookups (#736)
+		{"where is IndexableExt defined", querySymbol},
+		{"where is EvalManifest defined", querySymbol},
+		{"where is Store.SeenTime defined", querySymbol},
+		{"where is GoldenQuery declared", querySymbol},
+		{"find ResolveIntent", querySymbol},
+		{"locate feedbackEvent", querySymbol},
+		{"what is the FusionLinear type", querySymbol},
 		// Architecture queries
 		{"how does the indexer work", queryArchitecture},
-		{"where is the BM25 logic", queryArchitecture},
+		{"where is the BM25 logic", queryArchitecture}, // "logic" not a stop-word → not symbol
 		{"architecture of the search pipeline", queryArchitecture},
 		{"data flow through the embed layer", queryArchitecture},
 		{"explain the pipeline component", queryArchitecture},

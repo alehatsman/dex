@@ -1,18 +1,18 @@
 {
   "k": 10,
   "n": 30,
-  "mean_ndcg": 0.7561032750371782,
+  "mean_ndcg": 0.7585868290332712,
   "mean_recall": 0.95,
   "mean_recall_pool": 0.9666666666666667,
-  "mrr": 0.7383333333333333,
+  "mrr": 0.7372222222222221,
   "by_type": {
     "architecture": {
       "k": 10,
-      "n": 29,
-      "mean_ndcg": 0.7535015041907491,
-      "mean_recall": 0.9482758620689655,
-      "mean_recall_pool": 0.9655172413793104,
-      "mrr": 0.729310344827586
+      "n": 22,
+      "mean_ndcg": 0.7239113746097506,
+      "mean_recall": 0.9772727272727273,
+      "mean_recall_pool": 1,
+      "mrr": 0.6871212121212121
     },
     "nl": {
       "k": 10,
@@ -21,6 +21,14 @@
       "mean_recall": 1,
       "mean_recall_pool": 1,
       "mrr": 1
+    },
+    "symbol": {
+      "k": 10,
+      "n": 7,
+      "mean_ndcg": 0.8571428571428571,
+      "mean_recall": 0.8571428571428571,
+      "mean_recall_pool": 0.8571428571428571,
+      "mrr": 0.8571428571428571
     }
   },
   "queries": [
@@ -64,10 +72,10 @@
         "internal/store/store_degrade_test.go",
         "internal/retrieve/service.go",
         "internal/store/store.go",
-        "internal/store/store_test.go",
         "internal/bench/compress/corpus.go",
         "internal/retrieve/fuse.go",
-        "internal/eval/runner.go"
+        "internal/mcp/server_search.go",
+        "specs/storage.md"
       ],
       "ndcg": 0.8315546295836226,
       "recall": 1,
@@ -90,9 +98,9 @@
         "internal/eval/blastradius.go",
         "internal/eval/metrics.go",
         "internal/eval/corpus/gencache.go",
-        "tasks.yml",
         "cmd/dex/corpus.go",
-        "cmd/dex/bench_cochange.go"
+        "cmd/dex/bench_cochange.go",
+        "internal/eval/manifest.go"
       ],
       "ndcg": 1,
       "recall": 1,
@@ -111,14 +119,14 @@
       "ranked_files": [
         "internal/chunk/chunk.go",
         "specs/indexing.md",
-        "internal/store/store_test.go",
         "internal/index/index_test.go",
         "internal/mcp/server_tree.go",
-        "specs/review.md",
         "internal/chunk/chunk_window.go",
         "internal/chunk/chunk_coverage_test.go",
         "docs/architecture.md",
-        "internal/store/store.go"
+        "internal/store/store.go",
+        "internal/summarize/semchunks.go",
+        "internal/index/index.go"
       ],
       "ndcg": 0.6131471927654585,
       "recall": 0.5,
@@ -163,17 +171,17 @@
         "cmd/dex/main_ask.go",
         "specs/mcp-server.md",
         "internal/retrieve/intent.go",
-        "specs/symbol-search.md",
         "internal/mcp/context.go",
         "cmd/dex/eval.go",
         "internal/mcp/server_degrade_chat_test.go",
         "internal/bench/compress/corpus.go",
-        "internal/mcp/enrich.go"
+        "internal/mcp/enrich.go",
+        "specs/hook.md"
       ],
-      "ndcg": 0.3562071871080222,
+      "ndcg": 0.38685280723454163,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.16666666666666666,
+      "rr": 0.2,
       "type": "architecture",
       "class": "behavior"
     },
@@ -186,17 +194,17 @@
       ],
       "ranked_files": [
         "cmd/dex/main_lock.go",
-        "specs/constitution.md",
-        "cmd/dex/main_usage.go",
-        "specs/storage.md",
-        "docs/architecture.md",
+        "cmd/dex/main_manage.go",
+        "specs/indexing.md",
         "cmd/dex/main_clients.go",
         "internal/lock/lock.go",
-        "specs/watch.md",
-        "cmd/dex/main_manage.go",
-        "specs/multi-repo-ask.md"
+        "docs/architecture.md",
+        "specs/storage.md",
+        "docs/config.md",
+        "cmd/dex/env.go",
+        "specs/mcp-server.md"
       ],
-      "ndcg": 0.8175295903539446,
+      "ndcg": 0.8503449055347547,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
@@ -210,6 +218,7 @@
         "internal/graph/centrality.go"
       ],
       "ranked_files": [
+        "internal/eval/skew/skew.go",
         "docs/architecture.md",
         "specs/graph.md",
         "internal/graph/centrality.go",
@@ -218,13 +227,12 @@
         "specs/semantic-search.md",
         "cmd/dex/bench_skew.go",
         "internal/graph/centrality_test.go",
-        "internal/graphquery/view.go",
-        "internal/mcp/context_test.go"
+        "internal/graphquery/view.go"
       ],
-      "ndcg": 0.5,
+      "ndcg": 0.43067655807339306,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.3333333333333333,
+      "rr": 0.25,
       "type": "architecture",
       "class": "behavior"
     },
@@ -235,21 +243,21 @@
         "internal/index/index.go"
       ],
       "ranked_files": [
-        "internal/index/index.go",
         "specs/indexing.md",
-        "specs/storage.md",
+        "internal/index/index.go",
         "docs/architecture.md",
-        "cmd/dex/main_usage.go",
+        "internal/index/index_test.go",
         "cmd/dex/main_index.go",
-        "internal/chunk/chunk.go",
-        "specs/review.md",
-        "internal/store/store_search.go",
-        "specs/watch.md"
+        "cmd/dex/main_config.go",
+        "specs/semantic-search.md",
+        "specs/watch.md",
+        "specs/embedding.md",
+        "cmd/dex/main_manage.go"
       ],
-      "ndcg": 1,
+      "ndcg": 0.6309297535714574,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 1,
+      "rr": 0.5,
       "type": "architecture",
       "class": "behavior"
     },
@@ -263,20 +271,20 @@
       ],
       "ranked_files": [
         "specs/proxy.md",
-        "internal/proxy/prune.go",
-        "internal/proxy/usage.go",
-        "internal/proxy/proxy.go",
-        "internal/proxy/overprune.go",
-        "internal/proxy/metrics.go",
+        "internal/proxy/proxy_test.go",
         "cmd/dex/proxy.go",
-        "internal/proxy/cache.go",
-        "internal/proxy/baseline.go",
-        "internal/tokens/tokens.go"
+        "internal/proxy/proxy.go",
+        "cmd/dex/doctor.go",
+        "internal/proxy/metrics.go",
+        "internal/proxy/usage_test.go",
+        "internal/proxy/prune_test.go",
+        "internal/proxy/prune.go",
+        "internal/proxy/cache.go"
       ],
-      "ndcg": 0.6546154994739983,
+      "ndcg": 0.578013682371755,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.5,
+      "rr": 0.3333333333333333,
       "type": "architecture",
       "class": "behavior"
     },
@@ -289,20 +297,20 @@
       "ranked_files": [
         "internal/eval/manifest.go",
         "cmd/dex/eval.go",
-        "internal/eval/corpus/manifest.go",
-        "tasks.yml",
-        "cmd/dex/main_usage.go",
-        "cmd/dex/doctor.go",
-        "internal/retrieve/answer.go",
         "internal/eval/report.go",
-        "internal/eval/metrics.go",
-        "cmd/dex/env.go"
+        "internal/eval/manifest_test.go",
+        "cmd/dex/eval_check_test.go",
+        "internal/eval/corpus/manifest.go",
+        "cmd/dex/bench_cochange.go",
+        "cmd/dex/corpus.go",
+        "cmd/dex/bench_skew.go",
+        "cmd/dex/bench_trace.go"
       ],
       "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture",
+      "type": "symbol",
       "class": "symbol"
     },
     {
@@ -313,21 +321,21 @@
       ],
       "ranked_files": [
         "internal/eval/golden.go",
-        "internal/eval/cochange/cochange.go",
-        "cmd/dex/eval.go",
-        "cmd/dex/feedback.go",
         "internal/eval/orphan.go",
-        "internal/store/store_search.go",
-        "internal/bench/nav/nav.go",
-        "internal/eval/runner.go",
         "internal/eval/blastradius.go",
-        "internal/eval/manifest.go"
+        "internal/eval/orphan_test.go",
+        "internal/eval/golden_test.go",
+        "cmd/dex/bench_nav.go",
+        "cmd/dex/feedback.go",
+        "internal/eval/manifest_test.go",
+        "internal/bench/nav/reorient.go",
+        "internal/eval/cochange/cochange.go"
       ],
       "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture",
+      "type": "symbol",
       "class": "symbol"
     },
     {
@@ -338,15 +346,15 @@
       ],
       "ranked_files": [
         "internal/store/store.go",
-        "cmd/dex/main_config.go",
+        "cmd/dex/eval.go",
         "internal/store/calibration.yml",
         "internal/store/store_search.go",
         "internal/store/calibration.go",
-        "cmd/dex/eval.go",
+        "cmd/dex/main_config.go",
+        "docs/architecture.md",
         "internal/store/store_graph_fusion.go",
-        "specs/multi-repo-ask.md",
-        "tasks.yml",
-        "internal/eval/trace/trace.go"
+        "internal/retrieve/fuse.go",
+        "internal/store/search_quality.go"
       ],
       "ndcg": 1,
       "recall": 1,
@@ -363,21 +371,21 @@
       ],
       "ranked_files": [
         "internal/graph/go.go",
+        "internal/graph/go_nomod_test.go",
         "internal/graph/graph.go",
-        "internal/source/imports.go",
-        "internal/graph/sitter_java.go",
-        "internal/graph/sitter_python.go",
         "internal/graph/sitter.go",
-        "internal/chunk/chunk_summary.go",
-        "internal/graph/sitter_rust.go",
-        "internal/mcp/server_review.go",
-        "internal/compress/go_imports.go"
+        "internal/graph/go_editspan_test.go",
+        "specs/graph.md",
+        "internal/graph/graph_test.go",
+        "internal/source/imports.go",
+        "internal/compress/go_imports.go",
+        "internal/graph/yaml_test.go"
       ],
       "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture",
+      "type": "symbol",
       "class": "symbol"
     },
     {
@@ -395,14 +403,14 @@
         "cmd/dex/hook_observe.go",
         "cmd/dex/registry.go",
         "specs/hook.md",
-        "internal/proxy/budgetlog.go",
-        "internal/compress/adaptive_test.go"
+        "cmd/dex/hook_observe_feedback_test.go",
+        "internal/mcp/server.go"
       ],
       "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture",
+      "type": "symbol",
       "class": "symbol"
     },
     {
@@ -413,21 +421,21 @@
       ],
       "ranked_files": [
         "internal/retrieve/intent.go",
-        "internal/graph/sitter_python.go",
-        "internal/compress/adaptive.go",
-        "internal/graph/sitter_java.go",
-        "internal/graph/sitter_rust.go",
+        "internal/retrieve/intent_test.go",
         "internal/mcp/context.go",
-        "internal/mcp/server_locate.go",
-        "internal/retrieve/graph.go",
-        "internal/graph/sitter_jsts.go",
-        "internal/retrieve/response.go"
+        "internal/retrieve/response.go",
+        "specs/graph.md",
+        "cmd/dex/hook_observe_feedback_test.go",
+        "specs/mcp-server.md",
+        "cmd/dex/main_ask.go",
+        "internal/graph/sitter_rust.go",
+        "internal/graph/sitter_python.go"
       ],
       "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture",
+      "type": "symbol",
       "class": "symbol"
     },
     {
@@ -437,22 +445,22 @@
         "internal/ignore/ignore.go"
       ],
       "ranked_files": [
-        "cmd/dex/main_usage.go",
-        "internal/compress/adaptive.go",
-        "specs/indexing.md",
-        "specs/constitution.md",
-        "specs/review.md",
-        "cmd/dex/doctor.go",
-        "cmd/dex/registry.go",
+        "internal/ignore/ignore_test.go",
+        "internal/mcp/context_test.go",
+        "internal/mcp/server_test.go",
         "specs/ignore.md",
-        "cmd/dex/main_manage.go",
-        "docs/architecture.md"
+        "specs/indexing.md",
+        "cmd/dex/compact.go",
+        "cmd/dex/registry.go",
+        "cmd/dex/main_usage.go",
+        "internal/graph/sitter_jsts.go",
+        "internal/graph/sitter_ts.go"
       ],
       "ndcg": 0,
       "recall": 0,
       "recall_pool": 0,
       "rr": 0,
-      "type": "architecture",
+      "type": "symbol",
       "class": "symbol"
     },
     {
@@ -463,15 +471,15 @@
       ],
       "ranked_files": [
         "internal/store/store_migrate.go",
-        "cmd/dex/setup.go",
         "internal/store/store.go",
-        "cmd/dex/main_usage.go",
-        "specs/hook.md",
-        "docs/architecture.md",
-        "README.md",
-        "specs/constitution.md",
-        "tasks.yml",
-        "specs/storage.md"
+        "specs/mcp-server.md",
+        "internal/store/store_test.go",
+        "internal/store/store_fts_path_test.go",
+        "specs/storage.md",
+        "internal/mcp/server_session_handoff_test.go",
+        "cmd/dex/main_status.go",
+        "internal/store/store_external_test.go",
+        "specs/constitution.md"
       ],
       "ndcg": 1,
       "recall": 1,
@@ -487,21 +495,21 @@
         "internal/graph/go.go"
       ],
       "ranked_files": [
-        "internal/graph/go.go",
-        "specs/graph.md",
-        "cmd/dex/graph.go",
-        "internal/graph/sitter.go",
-        "internal/graph/sitter_java.go",
-        "internal/graph/graph.go",
         "docs/architecture.md",
-        "internal/mcp/server_graph_calls.go",
-        "internal/eval/cochange/cochange.go",
-        "internal/retrieve/graph.go"
+        "internal/graph/sitter.go",
+        "specs/graph.md",
+        "internal/graph/go.go",
+        "internal/graphquery/view.go",
+        "internal/graph/graph_test.go",
+        "internal/mcp/assemble_test.go",
+        "cmd/dex/graph.go",
+        "internal/graph/graph.go",
+        "internal/graph/sitter_python.go"
       ],
-      "ndcg": 1,
+      "ndcg": 0.43067655807339306,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 1,
+      "rr": 0.25,
       "type": "architecture",
       "class": "behavior"
     },
@@ -538,20 +546,20 @@
       ],
       "ranked_files": [
         "specs/semantic-search.md",
-        "internal/rerank/breaker.go",
-        "tasks.yml",
         "internal/retrieve/rerank.go",
         "internal/rerank/client.go",
-        "internal/bench/compress/corpus.go",
-        "internal/store/calibration.yml",
-        "cmd/dex/main_clients.go",
-        "internal/embed/breaker.go",
-        "docs/architecture.md"
+        "internal/rerank/breaker.go",
+        "internal/store/search_quality_test.go",
+        "internal/mcp/server_status.go",
+        "internal/rerank/breaker_test.go",
+        "internal/store/search_quality.go",
+        "cmd/dex/main_mcp.go",
+        "internal/store/store_search.go"
       ],
-      "ndcg": 0.6309297535714574,
+      "ndcg": 0.43067655807339306,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.5,
+      "rr": 0.25,
       "type": "architecture",
       "class": "behavior"
     },
@@ -564,14 +572,14 @@
       "ranked_files": [
         "internal/retrieve/submodular.go",
         "internal/retrieve/inline.go",
-        "tasks.yml",
-        "internal/mcp/server_summarize_analyze.go",
+        "internal/retrieve/assemble_test.go",
+        "specs/mcp-server.md",
+        "internal/mcp/context.go",
         "internal/mcp/context_inline.go",
-        "internal/mcp/server_summarize.go",
-        "cmd/dex/main_usage.go",
-        "internal/bench/compress/corpus.go",
-        "internal/store/store_search.go",
-        "internal/mcp/compress_quality.go"
+        "internal/retrieve/intent.go",
+        "internal/mcp/assemble.go",
+        "specs/ignore.md",
+        "internal/retrieve/results.go"
       ],
       "ndcg": 1,
       "recall": 1,
@@ -587,21 +595,21 @@
         "cmd/dex/main_summarize.go"
       ],
       "ranked_files": [
-        "cmd/dex/main_usage.go",
-        "internal/mcp/server_summarize_ref.go",
+        "specs/mcp-server.md",
         "internal/store/store_migrate.go",
         "cmd/dex/main_summarize.go",
+        "internal/mcp/server_summarize.go",
+        "internal/store/store_summaries.go",
+        "cmd/dex/main_usage.go",
         "docs/tools.md",
-        "README.md",
-        "cmd/dex/registry.go",
+        "internal/mcp/server.go",
         "cmd/dex/setup.go",
-        "specs/constitution.md",
-        "specs/mcp-server.md"
+        "internal/mcp/server_summarize_ref.go"
       ],
-      "ndcg": 0.43067655807339306,
+      "ndcg": 0.5,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.25,
+      "rr": 0.3333333333333333,
       "type": "architecture",
       "class": "behavior"
     },
@@ -615,13 +623,13 @@
         "internal/proxy/cold_prefix.go",
         "specs/proxy.md",
         "internal/proxy/metrics.go",
-        "internal/proxy/overprune.go",
-        "internal/proxy/prune.go",
-        "cmd/dex/proxy.go",
         "internal/proxy/proxy.go",
+        "internal/proxy/cold_prefix_test.go",
+        "internal/proxy/prune.go",
         "internal/proxy/cache.go",
-        "internal/proxy/baseline.go",
-        "cmd/dex/doctor.go"
+        "internal/proxy/proxy_test.go",
+        "cmd/dex/doctor.go",
+        "internal/proxy/prune_test.go"
       ],
       "ndcg": 1,
       "recall": 1,
@@ -637,21 +645,21 @@
         "cmd/dex/check.go"
       ],
       "ranked_files": [
-        "internal/mcp/server.go",
-        "cmd/dex/registry.go",
-        "internal/mcp/server_check.go",
-        "internal/mcp/server_refs.go",
         "cmd/dex/check.go",
-        "internal/mcp/server_verify.go",
-        "specs/mcp-server.md",
-        "specs/refs.md",
+        "cmd/dex/registry.go",
+        "internal/mcp/server.go",
+        "docs/tools.md",
+        "internal/mcp/server_locate_claims.go",
+        "internal/mcp/server_check.go",
         "README.md",
-        "cmd/dex/main_usage.go"
+        "cmd/dex/main_usage.go",
+        "internal/mcp/server_locate_claims_test.go",
+        "internal/mcp/server_verify.go"
       ],
-      "ndcg": 0.38685280723454163,
+      "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.2,
+      "rr": 1,
       "type": "architecture",
       "class": "behavior"
     },
@@ -688,21 +696,21 @@
         "internal/mcp/server.go"
       ],
       "ranked_files": [
-        "specs/mcp-server.md",
-        "cmd/dex/main_mcp.go",
-        "specs/http-api.md",
-        "internal/mcp/http_mcp.go",
         "internal/mcp/server.go",
-        "internal/mcp/server_graph.go",
-        "cmd/dex/registry.go",
+        "specs/mcp-server.md",
+        "specs/http-api.md",
+        "internal/mcp/remote_test.go",
         "internal/mcp/remote.go",
-        "internal/mcp/server_attention.go",
-        "internal/mcp/server_routes.go"
+        "cmd/dex/main_mcp.go",
+        "internal/mcp/http_mcp.go",
+        "internal/proxy/proxy.go",
+        "cmd/dex/proxy.go",
+        "internal/mcp/http_mcp_test.go"
       ],
-      "ndcg": 0.38685280723454163,
+      "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
-      "rr": 0.2,
+      "rr": 1,
       "type": "architecture",
       "class": "architecture"
     },
@@ -714,16 +722,16 @@
         "cmd/dex/main_index.go"
       ],
       "ranked_files": [
-        "internal/index/index.go",
-        "internal/store/store_migrate.go",
         "cmd/dex/main_index.go",
         "cmd/dex/main_manage.go",
-        "internal/store/store.go",
+        "internal/index/index.go",
         "specs/storage.md",
         "specs/watch.md",
-        "cmd/dex/main_usage.go",
+        "internal/index/index_test.go",
+        "internal/graph/graph.go",
         "docs/architecture.md",
-        "cmd/dex/doctor.go"
+        "specs/indexing.md",
+        "internal/index/degradation_test.go"
       ],
       "ndcg": 0.9197207891481877,
       "recall": 1,
@@ -741,20 +749,20 @@
       "ranked_files": [
         "internal/store/store.go",
         "internal/store/store_graph.go",
+        "internal/index/index.go",
         "internal/graph/persist.go",
-        "internal/mcp/seen.go",
-        "internal/store/store_knowledge.go",
-        "internal/store/store_coaccess.go",
-        "internal/mcp/server_review.go",
-        "internal/throttle/throttle.go",
-        "internal/retrieve/answer.go",
-        "internal/store/store_search.go"
+        "internal/store/store_graph_test.go",
+        "internal/store/seentime_test.go",
+        "internal/store/store_agent.go",
+        "internal/mcp/server_session.go",
+        "internal/retrieve/intent_test.go",
+        "internal/retrieve/assemble_test.go"
       ],
       "ndcg": 1,
       "recall": 1,
       "recall_pool": 1,
       "rr": 1,
-      "type": "architecture",
+      "type": "symbol",
       "class": "symbol"
     },
     {
@@ -788,7 +796,7 @@
     "golden_mode": "curated",
     "golden_sha256": "2f4b58538af52cf2a6404fea9836ebfc1cfbefe7cb4a3e14dc1ac77cff41b555",
     "golden_head": "cc80a9e",
-    "repo_head": "aa33982c6e1f50540623c473dcc0f3f206579ad4",
+    "repo_head": "f5de30cab31c61016fb78dd07e13d30751065ee1",
     "query_set_sha256": "aa512fe2a749cd489b8834785aee5e9313911f041b519e029f1539dda08ab320",
     "lane": "full",
     "embed_model": "qwen3-embedding:0.6b",
