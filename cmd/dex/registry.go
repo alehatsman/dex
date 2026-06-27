@@ -116,7 +116,7 @@ var verbs = []verbSpec{
 	},
 	{
 		name: "find", group: groupQuery, args: "[<path>] <q...>",
-		summary: "hybrid semantic top-k search",
+		summary: "hybrid search — raw ranking (ask composes this)",
 		flags: []flagSpec{
 			flagK, flagFormat,
 			{name: "--rerank", desc: "disable rerank for this query", arg: true, choices: []string{"off"}},
@@ -153,7 +153,7 @@ var verbs = []verbSpec{
 	},
 	{
 		name: "locate", group: groupQuery, args: "[<path>] <symbol-or-path:line>",
-		summary: "one-call orientation around a code location",
+		summary: "full context for one symbol: callers, tests, doc, blame, notes",
 		flags: []flagSpec{
 			{name: "--frame", desc: "parse a raw stack-trace frame line", arg: true},
 			{name: "--issues", desc: "also list matching open GitHub issues (gh)"},
@@ -166,8 +166,8 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagFormat},
 	},
 	{
-		name: "refs", group: groupQuery, args: "[<path>] <action> <symbol>",
-		summary: "type-precise Go symbol queries — references, implementations, supertypes, subtypes",
+		name: "xref", aliases: []string{"refs"}, group: groupQuery, args: "[<path>] <action> <symbol>",
+		summary: "type-precise Go symbol queries — references, implementations, supertypes, subtypes (Go-only)",
 		flags: []flagSpec{
 			{name: "--action", desc: "references | implementations | supertypes | subtypes (also positional arg 1)", arg: true},
 			flagFormat,
@@ -233,7 +233,7 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "shell", group: groupQuery, args: "<command...>",
+		name: "shell", group: groupHidden, args: "<command...>",
 		summary: "run a command with compressed output",
 		flags: []flagSpec{
 			{name: "--cwd", desc: "working directory", arg: true},
@@ -299,8 +299,8 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagFormat, flagV},
 	},
 	{
-		name: "compact", aliases: []string{"bundle"}, group: groupBuild, args: "<path>",
-		summary: "concatenate indexable files for LLM prompts",
+		name: "compact", aliases: []string{"bundle", "dump"}, group: groupBuild, args: "<path>",
+		summary: "dump all indexable files to stdout (LLM context prep)",
 		flags: []flagSpec{
 			{name: "--out", desc: "write to FILE", arg: true},
 			{name: "--max-bytes", desc: "byte budget", arg: true},
@@ -424,7 +424,7 @@ var verbs = []verbSpec{
 	},
 	{
 		name: "completion", group: groupConfig, args: "bash|zsh|fish",
-		summary: "output shell tab-completion script",
+		summary: "generate tab-completion script (bash|zsh|fish)",
 		subs:    []subSpec{{"bash", ""}, {"zsh", ""}, {"fish", ""}},
 	},
 	{

@@ -88,8 +88,11 @@ func TestQueryVerbsHaveMCPTool(t *testing.T) {
 	}
 
 	// cliOnlyQueryVerbs are query verbs that deliberately have no MCP tool.
-	// Empty today — every query verb mirrors an MCP tool. Add with a reason.
-	cliOnlyQueryVerbs := map[string]bool{}
+	cliOnlyQueryVerbs := map[string]bool{
+		// CLI canonical is "xref"; MCP tool is still "refs". The alias on xref
+		// covers "refs" in TestMCPToolCLIParity.
+		"xref": true,
+	}
 
 	for _, v := range verbs {
 		if v.group != groupQuery {

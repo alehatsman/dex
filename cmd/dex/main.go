@@ -112,7 +112,7 @@ func main() {
 		err = cmdRehearse(ctx, args)
 	case "cohort":
 		err = cmdCohort(ctx, args)
-	case "refs":
+	case "xref", "refs":
 		err = cmdRefs(ctx, args)
 	case "verify":
 		err = cmdVerify(ctx, args)
@@ -124,7 +124,7 @@ func main() {
 		err = cmdShell(ctx, args)
 	case "env":
 		err = cmdEnv(ctx, args)
-	case "compact", "bundle":
+	case "compact", "bundle", "dump":
 		err = cmdCompact(ctx, args)
 	case "nuke":
 		err = cmdNuke(ctx, args)

@@ -24,51 +24,45 @@ func usageQuickstart() {
 func usageConcise() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
 
-verbs (match the MCP tools — run "dex help all" for the full reference):
-  dex map    [--cluster <id>] [<path>]   repo orientation: first-touch bundle, or --cluster to zoom
-  dex find   [<path>] <q...>             semantic + symbol search (subsumes exact lookup)
-  dex read   <file>                      read a file — default raw (no LLM); --mode for views/summary
+SEARCH & UNDERSTAND
+  dex map    [--cluster <id>] [<path>]   repo overview — run first in an unfamiliar repo
+  dex ask    [<path>] <q...>             answer a codebase question (semantic + symbol + graph)
+  dex find   [<path>] <q...>             hybrid search — raw ranking (ask composes this)
+  dex read   <file>                      read a file (--mode signatures|skeleton|summary)
+  dex locate [<path>] <sym|path:line>    full context for one symbol: callers, tests, doc, blame, notes
   dex trace  [<path>] <name>             call graph — --dir callers|callees|path|impact
-  dex locate [<path>] <sym|path:line>    one-call orientation: callers, tests, doc, blame, notes
-  dex review [<path>]                    per-hunk PR intelligence — --ref|--branch|--pr
-  dex refactor [<path>] <symbol> <to>    plan a type-precise rename (edit triples; never writes)
-  dex rehearse [<path>]                  type-check a hypothetical edit in-memory (never writes) — --edits|--file
-  dex cohort [<path>] <interface>        types that must change in lockstep with an interface
-  dex refs   [<path>] <action> <symbol>  type-precise Go symbol queries — references, implementations, supertypes, subtypes
-  dex verify [<path>]                    run the tests a change implicates — working tree | --ref | --symbol
-  dex check  [<path>] <ref...>           verify file:line[:symbol] references against the index
-  dex ask    [<path>] <q...>             one-shot router: semantic + symbol + graph
-  dex grep   [<path>] <pattern>          exact RE2 regex search
-  dex shell  <command...>                run a command with compressed output
+  dex grep   [<path>] <pattern>          exact RE2 search (escape hatch; prefer find)
 
-detail / power lanes:
-  dex graph  <sub> [<path>] ...          deps/callers/callees/links/path/diff/clusters
-  dex notes  add|list|review|pin|gc      per-project notes (MCP: notes)
-  dex status [<path>]                    endpoint health + project stats (alias: index status)
+CHANGE SAFETY
+  dex verify  [<path>]                   run tests implicated by a change
+  dex review  [<path>]                   per-hunk PR intelligence (--ref|--branch|--pr)
+  dex check   [<path>] <ref...>          verify file:line[:symbol] references exist
 
-build / maintenance:
-  dex index <path>                   build or refresh the index  (--dry-run to preview)
-  dex watch <path>                   keep the index fresh as files change
-  dex reindex <path>                 drop and re-embed from scratch
-  dex summarize [<path>...]          generate per-file LLM summaries (isolated table; --get to read)
-  dex nuke <path>                    delete the on-disk index
-  dex bench <sub> [<path>]            benchmarks: eval|corpus|compress|perf|locomo
-  dex feedback [--json]              relevance of ask suggested_reads on real traffic (reads hooks.jsonl)
-  dex proxy <path>                    MCP proxy — forward tools to a remote dex server
+KNOWLEDGE & STATUS
+  dex notes  add|list|review|pin|gc      per-project knowledge store
+  dex status [<path>]                    endpoint health + index stats
 
-config / setup:
+MAINTENANCE
+  dex index    <path>   build or refresh the index (--dry-run to preview)
+  dex watch    <path>   keep the index fresh as files change
+  dex reindex  <path>   drop and rebuild from scratch
+  dex nuke     <path>   delete the on-disk index (destructive)
+
+SETUP
   dex setup                          guided first-run wizard
-  dex config init                    scaffold .dex/config.yml with commented defaults
+  dex doctor                         check endpoints, config, MCP wiring
   dex env [--all] [--doc]            print effective DEX_* configuration
-  dex doctor                         check setup: endpoints, index dir, MCP wiring
-  dex mcp                            run as an MCP server over stdio
-  dex completion bash|zsh|fish       shell tab-completion scripts
+  dex mcp                            run as MCP server (stdio)
+  dex serve [--addr] --project <p>   run as HTTP daemon (multi-project)
+  dex hook <action>                  Claude Code hook scripts
+  dex completion bash|zsh|fish       tab-completion script
   dex version                        print the build version
 
-  run 'dex help all' for the full reference (every subcommand, flag, env var, examples)`)
+  run 'dex help all' for power lanes (xref, refactor, rehearse, cohort, graph),
+  build utilities (compact, compress, summarize, clone, bench), and full flag reference`)
 }
 
-// usageFull is the exhaustive reference — the original usage() content plus exit codes.
+// usageFull is the exhaustive reference — every subcommand, flag, and env var.
 // Shown by `dex help all`.
 func usageFull() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
@@ -84,49 +78,22 @@ quickstart:
 
   <path> defaults to cwd on every query/graph command.
 
-query (the CLI verbs share the MCP tool names, #354/#427):
-    dex find   [<path>] <q...>    semantic + symbol search, fuses exact lookup (MCP: find)
-    dex trace  [<path>] <name>    call graph via --dir callers|callees|path|impact
-    dex locate [<path>] <target>  one-call orientation (MCP: locate)
-    dex review [<path>]           per-hunk PR intelligence (MCP: review)
-    dex refactor [<path>] <s> <t> plan a type-precise rename (MCP: refactor)
-    dex cohort [<path>] <iface>   interface lockstep set (MCP: cohort)
-    dex refs   [<path>] <act> <s> type-precise symbol queries (MCP: refs)
-    dex verify [<path>]           run tests a change implicates (MCP: verify)
-    dex check  [<path>] <ref...>  verify file:line[:symbol] refs (MCP: check)
-    (map / read / ask are already top-level — see below)
-
-  dex ask [<path>] <q...>            one-shot router (MCP: ask). Picks intent,
+query — core verbs (CLI names match the MCP tool names):
+  dex map    [--cluster <id>] [<path>]  repo orientation (MCP: map). No --cluster: the
+                                          first-touch bundle (L0 overview + a zoom into
+                                          the most-central cluster). --cluster <id>: zoom
+                                          a chosen cluster.
+  dex ask    [<path>] <q...>            one-shot router (MCP: ask). Picks intent,
                                           fuses semantic + symbol + graph; returns
                                           suggested_reads and a prose next_action.
                                           Flags: --intent, --k, --format=text|json,
                                           --no-inline, --max-content-bytes, -v
-  dex find [<path>] <q...>           hybrid semantic top-k chunks, fuses exact
-                                          symbol-name hits via RRF (MCP: find)
+  dex find   [<path>] <q...>            hybrid semantic top-k chunks, fuses exact
+                                          symbol-name hits via RRF (MCP: find).
+                                          Raw ranking — ask composes this internally.
                                           Flags: --k, --rerank=off, --explain,
                                           --format=text|json, --max-content-bytes, -v
-  dex graph neighbors [<path>] <file> <line>
-                                          vector neighbours of a chunk (CLI-only)
-  dex graph deps [<path>] [flags]    package imports (MCP: deps)
-                                          Flags: --file=<rel>, --package=<full path>
-  dex graph callers [<path>] <name>  incoming calls edges (MCP: callers)
-                                          Flags: --package=<pkg>, --k
-  dex graph callees [<path>] <name>  outgoing calls edges (MCP: callees)
-                                          Flags: --package=<pkg>, --k
-  dex graph links [<path>] <doc>     markdown docs this doc links to (CLI-only)
-                                          Flags: --k
-  dex graph backlinks [<path>] <doc> markdown docs that link to this doc (CLI-only)
-                                          Flags: --k
-  dex graph tags [<path>] --tag=<t>|--doc=<d>
-                                          tag→docs or doc→tags (CLI-only)
-                                          Flags: --k
-  dex graph export [<path>]          dump graph_nodes/graph_edges as JSONL
-                                          Flags: --output=<dir>
-  dex map [--cluster <id>] [<path>]  repo orientation (MCP: map). No --cluster: the
-                                          first-touch bundle (L0 overview + a zoom into
-                                          the most-central cluster). --cluster <id>: zoom
-                                          a chosen cluster.
-  dex read <file>                    read a file (MCP: read). Modes:
+  dex read   <file>                     read a file (MCP: read). Modes:
                                           full (default; raw, no LLM), signatures,
                                           skeleton, map, aggressive, entropy, auto,
                                           analyze (per-mode token-cost comparison),
@@ -134,77 +101,107 @@ query (the CLI verbs share the MCP tool names, #354/#427):
                                           Flags: --mode, --start, --end, --focus,
                                           --temperature, --max-tokens, -v,
                                           --format=text|json
-  dex status [<path>]                endpoint health + project stats
-                                          (MCP: status; alias for index status)
-  dex index status [<path>]          same as dex status
+  dex locate [<path>] <target>          full context for one symbol: callers, tests,
+                                          doc, blame, notes (MCP: locate)
+  dex trace  [<path>] <name>            call graph via --dir callers|callees|path|impact
+  dex grep   [<path>] <pattern>         exact RE2 regex search (MCP: grep)
+  dex verify [<path>]                   run tests a change implicates (MCP: verify)
+  dex review [<path>]                   per-hunk PR intelligence (MCP: review).
+                                          Flags: --ref, --branch, --pr
+  dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check)
+  dex notes  add|list|delete|review     per-project knowledge store (MCP: notes).
+     |pin|unpin|gc|relate|relations       add: --archetype, --confidence, --supersedes,
+                                          --valid-until, --evidence; list: --k by salience;
+                                          gc: decay+consolidate+evict; relate: typed edges
+                                          (--from, --to, --kind); relations: --diagram (Mermaid).
+                                          Aliases: query/rm. Flags: --format=text|json
+  dex status [<path>]                   endpoint health + project stats
+                                          (MCP: status; alias: index status)
+  dex index status [<path>]             same as dex status
+
+query — power lanes (Go-focused or specialized):
+  dex xref   [<path>] <action> <sym>    type-precise Go symbol queries (MCP: refs).
+                                          Actions: references, implementations,
+                                          supertypes, subtypes. Alias: refs.
+  dex refactor [<path>] <sym> <to>      plan a type-precise rename — edit triples,
+                                          never writes (MCP: refactor)
+  dex rehearse [<path>]                 type-check a hypothetical edit in-memory,
+                                          never writes (MCP: rehearse).
+                                          Flags: --edits, --file
+  dex cohort [<path>] <iface>           Go interface lockstep set — types that must
+                                          change together (MCP: cohort)
+
+query — graph power lanes:
+  dex graph neighbors [<path>] <file> <line>
+                                          vector neighbours of a chunk (CLI-only)
+  dex graph deps      [<path>] [flags]  package imports (MCP: deps)
+                                          Flags: --file=<rel>, --package=<full path>
+  dex graph callers   [<path>] <name>   incoming call edges — prefer: dex trace --dir callers
+                                          Flags: --package=<pkg>, --k
+  dex graph callees   [<path>] <name>   outgoing call edges — prefer: dex trace --dir callees
+  dex graph links     [<path>] <doc>    markdown docs this doc links to (CLI-only)
+  dex graph backlinks [<path>] <doc>    markdown docs that link to this doc (CLI-only)
+                                          Flags: --k
+  dex graph tags      [<path>] --tag=<t>|--doc=<d>
+                                          tag→docs or doc→tags (CLI-only)
+  dex graph export    [<path>]          dump graph_nodes/graph_edges as JSONL
+                                          Flags: --output=<dir>
 
 build / maintenance:
-  dex index <path>                   build or refresh the index. Runs chunk+embed
+  dex index   <path>                    build or refresh the index. Runs chunk+embed
                                           AND the Go static graph. Flags: --graph=off
                                           skips graph, --graph=only refreshes just the
                                           graph layer. Other flags: -v, --force,
                                           --dry-run, --format=text|json
-  dex env                            print effective env-var config with sources
-                                          Flags: --all, --doc, -v, --format=text|json
-  dex compact <path>                 concatenate indexable files under <path>
-                                          to stdout with `+"`===== <relpath> =====`"+`
-                                          headers. Honors .gitignore/.dexignore
-                                          and skips binaries + secret-shaped files.
+  dex watch   <path>                    keep the index fresh as files change
+  dex reindex <path>                    drop and re-embed from scratch
+  dex reindex --all --yes               drop and re-embed every known project
+                                          (run `+"`dex index <path>`"+` once first to record it)
+  dex clone   <src> <dst>               seed dst's index from src's (e.g. for a new
+                                          worktree); follow with `+"`dex index <dst>`"+`
+  dex nuke    <path>                    delete the on-disk index (prompts on TTY;
+                                          pass --yes for scripts)
+  dex summarize [<path>...]             generate per-file LLM summaries
+                                          (isolated table; --get to read back)
+  dex bench   <sub> [<path>]            benchmarks: eval|corpus|compress|perf|locomo
+  dex feedback [--json]                 ask suggested_reads relevance on real traffic
+                                          (reads hooks.jsonl)
+
+content prep (LLM context utilities):
+  dex compact <path>                    dump all indexable files to stdout with
+                                          `+"`===== <relpath> =====`"+` headers.
+                                          Alias: dump, bundle.
                                           Flags: --out FILE, --max-bytes N, --strip
-  dex compress <file|->              compress a file or stdin through the dex
-                                          engine — no LLM call. Writes to stdout
-                                          or --out. Flags: --mode=auto|aggressive|
+  dex compress <file|->                 run dex compression engine on a file or stdin —
+                                          no LLM call. Flags: --mode=auto|aggressive|
                                           entropy|terse|json|off, --ext, --format=text|json
-  dex notes add|list|delete|review   CLI access to the per-project knowledge
-     |pin|unpin|gc|relate|relations        store (MCP: notes). add stores a
-                                          fact (--archetype, --confidence,
-                                          --supersedes, --valid-until,
-                                          --evidence); list shows top-k by
-                                          salience (--k); delete removes by id;
-                                          review suggests merges/overlaps/stale
-                                          (read-only); pin/unpin mark permanent;
-                                          gc runs decay+consolidate+evict;
-                                          relate creates typed edges (--from,
-                                          --to, --kind); relations lists edges
-                                          (--id) or emits Mermaid (--diagram).
-                                          query/rm are accepted aliases.
-                                          Flags: --format=text|json
-  dex nuke   <path>                  delete the on-disk index for a project
-                                          (prompts on TTY; pass --yes for scripts)
-  dex reindex <path>                 drop and re-embed from scratch
-  dex reindex --all --yes            drop and re-embed every known project
-                                          (skips indexes from before this feature;
-                                          run `+"`dex index <path>`"+` once to
-                                          re-record them)
-  dex watch  <path>                  keep the index fresh as files change
-  dex clone  <src> <dst>             seed dst's index from src's (e.g. for a
-                                          new git worktree); follow with
-                                          `+"`dex index <dst>`"+` to reconcile
-  dex bench  <sub> [<path>]          benchmarks: eval|corpus|compress|perf|locomo
-  dex feedback [--json]              relevance of ask suggested_reads on real traffic (reads hooks.jsonl)
-  dex mcp                            run as an MCP server over stdio
-  dex serve [flags] --project <p>    run as an HTTP daemon (multi-project).
+
+config / setup:
+  dex env                               print effective env-var config with sources
+                                          Flags: --all, --doc, -v, --format=text|json
+  dex setup                             guided first-run wizard: check endpoints,
+                                          offer to index cwd, write Claude Code
+                                          routing rules. Flags: --check
+  dex doctor                            check the setup: index dir, endpoints, config, MCP wiring
+                                          Flags: -v
+  dex config init                       scaffold .dex/config.yml with commented defaults
+                                          Flags: --force, --full
+  dex mcp                               run as an MCP server over stdio
+  dex serve [flags] --project <p>       run as an HTTP daemon (multi-project).
                                           Flags: --addr=:8080 (default loopback
                                           when no token), --project (repeatable).
                                           DEX_SERVE_TOKEN gates non-loopback.
-  dex proxy <path>                   MCP proxy — forward tools to a remote dex server
-  dex hook inject                    Claude Code UserPromptSubmit hook:
+  dex proxy <path>                      MCP proxy — forward tools to a remote dex server
+  dex hook inject                       Claude Code UserPromptSubmit hook:
                                           inject dex context before each turn.
-  dex hook rewrite                   Claude Code PreToolUse(Bash) hook:
+  dex hook rewrite                      Claude Code PreToolUse(Bash) hook:
                                           rewrite rg/grep to dex find.
-  dex hook redirect                  Claude Code PreToolUse(Read/Grep/…) hook:
+  dex hook redirect                     Claude Code PreToolUse(Read/Grep/…) hook:
                                           compress large files to save tokens.
-  dex hook observe                   Claude Code PostToolUse/Stop hook:
+  dex hook observe                      Claude Code PostToolUse/Stop hook:
                                           append event to hooks.jsonl log.
-  dex setup                          guided first-run wizard: check endpoints,
-                                          offer to index cwd, write Claude Code
-                                          routing rules. Flags: --check
-  dex doctor                         check the setup: index dir, endpoints, config, MCP wiring
-                                          Flags: -v
-  dex config init                    scaffold .dex/config.yml with commented defaults
-                                          Flags: --force, --full
-  dex completion bash|zsh|fish       output shell tab-completion script
-  dex version                        print the build version
+  dex completion bash|zsh|fish          output shell tab-completion script
+  dex version                           print the build version
 
 env:
   Run `+"`dex env`"+` for the effective configuration. The 5 vars that
