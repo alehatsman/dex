@@ -1004,6 +1004,9 @@ func TestBuildNextAction(t *testing.T) {
 		// package_topology with empty graph still routes to weak-match
 		// fallback when scores are low (the genuine no-signal case).
 		{retrieve.IntentPackageTopology, reads, nil, 0.30, 0, 0, false, "Top semantic match is weak"},
+		// assemble (#725): the working set IS the answer — directive must say
+		// so and count the inlined bodies, not point at a grounding read.
+		{retrieve.IntentAssemble, reads, syms, 0.8, 0, 0, false, "Working set assembled"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.intent+" "+tc.want, func(t *testing.T) {

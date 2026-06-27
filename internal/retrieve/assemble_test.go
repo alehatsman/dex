@@ -51,6 +51,21 @@ func TestAssembleKeywordsMultiConcern(t *testing.T) {
 	}
 }
 
+// #725: interrogatives/auxiliaries are query scaffolding, not concerns —
+// they must not become coverage keys (else the completeness signal reports
+// noise like "dropped: how, does"). Code-shaped stems are unaffected.
+func TestAssembleKeywordsStripsFraming(t *testing.T) {
+	keys := AssembleKeywords(nil, "how does the watcher debounce events", nil)
+	for _, framing := range []string{"how", "does"} {
+		if slices.Contains(keys, framing) {
+			t.Errorf("framing word %q leaked into keys %v", framing, keys)
+		}
+	}
+	if !slices.Contains(keys, "watcher") || !slices.Contains(keys, "debounce") {
+		t.Errorf("concept words dropped from keys %v", keys)
+	}
+}
+
 func TestAssembleKeywordsAnchorStems(t *testing.T) {
 	keys := AssembleKeywords(nil, "where does the prune step run", []string{"(*Store).PruneIndex"})
 	for _, want := range []string{"prune", "index"} {

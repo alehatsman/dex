@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 // callChainView builds a tiny graph: C ──calls──▶ A ──calls──▶ B.
@@ -118,5 +120,76 @@ func TestCoveringNode(t *testing.T) {
 	}
 	if _, ok := coveringNode(v, "missing.go", 1); ok {
 		t.Error("unknown path covers no node, want ok=false")
+	}
+}
+
+// ─── #725 completeness signal ─────────────────────────────────────────────
+
+func TestAssembleConcernsNilOnEmptyKeywords(t *testing.T) {
+	if got := assembleConcerns([]SymbolHit{{QualifiedName: "Foo", Body: "x"}}, nil); got != nil {
+		t.Errorf("no keywords must yield nil concerns, got %+v", got)
+	}
+}
+
+// A concern is covered only when an INLINED symbol (Body != "") is about it;
+// a keyword that no inlined symbol names is dropped, and a symbol that was
+// cut by the byte budget (no Body) doesn't cover its keyword.
+func TestAssembleConcernsCoveredVsDropped(t *testing.T) {
+	syms := []SymbolHit{
+		{QualifiedName: "(*Store).parseConfig", Signature: "func parseConfig() error", Body: "..."},
+		{QualifiedName: "(*Pruner).pruneHistory", Body: ""}, // dropped by budget → no body
+	}
+	got := assembleConcerns(syms, []string{"parse", "config", "prune", "history"})
+	if got == nil {
+		t.Fatal("want concerns, got nil")
+	}
+	wantCovered := []string{"parse", "config"}
+	wantDropped := []string{"prune", "history"}
+	if !equalStrs(got.Covered, wantCovered) {
+		t.Errorf("covered = %v, want %v", got.Covered, wantCovered)
+	}
+	if !equalStrs(got.Dropped, wantDropped) {
+		t.Errorf("dropped = %v, want %v", got.Dropped, wantDropped)
+	}
+}
+
+func equalStrs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// ─── #725 next_action hints ───────────────────────────────────────────────
+
+func TestAssembleNextActionHintEditingNudge(t *testing.T) {
+	base := "Read foo.go before editing."
+	// Multi-site shape → nudge toward assemble.
+	got := assembleNextActionHint(retrieve.IntentEditingContext, base, nil, 2, 1)
+	if !strings.Contains(got, "intent=assemble") {
+		t.Errorf("multi-site editing_context should nudge assemble, got %q", got)
+	}
+	// Single site → no nudge.
+	if got := assembleNextActionHint(retrieve.IntentEditingContext, base, nil, 1, 0); got != base {
+		t.Errorf("single-site editing_context must not nudge, got %q", got)
+	}
+}
+
+func TestAssembleNextActionHintDroppedConcerns(t *testing.T) {
+	base := "Working set assembled: 3 symbol bodies inlined."
+	c := &AssembleConcerns{Covered: []string{"parse"}, Dropped: []string{"prune", "history"}}
+	got := assembleNextActionHint(retrieve.IntentAssemble, base, c, 0, 3)
+	if !strings.Contains(got, "DROPPED") || !strings.Contains(got, "1 of 3") {
+		t.Errorf("dropped concerns must surface a caveat with counts, got %q", got)
+	}
+	// Fully covered → no caveat appended.
+	full := &AssembleConcerns{Covered: []string{"parse"}}
+	if got := assembleNextActionHint(retrieve.IntentAssemble, base, full, 0, 3); got != base {
+		t.Errorf("fully-covered set must not append a caveat, got %q", got)
 	}
 }

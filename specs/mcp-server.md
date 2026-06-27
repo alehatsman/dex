@@ -114,6 +114,17 @@ service clients are the http-api spec's.
   structured working set IS the answer. Inline content shares one
   per-intent byte pool across both lanes; oversize ranges arrive `truncated:true`
   with their original line range, and `no_inline:true` omits payloads.
+- WHERE intent is `assemble`, the bundle also carries a `concerns` completeness
+  signal (#725): the query's coverage keywords split into `covered` (a symbol
+  whose body was inlined is about the concern — same name+signature haystack
+  the submodular selector scored) and `dropped` (the byte budget left no symbol
+  body about the concern). WHEN any concern is dropped, `next_action` states the
+  set is partial — an honest partial beats a false floor.
+- WHERE intent routes to `editing_context` (edit/modify/refactor/extend
+  phrasing) AND the result spans more than one site, `next_action` nudges the
+  caller toward `intent=assemble` (#725) — so the "batch reads" instinct reaches
+  the working-set assembler without the caller knowing the knob exists. The
+  routing itself is unchanged; the nudge is additive.
 - WHEN `ask` is called with an empty question, it routes to session-start
   orientation (intent `orient`): a deterministic, zero-inference L0+L1 codemap
   bundle (repo cluster overview, an L1 zoom into the most-central cluster, an

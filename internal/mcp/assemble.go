@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
@@ -141,4 +143,82 @@ func nodeToSymbolHit(n graphquery.Node) SymbolHit {
 		Kind:          string(n.Kind),
 		Role:          formatRole(n.Name, n.InDegree, n.OutDegree, n.CrossPkgCallers, n.Betweenness),
 	}
+}
+
+// inlineWorkingSet inlines file/symbol bodies into the bundle (unless the
+// caller opted out) and, for assemble, records the #725 completeness signal
+// from the same coverage keys the inliner selected on. Split out of
+// contextRouterStream to keep that router under the cyclop cap.
+func inlineWorkingSet(root, intent string, view *graphquery.View, out *ContextOutput, identifiers []string, question string, noInline bool) {
+	if noInline {
+		return
+	}
+	keywords := assembleInlinePrep(intent, view, out, identifiers, question)
+	inlineContent(root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits, keywords)
+	out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
+	if intent == retrieve.IntentAssemble {
+		out.Concerns = assembleConcerns(out.Symbols, keywords)
+	}
+}
+
+// assembleConcerns computes the completeness signal for an assemble working
+// set (#725): a concern keyword is COVERED when some symbol whose body was
+// actually inlined is about it — its qualified name or signature contains the
+// keyword, the same name+signature haystack the submodular selector scored —
+// and DROPPED otherwise. Returns nil when there are no coverage keys.
+//
+// Coverage is judged on name+signature, not body text: a stem like "store"
+// occurs in countless bodies, but a symbol is only ABOUT a concern when the
+// concern is in what it is named or declared. This mirrors the selection
+// (retrieve.coverageOrder) so the signal matches the set it explains. A
+// dropped concern means the byte budget left no symbol about it in the set —
+// the working set is partial, not a false floor.
+func assembleConcerns(syms []SymbolHit, keywords []string) *AssembleConcerns {
+	if len(keywords) == 0 {
+		return nil
+	}
+	covered := make(map[string]bool, len(keywords))
+	for i := range syms {
+		if syms[i].Body == "" {
+			continue // not inlined → not in the working set
+		}
+		hay := strings.ToLower(syms[i].QualifiedName + " " + syms[i].Signature)
+		for _, k := range keywords {
+			if !covered[k] && strings.Contains(hay, k) { // keywords are pre-lowercased
+				covered[k] = true
+			}
+		}
+	}
+	out := &AssembleConcerns{}
+	for _, k := range keywords {
+		if covered[k] {
+			out.Covered = append(out.Covered, k)
+		} else {
+			out.Dropped = append(out.Dropped, k)
+		}
+	}
+	return out
+}
+
+// assembleNextActionHint augments next_action with the #725 signals:
+//   - editing_context with a multi-site shape → nudge toward intent=assemble,
+//     which batches the symbol bodies for the change in one call (serves the
+//     "batch reads" instinct without the agent knowing the knob exists).
+//   - assemble with dropped concerns → caveat that the set is partial, so an
+//     honest partial isn't mistaken for a complete answer.
+func assembleNextActionHint(intent, next string, concerns *AssembleConcerns, nReads, nSyms int) string {
+	switch intent {
+	case retrieve.IntentEditingContext:
+		if nReads+nSyms > 1 {
+			return strings.TrimSpace(next +
+				" To pull the full working set of symbol bodies for this change in one call, re-run with intent=assemble.")
+		}
+	case retrieve.IntentAssemble:
+		if concerns != nil && len(concerns.Dropped) > 0 {
+			total := len(concerns.Covered) + len(concerns.Dropped)
+			return strings.TrimSpace(fmt.Sprintf("%s Working set covers %d of %d concerns — DROPPED %v have no symbol body here; narrow the question to them, raise k, or read them directly. Do not treat this set as complete.",
+				next, len(concerns.Covered), total, concerns.Dropped))
+		}
+	}
+	return next
 }

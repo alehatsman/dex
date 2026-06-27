@@ -39,7 +39,7 @@ const assembleMaxExpand = 24
 type ContextInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	Question    string `json:"question" jsonschema:"free-text question about the codebase (e.g. 'where is filesystem event debouncing handled?', 'how does indexing work?', 'callers of (*Store).Search')"`
-	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context|assemble (default: auto). assemble returns a budget-bounded working set — symbol bodies chosen by submodular keyword coverage, prose synthesis suppressed — instead of a prose answer (#687)"`
+	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context|assemble (default: auto). assemble returns a budget-bounded working set — symbol bodies chosen by submodular keyword coverage, prose synthesis suppressed — instead of a prose answer (#687); the concerns field reports which query concerns the set covers vs drops, so a partial set isn't read as complete (#725)"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
 	NoInline    bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
 	Expand      string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
@@ -254,6 +254,21 @@ type ContextOutput struct {
 	// the static call/import graph and learned co-access (Hebbian) edges (#688),
 	// seeded on the assemble working set. Populated only for intent=assemble.
 	RelatedFiles []string `json:"related_files,omitempty"`
+	// Concerns is the assemble completeness signal (#725): which query
+	// concerns the inlined working set is ABOUT (covered) vs which the byte
+	// budget dropped (no inlined symbol body is about them). It exists so a
+	// partial set isn't mistaken for complete — an honest partial beats a
+	// false floor. Populated only for intent=assemble with coverage keys.
+	Concerns *AssembleConcerns `json:"concerns,omitempty"`
+}
+
+// AssembleConcerns reports the per-concern completeness of an assemble
+// working set (#725). A concern keyword is Covered when some symbol whose
+// body was actually inlined is about it, and Dropped otherwise. Both lists
+// preserve coverage-key order.
+type AssembleConcerns struct {
+	Covered []string `json:"covered,omitempty"`
+	Dropped []string `json:"dropped,omitempty"`
 }
 
 // ContextRouter is the exported entry point used by the CLI
@@ -406,11 +421,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 
 	enrichGraph(&out, intent, graphView, out.SemanticHits, out.Symbols)
 	out.SuggestedReads = pickSuggestedReads(intent, out.SemanticHits, out.Symbols, symbolPaths, graphView)
-	if !in.NoInline {
-		keywords := assembleInlinePrep(intent, graphView, &out, candidates.Identifiers, in.Question)
-		inlineContent(p.Root, intent, out.SuggestedReads, out.Symbols, out.SemanticHits, keywords)
-		out.ContentBytesInlined = countInlinedBytes(out.SuggestedReads, out.Symbols, out.SemanticHits)
-	}
+	inlineWorkingSet(p.Root, intent, graphView, &out, candidates.Identifiers, in.Question, in.NoInline)
 	(&Enricher{projectRoot: p.Root, Store: st, Spread: st}).Enrich(ctx, intent, k, &out)
 	topSem := maxSemanticScore(out.SemanticHits)
 	var graphEdgeCount int
@@ -419,6 +430,9 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	}
 	out.NextAction = buildNextAction(intent, out.SuggestedReads, out.Symbols, topSem,
 		graphEdgeCount, len(out.References), hasBlameAnnotations(out.Annotations))
+	// #725: nudge edit-intent toward assemble, and caveat a partial assemble set.
+	out.NextAction = assembleNextActionHint(intent, out.NextAction, out.Concerns,
+		len(out.SuggestedReads), len(out.Symbols))
 	// If the directive's primary read was truncated at inline time,
 	// flag that so the agent knows the inlined Content isn't the full
 	// chunk and can Read the original line range for the rest.

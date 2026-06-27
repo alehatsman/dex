@@ -343,7 +343,21 @@ func printContextText(out mcp.ContextOutput, maxBytes int, answerHandled bool) {
 	printSemanticHits(out.SemanticHits)
 	printGraph(out.Graph)
 	printRelatedFiles(out.RelatedFiles)
+	printConcerns(out.Concerns)
 	printNextActionAndAvoid(out)
+}
+
+// printConcerns renders the assemble completeness signal (#725): which query
+// concerns the working set covers vs which the byte budget dropped.
+func printConcerns(c *mcp.AssembleConcerns) {
+	if c == nil || (len(c.Covered) == 0 && len(c.Dropped) == 0) {
+		return
+	}
+	fmt.Printf("Concerns: covered %d, dropped %d\n", len(c.Covered), len(c.Dropped))
+	if len(c.Dropped) > 0 {
+		fmt.Printf("  ⚠ dropped (no symbol body in the set): %s\n", strings.Join(c.Dropped, ", "))
+	}
+	fmt.Println()
 }
 
 func printContextError(out mcp.ContextOutput) {

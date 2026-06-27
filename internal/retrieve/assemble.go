@@ -45,9 +45,27 @@ func AssembleKeywords(identifiers []string, question string, anchorNames []strin
 		}
 	}
 	for _, w := range taskKeywords(question) {
+		if questionFraming[w] {
+			continue // interrogative/auxiliary — frames the query, not a concern
+		}
 		add(w)
 	}
 	return out
+}
+
+// questionFraming are interrogatives and auxiliaries that scaffold a question
+// but never name a concern. They're stripped from the question-derived
+// coverage keys so the #725 completeness signal reports concepts, not query
+// framing ("how"/"does" as dropped concerns is noise, not an honest partial).
+// Identifier and anchor stems are code-shaped and never filtered here. The
+// ECS taskKeywords stoplist is intentionally tiny (calibrated elsewhere); this
+// is the assemble-specific extension layered on top.
+var questionFraming = map[string]bool{
+	"how": true, "what": true, "where": true, "when": true, "why": true,
+	"which": true, "who": true, "whom": true, "whose": true,
+	"does": true, "did": true, "can": true, "could": true, "should": true,
+	"would": true, "will": true, "shall": true, "may": true, "might": true,
+	"must": true, "into": true, "onto": true, "via": true,
 }
 
 // splitIdentWords breaks an identifier or symbol name into lowercased

@@ -98,6 +98,11 @@ func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, top
 		if len(reads) > 0 {
 			return fmt.Sprintf("Read %s lines %d-%d before editing — this is the primary site.", reads[0].Path, reads[0].StartLine, reads[0].EndLine)
 		}
+	case IntentAssemble:
+		// The working set IS the answer — don't point at a grounding read.
+		if len(symbols) > 0 {
+			return fmt.Sprintf("Working set assembled: %d symbol bodies inlined by keyword coverage. Read it top-down — the set is the answer, not a pointer to one.", len(symbols))
+		}
 	}
 	// behavior_search and fallback.
 	if len(reads) > 0 {
