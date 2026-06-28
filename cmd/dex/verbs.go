@@ -59,11 +59,11 @@ func splitTraceArgs(args []string) (dir string, fwd []string, help bool, err err
 }
 
 // cmdTrace walks the static call graph from a symbol (MCP: trace). `--direction`
-// selects the traversal and re-dispatches to the existing graph subcommand:
+// selects the traversal and dispatches to the (now-internal) graph helpers:
 //
-//	callers (default) -> dex graph callers
-//	callees           -> dex graph callees
-//	path              -> dex graph path (destination via --to or a 2nd arg)
+//	callers (default) -> cmdGraphCallers
+//	callees           -> cmdGraphCallees
+//	path              -> cmdGraphPath (destination via --to or a 2nd arg)
 //	impact            -> transitive caller blast-radius (risk tier + tests_to_run)
 func cmdTrace(ctx context.Context, args []string) error {
 	dir, fwd, help, err := splitTraceArgs(args)
@@ -77,7 +77,7 @@ func cmdTrace(ctx context.Context, args []string) error {
   dex trace [<path>] <src> --dir path --to <dst>    shortest call path
   dex trace [<path>] <name> --dir impact            transitive caller blast-radius
 
-mirrors MCP `+"`trace`"+`; re-dispatches to `+"`dex graph callers|callees|path`"+` and impact.
+mirrors MCP `+"`trace`"+`; covers callers / callees / path / impact in one verb.
 flags after the name (-k, --package, --max-depth, --format) pass through.`)
 		return nil
 	}

@@ -19,27 +19,24 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// cmdGraph dispatches `dex graph <subcommand>`. The leaf
-// subcommands (neighbors / deps / callers / callees / export) mirror
-// the MCP `graph_*` tools 1:1 so CLI and MCP feel like the same tool.
+// cmdGraph dispatches `dex graph <subcommand>`. callers/callees/path are
+// reached via `dex trace --dir …`, not as graph subs (#728).
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | callers | callees | links | backlinks | tags | cycles | path | diff | clusters | smells | routes | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | deps | packages | links | backlinks | tags | cycles | diff | clusters | smells | routes | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "index":
 		return fmt.Errorf("`graph index` has been folded into `index` — use `dex index --graph=only <path>` (or just `dex index <path>`, which runs both phases)")
+	case "callers", "callees", "path":
+		return fmt.Errorf("`graph %s` is now `dex trace --dir %s` (#728)", sub, sub)
 	case "neighbors":
 		return cmdGraphNeighbors(ctx, rest)
 	case "deps":
 		return cmdGraphDeps(ctx, rest)
 	case "packages":
 		return cmdGraphPackages(ctx, rest)
-	case "callers":
-		return cmdGraphCallers(ctx, rest)
-	case "callees":
-		return cmdGraphCallees(ctx, rest)
 	case "links":
 		return cmdGraphLinks(ctx, rest)
 	case "backlinks":
@@ -48,8 +45,6 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphTags(ctx, rest)
 	case "cycles":
 		return cmdGraphCycles(ctx, rest)
-	case "path":
-		return cmdGraphPath(ctx, rest)
 	case "diff":
 		return cmdGraphDiff(ctx, rest)
 	case "clusters":
@@ -66,10 +61,6 @@ func cmdGraph(ctx context.Context, args []string) error {
   dex graph deps        [<path>] <file|package>  imports edges (MCP: deps)
                                                     --file=<rel>  --package=<full>
   dex graph packages    [<path>]                whole internal package import DAG
-  dex graph callers     [<path>] <name>         incoming calls edges (MCP: callers)
-                                                    --package=<pkg>  --k=<n>
-  dex graph callees     [<path>] <name>         outgoing calls edges (MCP: callees)
-                                                    --package=<pkg>  --k=<n>
   dex graph links       [<path>] <doc>          docs this doc links to (MCP: graph_links)
                                                     --k=<n>
   dex graph backlinks   [<path>] <doc>          docs that link to this doc (MCP: graph_backlinks)
@@ -79,8 +70,6 @@ func cmdGraph(ctx context.Context, args []string) error {
                                                     --k=<n>
   dex graph cycles      [<path>]                call-graph SCCs ≥ size 2 (MCP: graph_cycles)
                                                     --min-size=<n>  --k=<n>
-  dex graph path        [<path>] <src> <dst>    shortest call/import path (MCP: path)
-                                                    --package=<pkg>  --max-depth=<n>
   dex graph diff        [<path>]                blast-radius of current git diff (MCP: diff)
                                                     --ref=<ref>  --depth=<n>
   dex graph clusters    [<path>]                Louvain call/import-graph clusters (MCP: clusters)
@@ -94,11 +83,12 @@ func cmdGraph(ctx context.Context, args []string) error {
   (path defaults to cwd when omitted)
 
 note:
+  callers/callees/path moved to 'dex trace --dir callers|callees|path'.
   'graph index' is gone — use 'dex index --graph=only <path>'.
   Plain 'dex index <path>' runs both chunk and graph phases.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, callers, callees, links, backlinks, tags, cycles, path, diff, clusters, smells, routes, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, deps, packages, links, backlinks, tags, cycles, diff, clusters, smells, routes, export)", sub)
 	}
 }
 

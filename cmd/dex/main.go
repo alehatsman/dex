@@ -1,17 +1,16 @@
 // dex — local semantic-search helper for Claude Code.
 //
-// The query-side verbs share the MCP tool names 1:1 (find, trace, map, read,
-// ask). The build/maintenance commands are CLI-only.
+// The query-side verbs share the MCP tool names 1:1 (search, trace, repo_map,
+// read, ask). The build/maintenance commands are CLI-only.
 //
 //	ask <path> <q...>             Primary entry point (MCP: ask).
-//	find <path> <q...>            Hybrid semantic top-k chunks; fuses exact
-//	                              symbol-name hits via RRF (MCP: find).
+//	search <path> <q...>          Hybrid semantic top-k chunks; fuses exact
+//	                              symbol-name hits via RRF (MCP: search).
+//	trace <path> <sym>            Call-graph callers/callees/path/impact (MCP: trace).
 //	graph neighbors <path> <file> <line>
 //	                              Vector neighbours of a chunk (CLI-only).
 //	graph deps <path> [--file|--package]
 //	                              `imports` edges for a file/package (MCP: deps).
-//	graph callers <path> <name>   Incoming `calls` edges (MCP: callers).
-//	graph callees <path> <name>   Outgoing `calls` edges (MCP: callees).
 //	graph links <path> <doc>      Docs this markdown doc links to (CLI-only).
 //	graph backlinks <path> <doc>  Docs that link to this markdown doc (CLI-only).
 //	graph tags <path> --tag|--doc Tag→docs or doc→tags (CLI-only).

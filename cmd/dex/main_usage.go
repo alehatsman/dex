@@ -141,9 +141,6 @@ query — graph power lanes:
                                           vector neighbours of a chunk (CLI-only)
   dex graph deps      [<path>] [flags]  package imports (MCP: deps)
                                           Flags: --file=<rel>, --package=<full path>
-  dex graph callers   [<path>] <name>   incoming call edges — prefer: dex trace --dir callers
-                                          Flags: --package=<pkg>, --k
-  dex graph callees   [<path>] <name>   outgoing call edges — prefer: dex trace --dir callees
   dex graph links     [<path>] <doc>    markdown docs this doc links to (CLI-only)
   dex graph backlinks [<path>] <doc>    markdown docs that link to this doc (CLI-only)
                                           Flags: --k
