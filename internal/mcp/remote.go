@@ -376,3 +376,15 @@ func (rc *remoteClient) check(ctx context.Context, _ *sdk.CallToolRequest, in Ch
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/check"), in, &out)
 	return nil, out, err
 }
+
+func (rc *remoteClient) brief(ctx context.Context, _ *sdk.CallToolRequest, in BriefInput) (*sdk.CallToolResult, BriefOutput, error) {
+	var out BriefOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/brief"), in, &out)
+	return nil, out, err
+}
+
+func (rc *remoteClient) indexStatus(ctx context.Context, _ *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
+	var out IndexStatusOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/index-status"), in, &out)
+	return nil, out, err
+}

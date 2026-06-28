@@ -6,11 +6,22 @@ import "testing"
 // (internal/mcp/server.go) by hand. Both parity tests read from this single
 // list so the CLI↔MCP contract is guarded in both directions.
 var mcpToolSurface = []string{
-	"ask", "find", "map", "trace", "locate", "review", "refactor", "rehearse", "read",
+	"ask", "search", "repo_map", "trace", "locate", "review_diff", "plan_rename", "rehearse_patch", "read",
 	"grep", "shell",
 	"deps", "diff", "clusters",
-	"smells", "routes", "cohort", "refs", "verify", "check",
+	"smells", "routes", "cohort", "refs", "verify_change", "check",
 	"status", "notes", "session", "budget", "checkpoint",
+	"brief", "index_status",
+}
+
+// cliToMCPName maps CLI verb names to MCP tool names when they differ.
+var cliToMCPName = map[string]string{
+	"map":      "repo_map",
+	"find":     "search",
+	"review":   "review_diff",
+	"verify":   "verify_change",
+	"refactor": "plan_rename",
+	"rehearse": "rehearse_patch",
 }
 
 // TestMCPToolCLIParity locks every MCP `read`/graph/query tool to a reachable
@@ -45,6 +56,13 @@ func TestMCPToolCLIParity(t *testing.T) {
 		}
 	}
 
+	// mcpToCLIName is the inverse of cliToMCPName: given an MCP tool name,
+	// what is the CLI verb name? Built from cliToMCPName at test time.
+	mcpToCLIName := make(map[string]string, len(cliToMCPName))
+	for cli, mcp := range cliToMCPName {
+		mcpToCLIName[mcp] = cli
+	}
+
 	mcpOnlyTools := map[string]bool{
 		"session": true,
 		// budget reports per-session counters (slo.Tracker + heatmap) — a CLI
@@ -53,10 +71,20 @@ func TestMCPToolCLIParity(t *testing.T) {
 		// checkpoint manages an agent's shadow-git work history — a session-scoped
 		// concept with no CLI analogue (#608), surfaced via mcpOnlyToolHints.
 		"checkpoint": true,
+		// index_status is surfaced via MCP only; CLI uses `dex index status` / `dex status`.
+		"index_status": true,
 	}
 
 	for _, tool := range mcpTools {
-		if topLevel[tool] || graphSubs[tool] || mcpOnlyTools[tool] {
+		if mcpOnlyTools[tool] {
+			continue
+		}
+		// Check direct name match first, then the cliToMCPName mapping (renamed tools).
+		cliName := tool
+		if mapped, ok := mcpToCLIName[tool]; ok {
+			cliName = mapped
+		}
+		if topLevel[cliName] || graphSubs[cliName] || topLevel[tool] || graphSubs[tool] {
 			continue
 		}
 		t.Errorf("MCP tool %q has no CLI verb, graph subcommand, or allow-list entry", tool)
@@ -98,7 +126,15 @@ func TestQueryVerbsHaveMCPTool(t *testing.T) {
 		if v.group != groupQuery {
 			continue
 		}
-		if mcpSet[v.name] || cliOnlyQueryVerbs[v.name] {
+		if cliOnlyQueryVerbs[v.name] {
+			continue
+		}
+		// Check both direct name and the renamed MCP equivalent.
+		mcpName := v.name
+		if mapped, ok := cliToMCPName[v.name]; ok {
+			mcpName = mapped
+		}
+		if mcpSet[v.name] || mcpSet[mcpName] {
 			continue
 		}
 		t.Errorf("query verb %q has no MCP tool and is not in cliOnlyQueryVerbs — "+

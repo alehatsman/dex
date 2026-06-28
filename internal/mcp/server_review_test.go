@@ -239,13 +239,14 @@ func TestReviewIntegration(t *testing.T) {
 	}
 }
 
-// TestReviewInDefaultSurface guards that review ships in the everyday tool
-// surface (not behind DEX_EXPERT) — it's a headline review verb.
+// TestReviewInDefaultSurface guards that review_diff (the review MCP tool)
+// ships in the everyday tool surface (not behind DEX_EXPERT) — it's a headline
+// review verb.
 func TestReviewInDefaultSurface(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "")
 	names := listToolNames(t, stubServer(t))
-	if !names["review"] {
-		t.Error("default surface omitted verb \"review\"; want it advertised")
+	if !names["review_diff"] {
+		t.Error("default surface omitted verb \"review_diff\"; want it advertised")
 	}
 }
 

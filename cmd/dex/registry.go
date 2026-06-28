@@ -115,6 +115,15 @@ var verbs = []verbSpec{
 		},
 	},
 	{
+		name: "brief", group: groupQuery, args: "[<path>] <task...>",
+		summary: "task-specific context pack — call before starting any coding task",
+		flags: []flagSpec{
+			{name: "--budget", desc: "approximate token budget", arg: true},
+			{name: "--sections", desc: "comma-separated sections: map,relevant_code,rules,tests,impact", arg: true},
+			flagFormat,
+		},
+	},
+	{
 		name: "find", group: groupQuery, args: "[<path>] <q...>",
 		summary: "hybrid search — raw ranking (ask composes this)",
 		flags: []flagSpec{

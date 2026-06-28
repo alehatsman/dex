@@ -13,7 +13,7 @@ import (
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
 var instructionTools = []string{
-	"ask", "map", "find", "trace", "read", "shell", "grep", "notes",
+	"ask", "brief", "repo_map", "search", "trace", "read", "shell", "grep", "notes",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the
@@ -27,9 +27,11 @@ var deadToolNames = []string{
 // goodParamSignatures are the tool mnemonics whose param names match the real
 // input schema. Each MUST appear verbatim in ServerInstructions().
 var goodParamSignatures = []string{
-	"find(query, path_glob)",   // SearchInput: query + path_glob (no "path")
-	"read(path)",               // read takes path, not "file"
-	"trace(symbol, direction)", // already correct — pin it so it stays
+	"search(query)", // SearchInput: query field
+	"read(path)",    // read takes path, not "file"
+	"brief(task)",   // BriefInput: task field
+	"repo_map()",    // MapInput: no required fields
+	"trace(symbol)", // trace takes symbol
 }
 
 // staleParamSignatures are the pre-#525 param drifts: prose that named params
@@ -37,8 +39,11 @@ var goodParamSignatures = []string{
 // The trailing ')' keeps "find(query, path)" from matching "find(query, path_glob)".
 var staleParamSignatures = []string{
 	"find(query, path)",
+	"find(query, path_glob)",
 	"impact(symbol)",
 	"read(file)",
+	// "map()" must not appear as a standalone tool reference (now renamed to repo_map).
+	// Note: we test for "- map(" to avoid matching "repo_map()" which is valid.
 }
 
 // TestServerInstructionsParamNamesMatchSchema guards #525: the param names in

@@ -122,3 +122,9 @@ func (n *noopSurface) check(_ context.Context, _ *sdk.CallToolRequest, _ CheckIn
 func (n *noopSurface) refs(_ context.Context, _ *sdk.CallToolRequest, _ RefsInput) (*sdk.CallToolResult, RefsOutput, error) {
 	return nil, RefsOutput{}, n.err()
 }
+func (n *noopSurface) brief(_ context.Context, _ *sdk.CallToolRequest, _ BriefInput) (*sdk.CallToolResult, BriefOutput, error) {
+	return nil, BriefOutput{}, n.err()
+}
+func (n *noopSurface) indexStatus(_ context.Context, _ *sdk.CallToolRequest, _ IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
+	return nil, IndexStatusOutput{}, n.err()
+}

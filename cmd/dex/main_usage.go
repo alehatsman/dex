@@ -25,6 +25,7 @@ func usageConcise() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
 
 SEARCH & UNDERSTAND
+  dex brief  [<path>] <task...>          task context pack — call before any coding task
   dex map    [--cluster <id>] [<path>]   repo overview — run first in an unfamiliar repo
   dex ask    [<path>] <q...>             answer a codebase question (semantic + symbol + graph)
   dex find   [<path>] <q...>             hybrid search — raw ranking (ask composes this)
@@ -79,7 +80,11 @@ quickstart:
   <path> defaults to cwd on every query/graph command.
 
 query — core verbs (CLI names match the MCP tool names):
-  dex map    [--cluster <id>] [<path>]  repo orientation (MCP: map). No --cluster: the
+  dex brief  [<path>] <task...>         task-specific context pack (MCP: brief). Returns
+                                          ranked files, local rules, tests, and next_calls
+                                          for the given task. Requires an embedder.
+                                          Flags: --budget, --sections, --format=text|json
+  dex map    [--cluster <id>] [<path>]  repo orientation (MCP: repo_map). No --cluster: the
                                           first-touch bundle (L0 overview + a zoom into
                                           the most-central cluster). --cluster <id>: zoom
                                           a chosen cluster.

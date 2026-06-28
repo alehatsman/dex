@@ -62,12 +62,13 @@ func TestRefactorRenameHappyPath(t *testing.T) {
 	}
 }
 
-// TestRefactorInDefaultSurface guards that refactor ships in the everyday tool
-// surface (not behind DEX_EXPERT) — it's a headline S-tier verb.
+// TestRefactorInDefaultSurface guards that plan_rename (the refactor MCP tool)
+// ships in the everyday tool surface (not behind DEX_EXPERT) — it's a headline
+// S-tier verb.
 func TestRefactorInDefaultSurface(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "")
 	names := listToolNames(t, stubServer(t))
-	if !names["refactor"] {
-		t.Error("default surface omitted verb \"refactor\"; want it advertised")
+	if !names["plan_rename"] {
+		t.Error("default surface omitted verb \"plan_rename\"; want it advertised")
 	}
 }

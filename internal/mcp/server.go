@@ -40,28 +40,26 @@ import (
 func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
-Tool mapping (use these instead):
-- ask(question)            instead of free-form reasoning about code structure
-- map()                    instead of guessing layout — orient first in an unfamiliar repo
-- find(query, path_glob)   instead of Grep/rg for concept/intent searches
-- trace(symbol, direction) instead of manual cross-ref tracing — callers/callees/path, or direction=impact for an edit's blast radius
-- read(path)               instead of Read for large files (signatures + summaries)
-- shell(command)           instead of Bash for shell commands (compressed output)
-- grep(pattern)            instead of rg for exact regex matches
-- notes(action)            instead of re-deriving facts — recall and persist durable project memory
+Primary workflow (coding tasks):
+1. brief(task) — START HERE for any coding task. Returns ranked files, rules, tests, impact.
+2. read/locate — only for missing exact details after brief.
+3. edit — your job, not dex's.
+4. review_diff(staged) — inspect what you changed.
+5. verify_change(staged) — find and run the right tests.
 
-Workflow:
-1. Orient: ask(question) — routes intent, returns suggested_reads + next_action; map() for layout
-2. Locate: find for concepts; trace to follow the call graph
-3. Read: read for large files; native Read for small ones
-4. Shell: shell(command) for build/test output
-5. Remember: notes(action=list) to recall before exploring; notes(action=add) only for durable gotchas/decisions (not transient facts); when orientation reports "N notes pending review", run notes(action=review) and resolve it (merge/supersede/pin/delete)
+Tool mapping (use these instead of native):
+- brief(task)          instead of reading files blindly — get a curated context pack first
+- repo_map()           instead of guessing layout — orient in an unfamiliar repo
+- search(query)        instead of Grep/rg for concept/intent searches
+- trace(symbol)        instead of manual cross-ref tracing — callers/callees/path/impact
+- read(path)           instead of Read for large files (signatures + summaries)
+- shell(command)       instead of Bash for shell commands (compressed output)
+- grep(pattern)        instead of rg for exact regex matches
+- notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
 Power lanes (deps, diff, clusters, routes, smells, cohort, refs, status, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
-Start every session by calling ask() with the task description. dex's strength is navigation (where/what/how-connected); for exact ground truth — line numbers, exit codes, literal file content — confirm against the source (grep/read) rather than trusting a ranked summary.
-
-IMPORTANT: dex MCP tools are deferred — their schemas are not loaded until you call ToolSearch. Before using any dex tool for the first time each session, call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__find,mcp__dex__grep,mcp__dex__read" to load the schemas. Do this before any other action.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__find,mcp__dex__grep,mcp__dex__read" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -546,6 +544,16 @@ func (s *Server) Budget(ctx context.Context, in BudgetInput) (BudgetOutput, erro
 	return out, err
 }
 
+func (s *Server) Brief(ctx context.Context, in BriefInput) (BriefOutput, error) {
+	_, out, err := s.brief(ctx, nil, in)
+	return out, err
+}
+
+func (s *Server) IndexStatus(ctx context.Context, in IndexStatusInput) (IndexStatusOutput, error) {
+	_, out, err := s.indexStatus(ctx, nil, in)
+	return out, err
+}
+
 func (s *Server) resolveProject(projectRoot string) (*proj.Project, string) {
 	root := projectRoot
 	if root == "" {
@@ -809,6 +817,8 @@ type toolSurface interface {
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 	budget(context.Context, *sdk.CallToolRequest, BudgetInput) (*sdk.CallToolResult, BudgetOutput, error)
+	brief(context.Context, *sdk.CallToolRequest, BriefInput) (*sdk.CallToolResult, BriefOutput, error)
+	indexStatus(context.Context, *sdk.CallToolRequest, IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error)
 }
 
 // addTool registers h on srv with a panic recovery guard. A handler panic is
@@ -847,7 +857,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		// always-on below. The granular lanes these verbs compose over move
 		// behind DEX_EXPERT to keep the everyday surface small.
 		addTool(srv, &sdk.Tool{
-			Name:        "map",
+			Name:        "repo_map",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Orient in an unfamiliar codebase: a deterministic, multi-zoom map of the " +
 				"project's top packages/dirs and how they connect — no embedding or chat required. " +
@@ -858,7 +868,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
-				Name:        "find",
+				Name:        "search",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Prefer `ask` for general code-understanding questions — it composes this " +
 					"tool with symbol lookup and graph expansion. Use `find` directly only when you specifically " +
@@ -939,7 +949,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		// author history, and notes per hunk so the agent spends its budget on
 		// judgment, not context assembly.
 		addTool(srv, &sdk.Tool{
-			Name:        "review",
+			Name:        "review_diff",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Per-hunk intelligence for a diff or PR — use this when reviewing changes. " +
 				"Give one of `ref` ('HEAD~3..HEAD' or a single ref vs HEAD), `branch` (what it adds since " +
@@ -958,7 +968,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		// returns byte-precise edit triples the agent applies with Edit. v1 is
 		// rename_symbol for Go, planned on-demand via go/packages (no index).
 		addTool(srv, &sdk.Tool{
-			Name:        "refactor",
+			Name:        "plan_rename",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Plan a type-precise rename and get back byte-exact edit triples to apply yourself " +
 				"(dex never writes files). Set `op` to 'rename_symbol' (default), `symbol` to the target " +
@@ -978,7 +988,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		//   refactor (plan) → rehearse (prove compiles) → Edit (apply) → verify (test).
 		// v1 is Go-only, on-demand (no index needed).
 		addTool(srv, &sdk.Tool{
-			Name:        "rehearse",
+			Name:        "rehearse_patch",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 			Description: td("Type-check a hypothetical edit in-memory and return new type errors, broken " +
 				"files, and tests to run — without writing anything. Closes the chain: " +
@@ -996,7 +1006,7 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		// loop's missing half — change → verify → learn. Unlike every other query
 		// verb it is NOT read-only (it runs the test command), so no ReadOnlyHint.
 		addTool(srv, &sdk.Tool{
-			Name: "verify",
+			Name: "verify_change",
 			Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
 				"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
 				"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
@@ -1201,6 +1211,27 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"tool result from the proxy's CCR tee store; `slice` applies to the retrieved blob. " +
 				"On error, returns 'chat-service-unreachable' or 'error'."),
 		}, h.summarize)
+
+		addTool(srv, &sdk.Tool{
+			Name:        "index_status",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Check whether the project index is present and fresh. " +
+				"Returns status ('ok' | 'no-index' | 'error'), whether a file watcher is active, " +
+				"and the last-indexed timestamp. Call before any task to confirm the index is ready."),
+		}, h.indexStatus)
+
+		if embedAvailable {
+			addTool(srv, &sdk.Tool{
+				Name:        "brief",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Build a task-specific context pack for Claude. " +
+					"PRIMARY ENTRYPOINT for coding tasks: call brief(task) before any file reads. " +
+					"Returns relevant_files (ranked by semantic similarity to the task), relevant_symbols, " +
+					"local_rules (CLAUDE.md / specs), tests, impact, and next_calls. " +
+					"Replaces the read-everything pattern with a curated, budget-bounded working set. " +
+					"Follow up with read/locate only for missing exact details."),
+			}, h.brief)
+		}
 	}
 
 	addTool(srv, &sdk.Tool{
