@@ -3,20 +3,35 @@
 Local semantic code search for [Claude Code](https://docs.claude.com/en/docs/claude-code)
 and the terminal.
 
-`dex` indexes a repo — chunks, symbols, embeddings, and a call/import graph —
-then serves a small MCP tool surface for coding agents.
+`dex` indexes your repo — chunks, symbols, embeddings, and a call/import graph —
+then exposes a small MCP surface that helps Claude find the right code before it
+starts editing.
 
-Normal agent flow:
+The core idea:
 
-1. call `brief(task)` before coding
-2. read the ranked files/symbols it recommends
-3. use `search`, `locate`, and `trace` only when more context is needed
-4. use `review_diff` and `verify_change` before finalizing changes
+```text
+brief(task) -> read exact context -> edit -> review_diff -> verify_change
+```
 
-Dex is not another agent. Dex gives Claude precise local context so Claude does
-not grep blindly or waste tokens guessing.
+Dex is not another coding agent. It is local repo intelligence for the agent you
+already use.
 
-## Install
+## Why
+
+Claude is strong at editing, but weak at knowing your repo before it has read
+enough files. Dex gives it a fast local map:
+
+- ranked files and symbols for a task
+- local conventions and nearby examples
+- sibling tests and likely checks
+- callers/callees and blast-radius hints
+- cited repo facts with index freshness
+- compressed command output when needed
+
+That means less blind grep, less prompt waste, and fewer edits made from guessed
+context.
+
+## Quick start
 
 ```sh
 git clone https://github.com/alehatsman/dex.git && cd dex
@@ -27,67 +42,20 @@ This builds with `-tags sqlite_fts5` and installs `~/.local/bin/dex`.
 
 Needs Go and a C toolchain. The build links SQLite FTS5 and tree-sitter.
 
-Without mooncake:
+No mooncake:
 
 ```sh
 CGO_ENABLED=1 go install -tags sqlite_fts5 ./cmd/dex
 ```
 
-## Backends
-
-### Embeddings
-
-Semantic search uses an OpenAI-compatible or Ollama server.
-
-Default:
-
-```text
-http://localhost:11434
-```
-
-Override with:
-
-```sh
-DEX_EMBED_URL=...
-DEX_EMBED_MODEL=...
-```
-
-### Chat
-
-Chat is optional. It powers:
-
-- `ask`
-- `read --mode summary`
-
-Configure with:
-
-```sh
-DEX_CHAT_URL=...
-DEX_CHAT_MODEL=...
-```
-
-Without chat configured, those features degrade gracefully.
-
-### Lean profile
-
-No GPU or embedding backend:
-
-```sh
-DEX_EMBED_ENGINE=none
-```
-
-This runs BM25 + exact symbol + call-graph lanes only. Zero inference required.
-
-## Use with Claude Code
-
-Recommended:
+Set up a project:
 
 ```sh
 cd your-project
 dex setup
 ```
 
-`dex setup` checks backends, indexes the repo, and wires up MCP.
+`dex setup` checks backends, indexes the repo, and wires up MCP for Claude Code.
 
 Manual setup:
 
@@ -97,11 +65,52 @@ dex index .
 claude mcp add --scope user dex -- dex mcp
 ```
 
-Verify:
+Verify everything:
 
 ```sh
 dex doctor
 ```
+
+## Agent workflow
+
+For coding tasks, the agent should use Dex like this:
+
+```text
+1. brief(task)
+2. read suggested files
+3. locate key symbols
+4. search only if context is missing
+5. trace if impact/path is unclear
+6. edit
+7. review_diff(staged)
+8. verify_change(staged)
+```
+
+`brief(task)` is the normal starting point. It returns the smallest useful
+context pack for the task: ranked files, symbols, local rules, sibling tests,
+risks, and suggested reads.
+
+## Default MCP tools
+
+The default MCP surface is intentionally small:
+
+| Tool | Purpose |
+|---|---|
+| `brief` | task-specific context pack; start here |
+| `search` | hybrid semantic + exact + symbol + graph search |
+| `read` | fetch exact file/symbol context |
+| `locate` | definition, callers, tests, docs, notes, ownership around one ref |
+| `trace` | callers/callees/path/impact graph traversal |
+| `review_diff` | per-hunk change intelligence for staged/ref/branch/diff |
+| `verify_change` | select or run implicated tests/checks |
+| `notes` | scoped, cited repo-local memory |
+| `shell` | run commands with compressed output |
+
+`shell` is a utility tool, not a code intelligence primitive.
+
+`ask`, `repo_map`, and `grep` are not in the default MCP surface. They are useful
+escape hatches, but the agent should prefer deterministic navigation through
+`brief`, `search`, `read`, `locate`, and `trace`.
 
 ## CLI
 
@@ -122,7 +131,7 @@ dex <verb> [path] <args...>
 | `dex index [path]` | build/update index |
 | `dex index status [path]` | show index freshness |
 | `dex index watch [path]` | keep index fresh |
-| `dex brief [path] <task...>` | task-specific context pack; start here |
+| `dex brief [path] <task...>` | task-specific context pack |
 | `dex ask [path] <question...>` | open-ended repo question; human convenience |
 | `dex find [path] <query...>` | hybrid semantic/symbol/text search |
 | `dex read <file\|symbol>` | read exact context |
@@ -146,54 +155,50 @@ dex review . --staged
 dex verify . --staged
 ```
 
-## Default MCP surface
+## Backends
 
-The default MCP surface is intentionally small:
+### Embeddings
 
-```text
-brief
-search
-read
-locate
-trace
-review_diff
-verify_change
-notes
-shell
-```
+Semantic search uses an OpenAI-compatible or Ollama embedding server.
 
-| MCP tool | Purpose |
-|---|---|
-| `brief` | start every coding task; returns ranked files, local rules, sibling tests, risks, suggested reads |
-| `search` | hybrid semantic + exact + symbol + graph search |
-| `read` | fetch exact file/symbol context |
-| `locate` | definition, callers, callees, tests, docs, notes, ownership around one ref |
-| `trace` | graph traversal: callers, callees, path, impact |
-| `review_diff` | review staged/ref/branch/diff with per-hunk risk |
-| `verify_change` | select or run implicated tests/checks |
-| `notes` | scoped, cited repo-local memory |
-| `shell` | run commands with compressed output |
-
-`shell` is a utility tool, not a code intelligence primitive.
-
-`ask`, `repo_map`, and `grep` are not part of the default MCP surface. They are
-useful escape hatches, but the agent should prefer deterministic navigation
-through `brief`, `search`, `read`, `locate`, and `trace`.
-
-## Agent workflow
-
-For coding tasks, agents should use this sequence:
+Default:
 
 ```text
-1. brief(task)
-2. read suggested files
-3. locate key symbols
-4. search only if context is missing
-5. trace if impact/path is unclear
-6. edit
-7. review_diff(staged)
-8. verify_change(staged)
+http://localhost:11434
 ```
+
+Override with:
+
+```sh
+DEX_EMBED_URL=...
+DEX_EMBED_MODEL=...
+```
+
+### Chat
+
+Chat is optional. It powers answer synthesis and summaries:
+
+- `dex ask`
+- `dex read --mode summary`
+
+Configure with:
+
+```sh
+DEX_CHAT_URL=...
+DEX_CHAT_MODEL=...
+```
+
+Without chat configured, those features degrade gracefully.
+
+### Lean profile
+
+No GPU or embedding backend:
+
+```sh
+DEX_EMBED_ENGINE=none
+```
+
+This runs BM25 + exact symbol + call-graph lanes only. Zero inference required.
 
 ## Expert tools
 
@@ -203,27 +208,13 @@ Advanced MCP tools are hidden behind:
 DEX_EXPERT=1
 ```
 
-Expert tools may include:
-
-```text
-ask
-repo_map
-grep
-plan_rename
-rehearse_patch
-graph_deps
-graph_diff
-graph_cycles
-graph_routes
-graph_clusters
-risk_scan
-similar_changes
-context_budget
-```
+Expert mode is for lower-level graph and planning tools such as `repo_map`,
+`grep`, `plan_rename`, `rehearse_patch`, `graph_*`, `risk_scan`,
+`similar_changes`, and `context_budget`.
 
 Most users and agents should not need them.
 
-Low-level graph analysis is available from the CLI under:
+Low-level graph analysis is also available from the CLI:
 
 ```sh
 dex graph <subcommand>
@@ -238,73 +229,24 @@ dex graph routes
 dex graph export
 ```
 
-## Response contract
+## Output contract
 
-All MCP tools return cited, structured output.
+MCP responses are structured and cited. Repo claims include `path:line` evidence,
+confidence, index freshness, token estimate, and suggested next calls.
 
-Every repo claim must have evidence:
-
-```json
-{
-  "summary": "...",
-  "evidence": [
-    {
-      "path": "internal/foo.go",
-      "lines": [12, 40],
-      "kind": "definition"
-    }
-  ],
-  "confidence": 0.86,
-  "index_status": {
-    "fresh": true,
-    "dirty_files": [],
-    "warnings": []
-  },
-  "token_estimate": 1200,
-  "next_calls": [
-    {
-      "tool": "read",
-      "args": {
-        "target": "internal/foo.go",
-        "mode": "skeleton"
-      },
-      "reason": "Need exact implementation before editing"
-    }
-  ]
-}
-```
+See [`docs/tools.md`](docs/tools.md) for the full response contract.
 
 ## Notes
 
-Project notes are structured memory, not free-form magic.
+`notes` stores repo-local memory. Notes should be scoped, cited, and
+confidence-tagged; they should not become free-form magical memory.
 
-A note should include:
-
-```json
-{
-  "fact": "Indexer refresh is triggered through Claude Code hooks.",
-  "scope": "repo|path|symbol|task",
-  "source": "user|review|test|commit|manual",
-  "evidence": [
-    {
-      "path": "internal/hooks/refresh.go",
-      "lines": [10, 42]
-    }
-  ],
-  "confidence": 0.8,
-  "expires": null
-}
-```
+See [`docs/tools.md`](docs/tools.md) for the note schema.
 
 ## Config
 
-Per-project config lives in:
-
-```text
-.dex/config.yml
-```
-
-Environment variables override config.
+Per-project config lives in `.dex/config.yml`. Environment variables override
+config.
 
 Useful commands:
 
