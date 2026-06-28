@@ -1,98 +1,321 @@
 # dex
 
 Local semantic code search for [Claude Code](https://docs.claude.com/en/docs/claude-code)
-and the terminal. `dex` indexes a repo (chunks + embeddings + a call/import
-graph) and serves tools over MCP. An agent calls `brief(task)` before any
-coding task to get a curated context pack (ranked files, local rules, sibling
-tests), then navigates with `ask` / `search` / `trace` instead of grepping blind.
+and the terminal.
+
+`dex` indexes a repo — chunks, symbols, embeddings, and a call/import graph —
+then serves a small MCP tool surface for coding agents.
+
+Normal agent flow:
+
+1. call `brief(task)` before coding
+2. read the ranked files/symbols it recommends
+3. use `search`, `locate`, and `trace` only when more context is needed
+4. use `review_diff` and `verify_change` before finalizing changes
+
+Dex is not another agent. Dex gives Claude precise local context so Claude does
+not grep blindly or waste tokens guessing.
 
 ## Install
 
 ```sh
 git clone https://github.com/alehatsman/dex.git && cd dex
-mooncake task install        # builds with -tags sqlite_fts5 (CGO), installs ~/.local/bin/dex
+mooncake task install
 ```
 
-Needs Go and a C toolchain (the build links SQLite FTS5 + tree-sitter). No
-mooncake? `CGO_ENABLED=1 go install -tags sqlite_fts5 ./cmd/dex`.
+This builds with `-tags sqlite_fts5` and installs `~/.local/bin/dex`.
+
+Needs Go and a C toolchain. The build links SQLite FTS5 and tree-sitter.
+
+Without mooncake:
+
+```sh
+CGO_ENABLED=1 go install -tags sqlite_fts5 ./cmd/dex
+```
 
 ## Backends
 
-- **Embeddings** (semantic search): an OpenAI-compatible or ollama server —
-  defaults to `http://localhost:11434`. Override with `DEX_EMBED_URL` /
-  `DEX_EMBED_MODEL`.
-- **Chat** (optional): powers `ask` answer synthesis and `read --mode=summary`.
-  Set `DEX_CHAT_URL` / `DEX_CHAT_MODEL`; without it those degrade gracefully.
-- **No GPU?** `DEX_EMBED_ENGINE=none` runs the *lean profile*: BM25 + exact
-  symbol + call-graph lanes, zero inference required.
+### Embeddings
 
-## Use it with Claude Code
+Semantic search uses an OpenAI-compatible or Ollama server.
+
+Default:
+
+```text
+http://localhost:11434
+```
+
+Override with:
+
+```sh
+DEX_EMBED_URL=...
+DEX_EMBED_MODEL=...
+```
+
+### Chat
+
+Chat is optional. It powers:
+
+- `ask`
+- `read --mode summary`
+
+Configure with:
+
+```sh
+DEX_CHAT_URL=...
+DEX_CHAT_MODEL=...
+```
+
+Without chat configured, those features degrade gracefully.
+
+### Lean profile
+
+No GPU or embedding backend:
+
+```sh
+DEX_EMBED_ENGINE=none
+```
+
+This runs BM25 + exact symbol + call-graph lanes only. Zero inference required.
+
+## Use with Claude Code
+
+Recommended:
 
 ```sh
 cd your-project
-dex setup                              # guided: checks backends, indexes, wires up MCP
+dex setup
 ```
 
-Or do it by hand:
+`dex setup` checks backends, indexes the repo, and wires up MCP.
+
+Manual setup:
 
 ```sh
-dex config init                        # scaffold .dex/config.yml (indexes the whole tree by default)
-dex index .                            # build the index (chunks + graph)
+dex config init
+dex index .
 claude mcp add --scope user dex -- dex mcp
 ```
 
-`dex doctor` verifies the whole setup end-to-end. The agent then calls dex
-tools (`ask`, `find`, `read`, …) automatically.
-
-## Verbs
-
-CLI form is `dex <verb> [path] <args…>`; `path` defaults to the current
-directory. MCP tool names differ from CLI verbs for several commands (see
-below); the agent sees the MCP name.
-
-| CLI verb   | MCP tool name   | what it does |
-|------------|-----------------|--------------|
-| `brief`    | `brief`         | **start here** — task-specific context pack: ranked files, local rules, sibling tests, suggested reads |
-| `ask`      | `ask`           | one-shot router: picks intent, fuses lanes, returns suggested reads + a cited answer |
-| `find`     | `search`        | hybrid semantic top-k search — fuses exact symbol-name hits via RRF |
-| `map`      | `repo_map`      | deterministic repo orientation map |
-| `trace`    | `trace`         | call graph — `--dir callers\|callees\|path\|impact` |
-| `locate`   | `locate`        | one-call orientation around a `ref` / `symbol` / `frame`: callers, tests, nearest doc, last commit, notes |
-| `review`   | `review_diff`   | per-hunk PR intelligence: touched symbols, callers + risk, tests, churn, author history, notes |
-| `verify`   | `verify_change` | run the tests a change implicates → pass/fail; Go-only v1 |
-| `read`     | `read`          | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
-| `grep`     | `grep`          | exact regex match |
-| `shell`    | `shell`         | run a command with compressed output |
-| `notes`    | `notes`         | persistent project memory: `add`/`list`/`delete`/`gc` facts |
+Verify:
 
 ```sh
-dex brief . "add OAuth support"       # start here — curated context pack
-dex ask "where is rate limiting?"     # open-ended question
-dex find . "retry logic"
-dex trace . Run --dir callers
+dex doctor
 ```
 
-Call `brief(task)` at the start of every coding task — it returns ranked files
-to read, local rules, and sibling tests so you don't fan out blindly. Use `ask`
-for open-ended questions mid-task.
+## CLI
 
-Every verb works on the CLI. The default MCP surface is `brief ask search
-repo_map trace locate review_diff verify_change read grep shell notes`. The
-power lane (`plan_rename rehearse_patch check deps diff clusters routes smells
-cohort status budget session checkpoint`) is behind `DEX_EXPERT=1`.
-The graph/analysis tools live under `dex graph <sub>` on the CLI
-(`deps callers callees path diff clusters cycles smells routes export`,
-each annotated `(MCP: <name>)` in `dex graph --help`).
+CLI form:
+
+```sh
+dex <verb> [path] <args...>
+```
+
+`path` defaults to the current directory.
+
+| Command | Purpose |
+|---|---|
+| `dex setup` | guided setup: config, index, MCP wiring |
+| `dex doctor` | verify install/backend/index/MCP health |
+| `dex env` | print effective config |
+| `dex config init` | create `.dex/config.yml` |
+| `dex index [path]` | build/update index |
+| `dex index status [path]` | show index freshness |
+| `dex index watch [path]` | keep index fresh |
+| `dex brief [path] <task...>` | task-specific context pack; start here |
+| `dex ask [path] <question...>` | open-ended repo question; human convenience |
+| `dex find [path] <query...>` | hybrid semantic/symbol/text search |
+| `dex read <file\|symbol>` | read exact context |
+| `dex locate [path] <ref\|symbol\|path:line>` | orient around one object |
+| `dex trace [path] <symbol>` | callers/callees/path/impact graph |
+| `dex review [path]` | per-hunk change intelligence |
+| `dex verify [path]` | select/run implicated checks |
+| `dex notes add\|list\|delete\|gc` | cited repo-local memory |
+| `dex grep [path] <regex>` | CLI-only regex escape hatch |
+| `dex shell -- <cmd...>` | run command with compressed output |
+| `dex mcp` | serve MCP tools |
+
+Examples:
+
+```sh
+dex brief . "add OAuth support"
+dex find . "retry logic"
+dex locate . AuthMiddleware
+dex trace . Run --dir callers
+dex review . --staged
+dex verify . --staged
+```
+
+## Default MCP surface
+
+The default MCP surface is intentionally small:
+
+```text
+brief
+search
+read
+locate
+trace
+review_diff
+verify_change
+notes
+shell
+```
+
+| MCP tool | Purpose |
+|---|---|
+| `brief` | start every coding task; returns ranked files, local rules, sibling tests, risks, suggested reads |
+| `search` | hybrid semantic + exact + symbol + graph search |
+| `read` | fetch exact file/symbol context |
+| `locate` | definition, callers, callees, tests, docs, notes, ownership around one ref |
+| `trace` | graph traversal: callers, callees, path, impact |
+| `review_diff` | review staged/ref/branch/diff with per-hunk risk |
+| `verify_change` | select or run implicated tests/checks |
+| `notes` | scoped, cited repo-local memory |
+| `shell` | run commands with compressed output |
+
+`shell` is a utility tool, not a code intelligence primitive.
+
+`ask`, `repo_map`, and `grep` are not part of the default MCP surface. They are
+useful escape hatches, but the agent should prefer deterministic navigation
+through `brief`, `search`, `read`, `locate`, and `trace`.
+
+## Agent workflow
+
+For coding tasks, agents should use this sequence:
+
+```text
+1. brief(task)
+2. read suggested files
+3. locate key symbols
+4. search only if context is missing
+5. trace if impact/path is unclear
+6. edit
+7. review_diff(staged)
+8. verify_change(staged)
+```
+
+## Expert tools
+
+Advanced MCP tools are hidden behind:
+
+```sh
+DEX_EXPERT=1
+```
+
+Expert tools may include:
+
+```text
+ask
+repo_map
+grep
+plan_rename
+rehearse_patch
+graph_deps
+graph_diff
+graph_cycles
+graph_routes
+graph_clusters
+risk_scan
+similar_changes
+context_budget
+```
+
+Most users and agents should not need them.
+
+Low-level graph analysis is available from the CLI under:
+
+```sh
+dex graph <subcommand>
+```
+
+Examples:
+
+```sh
+dex graph deps
+dex graph cycles
+dex graph routes
+dex graph export
+```
+
+## Response contract
+
+All MCP tools return cited, structured output.
+
+Every repo claim must have evidence:
+
+```json
+{
+  "summary": "...",
+  "evidence": [
+    {
+      "path": "internal/foo.go",
+      "lines": [12, 40],
+      "kind": "definition"
+    }
+  ],
+  "confidence": 0.86,
+  "index_status": {
+    "fresh": true,
+    "dirty_files": [],
+    "warnings": []
+  },
+  "token_estimate": 1200,
+  "next_calls": [
+    {
+      "tool": "read",
+      "args": {
+        "target": "internal/foo.go",
+        "mode": "skeleton"
+      },
+      "reason": "Need exact implementation before editing"
+    }
+  ]
+}
+```
+
+## Notes
+
+Project notes are structured memory, not free-form magic.
+
+A note should include:
+
+```json
+{
+  "fact": "Indexer refresh is triggered through Claude Code hooks.",
+  "scope": "repo|path|symbol|task",
+  "source": "user|review|test|commit|manual",
+  "evidence": [
+    {
+      "path": "internal/hooks/refresh.go",
+      "lines": [10, 42]
+    }
+  ],
+  "confidence": 0.8,
+  "expires": null
+}
+```
 
 ## Config
 
-Per-project settings live in `.dex/config.yml`; any `DEX_*` env var overrides
-them. Run `dex env` to print the effective configuration, `dex help` for the
-full command reference.
+Per-project config lives in:
+
+```text
+.dex/config.yml
+```
+
+Environment variables override config.
+
+Useful commands:
+
+```sh
+dex env
+dex help
+```
 
 ## Docs
 
 - [architecture.md](docs/architecture.md) — how dex indexes and retrieves
-- [tools.md](docs/tools.md) — the tool/verb surface and response contract
+- [tools.md](docs/tools.md) — CLI/MCP tool surface and response contract
 - [deployment.md](docs/deployment.md) — backends, profiles, model selection
 - [config.md](docs/config.md) — `.dex/config.yml` and `DEX_*` reference
