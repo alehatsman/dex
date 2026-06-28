@@ -25,15 +25,14 @@ covers:
 
 `dex mcp` is dex's primary interface: a Model Context Protocol server spoken over
 stdio that lets Claude Code reach the local semantic index as native tools. It
-leads with a single `ask` tool that routes a free-text question across semantic
-search, symbol lookup, and graph expansion and (when a chat model is wired)
-synthesizes a cited answer — so an agent reaches for one dex tool before fanning
-out with Grep/Glob/Read. Every tool is scoped to one project, resolved from the
-caller's working directory, and every response carries a structured `status` so
-that when the index is missing or a backend is offline the agent gets an explicit
-fallback signal rather than a hard failure. This spec covers the stdio MCP tool
-interface and its contract; the same handlers re-exposed as REST endpoints for
-service clients are the http-api spec's.
+leads with `brief(task)` — a task-specific context pack (ranked files, local
+rules, sibling tests) that an agent calls before any coding task — and `ask` for
+open-ended code-understanding questions. Every tool is scoped to one project,
+resolved from the caller's working directory, and every response carries a
+structured `status` so that when the index is missing or a backend is offline the
+agent gets an explicit fallback signal rather than a hard failure. This spec
+covers the stdio MCP tool interface and its contract; the same handlers
+re-exposed as REST endpoints for service clients are the http-api spec's.
 
 ## Behavior
 
@@ -49,55 +48,57 @@ service clients are the http-api spec's.
   are registered only when the backend they need is available:
   - The always-on lane (registered even with no embedder or chat model) is
     `ask`, `grep`, `ls`, and `shell`.
-  - The default verb lane (non-weak model) adds `map`, `trace` (incl.
-    `--dir impact`), `locate`, `review`, `refactor`, `verify`, `check`, `read`, and `notes` — the everyday
-    navigation + reading verbs (`locate` for one-call orientation around a code
-    location, `review` for per-hunk PR intelligence) plus persistent project
-    memory (#548) and `refactor` for type-precise edit planning. `locate` and
-    `review` are pure composition over the index and need no chat model; their
-    callers lane degrades to empty without a graph. `locate` also carries a batch
-    `claims` mode (#708): given a set of `{ref:'file:line', symbol?}` citations it
-    resolves each against the index in one call and returns `results[]` —
-    `ok`/`moved` (with the corrected `found_at`)/`gone`/`no_file` — so an agent
-    can verify locations carried from notes or memory still hold before citing
-    them, without N defensive reads. `refactor` needs no index at
-    all — it loads source on-demand via go/packages and returns byte-exact edit
-    triples (read-only #551: it never writes; the agent applies the edits).
-    `verify` (#686, epic #683) is the one NON-read-only default verb: it runs the
-    tests a change implicates (working-tree diff / `ref` range / `symbol`
+  - The default verb lane (non-weak model) adds `brief`, `repo_map`, `trace`
+    (incl. `--dir impact`), `locate`, `review_diff`, `verify_change`, `read`,
+    and `notes`.
+    `brief` (#817) is the primary coding-task entrypoint: given a task
+    description it runs `taskMap` for ranked files, semantic search for relevant
+    symbols, scans for local rules (CLAUDE.md / .dex/rules.md / docs/*.md /
+    specs/*.md), and collects sibling `*_test.go` files — one call yields the
+    full pre-flight context pack. Requires an embedder; returns `no-embed` when
+    none is wired.
+    `locate` and `review_diff` are pure composition over the index and need no
+    chat model; their callers lane degrades to empty without a graph.
+    `verify_change` (#686, epic #683) is the one NON-read-only default verb: it
+    runs the tests a change implicates (working-tree diff / `ref` range / `symbol`
     blast-radius → Go packages) through the shell pipeline, so a failing run
-    stages a `gotcha_candidate` — closing change → verify → learn. Go-only in v1;
-    `check` (#708) is read-only: batch ref-verification of `file:line[:symbol]`
-    claims against the index — returns `ok|moved|gone|no_file|parse_error` per
-    claim, with `found_at` when a symbol has moved within the same file. Use it
-    after code edits to confirm cited locations are still valid.
-    the command template is `command` / `$DEX_VERIFY_CMD` overridable.
-    `notes` needs no embedder or chat model,
-    and the read path (facts auto-injected into `ask`) is inert if the agent
-    can never write, so the write verb headlines the default surface.
-  - `find` (semantic search) is registered only WHEN a query-time embedder is
-    wired (`embedAvailable`); with `DEX_EMBED_ENGINE=none` (the lean profile) it
-    is omitted and retrieval degrades to BM25 (`grep`) + symbol + graph + file
-    lanes — `ask` stays and routes to the non-semantic lanes.
+    stages a `gotcha_candidate` — closing change → verify → learn. Go-only v1;
+    command template overridable via `command` / `$DEX_VERIFY_CMD`.
+    `notes` needs no embedder or chat model, and the read path (facts
+    auto-injected into `ask`) is inert if the agent can never write, so the write
+    verb headlines the default surface.
+  - `search` (MCP) / `find` (CLI) is registered only WHEN a query-time embedder
+    is wired (`embedAvailable`); with `DEX_EMBED_ENGINE=none` (the lean profile)
+    it is omitted and retrieval degrades to BM25 (`grep`) + symbol + graph —
+    `ask` stays and routes to the non-semantic lanes.
   - `read` is always registered (its structural modes — `full` raw content,
     `signatures`, `skeleton`, `map`, `lines:N-M`, and `analyze` (a per-mode
     token-cost comparison + recommended mode + a whole-file expansion `handle`
     for lazy selective reads, no file content, #623/#620) — need no
     chat model). Only `read mode=summary` (the LLM digest) needs a chat model;
     when none is wired it returns `status=needs-chat` rather than being hidden.
-  - The power lane (`deps`, `diff`, `clusters`, `routes`, `smells`,
-    `cohort`, `status`, `budget`, `session`, `checkpoint`) is gated behind
-    `DEX_EXPERT` — the default verbs above cover everyday work, so the stdio
-    surface stays small unless an operator opts into the full set. (Call-graph
-    queries are NOT standalone tools: `callers`/`callees`/`path` are reached via
-    `trace --dir`, #575.)
+  - `index_status` (#817) is always registered (default lane); it reports
+    index freshness (last_indexed_at, watch_active) without touching the graph or
+    embedder. MCP-only — no CLI verb; `dex status` / `dex index status` are the
+    CLI equivalents.
+  - The power lane (`plan_rename`, `rehearse_patch`, `check`, `deps`, `diff`,
+    `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`, `session`,
+    `checkpoint`) is gated behind `DEX_EXPERT` — the default verbs cover everyday
+    work. `plan_rename` and `rehearse_patch` are Go-only with complex byte-offset
+    input; `check` is a citation-QA meta-tool. (Call-graph queries are NOT
+    standalone tools: `callers`/`callees`/`path` are reached via `trace --dir`,
+    #575.)
   - WHEN a weak/local model is detected, the full surface is hidden and only the
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
-  `ask`, `find`, `map`, `trace`, `locate`, `review`, `refactor`, `verify`, `check`, `read`, `grep`,
-  `ls`, `shell`, `notes` plus the `DEX_EXPERT` power lane `deps`, `diff`,
-  `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`, `session`,
-  `checkpoint`.
+  `brief`, `ask`, `search`, `repo_map`, `trace`, `locate`, `review_diff`,
+  `verify_change`, `read`, `grep`, `shell`, `notes`, `index_status` plus the
+  `DEX_EXPERT` power lane `plan_rename`, `rehearse_patch`, `check`, `deps`,
+  `diff`, `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`,
+  `session`, `checkpoint`.
+  MCP tool names diverge from CLI verb names (#817): `find`→`search`,
+  `map`→`repo_map`, `review`→`review_diff`, `verify`→`verify_change`,
+  `refactor`→`plan_rename`, `rehearse`→`rehearse_patch`.
 - WHEN a chat model is configured, `ask` returns a synthesized, citation-bearing
   (`path:line`) prose answer grounded in the evidence bundle; WHEN the chat leg
   is unreachable the answer is omitted and the caller falls back to the evidence
@@ -304,7 +305,7 @@ service clients are the http-api spec's.
 - [x] `ask` with an empty question → session-start orientation (intent `orient`): deterministic L0+L1 codemap in `map`, byte-stable, single-sourced with `dex orient`/`dex map`; degrades to a `no-graph`/`no-index` hint, never an error (#348 / #316 story 6)
 - [x] Single `registerTools` path wires the surface for stdio, remote shim, and HTTP-MCP — no name/schema drift
 - [x] Capability-derived exposure (#283/#290): `find` gated on `embedAvailable`; `read` always registered (structural modes need no chat; `mode=summary` returns `needs-chat` when no chat model); power lane gated on `DEX_EXPERT`; weak model → only `ask`/`grep`/`ls`/`shell`
-- [x] Flat, prefix-free surface of up to 21 tools (#427): default `ask`/`find`/`map`/`trace` (incl. `--dir impact`, #684)/`read`/`grep`/`ls`/`shell`/`notes` + `DEX_EXPERT` power lane (no `DEX_TOOLS` tiers)
+- [x] Flat, prefix-free surface (#427/#817/#818): default 13 tools (`brief`/`ask`/`search`/`repo_map`/`trace`/`locate`/`review_diff`/`verify_change`/`read`/`grep`/`shell`/`notes`/`index_status`) + `DEX_EXPERT` power lane (no `DEX_TOOLS` tiers); MCP tool names diverge from CLI verb names for 6 tools
 - [x] `read mode=map` returns a structural outline for non-code files (Markdown/JSON/YAML/TOML/lock); no LLM, no index
 - [x] `read paths[]` batch: max 10 files, same mode, concatenated `## path` output; path-traversal check per entry; etag/delta/skeleton modes
 - [x] `read` path traversal rejected (must resolve inside project root); files over 64 KB truncated

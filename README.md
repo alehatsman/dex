@@ -2,8 +2,9 @@
 
 Local semantic code search for [Claude Code](https://docs.claude.com/en/docs/claude-code)
 and the terminal. `dex` indexes a repo (chunks + embeddings + a call/import
-graph) and serves `ask` / `find` / `trace` and graph navigation as MCP tools,
-so an agent reaches for one dex tool instead of grepping blind.
+graph) and serves tools over MCP. An agent calls `brief(task)` before any
+coding task to get a curated context pack (ranked files, local rules, sibling
+tests), then navigates with `ask` / `search` / `trace` instead of grepping blind.
 
 ## Install
 
@@ -45,41 +46,43 @@ tools (`ask`, `find`, `read`, …) automatically.
 
 ## Verbs
 
-For the everyday set the CLI verbs and the MCP tool names are identical. CLI
-form is `dex <verb> [path] <args…>`; `path` defaults to the current directory.
-The graph/analysis tools are flat MCP tools but live under `dex graph <sub>` on
-the CLI (`deps callers callees path diff clusters cycles smells routes export`,
-each annotated `(MCP: <name>)` in `dex graph --help`).
+CLI form is `dex <verb> [path] <args…>`; `path` defaults to the current
+directory. MCP tool names differ from CLI verbs for several commands (see
+below); the agent sees the MCP name.
 
-| verb     | what it does                                                        |
-|----------|---------------------------------------------------------------------|
-| `ask`    | one-shot router: picks intent, fuses lanes, returns suggested reads + a cited answer |
-| `find`   | hybrid semantic top-k search — fuses exact symbol-name hits via RRF |
-| `map`    | deterministic repo orientation map                                  |
-| `trace`  | call graph — `--dir callers\|callees\|path\|impact` (impact = transitive caller blast-radius) |
-| `locate` | one-call orientation around a `ref` (`path:line`) / `symbol` / `frame`: callers, tests, nearest doc, last commit, notes; or batch-verify cited `claims` (ok/moved/gone/no_file) |
-| `review` | per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers + risk, tests, churn, author history, notes |
-| `refactor` | plan a type-precise rename → byte-exact edit triples you apply (never writes); Go-only v1 |
-| `verify` | run the tests a change implicates (working tree / `ref` / `symbol`) → pass/fail + a staged gotcha on failure; Go-only v1 |
-| `check`  | verify `file:line[:symbol]` refs against the index → `ok \| moved \| gone \| no_file \| parse_error` |
-| `read`   | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
-| `grep`   | exact regex match                                                   |
-| `shell`  | run a command with compressed output                                |
+| CLI verb   | MCP tool name   | what it does |
+|------------|-----------------|--------------|
+| `brief`    | `brief`         | **start here** — task-specific context pack: ranked files, local rules, sibling tests, suggested reads |
+| `ask`      | `ask`           | one-shot router: picks intent, fuses lanes, returns suggested reads + a cited answer |
+| `find`     | `search`        | hybrid semantic top-k search — fuses exact symbol-name hits via RRF |
+| `map`      | `repo_map`      | deterministic repo orientation map |
+| `trace`    | `trace`         | call graph — `--dir callers\|callees\|path\|impact` |
+| `locate`   | `locate`        | one-call orientation around a `ref` / `symbol` / `frame`: callers, tests, nearest doc, last commit, notes |
+| `review`   | `review_diff`   | per-hunk PR intelligence: touched symbols, callers + risk, tests, churn, author history, notes |
+| `verify`   | `verify_change` | run the tests a change implicates → pass/fail; Go-only v1 |
+| `read`     | `read`          | read a file — `--mode full` (raw, default), `signatures`, `skeleton`, `map`, `summary` (LLM), … |
+| `grep`     | `grep`          | exact regex match |
+| `shell`    | `shell`         | run a command with compressed output |
+| `notes`    | `notes`         | persistent project memory: `add`/`list`/`delete`/`gc` facts |
 
 ```sh
-dex ask "where is filesystem event debouncing handled?"
+dex brief . "add OAuth support"       # start here — curated context pack
+dex ask "where is rate limiting?"     # open-ended question
 dex find . "retry logic"
 dex trace . Run --dir callers
 ```
 
-Start with `ask` — it routes the query and tells you what to read next. Every
-verb works on the CLI. As MCP tools the everyday set is `ask find map trace
-locate review refactor read grep shell notes`; the rest (`deps diff
-clusters routes smells cohort status budget session checkpoint`) is behind
-`DEX_EXPERT=1` to keep the agent's tool list small.
-Call-graph walks fold into `trace --dir callers|callees|path|impact` — there are
-no standalone `callers`/`callees`/`path`/`impact` MCP tools (callers/callees/path
-remain `dex graph` subs; impact rides `trace`).
+Call `brief(task)` at the start of every coding task — it returns ranked files
+to read, local rules, and sibling tests so you don't fan out blindly. Use `ask`
+for open-ended questions mid-task.
+
+Every verb works on the CLI. The default MCP surface is `brief ask search
+repo_map trace locate review_diff verify_change read grep shell notes`. The
+power lane (`plan_rename rehearse_patch check deps diff clusters routes smells
+cohort status budget session checkpoint`) is behind `DEX_EXPERT=1`.
+The graph/analysis tools live under `dex graph <sub>` on the CLI
+(`deps callers callees path diff clusters cycles smells routes export`,
+each annotated `(MCP: <name>)` in `dex graph --help`).
 
 ## Config
 
