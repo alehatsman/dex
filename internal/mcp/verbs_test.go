@@ -11,7 +11,7 @@ var powerTools = []string{
 	"deps",
 	"clusters", "routes", "smells", "status", "session",
 	"plan_rename", "rehearse_patch", "check",
-	"repo_map", "index_status",
+	"repo_map",
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;

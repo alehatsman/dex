@@ -56,7 +56,7 @@ Tool mapping (use these instead of native):
 - grep(pattern)        instead of rg for exact regex matches
 - notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
-Power lanes (deps, clusters, routes, smells, cohort, refs, status, session, repo_map, index_status) are gated behind DEX_EXPERT — the verbs above cover everyday work.
+Power lanes (deps, clusters, routes, smells, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
 IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__brief,mcp__dex__shell,mcp__dex__search,mcp__dex__grep,mcp__dex__read" before first use.`
 }
@@ -855,8 +855,10 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		// review_diff / verify_change / notes / read / shell / grep.
 		// ask is registered below — always-on when embed is unavailable (BM25
 		// fallback), expert-only when embed is present (brief takes over as primary).
-		// repo_map and index_status moved to expert: brief embeds orientation and
-		// freshness inline, making standalone tools redundant for everyday work.
+		// repo_map moved to expert: brief embeds orientation and freshness inline,
+		// making the standalone tool redundant for everyday work. index_status was
+		// removed entirely — brief covers single-project freshness, status covers
+		// cross-project health.
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
 				Name:        "search",
@@ -1119,18 +1121,10 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			}, mapHandler(h))
 
 			addTool(srv, &sdk.Tool{
-				Name:        "index_status",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Check whether the project index is present and fresh. " +
-					"Returns status ('ok' | 'no-index' | 'error'), whether a file watcher is active, " +
-					"and the last-indexed timestamp. For everyday use, index freshness is embedded in `brief` " +
-					"responses — call this only for explicit health checks or debugging."),
-			}, h.indexStatus)
-
-			addTool(srv, &sdk.Tool{
 				Name:        "status",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
+				Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times. " +
+					"For everyday use, single-project index freshness is embedded in `brief` responses — call this for cross-project health checks or debugging."),
 			}, h.status)
 
 			addTool(srv, &sdk.Tool{

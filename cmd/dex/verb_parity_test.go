@@ -11,7 +11,7 @@ var mcpToolSurface = []string{
 	"deps", "clusters",
 	"smells", "routes", "cohort", "refs", "verify_change", "check",
 	"status", "notes", "session", "checkpoint",
-	"brief", "index_status",
+	"brief",
 }
 
 // cliToMCPName maps CLI verb names to MCP tool names when they differ.
@@ -63,8 +63,6 @@ func TestMCPToolCLIParity(t *testing.T) {
 		// checkpoint manages an agent's shadow-git work history — a session-scoped
 		// concept with no CLI analogue (#608), surfaced via mcpOnlyToolHints.
 		"checkpoint": true,
-		// index_status is surfaced via MCP only; CLI uses `dex index status` / `dex status`.
-		"index_status": true,
 	}
 
 	for _, tool := range mcpTools {
