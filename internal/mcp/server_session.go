@@ -598,9 +598,13 @@ func (s *Server) sessionHeatmap(cacheDir string) (*sdk.CallToolResult, SessionOu
 // writeCurrentTask writes the task string to ~/.cache/dex/current_task so the
 // proxy can read the current intent without a database query. Fail-open.
 func writeCurrentTask(task string) {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return
+	cacheDir := os.Getenv("XDG_CACHE_HOME")
+	if cacheDir == "" {
+		var err error
+		cacheDir, err = os.UserCacheDir()
+		if err != nil {
+			return
+		}
 	}
 	p := filepath.Join(cacheDir, "dex", "current_task")
 	if mkErr := os.MkdirAll(filepath.Dir(p), 0o755); mkErr != nil {

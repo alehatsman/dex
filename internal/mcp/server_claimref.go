@@ -28,7 +28,17 @@ func normalizeClaimRef(root, ref string) string {
 	}
 	pathPart := parts[0]
 	if filepath.IsAbs(pathPart) {
-		if rel, err := filepath.Rel(root, pathPart); err == nil && !strings.HasPrefix(rel, "..") {
+		// Canonicalize so filepath.Rel works on platforms where temp/project
+		// paths are symlinks (e.g. /var → /private/var on macOS). The file
+		// itself may not exist on disk (index-only entry), so fall back to
+		// resolving just the parent directory.
+		canonical := pathPart
+		if real, err := filepath.EvalSymlinks(pathPart); err == nil {
+			canonical = real
+		} else if realDir, err := filepath.EvalSymlinks(filepath.Dir(pathPart)); err == nil {
+			canonical = filepath.Join(realDir, filepath.Base(pathPart))
+		}
+		if rel, err := filepath.Rel(root, canonical); err == nil && !strings.HasPrefix(rel, "..") {
 			pathPart = rel
 		}
 	}

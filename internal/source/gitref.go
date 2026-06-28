@@ -25,6 +25,11 @@ func ReadAtRef(ctx context.Context, path, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Resolve symlinks so filepath.Rel matches the canonical path that
+	// git rev-parse --show-toplevel returns (e.g. /private/var on macOS).
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
 	dir := filepath.Dir(abs)
 	rootOut, err := gitRead(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
