@@ -31,6 +31,17 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# Docs-only shortcut: skip the entire gate when every staged file is
+# documentation (*.md, docs/, README*, LICENSE*).
+staged=$(git diff --cached --name-only 2>/dev/null)
+if [ -n "$staged" ]; then
+  non_docs=$(printf '%s\n' "$staged" | grep -vE '^(docs/|.*\.md$|README[^/]*$|LICENSE[^/]*$|\.github/)' || true)
+  if [ -z "$non_docs" ]; then
+    echo "pre-commit: docs-only change — skipping ci-fast."
+    exit 0
+  fi
+fi
+
 if ! command -v mooncake >/dev/null 2>&1; then
   echo "pre-commit: 'mooncake' is required but not installed." >&2
   echo "            See: https://github.com/alehatsman/mooncake" >&2
@@ -64,6 +75,27 @@ set -e
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+
+# Docs-only shortcut: skip the entire gate when every file in the push range
+# is documentation. Reads the ref list from stdin; new-branch pushes (remote
+# sha = zeros) always run CI since the full range can't be determined cheaply.
+run_ci=0
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    run_ci=1
+    break
+  fi
+  if git diff --name-only "$remote_sha..$local_sha" 2>/dev/null \
+      | grep -qvE '^(docs/|.*\.md$|README[^/]*$|LICENSE[^/]*$|\.github/)'; then
+    run_ci=1
+    break
+  fi
+done
+if [ "$run_ci" -eq 0 ]; then
+  echo "pre-push: docs-only push — skipping full CI."
+  exit 0
+fi
 
 if ! command -v mooncake >/dev/null 2>&1; then
   echo "pre-push: 'mooncake' is required but not installed." >&2
