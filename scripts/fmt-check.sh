@@ -16,7 +16,7 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
-dirty="$(gofmt -l .)"
+dirty="$(gofmt -l . | grep -v '^\.claude/worktrees/' || true)"
 if [ -n "$dirty" ]; then
   echo "gofmt: the following files are not formatted — run 'mooncake task fmt':" >&2
   echo "$dirty" | sed 's/^/  /' >&2
