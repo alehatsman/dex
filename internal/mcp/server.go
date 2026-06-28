@@ -963,45 +963,6 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
 		}, h.review)
 
-		// refactor is in the default lane (#638 / GitHub #65 S3): type-precise
-		// edit planning. dex stays read-only (#551) — refactor never writes; it
-		// returns byte-precise edit triples the agent applies with Edit. v1 is
-		// rename_symbol for Go, planned on-demand via go/packages (no index).
-		addTool(srv, &sdk.Tool{
-			Name:        "plan_rename",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Plan a type-precise rename and get back byte-exact edit triples to apply yourself " +
-				"(dex never writes files). Set `op` to 'rename_symbol' (default), `symbol` to the target " +
-				"(bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') and `to` to " +
-				"the new name. Returns every (path, start_byte, end_byte, replacement) edit across the module, " +
-				"resolved by the Go type checker — a method rename touches only that type's method, never " +
-				"same-named methods elsewhere. Apply edits highest-offset-first per file. The `etag` echoes the " +
-				"touched files' hash; pass it back to detect a stale plan. Go-only in v1 (returns " +
-				"'unsupported-language' otherwise); also 'not-found' / 'ambiguous' / 'stale'. Loads packages " +
-				"on-demand, so it is slower than the read verbs — reach for it when you're about to rename."),
-		}, h.refactor)
-
-		// rehearse is in the default lane (#730): type-check a hypothetical edit
-		// in-memory before applying. dex stays read-only (#551) — rehearse never
-		// writes files; it uses go/packages Overlay to apply edits in-memory and
-		// reports new type errors + broken files + tests to run. Closes the chain:
-		//   refactor (plan) → rehearse (prove compiles) → Edit (apply) → verify (test).
-		// v1 is Go-only, on-demand (no index needed).
-		addTool(srv, &sdk.Tool{
-			Name:        "rehearse_patch",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Type-check a hypothetical edit in-memory and return new type errors, broken " +
-				"files, and tests to run — without writing anything. Closes the chain: " +
-				"`refactor` (plan) → `rehearse` (prove it compiles) → `Edit` (apply) → `verify` (test). " +
-				"Pass `edits` as byte-range splices — the same shape `refactor` emits (path, start_byte, " +
-				"end_byte, replacement), applied highest-offset-first per file. Or pass `files` as whole-file " +
-				"replacements (path + contents); `files` takes precedence over `edits` for the same path. " +
-				"Returns `compiles` (bool), `diagnostics` (new type errors only — pre-existing errors are " +
-				"diffed out), `broken_files` (paths with new errors), and `tests_to_run` (sibling test files). " +
-				"Go-only in v1 (returns 'unsupported-language' for non-Go roots); also 'no-edits' when no " +
-				"edits/files are supplied. Loads packages on-demand — slower than the read verbs."),
-		}, h.rehearse)
-
 		// verify is in the default lane (#686, epic #683): it closes the agent
 		// loop's missing half — change → verify → learn. Unlike every other query
 		// verb it is NOT read-only (it runs the test command), so no ReadOnlyHint.
@@ -1017,21 +978,6 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
 				"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
 		}, h.verify)
-
-		// check is in the default lane (#708): batch ref-verification — confirm
-		// that file:line[:symbol] claims are still accurate after code changes.
-		addTool(srv, &sdk.Tool{
-			Name:        "check",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Verify a batch of file:line[:symbol] references against the current index — " +
-				"use this after making or reviewing changes to confirm that cited locations are still valid. " +
-				"Pass `claims` as an array of {ref, symbol?} objects where `ref` is 'file:line', " +
-				"'file:line:symbol', or 'file:symbol'. Each result has `status`: " +
-				"ok (reference is valid), moved (symbol found at a different line in the same file, " +
-				"with `found_at`), gone (symbol/line no longer indexed), no_file (path has no indexed " +
-				"chunks), or parse_error (malformed ref). `symbol_at` reports what IS indexed at the " +
-				"given line when the expected symbol does not match."),
-		}, h.check)
 
 		// notes is in the default lane (#548): persistent project memory is the
 		// highest-leverage saver of repeat exploration, and the read path (facts
@@ -1056,6 +1002,56 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}, h.knowledge)
 
 		if expert {
+			// plan_rename (#638): type-precise rename planner. Go-only, on-demand
+			// (no index). Moved to expert: niche workflow, byte-offset input shape
+			// that most agents don't construct naturally.
+			addTool(srv, &sdk.Tool{
+				Name:        "plan_rename",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Plan a type-precise rename and get back byte-exact edit triples to apply yourself " +
+					"(dex never writes files). Set `op` to 'rename_symbol' (default), `symbol` to the target " +
+					"(bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') and `to` to " +
+					"the new name. Returns every (path, start_byte, end_byte, replacement) edit across the module, " +
+					"resolved by the Go type checker — a method rename touches only that type's method, never " +
+					"same-named methods elsewhere. Apply edits highest-offset-first per file. The `etag` echoes the " +
+					"touched files' hash; pass it back to detect a stale plan. Go-only in v1 (returns " +
+					"'unsupported-language' otherwise); also 'not-found' / 'ambiguous' / 'stale'. Loads packages " +
+					"on-demand, so it is slower than the read verbs — reach for it when you're about to rename."),
+			}, h.refactor)
+
+			// rehearse_patch (#730): type-check a hypothetical edit in-memory.
+			// Moved to expert: complex byte-range splice input, Go-only, rarely
+			// called — agents typically edit then verify_change instead.
+			addTool(srv, &sdk.Tool{
+				Name:        "rehearse_patch",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Type-check a hypothetical edit in-memory and return new type errors, broken " +
+					"files, and tests to run — without writing anything. Closes the chain: " +
+					"`plan_rename` (plan) → `rehearse_patch` (prove it compiles) → `Edit` (apply) → `verify_change` (test). " +
+					"Pass `edits` as byte-range splices — the same shape `plan_rename` emits (path, start_byte, " +
+					"end_byte, replacement), applied highest-offset-first per file. Or pass `files` as whole-file " +
+					"replacements (path + contents); `files` takes precedence over `edits` for the same path. " +
+					"Returns `compiles` (bool), `diagnostics` (new type errors only — pre-existing errors are " +
+					"diffed out), `broken_files` (paths with new errors), and `tests_to_run` (sibling test files). " +
+					"Go-only in v1 (returns 'unsupported-language' for non-Go roots); also 'no-edits' when no " +
+					"edits/files are supplied. Loads packages on-demand — slower than the read verbs."),
+			}, h.rehearse)
+
+			// check (#708): batch citation verification. Moved to expert: meta-tool
+			// for QA of prior notes/citations, not primary coding workflow.
+			addTool(srv, &sdk.Tool{
+				Name:        "check",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Verify a batch of file:line[:symbol] references against the current index — " +
+					"use this after making or reviewing changes to confirm that cited locations are still valid. " +
+					"Pass `claims` as an array of {ref, symbol?} objects where `ref` is 'file:line', " +
+					"'file:line:symbol', or 'file:symbol'. Each result has `status`: " +
+					"ok (reference is valid), moved (symbol found at a different line in the same file, " +
+					"with `found_at`), gone (symbol/line no longer indexed), no_file (path has no indexed " +
+					"chunks), or parse_error (malformed ref). `symbol_at` reports what IS indexed at the " +
+					"given line when the expected symbol does not match."),
+			}, h.check)
+
 			addTool(srv, &sdk.Tool{
 				Name:        "routes",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},

@@ -21,15 +21,12 @@ it; see the README or `dex help all`.
 | `trace`  | Call graph: `--dir callers\|callees\|path\|impact` (impact = transitive caller blast-radius + risk tier + `tests_to_run`) | graph |
 | `locate` | One-call orientation around `ref` (`path:line`) / `symbol` / `frame`: callers, sibling tests, nearest doc, last commit, related notes. Or pass `claims` (a batch of `{ref, symbol?}` citations) to verify them in one call — each `ok` / `moved` (with `found_at`) / `gone` / `no_file` (#708) | always (callers need graph) |
 | `review` | Per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers (+ risk tier), tests, nearest doc, churn, author history, notes (+ per-file scope-bound notes, #645) | always (callers need graph) |
-| `refactor` | Plan a type-precise rename → byte-exact edit triples to apply yourself (never writes). Go-only v1 | Go toolchain |
-| `rehearse` | Type-check a hypothetical edit in-memory and return new errors, broken files, and tests to run (never writes). Pass `edits` (byte-range splices, same shape as `refactor` output) or `files` (whole-file replacements). Go-only v1 | Go toolchain |
 | `verify` | Run the tests a change implicates — working tree (default) / `ref` range / `symbol` blast-radius — and return pass/fail; routes through the shell pipeline so a failing run stages a `gotcha_candidate`. Override the command via `command` / `$DEX_VERIFY_CMD` (`{{packages}}`). Go-only v1 | Go toolchain |
-| `check`  | Verify a batch of `file:line[:symbol]` references against the index — returns `ok \| moved \| gone \| no_file \| parse_error` per claim; `moved` includes `found_at`. Use after code changes to confirm cited locations are still valid. | always |
 | `read`   | Read a file (see modes below) | always (`summary` needs chat) |
 | `grep`   | Exact regex over indexed files | always |
 | `shell`  | Run a command, return compressed output | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask`; `add` warns (`similar`) on a near-duplicate note | always |
-| `deps` `diff` `clusters` `routes` `smells` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`checkpoint`: shadow-git work history) | graph (`cohort`: Go toolchain) |
+| `refactor` `rehearse` `check` `deps` `diff` `clusters` `routes` `smells` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`refactor`/`rehearse`: Go-only rename + type-check; `check`: citation QA; `checkpoint`: shadow-git work history) | graph / Go toolchain |
 
 ## Capability-derived exposure
 
@@ -37,10 +34,10 @@ A tool is registered only when the backend it needs is available, so the surface
 matches the deployment:
 
 - **Always on** (no models at all): `ask`, `grep`, `shell`.
-- **Default verbs** (non-weak model): add `map`, `trace` (incl. `--dir impact`), `locate`, `review`, `refactor`, `read`, `notes`.
+- **Default verbs** (non-weak model): add `map`, `trace` (incl. `--dir impact`), `locate`, `review`, `verify`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
-- **Power lane** (`deps`, `diff`, `clusters`, `routes`, `smells`, `cohort`,
+- **Power lane** (`refactor`, `rehearse`, `check`, `deps`, `diff`, `clusters`, `routes`, `smells`, `cohort`,
   `status`, `budget`, `session`, `checkpoint`): behind `DEX_EXPERT=1`, to keep the everyday agent tool list small.
   Call-graph walks (callers/callees/shortest path) are not standalone tools —
   `trace --dir callers|callees|path` is the single entry point. (On the CLI
@@ -50,7 +47,7 @@ matches the deployment:
   so they don't count toward the tool surface above.
 - **Weak/local model detected**: only the always-on lane is exposed.
 
-This is a flat, prefix-free surface of up to 18 tools — no `category_` prefixes,
+This is a flat, prefix-free surface of up to 12 tools by default — no `category_` prefixes,
 no tiers.
 
 ## `read` modes

@@ -10,6 +10,7 @@ import (
 var powerTools = []string{
 	"deps",
 	"diff", "clusters", "routes", "smells", "status", "session",
+	"plan_rename", "rehearse_patch", "check",
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;

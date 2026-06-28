@@ -62,13 +62,17 @@ func TestRefactorRenameHappyPath(t *testing.T) {
 	}
 }
 
-// TestRefactorInDefaultSurface guards that plan_rename (the refactor MCP tool)
-// ships in the everyday tool surface (not behind DEX_EXPERT) — it's a headline
-// S-tier verb.
-func TestRefactorInDefaultSurface(t *testing.T) {
+// TestRefactorBehindExpertGate guards that plan_rename sits in the DEX_EXPERT
+// power lane — it's Go-only with complex byte-offset input, not an everyday verb.
+func TestRefactorBehindExpertGate(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "")
 	names := listToolNames(t, stubServer(t))
+	if names["plan_rename"] {
+		t.Error("plan_rename should NOT be in the default surface (expected DEX_EXPERT-gated)")
+	}
+	t.Setenv("DEX_EXPERT", "1")
+	names = listToolNames(t, stubServer(t))
 	if !names["plan_rename"] {
-		t.Error("default surface omitted verb \"plan_rename\"; want it advertised")
+		t.Error("plan_rename should be advertised when DEX_EXPERT is set")
 	}
 }
