@@ -982,7 +982,13 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"list (recall top-k facts ordered by salience), delete (remove a fact by id), " +
 				"review (read-only: suggest near-duplicate merges, overlaps to judge, and stale facts — " +
 				"dex never auto-applies these, you act on them), pin/unpin (mark a fact permanent — exempt " +
-				"from decay, eviction, and staleness proposals, #633). " +
+				"from decay, eviction, and staleness proposals, #633), " +
+				"relate (create/reinforce a typed edge between facts via relate_from/relate_to/relate_kind: " +
+				"DependsOn|RelatedTo|Supports|Contradicts|Supersedes, #621), " +
+				"relations (list edges for a fact id, or set diagram=true for a Mermaid graph of all edges), " +
+				"gc (run the lifecycle pass: decay confidence, consolidate near-duplicates, evict past the cap), " +
+				"consolidate (one-shot merge of near-duplicate facts without the rest of gc), " +
+				"export/import (dump/load the full note set as JSON for backup or cross-project transfer). " +
 				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
 				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
 				"as knowledge_facts."),
