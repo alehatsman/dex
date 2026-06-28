@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-// TestSearchRejectsNonPositiveK locks issue #523: `find` must reject --k<=0
+// TestSearchRejectsNonPositiveK locks issue #523: `search` must reject --k<=0
 // with a clear error instead of silently coercing it back to the default.
 // Validation runs before index resolution, so it needs no index. (lookup was
-// dropped in #685 — find subsumes exact symbol lookup.)
+// dropped in #685 — search subsumes exact symbol lookup.)
 func TestSearchRejectsNonPositiveK(t *testing.T) {
 	ctx := context.Background()
 	cmds := map[string]func(context.Context, []string) error{
-		"find": cmdSearchSemantic,
+		"search": cmdSearchSemantic,
 	}
 	for name, fn := range cmds {
 		for _, k := range []string{"0", "-1", "-8"} {
@@ -38,7 +38,7 @@ func TestSearchAcceptsPositiveK(t *testing.T) {
 	t.Chdir(dir)
 
 	cmds := map[string]func(context.Context, []string) error{
-		"find": cmdSearchSemantic,
+		"search": cmdSearchSemantic,
 	}
 	for name, fn := range cmds {
 		t.Run(name, func(t *testing.T) {

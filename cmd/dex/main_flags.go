@@ -84,7 +84,7 @@ type boolFlag interface {
 // flag.Parse sees them even when the user typed them after positional
 // args. Without this, Go's flag package silently stops parsing at the
 // first non-flag arg and quietly drops every flag that follows — a
-// real footgun for invocations like `dex find <path> "q" --k=3`.
+// real footgun for invocations like `dex search <path> "q" --k=3`.
 //
 // Uses the FlagSet to detect which flags consume a separate-token value
 // (so `--rerank off` is treated as one flag/value pair, not flag plus

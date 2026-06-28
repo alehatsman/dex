@@ -12,17 +12,17 @@ import (
 )
 
 // cmdVerify runs the tests a change implicates and reports pass/fail (MCP:
-// verify). With no selector it tests the uncommitted working tree; --ref tests
-// a git range; --symbol tests a symbol's blast-radius. It closes the
+// verify_change). With no selector it tests the uncommitted working tree; --ref
+// tests a git range; --symbol tests a symbol's blast-radius. It closes the
 // change→verify→learn loop: a failing run surfaces a gotcha candidate (#686).
 func cmdVerify(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	fs := flag.NewFlagSet("verify_change", flag.ContinueOnError)
 	setHelp(fs,
-		"Run the tests a change implicates and report pass/fail (MCP: verify). Go-only in v1.",
-		"dex verify [flags] [<path>]",
-		"dex verify                          # test uncommitted working-tree changes",
-		"dex verify --ref HEAD~3..HEAD       # test what a range changed",
-		"dex verify --symbol NewServer       # test a symbol's blast-radius")
+		"Run the tests a change implicates and report pass/fail (MCP: verify_change). Go-only in v1.",
+		"dex verify_change [flags] [<path>]",
+		"dex verify_change                          # test uncommitted working-tree changes",
+		"dex verify_change --ref HEAD~3..HEAD       # test what a range changed",
+		"dex verify_change --symbol NewServer       # test a symbol's blast-radius")
 	ref := fs.String("ref", "", "git range/ref to test instead of the working tree")
 	symbol := fs.String("symbol", "", "test a symbol's blast-radius instead of a diff")
 	command := fs.String("command", "", "override the test command template ({{packages}} placeholder)")
@@ -33,7 +33,7 @@ func cmdVerify(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 0 {
-		return fmt.Errorf("verify takes no positional args besides [<path>] — use --symbol or --ref (got %d extra)", len(rest))
+		return fmt.Errorf("verify_change takes no positional args besides [<path>] — use --symbol or --ref (got %d extra)", len(rest))
 	}
 	base, err := indexDir()
 	if err != nil {

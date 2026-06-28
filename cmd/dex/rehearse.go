@@ -12,15 +12,15 @@ import (
 )
 
 // cmdRehearse type-checks a hypothetical edit in-memory and reports new type
-// errors + broken files + tests to run, without writing anything (MCP: rehearse).
+// errors + broken files + tests to run, without writing anything (MCP: rehearse_patch).
 func cmdRehearse(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("rehearse", flag.ContinueOnError)
+	fs := flag.NewFlagSet("rehearse_patch", flag.ContinueOnError)
 	setHelp(fs,
 		"Type-check a hypothetical edit in-memory and return new type errors, broken files,\n"+
-			"and tests to run — without writing anything (MCP: rehearse). Go-only in v1.",
-		"dex rehearse [flags] [<path>] --edits <json> | --file <path> --contents <str>",
-		"dex rehearse --edits '[{\"path\":\"pkg/foo.go\",\"start_byte\":42,\"end_byte\":55,\"replacement\":\"NewName\"}]'",
-		"dex rehearse --file internal/store/store.go --contents \"$(cat /tmp/store_hypo.go)\"")
+			"and tests to run — without writing anything (MCP: rehearse_patch). Go-only in v1.",
+		"dex rehearse_patch [flags] [<path>] --edits <json> | --file <path> --contents <str>",
+		"dex rehearse_patch --edits '[{\"path\":\"pkg/foo.go\",\"start_byte\":42,\"end_byte\":55,\"replacement\":\"NewName\"}]'",
+		"dex rehearse_patch --file internal/store/store.go --contents \"$(cat /tmp/store_hypo.go)\"")
 	editsJSON := fs.String("edits", "", "JSON array of {path,start_byte,end_byte,replacement} splices")
 	filePath := fs.String("file", "", "project-relative path of a whole-file replacement (pair with --contents)")
 	fileContents := fs.String("contents", "", "new file contents for --file")
@@ -30,7 +30,7 @@ func cmdRehearse(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 0 {
-		return fmt.Errorf("rehearse takes no positional args besides [<path>] (got %d extra)", len(rest))
+		return fmt.Errorf("rehearse_patch takes no positional args besides [<path>] (got %d extra)", len(rest))
 	}
 	base, err := indexDir()
 	if err != nil {

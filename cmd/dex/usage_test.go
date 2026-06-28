@@ -9,7 +9,7 @@ import (
 // dexCmdRef matches `dex <verb>` command invocations in the usage text — only
 // where "dex" begins a line (the help tables) or follows a backtick (inline
 // code spans), never mid-sentence prose like "a remote dex server".
-var dexCmdRef = regexp.MustCompile("(?m)(?:^\\s*|`)dex (-{0,2}[a-z][a-z-]*)")
+var dexCmdRef = regexp.MustCompile("(?m)(?:^\\s*|`)dex (-{0,2}[a-z][a-z_-]*)")
 
 // usageReferencedCommands scans main_usage.go for every `dex <verb>` mention.
 func usageReferencedCommands(t *testing.T) map[string]bool {

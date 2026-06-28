@@ -26,17 +26,17 @@ func usageConcise() {
 
 SEARCH & UNDERSTAND
   dex brief  [<path>] <task...>          task context pack — call before any coding task
-  dex map    [--cluster <id>] [<path>]   repo overview — run first in an unfamiliar repo
-  dex ask    [<path>] <q...>             answer a codebase question (semantic + symbol + graph)
-  dex find   [<path>] <q...>             hybrid search — raw ranking (ask composes this)
-  dex read   <file>                      read a file (--mode signatures|skeleton|summary)
-  dex locate [<path>] <sym|path:line>    full context for one symbol: callers, tests, doc, blame, notes
-  dex trace  [<path>] <name>             call graph — --dir callers|callees|path|impact
-  dex grep   [<path>] <pattern>          exact RE2 search (literals, import paths, no-embed fallback)
+  dex repo_map [--cluster <id>] [<path>] repo overview — run first in an unfamiliar repo
+  dex ask      [<path>] <q...>           answer a codebase question (semantic + symbol + graph)
+  dex search   [<path>] <q...>           hybrid search — raw ranking (ask composes this)
+  dex read     <file>                    read a file (--mode signatures|skeleton|summary)
+  dex locate   [<path>] <sym|path:line>  full context for one symbol: callers, tests, doc, blame, notes
+  dex trace    [<path>] <name>           call graph — --dir callers|callees|path|impact
+  dex grep     [<path>] <pattern>        exact RE2 search (literals, import paths, no-embed fallback)
 
 CHANGE SAFETY
-  dex verify  [<path>]                   run tests implicated by a change
-  dex review  [<path>]                   per-hunk PR intelligence (--ref|--branch|--pr)
+  dex verify_change [<path>]             run tests implicated by a change
+  dex review_diff   [<path>]             per-hunk PR intelligence (--ref|--branch|--pr)
   dex check   [<path>] <ref...>          verify file:line[:symbol] references exist
 
 KNOWLEDGE & STATUS
@@ -59,7 +59,7 @@ SETUP
   dex completion bash|zsh|fish       tab-completion script
   dex version                        print the build version
 
-  run 'dex help all' for power lanes (refs, refactor, rehearse, cohort, graph),
+  run 'dex help all' for power lanes (refs, plan_rename, rehearse_patch, cohort, graph),
   build utilities (compact, compress, summarize, clone, bench), and full flag reference`)
 }
 
@@ -84,7 +84,7 @@ query — core verbs (CLI names match the MCP tool names):
                                           ranked files, local rules, tests, and next_calls
                                           for the given task. Requires an embedder.
                                           Flags: --budget, --sections, --format=text|json
-  dex map    [--cluster <id>] [<path>]  repo orientation (MCP: repo_map). No --cluster: the
+  dex repo_map [--cluster <id>] [<path>] repo orientation (MCP: repo_map). No --cluster: the
                                           first-touch bundle (L0 overview + a zoom into
                                           the most-central cluster). --cluster <id>: zoom
                                           a chosen cluster.
@@ -93,8 +93,8 @@ query — core verbs (CLI names match the MCP tool names):
                                           suggested_reads and a prose next_action.
                                           Flags: --intent, --k, --format=text|json,
                                           --no-inline, --max-content-bytes, -v
-  dex find   [<path>] <q...>            hybrid semantic top-k chunks, fuses exact
-                                          symbol-name hits via RRF (MCP: find).
+  dex search [<path>] <q...>            hybrid semantic top-k chunks, fuses exact
+                                          symbol-name hits via RRF (MCP: search).
                                           Raw ranking — ask composes this internally.
                                           Flags: --k, --rerank=off, --explain,
                                           --format=text|json, --max-content-bytes, -v
@@ -110,8 +110,8 @@ query — core verbs (CLI names match the MCP tool names):
                                           doc, blame, notes (MCP: locate)
   dex trace  [<path>] <name>            call graph via --dir callers|callees|path|impact
   dex grep   [<path>] <pattern>         exact RE2 regex search (MCP: grep)
-  dex verify [<path>]                   run tests a change implicates (MCP: verify)
-  dex review [<path>]                   per-hunk PR intelligence (MCP: review).
+  dex verify_change [<path>]            run tests a change implicates (MCP: verify_change)
+  dex review_diff   [<path>]            per-hunk PR intelligence (MCP: review_diff).
                                           Flags: --ref, --branch, --pr
   dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check)
   dex notes  add|list|delete|review     per-project knowledge store (MCP: notes).
@@ -128,10 +128,10 @@ query — power lanes (Go-focused or specialized):
   dex refs   [<path>] <action> <sym>    type-precise Go symbol queries (MCP: refs).
                                           Actions: references, implementations,
                                           supertypes, subtypes.
-  dex refactor [<path>] <sym> <to>      plan a type-precise rename — edit triples,
-                                          never writes (MCP: refactor)
-  dex rehearse [<path>]                 type-check a hypothetical edit in-memory,
-                                          never writes (MCP: rehearse).
+  dex plan_rename    [<path>] <sym> <to> plan a type-precise rename — edit triples,
+                                          never writes (MCP: plan_rename)
+  dex rehearse_patch [<path>]            type-check a hypothetical edit in-memory,
+                                          never writes (MCP: rehearse_patch).
                                           Flags: --edits, --file
   dex cohort [<path>] <iface>           Go interface lockstep set — types that must
                                           change together (MCP: cohort)
@@ -199,7 +199,7 @@ config / setup:
   dex hook inject                       Claude Code UserPromptSubmit hook:
                                           inject dex context before each turn.
   dex hook rewrite                      Claude Code PreToolUse(Bash) hook:
-                                          rewrite rg/grep to dex find.
+                                          rewrite rg/grep to dex search.
   dex hook redirect                     Claude Code PreToolUse(Read/Grep/…) hook:
                                           compress large files to save tokens.
   dex hook observe                      Claude Code PostToolUse/Stop hook:
@@ -217,7 +217,7 @@ env:
 exit codes:
   0    success
   1    error — runtime (index not found, embed unreachable) or usage
-       (bad flags, missing arguments); verify/check also exit 1 on failure
+       (bad flags, missing arguments); verify_change/check also exit 1 on failure
   2    unknown command
   130  interrupted (SIGINT / Ctrl-C)
 

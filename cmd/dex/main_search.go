@@ -16,13 +16,13 @@ import (
 )
 
 func cmdSearchSemantic(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("find", flag.ContinueOnError)
+	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	setHelp(fs,
-		"Hybrid semantic top-k chunks for a query (MCP: find).",
-		"dex find [flags] [<path>] <query...>",
-		`dex find . "retry logic"`,
-		`dex find . --k=16 --explain "rate limiter"`,
-		`dex find . --max-content-bytes=4000 "error handling"`,
+		"Hybrid semantic top-k chunks for a query (MCP: search).",
+		"dex search [flags] [<path>] <query...>",
+		`dex search . "retry logic"`,
+		`dex search . --k=16 --explain "rate limiter"`,
+		`dex search . --max-content-bytes=4000 "error handling"`,
 	)
 	k := fs.Int("k", 8, "number of results to return")
 	rerankFlag := fs.String("rerank", "", "set to 'off' to skip the rerank stage for this query (no effect when DEX_RERANK_URL is unset)")
@@ -41,7 +41,7 @@ func cmdSearchSemantic(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) == 0 {
-		return fmt.Errorf("find needs a query (path defaults to cwd)")
+		return fmt.Errorf("search needs a query (path defaults to cwd)")
 	}
 	q := strings.Join(rest, " ")
 	if strings.TrimSpace(q) == "" {

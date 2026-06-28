@@ -11,18 +11,18 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdReview is the front door for per-hunk PR intelligence (MCP: review). It
+// cmdReview is the front door for per-hunk PR intelligence (MCP: review_diff). It
 // composes the diff with callers, tests, churn, author history, and notes per
 // hunk so a reviewer spends budget on judgment, not context assembly. With no
 // selector it defaults to the last commit (HEAD~1..HEAD).
 func cmdReview(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("review", flag.ContinueOnError)
+	fs := flag.NewFlagSet("review_diff", flag.ContinueOnError)
 	setHelp(fs,
-		"Per-hunk intelligence for a diff or PR (MCP: review). Composes callers, tests, churn, author history, and notes.",
-		"dex review [flags] [<path>]",
-		"dex review --ref HEAD~3..HEAD",
-		"dex review --branch feat/foo",
-		"dex review --pr 42 --compact")
+		"Per-hunk intelligence for a diff or PR (MCP: review_diff). Composes callers, tests, churn, author history, and notes.",
+		"dex review_diff [flags] [<path>]",
+		"dex review_diff --ref HEAD~3..HEAD",
+		"dex review_diff --branch feat/foo",
+		"dex review_diff --pr 42 --compact")
 	ref := fs.String("ref", "", "git range ('HEAD~3..HEAD') or a single ref (vs HEAD); defaults to HEAD~1..HEAD")
 	branch := fs.String("branch", "", "branch name; reviews what it adds since diverging from --base")
 	pr := fs.Int("pr", 0, "GitHub PR number (resolved via the gh CLI)")
@@ -35,7 +35,7 @@ func cmdReview(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 0 {
-		return fmt.Errorf("review takes no positional args besides an optional path (got %d extra)", len(rest))
+		return fmt.Errorf("review_diff takes no positional args besides an optional path (got %d extra)", len(rest))
 	}
 	// CLI convenience: no selector → review the last commit.
 	if *ref == "" && *branch == "" && *pr == 0 {

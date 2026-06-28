@@ -19,10 +19,10 @@ import (
 // it zooms a chosen cluster instead. It composes the Louvain communities +
 // PageRank already in the graph — no model is called.
 func cmdMap(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("map", flag.ContinueOnError)
+	fs := flag.NewFlagSet("repo_map", flag.ContinueOnError)
 	setHelp(fs,
 		"Deterministic repo orientation: the first-touch bundle (L0 overview + a zoom into the most-central cluster), one chosen cluster in detail (--cluster), or a task-focused region (--around / --around-diff).",
-		"dex map [--cluster <id>] [--around <symbol>] [--around-diff <ref>] [--budget <tokens>] [flags] [<path>]")
+		"dex repo_map [--cluster <id>] [--around <symbol>] [--around-diff <ref>] [--budget <tokens>] [flags] [<path>]")
 	cluster := fs.Int("cluster", -1, "zoom into one cluster by id (L1); omit for the first-touch orientation bundle")
 	around := fs.String("around", "", "render the region around a symbol — its callers ∪ callees — instead of the overview")
 	aroundDiff := fs.String("around-diff", "", "render the blast radius of a git diff (the ref to diff against, e.g. HEAD~1)")
@@ -36,7 +36,7 @@ func cmdMap(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 0 {
-		return fmt.Errorf("map takes no extra positional args (got %v)", rest)
+		return fmt.Errorf("repo_map takes no extra positional args (got %v)", rest)
 	}
 
 	base, err := indexDir()

@@ -10,7 +10,7 @@ package main
 //
 //	rewrite   PreToolUse(Bash)  Rewrites shell commands to dex equivalents:
 //	                            - rg PATTERN [PATH] (no flags) →
-//	                              dex find [PATH] "PATTERN"
+//	                              dex search [PATH] "PATTERN"
 //	                            - grep [-rniI] PATTERN [PATH] (simple form) →
 //	                              appends 2>&1 | dex compress-stdin --command grep
 //	                            Anything complex passes through unchanged.

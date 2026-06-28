@@ -11,16 +11,16 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdRefactor is the front door for type-precise edit planning (MCP: refactor).
+// cmdRefactor is the front door for type-precise edit planning (MCP: plan_rename).
 // dex never writes files — it prints the edit triples for the caller to apply.
 // v1 supports op=rename_symbol for Go.
 func cmdRefactor(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("refactor", flag.ContinueOnError)
+	fs := flag.NewFlagSet("plan_rename", flag.ContinueOnError)
 	setHelp(fs,
-		"Plan a type-precise rename and print byte-exact edit triples (MCP: refactor). dex never writes — you apply them.",
-		"dex refactor [flags] [<path>] <symbol> <to>",
-		"dex refactor Greet Welcome",
-		"dex refactor '(*Server).Run' Start --format json")
+		"Plan a type-precise rename and print byte-exact edit triples (MCP: plan_rename). dex never writes — you apply them.",
+		"dex plan_rename [flags] [<path>] <symbol> <to>",
+		"dex plan_rename Greet Welcome",
+		"dex plan_rename '(*Server).Run' Start --format json")
 	op := fs.String("op", "rename_symbol", "operation (v1: rename_symbol only)")
 	etag := fs.String("etag", "", "plan etag from a prior call; reports 'stale' if files changed since")
 	format := fs.String("format", "text", "output format: text | json")
@@ -29,7 +29,7 @@ func cmdRefactor(ctx context.Context, args []string) error {
 	}
 	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 2 {
-		return fmt.Errorf("refactor needs <symbol> <to> (got %d args); path defaults to cwd", len(rest))
+		return fmt.Errorf("plan_rename needs <symbol> <to> (got %d args); path defaults to cwd", len(rest))
 	}
 
 	base, err := indexDir()

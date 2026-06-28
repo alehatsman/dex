@@ -13,11 +13,11 @@ import (
 )
 
 // CLI verb front doors mirroring the MCP tool facade (#345/#354/#427): the CLI
-// verbs are the same names as the MCP tools — find / trace / map / read / ask —
+// verbs share names with the MCP tools — search / trace / repo_map / read / ask —
 // so an agent and a human share one vocabulary across the stdio MCP surface, the
 // REST surface, and the CLI.
 
-// cmdFind is the front door for semantic code search (MCP: find).
+// cmdFind is the front door for semantic code search (MCP: search).
 func cmdFind(ctx context.Context, args []string) error {
 	return cmdSearchSemantic(ctx, args)
 }

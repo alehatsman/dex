@@ -123,7 +123,7 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "find", group: groupQuery, args: "[<path>] <q...>",
+		name: "search", group: groupQuery, args: "[<path>] <q...>",
 		summary: "hybrid search — raw ranking (ask composes this)",
 		flags: []flagSpec{
 			flagK, flagFormat,
@@ -146,7 +146,7 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "map", group: groupQuery, args: "[--cluster <id>] [<path>]",
+		name: "repo_map", group: groupQuery, args: "[--cluster <id>] [<path>]",
 		summary: "deterministic repo orientation: first-touch bundle, or --cluster to zoom",
 		flags:   []flagSpec{{name: "--cluster", desc: "focus a cluster id", arg: true}, flagFormat, flagV},
 	},
@@ -182,7 +182,7 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "refactor", group: groupQuery, args: "[<path>] <symbol> <to>",
+		name: "plan_rename", group: groupQuery, args: "[<path>] <symbol> <to>",
 		summary: "plan a type-precise rename (edit triples; never writes)",
 		flags: []flagSpec{
 			{name: "--op", desc: "operation (v1: rename_symbol)", arg: true},
@@ -191,7 +191,7 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "rehearse", group: groupQuery, args: "[<path>]",
+		name: "rehearse_patch", group: groupQuery, args: "[<path>]",
 		summary: "type-check a hypothetical edit in-memory (never writes)",
 		flags: []flagSpec{
 			{name: "--edits", desc: "JSON array of {path,start_byte,end_byte,replacement} splices", arg: true},
@@ -201,7 +201,7 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "review", group: groupQuery, args: "[<path>]",
+		name: "review_diff", group: groupQuery, args: "[<path>]",
 		summary: "per-hunk PR intelligence",
 		flags: []flagSpec{
 			{name: "--ref", desc: "git range or single ref (default HEAD~1..HEAD)", arg: true},
@@ -213,7 +213,7 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "verify", group: groupQuery, args: "[<path>]",
+		name: "verify_change", group: groupQuery, args: "[<path>]",
 		summary: "run the tests a change implicates (working tree / --ref / --symbol)",
 		flags: []flagSpec{
 			{name: "--ref", desc: "test a git range instead of the working tree", arg: true},

@@ -15,14 +15,9 @@ var mcpToolSurface = []string{
 }
 
 // cliToMCPName maps CLI verb names to MCP tool names when they differ.
-var cliToMCPName = map[string]string{
-	"map":      "repo_map",
-	"find":     "search",
-	"review":   "review_diff",
-	"verify":   "verify_change",
-	"refactor": "plan_rename",
-	"rehearse": "rehearse_patch",
-}
+// CLI verbs now share names with the MCP tools, so this map is empty —
+// kept as the seam for future renames.
+var cliToMCPName = map[string]string{}
 
 // TestMCPToolCLIParity locks every MCP `read`/graph/query tool to a reachable
 // CLI path (issue #494). grep/shell regressed silently into MCP-only tools
