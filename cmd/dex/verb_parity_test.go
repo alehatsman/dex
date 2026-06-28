@@ -8,9 +8,9 @@ import "testing"
 var mcpToolSurface = []string{
 	"ask", "search", "repo_map", "trace", "locate", "review_diff", "plan_rename", "rehearse_patch", "read",
 	"grep", "shell",
-	"deps", "diff", "clusters",
+	"deps", "clusters",
 	"smells", "routes", "cohort", "refs", "verify_change", "check",
-	"status", "notes", "session", "budget", "checkpoint",
+	"status", "notes", "session", "checkpoint",
 	"brief", "index_status",
 }
 
@@ -46,9 +46,6 @@ func TestMCPToolCLIParity(t *testing.T) {
 	graphSubs := map[string]bool{}
 	for _, v := range verbs {
 		topLevel[v.name] = true
-		for _, a := range v.aliases {
-			topLevel[a] = true
-		}
 		if v.name == "graph" {
 			for _, s := range v.subs {
 				graphSubs[s.name] = true
@@ -116,11 +113,7 @@ func TestQueryVerbsHaveMCPTool(t *testing.T) {
 	}
 
 	// cliOnlyQueryVerbs are query verbs that deliberately have no MCP tool.
-	cliOnlyQueryVerbs := map[string]bool{
-		// CLI canonical is "xref"; MCP tool is still "refs". The alias on xref
-		// covers "refs" in TestMCPToolCLIParity.
-		"xref": true,
-	}
+	cliOnlyQueryVerbs := map[string]bool{}
 
 	for _, v := range verbs {
 		if v.group != groupQuery {

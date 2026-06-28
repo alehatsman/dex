@@ -36,7 +36,6 @@ type subSpec struct {
 // verbSpec is one top-level command.
 type verbSpec struct {
 	name     string
-	aliases  []string
 	group    verbGroup
 	args     string // positional-arg hint, e.g. "[<path>] <q...>"
 	summary  string // one-line description (zsh _describe, usage tables)
@@ -175,7 +174,7 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagFormat},
 	},
 	{
-		name: "xref", aliases: []string{"refs"}, group: groupQuery, args: "[<path>] <action> <symbol>",
+		name: "refs", group: groupQuery, args: "[<path>] <action> <symbol>",
 		summary: "type-precise Go symbol queries — references, implementations, supertypes, subtypes (Go-only)",
 		flags: []flagSpec{
 			{name: "--action", desc: "references | implementations | supertypes | subtypes (also positional arg 1)", arg: true},
@@ -290,7 +289,7 @@ var verbs = []verbSpec{
 
 	// ---- build / maintenance ----
 	{
-		name: "index", aliases: []string{"idx"}, group: groupBuild, args: "<path>",
+		name: "index", group: groupBuild, args: "<path>",
 		summary: "build or refresh the project index",
 		subs:    []subSpec{{"status", "endpoint health and project stats"}},
 		flags: []flagSpec{
@@ -308,7 +307,7 @@ var verbs = []verbSpec{
 		flags:   []flagSpec{flagFormat, flagV},
 	},
 	{
-		name: "compact", aliases: []string{"bundle", "dump"}, group: groupBuild, args: "<path>",
+		name: "compact", group: groupBuild, args: "<path>",
 		summary: "dump all indexable files to stdout (LLM context prep)",
 		flags: []flagSpec{
 			{name: "--out", desc: "write to FILE", arg: true},

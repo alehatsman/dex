@@ -9,13 +9,11 @@ import (
 	"testing"
 )
 
-// allDispatchNames returns every name the registry claims main.go dispatches:
-// canonical names plus aliases.
+// allDispatchNames returns every name the registry claims main.go dispatches.
 func allDispatchNames() []string {
 	out := make([]string, 0, len(verbs))
 	for _, v := range verbs {
 		out = append(out, v.name)
-		out = append(out, v.aliases...)
 	}
 	return out
 }

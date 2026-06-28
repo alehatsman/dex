@@ -32,7 +32,7 @@ SEARCH & UNDERSTAND
   dex read   <file>                      read a file (--mode signatures|skeleton|summary)
   dex locate [<path>] <sym|path:line>    full context for one symbol: callers, tests, doc, blame, notes
   dex trace  [<path>] <name>             call graph — --dir callers|callees|path|impact
-  dex grep   [<path>] <pattern>          exact RE2 search (escape hatch; prefer find)
+  dex grep   [<path>] <pattern>          exact RE2 search (literals, import paths, no-embed fallback)
 
 CHANGE SAFETY
   dex verify  [<path>]                   run tests implicated by a change
@@ -59,7 +59,7 @@ SETUP
   dex completion bash|zsh|fish       tab-completion script
   dex version                        print the build version
 
-  run 'dex help all' for power lanes (xref, refactor, rehearse, cohort, graph),
+  run 'dex help all' for power lanes (refs, refactor, rehearse, cohort, graph),
   build utilities (compact, compress, summarize, clone, bench), and full flag reference`)
 }
 
@@ -125,9 +125,9 @@ query — core verbs (CLI names match the MCP tool names):
   dex index status [<path>]             same as dex status
 
 query — power lanes (Go-focused or specialized):
-  dex xref   [<path>] <action> <sym>    type-precise Go symbol queries (MCP: refs).
+  dex refs   [<path>] <action> <sym>    type-precise Go symbol queries (MCP: refs).
                                           Actions: references, implementations,
-                                          supertypes, subtypes. Alias: refs.
+                                          supertypes, subtypes.
   dex refactor [<path>] <sym> <to>      plan a type-precise rename — edit triples,
                                           never writes (MCP: refactor)
   dex rehearse [<path>]                 type-check a hypothetical edit in-memory,
@@ -175,7 +175,6 @@ build / maintenance:
 content prep (LLM context utilities):
   dex compact <path>                    dump all indexable files to stdout with
                                           `+"`===== <relpath> =====`"+` headers.
-                                          Alias: dump, bundle.
                                           Flags: --out FILE, --max-bytes N, --strip
   dex compress <file|->                 run dex compression engine on a file or stdin —
                                           no LLM call. Flags: --mode=auto|aggressive|

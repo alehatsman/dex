@@ -37,7 +37,6 @@ func dispatchCmd(ctx context.Context, cmd string, args []string) error {
 
 	dispatch := map[string]func(context.Context, []string) error{
 		"index":          cmdIndexDispatch,
-		"idx":            cmdIndexDispatch,
 		"status":         cmdIndexStatus, // top-level alias for `dex index status` (#501)
 		"ask":            cmdAsk,
 		"brief":          cmdBrief,
@@ -52,7 +51,6 @@ func dispatchCmd(ctx context.Context, cmd string, args []string) error {
 		"refactor":       cmdRefactor,
 		"rehearse":       cmdRehearse,
 		"cohort":         cmdCohort,
-		"xref":           cmdRefs,
 		"refs":           cmdRefs,
 		"verify":         cmdVerify,
 		"check":          cmdCheck,
@@ -60,8 +58,6 @@ func dispatchCmd(ctx context.Context, cmd string, args []string) error {
 		"shell":          cmdShell,
 		"env":            cmdEnv,
 		"compact":        cmdCompact,
-		"bundle":         cmdCompact,
-		"dump":           cmdCompact,
 		"nuke":           cmdNuke,
 		"reindex":        cmdReindex,
 		"mcp":            cmdMCP,

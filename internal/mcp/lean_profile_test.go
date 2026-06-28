@@ -16,15 +16,13 @@ var embedBackedTools = []string{
 }
 
 // zeroInferenceTools work with no embedder at all (ripgrep, the pre-computed
-// graph behind repo_map/trace — including trace --dir impact, and the ask router
-// which degrades to those lanes). They are part of the default verb surface and
-// must always be advertised, lean or not. (Exact-symbol lookup also needs no
-// embedder; it has no standalone tool since #685 — search fuses symbol-name hits
-// via RRF — so there is nothing to assert here.)
+// graph behind trace — including trace --dir impact, and the ask router which
+// degrades to BM25+symbol lanes). They are part of the default verb surface and
+// must always be advertised, lean or not. (repo_map is expert-only; exact-symbol
+// lookup has no standalone tool since #685 — search fuses it via RRF.)
 var zeroInferenceTools = []string{
 	"grep",
 	"ask",
-	"repo_map",
 	"trace",
 	"notes", // persistent memory, no embedder needed; default lane since #548
 }

@@ -13,7 +13,7 @@ import (
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
 var instructionTools = []string{
-	"ask", "brief", "repo_map", "search", "trace", "read", "shell", "grep", "notes",
+	"brief", "search", "trace", "read", "shell", "grep", "notes",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the
@@ -30,7 +30,6 @@ var goodParamSignatures = []string{
 	"search(query)", // SearchInput: query field
 	"read(path)",    // read takes path, not "file"
 	"brief(task)",   // BriefInput: task field
-	"repo_map()",    // MapInput: no required fields
 	"trace(symbol)", // trace takes symbol
 }
 

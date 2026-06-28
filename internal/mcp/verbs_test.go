@@ -5,19 +5,21 @@ import (
 	"testing"
 )
 
-// powerTools are the granular lanes that #316 story 3 moved behind DEX_EXPERT.
+// powerTools are the granular lanes gated behind DEX_EXPERT.
 // They must be absent from the default surface and present once expert is on.
 var powerTools = []string{
 	"deps",
-	"diff", "clusters", "routes", "smells", "status", "session",
+	"clusters", "routes", "smells", "status", "session",
 	"plan_rename", "rehearse_patch", "check",
+	"repo_map", "index_status",
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;
 // they don't need an embedder or chat model, so a lean stubServer advertises
 // them regardless of DEX_EXPERT. notes joined this lane in #548 — persistent
 // memory needs no models and is useless if the agent can't write it.
-var defaultVerbs = []string{"repo_map", "trace", "ask", "grep", "notes"}
+// ask is default when no embed (lean); repo_map moved to expert.
+var defaultVerbs = []string{"trace", "ask", "grep", "notes"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

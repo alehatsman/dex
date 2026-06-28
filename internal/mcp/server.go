@@ -49,7 +49,6 @@ Primary workflow (coding tasks):
 
 Tool mapping (use these instead of native):
 - brief(task)          instead of reading files blindly — get a curated context pack first
-- repo_map()           instead of guessing layout — orient in an unfamiliar repo
 - search(query)        instead of Grep/rg for concept/intent searches
 - trace(symbol)        instead of manual cross-ref tracing — callers/callees/path/impact
 - read(path)           instead of Read for large files (signatures + summaries)
@@ -57,9 +56,9 @@ Tool mapping (use these instead of native):
 - grep(pattern)        instead of rg for exact regex matches
 - notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
-Power lanes (deps, diff, clusters, routes, smells, cohort, refs, status, session) are gated behind DEX_EXPERT — the verbs above cover everyday work.
+Power lanes (deps, clusters, routes, smells, cohort, refs, status, session, repo_map, index_status) are gated behind DEX_EXPERT — the verbs above cover everyday work.
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__find,mcp__dex__grep,mcp__dex__read" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__brief,mcp__dex__shell,mcp__dex__search,mcp__dex__grep,mcp__dex__read" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -852,35 +851,21 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 	expert := expertEnabled()
 	if !weakModel {
-		// Default verb surface (#316 story 3): map (orient) / find (search) /
-		// trace (call graph) / impact (blast radius) / read (digest); ask is
-		// always-on below. The granular lanes these verbs compose over move
-		// behind DEX_EXPERT to keep the everyday surface small.
-		addTool(srv, &sdk.Tool{
-			Name:        "repo_map",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Orient in an unfamiliar codebase: a deterministic, multi-zoom map of the " +
-				"project's top packages/dirs and how they connect — no embedding or chat required. " +
-				"Secondary to ask (the primary entry point): reach for map when you want a model-free " +
-				"topology of a totally unfamiliar repo rather than an answer to a question. " +
-				"Returns 'no-index' when the project hasn't been indexed yet."),
-		}, mapHandler(h))
-
+		// Default verb surface: brief (task context) / search / trace / locate /
+		// review_diff / verify_change / notes / read / shell / grep.
+		// ask is registered below — always-on when embed is unavailable (BM25
+		// fallback), expert-only when embed is present (brief takes over as primary).
+		// repo_map and index_status moved to expert: brief embeds orientation and
+		// freshness inline, making standalone tools redundant for everyday work.
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
 				Name:        "search",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Prefer `ask` for general code-understanding questions — it composes this " +
-					"tool with symbol lookup and graph expansion. Use `find` directly only when you specifically " +
-					"want raw ranking without intent routing. " +
-					"Embeds the query and returns top-k matching chunks. Identifier tokens in the query (CamelCase, " +
-					"snake_case, qualified names) are automatically looked up by exact symbol name and fused into the " +
-					"results via Reciprocal Rank Fusion — no separate `lookup` call needed. " +
-					"Supports exclude list to skip paths. " +
-					"Optional 'languages' (e.g. ['go','typescript']) and 'path_glob' (e.g. 'internal/**') narrow results " +
-					"to specific file types or directories; when active, candidates are over-fetched to compensate for filtering. " +
-					"On error, returns a structured status: 'no-index' (run dex index first), " +
-					"'embedding-service-unreachable' (fall back to grep), or 'ok'."),
+				Description: td("Hybrid semantic + BM25 search. Use when brief is overkill and you need raw " +
+					"ranked hits for a specific query. Identifier tokens (CamelCase, snake_case, qualified names) " +
+					"are automatically looked up by exact symbol name and fused via Reciprocal Rank Fusion — no " +
+					"separate lookup call needed. Supports exclude list, 'languages', and 'path_glob' filters. " +
+					"On error: 'no-index' (run dex index first), 'embedding-service-unreachable' (fall back to grep), or 'ok'."),
 			}, h.search)
 		}
 
@@ -1108,17 +1093,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 
 			// `path` is not a standalone tool — `trace --dir path --to <dst>`
 			// finds the shortest route between two symbols (#575).
-
-			addTool(srv, &sdk.Tool{
-				Name:        "diff",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Blast-radius analysis for a git diff. " +
-					"Runs `git diff --name-only <ref> HEAD` to find changed files, " +
-					"collects all function/method nodes in those files as seeds, " +
-					"then BFS over `calls` edges to find transitive callers (default depth 2, max 5). " +
-					"Returns the blast-radius node list sorted by depth and PageRank. " +
-					"Requires a graph index (`dex index . --graph=only`)."),
-			}, h.graphDiff)
+			// `diff` removed: review_diff + trace direction=impact cover blast-radius
+			// from changed files. `budget` removed: session action=budget covers it.
 
 			addTool(srv, &sdk.Tool{
 				Name:        "clusters",
@@ -1133,20 +1109,29 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			}, h.graphCommunities)
 
 			addTool(srv, &sdk.Tool{
+				Name:        "repo_map",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Deterministic, multi-zoom topology map of the project's top packages/dirs " +
+					"and how they connect — no embedding or chat required. " +
+					"Use for structural exploration when you need raw topology rather than a task context pack. " +
+					"For coding tasks, call `brief(task)` instead — it returns ranked files and orientation together. " +
+					"Returns 'no-index' when the project hasn't been indexed yet."),
+			}, mapHandler(h))
+
+			addTool(srv, &sdk.Tool{
+				Name:        "index_status",
+				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+				Description: td("Check whether the project index is present and fresh. " +
+					"Returns status ('ok' | 'no-index' | 'error'), whether a file watcher is active, " +
+					"and the last-indexed timestamp. For everyday use, index freshness is embedded in `brief` " +
+					"responses — call this only for explicit health checks or debugging."),
+			}, h.indexStatus)
+
+			addTool(srv, &sdk.Tool{
 				Name:        "status",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 				Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times."),
 			}, h.status)
-
-			addTool(srv, &sdk.Tool{
-				Name:        "budget",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Per-session context budget radar (#33). Retrospective view of tokens actually " +
-					"emitted by dex's tools this session: context_tokens, tool_calls, shell_calls, plus the " +
-					"top files by net token footprint (original − compressed-savings) from the heatmap. " +
-					"Surfaces any active SLO violations and a one-line hint when a file dominates. " +
-					"Complements `session action=budget`, which is a prospective estimate from declared session state."),
-			}, h.budget)
 
 			addTool(srv, &sdk.Tool{
 				Name: "session",
@@ -1177,8 +1162,8 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		addTool(srv, &sdk.Tool{
 			Name:        "read",
 			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Prefer `ask` first — its `suggested_reads` will name the file worth reading. " +
-				"Use `read` directly when you already know which file you need. " +
+			Description: td("Fetch exact source context for a file you already know. " +
+				"Use `brief` first — its `ranked_files` and `suggested_reads` will name the files worth reading. " +
 				"`mode` (default 'full') selects the view: 'full' = raw file content (no LLM, exact bytes); " +
 				"'signatures' = indexed symbols + source lines; 'skeleton' = exported type declarations in full plus " +
 				"function/method signatures with @B<n> body handles (expand one later via expand='@B<n>'); " +
@@ -1208,22 +1193,13 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"On error, returns 'chat-service-unreachable' or 'error'."),
 		}, h.summarize)
 
-		addTool(srv, &sdk.Tool{
-			Name:        "index_status",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Check whether the project index is present and fresh. " +
-				"Returns status ('ok' | 'no-index' | 'error'), whether a file watcher is active, " +
-				"and the last-indexed timestamp. Call before any task to confirm the index is ready."),
-		}, h.indexStatus)
-
 		if embedAvailable {
 			addTool(srv, &sdk.Tool{
 				Name:        "brief",
 				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Build a task-specific context pack for Claude. " +
-					"PRIMARY ENTRYPOINT for coding tasks: call brief(task) before any file reads. " +
-					"Returns relevant_files (ranked by semantic similarity to the task), relevant_symbols, " +
-					"local_rules (CLAUDE.md / specs), tests, impact, and next_calls. " +
+				Description: td("PRIMARY ENTRYPOINT for coding tasks — call brief(task) before any file reads. " +
+					"Returns ranked_files (by semantic similarity to the task), relevant_symbols, " +
+					"local_rules (CLAUDE.md / specs), sibling tests, impact, index freshness, and next_calls. " +
 					"Replaces the read-everything pattern with a curated, budget-bounded working set. " +
 					"Follow up with read/locate only for missing exact details."),
 			}, h.brief)
@@ -1249,48 +1225,40 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	addTool(srv, &sdk.Tool{
 		Name:        "grep",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Regex search over project files — no embedding required. " +
-			"Complements ask/find for exact-match queries: cross-cutting symbol references, " +
-			"import paths, string literals, or patterns that semantic search misses. " +
-			"Searches the indexed file list when available (respects .gitignore via the index); " +
+		Description: td("Exact RE2 regex search over indexed project files — no embedding required. " +
+			"Use for literal pattern matches that semantic search misses: cross-cutting symbol references, " +
+			"import paths, string literals, regex-sensitive identifiers. Also the primary search lane when " +
+			"the embedding service is unavailable. " +
+			"Searches the indexed file list when available (respects .gitignore); " +
 			"falls back to walking the project directory and skipping .git/vendor/node_modules. " +
-			"Accepts an RE2 regex pattern, optional relative path prefix, and optional extension filter. " +
 			"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
-			"Pass `context` (1-10) to include that many lines before AND after each match (like grep -C) in " +
-			"`before`/`after` — see a match in context without a follow-up read. " +
-			"Pass `fixed:true` to match the pattern literally (like grep -F) — for code with regex metacharacters " +
-			"(foo.bar, arr[i], f(x)), no escaping needed. " +
-			"Returns 'no-matches' when nothing matches. Use ask for conceptual queries."),
+			"Pass `context` (1-10) for surrounding lines (like grep -C). " +
+			"Pass `fixed:true` to match literally (like grep -F) — no escaping needed for foo.bar, arr[i], f(x). " +
+			"Returns 'no-matches' when nothing matches."),
 	}, h.searchGrep)
 
-	addTool(srv, &sdk.Tool{
-		Name:        "ask",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("PRIMARY ENTRY POINT for code-understanding questions — and, by default, the ONLY dex tool you " +
-			"need. Call this BEFORE Grep/Glob/Read fan-out. By default synthesis is OFF — the tool returns only the " +
-			"evidence bundle + `next_action` (no chat leg, no latency). Pass `answer_style: \"brief\"` to enable a " +
-			"synthesized, citation-bearing prose response (`path:line`) grounded in the evidence — `answer_model` " +
-			"names the model that produced it. " +
-			"Given a free-text question (and optional intent override), it picks a strategy, composes semantic search " +
-			"+ symbol lookup + graph expansion, and returns a compact bundle: `semantic_hits`, `symbols`, `suggested_reads` " +
-			"(both lanes carry their CONTENTS inlined by default — no follow-up Read needed in the common case), a prose " +
-			"`next_action` directive you can execute verbatim, and an `avoid` line telling you what NOT to do. Each " +
-			"SymbolHit carries `signature` (declaration line) and `doc` (leading comment block) so you can see the API " +
-			"without reading the body. `annotations` is a per-path map populated by intent: always-on entries include " +
-			"sibling `tests` (foo.go ↔ foo_test.go) and `nearest_doc` (closest CLAUDE.md / doc.go / README.md walking " +
-			"up); editing_context adds `last_commit` / `last_author` (git blame) and `owners` (CODEOWNERS); architecture " +
-			"and editing_context add `build_tags` and `package`. `references` carries the `calls` graph edges for " +
-			"callers/callees intents (Go is type-resolved via the static call graph; other languages use a BM25 chunk search over the bare symbol name). Inline content " +
-			"shares ONE per-intent byte pool across both lanes: targeted intents budget ~60 lines / 4 KB per range " +
-			"and ~20 KB total; exploration intents (architecture, package_topology) widen to ~120 lines / 8 KB per " +
-			"range and ~40 KB total. Suggested_reads (~2 targeted / ~5 exploration) are filled first as the curated " +
-			"cut; semantic_hits use the remaining budget. A range that appears in both lanes is read once and " +
-			"charged once. Oversize ranges arrive with `truncated: true` and the original line range, so the caller " +
-			"can Read the rest if needed. Pass `no_inline: true` to omit content payloads when you already have the " +
-			"files open. Intent is inferred automatically " +
-			"(behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context) — pass `intent` " +
-			"only to override. Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep."),
-	}, h.contextRouter)
+	// ask: always registered when embed is unavailable (BM25-only fallback and
+	// intent router); gated behind expert when embed is present so brief is the
+	// unambiguous coding entry point and ask doesn't compete with it.
+	if !embedAvailable || expert {
+		addTool(srv, &sdk.Tool{
+			Name:        "ask",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Intent-routing code-understanding tool. Composes semantic search + symbol lookup " +
+				"+ graph expansion into one call. Primary fallback when embed is unavailable (BM25 + symbol lanes " +
+				"still work). With embed: prefer `brief(task)` for coding tasks; use `ask` for open-ended " +
+				"questions where a context pack is overkill. " +
+				"By default synthesis is OFF — returns evidence bundle + `next_action` (no chat leg, no latency). " +
+				"Pass `answer_style: \"brief\"` to enable a synthesized, citation-bearing prose response. " +
+				"Returns `semantic_hits`, `symbols`, `suggested_reads` with contents inlined by default. " +
+				"Each SymbolHit carries `signature` and `doc` so you can see the API without reading the body. " +
+				"`annotations` per-path: sibling `tests`, `nearest_doc`; editing_context adds `last_commit`/`last_author`/`owners`; " +
+				"architecture adds `build_tags`/`package`. `references` carries call-graph edges for callers/callees intents. " +
+				"Intent inferred automatically (behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context) — " +
+				"pass `intent` only to override. Pass `no_inline:true` to omit content payloads. " +
+				"Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep."),
+		}, h.contextRouter)
+	}
 
 }
 
