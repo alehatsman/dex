@@ -62,7 +62,7 @@ type briefNextCall struct {
 }
 
 // brief builds a task-specific context pack.
-func (s *Server) brief(ctx context.Context, req *sdk.CallToolRequest, in BriefInput) (*sdk.CallToolResult, BriefOutput, error) {
+func (s *Server) brief(ctx context.Context, _ *sdk.CallToolRequest, in BriefInput) (*sdk.CallToolResult, BriefOutput, error) {
 	// 1. Resolve project root.
 	root := in.ProjectRoot
 	if root == "" {

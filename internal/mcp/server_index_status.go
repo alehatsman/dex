@@ -24,7 +24,7 @@ type IndexStatusOutput struct {
 }
 
 // indexStatus checks whether the project index exists and is fresh.
-func (s *Server) indexStatus(ctx context.Context, req *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
+func (s *Server) indexStatus(_ context.Context, _ *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
 	p, hint := s.resolveProject(in.ProjectRoot)
 	if hint != "" {
 		return nil, IndexStatusOutput{Status: "error", Hint: hint}, nil
