@@ -177,16 +177,20 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 	}
 
 	var (
-		included    []fileEntry
-		skipped     []skipEntry
-		skipIgnore  int
-		skipBinary  int
-		skipSecret  int
-		skipSize    int
-		totalChunks int
+		included     []fileEntry
+		skipped      []skipEntry
+		skipIgnore   int
+		skipBinary   int
+		skipSecret   int
+		skipSize     int
+		skipMinified int
+		skipDense    int
+		totalChunks  int
 	)
 
 	const maxSize = int64(1 << 20) // 1 MB — mirrors index.Options default
+	// Mirror the chunk-density guard so the preview matches a real run.
+	guard := index.LoadChunkGuard(p.Root)
 
 	walkErr := filepath.WalkDir(p.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -243,7 +247,17 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 			skipSecret++
 			return nil
 		}
+		if guard.SkipMinified && index.LooksMinified(data) {
+			skipped = append(skipped, skipEntry{path: rel, reason: "minified"})
+			skipMinified++
+			return nil
+		}
 		chunks, _ := chunk.Chunks(ctx, rel, data)
+		if limit := guard.MaxChunksPerFile; limit > 0 && len(chunks) > limit {
+			skipped = append(skipped, skipEntry{path: rel, reason: "chunk-density"})
+			skipDense++
+			return nil
+		}
 		included = append(included, fileEntry{path: rel, chunks: len(chunks)})
 		totalChunks += len(chunks)
 		return nil
@@ -260,6 +274,8 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 			Binary   int `json:"binary"`
 			Secret   int `json:"secret_pattern"`
 			TooLarge int `json:"too_large"`
+			Minified int `json:"minified"`
+			Dense    int `json:"chunk_density"`
 		}
 		type dryRunResult struct {
 			Project   string        `json:"project"`
@@ -280,6 +296,8 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 				Binary:   skipBinary,
 				Secret:   skipSecret,
 				TooLarge: skipSize,
+				Minified: skipMinified,
+				Dense:    skipDense,
 			},
 		})
 	}
@@ -312,6 +330,12 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 		}
 		if skipSize > 0 {
 			parts = append(parts, fmt.Sprintf("%d too-large", skipSize))
+		}
+		if skipMinified > 0 {
+			parts = append(parts, fmt.Sprintf("%d minified", skipMinified))
+		}
+		if skipDense > 0 {
+			parts = append(parts, fmt.Sprintf("%d chunk-density", skipDense))
 		}
 		fmt.Printf("  skipped: %d files (%s)\n", totalSkipped, strings.Join(parts, ", "))
 	}

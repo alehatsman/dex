@@ -43,6 +43,18 @@ type Options struct {
 	// Called from the goroutine driving each phase — not thread-safe with
 	// itself, but callers that only write to a terminal are fine.
 	Progress func(phase string, done, total int)
+	// MaxChunksPerFile caps how many chunks a single file may contribute:
+	// a file over the cap is skipped entirely (its chunks are dropped and
+	// pruned) and logged, on the theory that a file emitting hundreds of
+	// chunks is generated — a data fixture or minified bundle — not
+	// searchable source. 0 = resolve from .dex/config.yml /
+	// DefaultMaxChunksPerFile; a negative value disables the cap. See guard.go.
+	MaxChunksPerFile int
+	// SkipMinified, when set, skips machine-emitted (minified/bundled) files
+	// before chunking (LooksMinified). nil = resolve from .dex/config.yml
+	// (default on). A tri-state pointer so config `skip_minified: false`
+	// can override the default.
+	SkipMinified *bool
 }
 
 // Indexer is the entry point.
@@ -57,6 +69,16 @@ type Indexer struct {
 func New(p *proj.Project, st *store.Store, em embed.Embedder, ig *ignore.Matcher, opt Options) *Indexer {
 	if opt.MaxFileSize <= 0 {
 		opt.MaxFileSize = 1 << 20 // 1 MB
+	}
+	// Resolve the chunk-density guard from .dex/config.yml unless the caller
+	// set it explicitly. Doing it here means every call site (index, reindex,
+	// watch, mcp) honours the same config with no per-site plumbing.
+	guard := LoadChunkGuard(p.Root)
+	if opt.MaxChunksPerFile == 0 {
+		opt.MaxChunksPerFile = guard.MaxChunksPerFile
+	}
+	if opt.SkipMinified == nil {
+		opt.SkipMinified = &guard.SkipMinified
 	}
 	if opt.Logger == nil {
 		opt.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -271,6 +293,15 @@ func (ix *Indexer) fileWorker(ctx context.Context, pathCh <-chan pathTask, resul
 			skipped.Add(1)
 			continue
 		}
+		// Chunk-density guard, check 1: skip minified/bundled files before
+		// chunking. They pack into few enormous lines and would otherwise be
+		// window-split into many near-context-length chunks of no search
+		// value. Cheapest catch — avoids the parse entirely.
+		if ix.Options.SkipMinified != nil && *ix.Options.SkipMinified && LooksMinified(data) {
+			ix.Options.Logger.Warn("index: skip (looks minified/generated)", "path", task.rel, "bytes", len(data))
+			skipped.Add(1)
+			continue
+		}
 		chunks, err := chunk.Chunks(ctx, task.rel, data)
 		if err != nil {
 			if ix.Options.Verbose {
@@ -282,6 +313,15 @@ func (ix *Indexer) fileWorker(ctx context.Context, pathCh <-chan pathTask, resul
 			// every subsequent run (no chunks to touch → slow path
 			// → parse fails again → permanent absence from index).
 			_, _ = ix.Store.TouchPath(ctx, task.rel, startTime)
+			continue
+		}
+		// Chunk-density guard, check 2: a single file over the per-file cap
+		// is a data fixture or generated blob, not source. Drop it (chunks
+		// omitted here get pruned by PruneUnseen) and log so the operator can
+		// add an index.ignore rule. limit <= 0 disables the guard.
+		if limit := ix.Options.MaxChunksPerFile; limit > 0 && len(chunks) > limit {
+			ix.Options.Logger.Warn("index: skip (chunk density cap exceeded)", "path", task.rel, "chunks", len(chunks), "cap", limit)
+			skipped.Add(1)
 			continue
 		}
 		select {

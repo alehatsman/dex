@@ -19,7 +19,17 @@ index:
   ignore:
     - testdata/
     - "**/*_generated.go"
+  max_chunks_per_file: 500   # per-file chunk cap; 0 = default, negative disables
+  skip_minified: true        # skip minified/bundled files before chunking
 ```
+
+`max_chunks_per_file` and `skip_minified` are the **chunk-density guard**: a
+file emitting more than the cap (default `500`) is skipped and logged — it is
+almost always a data fixture or generated blob rather than searchable source —
+and `skip_minified` (default on) drops minified/bundled files (very high
+average line length) before they are chunked. Both keep machine-emitted noise
+out of the index and off the embed path; skips are logged with the file path
+and reason. Set `max_chunks_per_file` negative to disable the cap.
 
 Endpoint/model/tool settings can also live here; env vars take precedence.
 
