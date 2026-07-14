@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -659,8 +660,8 @@ func reportGraphStats(project string, stats *graph.Stats, format string) error {
 
 // embedGraphNodes embeds all graph_nodes whose vec_hash differs from
 // content_hash (un-embedded or stale). Returns the number of nodes embedded.
-func embedGraphNodes(ctx context.Context, st *store.Store, em embed.Embedder, verbose bool) (int, error) {
-	return graphrefresh.EmbedNodes(ctx, st, em, verbose)
+func embedGraphNodes(ctx context.Context, st *store.Store, em embed.Embedder, verbose bool, logger *slog.Logger) (int, error) {
+	return graphrefresh.EmbedNodes(ctx, st, em, verbose, logger)
 }
 
 func cmdGraphExport(ctx context.Context, args []string) error {

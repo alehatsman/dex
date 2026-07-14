@@ -682,7 +682,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 				return err
 			}
 			if s.EmbedClient != nil {
-				if _, err := graphrefresh.EmbedNodes(c, st, s.EmbedClient, false); err != nil {
+				if _, err := graphrefresh.EmbedNodes(c, st, s.EmbedClient, false, logger); err != nil {
 					logger.Warn("mcp watch: graph-embed failed", "root", p.Root, "err", err)
 				}
 			}

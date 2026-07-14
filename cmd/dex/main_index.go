@@ -135,7 +135,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 	if *graphMode != "off" && gstats != nil {
 		if em := newEmbedClient(st.EmbedModel()); em != nil {
 			_ = lk.SetPhase("graph-embed")
-			if n, err := embedGraphNodes(ctx, st, em, *verbose); err != nil {
+			if n, err := embedGraphNodes(ctx, st, em, *verbose, cliLogger()); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ graph-embed phase failed: %v\n", err)
 			} else if n > 0 && *verbose {
 				fmt.Printf("  [graph-embed] %d nodes embedded\n", n)

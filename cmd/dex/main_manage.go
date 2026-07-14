@@ -14,6 +14,7 @@ import (
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/index"
+	"github.com/alehatsman/dex/internal/logx"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -267,7 +268,7 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	embedModel := st.EmbedModel()
 	if gstats != nil {
 		if em := newEmbedClient(embedModel); em != nil {
-			if _, err := embedGraphNodes(ctx, st, em, false); err != nil {
+			if _, err := embedGraphNodes(ctx, st, em, false, cliLogger()); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ graph-embed failed for %s: %v\n", p.Root, err)
 			}
 		}
@@ -285,6 +286,12 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	if err := clearCacheKeepLock(p); err != nil {
 		return err
 	}
+
+	// Terminal marker: the index is now fully written and swapped. This is the
+	// only "done" — the chunk phase logs "chunks done" and the graph pass runs
+	// in between, so an earlier terminal log would read as a hang (#75).
+	cliLogger().Info("index: done", logx.Phase("done"),
+		"chunks", stats.Chunks, "files", stats.Files)
 
 	fmt.Fprintf(os.Stderr, "✓ reindexed %s\n", p.Root)
 	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)

@@ -56,7 +56,7 @@ func TestEmbedNodes(t *testing.T) {
 		t.Fatalf("want 2 nodes needing embed, got %d", len(pending))
 	}
 
-	n, err := EmbedNodes(ctx, st, &fakeEmbedder{dim: 4}, false)
+	n, err := EmbedNodes(ctx, st, &fakeEmbedder{dim: 4}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestEmbedNodes(t *testing.T) {
 	}
 
 	// Idempotent: a second pass embeds nothing.
-	n2, err := EmbedNodes(ctx, st, &fakeEmbedder{dim: 4}, false)
+	n2, err := EmbedNodes(ctx, st, &fakeEmbedder{dim: 4}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

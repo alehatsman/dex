@@ -12,6 +12,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/logx"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -27,7 +28,11 @@ func RunPhase(ctx context.Context, p *proj.Project, st *store.Store, verbose boo
 
 // EmbedNodes embeds all graph_nodes whose vec_hash differs from
 // content_hash (un-embedded or stale). Returns the number of nodes embedded.
-func EmbedNodes(ctx context.Context, st *store.Store, em embed.Embedder, verbose bool) (int, error) {
+//
+// This is a second embed pass that runs after the chunk phase and can take as
+// long as it on a large repo. It emits per-batch progress at Info level so the
+// run is never mistaken for a hang (logger may be nil).
+func EmbedNodes(ctx context.Context, st *store.Store, em embed.Embedder, verbose bool, logger *slog.Logger) (int, error) {
 	const batchSize = 256
 	total := 0
 	for {
@@ -50,9 +55,16 @@ func EmbedNodes(ctx context.Context, st *store.Store, em embed.Embedder, verbose
 			return total, fmt.Errorf("graphrefresh: set: %w", err)
 		}
 		total += len(rows)
+		if logger != nil {
+			logger.Info("index: graph-embed batch",
+				logx.Phase("graph_embed"), "batch", len(rows), "nodes", total)
+		}
 		if verbose {
 			fmt.Printf("  [graph-embed] embedded %d nodes (total %d)\n", len(rows), total)
 		}
+	}
+	if logger != nil && total > 0 {
+		logger.Info("index: graph-embed done", logx.Phase("graph_embed_done"), "nodes", total)
 	}
 	return total, nil
 }

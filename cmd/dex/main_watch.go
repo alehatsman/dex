@@ -80,7 +80,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 			return err
 		}
 		if em := newEmbedClient(st.EmbedModel()); em != nil {
-			if _, err := embedGraphNodes(c, st, em, false); err != nil {
+			if _, err := embedGraphNodes(c, st, em, false, logger); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ graph-embed failed: %v\n", err)
 			}
 		}

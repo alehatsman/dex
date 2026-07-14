@@ -232,8 +232,8 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	if err := ix.Store.SetLastIndexedAt(ctx, startTime); err != nil {
 		return err
 	}
-	ix.Options.Logger.Info("index: done",
-		logx.Phase("done"), "chunks_seen", seen,
+	ix.Options.Logger.Info("index: chunks done",
+		logx.Phase("chunks_done"), "chunks_seen", seen,
 		"files_fast_path", mtimeSkips.Load(),
 		"embedded", len(toEmbed)-embedSkipped,
 		"embed_skipped", embedSkipped,
