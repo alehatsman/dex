@@ -58,6 +58,14 @@ type ShellInput struct {
 	// classify from the command and preserve small terse output.
 	Expect      string `json:"expect,omitempty"       jsonschema:"output-intent hint biasing compression: counts|table (preserve every line), json (lossless whitespace compaction), logs (aggressive summarization), raw (no compression). Empty = auto-detect."`
 	TimeoutSecs int    `json:"timeout_secs,omitempty" jsonschema:"per-call timeout in seconds (default 60, max 600); 0 uses the default"`
+	// Description is accepted and ignored. The native Bash/exec tool in most
+	// agent harnesses REQUIRES a description param, so LLMs reflexively attach
+	// one to the first shell call too. With the SDK-generated schema set to
+	// additionalProperties:false, that inert key would hard-fail the call and
+	// cost a wasted round-trip before the model learns to drop it. Declaring
+	// the field makes the schema accept it; the handler never reads it (#81).
+	// (Regressed by #86 which dropped it while adding Expect; restored #88.)
+	Description string `json:"description,omitempty" jsonschema:"ignored; accepted so agents that reflexively send a command description don't fail the call"`
 }
 
 type ShellOutput struct {
