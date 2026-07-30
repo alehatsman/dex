@@ -97,3 +97,40 @@ func TestNotesAddAcceptsValidFlags(t *testing.T) {
 		}
 	}
 }
+
+// TestNotesProjectFlag locks #89: every notes verb accepts the project as
+// `--project <dir>`, not only as the positional <path>. Previously `notes add
+// --project <dir>` died with a cryptic "flag provided but not defined: -project".
+// With no index at <dir> the verbs must stop at index resolution (a "no index"
+// error naming the dir) — proving the flag parsed and routed — never with a
+// flag-parse error.
+func TestNotesProjectFlag(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	// Run from a different cwd so only --project can point at dir.
+	t.Chdir(t.TempDir())
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"add", func() error { return cmdKnowledgeAdd(ctx, []string{"--project", dir, "--archetype", "Fact", "a body"}) }},
+		{"list", func() error { return cmdKnowledgeQuery(ctx, []string{"--project", dir}) }},
+		{"gc", func() error { return cmdKnowledgeGC(ctx, []string{"--project", dir}) }},
+		{"review", func() error { return cmdKnowledgeReview(ctx, []string{"--project", dir}) }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.run()
+			if err == nil {
+				t.Fatalf("notes %s --project %s = nil, want a no-index error", c.name, dir)
+			}
+			if strings.Contains(err.Error(), "not defined") {
+				t.Errorf("notes %s rejected --project as an unknown flag: %v", c.name, err)
+			}
+			if !strings.Contains(err.Error(), "no index") {
+				t.Errorf("notes %s error = %q, want it to stop at index resolution (--project routed)", c.name, err)
+			}
+		})
+	}
+}

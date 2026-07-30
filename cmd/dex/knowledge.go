@@ -76,10 +76,10 @@ func cmdKnowledgeGC(ctx context.Context, args []string) error {
 	)
 	maxFacts := fs.Int("max-facts", 0, "evict lowest-confidence facts beyond this cap (0 = default 1000)")
 	format := fs.String("format", "text", "output format: text|json")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+	path, rest, err := parseNotesArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	path, rest := splitProjectArg(fs.Args())
 	if len(rest) > 0 {
 		return fmt.Errorf("notes gc takes no positional args besides an optional <path>")
 	}
@@ -115,10 +115,10 @@ func cmdKnowledgeReview(ctx context.Context, args []string) error {
 		`dex notes review --format json`,
 	)
 	format := fs.String("format", "text", "output format: text|json")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+	path, rest, err := parseNotesArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	path, rest := splitProjectArg(fs.Args())
 	if len(rest) > 0 {
 		return fmt.Errorf("notes review takes no positional args besides an optional <path>")
 	}
@@ -174,10 +174,10 @@ func cmdKnowledgePin(ctx context.Context, args []string, pin bool) error {
 		"dex notes "+verb+" [<path>] <id>",
 		"dex notes "+verb+" 7",
 	)
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+	path, rest, err := parseNotesArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 1 {
 		return fmt.Errorf("notes %s needs exactly one <id>", verb)
 	}
@@ -241,6 +241,7 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	supersedes := fs.Int64("supersedes", 0, "id of the fact this note replaces — marks old fact inactive immediately (#606)")
 	validUntil := fs.String("valid-until", "", "expiry date YYYY-MM-DD; fact is excluded from recall after this date (#618)")
 	evidence := fs.Bool("evidence", false, "mark as derived from code inspection (halves decay rate, #618)")
+	projectRoot := registerProjectFlag(fs)
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -264,7 +265,7 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	if confSet && (*confidence <= 0 || *confidence > 1) {
 		return fmt.Errorf("invalid --confidence=%g (want a value in (0,1])", *confidence)
 	}
-	path, rest := splitProjectArg(fs.Args())
+	path, rest := projectFromFlag(*projectRoot, fs.Args())
 	body := strings.TrimSpace(strings.Join(rest, " "))
 	if body == "" {
 		return fmt.Errorf("notes add needs a <body> (the fact text)")
@@ -355,10 +356,10 @@ func cmdKnowledgeRelate(ctx context.Context, args []string) error {
 	fromID := fs.Int64("from", 0, "source fact id")
 	toID := fs.Int64("to", 0, "target fact id")
 	kind := fs.String("kind", "", "edge kind: DependsOn|RelatedTo|Supports|Contradicts|Supersedes")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+	path, rest, err := parseNotesArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	path, rest := splitProjectArg(fs.Args())
 	if len(rest) > 0 {
 		return fmt.Errorf("notes relate takes no positional args (got %q)", strings.Join(rest, " "))
 	}
@@ -393,10 +394,10 @@ func cmdKnowledgeRelations(ctx context.Context, args []string) error {
 	diagram := fs.Bool("diagram", false, "emit a Mermaid graph of all edges")
 	minStr := fs.Float64("min-strength", 0.0, "minimum edge strength to include in diagram (0.0 = all)")
 	format := fs.String("format", "text", "output format: text|json")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+	path, rest, err := parseNotesArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	path, rest := splitProjectArg(fs.Args())
 	if len(rest) > 0 {
 		return fmt.Errorf("notes relations takes no positional args (got %q)", strings.Join(rest, " "))
 	}
@@ -462,10 +463,10 @@ func cmdKnowledgeQuery(ctx context.Context, args []string) error {
 	k := fs.Int("k", 10, "max facts to return (1–50)")
 	scope := fs.String("scope", "", "filter to notes whose scope binds this path (what surfaces on touching it, #653)")
 	format := fs.String("format", "text", "output format: text|json")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+	path, rest, err := parseNotesArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	path, rest := splitProjectArg(fs.Args())
 	if len(rest) > 0 {
 		return fmt.Errorf("notes query takes no positional args besides an optional <path> (got %q) — semantic query is #223", strings.Join(rest, " "))
 	}
@@ -505,10 +506,10 @@ func cmdKnowledgeRm(ctx context.Context, args []string) error {
 		"dex notes rm [<path>] <id>",
 		`dex notes rm 7`,
 	)
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+	path, rest, err := parseNotesArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	path, rest := splitProjectArg(fs.Args())
 	if len(rest) != 1 {
 		return fmt.Errorf("notes rm needs exactly one <id>")
 	}
