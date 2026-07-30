@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -52,6 +53,32 @@ type BriefOutput struct {
 	TokenEstimate   int                 `json:"token_estimate,omitempty"`
 	IndexStatus     *IndexStatusOutput  `json:"index_status,omitempty"`
 	NextCalls       []briefNextCall     `json:"next_calls,omitempty"`
+	// Review is a curated structural-assessment pack, populated only when the
+	// task string reads as a review/audit/architecture intent (#83). It inlines
+	// the highest-signal slices of the DEX_EXPERT smells/clusters lanes so a
+	// review agent gets god-modules, high fan-in symbols, and layering without
+	// hand-rolling grep -c | wc -l or needing DEX_EXPERT to see the tools.
+	Review *BriefReview `json:"review,omitempty"`
+}
+
+// BriefReview is the inline structural-assessment pack for review-intent tasks.
+// Each list is capped short; call the full smells/clusters/repo_map lanes
+// (DEX_EXPERT=1) for the complete report.
+type BriefReview struct {
+	GodFiles      []GodFileHit   `json:"god_files,omitempty"`
+	GodNodes      []SmellHit     `json:"god_nodes,omitempty"`
+	LongFunctions []SmellHit     `json:"long_functions,omitempty"`
+	DeadExports   int            `json:"dead_exports,omitempty"`
+	Clusters      []BriefCluster `json:"clusters,omitempty"`
+	Hint          string         `json:"hint,omitempty"`
+}
+
+// BriefCluster is one module community in the review pack — a size-ranked
+// cluster of tightly-coupled symbols, labelled by its dominant package.
+type BriefCluster struct {
+	ID      int    `json:"id"`
+	Size    int    `json:"size"`
+	Package string `json:"package,omitempty"`
 }
 
 // briefNextCall is a suggested follow-up call in the brief output.
@@ -148,6 +175,13 @@ func (s *Server) brief(ctx context.Context, _ *sdk.CallToolRequest, in BriefInpu
 	// 8. Set confidence: high when embed available.
 	out.Confidence = 0.8
 
+	// 8b. Review intent — inline a curated slice of the structural-assessment
+	// lanes (smells + clusters) so a review/audit task gets god-modules, high
+	// fan-in, and layering up front instead of falling back to manual grep (#83).
+	if isReviewIntent(in.Task) {
+		out.Review = s.briefReviewPack(ctx, root)
+	}
+
 	// 9. Rough token estimate (4 chars ~= 1 token).
 	total := len(in.Task)
 	for _, f := range out.RelevantFiles {
@@ -170,6 +204,79 @@ func (s *Server) brief(ctx context.Context, _ *sdk.CallToolRequest, in BriefInpu
 	}
 
 	return nil, out, nil
+}
+
+// reviewIntentRe matches task strings that read as a review/audit/architecture
+// assessment rather than a navigate-and-edit change. Matched on word boundaries
+// so code identifiers (e.g. "SmellsInput") don't false-trigger the phrase list,
+// and kept assessment-specific so ordinary edit tasks don't pull the lane work.
+var reviewIntentRe = regexp.MustCompile(`(?i)\b(` +
+	`review|audit|architectur\w*|refactor\w*|tech(?:nical)? debt|` +
+	`code smells?|god (?:module|file)s?|coupling|cohesion|` +
+	`hotspots?|structural|code health|code quality|cross-boundary|` +
+	`layering|dead code|duplication|assess\w*` +
+	`)\b`)
+
+// isReviewIntent reports whether the task string reads as a review/audit intent.
+func isReviewIntent(task string) bool {
+	return reviewIntentRe.MatchString(task)
+}
+
+// briefReviewCap bounds each inlined smell/cluster list so the review pack stays
+// compact — the full report is one smells/clusters call away.
+const briefReviewCap = 8
+
+// briefReviewPack runs the smells and clusters lanes internally (their handlers
+// live on *Server regardless of DEX_EXPERT gating) and returns a compact,
+// capped assessment. Returns nil when the graph yields nothing to report.
+func (s *Server) briefReviewPack(ctx context.Context, root string) *BriefReview {
+	r := &BriefReview{
+		Hint: "review intent detected — structural smells + module clusters inlined. " +
+			"For the full report call the smells / clusters / repo_map lanes (enable with DEX_EXPERT=1).",
+	}
+
+	if _, sm, err := s.smells(ctx, nil, SmellsInput{ProjectRoot: root}); err == nil && sm.Status == "ok" {
+		r.GodFiles = sm.GodFiles[:min(len(sm.GodFiles), briefReviewCap)]
+		r.GodNodes = sm.GodNodes[:min(len(sm.GodNodes), briefReviewCap)]
+		r.LongFunctions = sm.LongFunctions[:min(len(sm.LongFunctions), briefReviewCap)]
+		r.DeadExports = len(sm.DeadExports)
+	}
+
+	if _, cm, err := s.graphCommunities(ctx, nil, CommunitiesInput{ProjectRoot: root}); err == nil && cm.Status == "ok" {
+		for _, c := range cm.Communities {
+			if len(r.Clusters) >= briefReviewCap {
+				break
+			}
+			r.Clusters = append(r.Clusters, BriefCluster{
+				ID:      c.ID,
+				Size:    c.Size,
+				Package: dominantPackage(c.Members),
+			})
+		}
+	}
+
+	if len(r.GodFiles) == 0 && len(r.GodNodes) == 0 && len(r.LongFunctions) == 0 &&
+		r.DeadExports == 0 && len(r.Clusters) == 0 {
+		return nil
+	}
+	return r
+}
+
+// dominantPackage returns the most common package among community members, used
+// as a human-readable label for a cluster.
+func dominantPackage(members []CommunityMember) string {
+	counts := make(map[string]int, len(members))
+	best, bestN := "", 0
+	for _, m := range members {
+		if m.Package == "" {
+			continue
+		}
+		counts[m.Package]++
+		if counts[m.Package] > bestN {
+			best, bestN = m.Package, counts[m.Package]
+		}
+	}
+	return best
 }
 
 // collectLocalRules scans the project root for rule/spec files (first 100 lines).

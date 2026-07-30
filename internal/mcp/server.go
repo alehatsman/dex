@@ -56,7 +56,7 @@ Tool mapping (use these instead of native):
 - grep(pattern)        instead of rg for exact regex matches
 - notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
-Power lanes (deps, clusters, routes, smells, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work.
+Power lanes (deps, clusters, routes, smells, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. For review/audit/architecture tasks, brief(task) inlines a curated structural pack (god-modules, high fan-in, clusters) from these lanes; enable DEX_EXPERT=1 to call smells/clusters/repo_map directly for the full report.
 
 IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__brief,mcp__dex__shell,mcp__dex__search,mcp__dex__grep,mcp__dex__read" before first use.`
 }

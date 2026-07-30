@@ -39,6 +39,9 @@ matches the deployment:
   degrades to BM25 + symbol + graph and `ask` routes around it.
 - **Power lane** (`refactor`, `rehearse`, `check`, `deps`, `diff`, `clusters`, `routes`, `smells`, `cohort`,
   `status`, `budget`, `session`, `checkpoint`): behind `DEX_EXPERT=1`, to keep the everyday agent tool list small.
+  For review/audit/architecture tasks these lanes are not invisible: `brief(task)` detects review intent and
+  inlines a curated `review` pack (god files, high fan-in nodes, long functions, dead-export count, top clusters)
+  drawn from `smells`/`clusters`, so a review agent gets structural assessment without setting `DEX_EXPERT` (#83).
   Call-graph walks (callers/callees/shortest path) are not standalone tools —
   `trace --dir callers|callees|path` is the single entry point. (On the CLI
   every verb, plus the full `dex graph <sub>` set, is always available.)
