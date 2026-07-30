@@ -990,7 +990,11 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"gc (run the lifecycle pass: decay confidence, consolidate near-duplicates, evict past the cap), " +
 				"consolidate (one-shot merge of near-duplicate facts without the rest of gc), " +
 				"export/import (dump/load the full note set as JSON for backup or cross-project transfer). " +
-				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact. " +
+				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding. " +
+				"ReviewFinding closes the review→edit loop (#87): after reviewing a file, persist what the next editor " +
+				"most needs (a god-object, a duplication, a layering-violation, an injection-risk — lead the body with a " +
+				"bracketed [kind]) as add(archetype=ReviewFinding, scope=<reviewed file>) so read/locate/review surface it " +
+				"on touch instead of it leaking into chat. " +
 				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
 				"as knowledge_facts."),
 		}, h.knowledge)

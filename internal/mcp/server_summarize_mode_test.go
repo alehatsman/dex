@@ -102,3 +102,41 @@ func TestSummarizeSurfacesScopedNotes(t *testing.T) {
 		t.Errorf("other.go should surface no scoped notes, got %+v", o2.ScopedNotes)
 	}
 }
+
+// TestReviewFindingClosesLoop covers #87 end-to-end: a review finding authored
+// as a scoped ReviewFinding note is accepted (valid archetype) and surfaces in
+// the bound file's scoped_notes when the next agent reads it — the review→edit
+// loop closed inside dex without any out-of-band memory store.
+func TestReviewFindingClosesLoop(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	t.Cleanup(srv.Close)
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "server.go"),
+		"package main\n\nfunc registerTools() {}\n")
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+	ctx := context.Background()
+
+	// The reviewer persists the finding — must be accepted as a valid archetype.
+	if _, out, err := s.knowledge(ctx, nil, KnowledgeInput{
+		ProjectRoot: root, Action: "add", Archetype: "ReviewFinding",
+		Body: "[god-object] registerTools is a 442-line god-step; decomposition in flight", Scope: "server.go",
+	}); err != nil {
+		t.Fatal(err)
+	} else if out.Status == "error" {
+		t.Fatalf("ReviewFinding add rejected: %s", out.Hint)
+	}
+
+	// The next editor reads the file and the finding surfaces on touch.
+	_, out, err := s.summarize(ctx, nil, SummarizeInput{Path: "server.go", ProjectRoot: root, Mode: "full"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.ScopedNotes) != 1 {
+		t.Fatalf("ScopedNotes = %d, want 1: %+v", len(out.ScopedNotes), out.ScopedNotes)
+	}
+	if got := out.ScopedNotes[0]; got.Archetype != "ReviewFinding" || !strings.Contains(got.Body, "god-object") {
+		t.Errorf("wrong scoped note surfaced: %+v", got)
+	}
+}

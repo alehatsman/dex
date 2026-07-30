@@ -231,9 +231,10 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 		`dex notes add --archetype Gotcha "store tests need -tags sqlite_fts5"`,
 		`dex notes add --archetype Decision --confidence 0.9 "we use yaml.v3 for config"`,
 		`dex notes add --archetype Hypothesis --valid-until 2026-12-01 "might be memory leak in watcher"`,
+		`dex notes add --archetype ReviewFinding --scope internal/mcp/server.go "[god-object] registerTools is 442 lines; decomposition in flight (#87)"`,
 		`dex notes add --supersedes 12 --archetype Architecture "revised: uses layered architecture"`,
 	)
-	archetype := fs.String("archetype", "Fact", "fact archetype: Architecture|Gotcha|Decision|Convention|Dependency|Pattern|Fact|Observation|Hypothesis|Inference|VerifiedFact")
+	archetype := fs.String("archetype", "Fact", "fact archetype: Architecture|Gotcha|Decision|Convention|Dependency|Pattern|Fact|ReviewFinding|Observation|Hypothesis|Inference|VerifiedFact")
 	confidence := fs.Float64("confidence", 0, "confidence in (0,1] (default 0.8 when unset)")
 	scope := fs.String("scope", "", "bind to a file glob/path/package (e.g. 'internal/mcp/*_test.go'); file verbs surface it on touch (#645)")
 	format := fs.String("format", "text", "output format: text|json")
@@ -248,7 +249,7 @@ func cmdKnowledgeAdd(ctx context.Context, args []string) error {
 	// rather than silently stored with the default weight (#520).
 	canonArch, ok := canonicalArchetype(*archetype)
 	if !ok {
-		return fmt.Errorf("invalid --archetype=%q (want one of: Architecture, Gotcha, Decision, Convention, Dependency, Pattern, Fact, Observation, Hypothesis, Inference, VerifiedFact)", *archetype)
+		return fmt.Errorf("invalid --archetype=%q (want one of: Architecture, Gotcha, Decision, Convention, Dependency, Pattern, Fact, ReviewFinding, Observation, Hypothesis, Inference, VerifiedFact)", *archetype)
 	}
 	*archetype = canonArch
 	// --confidence is a (0,1] value; 0 is the unset sentinel that defers to the

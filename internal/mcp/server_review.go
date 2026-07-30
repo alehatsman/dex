@@ -214,6 +214,11 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	if out.Truncated {
 		out.Hint = appendHint(out.Hint, fmt.Sprintf("output capped at %d hunks / %d files — narrow the range for full coverage", reviewMaxHunks, reviewMaxFiles))
 	}
+	if len(out.Files) > 0 {
+		// Close the review→edit loop (#87): findings you confirm here should be
+		// persisted where the next editor will hit them, not left in chat.
+		out.Hint = appendHint(out.Hint, "persist a finding the next editor needs via notes(action=add, archetype=ReviewFinding, scope=<file>, body=\"[kind] …\") — it then surfaces in read/locate/review scoped_notes on touch")
+	}
 	return nil, out, nil
 }
 

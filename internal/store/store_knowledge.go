@@ -18,7 +18,7 @@ type knowledgeStore struct{ db *sql.DB }
 // KnowledgeFact is one persisted fact about the project.
 type KnowledgeFact struct {
 	ID            int64
-	Archetype     string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | Hypothesis | Inference | VerifiedFact
+	Archetype     string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding | Hypothesis | Inference | VerifiedFact
 	Body          string
 	Confidence    float64 // 0–1
 	CreatedAt     time.Time
@@ -60,6 +60,8 @@ func archetypeWeight(a string) float64 {
 		return 1.5
 	case "Gotcha":
 		return 1.4
+	case "ReviewFinding":
+		return 1.3 // actionable but point-in-time; scope-surfaces on touch (#87)
 	case "Decision":
 		return 1.2
 	case "Convention":
@@ -94,6 +96,8 @@ func archetypeDecayRate(a string) float64 {
 		return 0.007
 	case "Gotcha":
 		return 0.008
+	case "ReviewFinding":
+		return 0.012 // ages faster than Gotcha — a stale finding evicts if unreaffirmed (#87)
 	case "Dependency", "Pattern", "Fact":
 		return 0.010
 	case "VerifiedFact":

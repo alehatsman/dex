@@ -100,6 +100,13 @@ context lines so hunks stay tight around the actual change.
 - `scoped_notes`: notes whose `scope` binds this file's path
   (`store.KnowledgeByScope`), surfaced because the PR touches the file
   (gotcha-on-touch #645/#649). Distinct from per-hunk notes recalled by symbol.
+  This is the read side of the review→edit loop (#87): a prior review's
+  `ReviewFinding` notes (see specs/review-finding.md) land here on the very files
+  a later PR touches.
+
+When a review returns files, its `hint` nudges the reviewer to persist a
+confirmed finding as `notes(action=add, archetype=ReviewFinding, scope=<file>,
+body="[kind] …")` — closing the loop where the review happens (#87).
 
 **Hunk-level notes**:
 

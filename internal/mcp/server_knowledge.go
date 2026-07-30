@@ -21,7 +21,7 @@ import (
 type KnowledgeInput struct {
 	ProjectRoot string  `json:"project_root,omitempty"  jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	Action      string  `json:"action"                  jsonschema:"add | list | delete | review | pin | unpin | export | import | consolidate | gc | relate | relations"`
-	Archetype   string  `json:"archetype,omitempty"     jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default) | Hypothesis | Inference | VerifiedFact"`
+	Archetype   string  `json:"archetype,omitempty"     jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default) | ReviewFinding (a code-review finding, scope it to the reviewed file so the next toucher sees it — #87) | Hypothesis | Inference | VerifiedFact"`
 	Body        string  `json:"body,omitempty"          jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
 	Confidence  float64 `json:"confidence,omitempty"    jsonschema:"float 0.0–1.0: how confident this fact is (e.g. 0.9 = high, 0.5 = uncertain). Default 0.8. Strings like 'high' are not valid — pass a number."`
 	ID          int64   `json:"id,omitempty"            jsonschema:"fact id for delete action; for relations: the fact whose edges to list"`
@@ -301,7 +301,7 @@ func (s *Server) knowledgeAdd(ctx context.Context, st *store.Store, p *proj.Proj
 		arch = "Observation"
 	} else if !validArchetype(arch) {
 		return nil, KnowledgeOutput{Status: "error", Hint: fmt.Sprintf(
-			"invalid archetype %q — want one of: Architecture, Gotcha, Decision, Convention, Dependency, Pattern, Fact, Observation, Hypothesis, Inference, VerifiedFact",
+			"invalid archetype %q — want one of: Architecture, Gotcha, Decision, Convention, Dependency, Pattern, Fact, ReviewFinding, Observation, Hypothesis, Inference, VerifiedFact",
 			arch)}, nil
 	}
 	opts := store.KnowledgeAddOpts{Scope: in.Scope, Evidence: in.Evidence}
@@ -772,7 +772,7 @@ func truncate(s string, n int) string {
 func validArchetype(s string) bool {
 	switch s {
 	case "Architecture", "Gotcha", "Decision", "Convention", "Dependency",
-		"Pattern", "Fact", "Observation", "Hypothesis", "Inference", "VerifiedFact":
+		"Pattern", "Fact", "ReviewFinding", "Observation", "Hypothesis", "Inference", "VerifiedFact":
 		return true
 	}
 	return false

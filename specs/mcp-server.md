@@ -219,8 +219,17 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
   notes whose scope binds that path — what would surface on touching it, #653),
   `action=delete` (by id). Archetypes:
   Architecture | Gotcha | Convention | Decision | Observation | Dependency |
-  Pattern | Fact. High-salience facts are injected into `ask` responses as
-  `knowledge_facts`. No embedding required.
+  Pattern | Fact | ReviewFinding. High-salience facts are injected into `ask`
+  responses as `knowledge_facts`. No embedding required.
+  `ReviewFinding` closes the review→edit loop (#87): a code-review finding
+  authored as `add(archetype=ReviewFinding, scope=<reviewed file>, body="[kind] …")`
+  — lead the body with a bracketed kind (`god-object`, `duplication`,
+  `layering-violation`, `injection-risk`). It rides the existing scope machinery,
+  so `read`/`locate`/`review` surface it in `scoped_notes` when the file is
+  touched, instead of the finding leaking into chat. It carries a moderate
+  salience weight (1.3) and ages faster than a Gotcha (decay 0.012) — a
+  point-in-time assessment that evicts if unreaffirmed. Scope is file / glob /
+  package grain; line ranges belong in the body, not the scope.
 - WHEN `session` is called, dex manages per-project session memory across tool
   calls: `set_task`, `add_note`, `add_file`, `get`, `clear`, `snapshot` (recovery
   block after compaction), `budget` (context-window utilization estimate),
