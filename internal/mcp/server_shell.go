@@ -51,14 +51,13 @@ type ShellInput struct {
 	Cwd         string `json:"cwd,omitempty"          jsonschema:"working directory (default: server's cwd); must be under project_root when project_root is set"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; when set, cwd must resolve inside it"`
 	Raw         bool   `json:"raw,omitempty"          jsonschema:"skip compression and return full output"`
+	// Expect is an output-intent hint that biases compression (#86). Values:
+	// counts|table preserve every line, json applies lossless whitespace
+	// compaction (falls back to preserve when the output is not JSON), logs
+	// forces the aggressive summarizer, raw skips compression. Empty = auto —
+	// classify from the command and preserve small terse output.
+	Expect      string `json:"expect,omitempty"       jsonschema:"output-intent hint biasing compression: counts|table (preserve every line), json (lossless whitespace compaction), logs (aggressive summarization), raw (no compression). Empty = auto-detect."`
 	TimeoutSecs int    `json:"timeout_secs,omitempty" jsonschema:"per-call timeout in seconds (default 60, max 600); 0 uses the default"`
-	// Description is accepted and ignored. The native Bash/exec tool in most
-	// agent harnesses REQUIRES a description param, so LLMs reflexively attach
-	// one to the first shell call too. With the SDK-generated schema set to
-	// additionalProperties:false, that inert key would hard-fail the call and
-	// cost a wasted round-trip before the model learns to drop it. Declaring
-	// the field makes the schema accept it; the handler never reads it (#81).
-	Description string `json:"description,omitempty" jsonschema:"ignored; accepted so agents that reflexively send a command description don't fail the call"`
 }
 
 type ShellOutput struct {
@@ -182,6 +181,87 @@ func classifyCommand(command string) shellPolicy {
 		return policyVerbatim
 	}
 	return policyCompress
+}
+
+// shellExpect is the caller's output-intent hint (#86). It biases the output
+// policy so terse result shapes survive intact and only genuine logs get the
+// aggressive summarizer.
+type shellExpect int
+
+const (
+	expectAuto   shellExpect = iota // no hint: classify + size-floor
+	expectCounts                    // bare counts / exit codes — preserve every line
+	expectTable                     // columnar output — preserve every line
+	expectJSON                      // structured JSON — lossless whitespace compaction
+	expectLogs                      // verbose log — aggressive summarization
+	expectRaw                       // skip compression entirely
+)
+
+// normalizeExpect maps the raw `expect` field to a shellExpect. Unknown values
+// degrade to expectAuto so a typo never surprises the caller with a hard error.
+func normalizeExpect(s string) shellExpect {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "counts", "count":
+		return expectCounts
+	case "table":
+		return expectTable
+	case "json":
+		return expectJSON
+	case "logs", "log":
+		return expectLogs
+	case "raw":
+		return expectRaw
+	default:
+		return expectAuto
+	}
+}
+
+// isSmallOutput reports whether cleaned output is below the compression floor
+// in EITHER dimension — too few lines OR too few bytes to be a verbose log.
+// This is the complement of the aggressive-pass gate in CompressText: any
+// output large enough for the lossy passes is never "small". Small terse output
+// is exactly where lossy compression does damage and saves nothing, so the auto
+// path preserves it verbatim (#86).
+func isSmallOutput(clean string) bool {
+	return lineCount(clean) < aggressiveMinLines || len(clean) < aggressiveMinBytes
+}
+
+// isPreserveIntent reports whether the hint demands every line survive intact.
+// counts/table are terse result shapes; json falls here only after the lossless
+// JSON compaction declined the output (it was not JSON-shaped) — preserve it
+// rather than hand it to the summarizer.
+func isPreserveIntent(expect shellExpect) bool {
+	switch expect {
+	case expectCounts, expectTable, expectJSON:
+		return true
+	}
+	return false
+}
+
+// resolveEffectivePolicy folds the caller's `expect` hint and the auto size
+// floor into the command-classified policy (#86). expect=raw is handled earlier
+// (it sets Raw); the preserve intents (counts/table/json) short-circuit to a
+// verbatim return, so only logs and auto reach here.
+func resolveEffectivePolicy(expect shellExpect, clean string, base shellPolicy) shellPolicy {
+	if expect == expectLogs {
+		// Explicit opt-in: summarize even short output the floor would keep.
+		return policyCompress
+	}
+	// No hint: below the size floor, route the aggressive tier to verbatim so
+	// small terse output is never fed to the lossy line-scoring passes. Higher
+	// tiers (passthrough/verbatim/minimal) already preserve, so leave them be.
+	if expect == expectAuto && base == policyCompress && isSmallOutput(clean) {
+		return policyVerbatim
+	}
+	return base
+}
+
+// preserveOutput returns cleaned output unchanged with matching line metrics —
+// the honest "preserve every line" result for the counts/table/json intents,
+// with no summarization and no line-scoring pass (#86).
+func preserveOutput(clean string, exitCode int) ShellOutput {
+	n := lineCount(clean)
+	return ShellOutput{Output: clean, ExitCode: exitCode, OriginalLines: n, OutputLines: n}
 }
 
 // testRunnerPrefixes — commands known to produce test result output that must
@@ -721,6 +801,13 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 		in.Raw = true
 	}
 
+	// expect=raw is the declarative form of raw:true — fold it in before the
+	// raw short-circuit below so both paths share one implementation (#86).
+	expect := normalizeExpect(in.Expect)
+	if expect == expectRaw {
+		in.Raw = true
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, resolveShellTimeout(in.TimeoutSecs))
 	defer cancel()
 
@@ -771,6 +858,11 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 
 	clean := redact.Mask(stripANSI(rawBytes))
 
+	// Fold the caller's expect hint and the auto size floor into the policy
+	// before any lossy pass runs (#86): terse shapes and small output route to
+	// the preserving tiers; an explicit `logs` hint opts into summarization.
+	policy = resolveEffectivePolicy(expect, clean, policy)
+
 	// Lossless JSON compaction (#619): JSON-shaped output (jq, gh api, go list
 	// -json, config dumps) is 20–50% insignificant whitespace. Strip it with a
 	// text-level scan — no re-parse, no semantic change — and return the result
@@ -791,6 +883,15 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 			OutputLines:   outLines,
 			SavedPct:      saved,
 		}, nil
+	}
+
+	// Explicit preserve intents (#86): counts/table are terse result shapes;
+	// json lands here only when the compaction above declined it (not JSON).
+	// Return every line intact — no summarization, no line-scoring pass. This
+	// is stronger than policyVerbatim, whose CompressText call still runs the
+	// entropy/terse passes above the size floor.
+	if isPreserveIntent(expect) {
+		return nil, preserveOutput(clean, exitCode), nil
 	}
 
 	// Minimal: light structure-preserving cleanup for git diff/log/show/blame

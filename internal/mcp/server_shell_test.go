@@ -914,3 +914,147 @@ func linePresent(text, want string) bool {
 	}
 	return false
 }
+
+// ── expect hint (#86) ────────────────────────────────────────────────────────
+
+func TestNormalizeExpect(t *testing.T) {
+	cases := map[string]shellExpect{
+		"":         expectAuto,
+		"  ":       expectAuto,
+		"nonsense": expectAuto,
+		"counts":   expectCounts,
+		"COUNT":    expectCounts,
+		"table":    expectTable,
+		"json":     expectJSON,
+		"logs":     expectLogs,
+		"Log":      expectLogs,
+		" raw ":    expectRaw,
+	}
+	for in, want := range cases {
+		if got := normalizeExpect(in); got != want {
+			t.Errorf("normalizeExpect(%q) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestResolveEffectivePolicy(t *testing.T) {
+	small := "a\nb\nc" // below the floor in both dims
+	// >50 lines AND >4KB, so it clears the aggressive floor in both dims.
+	large := strings.Repeat("filler line of text that is long enough to clear the byte floor\n", 80)
+
+	cases := []struct {
+		name   string
+		expect shellExpect
+		clean  string
+		base   shellPolicy
+		want   shellPolicy
+	}{
+		{"logs forces compress from verbatim", expectLogs, small, policyVerbatim, policyCompress},
+		{"logs forces compress from minimal", expectLogs, small, policyMinimal, policyCompress},
+		{"auto small compress → verbatim", expectAuto, small, policyCompress, policyVerbatim},
+		{"auto large compress stays compress", expectAuto, large, policyCompress, policyCompress},
+		{"auto small verbatim stays verbatim", expectAuto, small, policyVerbatim, policyVerbatim},
+		{"auto small minimal stays minimal", expectAuto, small, policyMinimal, policyMinimal},
+	}
+	for _, c := range cases {
+		if got := resolveEffectivePolicy(c.expect, c.clean, c.base); got != c.want {
+			t.Errorf("%s: resolveEffectivePolicy = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// redundantWithSentinels emits 120 timestamped log lines that differ only in
+// their timestamp (which the log-dedup pass collapses) plus two distinct terse
+// "count" sentinels — the terse result that must survive under the preserving
+// intents. The log format mirrors TestCompressLogDedup so the aggressive path
+// reliably compresses it.
+const redundantWithSentinels = `{ for i in $(seq 1 120); do printf '2024-01-01T10:%02d:00Z INFO starting server\n' $((i % 60)); done; echo "SENTINEL_ALPHA 7"; echo "SENTINEL_BETA 42"; }`
+
+// TestShellRun_ExpectCountsPreservesEveryLine: counts is a preserve intent, so
+// large redundant output comes back byte-for-byte — no dedup, no line-scoring —
+// while the same command under the auto path compresses it.
+func TestShellRun_ExpectCountsPreservesEveryLine(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "")
+	s := &Server{}
+
+	counts, err := s.ShellRun(t.Context(), ShellInput{Command: redundantWithSentinels, Expect: "counts"})
+	if err != nil {
+		t.Fatalf("counts run: %v", err)
+	}
+	if counts.OriginalLines != counts.OutputLines {
+		t.Errorf("counts must preserve every line: original=%d output=%d", counts.OriginalLines, counts.OutputLines)
+	}
+	if counts.SavedPct != 0 {
+		t.Errorf("counts must not compress, got SavedPct=%d", counts.SavedPct)
+	}
+	for _, want := range []string{"SENTINEL_ALPHA 7", "SENTINEL_BETA 42"} {
+		if !linePresent(counts.Output, want) {
+			t.Errorf("preserve intent dropped %q:\n%s", want, counts.Output)
+		}
+	}
+
+	// Contrast: auto (no hint) on the same large output must compress it.
+	auto, err := s.ShellRun(t.Context(), ShellInput{Command: redundantWithSentinels})
+	if err != nil {
+		t.Fatalf("auto run: %v", err)
+	}
+	if auto.OutputLines >= counts.OutputLines {
+		t.Errorf("auto should compress redundant output below the preserved line count: auto=%d counts=%d", auto.OutputLines, counts.OutputLines)
+	}
+}
+
+// TestShellRun_ExpectLogsForcesCompression: logs opts into the aggressive path,
+// so the redundant filler is deduped even though counts would preserve it.
+func TestShellRun_ExpectLogsForcesCompression(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "")
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: redundantWithSentinels, Expect: "logs"})
+	if err != nil {
+		t.Fatalf("logs run: %v", err)
+	}
+	if out.OutputLines >= out.OriginalLines {
+		t.Errorf("logs must compress redundant output: original=%d output=%d", out.OriginalLines, out.OutputLines)
+	}
+}
+
+// TestShellRun_ExpectRawSkipsCompression: expect=raw is the declarative raw:true
+// — content survives, nothing is summarized.
+func TestShellRun_ExpectRawSkipsCompression(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "")
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: redundantWithSentinels, Expect: "raw"})
+	if err != nil {
+		t.Fatalf("raw run: %v", err)
+	}
+	if out.SavedPct != 0 {
+		t.Errorf("raw must not report compression, got SavedPct=%d", out.SavedPct)
+	}
+	for _, want := range []string{"SENTINEL_ALPHA 7", "SENTINEL_BETA 42"} {
+		if !linePresent(out.Output, want) {
+			t.Errorf("raw dropped %q:\n%s", want, out.Output)
+		}
+	}
+}
+
+// TestShellRun_ExpectJSONPreservesNonJSON: when the output is not JSON-shaped
+// the lossless compaction declines it, and the json intent then preserves it
+// verbatim rather than summarizing.
+func TestShellRun_ExpectJSONPreservesNonJSON(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "")
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{
+		Command: `printf '%s\n' "plain line one" "plain line two" "plain line three"`,
+		Expect:  "json",
+	})
+	if err != nil {
+		t.Fatalf("json run: %v", err)
+	}
+	if out.OriginalLines != out.OutputLines {
+		t.Errorf("json fallback must preserve every line: original=%d output=%d", out.OriginalLines, out.OutputLines)
+	}
+	for _, want := range []string{"plain line one", "plain line two", "plain line three"} {
+		if !linePresent(out.Output, want) {
+			t.Errorf("json fallback dropped %q:\n%s", want, out.Output)
+		}
+	}
+}

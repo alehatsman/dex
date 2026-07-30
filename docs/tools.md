@@ -24,7 +24,7 @@ it; see the README or `dex help all`.
 | `verify` | Run the tests a change implicates — working tree (default) / `ref` range / `symbol` blast-radius — and return pass/fail; routes through the shell pipeline so a failing run stages a `gotcha_candidate`. Override the command via `command` / `$DEX_VERIFY_CMD` (`{{packages}}`). Go-only v1 | Go toolchain |
 | `read`   | Read a file (see modes below) | always (`summary` needs chat) |
 | `grep`   | Exact regex over indexed files | always |
-| `shell`  | Run a command, return compressed output | always |
+| `shell`  | Run a command, return compressed output. `expect` hint (`counts`/`table`/`json`/`logs`/`raw`) biases compression toward preserving terse results; small output (<50 lines or <4 KB) auto-preserves | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask`; `add` warns (`similar`) on a near-duplicate note | always |
 | `refactor` `rehearse` `check` `deps` `diff` `clusters` `routes` `smells` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`refactor`/`rehearse`: Go-only rename + type-check; `check`: citation QA; `checkpoint`: shadow-git work history) | graph / Go toolchain |
 
