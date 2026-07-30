@@ -328,6 +328,12 @@ func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in S
 	return nil, out, err
 }
 
+func (rc *remoteClient) clones(ctx context.Context, _ *sdk.CallToolRequest, in ClonesInput) (*sdk.CallToolResult, ClonesOutput, error) {
+	var out ClonesOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/clones"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesInput) (*sdk.CallToolResult, RoutesOutput, error) {
 	var out RoutesOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/routes"), in, &out)

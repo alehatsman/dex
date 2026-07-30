@@ -17,6 +17,9 @@ type RelatedInput struct {
 	StartLine   int    `json:"start_line" jsonschema:"start line of the source chunk (1-indexed)"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
 	K           int    `json:"k,omitempty" jsonschema:"number of related chunks to return (default 8, max 30)"`
+	// Threshold drops hits below this cosine similarity (0..1); 0 keeps all.
+	// The `similar` verb sets it to return only genuinely near-duplicate blocks.
+	Threshold float32 `json:"threshold,omitempty" jsonschema:"drop hits below this cosine similarity, 0..1 (default 0 = keep all)"`
 }
 
 type RelatedOutput struct {
@@ -62,6 +65,9 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 	}
 	out := RelatedOutput{Status: "ok", Project: p.Root, Hits: []SearchHit{}}
 	for _, h := range hits {
+		if in.Threshold > 0 && h.Score < in.Threshold {
+			continue // below the similarity floor requested by `similar`
+		}
 		out.Hits = append(out.Hits, SearchHit{
 			Path:      h.Path,
 			Kind:      h.Kind,

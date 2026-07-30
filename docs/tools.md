@@ -26,7 +26,7 @@ it; see the README or `dex help all`.
 | `grep`   | Exact regex over indexed files | always |
 | `shell`  | Run a command, return compressed output. `expect` hint (`counts`/`table`/`json`/`logs`/`raw`) biases compression toward preserving terse results; small output (<50 lines or <4 KB) auto-preserves | always |
 | `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask`; `add` warns (`similar`) on a near-duplicate note | always |
-| `refactor` `rehearse` `check` `deps` `diff` `clusters` `routes` `smells` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`refactor`/`rehearse`: Go-only rename + type-check; `check`: citation QA; `checkpoint`: shadow-git work history) | graph / Go toolchain |
+| `refactor` `rehearse` `check` `deps` `diff` `clusters` `routes` `smells` `clones` `similar` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`refactor`/`rehearse`: Go-only rename + type-check; `check`: citation QA; `clones`: semantic duplication clusters; `similar`: blocks near a block; `checkpoint`: shadow-git work history) | graph / Go toolchain / vectors |
 
 ## Capability-derived exposure
 
@@ -37,11 +37,15 @@ matches the deployment:
 - **Default verbs** (non-weak model): add `map`, `trace` (incl. `--dir impact`), `locate`, `review`, `verify`, `read`, `notes`.
 - **`find`**: only when a query-time embedder is wired; otherwise retrieval
   degrades to BM25 + symbol + graph and `ask` routes around it.
-- **Power lane** (`refactor`, `rehearse`, `check`, `deps`, `diff`, `clusters`, `routes`, `smells`, `cohort`,
-  `status`, `budget`, `session`, `checkpoint`): behind `DEX_EXPERT=1`, to keep the everyday agent tool list small.
+- **Power lane** (`refactor`, `rehearse`, `check`, `deps`, `diff`, `clusters`, `routes`, `smells`, `clones`,
+  `similar`, `cohort`, `status`, `budget`, `session`, `checkpoint`): behind `DEX_EXPERT=1`, to keep the everyday
+  agent tool list small. `clones` finds clusters of semantically near-duplicate code blocks (duplication hotspots)
+  and `similar` finds blocks near a given one — semantic work grep can't do; both reuse the search vectors, so
+  they need an embedder (#84).
   For review/audit/architecture tasks these lanes are not invisible: `brief(task)` detects review intent and
-  inlines a curated `review` pack (god files, high fan-in nodes, long functions, dead-export count, top clusters)
-  drawn from `smells`/`clusters`, so a review agent gets structural assessment without setting `DEX_EXPERT` (#83).
+  inlines a curated `review` pack (god files, high fan-in nodes, long functions, dead-export count, top clusters,
+  top duplication clones) drawn from `smells`/`clusters`/`clones`, so a review agent gets structural assessment
+  without setting `DEX_EXPERT` (#83, #84).
   Call-graph walks (callers/callees/shortest path) are not standalone tools —
   `trace --dir callers|callees|path` is the single entry point. (On the CLI
   every verb, plus the full `dex graph <sub>` set, is always available.)

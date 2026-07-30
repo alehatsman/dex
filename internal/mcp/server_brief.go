@@ -70,7 +70,11 @@ type BriefReview struct {
 	LongFunctions []SmellHit     `json:"long_functions,omitempty"`
 	DeadExports   int            `json:"dead_exports,omitempty"`
 	Clusters      []BriefCluster `json:"clusters,omitempty"`
-	Hint          string         `json:"hint,omitempty"`
+	// Clones are the top semantic duplication hotspots (#84) — the highest-value
+	// review finding ("this logic exists in N places"). Capped short here; call
+	// the clones lane for the full scan.
+	Clones []CloneClusterOut `json:"clones,omitempty"`
+	Hint   string            `json:"hint,omitempty"`
 }
 
 // BriefCluster is one module community in the review pack — a size-ranked
@@ -231,8 +235,8 @@ const briefReviewCap = 8
 // capped assessment. Returns nil when the graph yields nothing to report.
 func (s *Server) briefReviewPack(ctx context.Context, root string) *BriefReview {
 	r := &BriefReview{
-		Hint: "review intent detected — structural smells + module clusters inlined. " +
-			"For the full report call the smells / clusters / repo_map lanes (enable with DEX_EXPERT=1).",
+		Hint: "review intent detected — structural smells, module clusters, and duplication clones inlined. " +
+			"For the full report call the smells / clusters / clones / repo_map lanes (enable with DEX_EXPERT=1).",
 	}
 
 	if _, sm, err := s.smells(ctx, nil, SmellsInput{ProjectRoot: root}); err == nil && sm.Status == "ok" {
@@ -255,8 +259,17 @@ func (s *Server) briefReviewPack(ctx context.Context, root string) *BriefReview 
 		}
 	}
 
+	// Semantic duplication hotspots (#84) — the highest-value review finding.
+	// Bounded tighter than the full lane (fewer, longer, tighter clusters) so the
+	// per-candidate KNN stays cheap enough to run inline on a review brief.
+	if _, cl, err := s.clones(ctx, nil, ClonesInput{
+		ProjectRoot: root, MinLines: 8, Threshold: 0.92, MaxClusters: 3,
+	}); err == nil && cl.Status == "ok" {
+		r.Clones = cl.Clusters
+	}
+
 	if len(r.GodFiles) == 0 && len(r.GodNodes) == 0 && len(r.LongFunctions) == 0 &&
-		r.DeadExports == 0 && len(r.Clusters) == 0 {
+		r.DeadExports == 0 && len(r.Clusters) == 0 && len(r.Clones) == 0 {
 		return nil
 	}
 	return r

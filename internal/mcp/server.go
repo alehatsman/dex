@@ -56,7 +56,7 @@ Tool mapping (use these instead of native):
 - grep(pattern)        instead of rg for exact regex matches
 - notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
-Power lanes (deps, clusters, routes, smells, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. For review/audit/architecture tasks, brief(task) inlines a curated structural pack (god-modules, high fan-in, clusters) from these lanes; enable DEX_EXPERT=1 to call smells/clusters/repo_map directly for the full report.
+Power lanes (deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. For review/audit/architecture tasks, brief(task) inlines a curated structural pack (god-modules, high fan-in, clusters, duplication clones) from these lanes; enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly for the full report. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
 
 IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__brief,mcp__dex__shell,mcp__dex__search,mcp__dex__grep,mcp__dex__read" before first use.`
 }
@@ -804,6 +804,7 @@ type toolSurface interface {
 	graphDiff(context.Context, *sdk.CallToolRequest, DiffInput) (*sdk.CallToolResult, DiffOutput, error)
 	graphCommunities(context.Context, *sdk.CallToolRequest, CommunitiesInput) (*sdk.CallToolResult, CommunitiesOutput, error)
 	smells(context.Context, *sdk.CallToolRequest, SmellsInput) (*sdk.CallToolResult, SmellsOutput, error)
+	clones(context.Context, *sdk.CallToolRequest, ClonesInput) (*sdk.CallToolResult, ClonesOutput, error)
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
 	searchGrep(context.Context, *sdk.CallToolRequest, SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error)
@@ -1066,6 +1067,34 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 					"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
 					"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
 			}, h.smells)
+
+			// clones / similar (#84): semantic duplication detection over the
+			// vectors already indexed for search. Vector-backed, so only wired
+			// when an embedder is present.
+			if embedAvailable {
+				addTool(srv, &sdk.Tool{
+					Name:        "clones",
+					Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+					Description: td("Find clusters of semantically near-duplicate code blocks (duplication hotspots) — " +
+						"the highest-leverage output for review/refactor work, and something grep can't do (it matches " +
+						"literals, not meaning). Scans indexed function/method blocks, KNNs each against the rest, and " +
+						"union-finds the near-duplicate edges into clusters. Returns clusters of `{path, start_line, " +
+						"end_line, kind, name}` with a `similarity` floor and `size`. Args: `path` (restrict to a file/dir " +
+						"prefix), `threshold` (min cosine similarity, default 0.90), `min_lines` (default 6), `k`, " +
+						"`max_clusters`. Reuses search vectors — no embedder round-trip; an index built without embeddings " +
+						"returns none."),
+				}, h.clones)
+
+				addTool(srv, &sdk.Tool{
+					Name:        "similar",
+					Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+					Description: td("Return code blocks across the repo semantically near a given block, ranked by " +
+						"similarity. Point it at a block via `path` + `start_line` (the block indexed at that line); set " +
+						"`threshold` (cosine similarity 0..1) to keep only genuine near-duplicates. Use it to answer " +
+						"'where else is this logic implemented?' before editing or de-duplicating. Vector KNN over the " +
+						"search index — no embedder round-trip."),
+				}, h.related)
+			}
 
 			// cohort (#643): blast radius of an intent. Given an interface, list
 			// the types you must edit in lockstep when its method set changes —

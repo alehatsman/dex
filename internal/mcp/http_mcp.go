@@ -130,6 +130,11 @@ func (p projectScoped) smells(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.smells(ctx, req, in)
 }
 
+func (p projectScoped) clones(ctx context.Context, req *sdk.CallToolRequest, in ClonesInput) (*sdk.CallToolResult, ClonesOutput, error) {
+	in.ProjectRoot = p.root
+	return p.s.clones(ctx, req, in)
+}
+
 func (p projectScoped) routes(ctx context.Context, req *sdk.CallToolRequest, in RoutesInput) (*sdk.CallToolResult, RoutesOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.routes(ctx, req, in)

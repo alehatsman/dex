@@ -62,12 +62,19 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
     architecture, refactor, coupling, hotspot, code smell, god module, …) —
     `brief` also inlines a capped `review` pack: the highest-signal slices of the
     DEX_EXPERT `smells` lane (god files, high fan-in god nodes, long functions,
-    dead-export count) plus the top `clusters` (size-ranked module communities
-    labelled by dominant package). The lane handlers live on `*Server` and are
+    dead-export count), the top `clusters` (size-ranked module communities
+    labelled by dominant package), and the top duplication `clones` (#84 — the
+    highest-value review finding: "this logic exists in N places", found by
+    embedding KNN, not grep). The lane handlers live on `*Server` and are
     called internally, so the pack is produced without `DEX_EXPERT` and without
     growing the advertised tool surface; a `hint` points at the full
-    `smells`/`clusters`/`repo_map` lanes for the complete report. The pack is
+    `smells`/`clusters`/`clones`/`repo_map` lanes for the complete report. The pack is
     omitted (nil) for navigate-and-edit tasks and when the graph yields nothing.
+    WHERE duplication matters most (review/refactor), the `clones` verb scans
+    indexed function/method blocks, KNNs each against the sqlite-vec store, and
+    union-finds the near-duplicate edges into clusters — reusing the search
+    vectors, so it needs an embedder but no extra round-trip; `similar` returns
+    blocks near a single given block. Both are DEX_EXPERT + embed gated (#84).
     `locate` and `review_diff` are pure composition over the index and need no
     chat model; their callers lane degrades to empty without a graph.
     `verify_change` (#686, epic #683) is the one NON-read-only default verb: it

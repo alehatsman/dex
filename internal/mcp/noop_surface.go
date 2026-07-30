@@ -89,6 +89,9 @@ func (n *noopSurface) graphCommunities(_ context.Context, _ *sdk.CallToolRequest
 func (n *noopSurface) smells(_ context.Context, _ *sdk.CallToolRequest, _ SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	return nil, SmellsOutput{}, n.err()
 }
+func (n *noopSurface) clones(_ context.Context, _ *sdk.CallToolRequest, _ ClonesInput) (*sdk.CallToolResult, ClonesOutput, error) {
+	return nil, ClonesOutput{}, n.err()
+}
 func (n *noopSurface) routes(_ context.Context, _ *sdk.CallToolRequest, _ RoutesInput) (*sdk.CallToolResult, RoutesOutput, error) {
 	return nil, RoutesOutput{}, n.err()
 }
