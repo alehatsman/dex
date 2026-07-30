@@ -11,6 +11,20 @@ import (
 // runs — tiny outputs gain nothing and can only be made worse.
 const minCompressLines = 5
 
+// aggressiveMinLines and aggressiveMinBytes are the floor below which the lossy
+// line-scoring passes (entropy + terse) are skipped. On small, non-redundant
+// output those passes delete unique diagnostic lines — bare counts (`wc -l`,
+// `grep -c`), exit codes, short tokens — that the caller has no way to know were
+// dropped. That silent partial result is worse than a few extra tokens, and
+// compression only pays off on large verbose output anyway. Both dimensions
+// must be exceeded to run them (a wide-but-short or long-but-tiny output stays
+// intact); the lossless command-specific summaries and dedup in Dispatch still
+// run below the floor.
+const (
+	aggressiveMinLines = 50
+	aggressiveMinBytes = 4096
+)
+
 // CompressMinimal applies the light Minimal tier (#616): drop only provably-
 // redundant noise (git index-hash plumbing, blank runs, non-signal duplicate
 // lines) while preserving every diff/error/count line. Input is expected to be
@@ -66,16 +80,22 @@ func CompressText(output, command string, maxLines int) (compressed string, orig
 	out := compress.Dispatch(cmd, lines)
 	out = compress.CollapseBlankLines(out)
 
-	// Entropy pass: drop low-information lines using Shannon entropy + marker
-	// + trigram-repetition scoring. Quality gate preserves paths and idents.
-	if ef := compress.EntropyFilter(out, compress.EntropyThresholdStandard); ef != nil {
-		out = ef
-	}
+	// The entropy and terse passes score and drop individual lines, so they can
+	// silently delete unique, meaningful content from terse output. Only run
+	// them once the output is large in BOTH lines and bytes — below the floor
+	// the token savings are negligible and the silent-loss risk dominates.
+	if originalLines >= aggressiveMinLines && len(stripped) >= aggressiveMinBytes {
+		// Entropy pass: drop low-information lines using Shannon entropy + marker
+		// + trigram-repetition scoring. Quality gate preserves paths and idents.
+		if ef := compress.EntropyFilter(out, compress.EntropyThresholdStandard); ef != nil {
+			out = ef
+		}
 
-	// Terse pass: deterministic function-word stripping + abbreviations +
-	// zero-unique-token line dedup. Quality gate (3% minimum) is internal.
-	if tr := compress.TerseCompress(strings.Join(out, "\n"), compress.Level3); tr.Applied {
-		out = strings.Split(tr.Output, "\n")
+		// Terse pass: deterministic function-word stripping + abbreviations +
+		// zero-unique-token line dedup. Quality gate (3% minimum) is internal.
+		if tr := compress.TerseCompress(strings.Join(out, "\n"), compress.Level3); tr.Applied {
+			out = strings.Split(tr.Output, "\n")
+		}
 	}
 
 	// shorter_only guard: never emit a result that's longer than the original.

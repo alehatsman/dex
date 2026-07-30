@@ -708,7 +708,7 @@ func TestCompressGoTest_FailureDiagnostics(t *testing.T) {
 	for _, want := range []string{
 		"got 4, want 3", // t.Errorf detail
 		"expected: 3",   // testify diff
-		"actual : 4",    // testify diff (whitespace collapsed by the pipeline)
+		"actual  : 4",   // testify diff (spacing preserved: small output skips the terse pass)
 		"--- FAIL: TestFoo",
 	} {
 		if !strings.Contains(compressed, want) {
@@ -858,4 +858,59 @@ func TestCompressViteBuild(t *testing.T) {
 	if !strings.Contains(joined, "chunks:") {
 		t.Fatalf("expected chunks section:\n%s", joined)
 	}
+}
+
+// TestShellRun_SmallOutputNotLossy guards the silent-loss regression: on small,
+// non-redundant output the lossy entropy/terse passes used to delete unique
+// lines (bare ints, floats, short tokens) with no marker, returning a plausible
+// partial result. Below the size floor those passes must not run, so every
+// distinct line survives.
+func TestShellRun_SmallOutputNotLossy(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "")
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{
+		Command: `printf '%s\n' "start" "42" "  99  " "count: 5" "3.14" "0" "-1" "1000000" "v2" "end"`,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"start", "42", "99", "count: 5", "3.14", "0", "-1", "1000000", "v2", "end"} {
+		if !linePresent(out.Output, want) {
+			t.Errorf("unique line %q silently dropped from output:\n%s", want, out.Output)
+		}
+	}
+	// No line-scoring pass ran, so nothing was dropped: savings stay at zero.
+	if out.SavedPct != 0 {
+		t.Errorf("small non-redundant output should not report savings, got saved=%d", out.SavedPct)
+	}
+}
+
+// TestShellRun_TerseCountLinesSurvive covers the observed-in-the-wild case: a
+// multi-grep diagnostic whose count lines sat between printed headers used to
+// come back with the counts elided. Each terse count line must survive.
+func TestShellRun_TerseCountLinesSurvive(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "")
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{
+		Command: `printf '%s\n' "== callers ==" "7" "== callees ==" "3" "== paths ==" "12"`,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"7", "3", "12"} {
+		if !linePresent(out.Output, want) {
+			t.Errorf("count line %q dropped between headers:\n%s", want, out.Output)
+		}
+	}
+}
+
+// linePresent reports whether text contains want as a whole line (trimmed),
+// so a bare "42" isn't spuriously matched by "1000000442" etc.
+func linePresent(text, want string) bool {
+	for _, l := range strings.Split(text, "\n") {
+		if strings.TrimSpace(l) == want {
+			return true
+		}
+	}
+	return false
 }
