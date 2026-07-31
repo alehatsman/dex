@@ -1,0 +1,1350 @@
+{
+  "default": [
+    {
+      "name": "brief",
+      "additionalProperties": false,
+      "required": [
+        "task"
+      ],
+      "properties": {
+        "budget_tokens": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "array|null"
+        },
+        "task": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "grep",
+      "additionalProperties": false,
+      "required": [
+        "pattern"
+      ],
+      "properties": {
+        "context": {
+          "type": "integer"
+        },
+        "ext": {
+          "type": "string"
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "max_results": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "locate",
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "type": "string"
+        },
+        "issues": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "notes",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "archetype": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "diagram": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "boolean"
+        },
+        "gc_decay_per_day": {
+          "type": "number"
+        },
+        "gc_floor": {
+          "type": "number"
+        },
+        "gc_jaccard_merge": {
+          "type": "number"
+        },
+        "gc_max_facts": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "relate_from": {
+          "type": "integer"
+        },
+        "relate_kind": {
+          "type": "string"
+        },
+        "relate_to": {
+          "type": "integer"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "supersedes_id": {
+          "type": "integer"
+        },
+        "valid_until": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "read",
+      "additionalProperties": false,
+      "properties": {
+        "budget_tokens": {
+          "type": "integer"
+        },
+        "cache_layout": {
+          "type": "string"
+        },
+        "ccr_hash": {
+          "type": "string"
+        },
+        "dedup": {
+          "type": "boolean|null"
+        },
+        "end_line": {
+          "type": "integer"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "expand": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "string"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "max_tokens": {
+          "type": "integer"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array|null"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "slice": {
+          "type": "string"
+        },
+        "start_line": {
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        },
+        "temperature": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "name": "review_diff",
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "pr": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "search",
+      "additionalProperties": false,
+      "required": [
+        "query"
+      ],
+      "properties": {
+        "exclude": {
+          "type": "array|null"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "languages": {
+          "type": "array|null"
+        },
+        "path_glob": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "shell",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "expect": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "boolean"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "name": "trace",
+      "additionalProperties": false,
+      "required": [
+        "symbol"
+      ],
+      "properties": {
+        "direction": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "max_depth": {
+          "type": "integer"
+        },
+        "package": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "verify_change",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    }
+  ],
+  "expert": [
+    {
+      "name": "ask",
+      "additionalProperties": false,
+      "required": [
+        "question"
+      ],
+      "properties": {
+        "answer_style": {
+          "type": "string"
+        },
+        "expand": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "no_inline": {
+          "type": "boolean"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "brief",
+      "additionalProperties": false,
+      "required": [
+        "task"
+      ],
+      "properties": {
+        "budget_tokens": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "array|null"
+        },
+        "task": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "check",
+      "additionalProperties": false,
+      "required": [
+        "claims"
+      ],
+      "properties": {
+        "claims": {
+          "type": "array|null"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "checkpoint",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "clones",
+      "additionalProperties": false,
+      "properties": {
+        "k": {
+          "type": "integer"
+        },
+        "max_clusters": {
+          "type": "integer"
+        },
+        "min_lines": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "name": "clusters",
+      "additionalProperties": false,
+      "properties": {
+        "k": {
+          "type": "integer"
+        },
+        "min_members": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "top_k": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "name": "cohort",
+      "additionalProperties": false,
+      "required": [
+        "interface"
+      ],
+      "properties": {
+        "interface": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "deps",
+      "additionalProperties": false,
+      "properties": {
+        "package": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "grep",
+      "additionalProperties": false,
+      "required": [
+        "pattern"
+      ],
+      "properties": {
+        "context": {
+          "type": "integer"
+        },
+        "ext": {
+          "type": "string"
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "max_results": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "locate",
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "type": "string"
+        },
+        "issues": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "notes",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "archetype": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "diagram": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "boolean"
+        },
+        "gc_decay_per_day": {
+          "type": "number"
+        },
+        "gc_floor": {
+          "type": "number"
+        },
+        "gc_jaccard_merge": {
+          "type": "number"
+        },
+        "gc_max_facts": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "relate_from": {
+          "type": "integer"
+        },
+        "relate_kind": {
+          "type": "string"
+        },
+        "relate_to": {
+          "type": "integer"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "supersedes_id": {
+          "type": "integer"
+        },
+        "valid_until": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "plan_rename",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "to"
+      ],
+      "properties": {
+        "etag": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "read",
+      "additionalProperties": false,
+      "properties": {
+        "budget_tokens": {
+          "type": "integer"
+        },
+        "cache_layout": {
+          "type": "string"
+        },
+        "ccr_hash": {
+          "type": "string"
+        },
+        "dedup": {
+          "type": "boolean|null"
+        },
+        "end_line": {
+          "type": "integer"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "expand": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "string"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "max_tokens": {
+          "type": "integer"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array|null"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "slice": {
+          "type": "string"
+        },
+        "start_line": {
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        },
+        "temperature": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "name": "refs",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "symbol"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "rehearse_patch",
+      "additionalProperties": false,
+      "properties": {
+        "edits": {
+          "type": "array|null"
+        },
+        "files": {
+          "type": "array|null"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "repo_map",
+      "additionalProperties": false,
+      "properties": {
+        "around": {
+          "type": "string"
+        },
+        "around_diff": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "integer"
+        },
+        "cluster": {
+          "type": "integer|null"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "min_members": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "top_k": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "name": "review_diff",
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "pr": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "routes",
+      "additionalProperties": false,
+      "properties": {
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "search",
+      "additionalProperties": false,
+      "required": [
+        "query"
+      ],
+      "properties": {
+        "exclude": {
+          "type": "array|null"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "languages": {
+          "type": "array|null"
+        },
+        "path_glob": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "session",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "integer"
+        },
+        "bundle": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "window_size": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "name": "shell",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "expect": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "boolean"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "name": "similar",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "start_line"
+      ],
+      "properties": {
+        "k": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "start_line": {
+          "type": "integer"
+        },
+        "threshold": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "name": "smells",
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "min_file_symbols": {
+          "type": "integer"
+        },
+        "min_func_lines": {
+          "type": "integer"
+        },
+        "min_god_node_callers": {
+          "type": "integer"
+        },
+        "min_god_node_pkg_callers": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "status",
+      "additionalProperties": false
+    },
+    {
+      "name": "trace",
+      "additionalProperties": false,
+      "required": [
+        "symbol"
+      ],
+      "properties": {
+        "direction": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "max_depth": {
+          "type": "integer"
+        },
+        "package": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "verify_change",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    }
+  ],
+  "lean": [
+    {
+      "name": "ask",
+      "additionalProperties": false,
+      "required": [
+        "question"
+      ],
+      "properties": {
+        "answer_style": {
+          "type": "string"
+        },
+        "expand": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "no_inline": {
+          "type": "boolean"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "grep",
+      "additionalProperties": false,
+      "required": [
+        "pattern"
+      ],
+      "properties": {
+        "context": {
+          "type": "integer"
+        },
+        "ext": {
+          "type": "string"
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "max_results": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "locate",
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "type": "string"
+        },
+        "issues": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "notes",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "archetype": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "diagram": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "boolean"
+        },
+        "gc_decay_per_day": {
+          "type": "number"
+        },
+        "gc_floor": {
+          "type": "number"
+        },
+        "gc_jaccard_merge": {
+          "type": "number"
+        },
+        "gc_max_facts": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "relate_from": {
+          "type": "integer"
+        },
+        "relate_kind": {
+          "type": "string"
+        },
+        "relate_to": {
+          "type": "integer"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "supersedes_id": {
+          "type": "integer"
+        },
+        "valid_until": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "read",
+      "additionalProperties": false,
+      "properties": {
+        "budget_tokens": {
+          "type": "integer"
+        },
+        "cache_layout": {
+          "type": "string"
+        },
+        "ccr_hash": {
+          "type": "string"
+        },
+        "dedup": {
+          "type": "boolean|null"
+        },
+        "end_line": {
+          "type": "integer"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "expand": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "string"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "max_tokens": {
+          "type": "integer"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array|null"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "slice": {
+          "type": "string"
+        },
+        "start_line": {
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        },
+        "temperature": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "name": "review_diff",
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "pr": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "shell",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "expect": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "boolean"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "name": "trace",
+      "additionalProperties": false,
+      "required": [
+        "symbol"
+      ],
+      "properties": {
+        "direction": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "max_depth": {
+          "type": "integer"
+        },
+        "package": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "verify_change",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    }
+  ]
+}
