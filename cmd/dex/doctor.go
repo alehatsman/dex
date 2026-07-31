@@ -48,9 +48,10 @@ func cmdDoctor(ctx context.Context, args []string) error {
 		"Check the dex setup: index dir, endpoints, project config, and MCP wiring.",
 		"dex doctor",
 		"dex doctor",
-		"dex doctor -v",
+		"dex doctor --deep",
 	)
 	verbose := fs.Bool("v", false, "verbose: accepted for consistency (endpoint details always shown)")
+	deep := fs.Bool("deep", false, "deep readiness: send one minimal real request per configured backend (may load models; slower)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -67,6 +68,13 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	var checks []doctorCheck
 	checks = append(checks, checkIndexDir())
 	checks = append(checks, checkEndpoints(epCtx)...)
+	if *deep {
+		// Deep probes cold-load models, so they get their own longer budget
+		// separate from the 5s liveness context.
+		deepCtx, dcancel := context.WithTimeout(ctx, 60*time.Second)
+		checks = append(checks, checkEndpointsDeep(deepCtx)...)
+		dcancel()
+	}
 	checks = append(checks, checkProjectConfig())
 	checks = append(checks, checkProxy(epCtx))
 	checks = append(checks, checkMCPWiring())

@@ -50,6 +50,7 @@ var (
 	flagFormat = flagSpec{name: "--format", desc: "output format", arg: true, choices: []string{"text", "json"}}
 	flagK      = flagSpec{name: "--k", desc: "max results", arg: true}
 	flagV      = flagSpec{name: "-v", desc: "verbose"}
+	flagDeep   = flagSpec{name: "--deep", desc: "send one minimal real request per backend (may load models)"}
 	flagMaxCB  = flagSpec{name: "--max-content-bytes", desc: "truncation limit in bytes (0=no limit)", arg: true}
 
 	intentChoices = []string{
@@ -410,7 +411,7 @@ var verbs = []verbSpec{
 	},
 	{
 		name: "doctor", group: groupConfig, summary: "check the dex setup", noFiles: true,
-		flags: []flagSpec{flagV},
+		flags: []flagSpec{flagV, flagDeep},
 	},
 	{
 		name: "config", group: groupConfig, args: "init",

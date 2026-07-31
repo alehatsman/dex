@@ -28,6 +28,12 @@ type endpointProbe struct {
 	url    string
 	model  string
 	health func(context.Context) error
+	// deep sends one minimal *real* capability request (embed a string, a tiny
+	// completion, rerank a pair) and validates the response shape. nil when the
+	// backend isn't configured. Only `dex doctor --deep` calls it — status and
+	// the default doctor stay liveness-only so they never trip on a cold model
+	// load (#78). See checkEndpointsDeep.
+	deep   func(context.Context) error
 	status string // ok | UNREACHABLE | not configured
 }
 
@@ -41,16 +47,40 @@ func collectEndpoints() []endpointProbe {
 	// no embedding backend is wired, so probe nothing rather than dereferencing
 	// it (#545). Mirrors the opt-in rerank branch below.
 	if em := newEmbedClient(""); em != nil {
-		probes = append(probes, endpointProbe{name: "embed", url: em.Endpoint(), model: em.ModelName(), health: em.Health})
+		probes = append(probes, endpointProbe{name: "embed", url: em.Endpoint(), model: em.ModelName(), health: em.Health,
+			deep: func(ctx context.Context) error {
+				vecs, err := em.Embed(ctx, []string{deepProbeText})
+				if err != nil {
+					return err
+				}
+				if len(vecs) != 1 || len(vecs[0]) == 0 {
+					return fmt.Errorf("returned %d vectors (want 1 non-empty)", len(vecs))
+				}
+				return nil
+			}})
 	} else {
 		probes = append(probes, endpointProbe{name: "embed", status: "not configured"})
 	}
 
 	cc := newChatClient()
-	probes = append(probes, endpointProbe{name: "chat", url: cc.BaseURL, model: cc.Model, health: cc.Health})
+	probes = append(probes, endpointProbe{name: "chat", url: cc.BaseURL, model: cc.Model, health: cc.Health,
+		deep: func(ctx context.Context) error {
+			_, err := cc.Generate(ctx, []chat.Message{{Role: "user", Content: deepProbeText}}, chat.Options{MaxTokens: 1})
+			return err
+		}})
 
 	if rc := newRerankClient(); rc != nil {
-		probes = append(probes, endpointProbe{name: "rerank", url: rc.Endpoint(), model: rc.ModelName(), health: rc.Health})
+		probes = append(probes, endpointProbe{name: "rerank", url: rc.Endpoint(), model: rc.ModelName(), health: rc.Health,
+			deep: func(ctx context.Context) error {
+				scores, err := rc.Rerank(ctx, deepProbeText, []string{"a candidate document"})
+				if err != nil {
+					return err
+				}
+				if len(scores) == 0 {
+					return fmt.Errorf("returned no scores for a 1-document rerank")
+				}
+				return nil
+			}})
 	} else {
 		probes = append(probes, endpointProbe{name: "rerank", status: "not configured"})
 	}

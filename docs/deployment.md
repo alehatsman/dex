@@ -14,7 +14,11 @@ profile that matches your hardware.
 
 Each degrades gracefully when its endpoint is unreachable: no chat → evidence
 bundle without prose; no reranker → fused order; no embedder → BM25 + symbol +
-graph. `dex doctor` probes all of them and reports what's wired.
+graph. `dex doctor` probes all of them for liveness and reports what's wired.
+For a stronger signal, `dex doctor --deep` sends one minimal real request per
+configured backend (embed a string, a 1-token completion, rerank a pair) and
+reports usable / model-not-ready / unreachable / cold-timeout — it can load a
+cold model, so it's opt-in and slower than the default liveness check.
 
 ## Profiles
 
