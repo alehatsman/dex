@@ -237,6 +237,24 @@ func BuildSystem(focus string) string {
 	return base
 }
 
+// BuildRollupSystem builds the directory-rollup system prompt. Unlike
+// BuildSystem, the input is not source — it is the already-written summaries of
+// the directory's members (child files and child subdirectories). The model's
+// job is to synthesize a package/subsystem-level view from them, not to re-read
+// code. Optionally narrowed by a free-text focus.
+func BuildRollupSystem(focus string) string {
+	base := "You are a codebase rollup summarizer. You are given the summaries of the members of one directory (a package or subsystem) — its child files and child subdirectories, each labeled by name. " +
+		"Synthesize a single directory-level summary the reader can use to understand what this part of the codebase does without opening its members. " +
+		"Lead with one sentence on the directory's overall responsibility. Then a short bulleted list of the main capabilities or components it groups, attributing each to the member(s) that provide it by name. " +
+		"Note cross-member relationships, the directory's role relative to its siblings, and any load-bearing invariants that span members. " +
+		"Quote package, file, and identifier names verbatim. Do not invent members not present in the input. No prose padding, no apologies, no restating the prompt. " +
+		"Keep under 200 words."
+	if strings.TrimSpace(focus) != "" {
+		base += " Focus specifically on: " + strings.TrimSpace(focus) + "."
+	}
+	return base
+}
+
 // graphRelatedHint returns a compact "Related (call graph): ..." line
 // listing files graph-adjacent to relPath, or "" when the graph is absent
 // or has no neighbors. Never fails — graph errors are silently swallowed.

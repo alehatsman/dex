@@ -36,12 +36,14 @@ func cmdSummarize(ctx context.Context, args []string) error {
 		"dex summarize [flags] [path...]",
 		"dex summarize                 # summarize the whole index (stale files only)",
 		"dex summarize internal/store  # only the given paths",
+		"dex summarize --rollups       # also roll up package/subsystem summaries",
 		"dex summarize --get FILE      # print a stored summary as JSON")
 	get := fs.String("get", "", "print the stored summary for a path as JSON, without generating")
 	force := fs.Bool("force", false, "regenerate even when the source hash is unchanged")
 	focus := fs.String("focus", "", "optional focus hint passed to the summarizer")
 	format := fs.String("format", "text", "output format: text|json")
 	verbose := fs.Bool("v", false, "verbose: print each summarized path")
+	rollups := fs.Bool("rollups", false, "after the file pass, roll up hierarchical package/subsystem/repo summaries (whole tree)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -68,7 +70,16 @@ func cmdSummarize(ctx context.Context, args []string) error {
 	if *get != "" {
 		return runSummaryGet(ctx, st, toRelPath(p.Root, *get), *format)
 	}
-	return runSummaryGenerate(ctx, st, p.Root, fs.Args(), *focus, *force, *verbose, *format)
+	if err := runSummaryGenerate(ctx, st, p.Root, fs.Args(), *focus, *force, *verbose, *format); err != nil {
+		return err
+	}
+	if *rollups {
+		// Rolls up the whole directory tree from current file summaries; the file
+		// pass above refreshed any stale leaves first, so parents summarize fresh
+		// children. Targets narrow only the file pass, not the rollup tree.
+		return runRollupGenerate(ctx, st, *focus, *force, *verbose, *format)
+	}
+	return nil
 }
 
 // runSummaryGet prints a stored summary (or a not-found notice) for one path.

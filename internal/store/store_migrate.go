@@ -23,7 +23,10 @@ import (
 // v6 (#606/#618/#621): knowledge_facts gains active/superseded_by (supersession),
 // valid_until (temporal windows), evidence (slower decay for code-inspection
 // facts); new knowledge_relations table for typed, Hebbian-strengthened edges.
-const schemaVersion = "6"
+// v7 (#95e): dir_summaries — hierarchical (package/subsystem/repo) rollup
+// summaries, the file_summaries pattern one level up. Isolated derived artifact,
+// dropped+rebuilt on reindex like the rest.
+const schemaVersion = "7"
 
 // chunkFTSContentExpr builds the SQL expression for a chunk's FTS `content`
 // document: the Contextual-BM25 prefix (context_text + newline, when present)
@@ -302,6 +305,21 @@ func schemaDDL() []string {
 		// the summarizer prompt changes. Dropped+rebuilt with the rest of the
 		// index on reindex via the schemaVersion gate.
 		`CREATE TABLE IF NOT EXISTS file_summaries (
+		   path           TEXT PRIMARY KEY,
+		   source_hash    TEXT NOT NULL,
+		   prompt_version INTEGER NOT NULL,
+		   model          TEXT NOT NULL,
+		   summary        TEXT NOT NULL,
+		   generated_at   INTEGER NOT NULL
+		 )`,
+		// dir_summaries — hierarchical rollup prose (package/subsystem/repo),
+		// produced on demand by `dex summarize --rollups` (#95e). Same isolation
+		// as file_summaries (no FTS, no vector, no retrieval read). Keyed by
+		// index-relative directory path ("" = repo root). source_hash is a
+		// COMPOSITE of the directory's children's source hashes (see RollupHash),
+		// so it flips when any descendant file changes and is stable otherwise —
+		// touch one file, re-roll only its ancestors.
+		`CREATE TABLE IF NOT EXISTS dir_summaries (
 		   path           TEXT PRIMARY KEY,
 		   source_hash    TEXT NOT NULL,
 		   prompt_version INTEGER NOT NULL,

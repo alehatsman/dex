@@ -58,13 +58,23 @@ func (s *Store) ChunkBodiesByPath(ctx context.Context, relPath string) ([]ChunkB
 // line-shifts elsewhere in the file — unlike graph_nodes.content_hash, which is
 // positional. Empty input yields "".
 func FileBodyHash(bodies []ChunkBody) string {
-	if len(bodies) == 0 {
-		return ""
-	}
 	hs := make([]string, len(bodies))
 	for i, b := range bodies {
 		hs[i] = b.ContentSHA1
 	}
+	return hashSorted(hs)
+}
+
+// hashSorted derives a stable, order-independent hash from a set of child
+// hashes: sort, join with "\n", sha256. Shared by FileBodyHash (over chunk
+// body hashes) and RollupHash (over child file/dir source hashes) so the file-
+// and directory-level staleness signals can never drift apart. Empty input
+// yields "".
+func hashSorted(hs []string) string {
+	if len(hs) == 0 {
+		return ""
+	}
+	hs = append([]string(nil), hs...)
 	sort.Strings(hs)
 	sum := sha256.Sum256([]byte(strings.Join(hs, "\n")))
 	return hex.EncodeToString(sum[:])
