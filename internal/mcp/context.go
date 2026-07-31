@@ -216,6 +216,12 @@ type ContextOutput struct {
 	Endpoint       string          `json:"endpoint,omitempty"` // populated when embed is unreachable
 	Project        string          `json:"project,omitempty"`
 	Intent         string          `json:"intent,omitempty"`
+	// Confidence classifies how much to trust the top-ranked evidence:
+	// "high" (symbol hits, strong semantic score, or a strong intent
+	// payload) or "low" (weak ranking — verify with grep before relying on
+	// it). A structured mirror of the weak-semantic signal that otherwise
+	// only shows up in next_action prose (#102). Omitted on error/no-index.
+	Confidence     string          `json:"confidence,omitempty"`
 	Stale          bool            `json:"stale,omitempty"`
 	Indexing       bool            `json:"indexing,omitempty"` // a re-index is underway; results are partial (#531)
 	SemanticHits   []SemHit        `json:"semantic_hits,omitempty"`
@@ -467,6 +473,8 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	}
 	out.NextAction = buildNextAction(intent, out.SuggestedReads, out.Symbols, topSem,
 		graphEdgeCount, len(out.References), hasBlameAnnotations(out.Annotations))
+	out.Confidence = retrieve.ConfidenceLevel(intent, len(out.Symbols), topSem,
+		graphEdgeCount, hasBlameAnnotations(out.Annotations))
 	// #725: nudge edit-intent toward assemble, and caveat a partial assemble set.
 	out.NextAction = assembleNextActionHint(intent, out.NextAction, out.Concerns,
 		len(out.SuggestedReads), out.Symbols)

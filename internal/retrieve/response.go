@@ -19,21 +19,42 @@ import (
 // annotations count likewise. This prevents the misleading
 // "rephrase or grep" message on calls that actually returned useful
 // structural data.
+// intentPayloadStrong reports whether an intent-specific structural payload
+// (graph edges for topology/architecture, blame for editing_context) counts as
+// strong evidence even when semantic scores are weak. Shared by BuildNextAction
+// and ConfidenceLevel so the two never drift.
+func intentPayloadStrong(intent string, graphEdgeCount int, hasBlame bool) bool {
+	switch intent {
+	case IntentPackageTopology, IntentArchitecture:
+		return graphEdgeCount > 0
+	case IntentEditingContext:
+		return hasBlame
+	}
+	return false
+}
+
+// ConfidenceLevel classifies how much to trust the top-ranked evidence, using
+// the same predicate BuildNextAction bakes into its prose (#102). "high" when
+// there are symbol hits, a strong semantic score (>= LowConfidenceScore), or a
+// strong intent payload; "low" otherwise — the caller should verify (e.g. grep)
+// before relying on the ranking. Surfaced as a structured field so agents can
+// gate on it instead of parsing next_action prose.
+func ConfidenceLevel(intent string, nSymbols int, topSemScore float32, graphEdgeCount int, hasBlame bool) string {
+	strongSemantic := topSemScore >= LowConfidenceScore
+	if nSymbols > 0 || strongSemantic || intentPayloadStrong(intent, graphEdgeCount, hasBlame) {
+		return "high"
+	}
+	return "low"
+}
+
 func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, topSemScore float32, graphEdgeCount, refCount int, hasBlame bool) string {
 	if len(reads) == 0 && len(symbols) == 0 && graphEdgeCount == 0 {
 		return "Rephrase the question with concrete keywords or fall back to grep."
 	}
 	// Confidence comes from any of: symbol hits, strong semantic score,
 	// or an intent-specific structural payload.
-	intentPayloadStrong := false
-	switch intent {
-	case IntentPackageTopology, IntentArchitecture:
-		intentPayloadStrong = graphEdgeCount > 0
-	case IntentEditingContext:
-		intentPayloadStrong = hasBlame
-	}
 	weakSemantic := topSemScore > 0 && topSemScore < LowConfidenceScore
-	if len(symbols) == 0 && weakSemantic && !intentPayloadStrong {
+	if len(symbols) == 0 && weakSemantic && !intentPayloadStrong(intent, graphEdgeCount, hasBlame) {
 		return "Top semantic match is weak — rephrase with concrete keywords or fall back to grep."
 	}
 	switch intent {
