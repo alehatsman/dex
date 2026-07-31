@@ -1,0 +1,104 @@
+package retrieve
+
+import "time"
+
+// ContextPack is the assembled, intent-shaped working set for one ask — the
+// L2 DOMAIN result of assembly. It carries no wire (json) tags: mcp projects it
+// to ContextOutput at the surface (L4). Splitting the domain pack out of the
+// wire type lets the assembly logic live where it belongs and gives the trust
+// envelope a native home next to the facts. See docs/design/95-context-pack.md.
+//
+// This is the target type the #95a seam-move lands on; no caller builds a
+// ContextPack yet (#101 / #95b defines the shape only).
+type ContextPack struct {
+	Intent   string // resolved intent (ResolveIntent)
+	Question string
+
+	// --- Evidence lanes ---
+	Symbols        []SymbolHit     // domain SymbolHit (twin of mcp's wire type)
+	SemanticHits   []SemHit        // existing retrieve.SemHit
+	SuggestedReads []SuggestedRead // existing retrieve.SuggestedRead
+	Graph          *GraphResult    // existing retrieve.GraphResult
+	References      []RefHit
+	RelatedFiles   []string // spreading activation (#688), assemble intent only
+
+	// --- Accumulated knowledge ---
+	KnowledgeFacts []string     // top project facts by salience
+	ScopedNotes    []ScopedNote // notes bound to a touched file's path (#645)
+
+	// --- Completeness (#725) ---
+	Concerns Concerns
+
+	// --- Trust envelope (#95c) ---
+	Trust Trust
+
+	// --- Cost accounting ---
+	ContentBytesInlined int
+	Expanded            bool // query expansion contributed terms (#252)
+}
+
+// Trust folds the confidence/freshness signals dex already computes but
+// currently scatters (ContextOutput.Stale/Indexing, SemHit.Lanes,
+// LowConfidenceScore, graphquery.EdgeKind, the recall caveat). #101 defines the
+// shape; #95c populates it and surfaces the two genuinely new fields
+// (LowConf, GraphResolved/RecallPartial) that are computed internally today and
+// dropped before the response.
+type Trust struct {
+	// Freshness — is the index behind the working tree?
+	Stale     bool      // index older than the working tree
+	Indexing  bool      // a reindex is underway; results are partial (#531)
+	IndexedAt time.Time // index mtime; drives age
+
+	// Confidence — how much to trust the ranking.
+	TopScore float32 // fused top semantic score
+	LowConf  bool    // TopScore < LowConfidenceScore (0.45)
+
+	// Claims — proven graph facts vs heuristic edges.
+	GraphResolved bool   // all graph edges type-resolved (Go)
+	RecallPartial bool   // name-based edges present → recall incomplete
+	Caveat        string // human-readable recall warning (response.go)
+}
+
+// Concerns is the assemble completeness signal (#725): which query concerns the
+// inlined working set is ABOUT (Covered) vs which the byte budget dropped
+// (Dropped). An honest partial beats a false floor.
+type Concerns struct {
+	Covered []string
+	Dropped []string
+}
+
+// SymbolHit is the domain twin of mcp.SymbolHit (same fields, no json tags).
+// The pack owns the domain shape; mcp maps it to the wire type at L4.
+type SymbolHit struct {
+	QualifiedName string
+	Path          string
+	StartLine     int
+	EndLine       int
+	Kind          string
+	Signature     string // declaration line — the API contract without the body
+	Doc           string // contiguous comment block above the decl
+	Body          string // full source, populated only for symbol_lookup intent
+	Role          string
+	Truncated     bool
+	Handle        string // opaque expansion handle for this range (#344)
+	SeenTurn      int    // >0 when already surfaced this session (#344)
+}
+
+// RefHit is a single BM25-backed reference to a symbol (domain twin of
+// mcp.RefHit). Stand-in for the deferred `calls` graph edges.
+type RefHit struct {
+	Path    string
+	Line    int
+	Snippet string // single-line excerpt
+	Symbol  string // which symbol this is a ref to
+}
+
+// ScopedNote is a durable note bound to a file's path via its scope
+// (gotcha-on-touch, #645) — the domain twin of mcp.LocatedFact.
+type ScopedNote struct {
+	ID        int64
+	Archetype string
+	Body      string
+	Salience  float64
+	Scope     string
+}
