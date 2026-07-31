@@ -35,12 +35,7 @@ const answerTruncatedMarker = " […answer truncated at token limit]"
 // InlineCapsFor), so the flat 400-token cap truncated those answers
 // mid-sentence (#568). Targeted intents stay at 400.
 func answerMaxTokensFor(intent string) int {
-	switch intent {
-	case IntentArchitecture, IntentPackageTopology:
-		return 900
-	default:
-		return 400
-	}
+	return PolicyFor(intent).AnswerMaxTokens
 }
 
 // SynthesizeAnswer produces a grounded prose answer from pre-assembled

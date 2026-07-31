@@ -380,20 +380,26 @@ func (e *graphEnricher) packageTopology() {
 // no pkg rollup (noisy semHits from help-text blobs would otherwise
 // dump an entire package's function list as graph noise).
 func (e *graphEnricher) runForIntent(intent string) {
-	switch intent {
-	case IntentSymbolLookup, IntentEditingContext:
+	// Which graph lane an intent anchors on is decided by the #95d evidence
+	// policy (policy.go); the lane implementations stay here.
+	switch PolicyFor(intent).GraphLane {
+	case GraphLaneNeighborhood:
+		// symbol_lookup / editing_context / behavior_search: symbol
+		// neighborhood only. Package rollup is intentionally omitted — if
+		// semantic hits are noisy (e.g. a help-text blob in main.go), rollup
+		// dumps the entire main package's function list as graph noise.
 		e.symbolNeighborhood()
-	case IntentCallers:
+	case GraphLaneCallersInbound:
 		e.callsExpansion(callsInbound)
 		if len(e.gr.Nodes) == 0 {
 			e.symbolNeighborhood()
 		}
-	case IntentCallees:
+	case GraphLaneCalleesOutbound:
 		e.callsExpansion(callsOutbound)
 		if len(e.gr.Nodes) == 0 {
 			e.symbolNeighborhood()
 		}
-	case IntentArchitecture:
+	case GraphLaneArchitecture:
 		// Anchor on the project's structurally central packages so the
 		// rollup stays useful even when the semantic lane skews to docs
 		// and surfaces only one Go file by accident. PageRank-derived
@@ -409,15 +415,9 @@ func (e *graphEnricher) runForIntent(intent string) {
 		// real structure, not a flat node list — otherwise the `avoid` hint
 		// ("these nodes ARE the structural overview") would be a lie (#537).
 		e.importEdgesAmong(pkgs)
-	case IntentPackageTopology:
+	case GraphLanePackageTopology:
 		e.packageTopology()
-	case IntentBehaviorSearch:
-		// For behavioral questions the symbol neighborhood is the right
-		// anchor. Package rollup is intentionally omitted: if semantic
-		// hits are noisy (e.g. a help-text blob in main.go), rollup
-		// dumps the entire main package's function list as graph noise.
-		e.symbolNeighborhood()
-	default:
+	default: // GraphLaneNeighborhoodRollup — assemble + unrecognized intents
 		e.symbolNeighborhood()
 		e.packageRollup(packagesFromPaths(e.view, e.semHits))
 	}

@@ -37,22 +37,14 @@ type InlineCaps struct {
 	TotalBytesCap   int
 }
 
-// InlineCapsFor returns the byte/line budget for an intent.
+// InlineCapsFor returns the byte/line budget for an intent. Thin shim over the
+// #95d evidence policy (capsDense for architecture/package_topology/assemble,
+// capsTargeted otherwise — see policy.go); kept as a function so external call
+// sites don't change. The dense budget is an exploration bundle (assemble, #687,
+// wants a usable working set in one shot); targeted was bumped 12KB→20KB on
+// 2026-05-20 to stop semantic_hits truncating and forcing follow-up Reads.
 func InlineCapsFor(intent string) InlineCaps {
-	switch intent {
-	case IntentArchitecture, IntentPackageTopology, IntentAssemble:
-		// assemble (#687) is context-assembly: the caller wants a usable working
-		// set in one shot, so it gets the denser exploration-sized budget.
-		return InlineCaps{MaxLinesPerRead: 120, MaxBytesPerRead: 8 * 1024, TotalBytesCap: 40 * 1024}
-	default:
-		// Targeted intents (behavior_search / symbol_lookup / callers /
-		// callees / editing_context). Bumped from 12 KB → 20 KB on
-		// 2026-05-20: the smaller budget often forced semantic_hits to
-		// truncate, pushing the agent toward follow-up Reads. 20 KB
-		// covers ~10 chunk-sized hits with their content intact while
-		// still being a tight bundle.
-		return InlineCaps{MaxLinesPerRead: 60, MaxBytesPerRead: 4 * 1024, TotalBytesCap: 20 * 1024}
-	}
+	return PolicyFor(intent).InlineCaps
 }
 
 // InlineContent fills the Content/Truncated fields on suggested_reads,
@@ -92,10 +84,10 @@ func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms 
 	in.budget = in.caps.TotalBytesCap
 	in.fillReads(reads)
 	in.fillImports(reads)
-	switch intent {
-	case IntentSymbolLookup:
+	switch PolicyFor(intent).BodyFill {
+	case BodyFillSymbols:
 		in.fillSymbolBodies(syms)
-	case IntentAssemble:
+	case BodyFillCoverage:
 		// Inline symbol bodies in submodular keyword-coverage order: the
 		// remaining byte budget then naturally selects the non-redundant subset
 		// that covers the most of the query per byte (#687).
