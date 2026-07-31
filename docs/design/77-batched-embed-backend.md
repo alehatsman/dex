@@ -184,6 +184,30 @@ branch on it:
 
 Mostly a defaults + `docs/deployment.md` change; no new subsystem.
 
+> **Implemented in #97.** `embedBackendDefaults` (`cmd/dex/main_clients.go`)
+> branches on the `DetectOllama` result: auto-detected ollama → batch 16 +
+> concurrency 4; any other (or explicit `DEX_EMBED_URL`) backend → VRAM-sized
+> batch + concurrency 1. `DEX_EMBED_BATCH` / `DEX_EMBED_CONCURRENCY` still
+> override.
+>
+> A reindex grid on qwen3-embedding:0.6b (6.8k chunks, this ollama) pinned the
+> values and *revised the §4 hypothesis*: the win is **concurrency, not small
+> batch**. Sequential throughput does climb as batch shrinks (7.8 c/s @128 →
+> 14.7 c/s @8), but concurrency=4 flattens the batch-collapse entirely — batch
+> 16 and 128 both hit the same ~16.7 c/s GPU-bound ceiling, and batch 8 is
+> marginally *worse* (15.3). The RFC's headline "26.7 c/s @ batch 8" (single
+> stream) did not reproduce. So ollama gets a *small-ish* batch (16) mainly to
+> cap VRAM and protect a `conc=1` override, and concurrency 4 does the real
+> work — the lever #96 made live.
+>
+> | batch | conc | embed (6.8k chunks) | c/s |
+> |------:|-----:|--------------------:|----:|
+> | 128 | 1 | 869.6s | 7.8 |
+> | 8   | 1 | 463.0s | 14.7 |
+> | 8   | 4 | 443.2s | 15.3 |
+> | 16  | 4 | **407.3s** | **16.7** |
+> | 128 | 4 | 406.5s | 16.7 |
+
 ## §5 — infinity as an opt-in embed backend (Tier 2, CUDA-only)
 
 Compatibility is genuinely small — dex speaks the OpenAI embed shape, infinity

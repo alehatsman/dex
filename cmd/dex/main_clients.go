@@ -40,10 +40,16 @@ func newEmbedClient(indexModel string) embed.Embedder {
 	url := os.Getenv("DEX_EMBED_URL")
 	model := os.Getenv("DEX_EMBED_MODEL")
 
+	// isOllama drives backend-aware batch/concurrency defaults (#77 §4). It is
+	// only known true on the auto-detect path (DEX_EMBED_URL unset + DetectOllama
+	// probe succeeds); an explicit DEX_EMBED_URL points at an unknown backend, so
+	// we assume a true-batching server and let the operator override via env.
+	isOllama := false
 	if url == "" {
 		ensureOllamaRunning() // best-effort: start ollama if installed-but-down
 		if om, ok := embed.DetectOllama(context.Background()); ok {
 			url = om.URL
+			isOllama = true
 			if model == "" {
 				model = om.Name
 			}
@@ -63,25 +69,60 @@ func newEmbedClient(indexModel string) embed.Embedder {
 		model = "Qwen/Qwen3-Embedding-4B"
 	}
 
-	batch := 32
+	// Backend-aware defaults (#77 §4). VRAM is probed only for the non-ollama
+	// path, where batch size actually tracks it; ollama uses a fixed small batch.
+	var vram float64
+	if !isOllama {
+		vram = embed.FreeVRAMGB()
+	}
+	defBatch, defConc := embedBackendDefaults(isOllama, vram)
+
+	batch := defBatch
 	if explicit := os.Getenv("DEX_EMBED_BATCH"); explicit != "" {
 		if v, err := strconv.Atoi(explicit); err != nil || v <= 0 {
-			fmt.Fprintf(os.Stderr, "warning: DEX_EMBED_BATCH=%q is not a positive integer; using 32\n", explicit)
+			fmt.Fprintf(os.Stderr, "warning: DEX_EMBED_BATCH=%q is not a positive integer; using %d\n", explicit, defBatch)
 		} else {
 			batch = v
 		}
-	} else {
-		// No explicit batch size — probe VRAM and pick a suitable default.
-		if vram := embed.FreeVRAMGB(); vram > 0 {
-			batch = embed.BatchSizeForVRAM(vram, 32)
-		}
 	}
-	conc := envInt("DEX_EMBED_CONCURRENCY", 4)
+	conc := envInt("DEX_EMBED_CONCURRENCY", defConc)
 	timeout := parseDuration("DEX_EMBED_TIMEOUT", envOr("DEX_EMBED_TIMEOUT", "60s"), 60*time.Second)
 	c := embed.NewWithConcurrency(url, model, batch, conc, timeout)
 	capped := embed.WithDimCap(c, envInt("DEX_EMBED_DIM", 0))
 	return embed.NewBreaker(capped, 3, 30*time.Second)
 }
+
+// embedBackendDefaults picks the default embed batch size and client
+// concurrency for the resolved backend (#77 §4). For auto-detected ollama the
+// dominant lever is *concurrency*, not batch size: a reindex grid on
+// qwen3-embedding:0.6b showed concurrency=4 flattens the large-batch collapse
+// and pins throughput at a ~16.7 c/s GPU-bound ceiling for batch 16 and 128
+// alike, while sequential dispatch is batch-sensitive (7.8 c/s @128 → 14.7 @8)
+// and always slower. So ollama gets concurrency 4 (the lever #96 made live)
+// plus a small-ish batch (16) — chosen to cap VRAM and keep a conc=1 override
+// off the collapse, not for throughput. A true-batching server
+// (infinity/TEI/vLLM) saturates on a large batch and is *hurt* by client
+// concurrency (bge-large −23% at conc=4), so it gets a VRAM-sized batch and
+// sequential dispatch — which also matches the effective pre-#96 chunk-pass
+// behaviour for explicit-URL deployments. DEX_EMBED_BATCH /
+// DEX_EMBED_CONCURRENCY override both. vramGB is only consulted for the
+// non-ollama path (pass 0 for ollama).
+func embedBackendDefaults(isOllama bool, vramGB float64) (batch, conc int) {
+	if isOllama {
+		return ollamaEmbedBatch, 4
+	}
+	batch = 32
+	if vramGB > 0 {
+		batch = embed.BatchSizeForVRAM(vramGB, 32)
+	}
+	return batch, 1
+}
+
+// ollamaEmbedBatch is the default chunks-per-request for auto-detected ollama.
+// Pinned by a reindex grid on qwen3-embedding:0.6b (#77 §4): under the default
+// concurrency 4, batch 16 and 128 tie at the GPU-bound throughput ceiling, so
+// 16 is the smaller of the two co-optima (less VRAM, safer conc=1 fallback).
+const ollamaEmbedBatch = 16
 
 // newONNXEmbedder builds the in-process ONNX embedder from operator-provided
 // env vars. The engine is opt-in behind -tags onnx; in a default build

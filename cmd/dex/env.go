@@ -60,8 +60,8 @@ var allEnvVars = []envVar{
 
 	// tuning — hidden unless --all. Most installs leave these alone.
 	{"DEX_EMBED_DIM", "0", "Truncate embedding vectors to this many dimensions and re-normalise (Matryoshka truncation). 0 = use full model output. Requires `dex reindex` after changing.", "tuning", false},
-	{"DEX_EMBED_BATCH", "auto", "Max chunks per /v1/embeddings call. Unset = VRAM-aware auto (8/64/256 for <4 GB/4-16 GB/>16 GB); explicit value overrides.", "tuning", false},
-	{"DEX_EMBED_CONCURRENCY", "4", "Parallel /v1/embeddings calls in flight (1 = sequential, the historical default).", "tuning", false},
+	{"DEX_EMBED_BATCH", "auto", "Max chunks per /v1/embeddings call. Unset = backend-aware auto: 16 for auto-detected ollama; else VRAM-sized (8/64/256 for <4 GB/4-16 GB/>16 GB). Explicit value overrides.", "tuning", false},
+	{"DEX_EMBED_CONCURRENCY", "auto", "Parallel /v1/embeddings calls in flight. Unset = backend-aware auto: 4 for auto-detected ollama (small-batch GPU underutilisation); 1 for a true-batching server (concurrency hurts a saturating backend). 1 = sequential. Explicit value overrides.", "tuning", false},
 	{"DEX_EMBED_TIMEOUT", "60s", "HTTP timeout per embed call.", "tuning", false},
 	{"DEX_INDEX_CONCURRENCY", "0", "Parallel file readers/chunkers in Pass 1 of `index` (0 = GOMAXPROCS).", "tuning", false},
 	{"DEX_CHAT_TIMEOUT", "120s", "HTTP timeout per chat call.", "tuning", false},

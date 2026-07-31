@@ -45,7 +45,7 @@ Grouped by role (all optional; defaults shown where notable).
 **Embeddings**
 - `DEX_EMBED_URL` (default `http://localhost:11434`), `DEX_EMBED_MODEL`, `DEX_EMBED_DIM`
 - `DEX_EMBED_ENGINE` — `ollama`/openai-compatible (default) · `none` (lean, BM25-only) · `onnx` (in-process)
-- `DEX_EMBED_BATCH`, `DEX_EMBED_CONCURRENCY`, `DEX_EMBED_TIMEOUT`
+- `DEX_EMBED_BATCH`, `DEX_EMBED_CONCURRENCY`, `DEX_EMBED_TIMEOUT` — both default to backend-aware auto: auto-detected ollama gets a small batch (16) with concurrency 4 (its single stream underutilises the GPU); a true-batching server (infinity/TEI/vLLM, or any explicit `DEX_EMBED_URL`) gets a VRAM-sized batch with concurrency 1 (client concurrency hurts a saturating backend). Set either explicitly to override.
 - `DEX_NO_AUTO_OLLAMA` — disable local ollama auto-detection
 
 **Chat & rerank**
