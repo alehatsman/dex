@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alehatsman/dex/internal/backendhttp"
 	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/rerank"
@@ -61,7 +62,7 @@ func TestClassifyDeep(t *testing.T) {
 		rerankP := endpointProbe{name: "rerank", url: "http://r", model: "m-rerank"}
 		// The rerank client wraps 429/5xx as ErrUnreachable but keeps the
 		// "http <code>:" marker — deep mode must read the code, not the sentinel.
-		c := classifyDeep(rerankP, fmt.Errorf("%w: http 429: model overloaded", rerank.ErrUnreachable))
+		c := classifyDeep(rerankP, fmt.Errorf("%w: %w", rerank.ErrUnreachable, &backendhttp.StatusError{Code: 429, Body: "model overloaded"}))
 		if c.status != docWarn || c.critical {
 			t.Fatalf("status=%v critical=%v, want docWarn non-critical", c.status, c.critical)
 		}
@@ -71,7 +72,7 @@ func TestClassifyDeep(t *testing.T) {
 	})
 
 	t.Run("model not served -> not ready with targeted hint", func(t *testing.T) {
-		c := classifyDeep(embedP, fmt.Errorf("http 404: model not found"))
+		c := classifyDeep(embedP, fmt.Errorf("embed: %w", &backendhttp.StatusError{Code: 404, Body: "model not found"}))
 		if c.status != docFail || !c.critical {
 			t.Fatalf("status=%v critical=%v, want docFail critical", c.status, c.critical)
 		}

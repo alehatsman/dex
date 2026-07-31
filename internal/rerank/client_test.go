@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/alehatsman/dex/internal/backendhttp"
 )
 
 // closedURL returns an http:// URL pointing at a port guaranteed to refuse
@@ -165,6 +167,31 @@ func TestRerankServiceUnavailableIsUnreachable(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), fmt.Sprint(code)) {
 			t.Errorf("status %d: error should mention status code: %v", code, err)
+		}
+	}
+}
+
+// TestRerankStatusErrorRecoverable guards the #100 contract: regardless of
+// whether the non-2xx is also wrapped as ErrUnreachable (5xx/429) or not (4xx),
+// the HTTP status is recoverable via errors.As so consumers (doctor --deep) can
+// tell overload from a model/config error.
+func TestRerankStatusErrorRecoverable(t *testing.T) {
+	for _, code := range []int{http.StatusBadRequest, http.StatusServiceUnavailable, http.StatusTooManyRequests} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte("body"))
+		}))
+		c := New(srv.URL, "test", 5*time.Second)
+		_, err := c.Rerank(context.Background(), "q", []string{"a"})
+		srv.Close()
+
+		var se *backendhttp.StatusError
+		if !errors.As(err, &se) {
+			t.Errorf("status %d: errors.As(*StatusError) failed for %v", code, err)
+			continue
+		}
+		if se.Code != code {
+			t.Errorf("status %d: StatusError.Code = %d", code, se.Code)
 		}
 	}
 }

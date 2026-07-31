@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/alehatsman/dex/internal/backendhttp"
 )
 
 // ErrUnreachable is returned when the rerank endpoint cannot be reached
@@ -115,7 +117,7 @@ func (c *Client) Rerank(ctx context.Context, query string, docs []string) ([]Sco
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		msg := strings.TrimSpace(string(buf))
+		se := &backendhttp.StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(buf))}
 		// 5xx and 429 are reachability-shaped outages — an overloaded,
 		// restarting, or gateway-fronted backend that is up enough to
 		// answer but cannot serve. Wrap them as ErrUnreachable so the
@@ -123,11 +125,12 @@ func (c *Client) Rerank(ctx context.Context, query string, docs []string) ([]Sco
 		// to non-reranked results instead of failing the whole query
 		// (#445). Other 4xx (bad model, wrong path, malformed request)
 		// are configuration bugs we surface every time, per the breaker's
-		// design (see breaker.go) — they are not wrapped.
-		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-			return nil, fmt.Errorf("%w: http %d: %s", ErrUnreachable, resp.StatusCode, msg)
+		// design (see breaker.go) — they are not wrapped. Either way the
+		// StatusError is composed in so callers can errors.As the code.
+		if se.Retryable() {
+			return nil, fmt.Errorf("%w: %w", ErrUnreachable, se)
 		}
-		return nil, fmt.Errorf("rerank: http %d: %s", resp.StatusCode, msg)
+		return nil, fmt.Errorf("rerank: %w", se)
 	}
 	var parsed rerankResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {

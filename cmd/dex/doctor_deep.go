@@ -13,11 +13,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/backendhttp"
 	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/rerank"
@@ -110,14 +109,16 @@ func classifyDeep(p endpointProbe, err error) doctorCheck {
 
 	// If the backend answered with an HTTP status, it is reachable — classify by
 	// the code rather than trusting the transport sentinel. The embed/rerank
-	// clients wrap 5xx/429 as ErrUnreachable so the breaker degrades search
-	// (#445), but for a *readiness read* those mean "up but can't serve right
-	// now", which is a retryable warning, not an outage.
-	if code, ok := httpStatusFromErr(err); ok {
-		if code == 429 || code >= 500 {
+	// clients compose a StatusError even when they also wrap 5xx/429 as
+	// ErrUnreachable for the breaker (#445), so errors.As recovers the code; for
+	// a *readiness read* a 5xx/429 means "up but can't serve right now", a
+	// retryable warning rather than an outage.
+	var se *backendhttp.StatusError
+	if errors.As(err, &se) {
+		if se.Retryable() {
 			return doctorCheck{
 				name: name, status: docWarn, // transient, retryable — not critical
-				detail: fmt.Sprintf("reachable but overloaded/restarting (http %d) — retry", code),
+				detail: fmt.Sprintf("reachable but overloaded/restarting (http %d) — retry", se.Code),
 				hints:  []string{"backend is up but can't serve right now; re-run once load subsides"},
 			}
 		}
@@ -146,24 +147,6 @@ func classifyDeep(p endpointProbe, err error) doctorCheck {
 		hints:  deepNotReadyHints(p.name, p.model, err),
 	}
 }
-
-// httpStatusFromErr extracts an HTTP status code from a client error whose
-// message carries the "http <code>:" marker the embed/chat/rerank clients use
-// for non-2xx responses. Its presence means the backend answered (is reachable);
-// absence means the failure was transport-level.
-func httpStatusFromErr(err error) (int, bool) {
-	m := httpStatusRe.FindStringSubmatch(strings.ToLower(err.Error()))
-	if m == nil {
-		return 0, false
-	}
-	code, convErr := strconv.Atoi(m[1])
-	if convErr != nil {
-		return 0, false
-	}
-	return code, true
-}
-
-var httpStatusRe = regexp.MustCompile(`http (\d{3})`)
 
 // deepNotReadyHints gives a targeted fix when a reachable backend rejects the
 // probe. It best-effort-detects a "model not served" error to point at the

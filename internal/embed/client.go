@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/backendhttp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -288,9 +289,10 @@ func (c *Client) embedBatchOnce(ctx context.Context, inputs []string) ([][]float
 	if resp.StatusCode/100 != 2 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		// 5xx (server-side) and 429 (rate limit) are transient; 4xx is a
-		// client-side error that will fail identically on retry.
-		retryable := resp.StatusCode/100 == 5 || resp.StatusCode == http.StatusTooManyRequests
-		return nil, retryable, fmt.Errorf("embed: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))
+		// client-side error that will fail identically on retry. StatusError
+		// carries the code so callers (e.g. doctor --deep) can errors.As it.
+		se := &backendhttp.StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(buf))}
+		return nil, se.Retryable(), fmt.Errorf("embed: %w", se)
 	}
 	var parsed embedResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {

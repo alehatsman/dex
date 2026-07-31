@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/alehatsman/dex/internal/backendhttp"
 )
 
 // ErrUnreachable is returned when the chat endpoint cannot be reached at
@@ -173,7 +175,8 @@ func (c *Client) Generate(ctx context.Context, messages []Message, opts Options)
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return Response{}, fmt.Errorf("chat: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))
+		se := &backendhttp.StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(buf))}
+		return Response{}, fmt.Errorf("chat: %w", se)
 	}
 	var parsed chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
@@ -269,7 +272,8 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, opts Op
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return Response{}, fmt.Errorf("chat: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))
+		se := &backendhttp.StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(buf))}
+		return Response{}, fmt.Errorf("chat: %w", se)
 	}
 
 	var (
