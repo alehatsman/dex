@@ -881,7 +881,10 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 				"its hop depth + PageRank, a risk tier, and `tests_to_run` — the sibling tests of the blast-radius " +
 				"files, so change→verify is one call (#654)). " +
 				"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
-				"recall, so an empty result there is not proof of none — verify with grep. For a Go method that " +
+				"recall, so an empty result there is not proof of none — verify with grep. Non-empty non-Go " +
+				"results are tagged `recall:partial` (callers/callees also fold a grep sweep into `grep_hits`; " +
+				"impact just flags the radius as possibly larger). TypeScript additionally resolves constructor-DI " +
+				"dispatch — `this.dep.method()` binds to the injected type's method (#85). For a Go method that " +
 				"implements a project interface, callers (and impact) also include the INTERFACE-dispatch call sites " +
 				"(calls through the interface value), each tagged with `via` naming the interface method — so dynamic " +
 				"dispatch isn't missed (#604). Accepts a bare name ('Foo'), " +

@@ -298,7 +298,7 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 	case "impact":
 		ii := ImpactInput{Name: in.Symbol, Package: in.Package, MaxDepth: in.MaxDepth, K: in.K, ProjectRoot: in.ProjectRoot}
 		_, out, err := h.graphImpact(ctx, req, ii)
-		return nil, TraceOutput{
+		tOut := TraceOutput{
 			Direction:  dir,
 			Status:     out.Status,
 			Hint:       out.Hint,
@@ -311,7 +311,11 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 			Truncated:  out.Truncated,
 			Elided:     out.Elided,
 			TestsToRun: out.TestsToRun,
-		}, err
+		}
+		if out.Status == "ok" && out.Total > 0 && hasNonGoTarget(out.Targets) {
+			markImpactPartialRecall(&tOut)
+		}
+		return nil, tOut, err
 	default:
 		return nil, TraceOutput{Direction: dir, Status: "error", Hint: "direction must be one of: callers, callees, path, impact"}, nil
 	}
@@ -326,6 +330,21 @@ func hasNonGoTarget(targets []TargetMatch) bool {
 		}
 	}
 	return false
+}
+
+// markImpactPartialRecall tags a non-empty impact blast radius on a non-Go
+// (tree-sitter) target as partial-recall. Unlike callers/callees, no grep
+// sweep is run: impact is a *transitive* radius and a single bare-symbol grep
+// can't reconstruct it, so approximating would over-claim. The honest signal
+// is the flag plus a hint pointing at grep for the edges that matter.
+func markImpactPartialRecall(out *TraceOutput) {
+	out.Recall = "partial"
+	partial := fmt.Sprintf("impact: %d node(s) via name-based (tree-sitter) edges, recall partial — the true blast radius may be larger; verify critical edges with grep on the symbol names", out.Total)
+	if out.Hint != "" {
+		out.Hint += " | " + partial
+	} else {
+		out.Hint = partial
+	}
 }
 
 // augmentPartialRecall runs a grep sweep for the bare symbol name and folds

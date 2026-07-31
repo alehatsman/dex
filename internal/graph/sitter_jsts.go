@@ -26,7 +26,20 @@ type jstsBase struct {
 	fileImports  map[string]*tsImportTable
 	knownFiles   map[string]string
 	pendingCalls []tsPendingCall
-	warnings     []string
+	// fieldTypes records a class's instance-field types for DI/adapter
+	// dispatch: classKey (pkg + "\x00" + className) → fieldName → the
+	// simple type-name the field holds (a class name, same-file or
+	// imported). Populated from constructor parameter-properties, typed
+	// field declarations, and `field = new T()` initializers. Lets
+	// `this.field.method()` resolve to `T.method` name-based.
+	fieldTypes map[string]map[string]string
+	warnings   []string
+}
+
+// classFieldKey is the fieldTypes outer key. The NUL separator can't
+// occur in a package path or identifier, so it never collides.
+func classFieldKey(pkg, className string) string {
+	return pkg + "\x00" + className
 }
 
 func (e *jstsBase) Init(_ context.Context, root string) error {
@@ -188,6 +201,110 @@ func (e *jstsBase) emitClassNode(
 		EndLine:   endLine,
 	})
 	return name
+}
+
+// collectClassFieldTypes records the instance-field → type-name map for a
+// class so `this.field.method()` can resolve DI/adapter dispatch name-based.
+// It walks the class_body for the three shapes that give a field a known
+// class type without a type checker:
+//
+//   - constructor parameter-properties — a `required_parameter` carrying an
+//     accessibility_modifier / readonly (`constructor(private auth: Auth)`);
+//   - typed field declarations (`private repo: UserRepo`);
+//   - fields initialized by construction (`private cache = new Cache()`).
+//
+// Only a simple leading type_identifier is taken; unions, predefined types,
+// and qualified/namespaced types are skipped (they'd resolve to nothing, not
+// to a wrong edge). className is the emitted class node's name.
+func (e *jstsBase) collectClassFieldTypes(classDecl *sitter.Node, src []byte, pkg, className string) {
+	if className == "" {
+		return
+	}
+	body := classDecl.ChildByFieldName("body")
+	if body == nil {
+		return
+	}
+	record := func(field, typeName string) {
+		if field == "" || typeName == "" {
+			return
+		}
+		key := classFieldKey(pkg, className)
+		if e.fieldTypes[key] == nil {
+			e.fieldTypes[key] = map[string]string{}
+		}
+		e.fieldTypes[key][field] = typeName
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		member := body.NamedChild(i)
+		if member == nil {
+			continue
+		}
+		switch member.Type() {
+		case "public_field_definition", "field_definition":
+			name := nodeText(member.ChildByFieldName("name"), src)
+			if t := member.ChildByFieldName("type"); t != nil {
+				record(name, simpleTypeName(t, src))
+			} else if v := member.ChildByFieldName("value"); v != nil && v.Type() == "new_expression" {
+				record(name, nodeText(v.ChildByFieldName("constructor"), src))
+			}
+		case "method_definition":
+			if nodeText(member.ChildByFieldName("name"), src) != "constructor" {
+				continue
+			}
+			params := member.ChildByFieldName("parameters")
+			if params == nil {
+				continue
+			}
+			for j := 0; j < int(params.NamedChildCount()); j++ {
+				p := params.NamedChild(j)
+				if p == nil || p.Type() != "required_parameter" || !isParameterProperty(p) {
+					continue
+				}
+				name := nodeText(p.ChildByFieldName("pattern"), src)
+				if t := p.ChildByFieldName("type"); t != nil {
+					record(name, simpleTypeName(t, src))
+				}
+			}
+		}
+	}
+}
+
+// isParameterProperty reports whether a constructor parameter is declared
+// as an instance field — TypeScript promotes a parameter to a field when it
+// carries an accessibility modifier (public/private/protected) or `readonly`.
+func isParameterProperty(param *sitter.Node) bool {
+	for i := 0; i < int(param.ChildCount()); i++ {
+		switch c := param.Child(i); c.Type() {
+		case "accessibility_modifier", "readonly", "override_modifier":
+			return true
+		}
+	}
+	return false
+}
+
+// simpleTypeName extracts the container class name from a type_annotation:
+// `: Auth` → "Auth", `: Repository<User>` → "Repository" (method resolves on
+// the container). Returns "" for unions, predefined types, qualified/generic
+// bases we can't resolve name-based — the caller then emits no edge.
+func simpleTypeName(typeAnnotation *sitter.Node, src []byte) string {
+	// type_annotation wraps the actual type node; a bare type_identifier is
+	// the resolvable case, and a generic_type's own type is its container.
+	var t *sitter.Node
+	for i := 0; i < int(typeAnnotation.NamedChildCount()); i++ {
+		t = typeAnnotation.NamedChild(i)
+		break
+	}
+	for t != nil {
+		switch t.Type() {
+		case "type_identifier":
+			return nodeText(t, src)
+		case "generic_type":
+			t = t.ChildByFieldName("name")
+		default:
+			return ""
+		}
+	}
+	return ""
 }
 
 // emitScaffold emits the package + file nodes and the package→file
@@ -500,11 +617,24 @@ func (e *jstsBase) resolveCall(c tsPendingCall) string {
 		return ""
 
 	case "self":
-		if c.callerCls == "" || len(c.calleeExpr.parts) < 2 {
+		if c.callerCls == "" {
 			return ""
 		}
-		methodName := c.calleeExpr.parts[1]
-		return e.symbolIn(c.callerPkg, c.callerCls+"."+methodName)
+		parts := c.calleeExpr.parts
+		switch len(parts) {
+		case 2:
+			// this.method() — a method on the enclosing class.
+			return e.symbolIn(c.callerPkg, c.callerCls+"."+parts[1])
+		case 3:
+			// this.field.method() — DI/adapter dispatch. Resolve the
+			// field's declared/constructed type, then the method on it.
+			typeName := e.fieldTypes[classFieldKey(c.callerPkg, c.callerCls)][parts[1]]
+			if typeName == "" {
+				return ""
+			}
+			return e.resolveTypeMethod(c.callerPkg, c.filePath, typeName, parts[2])
+		}
+		return ""
 
 	case "attr":
 		imports := e.fileImports[c.filePath]
@@ -539,6 +669,25 @@ func (e *jstsBase) symbolIn(pkg, name string) string {
 		return ""
 	}
 	return bucket[name]
+}
+
+// resolveTypeMethod resolves `<typeName>.<method>` to a method node, where
+// typeName is a class named by a field-type annotation. It mirrors bare-call
+// resolution: the class may be defined in the same package (file) or imported
+// by name (`import { AuthService } from './auth'`). Returns "" when the type
+// isn't a known project class or the method isn't on it.
+func (e *jstsBase) resolveTypeMethod(pkg, filePath, typeName, method string) string {
+	if id := e.symbolIn(pkg, typeName+"."+method); id != "" {
+		return id
+	}
+	imports := e.fileImports[filePath]
+	if imports == nil {
+		return ""
+	}
+	if fi, ok := imports.fromImports[typeName]; ok {
+		return e.symbolIn(fi.pkg, fi.name+"."+method)
+	}
+	return ""
 }
 
 // resolveModuleSpecifier turns a raw specifier (./foo, ../bar/baz,

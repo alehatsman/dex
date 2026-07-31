@@ -182,6 +182,31 @@ func TestHasNonGoTarget(t *testing.T) {
 	}
 }
 
+// #85: trace --dir impact must carry the same recall=partial trust signal on
+// a non-Go blast radius. Unlike callers/callees it runs no grep sweep (a
+// single bare-symbol grep can't reconstruct a transitive radius) — the flag +
+// hint are the honest signal.
+func TestMarkImpactPartialRecall(t *testing.T) {
+	out := TraceOutput{Direction: "impact", Total: 7, Hint: "existing"}
+	markImpactPartialRecall(&out)
+
+	if out.Recall != "partial" {
+		t.Errorf("Recall = %q, want partial", out.Recall)
+	}
+	if !strings.HasPrefix(out.Hint, "existing | ") {
+		t.Errorf("Hint = %q, want existing hint preserved and appended", out.Hint)
+	}
+	for _, want := range []string{"impact: 7 node(s)", "name-based", "recall partial", "grep"} {
+		if !strings.Contains(out.Hint, want) {
+			t.Errorf("Hint = %q missing %q", out.Hint, want)
+		}
+	}
+	// No grep sweep for impact.
+	if len(out.GrepHits) != 0 {
+		t.Errorf("GrepHits = %d, want 0 (impact runs no grep sweep)", len(out.GrepHits))
+	}
+}
+
 func TestAugmentPartialRecallSetsRecallAndHint(t *testing.T) {
 	// noopSurface returns an empty SearchGrepOutput (status=""), so grepN=0.
 	h := &noopSurface{}

@@ -143,7 +143,8 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		if !jstsClassReachable(n) {
 			continue
 		}
-		e.emitClassNode(n, in.Source, in.RelPath, pkg, fileID)
+		className := e.emitClassNode(n, in.Source, in.RelPath, pkg, fileID)
+		e.collectClassFieldTypes(n, in.Source, pkg, className)
 		e.maybeMarkDefaultExport(n, in.Source, pkg)
 	}
 

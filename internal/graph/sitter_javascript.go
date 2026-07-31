@@ -29,6 +29,7 @@ func newJSTSBase(lang string) jstsBase {
 		symbols:     map[string]map[string]string{},
 		fileImports: map[string]*tsImportTable{},
 		knownFiles:  map[string]string{},
+		fieldTypes:  map[string]map[string]string{},
 	}
 }
 

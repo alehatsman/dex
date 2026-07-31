@@ -27,9 +27,16 @@ multi-language: Go is extracted with full type resolution (`go/types`), while
 Python, JavaScript, TypeScript, Rust, and Java are extracted with name-based
 tree-sitter parsers. Go edges are type-resolved and precise; tree-sitter edges
 are name-based and stamped `metadata.provenance = "sitter"` so consumers can
-tell them apart. A language with no registered extractor (or a target dex
-hasn't graphed) degrades to an empty, well-typed answer rather than an error,
-so a consumer can branch on status instead of catching a failure.
+tell them apart. Because their recall is incomplete, non-empty non-Go `trace`
+results are tagged `recall:partial` (callers/callees fold a grep sweep into
+`grep_hits`; impact flags the radius as possibly larger — #85). Within the
+name-based tier, TypeScript additionally resolves constructor-DI / adapter
+dispatch: a `this.field.method()` call binds to the injected field's type
+(from a constructor parameter-property, a typed field, or a `field = new T()`
+initializer), same-file or imported (#85). A language with no registered
+extractor (or a target dex hasn't graphed) degrades to an empty, well-typed
+answer rather than an error, so a consumer can branch on status instead of
+catching a failure.
 
 ## Behavior
 
