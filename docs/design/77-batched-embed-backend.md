@@ -134,6 +134,18 @@ and it's independent of the backend question:
   *means*, so it's a **separate issue**, not folded into #77. Flagged as the
   likely single biggest structural win for node-heavy repos.
 
+> **Partly addressed in #91 (Tier A).** Investigation found a sharper problem
+> than the first-index 35k: the re-embed gate was `vec_hash != content_hash`,
+> but `content_hash` includes start/end line+byte spans while `nodeEmbedText`
+> depends only on `kind`+`qualified_name`. So *every incremental reindex*
+> re-embedded an identical signature string for every node below an edit point —
+> recurring waste, not just a one-time cost. #91 re-keys the gate on the embed
+> text (`vec_hash` now stores it; the `WHERE` reconstructs it in SQL), so a line
+> shift no longer re-embeds. The first-index 35k remains (all nodes are new) —
+> eliminating *that* needs the vector-reuse change above (chunk-vector reuse /
+> chunk-KNN seeding), which alters NodeKNN semantics and stays deferred behind a
+> retrieval eval (Tier B), consistent with §7's accept-the-one-time-cost verdict.
+
 ## §3 — The inert concurrency path (Tier 1, conditional win)
 
 `newEmbedClient` wires `DEX_EMBED_CONCURRENCY` (default 4) into

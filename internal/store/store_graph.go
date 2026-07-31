@@ -1104,12 +1104,14 @@ func (s *Store) GraphCommunities(ctx context.Context, minMembers, limit int) ([]
 	return out, nil
 }
 
-// NodeVecRow is returned by NodesNeedingEmbed.
+// NodeVecRow is returned by NodesNeedingEmbed. EmbedText is the exact string
+// that gets embedded and, post-embed, is stored in vec_hash to gate re-embeds
+// (#91) — the row's content_hash is deliberately not carried, since it moves on
+// line shifts that do not change the embed text.
 type NodeVecRow struct {
-	RowID       int64
-	ID          string
-	ContentHash string
-	EmbedText   string
+	RowID     int64
+	ID        string
+	EmbedText string
 }
 
 // nodeEmbedText formats the embed text for a graph node.
@@ -1120,13 +1122,24 @@ func nodeEmbedText(kind, name, qualifiedName string) string {
 	return kind + " " + name
 }
 
-// NodesNeedingEmbed returns up to limit graph_nodes whose content_hash
-// differs from vec_hash (i.e. not yet embedded or stale).
+// nodeEmbedTextSQL reconstructs nodeEmbedText from a graph_nodes row in SQL so
+// the re-embed gate can be evaluated in the WHERE clause. It MUST stay
+// byte-for-byte identical to nodeEmbedText — see TestNodeEmbedTextSQLMirrorsGo.
+const nodeEmbedTextSQL = `(kind || ' ' || CASE WHEN qualified_name != '' THEN qualified_name ELSE name END)`
+
+// NodesNeedingEmbed returns up to limit graph_nodes whose stored vec_hash no
+// longer matches their embed text (i.e. not yet embedded, or the kind/qualified
+// name that feeds nodeEmbedText changed). The gate keys on the *embed text*, not
+// the node's content_hash: content_hash shifts on any line/byte move above a
+// symbol, but nodeEmbedText depends only on kind + qualified_name, so gating on
+// content_hash re-embedded an identical string on every incremental reindex
+// (#91). vec_hash now stores the embed text, so a pure line shift no longer
+// triggers a re-embed.
 func (s *Store) NodesNeedingEmbed(ctx context.Context, limit int) ([]NodeVecRow, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT rowid, id, content_hash, kind, name, qualified_name
+		`SELECT rowid, id, kind, name, qualified_name
 		 FROM graph_nodes
-		 WHERE vec_hash != content_hash
+		 WHERE vec_hash != `+nodeEmbedTextSQL+`
 		 ORDER BY rowid
 		 LIMIT ?`, limit)
 	if err != nil {
@@ -1137,7 +1150,7 @@ func (s *Store) NodesNeedingEmbed(ctx context.Context, limit int) ([]NodeVecRow,
 	for rows.Next() {
 		var r NodeVecRow
 		var kind, name, qname string
-		if err := rows.Scan(&r.RowID, &r.ID, &r.ContentHash, &kind, &name, &qname); err != nil {
+		if err := rows.Scan(&r.RowID, &r.ID, &kind, &name, &qname); err != nil {
 			return nil, err
 		}
 		r.EmbedText = nodeEmbedText(kind, name, qname)
@@ -1147,13 +1160,16 @@ func (s *Store) NodesNeedingEmbed(ctx context.Context, limit int) ([]NodeVecRow,
 }
 
 // SetNodeVecs stores embeddings for the given nodes, updating vec and vec_hash.
-// The triggers on graph_nodes.vec sync node_vecs automatically.
+// The triggers on graph_nodes.vec sync node_vecs automatically. vec_hash is set
+// to the row's EmbedText (the exact string that was embedded) so the
+// NodesNeedingEmbed gate re-fires only when that text changes (#91); callers
+// must pass rows produced by NodesNeedingEmbed, which populates EmbedText.
 func (s *Store) SetNodeVecs(ctx context.Context, rows []NodeVecRow, vecs [][]float32) error {
 	for i, r := range rows {
 		blob := encodeVec(vecs[i])
 		if _, err := s.db.ExecContext(ctx,
 			`UPDATE graph_nodes SET vec=?, vec_hash=? WHERE rowid=?`,
-			blob, r.ContentHash, r.RowID); err != nil {
+			blob, r.EmbedText, r.RowID); err != nil {
 			return fmt.Errorf("set node vec %s: %w", r.ID, err)
 		}
 	}
