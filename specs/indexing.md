@@ -36,6 +36,12 @@ storage spec's, and reading it is the query specs'.
   failures; any chunk larger than the byte cap is split to fit.
 - WHEN chunks are embedded, dex sends them in batches to an OpenAI-compatible
   `/v1/embeddings` endpoint and stores the returned float32 vectors.
+- WHILE the embed pass runs, dex embeds and upserts one *super-batch* at a time —
+  `BatchSize × concurrency` chunks — so the embedder receives enough sub-batches
+  to dispatch the configured number of requests in flight, and each completed
+  super-batch is durably stored before the next starts. A failure mid-pass leaves
+  earlier super-batches in the index; the next run skips them via content-sha
+  matching rather than re-embedding them.
 - IF the embedding backend is unreachable at index time, indexing surfaces a distinct
   unreachable condition rather than silently producing an empty or partial index,
   so a consumer can degrade (e.g. fall back to grep) instead of trusting a broken index.

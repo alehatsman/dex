@@ -477,16 +477,33 @@ func (ix *Indexer) runEmbedPhase(ctx context.Context, toEmbed []pending, startTi
 	if len(toEmbed) == 0 {
 		return 0, nil
 	}
-	// Embed and upsert one batch at a time. If a later batch fails
-	// (timeout, embedding service crash), earlier batches survive
-	// in the store and the next index run skips them via
-	// content-sha matching — no wasted GPU time on retry.
-	batchSize := 32
+	// Embed and upsert one super-batch at a time. A super-batch is
+	// httpBatch × concurrency chunks: the embedder splits it back into
+	// httpBatch-sized sub-batches and dispatches up to `concurrency` of
+	// them in flight (internal/embed.Client.Embed), so DEX_EMBED_CONCURRENCY
+	// actually engages. Feeding one httpBatch at a time (the old behaviour)
+	// left the embedder a single sub-batch with nothing to fan out — the
+	// concurrency knob was inert on the reindex hot path (#96).
+	//
+	// The super-batch is also the crash-survival / failure-isolation unit:
+	// if a later one fails (timeout, embedding service crash), earlier ones
+	// survive in the store and the next run skips them via content-sha
+	// matching — no wasted GPU on retry. Multiplying by concurrency coarsens
+	// that unit (a failed super-batch re-queues httpBatch×conc chunks instead
+	// of httpBatch) but the granule stays bounded and upsert checkpoints stay
+	// frequent. UpsertMany is a per-row prepared stmt, so the wider batch has
+	// no SQL param-count limit — just fewer, larger commits.
+	httpBatch := 32
+	conc := 1
 	if ix.Embed != nil {
 		if bs := ix.Embed.BatchSize(); bs > 0 {
-			batchSize = bs
+			httpBatch = bs
+		}
+		if c := ix.Embed.EmbedConcurrency(); c > 0 {
+			conc = c
 		}
 	}
+	batchSize := httpBatch * conc
 	if batchSize <= 0 {
 		batchSize = 32
 	}
@@ -494,7 +511,9 @@ func (ix *Indexer) runEmbedPhase(ctx context.Context, toEmbed []pending, startTi
 	ix.Options.Logger.Info("index: embedding",
 		logx.Phase("embed"), "chunks", len(toEmbed),
 		"batches", totalBatches,
-		"batch_size", batchSize)
+		"batch_size", batchSize,
+		"http_batch", httpBatch,
+		"concurrency", conc)
 	var skippedBatches int
 	var lastBatchErr error
 	embedStart := time.Now()

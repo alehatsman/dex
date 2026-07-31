@@ -56,6 +56,7 @@ func (d *dimCapEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 func (d *dimCapEmbedder) Health(ctx context.Context) error { return d.inner.Health(ctx) }
 func (d *dimCapEmbedder) Endpoint() string                 { return d.inner.Endpoint() }
 func (d *dimCapEmbedder) BatchSize() int                   { return d.inner.BatchSize() }
+func (d *dimCapEmbedder) EmbedConcurrency() int            { return d.inner.EmbedConcurrency() }
 
 // ModelName encodes the dim cap so the store's EnsureEmbedModel guard
 // catches a dimension mismatch between index-time and query-time configs.

@@ -27,6 +27,7 @@ func (f *fakeEmbedder) Health(context.Context) error { return nil }
 func (f *fakeEmbedder) Endpoint() string             { return "fake" }
 func (f *fakeEmbedder) ModelName() string            { return "fake" }
 func (f *fakeEmbedder) BatchSize() int               { return 16 }
+func (f *fakeEmbedder) EmbedConcurrency() int        { return 1 }
 
 // TestEmbedNodes guards the shared graph-node embed loop that both the CLI
 // index/watch paths and the MCP auto-watcher (#327) now drive: every node

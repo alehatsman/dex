@@ -26,6 +26,7 @@ func (s *stubEmbedder) Health(_ context.Context) error { return nil }
 func (s *stubEmbedder) Endpoint() string               { return "stub" }
 func (s *stubEmbedder) ModelName() string              { return s.model }
 func (s *stubEmbedder) BatchSize() int                 { return 32 }
+func (s *stubEmbedder) EmbedConcurrency() int          { return 1 }
 
 func TestWithDimCap_noopWhenZero(t *testing.T) {
 	inner := &stubEmbedder{model: "m", vecs: [][]float32{{1, 2, 3, 4}}}

@@ -44,9 +44,10 @@ func NewBreaker(inner Embedder, threshold int, openFor time.Duration) *Breaker {
 	return &Breaker{Inner: inner, Threshold: threshold, OpenFor: openFor, now: time.Now}
 }
 
-func (b *Breaker) Endpoint() string  { return b.Inner.Endpoint() }
-func (b *Breaker) ModelName() string { return b.Inner.ModelName() }
-func (b *Breaker) BatchSize() int    { return b.Inner.BatchSize() }
+func (b *Breaker) Endpoint() string      { return b.Inner.Endpoint() }
+func (b *Breaker) ModelName() string     { return b.Inner.ModelName() }
+func (b *Breaker) BatchSize() int        { return b.Inner.BatchSize() }
+func (b *Breaker) EmbedConcurrency() int { return b.Inner.EmbedConcurrency() }
 
 // Embed short-circuits with ErrUnreachable when the breaker is open;
 // otherwise delegates and records the outcome.

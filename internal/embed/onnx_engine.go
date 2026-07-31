@@ -296,6 +296,10 @@ func (e *onnxEmbedder) Health(_ context.Context) error {
 func (e *onnxEmbedder) Endpoint() string { return "onnx:" + e.cfg.ModelPath }
 func (e *onnxEmbedder) BatchSize() int   { return e.batch }
 
+// EmbedConcurrency is 1: a single DynamicAdvancedSession is not concurrency-safe
+// and Embed already serializes batches through it under a mutex.
+func (e *onnxEmbedder) EmbedConcurrency() int { return 1 }
+
 // ModelName is the index namespace identity: "onnx:<modelID>:<dim>". The
 // "onnx:" prefix and explicit dim ensure an ONNX-built index is never silently
 // mixed with ollama/http vectors — the store's EnsureEmbedModel guard trips on

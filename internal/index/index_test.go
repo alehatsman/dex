@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/proj"
@@ -544,6 +545,7 @@ func (flakyEmbedder) Health(context.Context) error { return nil }
 func (flakyEmbedder) Endpoint() string             { return "flaky://test" }
 func (flakyEmbedder) ModelName() string            { return "fake" }
 func (flakyEmbedder) BatchSize() int               { return 1 }
+func (flakyEmbedder) EmbedConcurrency() int        { return 1 }
 
 func (f flakyEmbedder) Embed(_ context.Context, inputs []string) ([][]float32, error) {
 	if f.failAll {
@@ -583,6 +585,84 @@ func openIndexerStore(t *testing.T, projDir, cacheDir string) (*proj.Project, *s
 		t.Fatal(err)
 	}
 	return p, st, ig
+}
+
+// recordingEmbedder records the size of every Embed call so a test can assert
+// what granularity the indexer feeds it. BatchSize × EmbedConcurrency is the
+// super-batch the embed loop is expected to hand over per call (#96).
+type recordingEmbedder struct {
+	batch, conc int
+	callSizes   []int // runEmbedPhase drives Embed serially, so no lock needed.
+}
+
+func (recordingEmbedder) Health(context.Context) error { return nil }
+func (recordingEmbedder) Endpoint() string             { return "recording://test" }
+func (recordingEmbedder) ModelName() string            { return "fake" }
+func (r *recordingEmbedder) BatchSize() int            { return r.batch }
+func (r *recordingEmbedder) EmbedConcurrency() int     { return r.conc }
+
+func (r *recordingEmbedder) Embed(_ context.Context, inputs []string) ([][]float32, error) {
+	r.callSizes = append(r.callSizes, len(inputs))
+	out := make([][]float32, len(inputs))
+	for i, in := range inputs {
+		out[i] = hashVec(in, 16)
+	}
+	return out, nil
+}
+
+func (r *recordingEmbedder) maxCall() int {
+	m := 0
+	for _, n := range r.callSizes {
+		if n > m {
+			m = n
+		}
+	}
+	return m
+}
+
+// TestRunEmbedPhaseSuperBatch: the embed loop must hand the embedder a
+// super-batch (BatchSize × EmbedConcurrency) per Embed call, so the client's
+// internal fan-out has sub-batches to parallelize. Before #96 the loop fed
+// exactly one BatchSize, leaving DEX_EMBED_CONCURRENCY inert on the reindex
+// hot path.
+func TestRunEmbedPhaseSuperBatch(t *testing.T) {
+	projDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeIndexAll(t, projDir)
+
+	ctx := context.Background()
+	p, st, ig := openIndexerStore(t, projDir, cacheDir)
+
+	rec := &recordingEmbedder{batch: 8, conc: 4} // super-batch = 32
+	ix := New(p, st, rec, ig, Options{})
+
+	// 40 distinct pending chunks — more than one super-batch, so the loop must
+	// issue at least one full super-batch call.
+	toEmbed := make([]pending, 40)
+	for i := range toEmbed {
+		toEmbed[i] = pending{
+			rel: fmt.Sprintf("f%02d.go", i),
+			chunk: chunk.Chunk{
+				Path:      fmt.Sprintf("f%02d.go", i),
+				Kind:      "function_declaration",
+				Name:      fmt.Sprintf("Fn%02d", i),
+				StartLine: 1, EndLine: 3,
+				Content: fmt.Sprintf("func Fn%02d() int { return %d }", i, i),
+			},
+			sha: fmt.Sprintf("sha%02d", i),
+		}
+	}
+
+	if _, err := ix.runEmbedPhase(ctx, toEmbed, time.Now()); err != nil {
+		t.Fatalf("runEmbedPhase: %v", err)
+	}
+
+	want := rec.batch * rec.conc // 32
+	if got := rec.maxCall(); got != want {
+		t.Errorf("largest Embed call was %d inputs; want a full super-batch of %d "+
+			"(BatchSize %d × concurrency %d) so DEX_EMBED_CONCURRENCY engages (#96)",
+			got, want, rec.batch, rec.conc)
+	}
 }
 
 // TestIndexEmbedBatchIsolation: one bad embed batch is logged and skipped, the

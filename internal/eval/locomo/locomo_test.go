@@ -109,6 +109,7 @@ func (fakeEmbedder) Health(_ context.Context) error { return nil }
 func (fakeEmbedder) Endpoint() string               { return "fake" }
 func (fakeEmbedder) ModelName() string              { return "fake" }
 func (fakeEmbedder) BatchSize() int                 { return 64 }
+func (fakeEmbedder) EmbedConcurrency() int          { return 1 }
 
 func hashVec(s string, dim int) []float32 {
 	h := fnv.New64a()

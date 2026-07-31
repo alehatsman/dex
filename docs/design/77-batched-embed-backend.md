@@ -158,6 +158,14 @@ granularity — feed `Embed` `conc × BatchSize` texts, upserting per client-bat
 as vectors return (preserving crash-survival), or run `embedAndUpsertBatch` in an
 errgroup with `SetLimit(conc)`.
 
+> **Implemented in #96.** The embed loop now iterates at a super-batch of
+> `BatchSize × EmbedConcurrency` (new `Embedder.EmbedConcurrency()` method) and
+> hands the whole super-batch to `Embed`, which fans out internally. Crash-survival
+> is preserved at super-batch granularity (embed super-batch → upsert → next);
+> `UpsertMany` is a per-row prepared stmt, so the wider batch has no SQL
+> param-count limit. Failure-isolation coarsens from `BatchSize` to the super-batch
+> — bounded and re-queued via content-sha next run.
+
 **But it's a conditional win** (measured): +1.88× on qwen3 (GPU underused
 single-stream), −23% on bge-large (already saturated). So it should be *engaged*
 and *auto-tuned per backend*, not assumed positive. Pairs with §4.

@@ -39,6 +39,12 @@ type Embedder interface {
 	// BatchSize is the per-call chunk size the indexer loops over so it can
 	// embed-and-upsert one batch at a time (crash-survival, see index.Run).
 	BatchSize() int
+	// EmbedConcurrency is how many BatchSize-sized sub-batches this embedder
+	// dispatches in flight per Embed call. The indexer multiplies it into a
+	// super-batch (BatchSize × EmbedConcurrency) so a single Embed call
+	// actually has enough sub-batches to fan out — see index.runEmbedPhase.
+	// <=1 means sequential (onnx, opted-out HTTP clients).
+	EmbedConcurrency() int
 }
 
 // Compile-time check that *Client satisfies Embedder.
@@ -114,9 +120,10 @@ func NewWithConcurrency(baseURL, model string, batch, concurrency int, timeout t
 	}
 }
 
-func (c *Client) Endpoint() string  { return c.BaseURL }
-func (c *Client) ModelName() string { return c.Model }
-func (c *Client) BatchSize() int    { return c.Batch }
+func (c *Client) Endpoint() string       { return c.BaseURL }
+func (c *Client) ModelName() string      { return c.Model }
+func (c *Client) BatchSize() int         { return c.Batch }
+func (c *Client) EmbedConcurrency() int  { return c.Concurrency }
 
 type embedRequest struct {
 	Model string   `json:"model"`
