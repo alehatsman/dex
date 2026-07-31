@@ -146,12 +146,32 @@ func (c *Client) Rerank(ctx context.Context, query string, docs []string) ([]Sco
 	return out, nil
 }
 
-// Health does a cheap reachability check: a single-doc rerank.
-// Returns nil if the endpoint accepted and answered, ErrUnreachable
-// on transport failure, otherwise the server error.
+// Health does a cheap liveness probe: a GET against /health, the near-
+// universal reachability path served by TEI, Infinity, and vLLM reranker
+// backends. It deliberately avoids a real Rerank() call: cross-encoder
+// rerankers cold-load the model on the first inference (seconds on MPS/GPU),
+// which routinely exceeds the short status-probe timeout and falsely reports
+// the endpoint as UNREACHABLE even when the server is up and answering
+// metadata requests instantly (#78) — the same cold-model trap embed.Client
+// and chat.Client already dodge by probing /v1/models.
+//
+// The probe is lenient: any HTTP response — including a 404 from a backend
+// that doesn't expose /health — proves the server is listening and speaking
+// HTTP, so it counts as reachable. Only a transport-level failure (dial /
+// timeout) is treated as unreachable. Whether the model is actually loaded
+// surfaces on the first real rerank call, where the breaker (see breaker.go)
+// degrades search to non-reranked results (#445) rather than failing it.
 func (c *Client) Health(ctx context.Context) error {
-	_, err := c.Rerank(ctx, "ping", []string{"ping"})
-	return err
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/health", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnreachable, err)
+	}
+	_ = resp.Body.Close()
+	return nil
 }
 
 // Endpoint returns the server's base URL for status reporting.

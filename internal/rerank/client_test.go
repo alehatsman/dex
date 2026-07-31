@@ -221,17 +221,43 @@ func TestNewDefaults(t *testing.T) {
 	}
 }
 
-func TestHealthSucceedsOnReachable(t *testing.T) {
+// TestHealthProbesLivenessNotInference guards #78: the probe must hit the
+// cheap /health liveness path and must NOT fire a real /rerank inference,
+// which cold-loads the cross-encoder and false-negatives as UNREACHABLE on a
+// warming model. The handler fails the test if /rerank is ever touched.
+func TestHealthProbesLivenessNotInference(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"results": []map[string]any{{"index": 0, "relevance_score": 1.0}},
-		})
+		if r.URL.Path == "/rerank" {
+			t.Errorf("Health hit /rerank — must probe liveness, not run inference")
+		}
+		if r.URL.Path != "/health" {
+			t.Errorf("path = %q, want /health", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "test", 5*time.Second)
 	if err := c.Health(context.Background()); err != nil {
 		t.Errorf("Health on reachable endpoint = %v, want nil", err)
+	}
+}
+
+// TestHealthLenientOnHTTPResponse locks the "any HTTP response = reachable"
+// rule: a backend that doesn't expose /health (404) is still listening and
+// speaking HTTP, so the probe must report it reachable rather than fail — the
+// whole point of #78 is to stop over-reporting UNREACHABLE.
+func TestHealthLenientOnHTTPResponse(t *testing.T) {
+	for _, code := range []int{http.StatusNotFound, http.StatusServiceUnavailable, http.StatusMethodNotAllowed} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+		}))
+		c := New(srv.URL, "test", 5*time.Second)
+		err := c.Health(context.Background())
+		srv.Close()
+		if err != nil {
+			t.Errorf("status %d: Health = %v, want nil (any HTTP response is reachable)", code, err)
+		}
 	}
 }
 
