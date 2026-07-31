@@ -1,5 +1,14 @@
-model	dim	ndcg10	recall10	mrr
-qwen3-embedding:4b	0	0.5924	0.6294	0.7562
-qwen3-embedding:4b	512	0.5904	0.6305	0.7523
-qwen3-embedding:4b	1024	0.5905	0.6305	0.7523
-qwen3-embedding:0.6b	0	0.5753	0.626	0.7291
+# embed-model A/B — retrieval quality on the dex repo golden set (#90).
+# Cols: model  dim  ndcg10  recall10  mrr  index_s  notes
+# Rows without index_s predate #90 (quality-only, fresh golden @ f11abda3).
+# The #90 batch is stale-golden (golden f11abda3 vs repo 9477c713): absolute
+# numbers run lower than the fresh rows, but the two #90 rows share the SAME
+# golden, so they are directly comparable to each other. ~14187 embeds/repo
+# (6738 chunks + 7449 graph nodes). index_s = full `dex reindex` wall-clock, MPS.
+model	dim	ndcg10	recall10	mrr	index_s	notes
+qwen3-embedding:4b	0	0.5924	0.6294	0.7562		fresh-golden
+qwen3-embedding:4b	512	0.5904	0.6305	0.7523		fresh-golden
+qwen3-embedding:4b	1024	0.5905	0.6305	0.7523		fresh-golden
+qwen3-embedding:0.6b	0	0.5753	0.626	0.7291		fresh-golden
+qwen3-embedding:0.6b	1024	0.521	0.538	0.714	535	#90 stale-golden baseline (default)
+bge-large	1024	0.142	0.232	0.160	343	#90 fast candidate — 1.56x faster, quality COLLAPSES; asymmetric model needs a query-instruction prefix dex does not apply
