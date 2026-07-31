@@ -78,6 +78,15 @@ type ShellOutput struct {
 	// failure signature when the command exits non-zero (#601). nil on success
 	// or when no known pattern matched. The agent confirms it via `notes add`.
 	GotchaCandidate *gotcha.Candidate `json:"gotcha_candidate,omitempty"`
+	// Truncated reports that the command produced more output than the 8 MiB
+	// capture cap, so Output holds only the capped prefix (#92). These three
+	// fields describe the CAPTURE cap and are independent of the compression
+	// line metrics above — SavedPct measures what compaction dropped from the
+	// captured bytes, whereas DiscardedBytes measures what never made it into
+	// the buffer at all. All zero/false when output stayed under the cap.
+	Truncated      bool `json:"truncated,omitempty"`
+	CapturedBytes  int  `json:"captured_bytes,omitempty"`
+	DiscardedBytes int  `json:"discarded_bytes,omitempty"`
 }
 
 const (
@@ -101,19 +110,25 @@ func resolveShellTimeout(secs int) time.Duration {
 }
 
 // outputSizeMax is the maximum bytes buffered from a shell command. Output
-// beyond this is silently discarded to prevent OOM when a command produces
-// unbounded output (find /, yes, dd) within the 60-second timeout window.
-const outputSizeMax = 8 * 1024 * 1024 // 8 MB
+// beyond this is discarded to prevent OOM when a command produces unbounded
+// output (find /, yes, dd) within the 60-second timeout window. The discard is
+// recorded (limitedBuf.discarded) and surfaced as ShellOutput.Truncated so the
+// caller never mistakes the capped prefix for the complete stream (#92).
+const outputSizeMax = 8 * 1024 * 1024 // 8 MiB
 
-// limitedBuf is a bytes.Buffer capped at limit bytes.  Writes past the cap are
+// limitedBuf is a bytes.Buffer capped at limit bytes. Writes past the cap are
 // accepted (return the full len to satisfy io.Writer) but discarded so the
-// command keeps running normally until the timeout fires.
+// command keeps running normally until the timeout fires. total tracks every
+// byte presented to Write — including the discarded tail — so the exact number
+// of dropped bytes is recoverable after the run (#92).
 type limitedBuf struct {
 	buf   bytes.Buffer
 	limit int
+	total int // bytes presented to Write, capped and discarded alike
 }
 
 func (l *limitedBuf) Write(p []byte) (int, error) {
+	l.total += len(p)
 	if remaining := l.limit - l.buf.Len(); remaining > 0 {
 		take := p
 		if len(take) > remaining {
@@ -125,6 +140,24 @@ func (l *limitedBuf) Write(p []byte) (int, error) {
 }
 
 func (l *limitedBuf) String() string { return l.buf.String() }
+
+// captured returns the bytes retained in the buffer (≤ limit).
+func (l *limitedBuf) captured() int { return l.buf.Len() }
+
+// discarded returns the bytes presented to Write but dropped past the cap.
+func (l *limitedBuf) discarded() int { return l.total - l.buf.Len() }
+
+// truncated reports whether any bytes were dropped past the cap.
+func (l *limitedBuf) truncated() bool { return l.total > l.buf.Len() }
+
+// truncationMarker is the deterministic line appended to captured output when
+// the capture cap dropped bytes (#92). It rides on Output so the incompleteness
+// is visible under every output policy — including raw:true and passthrough,
+// which carry no compression metrics — not only in the structured fields.
+func truncationMarker(discarded int) string {
+	return fmt.Sprintf("\n[dex: output truncated at the %d MiB capture cap — %d byte(s) discarded]",
+		outputSizeMax/(1024*1024), discarded)
+}
 
 // shellWrappedEnv marks child processes spawned by the shell tool so a nested
 // dex (or another compression wrapper that honors the convention) can detect
@@ -758,13 +791,29 @@ func (s *Server) ShellRun(ctx context.Context, in ShellInput) (ShellOutput, erro
 }
 
 func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellInput) (res *sdk.CallToolResult, out ShellOutput, err error) {
-	// Stage a Gotcha candidate from any non-zero exit, uniformly across every
-	// return path below (#601). Runs after the output is assembled so it sees
-	// the compressed text the agent sees; nil unless a known failure signature
-	// matched, so the field is omitted on success and on unrecognized failures.
+	// buf holds captured stdout+stderr; declared here so the deferred stamp
+	// below can read the capture-cap totals regardless of which return path the
+	// body took. nil until the command actually runs (early validation errors
+	// return before it is set).
+	var buf *limitedBuf
+
+	// Post-process every return path uniformly (#601, #92). Runs after the
+	// output is assembled so it sees the compressed text the agent sees:
+	//   1. Stage a Gotcha candidate from any non-zero exit — nil unless a known
+	//      failure signature matched, so the field is omitted otherwise. Runs
+	//      before the marker is appended so it matches on real command output.
+	//   2. Stamp capture-truncation metadata and append the visible marker when
+	//      the 8 MiB cap dropped bytes, so no policy (compress/minimal/verbatim/
+	//      passthrough/raw) can return a capped prefix that looks complete.
 	defer func() {
 		if err == nil && out.ExitCode != 0 {
 			out.GotchaCandidate = gotcha.Detect(in.Command, out.Output, out.ExitCode)
+		}
+		if buf != nil && buf.truncated() {
+			out.Truncated = true
+			out.CapturedBytes = buf.captured()
+			out.DiscardedBytes = buf.discarded()
+			out.Output += truncationMarker(buf.discarded())
 		}
 	}()
 
@@ -828,7 +877,7 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	// actually stop.
 	setupShellProcessGroup(cmd)
 
-	buf := &limitedBuf{limit: outputSizeMax}
+	buf = &limitedBuf{limit: outputSizeMax}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
 

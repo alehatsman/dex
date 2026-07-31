@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1056,5 +1057,161 @@ func TestShellRun_ExpectJSONPreservesNonJSON(t *testing.T) {
 		if !linePresent(out.Output, want) {
 			t.Errorf("json fallback dropped %q:\n%s", want, out.Output)
 		}
+	}
+}
+
+// ── capture-cap truncation (#92) ──────────────────────────────────────────────
+
+// TestLimitedBuf_BelowCap: a write that stays under the cap is retained whole
+// and reports no truncation — the byte-for-byte-preserved contract.
+func TestLimitedBuf_BelowCap(t *testing.T) {
+	l := &limitedBuf{limit: 100}
+	n, err := l.Write([]byte("hello"))
+	if err != nil || n != 5 {
+		t.Fatalf("Write = %d, %v; want 5, nil", n, err)
+	}
+	if l.truncated() {
+		t.Error("truncated=true below the cap")
+	}
+	if l.discarded() != 0 {
+		t.Errorf("discarded=%d, want 0", l.discarded())
+	}
+	if l.captured() != 5 || l.String() != "hello" {
+		t.Errorf("captured=%d string=%q, want 5 %q", l.captured(), l.String(), "hello")
+	}
+}
+
+// TestLimitedBuf_ExactCap: a write that fills the buffer to exactly the cap is
+// the boundary case — every byte kept, nothing discarded, not flagged.
+func TestLimitedBuf_ExactCap(t *testing.T) {
+	l := &limitedBuf{limit: 8}
+	l.Write([]byte("12345678")) //nolint:errcheck // limitedBuf.Write never errors
+	if l.truncated() {
+		t.Error("exact-cap write must not be truncated")
+	}
+	if l.discarded() != 0 {
+		t.Errorf("discarded=%d, want 0", l.discarded())
+	}
+	if l.captured() != 8 {
+		t.Errorf("captured=%d, want 8", l.captured())
+	}
+}
+
+// TestLimitedBuf_SingleWriteOverflow: one write crossing the cap keeps exactly
+// the capped prefix, still reports the full input length to satisfy io.Writer,
+// and records the exact discarded count.
+func TestLimitedBuf_SingleWriteOverflow(t *testing.T) {
+	l := &limitedBuf{limit: 4}
+	n, _ := l.Write([]byte("abcdefghij")) // 10 bytes, cap 4
+	if n != 10 {
+		t.Fatalf("Write must report the full input len, got %d want 10", n)
+	}
+	if l.String() != "abcd" {
+		t.Errorf("captured prefix=%q, want %q", l.String(), "abcd")
+	}
+	if !l.truncated() {
+		t.Error("want truncated=true after crossing the cap")
+	}
+	if l.captured() != 4 {
+		t.Errorf("captured=%d, want 4", l.captured())
+	}
+	if l.discarded() != 6 {
+		t.Errorf("discarded=%d, want 6", l.discarded())
+	}
+}
+
+// TestLimitedBuf_MultiWriteOverflow: writes that continue after the cap is
+// reached keep accumulating discarded bytes — the prefix never grows past the
+// cap and the discarded tally is the exact sum of every dropped byte.
+func TestLimitedBuf_MultiWriteOverflow(t *testing.T) {
+	l := &limitedBuf{limit: 5}
+	l.Write([]byte("abc"))    // fills 3 of 5, none discarded          //nolint:errcheck
+	l.Write([]byte("defghi")) // takes "de" to the cap, discards 4     //nolint:errcheck
+	l.Write([]byte("jklmno")) // entirely past the cap, discards 6     //nolint:errcheck
+	if l.String() != "abcde" {
+		t.Errorf("captured=%q, want %q", l.String(), "abcde")
+	}
+	if !l.truncated() {
+		t.Error("want truncated=true")
+	}
+	if l.captured() != 5 {
+		t.Errorf("captured=%d, want 5", l.captured())
+	}
+	if l.discarded() != 10 { // 4 + 6
+		t.Errorf("discarded=%d, want 10", l.discarded())
+	}
+}
+
+// TestShellRun_NoTruncationBelowCap: normal-sized output leaves the truncation
+// fields zero-valued (omitted on the wire) and adds no marker — the preserved
+// contract for the common case.
+func TestShellRun_NoTruncationBelowCap(t *testing.T) {
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: "echo hi", Raw: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Truncated || out.CapturedBytes != 0 || out.DiscardedBytes != 0 {
+		t.Errorf("below-cap output must not report truncation: %+v", out)
+	}
+	if strings.Contains(out.Output, "output truncated") {
+		t.Errorf("unexpected truncation marker in below-cap output: %q", out.Output)
+	}
+}
+
+// truncatingCommand emits exactly outputSizeMax+over bytes and then exits, so
+// the capture cap discards precisely `over` bytes without leaving a process
+// running until the timeout.
+func truncatingCommand(over int) string {
+	return fmt.Sprintf("head -c %d /dev/zero | tr '\\0' 'a'", outputSizeMax+over)
+}
+
+// TestShellRun_TruncationRaw: raw:true skips compression but must still report
+// the capture cap honestly — exact captured/discarded counts and a marker.
+func TestShellRun_TruncationRaw(t *testing.T) {
+	const over = 4096
+	s := &Server{}
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: truncatingCommand(over), Raw: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !out.Truncated {
+		t.Fatal("raw:true output past the cap must report truncated=true")
+	}
+	if out.CapturedBytes != outputSizeMax {
+		t.Errorf("captured_bytes=%d, want %d", out.CapturedBytes, outputSizeMax)
+	}
+	if out.DiscardedBytes != over {
+		t.Errorf("discarded_bytes=%d, want %d", out.DiscardedBytes, over)
+	}
+	if !strings.Contains(out.Output, "output truncated at the") {
+		t.Error("raw output missing the truncation marker")
+	}
+}
+
+// TestShellRun_TruncationSurvivesCompression proves the handler-level contract:
+// truncation metadata and the marker survive a lossy output policy. `seq` is
+// classified policyCompress, so its cap-crossing output is routed through the
+// aggressive compressor — yet the capture-cap fields (independent of the
+// compression line metrics) still reach the caller intact.
+func TestShellRun_TruncationSurvivesCompression(t *testing.T) {
+	t.Setenv(shellWrappedEnv, "")
+	s := &Server{}
+	// ~19 MB of numbered lines — comfortably past the 8 MiB cap.
+	out, err := s.ShellRun(t.Context(), ShellInput{Command: "seq 1 3000000"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !out.Truncated {
+		t.Fatal("compression path dropped the truncation flag")
+	}
+	if out.CapturedBytes != outputSizeMax {
+		t.Errorf("captured_bytes=%d, want %d", out.CapturedBytes, outputSizeMax)
+	}
+	if out.DiscardedBytes <= 0 {
+		t.Errorf("discarded_bytes=%d, want > 0", out.DiscardedBytes)
+	}
+	if !strings.Contains(out.Output, "output truncated at the") {
+		t.Error("truncation marker lost during compression")
 	}
 }
