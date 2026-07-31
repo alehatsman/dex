@@ -1,6 +1,6 @@
 # Findings — #90 Re-evaluate the default embed model
 
-Status: **measured / decided (this round)** · Follows the #77 RFC Tier-0 hypothesis.
+Status: **CLOSED — keep `qwen3-embedding:0.6b` default; model-swap is not a reindex-speed lever.** Follows the #77 RFC Tier-0 hypothesis.
 
 ## Hypothesis (from #77)
 
