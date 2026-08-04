@@ -48,3 +48,35 @@ The symbol-leg helpers (`collectSearchSymbolLeg`, `collectSymbolHits`) move from
 Behavior-neutral: same lane order, same candidateK-vs-k split, identical output.
 Existing tests are the gate (`server_search*`, `render_sort_score`, `verb_parity`,
 `clamp_searchk`, `search_throttle`, `search_filter`). `mooncake task ci-fast` green.
+
+## Stage 2 — locate
+
+The symbol/ref/frame **resolution core** — deciding "what location does the caller
+mean" — was pure store logic misfiled in the transport. It moves to
+`internal/retrieve/locate.go`: `ResolveLocateTarget(ctx, st, root, LocateRequest)
+→ LocateTarget` plus `resolveByRef`/`resolveBySymbol`/`parseRef`/`parseFrame`/
+`normalizeRefPath` and the receiver-shape regexes. `resolveLocateTarget` never
+touched `*Server`, so it drops to a package func. Its unit tests (`parseRef`,
+`parseFrame`, the #702 receiver-preference case) move to `retrieve` alongside.
+
+The transport keeps the **composition** it must own: callers via the trace verb,
+sibling tests / nearest doc / blame via the Enricher, related notes via recall,
+related issues via `gh`. These fan out over other verbs and produce wire types
+(`CallSite`, `LocatedFact`), so forcing them through a neutral pack would be
+type-shuffling with no real decoupling.
+
+## Stage 3 — verify
+
+The **test-scope assembly** — changed files → Go package list, sibling test list,
+synthesized command — moves to `internal/retrieve/testscope.go`
+(`GoPackagesForFiles`, `SiblingTestFiles`, `SynthVerifyCommand`), with its unit
+tests. `impactFiles` stays transport-side (coupled to the `ImpactOutput` wire
+type). The transport keeps resolving the changed set (git diff / graph impact) and
+running the command through the shell pipeline — `verify` is left as
+decode → resolve → scope → run.
+
+## Not done — brief, trace
+
+Already at target shape: `trace` is pure dispatch (`traceVerb` decode → graph
+handler → fold) and `brief` is a composition of other verbs. Neither has a fat
+domain core to lift; a seam would relocate glue for churn. Left as-is by design.

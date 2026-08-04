@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alehatsman/dex/internal/output"
 	"github.com/alehatsman/dex/internal/retrieve"
-	"github.com/alehatsman/dex/internal/store"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -172,22 +169,24 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	}
 
 	out = LocateOutput{Status: "ok", Project: p.Root, Callers: []CallSite{}}
-	res := s.resolveLocateTarget(ctx, st, p.Root, in)
-	if res.status != "ok" {
-		out.Status = res.status
-		out.Hint = res.hint
+	res := retrieve.ResolveLocateTarget(ctx, st, p.Root, retrieve.LocateRequest{
+		Ref: in.Ref, Symbol: in.Symbol, Frame: in.Frame,
+	})
+	if res.Status != "ok" {
+		out.Status = res.Status
+		out.Hint = res.Hint
 		return nil, out, nil
 	}
-	out.Path = res.path
-	out.Symbol = res.symbol
-	out.Kind = res.kind
-	out.StartLine = res.startLine
-	out.EndLine = res.endLine
+	out.Path = res.Path
+	out.Symbol = res.Symbol
+	out.Kind = res.Kind
+	out.StartLine = res.StartLine
+	out.EndLine = res.EndLine
 
 	// Callers (+ risk) via the trace verb — degrades to empty on no-graph.
-	if res.symbol != "" {
+	if res.Symbol != "" {
 		_, tr, _ := traceVerb(ctx, s, nil, TraceInput{
-			Symbol: res.symbol, Direction: "callers", K: k, ProjectRoot: p.Root,
+			Symbol: res.Symbol, Direction: "callers", K: k, ProjectRoot: p.Root,
 		})
 		if tr.Status == "ok" {
 			out.Callers = tr.Hits
@@ -201,11 +200,11 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 
 	// Static enrichment legs — pure filesystem / git, all best-effort.
 	e := &retrieve.Enricher{ProjectRoot: p.Root}
-	out.Tests = e.PairSiblingTests(res.path)
-	out.NearestDoc = e.FindNearestDoc(res.path)
+	out.Tests = e.PairSiblingTests(res.Path)
+	out.NearestDoc = e.FindNearestDoc(res.Path)
 	meta := map[string]*retrieve.PathMeta{}
-	e.EnrichBlame(ctx, []string{res.path}, meta)
-	if m := meta[res.path]; m != nil {
+	e.EnrichBlame(ctx, []string{res.Path}, meta)
+	if m := meta[res.Path]; m != nil {
 		out.LastCommit = m.LastCommit
 		out.LastAuthor = m.LastAuthor
 	}
@@ -218,7 +217,7 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	// surfaced (and tagged with `scope`) because you touched the file, even if
 	// they wouldn't match the symbol semantically. The "you're editing X, here's
 	// the gotcha about X" signal leads.
-	if scoped, serr := st.KnowledgeByScope(ctx, res.path, k); serr == nil {
+	if scoped, serr := st.KnowledgeByScope(ctx, res.Path, k); serr == nil {
 		for _, f := range scoped {
 			seenNote[f.ID] = true
 			out.Notes = append(out.Notes, LocatedFact{
@@ -229,7 +228,7 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	// Then semantic recall on the symbol, deduped against the scoped set.
 	// skipFallback=true: locate shows no notes rather than irrelevant top-salience
 	// ones when the symbol doesn't match any note semantically.
-	if facts, ferr := s.recallFacts(ctx, st, res.symbol, k, false, "", true); ferr == nil {
+	if facts, ferr := s.recallFacts(ctx, st, res.Symbol, k, false, "", true); ferr == nil {
 		for _, f := range facts {
 			if seenNote[f.ID] {
 				continue
@@ -242,191 +241,11 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	}
 
 	// Optional: related open issues via `gh` — opt-in, best-effort, hermetic-safe.
-	if in.Issues && res.symbol != "" {
-		out.Issues = relatedIssues(ctx, p.Root, retrieve.BareSymbolName(res.symbol))
+	if in.Issues && res.Symbol != "" {
+		out.Issues = relatedIssues(ctx, p.Root, retrieve.BareSymbolName(res.Symbol))
 	}
 
 	return nil, out, nil
-}
-
-// locateTarget is the resolved (path, symbol, kind, line-range) plus a status
-// the caller maps straight onto LocateOutput.
-type locateTarget struct {
-	path      string
-	symbol    string
-	kind      string
-	startLine int
-	endLine   int
-	status    string // "ok" | "not-found"
-	hint      string
-}
-
-// resolveLocateTarget turns the input into a concrete target. Ref wins, then
-// Symbol, then Frame (which is itself parsed into a ref or a symbol).
-func (s *Server) resolveLocateTarget(ctx context.Context, st *store.Store, root string, in LocateInput) locateTarget {
-	if ref := strings.TrimSpace(in.Ref); ref != "" {
-		return resolveByRef(ctx, st, root, ref)
-	}
-	if sym := strings.TrimSpace(in.Symbol); sym != "" {
-		return resolveBySymbol(ctx, st, sym)
-	}
-	// Frame: pull a file:line or a symbol out of the raw line.
-	ref, sym := parseFrame(in.Frame)
-	if ref != "" {
-		return resolveByRef(ctx, st, root, ref)
-	}
-	if sym != "" {
-		return resolveBySymbol(ctx, st, sym)
-	}
-	return locateTarget{status: "not-found", hint: "could not parse a file:line or symbol out of the frame"}
-}
-
-// resolveByRef resolves a 'path:line' to its enclosing chunk via ChunkAt.
-func resolveByRef(ctx context.Context, st *store.Store, root, ref string) locateTarget {
-	path, line, ok := parseRef(ref)
-	if !ok {
-		return locateTarget{status: "not-found", hint: fmt.Sprintf("ref %q is not 'path:line'", ref)}
-	}
-	path = normalizeRefPath(root, path)
-	hit, err := st.ChunkAt(ctx, path, line)
-	if err != nil {
-		return locateTarget{status: "not-found",
-			hint: fmt.Sprintf("%v — check the path is project-relative and indexed.", err)}
-	}
-	sym := hit.Name
-	// Prefer the graph node's QualifiedName (e.g. "(*Store).Run") over the
-	// bare chunk name ("Run") so traceVerb doesn't match every node named Run
-	// across all packages (#716).
-	if qn, qerr := st.GraphQualifiedNameAt(ctx, path, line); qerr == nil && qn != "" {
-		sym = qn
-	}
-	return locateTarget{
-		path: hit.Path, symbol: sym, kind: hit.Kind,
-		startLine: hit.StartLine, endLine: hit.EndLine, status: "ok",
-	}
-}
-
-// resolveBySymbol resolves a symbol name to its first indexed definition.
-func resolveBySymbol(ctx context.Context, st *store.Store, sym string) locateTarget {
-	hits, err := st.FindSymbol(ctx, sym, 1)
-	if err != nil {
-		return locateTarget{status: "not-found", hint: fmt.Sprintf("lookup %q: %v", sym, err)}
-	}
-	// Frames and qualified names ('main.Greet', 'mcp.(*Server).Run') don't match
-	// the exact-name index; fall back to the bare trailing identifier.
-	if len(hits) == 0 {
-		if bare := retrieve.BareSymbolName(sym); bare != sym {
-			// For receiver-qualified forms like (*T).Method, fetch more candidates
-			// so we can prefer method/function over field — a field named Context
-			// loses to a method named Context when the input is (*Server).Context.
-			k := 1
-			if reReceiverPointer.MatchString(sym) {
-				k = 20
-			}
-			hits, err = st.FindSymbol(ctx, bare, k)
-			if err != nil {
-				return locateTarget{status: "not-found", hint: fmt.Sprintf("lookup %q: %v", bare, err)}
-			}
-			if reReceiverPointer.MatchString(sym) && len(hits) > 1 {
-				// Extract the receiver type (e.g. "Client" from "(*Client).Method")
-				// and prefer a hit whose signature mentions that type, so that
-				// (*Client).Method doesn't resolve to (*Server).Method.
-				rxType := ""
-				if m := reReceiverType.FindStringSubmatch(sym); m != nil {
-					rxType = m[1]
-				}
-				chosen := -1
-				for i, h := range hits {
-					if h.Kind != "method" && h.Kind != "function" {
-						continue
-					}
-					if chosen < 0 {
-						chosen = i // first method: fallback if no type match
-					}
-					if rxType != "" && strings.Contains(h.Signature, rxType) {
-						chosen = i
-						break
-					}
-				}
-				if chosen >= 0 {
-					hits = []store.Hit{hits[chosen]}
-				}
-			}
-		}
-	}
-	if len(hits) == 0 {
-		return locateTarget{status: "not-found",
-			hint: fmt.Sprintf("no indexed symbol named %q — check spelling or reindex.", sym)}
-	}
-	h := hits[0]
-	name := h.Name
-	if name == "" {
-		name = sym
-	}
-	return locateTarget{
-		path: h.Path, symbol: name, kind: h.Kind,
-		startLine: h.StartLine, endLine: h.EndLine, status: "ok",
-	}
-}
-
-// parseRef splits 'path:line' or 'path:line:col' into its path and line.
-// A path with no trailing :line is rejected (locate needs a line to find the
-// enclosing symbol).
-func parseRef(ref string) (path string, line int, ok bool) {
-	ref = strings.TrimSpace(ref)
-	i := strings.LastIndex(ref, ":")
-	if i < 0 {
-		return "", 0, false
-	}
-	// Allow a trailing :col — peel it off and retry on the remainder.
-	if n, err := strconv.Atoi(ref[i+1:]); err == nil {
-		head := ref[:i]
-		if j := strings.LastIndex(head, ":"); j >= 0 {
-			if ln, err2 := strconv.Atoi(head[j+1:]); err2 == nil {
-				return head[:j], ln, true // path:line:col
-			}
-		}
-		return head, n, true // path:line
-	}
-	return "", 0, false
-}
-
-// frameLoc matches a 'file.ext:line' anywhere inside a stack frame.
-var frameLoc = regexp.MustCompile(`([^\s:()]+\.[A-Za-z0-9]+):(\d+)`)
-
-// reReceiverPointer matches the (*T). prefix in a receiver-qualified symbol like (*Server).Context.
-// Used to bias bare-name fallback toward method/function kinds over fields.
-var reReceiverPointer = regexp.MustCompile(`^\(\*[^)]+\)\.`)
-
-// reReceiverType extracts the type name from a pointer-receiver prefix:
-// "(*Client).Method" → "Client".
-var reReceiverType = regexp.MustCompile(`^\([*]?([^)]+)\)\.*`)
-
-// parseFrame extracts either a 'path:line' ref or a symbol from one raw stack
-// frame. A file location wins (it pins the exact site); otherwise the trailing
-// call expression is reduced to a trace-friendly symbol form.
-func parseFrame(frame string) (ref, symbol string) {
-	frame = strings.TrimSpace(frame)
-	if m := frameLoc.FindStringSubmatch(frame); m != nil {
-		return m[1] + ":" + m[2], ""
-	}
-	s := frame
-	// Keep the rightmost path segment: 'github.com/x/mcp.(*Server).Run' → 'mcp.(*Server).Run'.
-	if i := strings.LastIndex(s, "/"); i >= 0 {
-		s = s[i+1:]
-	}
-	// Drop a trailing argument list: '(*Server).Run(0xc..)' → '(*Server).Run'.
-	if strings.HasSuffix(s, ")") {
-		if i := strings.LastIndex(s, "("); i >= 0 {
-			s = s[:i]
-		}
-	}
-	// Drop a leading package qualifier on a receiver method: 'mcp.(*Server).Run'
-	// → '(*Server).Run' (the receiver-qualified form trace prefers).
-	if i := strings.Index(s, ".("); i >= 0 {
-		s = s[i+1:]
-	}
-	return "", strings.TrimSpace(s)
 }
 
 // relatedIssues lists up to 5 open issues whose text matches the symbol via

@@ -3,12 +3,10 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"os"
-	"path"
-	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/gotcha"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/review"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -77,13 +75,13 @@ func (s *Server) verify(ctx context.Context, req *sdk.CallToolRequest, in Verify
 		return nil, *early, nil
 	}
 
-	pkgs := goPackagesForFiles(files)
+	pkgs := retrieve.GoPackagesForFiles(files)
 	if len(pkgs) == 0 {
 		return nil, VerifyOutput{Status: "no-tests", Project: p.Root, Mode: mode,
 			Hint: "no Go package is implicated by the change — verify is Go-only in v1"}, nil
 	}
 
-	cmd := synthVerifyCommand(in.Command, pkgs)
+	cmd := retrieve.SynthVerifyCommand(in.Command, pkgs)
 	_, sh, err := s.shellRun(ctx, req, ShellInput{Command: cmd, Cwd: p.Root, TimeoutSecs: in.TimeoutSecs})
 	if err != nil {
 		return nil, VerifyOutput{Status: "error", Project: p.Root, Mode: mode, Command: cmd,
@@ -95,7 +93,7 @@ func (s *Server) verify(ctx context.Context, req *sdk.CallToolRequest, in Verify
 		Project:         p.Root,
 		Mode:            mode,
 		Packages:        pkgs,
-		Tests:           siblingTestFiles(files),
+		Tests:           retrieve.SiblingTestFiles(files),
 		Command:         cmd,
 		ExitCode:        sh.ExitCode,
 		Passed:          sh.ExitCode == 0,
@@ -160,66 +158,6 @@ func impactFiles(imp ImpactOutput) []string {
 	return files
 }
 
-// goPackagesForFiles reduces a file list to the sorted, de-duplicated set of Go
-// package directories, as `go test` patterns ("./internal/mcp", "."). Non-.go
-// files are dropped (verify is Go-only in v1).
-func goPackagesForFiles(files []string) []string {
-	seen := map[string]bool{}
-	var pkgs []string
-	for _, f := range files {
-		if !strings.HasSuffix(f, ".go") {
-			continue
-		}
-		dir := path.Dir(f)
-		pkg := "."
-		if dir != "." && dir != "" {
-			pkg = "./" + dir
-		}
-		if !seen[pkg] {
-			seen[pkg] = true
-			pkgs = append(pkgs, pkg)
-		}
-	}
-	sort.Strings(pkgs)
-	return pkgs
-}
-
-// siblingTestFiles is the informational list of test files for the changed set
-// (foo.go ↔ foo_test.go). Best-effort: it does not check existence.
-func siblingTestFiles(files []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, f := range files {
-		if !strings.HasSuffix(f, ".go") {
-			continue
-		}
-		tf := f
-		if !strings.HasSuffix(f, "_test.go") {
-			tf = strings.TrimSuffix(f, ".go") + "_test.go"
-		}
-		if !seen[tf] {
-			seen[tf] = true
-			out = append(out, tf)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// synthVerifyCommand builds the test command from the override, else
-// $DEX_VERIFY_CMD, else the default. A "{{packages}}" placeholder is replaced
-// with the space-joined package list; without it the list is appended.
-func synthVerifyCommand(override string, pkgs []string) string {
-	tmpl := strings.TrimSpace(override)
-	if tmpl == "" {
-		tmpl = strings.TrimSpace(os.Getenv("DEX_VERIFY_CMD"))
-	}
-	if tmpl == "" {
-		tmpl = "go test {{packages}}"
-	}
-	joined := strings.Join(pkgs, " ")
-	if strings.Contains(tmpl, "{{packages}}") {
-		return strings.ReplaceAll(tmpl, "{{packages}}", joined)
-	}
-	return tmpl + " " + joined
-}
+// Test-scope assembly (goPackagesForFiles / siblingTestFiles / synthVerifyCommand)
+// moved to internal/retrieve.GoPackagesForFiles / SiblingTestFiles /
+// SynthVerifyCommand (#111).
