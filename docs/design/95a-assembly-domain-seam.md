@@ -81,11 +81,34 @@ suite + `mooncake task ci-fast`, byte-identical output (#93 tool-schema unchange
   `ContextPack`. `*Server.contextRouterStream` builds the request, projects the
   pack onto the wire `ContextOutput` (`context_project.go`), and continues the
   edge pipeline unchanged. Removes the now-dead `runSymbolLane` wrapper.
-- **Stage 2 — enrichment + confidence + concerns + prose.** Move the Enricher
-  (signatures/blame/references/related, ~950 LOC of file/git/store I/O) behind
-  the seam so `ConfidenceLevel`/`NextAction`/`Avoid`/`Concerns` — which read its
-  outputs — move down with it. This is the ordering-critical, high-churn stage.
-- **Stage 3 — inline byte-budget** relocation (presentation policy on the pack).
+- **Stage 2a (done) — completeness + advice prose.** `AssembleConcerns`,
+  `AssembleNextActionHint`, `firstInlinedAnchor` move to `retrieve`, beside the
+  `BuildNextAction`/`BuildAvoid`/`ConfidenceLevel` prose already there; mcp keeps
+  byte-neutral wrappers. `toNeutralSyms` now carries `Signature` (coverage is
+  judged on name+signature). `ConfidenceLevel`/`NextAction`/`Avoid` were already
+  L2 from a prior stage, so this closes the "confidence + concerns + prose" half.
+- **Stage 2b (open — needs a call) — the Enricher.** Discovery that reshapes the
+  plan: the Enricher is **not `ask`-local**. Its **path-based legs**
+  (`pairSiblingTests`, `findNearestDoc`, `enrichBlame`) are shared by
+  locate/review/graph_impact on wire `map[string]*PathMeta`/paths. Only the
+  top-level `Enrich(ctx, intent, k, *ContextOutput)` **orchestrator** is
+  `ask`-only, and it is the sole thing welded to the wire `ContextOutput`. So
+  moving "the Enricher" to L2 is a fork, not a given:
+    - **(A) Injected enrich hook.** The Enricher stays a shared mcp component;
+      the ask Assembler orchestrates it via an injected `Enrich` hook (like
+      reweight/formatRole already are), so Assemble owns evidence→inline→enrich→
+      prose and produces a complete pack. Requires inline to move into the
+      sequence too (it must precede enrich — the Concerns/Signature ordering
+      trap). Localized pack↔wire bridge glue in the ask router. In scope for ask.
+    - **(B) Promote the Enricher to an L2 domain service.** Neutralize `PathMeta`
+      + `RefHit`, move the Enricher to `retrieve`, adapt the three other verbs'
+      local `map[string]*PathMeta` to the neutral twin. Structurally cleanest
+      ("three identical transports" all the way down), but cross-verb — belongs
+      in its own issue, not folded into the ask seam.
+    - **(C) Stop at 2a.** Evidence core + advice/completeness are L2; the
+      Enricher orchestration stays edge-side. Honest, minimal, defers A/B.
+- **Stage 3 — inline byte-budget** relocation (presentation policy on the pack);
+  subsumed into (A) if that path is taken, since inline must join the sequence.
 
 Out of scope for all three: a distinct HTTP/CLI *direct* path that skips
 `*Server` (unnecessary — all three transports already share the adapter; the
