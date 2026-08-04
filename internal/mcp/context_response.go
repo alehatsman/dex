@@ -7,18 +7,12 @@ import (
 	"github.com/alehatsman/dex/internal/retrieve"
 )
 
-// ─── next_action / avoid (prose) ──────────────────────────────────────────
+// ─── next_action reconciliation (transport) ───────────────────────────────
 //
-// The prose builders live in internal/retrieve (BuildNextAction /
-// BuildAvoid) over neutral types. These thin wrappers convert the wire
-// hit slices to neutral and delegate. hasBlameAnnotations stays here —
-// it reads the wire PathMeta annotations and feeds BuildNextAction a
-// plain bool.
-
-// buildNextAction is the transport wrapper over retrieve.BuildNextAction.
-func buildNextAction(intent string, reads []SuggestedRead, symbols []SymbolHit, topSemScore float32, graphEdgeCount, refCount int, hasBlame bool) string {
-	return retrieve.BuildNextAction(intent, toNeutralReads(reads), toNeutralSyms(symbols), topSemScore, graphEdgeCount, refCount, hasBlame)
-}
+// The prose builders themselves (BuildNextAction / BuildAvoid / ConfidenceLevel
+// + the #725 completeness advice) live and compose in internal/retrieve.Assemble.
+// What stays here is the transport-only post-step that keeps the deterministic
+// next_action from contradicting the LLM-synthesized answer shipped alongside it.
 
 // reconcileNextActionWithAnswer keeps next_action from contradicting the
 // synthesized answer it ships with. next_action is built deterministically
@@ -73,24 +67,6 @@ func firstAnswerLeadPath(answer string) string {
 		return ""
 	}
 	return m[1]
-}
-
-// buildAvoid is the transport wrapper over retrieve.BuildAvoid.
-func buildAvoid(intent string, semHits []SemHit, symbols []SymbolHit, graphIndexed, hasRefs bool) string {
-	return retrieve.BuildAvoid(intent, toNeutralSems(semHits), toNeutralSyms(symbols), graphIndexed, hasRefs)
-}
-
-// hasBlameAnnotations reports whether any path in the annotations map
-// carries blame metadata — the signal that BuildNextAction uses to
-// avoid emitting "weak match" on editing_context responses that have
-// concrete authorship data.
-func hasBlameAnnotations(anns map[string]PathMeta) bool {
-	for _, m := range anns {
-		if m.LastCommit != "" || m.LastAuthor != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // ─── inline helpers ───────────────────────────────────────────────────────

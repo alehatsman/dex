@@ -59,6 +59,21 @@ func TestAssembleNextActionHint(t *testing.T) {
 	if !strings.Contains(got, "intent=assemble") {
 		t.Errorf("multi-site editing_context must nudge toward assemble, got %q", got)
 	}
+	// Single site (nReads+nsyms == 1) → no nudge, directive returned as-is.
+	if got := AssembleNextActionHint(IntentEditingContext, "Edit here.", Concerns{}, 1, nil); got != "Edit here." {
+		t.Errorf("single-site editing_context must not nudge, got %q", got)
+	}
+
+	// assemble, dropped concerns but NO inlined anchor → generic caveat with
+	// counts, no chained trace directive.
+	noAnchor := Concerns{Covered: []string{"parse"}, Dropped: []string{"prune", "history"}}
+	got = AssembleNextActionHint(IntentAssemble, "Base.", noAnchor, 0, []SymHit{{QualifiedName: "pkg.Parse"}})
+	if !strings.Contains(got, "DROPPED") || !strings.Contains(got, "1 of 3") {
+		t.Errorf("dropped concerns must surface a caveat with counts, got %q", got)
+	}
+	if strings.Contains(got, "Trace callees") {
+		t.Errorf("no inlined anchor must not chain a trace directive, got %q", got)
+	}
 
 	// assemble with a dropped concern + an inlined anchor → concrete chained
 	// trace directive naming the first inlined symbol.

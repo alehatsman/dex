@@ -171,14 +171,3 @@ func assembleConcerns(syms []SymbolHit, keywords []string) *AssembleConcerns {
 	return &AssembleConcerns{Covered: c.Covered, Dropped: c.Dropped}
 }
 
-// assembleNextActionHint is the transport wrapper over
-// retrieve.AssembleNextActionHint. A nil concerns pointer maps to the zero
-// Concerns (empty Dropped), so the assemble caveat is skipped exactly as
-// before.
-func assembleNextActionHint(intent, next string, concerns *AssembleConcerns, nReads int, syms []SymbolHit) string {
-	var c retrieve.Concerns
-	if concerns != nil {
-		c = retrieve.Concerns{Covered: concerns.Covered, Dropped: concerns.Dropped}
-	}
-	return retrieve.AssembleNextActionHint(intent, next, c, nReads, toNeutralSyms(syms))
-}

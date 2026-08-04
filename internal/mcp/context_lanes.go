@@ -35,18 +35,3 @@ func (s *Server) runSemanticLane(ctx context.Context, st store.Searcher, embedTe
 	}
 	return out, embedFailed
 }
-
-// maxSemanticScore returns the highest Score across all semantic
-// hits. semantic_hits isn't strictly score-sorted (summary merging
-// and rerank-driven re-ordering permute it), so using [0] for the
-// "weak match" decision mis-classifies strong responses whenever a
-// low-score symbol-driven entry gets promoted to the front.
-func maxSemanticScore(hits []SemHit) float32 {
-	var top float32
-	for _, h := range hits {
-		if h.Score > top {
-			top = h.Score
-		}
-	}
-	return top
-}
