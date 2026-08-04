@@ -53,6 +53,20 @@ const (
 // intent. Returns the result and whether anything was emitted — the
 // caller uses the bool to keep avoid/next_action consistent.
 //
+// What each intent gets (relocated from the former mcp graph wrapper, #114):
+//
+//	symbol_lookup     — neighbors of the matched symbol (sibling methods,
+//	                    fields, embedded types) so the agent sees a type's
+//	                    whole "shape" without reading the file.
+//	editing_context   — same neighborhood, plus the enclosing type so
+//	                    refactors know what else uses the type.
+//	architecture      — package/type roll-up for packages surfaced by the
+//	                    semantic lane, anchored on PageRank.
+//	package_topology  — import edges between packages in the neighborhood.
+//	callers           — incoming calls edges into matched symbols (Go-only;
+//	                    other languages fall back to BM25 chunk search).
+//	callees           — outgoing calls edges from matched symbols.
+//
 // Node IDs and edge from/to are rewritten to a compact form
 // (`<pkg-tail>.<qualified-name>`) so agents don't have to parse
 // `<module>::<pkg>::<kind>::<qname>` for every reference. The full
