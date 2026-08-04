@@ -29,12 +29,6 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// assembleMaxExpand bounds how many call-graph neighbors ExpandAssemblePool
-// (#723, lever A) adds to an assemble working set. The downstream byte cap
-// does the real cut; this just keeps a hub node's fan-out from flooding the
-// symbol list with low-relevance neighbors.
-const assembleMaxExpand = 24
-
 // ─── tool: ask ────────────────────────────────────────────────────────────
 
 type ContextInput struct {
@@ -437,21 +431,19 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		Service:    retrieve.Service{Embed: s.EmbedClient},
 		FormatRole: formatRole,
 		IsNonImpl:  isNonImplPath,
+		IsTestPath: isTestPath,
 	}.Assemble(ctx, st, retrieve.AssembleRequest{
-		Intent:      intent,
-		Question:    in.Question,
-		Candidates:  candidates,
-		K:           k,
-		Graph:       graphView,
-		EmbedText:   retrieve.ExpandedEmbedText(in.Question, exp),
-		FTSText:     retrieve.ExpandedFTSText(in.Question, exp),
-		Expanded:    out.Expanded,
-		ProjectRoot: p.Root,
-		NoInline:    in.NoInline,
-		Spread:      st,
-		Inline: func(pk *retrieve.ContextPack) {
-			inlineWirePack(p.Root, intent, graphView, candidates.Identifiers, in.Question, in.NoInline, pk)
-		},
+		Intent:       intent,
+		Question:     in.Question,
+		Candidates:   candidates,
+		K:            k,
+		Graph:        graphView,
+		EmbedText:    retrieve.ExpandedEmbedText(in.Question, exp),
+		FTSText:      retrieve.ExpandedFTSText(in.Question, exp),
+		Expanded:     out.Expanded,
+		ProjectRoot:  p.Root,
+		NoInline:     in.NoInline,
+		Spread:       st,
 		RecordShadow: s.recordShadowPack,
 		Reweight:     s.reweightPack,
 	})

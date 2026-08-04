@@ -3,8 +3,6 @@ package mcp
 import (
 	"fmt"
 	"strings"
-
-	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 // ─── next_action reconciliation (transport) ───────────────────────────────
@@ -67,11 +65,4 @@ func firstAnswerLeadPath(answer string) string {
 		return ""
 	}
 	return m[1]
-}
-
-// ─── inline helpers ───────────────────────────────────────────────────────
-
-// countInlinedBytes sums len(Content) / len(Body) across the three output lanes.
-func countInlinedBytes(reads []SuggestedRead, syms []SymbolHit, sem []SemHit) int {
-	return retrieve.CountInlinedBytes(toNeutralReads(reads), toNeutralSyms(syms), toNeutralSems(sem))
 }

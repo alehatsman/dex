@@ -1,6 +1,6 @@
 # 113 + 114 — finish the #95a mcp→retrieve seam cleanup
 
-Status: in progress (2026-08-04)
+Status: done (2026-08-04) — both commits landed, full suite green
 Branch: `refactor/113-114-seam-cleanup`
 Issues: #113 (relocate inline machinery), #114 (delete dead ask/context funcs)
 

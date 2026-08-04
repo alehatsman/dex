@@ -18,7 +18,7 @@ import (
 //
 // Assemble runs the whole `ask` domain sequence: symbol lane (+role +non-impl
 // demotion) → semantic lane → graph neighborhood → lane-agreement reweight →
-// suggested reads → inline byte-budgeting (injected presentation hook) →
+// suggested reads → inline byte-budgeting (native, #113) →
 // enrichment (signatures/blame/references/related) → confidence and the prose
 // directives. It returns a complete ContextPack; the transport router only
 // projects it and applies transport concerns (session/throttle/answer/dedup).
@@ -36,6 +36,11 @@ type Assembler struct {
 	// directive on real code. Injected (transport owns path classification).
 	// nil treats every path as implementation.
 	IsNonImpl func(string) bool
+
+	// IsTestPath reports whether a path is test source — the inline pass
+	// drops test bodies for non-editing intents. Injected (transport owns
+	// path classification); nil treats nothing as a test.
+	IsTestPath func(string) bool
 }
 
 // AssembleRequest carries the resolved per-request inputs the evidence core
@@ -53,12 +58,6 @@ type AssembleRequest struct {
 	ProjectRoot string         // repo root for the enrichment file/git legs
 	NoInline    bool           // caller opted out of body inlining
 	Spread      store.Spreader // optional; nil = no spreading-activation related files
-
-	// Inline is the byte-budget inlining pass (#725 presentation policy). It
-	// widens the assemble working set along the call graph and stamps
-	// Body/Content/Concerns onto the pack. Transport-owned (it is presentation,
-	// not retrieval) and injected as a hook; nil skips inlining.
-	Inline func(pack *ContextPack)
 
 	// Reweight, when non-nil, reorders the semantic hits (lane-agreement
 	// feedback, #731) after graph enrichment. RecordShadow logs the
@@ -124,15 +123,13 @@ func (a Assembler) Assemble(ctx context.Context, st store.Searcher, req Assemble
 	return pack, AssembleMeta{EmbedFailed: embedFailed}
 }
 
-// finish runs the post-evidence tail on the pack: inline (injected) →
+// finish runs the post-evidence tail on the pack: inline (native, #113) →
 // enrichment → confidence + prose. Ordering is load-bearing: inline widens the
 // working set and computes Concerns over the pre-enrich signatures; enrichment
 // then fills signatures/refs/blame; the prose reads both. Mirrors the former
 // edge sequence exactly.
 func (a Assembler) finish(ctx context.Context, st store.Searcher, req AssembleRequest, pack *ContextPack) {
-	if req.Inline != nil {
-		req.Inline(pack)
-	}
+	a.inlinePack(req, pack)
 
 	(&Enricher{ProjectRoot: req.ProjectRoot, Store: st, Spread: req.Spread}).
 		Enrich(ctx, req.Intent, req.K, pack)
