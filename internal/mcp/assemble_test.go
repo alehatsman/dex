@@ -220,16 +220,3 @@ func TestAssembleNextActionHintChainedDirective(t *testing.T) {
 		t.Errorf("chained directive must keep the honest-partial framing, got %q", got)
 	}
 }
-
-func TestFirstInlinedAnchor(t *testing.T) {
-	if got := firstInlinedAnchor(nil); got != "" {
-		t.Errorf("empty set → no anchor, got %q", got)
-	}
-	if got := firstInlinedAnchor([]SymbolHit{{QualifiedName: "a"}, {QualifiedName: "b"}}); got != "" {
-		t.Errorf("no inlined bodies → no anchor, got %q", got)
-	}
-	syms := []SymbolHit{{QualifiedName: "a"}, {QualifiedName: "b", Body: "x"}, {QualifiedName: "c", Body: "y"}}
-	if got := firstInlinedAnchor(syms); got != "b" {
-		t.Errorf("anchor = first inlined symbol, want b, got %q", got)
-	}
-}

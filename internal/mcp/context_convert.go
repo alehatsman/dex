@@ -37,6 +37,7 @@ func toNeutralSyms(in []SymbolHit) []retrieve.SymHit {
 			StartLine:     in[i].StartLine,
 			EndLine:       in[i].EndLine,
 			Kind:          in[i].Kind,
+			Signature:     in[i].Signature,
 			Body:          in[i].Body,
 			Truncated:     in[i].Truncated,
 		}

@@ -201,3 +201,94 @@ func BuildAvoid(intent string, semHits []SemHit, symbols []SymHit, graphIndexed,
 	}
 	return ""
 }
+
+// ─── assemble completeness + advice (#725 / #729) ─────────────────────────
+
+// AssembleConcerns computes the completeness signal for an assemble working
+// set (#725): a concern keyword is Covered when some symbol whose body was
+// actually inlined is about it — its qualified name or signature contains the
+// keyword, the same name+signature haystack the submodular selector scored —
+// and Dropped otherwise. Both lists preserve coverage-key order.
+//
+// Coverage is judged on name+signature, not body text: a stem like "store"
+// occurs in countless bodies, but a symbol is only ABOUT a concern when the
+// concern is in what it is named or declared. This mirrors the selection
+// (coverageOrder) so the signal matches the set it explains. A dropped concern
+// means the byte budget left no symbol about it in the set — the working set is
+// partial, not a false floor. Returns a zero Concerns when there are no keys.
+func AssembleConcerns(syms []SymHit, keywords []string) Concerns {
+	var c Concerns
+	if len(keywords) == 0 {
+		return c
+	}
+	covered := make(map[string]bool, len(keywords))
+	for i := range syms {
+		if syms[i].Body == "" {
+			continue // not inlined → not in the working set
+		}
+		hay := strings.ToLower(syms[i].QualifiedName + " " + syms[i].Signature)
+		for _, k := range keywords {
+			if !covered[k] && strings.Contains(hay, k) { // keywords are pre-lowercased
+				covered[k] = true
+			}
+		}
+	}
+	for _, k := range keywords {
+		if covered[k] {
+			c.Covered = append(c.Covered, k)
+		} else {
+			c.Dropped = append(c.Dropped, k)
+		}
+	}
+	return c
+}
+
+// AssembleNextActionHint augments next_action with the #725/#729 signals:
+//   - editing_context with a multi-site shape → nudge toward intent=assemble,
+//     which batches the symbol bodies for the change in one call (serves the
+//     "batch reads" instinct without the agent knowing the knob exists).
+//   - assemble with dropped concerns → caveat that the set is partial, so an
+//     honest partial isn't mistaken for a complete answer. When the set has a
+//     covered anchor to chain from, the caveat upgrades to a concrete graph
+//     move ("trace callees of <anchor> …") so the agent is handed the next
+//     command, not just told the set is incomplete (#729).
+func AssembleNextActionHint(intent, next string, concerns Concerns, nReads int, syms []SymHit) string {
+	switch intent {
+	case IntentEditingContext:
+		if nReads+len(syms) > 1 {
+			return strings.TrimSpace(next +
+				" To pull the full working set of symbol bodies for this change in one call, re-run with intent=assemble.")
+		}
+	case IntentAssemble:
+		if len(concerns.Dropped) > 0 {
+			total := len(concerns.Covered) + len(concerns.Dropped)
+			if anchor := firstInlinedAnchor(syms); anchor != "" {
+				// Concrete chained directive: the dropped concerns are likely
+				// one hop out from a symbol already in the set (same lever-A
+				// call-graph logic expandAssemblePool widens on), so name the
+				// anchor and the move that reaches them (#729).
+				return strings.TrimSpace(fmt.Sprintf("%s Working set covers %d of %d concerns — DROPPED %v. Trace callees of %s (or raise k) to pull them into the set. Do not treat this set as complete.",
+					next, len(concerns.Covered), total, concerns.Dropped, anchor))
+			}
+			// No covered anchor to chain from (e.g. nsyms=0 pure-prose miss):
+			// keep the generic caveat — there's nothing in the set to trace
+			// from. That prose gap is upstream retrieval (#687/#723), not here.
+			return strings.TrimSpace(fmt.Sprintf("%s Working set covers %d of %d concerns — DROPPED %v have no symbol body here; narrow the question to them, raise k, or read them directly. Do not treat this set as complete.",
+				next, len(concerns.Covered), total, concerns.Dropped))
+		}
+	}
+	return next
+}
+
+// firstInlinedAnchor returns the qualified name of the first symbol whose body
+// was actually inlined into the assemble set, so a chained "trace callees of
+// <anchor>" directive points at a symbol that is really in the working set.
+// Empty when nothing was inlined (the pure-prose miss where nsyms=0).
+func firstInlinedAnchor(syms []SymHit) string {
+	for i := range syms {
+		if syms[i].Body != "" {
+			return syms[i].QualifiedName
+		}
+	}
+	return ""
+}
