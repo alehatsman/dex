@@ -19,7 +19,7 @@ type ContextPack struct {
 	SemanticHits   []SemHit        // existing retrieve.SemHit
 	SuggestedReads []SuggestedRead // existing retrieve.SuggestedRead
 	Graph          *GraphResult    // existing retrieve.GraphResult
-	References      []RefHit
+	References     []RefHit
 	Annotations    map[string]PathMeta // per-file enrichment keyed by rel path
 	RelatedFiles   []string            // spreading activation (#688), assemble intent only
 

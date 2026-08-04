@@ -49,9 +49,9 @@ type AssembleRequest struct {
 	EmbedText   string
 	FTSText     string
 	Expanded    bool
-	ProjectRoot string          // repo root for the enrichment file/git legs
-	NoInline    bool            // caller opted out of body inlining
-	Spread      store.Spreader  // optional; nil = no spreading-activation related files
+	ProjectRoot string         // repo root for the enrichment file/git legs
+	NoInline    bool           // caller opted out of body inlining
+	Spread      store.Spreader // optional; nil = no spreading-activation related files
 
 	// Inline is the byte-budget inlining pass (#725 presentation policy). It
 	// widens the assemble working set along the call graph and stamps

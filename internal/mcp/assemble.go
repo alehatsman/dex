@@ -170,4 +170,3 @@ func assembleConcerns(syms []SymbolHit, keywords []string) *AssembleConcerns {
 	c := retrieve.AssembleConcerns(toNeutralSyms(syms), keywords)
 	return &AssembleConcerns{Covered: c.Covered, Dropped: c.Dropped}
 }
-
