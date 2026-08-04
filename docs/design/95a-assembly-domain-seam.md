@@ -116,8 +116,21 @@ suite + `mooncake task ci-fast`, byte-identical output (#93 tool-schema unchange
       in its own issue, not folded into the ask seam.
     - **(C) Stop at 2a.** Evidence core + advice/completeness are L2; the
       Enricher orchestration stays edge-side. Honest, minimal, defers A/B.
-- **Stage 3 — inline byte-budget** relocation (presentation policy on the pack);
-  subsumed into (A) if that path is taken, since inline must join the sequence.
+- **Tail fold (done) — Assemble owns the full sequence.** `Assemble` now runs
+  evidence → inline → enrichment → confidence + prose and returns a complete
+  `ContextPack`; the router is a thin adapter (project once + transport concerns).
+  Enrichment and prose are direct L2 calls; inline stays transport-owned
+  presentation, **injected** as `AssembleRequest.Inline` (a wire adapter, same
+  shape as the reweight/formatRole hooks) — this is option A from 2b, and it
+  subsumes the old "Stage 3 inline relocation". The tail is gated on the
+  no-lane-hits condition so the empty path stays byte-identical. Now-dead mcp
+  prose wrappers removed; their table tests moved down to `retrieve`.
+
+- **Later (not blocking) — relocate inline into `retrieve`.** The inline
+  machinery (`inlineWorkingSet`/`expandAssemblePool`/`nodeToSymbolHit`) still
+  lives in mcp behind the injected hook. Moving it into `retrieve` (using the
+  injected `FormatRole`) would drop the hook and the wire round-trip, but it is
+  pure presentation policy and carries no correctness value — deferred.
 
 Out of scope for all three: a distinct HTTP/CLI *direct* path that skips
 `*Server` (unnecessary — all three transports already share the adapter; the
@@ -135,6 +148,8 @@ seam is what makes it possible later), and applying the pattern to other verbs.
 
 ## Acceptance
 
-- `retrieve.Assembler.Assemble` returns a populated `ContextPack` unit-tested in L2 without a `*Server`.
-- `*Server.contextRouter*` output byte-identical (existing tests green).
-- `mooncake task ci-fast` green.
+- `retrieve.Assembler.Assemble` returns a **complete** `ContextPack` (evidence +
+  inline + enrichment + confidence + prose), unit-tested in L2 without a `*Server`. ✓
+- `*Server.contextRouter*` is a thin adapter: build request → `Assemble` →
+  project once → transport concerns. Output byte-identical (existing tests green). ✓
+- `mooncake task ci-fast` green. ✓
