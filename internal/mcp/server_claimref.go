@@ -48,14 +48,3 @@ func normalizeClaimRef(root, ref string) string {
 	}
 	return pathPart + ":" + strings.Join(parts[1:], ":")
 }
-
-// normalizeRefPath makes a ref path project-relative and slash-cleaned so it
-// matches the index's stored paths. Used by resolveByRef.
-func normalizeRefPath(root, path string) string {
-	if filepath.IsAbs(path) {
-		if rel, err := filepath.Rel(root, path); err == nil && !strings.HasPrefix(rel, "..") {
-			path = rel
-		}
-	}
-	return filepath.ToSlash(filepath.Clean(path))
-}
