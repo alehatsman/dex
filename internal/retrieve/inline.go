@@ -64,7 +64,7 @@ func InlineCapsFor(intent string) InlineCaps {
 //
 // isTest classifies a path as test source — injected by the transport,
 // which owns path classification.
-func InlineContent(projectRoot, intent string, reads []SuggestedRead, syms []SymHit, sem []SemHit, isTest func(string) bool) {
+func InlineContent(projectRoot, intent string, reads []SuggestedRead, syms []SymbolHit, sem []SemHit, isTest func(string) bool) {
 	InlineContentKeyed(projectRoot, intent, reads, syms, sem, nil, isTest, nil)
 }
 
@@ -73,7 +73,7 @@ func InlineContent(projectRoot, intent string, reads []SuggestedRead, syms []Sym
 // every other intent. isNonImpl (also assemble-only) demotes non-implementation
 // symbols within the coverage ordering. InlineContent is the keyword-free shim
 // for callers that don't assemble.
-func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms []SymHit, sem []SemHit, keywords []string, isTest func(string) bool, isNonImpl func(string) bool) {
+func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms []SymbolHit, sem []SemHit, keywords []string, isTest func(string) bool, isNonImpl func(string) bool) {
 	in := &inliner{
 		projectRoot: projectRoot,
 		intent:      intent,
@@ -104,7 +104,7 @@ func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms 
 // assembled set (#723). With no keywords it falls back to natural order so
 // assemble still inlines bodies. Budget 0 = order all covering symbols; the
 // byte cap downstream does the real cut.
-func coverageOrder(syms []SymHit, keywords []string, isNonImpl func(string) bool) []int {
+func coverageOrder(syms []SymbolHit, keywords []string, isNonImpl func(string) bool) []int {
 	if len(keywords) == 0 {
 		order := make([]int, len(syms))
 		for i := range syms {
@@ -273,7 +273,7 @@ func (in *inliner) fillImports(reads []SuggestedRead) {
 // for IntentSymbolLookup: "what does X do" is the canonical case where
 // the agent reads the body next, so inlining eliminates an otherwise
 // certain follow-up Read.
-func (in *inliner) fillSymbolBodies(syms []SymHit) {
+func (in *inliner) fillSymbolBodies(syms []SymbolHit) {
 	order := make([]int, len(syms))
 	for i := range syms {
 		order[i] = i
@@ -285,7 +285,7 @@ func (in *inliner) fillSymbolBodies(syms []SymHit) {
 // stopping when the shared budget is spent. The order is natural rank for
 // symbol_lookup and submodular coverage order for assemble (#687); the
 // per-symbol fetch and budget accounting are identical either way.
-func (in *inliner) fillSymbolBodiesOrdered(syms []SymHit, order []int) {
+func (in *inliner) fillSymbolBodiesOrdered(syms []SymbolHit, order []int) {
 	for _, idx := range order {
 		if in.budget <= 0 {
 			return
@@ -368,7 +368,7 @@ func maxScore(sem []SemHit) float32 {
 // output lanes. Imports are excluded — they are accounted against the
 // budget at fill time but not reported here, matching the prior
 // transport-side accounting.
-func CountInlinedBytes(reads []SuggestedRead, syms []SymHit, sem []SemHit) int {
+func CountInlinedBytes(reads []SuggestedRead, syms []SymbolHit, sem []SemHit) int {
 	n := 0
 	for i := range reads {
 		n += len(reads[i].Content)

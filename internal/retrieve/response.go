@@ -47,7 +47,7 @@ func ConfidenceLevel(intent string, nSymbols int, topSemScore float32, graphEdge
 	return "low"
 }
 
-func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, topSemScore float32, graphEdgeCount, refCount int, hasBlame bool) string {
+func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymbolHit, topSemScore float32, graphEdgeCount, refCount int, hasBlame bool) string {
 	if len(reads) == 0 && len(symbols) == 0 && graphEdgeCount == 0 {
 		return "Rephrase the question with concrete keywords or fall back to grep."
 	}
@@ -97,7 +97,7 @@ func BuildNextAction(intent string, reads []SuggestedRead, symbols []SymHit, top
 	return ""
 }
 
-func buildSymbolLookupNextAction(reads []SuggestedRead, symbols []SymHit) string {
+func buildSymbolLookupNextAction(reads []SuggestedRead, symbols []SymbolHit) string {
 	if len(symbols) > 0 && len(reads) > 0 {
 		if distinctSymbolPaths(symbols) > 1 {
 			return fmt.Sprintf("%d definitions across files — closest is %s lines %d-%d; consult the full `symbols` array for the rest.",
@@ -112,7 +112,7 @@ func buildSymbolLookupNextAction(reads []SuggestedRead, symbols []SymHit) string
 	return ""
 }
 
-func buildCallerCalleeNextAction(intent string, _ []SuggestedRead, symbols []SymHit, graphEdgeCount, refCount int) string {
+func buildCallerCalleeNextAction(intent string, _ []SuggestedRead, symbols []SymbolHit, graphEdgeCount, refCount int) string {
 	rel := "callers"
 	if intent == IntentCallees {
 		rel = "callees"
@@ -139,11 +139,11 @@ func buildCallerCalleeNextAction(intent string, _ []SuggestedRead, symbols []Sym
 }
 
 // distinctSymbolPaths counts the number of unique paths across a
-// SymHit slice. Used by BuildNextAction to signal when a single
+// SymbolHit slice. Used by BuildNextAction to signal when a single
 // identifier resolves to multiple definitions (e.g. `Options` exists
 // in chat, graph, index, store, watch packages) so the agent reads
 // the full symbols array rather than stopping at the first read.
-func distinctSymbolPaths(syms []SymHit) int {
+func distinctSymbolPaths(syms []SymbolHit) int {
 	seen := make(map[string]struct{}, len(syms))
 	for _, s := range syms {
 		if s.Path == "" {
@@ -171,7 +171,7 @@ func readsSkimDirective(reads []SuggestedRead) string {
 // either calls-edges or BM25 chunk search populated `references`,
 // the agent has the surface it needs, so the message shifts from
 // "verify with grep" to "do not re-grep, the list is here."
-func BuildAvoid(intent string, semHits []SemHit, symbols []SymHit, graphIndexed, hasRefs bool) string {
+func BuildAvoid(intent string, semHits []SemHit, symbols []SymbolHit, graphIndexed, hasRefs bool) string {
 	if intent == IntentCallers || intent == IntentCallees {
 		if hasRefs {
 			return "Do not grep for the identifier — the `references` field already lists call sites. For Go this comes from the static graph; for other languages it's a BM25 chunk search over the bare symbol name (verify edge cases by reading the snippets)."
@@ -216,7 +216,7 @@ func BuildAvoid(intent string, semHits []SemHit, symbols []SymHit, graphIndexed,
 // (coverageOrder) so the signal matches the set it explains. A dropped concern
 // means the byte budget left no symbol about it in the set — the working set is
 // partial, not a false floor. Returns a zero Concerns when there are no keys.
-func AssembleConcerns(syms []SymHit, keywords []string) Concerns {
+func AssembleConcerns(syms []SymbolHit, keywords []string) Concerns {
 	var c Concerns
 	if len(keywords) == 0 {
 		return c
@@ -252,7 +252,7 @@ func AssembleConcerns(syms []SymHit, keywords []string) Concerns {
 //     covered anchor to chain from, the caveat upgrades to a concrete graph
 //     move ("trace callees of <anchor> …") so the agent is handed the next
 //     command, not just told the set is incomplete (#729).
-func AssembleNextActionHint(intent, next string, concerns Concerns, nReads int, syms []SymHit) string {
+func AssembleNextActionHint(intent, next string, concerns Concerns, nReads int, syms []SymbolHit) string {
 	switch intent {
 	case IntentEditingContext:
 		if nReads+len(syms) > 1 {
@@ -284,7 +284,7 @@ func AssembleNextActionHint(intent, next string, concerns Concerns, nReads int, 
 // was actually inlined into the assemble set, so a chained "trace callees of
 // <anchor>" directive points at a symbol that is really in the working set.
 // Empty when nothing was inlined (the pure-prose miss where nsyms=0).
-func firstInlinedAnchor(syms []SymHit) string {
+func firstInlinedAnchor(syms []SymbolHit) string {
 	for i := range syms {
 		if syms[i].Body != "" {
 			return syms[i].QualifiedName

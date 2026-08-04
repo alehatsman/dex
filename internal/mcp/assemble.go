@@ -162,7 +162,7 @@ func inlineWorkingSet(root, intent string, view *graphquery.View, out *ContextOu
 // assembleConcerns is the transport wrapper over retrieve.AssembleConcerns.
 // It preserves the nil-pointer semantics the wire type wants (omitted field
 // when there are no coverage keys) while the completeness judgment itself
-// lives in L2 over the neutral SymHit — see retrieve.AssembleConcerns.
+// lives in L2 over the neutral SymbolHit — see retrieve.AssembleConcerns.
 func assembleConcerns(syms []SymbolHit, keywords []string) *AssembleConcerns {
 	if len(keywords) == 0 {
 		return nil

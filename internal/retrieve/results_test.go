@@ -8,7 +8,7 @@ import (
 // and the symbol lane has exact hits, their files must lead suggested_reads
 // so the agent is not misdirected by unrelated semantic hits.
 func TestPickSuggestedReads_AssembleSymbolFirst(t *testing.T) {
-	syms := []SymHit{
+	syms := []SymbolHit{
 		{Path: "internal/mcp/server_review.go", StartLine: 387, EndLine: 414, QualifiedName: "hunkRisk"},
 		{Path: "internal/mcp/server_review.go", StartLine: 220, EndLine: 311, QualifiedName: "reviewFile"},
 	}

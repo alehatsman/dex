@@ -47,7 +47,7 @@ func TestSelectMaxCoverage_SkipsZeroCoverageAndZeroCost(t *testing.T) {
 }
 
 func TestCoverageOrder_RanksByKeywordCoverage(t *testing.T) {
-	syms := []SymHit{
+	syms := []SymbolHit{
 		{QualifiedName: "pkg.Unrelated", StartLine: 1, EndLine: 30},                                   // 0: covers none
 		{QualifiedName: "pkg.ParseConfig", Signature: "func ParseConfig()", StartLine: 1, EndLine: 5}, // 1: covers parse,config cheaply
 		{QualifiedName: "pkg.Config", StartLine: 1, EndLine: 50},                                      // 2: covers config, expensive
@@ -65,7 +65,7 @@ func TestCoverageOrder_RanksByKeywordCoverage(t *testing.T) {
 }
 
 func TestCoverageOrder_NoKeywordsIsNaturalOrder(t *testing.T) {
-	syms := []SymHit{{QualifiedName: "A"}, {QualifiedName: "B"}, {QualifiedName: "C"}}
+	syms := []SymbolHit{{QualifiedName: "A"}, {QualifiedName: "B"}, {QualifiedName: "C"}}
 	got := coverageOrder(syms, nil, nil)
 	if !reflect.DeepEqual(got, []int{0, 1, 2}) {
 		t.Fatalf("no keywords should give natural order, got %v", got)

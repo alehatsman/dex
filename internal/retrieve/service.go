@@ -62,45 +62,19 @@ type SemHit struct {
 	Truncated bool
 }
 
-// SymHit is one symbol-lane result in neutral form. It carries the raw
-// call-graph centrality columns rather than a formatted role string so
-// the transport (which owns the role-display vocabulary, shared with the
-// search/symbol/graph tools) formats the Role at the edge.
-type SymHit struct {
-	QualifiedName string
-	// Name is the raw symbol name as stored (may be empty); it is the
-	// first argument formatRole consumes at the transport edge.
-	Name            string
-	Path            string
-	StartLine       int
-	EndLine         int
-	Kind            string
-	InDegree        int
-	OutDegree       int
-	CrossPkgCallers int
-	Betweenness     float64
-	// Signature is the stored declaration header from graph_nodes.signature.
-	// Non-empty for Go symbols when the graph is built.
-	Signature string
-	// Body / Truncated are the inline overlay, populated by
-	// InlineContent (the symbol's source slice and its clip flag).
-	Body      string
-	Truncated bool
-}
-
 // SymbolLane runs FindSymbol for each detected identifier and returns
 // deduplicated symbol hits plus the set of file paths the lane touched
 // (used by the suggested_reads ranker). At most k hits are returned. The
-// transport maps these to wire SymbolHits — formatting the Role and
-// applying the test/doc/fixture demotion that lands the prose directive
-// on real implementation code.
-func (svc Service) SymbolLane(ctx context.Context, st store.Searcher, cand IntentCandidates, k int) ([]SymHit, map[string]struct{}) {
+// rows carry the raw centrality columns (Role unformatted); the assembler's
+// injected FormatRole renders Role at the edge, and applies the
+// test/doc/fixture demotion that lands the prose directive on real code.
+func (svc Service) SymbolLane(ctx context.Context, st store.Searcher, cand IntentCandidates, k int) ([]SymbolHit, map[string]struct{}) {
 	if len(cand.Identifiers) == 0 {
 		return nil, nil
 	}
 	paths := map[string]struct{}{}
 	seen := map[string]struct{}{}
-	var out []SymHit
+	var out []SymbolHit
 	for _, id := range cand.Identifiers {
 		// FindSymbol expects the bare name; strip a "(*T)." prefix.
 		bare := id
@@ -121,7 +95,7 @@ func (svc Service) SymbolLane(ctx context.Context, st store.Searcher, cand Inten
 			if h.Name == "" {
 				qual = bare
 			}
-			out = append(out, SymHit{
+			out = append(out, SymbolHit{
 				QualifiedName:   qual,
 				Name:            h.Name,
 				Path:            h.Path,

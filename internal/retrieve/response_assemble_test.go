@@ -7,11 +7,11 @@ import (
 
 func TestAssembleConcerns(t *testing.T) {
 	// No keys → zero Concerns (transport maps this to a nil pointer).
-	if c := AssembleConcerns([]SymHit{{QualifiedName: "Foo", Body: "x"}}, nil); len(c.Covered)+len(c.Dropped) != 0 {
+	if c := AssembleConcerns([]SymbolHit{{QualifiedName: "Foo", Body: "x"}}, nil); len(c.Covered)+len(c.Dropped) != 0 {
 		t.Fatalf("no keywords → zero Concerns, got %+v", c)
 	}
 
-	syms := []SymHit{
+	syms := []SymbolHit{
 		{QualifiedName: "config.Parse", Signature: "func Parse(b []byte) Config", Body: "..."}, // inlined
 		{QualifiedName: "history.Prune", Signature: "func Prune()"},                            // NOT inlined (no body)
 	}
@@ -33,7 +33,7 @@ func TestAssembleConcerns(t *testing.T) {
 func TestAssembleConcernsSignatureHaystack(t *testing.T) {
 	// A concern present ONLY in the signature (not the qualified name) must
 	// still count as covered — guards the toNeutralSyms Signature carry-through.
-	syms := []SymHit{{QualifiedName: "x.Handler", Signature: "func Handler(store Store)", Body: "..."}}
+	syms := []SymbolHit{{QualifiedName: "x.Handler", Signature: "func Handler(store Store)", Body: "..."}}
 	c := AssembleConcerns(syms, []string{"store"})
 	if len(c.Covered) != 1 || c.Covered[0] != "store" {
 		t.Errorf("signature-only concern must be covered, got %+v", c)
@@ -44,10 +44,10 @@ func TestFirstInlinedAnchor(t *testing.T) {
 	if got := firstInlinedAnchor(nil); got != "" {
 		t.Errorf("empty set → no anchor, got %q", got)
 	}
-	if got := firstInlinedAnchor([]SymHit{{QualifiedName: "a"}, {QualifiedName: "b"}}); got != "" {
+	if got := firstInlinedAnchor([]SymbolHit{{QualifiedName: "a"}, {QualifiedName: "b"}}); got != "" {
 		t.Errorf("no inlined bodies → no anchor, got %q", got)
 	}
-	syms := []SymHit{{QualifiedName: "a"}, {QualifiedName: "b", Body: "x"}, {QualifiedName: "c", Body: "y"}}
+	syms := []SymbolHit{{QualifiedName: "a"}, {QualifiedName: "b", Body: "x"}, {QualifiedName: "c", Body: "y"}}
 	if got := firstInlinedAnchor(syms); got != "b" {
 		t.Errorf("anchor = first inlined symbol, want b, got %q", got)
 	}
@@ -67,7 +67,7 @@ func TestAssembleNextActionHint(t *testing.T) {
 	// assemble, dropped concerns but NO inlined anchor → generic caveat with
 	// counts, no chained trace directive.
 	noAnchor := Concerns{Covered: []string{"parse"}, Dropped: []string{"prune", "history"}}
-	got = AssembleNextActionHint(IntentAssemble, "Base.", noAnchor, 0, []SymHit{{QualifiedName: "pkg.Parse"}})
+	got = AssembleNextActionHint(IntentAssemble, "Base.", noAnchor, 0, []SymbolHit{{QualifiedName: "pkg.Parse"}})
 	if !strings.Contains(got, "DROPPED") || !strings.Contains(got, "1 of 3") {
 		t.Errorf("dropped concerns must surface a caveat with counts, got %q", got)
 	}
@@ -78,7 +78,7 @@ func TestAssembleNextActionHint(t *testing.T) {
 	// assemble with a dropped concern + an inlined anchor → concrete chained
 	// trace directive naming the first inlined symbol.
 	c := Concerns{Covered: []string{"parse"}, Dropped: []string{"prune"}}
-	syms := []SymHit{{QualifiedName: "pkg.Parse", Body: "func Parse()"}}
+	syms := []SymbolHit{{QualifiedName: "pkg.Parse", Body: "func Parse()"}}
 	got = AssembleNextActionHint(IntentAssemble, "Base.", c, 0, syms)
 	if !strings.Contains(got, "Trace callees of pkg.Parse") {
 		t.Errorf("anchored partial must chain a concrete trace directive, got %q", got)

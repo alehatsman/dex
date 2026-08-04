@@ -10,12 +10,12 @@ import (
 
 func TestBuildNextAction(t *testing.T) {
 	reads := []SuggestedRead{{Path: "x.go", StartLine: 10, EndLine: 30}}
-	syms := []SymHit{{QualifiedName: "Foo", Path: "x.go"}}
+	syms := []SymbolHit{{QualifiedName: "Foo", Path: "x.go"}}
 
 	cases := []struct {
 		intent     string
 		reads      []SuggestedRead
-		syms       []SymHit
+		syms       []SymbolHit
 		topSem     float32
 		graphEdges int
 		refs       int
@@ -25,7 +25,7 @@ func TestBuildNextAction(t *testing.T) {
 		{IntentSymbolLookup, reads, syms, 0.8, 0, 0, false, "Read x.go lines 10-30"},
 		// symbol_lookup ambiguous: 3 symbols across 3 distinct paths —
 		// next_action must signal the count, not say "the definition".
-		{IntentSymbolLookup, reads, []SymHit{
+		{IntentSymbolLookup, reads, []SymbolHit{
 			{QualifiedName: "Options", Path: "a.go"},
 			{QualifiedName: "Options", Path: "b.go"},
 			{QualifiedName: "Options", Path: "c.go"},
@@ -74,13 +74,13 @@ func TestBuildNextAction(t *testing.T) {
 
 func TestBuildAvoid(t *testing.T) {
 	sem := []SemHit{{Path: "a.go"}}
-	syms := []SymHit{{QualifiedName: "Foo", Path: "a.go"}}
+	syms := []SymbolHit{{QualifiedName: "Foo", Path: "a.go"}}
 
 	cases := []struct {
 		name         string
 		intent       string
 		sem          []SemHit
-		syms         []SymHit
+		syms         []SymbolHit
 		graphIndexed bool
 		want         string
 	}{

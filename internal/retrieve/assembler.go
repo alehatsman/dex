@@ -13,7 +13,8 @@ import (
 // (via Service); the per-request policy the transport deliberately owns —
 // the call-graph role vocabulary and path classification, both shared with
 // the search/symbol/graph tools — is injected as funcs rather than moved
-// down, per the design note on Service.SymHit.
+// down, so SymbolHit carries the raw centrality columns and FormatRole
+// renders Role at the edge (#112).
 //
 // Assemble runs the whole `ask` domain sequence: symbol lane (+role +non-impl
 // demotion) → semantic lane → graph neighborhood → lane-agreement reweight →
@@ -87,7 +88,7 @@ func (a Assembler) Assemble(ctx context.Context, st store.Searcher, req Assemble
 	sort.SliceStable(rawSyms, func(i, j int) bool {
 		return !a.nonImpl(rawSyms[i].Path) && a.nonImpl(rawSyms[j].Path)
 	})
-	pack.Symbols = a.toSymbolHits(rawSyms)
+	pack.Symbols = a.formatRoles(rawSyms)
 
 	// Semantic lane — runs unless embed is offline.
 	sems, embedFailed := a.Service.SemanticLane(ctx, st, req.EmbedText, req.FTSText, req.K)
@@ -142,18 +143,17 @@ func (a Assembler) finish(ctx context.Context, st store.Searcher, req AssembleRe
 		graphEdges = len(pack.Graph.Edges)
 	}
 	hasBlame := hasBlameMeta(pack.Annotations)
-	syms := packSymHits(pack.Symbols)
 
-	pack.NextAction = BuildNextAction(req.Intent, pack.SuggestedReads, syms, topSem, graphEdges, len(pack.References), hasBlame)
+	pack.NextAction = BuildNextAction(req.Intent, pack.SuggestedReads, pack.Symbols, topSem, graphEdges, len(pack.References), hasBlame)
 	pack.Confidence = ConfidenceLevel(req.Intent, len(pack.Symbols), topSem, graphEdges, hasBlame)
 	// #725: nudge edit-intent toward assemble, and caveat a partial assemble set.
-	pack.NextAction = AssembleNextActionHint(req.Intent, pack.NextAction, pack.Concerns, len(pack.SuggestedReads), syms)
+	pack.NextAction = AssembleNextActionHint(req.Intent, pack.NextAction, pack.Concerns, len(pack.SuggestedReads), pack.Symbols)
 	// If the directive's primary read was truncated at inline time, flag that so
 	// the agent knows the inlined Content isn't the full chunk.
 	if !req.NoInline && len(pack.SuggestedReads) > 0 && pack.SuggestedReads[0].Truncated {
 		pack.NextAction += " The inlined content is truncated at inline-budget caps — Read the full line range if you need the tail."
 	}
-	pack.Avoid = BuildAvoid(req.Intent, pack.SemanticHits, syms, req.Graph != nil, len(pack.References) > 0)
+	pack.Avoid = BuildAvoid(req.Intent, pack.SemanticHits, pack.Symbols, req.Graph != nil, len(pack.References) > 0)
 }
 
 // maxSemScore returns the top semantic Score (hits aren't strictly sorted —
@@ -180,29 +180,6 @@ func hasBlameMeta(anns map[string]PathMeta) bool {
 	return false
 }
 
-// packSymHits projects the rich pack SymbolHit onto the lean SymHit the prose
-// builders (BuildNextAction/BuildAvoid/AssembleConcerns) read — name, path and
-// the inlined body/signature that coverage and anchors key on.
-func packSymHits(in []SymbolHit) []SymHit {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]SymHit, len(in))
-	for i := range in {
-		out[i] = SymHit{
-			QualifiedName: in[i].QualifiedName,
-			Path:          in[i].Path,
-			StartLine:     in[i].StartLine,
-			EndLine:       in[i].EndLine,
-			Kind:          in[i].Kind,
-			Signature:     in[i].Signature,
-			Body:          in[i].Body,
-			Truncated:     in[i].Truncated,
-		}
-	}
-	return out
-}
-
 // nonImpl applies the injected classifier, defaulting to "everything is
 // implementation" when none is wired.
 func (a Assembler) nonImpl(p string) bool {
@@ -212,28 +189,22 @@ func (a Assembler) nonImpl(p string) bool {
 	return a.IsNonImpl(p)
 }
 
-// toSymbolHits maps neutral lane rows to the rich pack SymbolHit, formatting
-// the Role via the injected formatter. Doc/Body/Handle/SeenTurn/Truncated
-// stay zero here — enrichment, inline and edge stamping fill them later.
-func (a Assembler) toSymbolHits(raw []SymHit) []SymbolHit {
+// formatRoles renders Role on each lane row via the injected FormatRole,
+// reading the raw centrality columns. It returns a fresh slice so the pack's
+// Role-stamped copy stays independent of the rawSyms the graph/pick lanes read
+// (they consume the pre-Role rows). Doc/Body/Handle/SeenTurn stay zero here —
+// enrichment, inline and edge stamping fill them later. nil formatter (or nil
+// input) leaves Role empty.
+func (a Assembler) formatRoles(raw []SymbolHit) []SymbolHit {
 	if raw == nil {
 		return nil
 	}
-	out := make([]SymbolHit, 0, len(raw))
-	for _, h := range raw {
-		role := ""
-		if a.FormatRole != nil {
-			role = a.FormatRole(h.Name, h.InDegree, h.OutDegree, h.CrossPkgCallers, h.Betweenness)
+	out := make([]SymbolHit, len(raw))
+	copy(out, raw)
+	if a.FormatRole != nil {
+		for i := range out {
+			out[i].Role = a.FormatRole(out[i].Name, out[i].InDegree, out[i].OutDegree, out[i].CrossPkgCallers, out[i].Betweenness)
 		}
-		out = append(out, SymbolHit{
-			QualifiedName: h.QualifiedName,
-			Path:          h.Path,
-			StartLine:     h.StartLine,
-			EndLine:       h.EndLine,
-			Kind:          h.Kind,
-			Signature:     h.Signature,
-			Role:          role,
-		})
 	}
 	return out
 }

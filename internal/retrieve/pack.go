@@ -73,21 +73,39 @@ type Concerns struct {
 	Dropped []string
 }
 
-// SymbolHit is the domain twin of mcp.SymbolHit (same fields, no json tags).
-// The pack owns the domain shape; mcp maps it to the wire type at L4.
+// SymbolHit is the one neutral (transport-free) symbol type used across the
+// retrieve package — the symbol-lane row, the pack member, and the shape the
+// prose/inline/graph lanes read (#112). It maps to the wire mcp.SymbolHit at
+// L4 for the presentation fields; the lane-input fields below (Name +
+// centrality) have no wire twin — they exist only to feed the injected Role
+// formatter and are zero once Role is set.
+//
+// Field lifecycle: SymbolLane fills the identity + centrality columns; the
+// assembler's injected FormatRole reads Name/centrality to fill Role; enrich
+// fills Signature/Doc; inline fills Body/Truncated; envelope fills Handle/SeenTurn.
 type SymbolHit struct {
 	QualifiedName string
-	Path          string
-	StartLine     int
-	EndLine       int
-	Kind          string
-	Signature     string // declaration line — the API contract without the body
-	Doc           string // contiguous comment block above the decl
-	Body          string // full source, populated only for symbol_lookup intent
-	Role          string
-	Truncated     bool
-	Handle        string // opaque expansion handle for this range (#344)
-	SeenTurn      int    // >0 when already surfaced this session (#344)
+	// Name is the raw symbol name as stored (may be empty); FormatRole's first
+	// argument. Lane input — not projected to the wire type.
+	Name      string
+	Path      string
+	StartLine int
+	EndLine   int
+	Kind      string
+	// Call-graph centrality columns — inputs the injected FormatRole consumes
+	// to render Role. Lane inputs; unread by the prose/inline/graph lanes and
+	// not projected to the wire type.
+	InDegree        int
+	OutDegree       int
+	CrossPkgCallers int
+	Betweenness     float64
+	Signature       string // declaration line — the API contract without the body
+	Doc             string // contiguous comment block above the decl
+	Body            string // full source, populated only for symbol_lookup intent
+	Role            string
+	Truncated       bool
+	Handle          string // opaque expansion handle for this range (#344)
+	SeenTurn        int    // >0 when already surfaced this session (#344)
 }
 
 // RefHit is a single BM25-backed reference to a symbol (domain twin of

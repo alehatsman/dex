@@ -58,7 +58,7 @@ const (
 // `<module>::<pkg>::<kind>::<qname>` for every reference. The full
 // IDs remain available via the in-memory view for any future query
 // that takes a graph ID as input.
-func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols []SymHit) (*GraphResult, bool) {
+func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols []SymbolHit) (*GraphResult, bool) {
 	if view == nil {
 		return nil, false
 	}
@@ -83,7 +83,7 @@ func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols
 type graphEnricher struct {
 	view     *graphquery.View
 	semHits  []SemHit
-	symbols  []SymHit
+	symbols  []SymbolHit
 	gr       *GraphResult
 	seenNode map[string]struct{}
 	seenEdge map[string]struct{}

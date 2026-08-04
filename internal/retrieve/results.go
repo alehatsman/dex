@@ -54,7 +54,7 @@ func isReadableRange(h SemHit) bool {
 //
 // isNonImpl classifies a path as non-implementation (docs, build/CI
 // config) — injected by the transport, which owns path classification.
-func PickSuggestedReads(intent string, semHits []SemHit, symbols []SymHit, symbolPaths map[string]struct{}, view *graphquery.View, isNonImpl func(string) bool) []SuggestedRead {
+func PickSuggestedReads(intent string, semHits []SemHit, symbols []SymbolHit, symbolPaths map[string]struct{}, view *graphquery.View, isNonImpl func(string) bool) []SuggestedRead {
 	// Exploration intents (architecture/package_topology) take a denser bundle
 	// — the caller is forming a mental model, so more files pays off more than a
 	// slim one (see the #95d evidence policy in policy.go / InlineCapsFor).

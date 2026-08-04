@@ -28,10 +28,10 @@ func toNeutralSems(in []SemHit) []retrieve.SemHit {
 	return out
 }
 
-func toNeutralSyms(in []SymbolHit) []retrieve.SymHit {
-	out := make([]retrieve.SymHit, len(in))
+func toNeutralSyms(in []SymbolHit) []retrieve.SymbolHit {
+	out := make([]retrieve.SymbolHit, len(in))
 	for i := range in {
-		out[i] = retrieve.SymHit{
+		out[i] = retrieve.SymbolHit{
 			QualifiedName: in[i].QualifiedName,
 			Path:          in[i].Path,
 			StartLine:     in[i].StartLine,
