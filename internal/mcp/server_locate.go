@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/output"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -199,11 +200,11 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	}
 
 	// Static enrichment legs — pure filesystem / git, all best-effort.
-	e := &Enricher{projectRoot: p.Root}
-	out.Tests = e.pairSiblingTests(res.path)
-	out.NearestDoc = e.findNearestDoc(res.path)
-	meta := map[string]*PathMeta{}
-	e.enrichBlame(ctx, []string{res.path}, meta)
+	e := &retrieve.Enricher{ProjectRoot: p.Root}
+	out.Tests = e.PairSiblingTests(res.path)
+	out.NearestDoc = e.FindNearestDoc(res.path)
+	meta := map[string]*retrieve.PathMeta{}
+	e.EnrichBlame(ctx, []string{res.path}, meta)
 	if m := meta[res.path]; m != nil {
 		out.LastCommit = m.LastCommit
 		out.LastAuthor = m.LastAuthor
@@ -242,7 +243,7 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 
 	// Optional: related open issues via `gh` — opt-in, best-effort, hermetic-safe.
 	if in.Issues && res.symbol != "" {
-		out.Issues = relatedIssues(ctx, p.Root, bareSymbolName(res.symbol))
+		out.Issues = relatedIssues(ctx, p.Root, retrieve.BareSymbolName(res.symbol))
 	}
 
 	return nil, out, nil
@@ -314,7 +315,7 @@ func resolveBySymbol(ctx context.Context, st *store.Store, sym string) locateTar
 	// Frames and qualified names ('main.Greet', 'mcp.(*Server).Run') don't match
 	// the exact-name index; fall back to the bare trailing identifier.
 	if len(hits) == 0 {
-		if bare := bareSymbolName(sym); bare != sym {
+		if bare := retrieve.BareSymbolName(sym); bare != sym {
 			// For receiver-qualified forms like (*T).Method, fetch more candidates
 			// so we can prefer method/function over field — a field named Context
 			// loses to a method named Context when the input is (*Server).Context.

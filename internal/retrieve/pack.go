@@ -20,7 +20,8 @@ type ContextPack struct {
 	SuggestedReads []SuggestedRead // existing retrieve.SuggestedRead
 	Graph          *GraphResult    // existing retrieve.GraphResult
 	References      []RefHit
-	RelatedFiles   []string // spreading activation (#688), assemble intent only
+	Annotations    map[string]PathMeta // per-file enrichment keyed by rel path
+	RelatedFiles   []string            // spreading activation (#688), assemble intent only
 
 	// --- Accumulated knowledge ---
 	KnowledgeFacts []string     // top project facts by salience
@@ -91,6 +92,20 @@ type RefHit struct {
 	Line    int
 	Snippet string // single-line excerpt
 	Symbol  string // which symbol this is a ref to
+}
+
+// PathMeta is the per-file annotation bundle keyed by relative path in
+// ContextPack.Annotations (domain twin of mcp.PathMeta). Fields are populated
+// conditionally by intent and may individually be empty — all data about a
+// single file lives in one place, joined by path.
+type PathMeta struct {
+	LastCommit string   // short SHA + short date + author (editing_context)
+	LastAuthor string   // author of the last commit (editing_context)
+	Owners     []string // CODEOWNERS matches (editing_context)
+	NearestDoc string   // closest doc walking up: CLAUDE.md > doc.go > README.md
+	Tests      []string // sibling test files paired by language convention
+	BuildTags  string   // //go:build constraint + package clause
+	Package    string   // package name (Go)
 }
 
 // ScopedNote is a durable note bound to a file's path via its scope

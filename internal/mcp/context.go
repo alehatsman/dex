@@ -476,7 +476,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		}
 	}
 	inlineWorkingSet(p.Root, intent, graphView, &out, candidates.Identifiers, in.Question, in.NoInline)
-	(&Enricher{projectRoot: p.Root, Store: st, Spread: st}).Enrich(ctx, intent, k, &out)
+	enrichWire(ctx, p.Root, st, intent, k, &out)
 	topSem := maxSemanticScore(out.SemanticHits)
 	var graphEdgeCount int
 	if out.Graph != nil {

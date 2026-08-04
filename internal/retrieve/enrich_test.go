@@ -1,14 +1,26 @@
-package mcp
+package retrieve
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
+
+// writeFile is a local test helper (the enrichment legs read real files off
+// disk) — mirrors the mcp package's helper of the same name.
+func writeFile(t *testing.T, p, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // stubSpreader is a test-only store.Spreader that returns a fixed list.
 type stubSpreader struct {
@@ -24,16 +36,16 @@ var _ store.Spreader = (*stubSpreader)(nil)
 // ─── assemble spreading-activation leg (#688) ────────────────────────────
 
 func TestEnrichAssemblePopulatesRelatedFiles(t *testing.T) {
-	out := &ContextOutput{
+	out := &ContextPack{
 		SuggestedReads: []SuggestedRead{
 			{Path: "internal/store/store.go", StartLine: 1, EndLine: 10},
 		},
 	}
 	sp := &stubSpreader{out: []string{"internal/store/store_search.go", "internal/mcp/context.go"}}
 	(&Enricher{
-		projectRoot: t.TempDir(),
+		ProjectRoot: t.TempDir(),
 		Spread:      sp,
-	}).Enrich(context.Background(), retrieve.IntentAssemble, 8, out)
+	}).Enrich(context.Background(), IntentAssemble, 8, out)
 
 	if len(out.RelatedFiles) == 0 {
 		t.Fatal("expected related_files to be populated for assemble intent")
@@ -44,20 +56,20 @@ func TestEnrichAssemblePopulatesRelatedFiles(t *testing.T) {
 }
 
 func TestEnrichAssembleNilSpreadSkipped(t *testing.T) {
-	out := &ContextOutput{
+	out := &ContextPack{
 		SuggestedReads: []SuggestedRead{
 			{Path: "x.go", StartLine: 1, EndLine: 5},
 		},
 	}
 	// No Spread wired — related_files must remain empty.
-	(&Enricher{projectRoot: t.TempDir()}).Enrich(context.Background(), retrieve.IntentAssemble, 8, out)
+	(&Enricher{ProjectRoot: t.TempDir()}).Enrich(context.Background(), IntentAssemble, 8, out)
 	if len(out.RelatedFiles) != 0 {
 		t.Errorf("expected no related_files when Spread is nil; got %v", out.RelatedFiles)
 	}
 }
 
 func TestEnrichNonAssembleNoRelatedFiles(t *testing.T) {
-	out := &ContextOutput{
+	out := &ContextPack{
 		SuggestedReads: []SuggestedRead{
 			{Path: "x.go", StartLine: 1, EndLine: 5},
 		},
@@ -65,9 +77,9 @@ func TestEnrichNonAssembleNoRelatedFiles(t *testing.T) {
 	sp := &stubSpreader{out: []string{"y.go"}}
 	// Non-assemble intent: Spread wired but related_files must stay empty.
 	(&Enricher{
-		projectRoot: t.TempDir(),
+		ProjectRoot: t.TempDir(),
 		Spread:      sp,
-	}).Enrich(context.Background(), retrieve.IntentBehaviorSearch, 8, out)
+	}).Enrich(context.Background(), IntentBehaviorSearch, 8, out)
 	if len(out.RelatedFiles) != 0 {
 		t.Errorf("related_files should be empty for non-assemble intent; got %v", out.RelatedFiles)
 	}
@@ -97,7 +109,7 @@ func TestPairSiblingTests(t *testing.T) {
 		{"unknown.cpp", nil}, // unsupported extension
 	}
 	for _, tc := range cases {
-		got := (&Enricher{projectRoot: root}).pairSiblingTests(tc.path)
+		got := (&Enricher{ProjectRoot: root}).PairSiblingTests(tc.path)
 		if len(got) != len(tc.want) {
 			t.Errorf("pairSiblingTests(%q) = %v, want %v", tc.path, got, tc.want)
 			continue
@@ -119,20 +131,20 @@ func TestFindNearestDoc(t *testing.T) {
 	writeFile(t, filepath.Join(root, "internal", "CLAUDE.md"), "# claude\n")
 
 	// CLAUDE.md at internal/ wins over README.md at root.
-	got := (&Enricher{projectRoot: root}).findNearestDoc("internal/deep/pkg/code.go")
+	got := (&Enricher{ProjectRoot: root}).FindNearestDoc("internal/deep/pkg/code.go")
 	if got != "internal/CLAUDE.md" {
 		t.Errorf("got %q, want internal/CLAUDE.md", got)
 	}
 
 	// A file at the top level falls back to root README.md.
 	writeFile(t, filepath.Join(root, "top.go"), "package x\n")
-	got = (&Enricher{projectRoot: root}).findNearestDoc("top.go")
+	got = (&Enricher{ProjectRoot: root}).FindNearestDoc("top.go")
 	if got != "README.md" {
 		t.Errorf("got %q, want README.md", got)
 	}
 
 	// The README itself shouldn't be returned as its own nearest doc.
-	got = (&Enricher{projectRoot: root}).findNearestDoc("README.md")
+	got = (&Enricher{ProjectRoot: root}).FindNearestDoc("README.md")
 	if got == "README.md" {
 		t.Error("findNearestDoc should not return the file itself")
 	}
@@ -598,11 +610,11 @@ func TestEnrichEditingContext(t *testing.T) {
 	writeFile(t, filepath.Join(root, "pkg", "CLAUDE.md"), "# claude\n")
 	writeFile(t, filepath.Join(root, "CODEOWNERS"), "pkg/ @backend\n")
 
-	out := &ContextOutput{
+	out := &ContextPack{
 		SuggestedReads: []SuggestedRead{{Path: "pkg/core.go", StartLine: 6, EndLine: 6}},
 		Symbols:        []SymbolHit{{QualifiedName: "Run", Path: "pkg/core.go", StartLine: 6, EndLine: 6}},
 	}
-	(&Enricher{projectRoot: root}).Enrich(context.Background(), retrieve.IntentEditingContext, 8, out)
+	(&Enricher{ProjectRoot: root}).Enrich(context.Background(), IntentEditingContext, 8, out)
 
 	if out.Symbols[0].Signature == "" {
 		t.Error("symbol signature should be populated")
@@ -643,11 +655,11 @@ func TestEnrichBehaviorSearchOmitsHeavyLegs(t *testing.T) {
 	writeFile(t, filepath.Join(root, "README.md"), "# x\n")
 	writeFile(t, filepath.Join(root, "CODEOWNERS"), "* @owner\n")
 
-	out := &ContextOutput{
+	out := &ContextPack{
 		SuggestedReads: []SuggestedRead{{Path: "x.go", StartLine: 3, EndLine: 3}},
 		Symbols:        []SymbolHit{{QualifiedName: "F", Path: "x.go", StartLine: 3, EndLine: 3}},
 	}
-	(&Enricher{projectRoot: root}).Enrich(context.Background(), retrieve.IntentBehaviorSearch, 8, out)
+	(&Enricher{ProjectRoot: root}).Enrich(context.Background(), IntentBehaviorSearch, 8, out)
 
 	meta, ok := out.Annotations["x.go"]
 	if !ok {
@@ -680,7 +692,7 @@ func TestRunReferencesLaneNilStore(t *testing.T) {
 		StartLine:     3,
 		EndLine:       3,
 	}
-	got := (&Enricher{projectRoot: t.TempDir()}).runReferencesLane(context.Background(), 8, []SymbolHit{def})
+	got := (&Enricher{ProjectRoot: t.TempDir()}).runReferencesLane(context.Background(), 8, []SymbolHit{def})
 	if got != nil {
 		t.Errorf("expected nil when Store is nil; got %v", got)
 	}

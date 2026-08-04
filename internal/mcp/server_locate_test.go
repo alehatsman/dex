@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -70,7 +71,7 @@ func TestLocateBySymbol(t *testing.T) {
 	if len(out.Callers) > 0 {
 		found := false
 		for _, c := range out.Callers {
-			if bareSymbolName(c.QualifiedName) == "Caller" {
+			if retrieve.BareSymbolName(c.QualifiedName) == "Caller" {
 				found = true
 			}
 		}

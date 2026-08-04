@@ -1,4 +1,5 @@
-// Package mcp — enrichment legs for the `ask` router.
+// Package retrieve — enrichment legs for the `ask` router (and reused by the
+// locate / review / graph_impact verbs via the exported path legs).
 //
 // enrich.go holds the secondary lanes that the router calls *after*
 // the semantic + symbol lanes have produced the primary bundle. They
@@ -20,7 +21,7 @@
 // All legs are best-effort: any failure (missing git binary, no
 // CODEOWNERS file, unreadable source) leaves the relevant field empty
 // and does not propagate an error to the caller.
-package mcp
+package retrieve
 
 import (
 	"bufio"
@@ -34,7 +35,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/alehatsman/dex/internal/gitenv"
-	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/store"
 )
 
@@ -59,7 +59,7 @@ const (
 // package-level functions that required projectRoot to be threaded through
 // every call.
 type Enricher struct {
-	projectRoot string
+	ProjectRoot string
 	Store       store.Searcher
 	Spread      store.Spreader // optional; nil = no spreading activation
 }
@@ -96,9 +96,9 @@ func (e *Enricher) enrichSymbolsSigDoc(syms []SymbolHit) {
 		}
 		abs := syms[i].Path
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(e.projectRoot, abs)
+			abs = filepath.Join(e.ProjectRoot, abs)
 		}
-		sig, doc := readSignatureAndDoc(abs, syms[i].StartLine, bareSymbolName(syms[i].QualifiedName))
+		sig, doc := readSignatureAndDoc(abs, syms[i].StartLine, BareSymbolName(syms[i].QualifiedName))
 		// Prefer the stored signature from graph_nodes when available —
 		// it comes from go/types and is more accurate than the line-scan heuristic.
 		if syms[i].Signature == "" {
@@ -435,11 +435,6 @@ func looksLikeBashFuncDecl(s string) bool {
 	return i < len(s) && s[i] == '{'
 }
 
-func isIdentChar(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
-		(b >= '0' && b <= '9') || b == '_'
-}
-
 func isCommentLine(s string) bool {
 	return strings.HasPrefix(s, "//") || strings.HasPrefix(s, "#")
 }
@@ -479,12 +474,12 @@ func looksLikeDeclaration(line string) bool {
 
 // ─── leg 2: tests pairing (path heuristic, always-on) ────────────────────
 
-// pairSiblingTests returns relative paths of test files that look like
+// PairSiblingTests returns relative paths of test files that look like
 // siblings of the input path, using language-conventional naming. It
 // never recurses and never opens files beyond os.Stat to confirm
 // existence. Returns paths relative to projectRoot when possible so
 // they match the format used elsewhere in the bundle.
-func (e *Enricher) pairSiblingTests(relPath string) []string {
+func (e *Enricher) PairSiblingTests(relPath string) []string {
 	if relPath == "" {
 		return nil
 	}
@@ -523,7 +518,7 @@ func (e *Enricher) pairSiblingTests(relPath string) []string {
 	var out []string
 	for _, c := range candidates {
 		rel := filepath.Join(dir, c)
-		abs := filepath.Join(e.projectRoot, rel)
+		abs := filepath.Join(e.ProjectRoot, rel)
 		if _, err := os.Stat(abs); err == nil {
 			out = append(out, rel)
 		}
@@ -537,11 +532,11 @@ func (e *Enricher) pairSiblingTests(relPath string) []string {
 // first one found while walking up wins.
 var nearestDocFiles = []string{"CLAUDE.md", "doc.go", "README.md"}
 
-// findNearestDoc walks up from filepath.Dir(relPath) toward
+// FindNearestDoc walks up from filepath.Dir(relPath) toward
 // projectRoot, returning the first doc file it finds. Returns "" if
 // none. Cap on traversal: stops at projectRoot or at depth 10 (defends
 // against pathological project layouts).
-func (e *Enricher) findNearestDoc(relPath string) string {
+func (e *Enricher) FindNearestDoc(relPath string) string {
 	if relPath == "" {
 		return ""
 	}
@@ -549,7 +544,7 @@ func (e *Enricher) findNearestDoc(relPath string) string {
 	for range 10 {
 		for _, name := range nearestDocFiles {
 			candidate := filepath.Join(dir, name)
-			abs := filepath.Join(e.projectRoot, candidate)
+			abs := filepath.Join(e.ProjectRoot, candidate)
 			if _, err := os.Stat(abs); err == nil {
 				// Don't return relPath itself — if the suggested read IS
 				// the README, skipping it as a sibling doc is correct.
@@ -585,7 +580,7 @@ func (e *Enricher) runReferencesLane(ctx context.Context, k int, symbols []Symbo
 		if len(out) >= totalCap {
 			break
 		}
-		bare := bareSymbolName(sym.QualifiedName)
+		bare := BareSymbolName(sym.QualifiedName)
 		if bare == "" {
 			continue
 		}
@@ -623,9 +618,9 @@ func (e *Enricher) runReferencesLane(ctx context.Context, k int, symbols []Symbo
 	return out
 }
 
-// bareSymbolName strips a "(*T)." or "T." prefix and returns the
+// BareSymbolName strips a "(*T)." or "T." prefix and returns the
 // rightmost identifier.
-func bareSymbolName(qualified string) string {
+func BareSymbolName(qualified string) string {
 	if i := strings.LastIndex(qualified, "."); i >= 0 {
 		return qualified[i+1:]
 	}
@@ -644,10 +639,10 @@ func firstContentLine(s string) string {
 
 // ─── leg 5: git blame + CODEOWNERS (editing_context only) ────────────────
 
-// enrichBlame populates LastCommit / LastAuthor on the meta for each
+// EnrichBlame populates LastCommit / LastAuthor on the meta for each
 // path. One `git log -1` subprocess per path, bounded by blameTimeout
 // individually. If `git` isn't available, returns silently.
-func (e *Enricher) enrichBlame(ctx context.Context, paths []string, meta map[string]*PathMeta) {
+func (e *Enricher) EnrichBlame(ctx context.Context, paths []string, meta map[string]*PathMeta) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return
 	}
@@ -655,7 +650,7 @@ func (e *Enricher) enrichBlame(ctx context.Context, paths []string, meta map[str
 		cctx, cancel := context.WithTimeout(ctx, blameTimeout)
 		// %h|%ad|%an|%s with date=short keeps the field compact.
 		cmd := exec.CommandContext(cctx, "git",
-			"-C", e.projectRoot,
+			"-C", e.ProjectRoot,
 			"log", "-1",
 			"--format=%h|%ad|%an|%s",
 			"--date=short",
@@ -688,7 +683,7 @@ func (e *Enricher) enrichBlame(ctx context.Context, paths []string, meta map[str
 // standard locations, or "".
 func (e *Enricher) codeownersPath() string {
 	for _, rel := range []string{"CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"} {
-		abs := filepath.Join(e.projectRoot, rel)
+		abs := filepath.Join(e.ProjectRoot, rel)
 		if _, err := os.Stat(abs); err == nil {
 			return abs
 		}
@@ -790,7 +785,7 @@ func (e *Enricher) enrichBuildTags(paths []string, meta map[string]*PathMeta) {
 		}
 		abs := p
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(e.projectRoot, p)
+			abs = filepath.Join(e.ProjectRoot, p)
 		}
 		tags, pkg := readBuildTagsAndPackage(abs)
 		if tags == "" && pkg == "" {
@@ -889,14 +884,14 @@ func assembleSeeds(reads []SuggestedRead) []string {
 // fields empty rather than propagating errors. `k` is the request's
 // per-lane cap; passed through to the references lane so wider
 // requests get proportionally wider reference lists.
-func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *ContextOutput) {
+func (e *Enricher) Enrich(ctx context.Context, intent string, k int, pack *ContextPack) {
 	// Symbol-level enrichment is always on when we have symbol hits.
-	if len(out.Symbols) > 0 {
-		e.enrichSymbolsSigDoc(out.Symbols)
+	if len(pack.Symbols) > 0 {
+		e.enrichSymbolsSigDoc(pack.Symbols)
 	}
 
-	paths := uniquePaths(out.SuggestedReads, out.Symbols)
-	if len(paths) == 0 && (intent != retrieve.IntentCallers && intent != retrieve.IntentCallees) {
+	paths := uniquePaths(pack.SuggestedReads, pack.Symbols)
+	if len(paths) == 0 && (intent != IntentCallers && intent != IntentCallees) {
 		return
 	}
 
@@ -904,8 +899,8 @@ func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *Contex
 
 	// Always-on path heuristics.
 	for _, p := range paths {
-		tests := e.pairSiblingTests(p)
-		nearest := e.findNearestDoc(p)
+		tests := e.PairSiblingTests(p)
+		nearest := e.FindNearestDoc(p)
 		if len(tests) == 0 && nearest == "" {
 			continue
 		}
@@ -915,34 +910,34 @@ func (e *Enricher) Enrich(ctx context.Context, intent string, k int, out *Contex
 	}
 
 	// editing_context: blame + owners.
-	if intent == retrieve.IntentEditingContext {
-		e.enrichBlame(ctx, paths, meta)
+	if intent == IntentEditingContext {
+		e.EnrichBlame(ctx, paths, meta)
 		e.enrichOwners(paths, meta)
 	}
 
 	// editing_context, architecture, package_topology: build tags + pkg.
-	if intent == retrieve.IntentEditingContext || intent == retrieve.IntentArchitecture || intent == retrieve.IntentPackageTopology {
+	if intent == IntentEditingContext || intent == IntentArchitecture || intent == IntentPackageTopology {
 		e.enrichBuildTags(paths, meta)
 	}
 
 	if len(meta) > 0 {
-		out.Annotations = make(map[string]PathMeta, len(meta))
+		pack.Annotations = make(map[string]PathMeta, len(meta))
 		for k, v := range meta {
-			out.Annotations[k] = *v
+			pack.Annotations[k] = *v
 		}
 	}
 
 	// References: callers/callees with at least one symbol hit.
-	if (intent == retrieve.IntentCallers || intent == retrieve.IntentCallees) && len(out.Symbols) > 0 {
-		out.References = e.runReferencesLane(ctx, k, out.Symbols)
+	if (intent == IntentCallers || intent == IntentCallees) && len(pack.Symbols) > 0 {
+		pack.References = e.runReferencesLane(ctx, k, pack.Symbols)
 	}
 
 	// assemble: spreading activation over static graph ∪ co-access edges (#688).
-	if intent == retrieve.IntentAssemble && e.Spread != nil {
-		if seeds := assembleSeeds(out.SuggestedReads); len(seeds) > 0 {
+	if intent == IntentAssemble && e.Spread != nil {
+		if seeds := assembleSeeds(pack.SuggestedReads); len(seeds) > 0 {
 			related, err := e.Spread.AssembleRelated(ctx, seeds, 10)
 			if err == nil && len(related) > 0 {
-				out.RelatedFiles = related
+				pack.RelatedFiles = related
 			}
 		}
 	}

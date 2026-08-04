@@ -13,6 +13,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/gitenv"
+	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/review"
 	"github.com/alehatsman/dex/internal/store"
 
@@ -184,7 +185,7 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 			out.Hint = appendHint(out.Hint, "callers and risk tiers reflect the current index, not the diff's historical revision")
 		}
 	}
-	e := &Enricher{projectRoot: p.Root}
+	e := &retrieve.Enricher{ProjectRoot: p.Root}
 	// Cache caller/risk + notes per symbol — the same function often recurs
 	// across hunks and files, and traceVerb/recallFacts are the costly legs.
 	callerCache := map[string]traceResult{}
@@ -233,7 +234,7 @@ type traceResult struct {
 // blame, churn, author) run once; symbol legs run per hunk against the caches.
 // newRef, when non-empty, triggers time-travel: hunk→symbol mapping resolves
 // against the historical file content at that ref instead of the live index.
-func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, root string,
+func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.Enricher, root string,
 	fd review.FileDiff, k int, hunkBudget *int,
 	callerCache map[string]traceResult, noteCache map[string][]LocatedFact,
 	newRef string) ReviewFile {
@@ -241,10 +242,10 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *Enricher, r
 	rf := ReviewFile{Path: fd.Path, OldPath: fd.OldPath, Status: fd.Status}
 
 	// File-level history — pure filesystem / git, best-effort.
-	rf.Tests = e.pairSiblingTests(fd.Path)
-	rf.NearestDoc = e.findNearestDoc(fd.Path)
-	meta := map[string]*PathMeta{}
-	e.enrichBlame(ctx, []string{fd.Path}, meta)
+	rf.Tests = e.PairSiblingTests(fd.Path)
+	rf.NearestDoc = e.FindNearestDoc(fd.Path)
+	meta := map[string]*retrieve.PathMeta{}
+	e.EnrichBlame(ctx, []string{fd.Path}, meta)
 	if m := meta[fd.Path]; m != nil {
 		rf.LastCommit = m.LastCommit
 		rf.LastAuthor = m.LastAuthor
@@ -390,7 +391,7 @@ func resolveHunkSymbols(ctx context.Context, st *store.Store, path string, h rev
 		}
 		seen[name] = true
 		out = append(out, ReviewSymbol{
-			Name: name, Kind: kind, Exported: isExportedName(bareSymbolName(name)),
+			Name: name, Kind: kind, Exported: isExportedName(retrieve.BareSymbolName(name)),
 			StartLine: startLine, EndLine: endLine,
 		})
 	}

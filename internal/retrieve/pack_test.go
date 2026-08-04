@@ -20,7 +20,7 @@ func TestContextPackShape(t *testing.T) {
 			typ:  reflect.TypeOf(ContextPack{}),
 			want: []string{
 				"Intent", "Question",
-				"Symbols", "SemanticHits", "SuggestedReads", "Graph", "References", "RelatedFiles",
+				"Symbols", "SemanticHits", "SuggestedReads", "Graph", "References", "Annotations", "RelatedFiles",
 				"KnowledgeFacts", "ScopedNotes",
 				"Concerns",
 				"Trust",

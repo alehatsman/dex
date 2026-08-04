@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/codemap"
+	"github.com/alehatsman/dex/internal/retrieve"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -351,7 +352,7 @@ func markImpactPartialRecall(out *TraceOutput) {
 // the results into out.GrepHits (deduped against existing call-site lines).
 // Sets out.Recall = "partial" and annotates out.Hint regardless of grep outcome.
 func augmentPartialRecall(ctx context.Context, h toolSurface, symbol, projectRoot string, out *TraceOutput) {
-	bare := bareSymbolName(symbol)
+	bare := retrieve.BareSymbolName(symbol)
 	if bare == "" {
 		out.Recall = "partial"
 		return

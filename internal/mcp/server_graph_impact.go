@@ -10,6 +10,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
+	"github.com/alehatsman/dex/internal/retrieve"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -181,7 +182,7 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 // best-effort (pairSiblingTests is the foo.go ↔ foo_test.go heuristic, so the
 // list is empty when no matching test files exist).
 func impactTestsToRun(root string, targets []TargetMatch, nodes []ImpactNode) []string {
-	e := &Enricher{projectRoot: root}
+	e := &retrieve.Enricher{ProjectRoot: root}
 	seenFile := map[string]bool{}
 	seenTest := map[string]bool{}
 	var out []string
@@ -190,7 +191,7 @@ func impactTestsToRun(root string, targets []TargetMatch, nodes []ImpactNode) []
 			return
 		}
 		seenFile[path] = true
-		for _, tf := range e.pairSiblingTests(path) {
+		for _, tf := range e.PairSiblingTests(path) {
 			if !seenTest[tf] {
 				seenTest[tf] = true
 				out = append(out, tf)
