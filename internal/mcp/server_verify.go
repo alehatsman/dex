@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/gotcha"
-	"github.com/alehatsman/dex/internal/retrieve"
 	"github.com/alehatsman/dex/internal/review"
+	"github.com/alehatsman/dex/internal/testscope"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -75,13 +75,13 @@ func (s *Server) verify(ctx context.Context, req *sdk.CallToolRequest, in Verify
 		return nil, *early, nil
 	}
 
-	pkgs := retrieve.GoPackagesForFiles(files)
+	pkgs := testscope.GoPackagesForFiles(files)
 	if len(pkgs) == 0 {
 		return nil, VerifyOutput{Status: "no-tests", Project: p.Root, Mode: mode,
 			Hint: "no Go package is implicated by the change — verify is Go-only in v1"}, nil
 	}
 
-	cmd := retrieve.SynthVerifyCommand(in.Command, pkgs)
+	cmd := testscope.SynthVerifyCommand(in.Command, pkgs)
 	_, sh, err := s.shellRun(ctx, req, ShellInput{Command: cmd, Cwd: p.Root, TimeoutSecs: in.TimeoutSecs})
 	if err != nil {
 		return nil, VerifyOutput{Status: "error", Project: p.Root, Mode: mode, Command: cmd,
@@ -93,7 +93,7 @@ func (s *Server) verify(ctx context.Context, req *sdk.CallToolRequest, in Verify
 		Project:         p.Root,
 		Mode:            mode,
 		Packages:        pkgs,
-		Tests:           retrieve.SiblingTestFiles(files),
+		Tests:           testscope.SiblingTestFiles(files),
 		Command:         cmd,
 		ExitCode:        sh.ExitCode,
 		Passed:          sh.ExitCode == 0,
@@ -159,5 +159,5 @@ func impactFiles(imp ImpactOutput) []string {
 }
 
 // Test-scope assembly (goPackagesForFiles / siblingTestFiles / synthVerifyCommand)
-// moved to internal/retrieve.GoPackagesForFiles / SiblingTestFiles /
+// moved to internal/testscope.GoPackagesForFiles / SiblingTestFiles /
 // SynthVerifyCommand (#111).

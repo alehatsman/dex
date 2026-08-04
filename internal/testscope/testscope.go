@@ -1,4 +1,9 @@
-package retrieve
+// Package testscope turns the set of files a change implicates into the runnable
+// test scope for the `verify` verb (#111): the Go package list, the sibling test
+// files, and the synthesized test command. Pure over its inputs — the mcp
+// transport owns resolving the changed set (git diff / graph impact) and running
+// the command through the shell pipeline.
+package testscope
 
 import (
 	"os"
@@ -6,12 +11,6 @@ import (
 	"sort"
 	"strings"
 )
-
-// Test-scope assembly — the domain core of the `verify` verb (#111): turn the
-// set of files a change implicates into the runnable test scope (Go package
-// list, sibling test files) and synthesize the test command. Pure over its
-// inputs; the mcp transport owns resolving the changed set (git diff / graph
-// impact) and running the command through the shell pipeline.
 
 // GoPackagesForFiles reduces a file list to the sorted, de-duplicated set of Go
 // package directories, as `go test` patterns ("./internal/mcp", "."). Non-.go

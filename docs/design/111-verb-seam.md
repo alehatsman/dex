@@ -68,9 +68,11 @@ type-shuffling with no real decoupling.
 ## Stage 3 — verify
 
 The **test-scope assembly** — changed files → Go package list, sibling test list,
-synthesized command — moves to `internal/retrieve/testscope.go`
+synthesized command — moves to its own `internal/testscope` package
 (`GoPackagesForFiles`, `SiblingTestFiles`, `SynthVerifyCommand`), with its unit
-tests. `impactFiles` stays transport-side (coupled to the `ImpactOutput` wire
+tests. It lives in a dedicated package rather than `retrieve` because it is
+Go-test-invocation logic, not query-time ranking — the wrong tenant for
+`retrieve`. `impactFiles` stays transport-side (coupled to the `ImpactOutput` wire
 type). The transport keeps resolving the changed set (git diff / graph impact) and
 running the command through the shell pipeline — `verify` is left as
 decode → resolve → scope → run.
