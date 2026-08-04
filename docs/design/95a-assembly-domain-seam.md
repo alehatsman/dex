@@ -87,8 +87,17 @@ suite + `mooncake task ci-fast`, byte-identical output (#93 tool-schema unchange
   byte-neutral wrappers. `toNeutralSyms` now carries `Signature` (coverage is
   judged on name+signature). `ConfidenceLevel`/`NextAction`/`Avoid` were already
   L2 from a prior stage, so this closes the "confidence + concerns + prose" half.
-- **Stage 2b (open — needs a call) — the Enricher.** Discovery that reshapes the
-  plan: the Enricher is **not `ask`-local**. Its **path-based legs**
+- **Stage 2b (done — took path B) — the Enricher → L2 service.** The Enricher
+  moved into `internal/retrieve` as a domain service on the neutral pack types
+  (`PathMeta` twin + `ContextPack.Annotations` added); mcp keeps the thin
+  `enrichWire` adapter in the `inlineContent` shape. All four verbs
+  (ask/locate/review/graph_impact) now call one `retrieve.Enricher` — the shared
+  usage was the argument *for* the move. `BareSymbolName` exported for the shared
+  display path. Byte-neutral: the adapter round-trips exactly Signature/Doc +
+  References/Annotations/RelatedFiles, index-aligned.
+
+  Original framing (the fork that was weighed): the Enricher is **not `ask`-local**.
+  Its **path-based legs**
   (`pairSiblingTests`, `findNearestDoc`, `enrichBlame`) are shared by
   locate/review/graph_impact on wire `map[string]*PathMeta`/paths. Only the
   top-level `Enrich(ctx, intent, k, *ContextOutput)` **orchestrator** is
