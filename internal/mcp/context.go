@@ -212,10 +212,10 @@ type ContextOutput struct {
 	Answer string `json:"answer,omitempty"`
 	// AnswerModel names the model that produced Answer (e.g.
 	// "qwen2.5-coder:14b"). Empty when no answer was synthesized.
-	AnswerModel    string          `json:"answer_model,omitempty"`
-	Endpoint       string          `json:"endpoint,omitempty"` // populated when embed is unreachable
-	Project        string          `json:"project,omitempty"`
-	Intent         string          `json:"intent,omitempty"`
+	AnswerModel string `json:"answer_model,omitempty"`
+	Endpoint    string `json:"endpoint,omitempty"` // populated when embed is unreachable
+	Project     string `json:"project,omitempty"`
+	Intent      string `json:"intent,omitempty"`
 	// Confidence classifies how much to trust the top-ranked evidence:
 	// "high" (symbol hits, strong semantic score, or a strong intent
 	// payload) or "low" (weak ranking — verify with grep before relying on
@@ -403,10 +403,11 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	contextRouterCheckStale(ctx, st, &out, p.Root)
 	s.loadContextFacts(ctx, st, in, &out)
 
-	// enrichGraph sets out.Graph only when it has something to emit.
-	// An absent `graph` key signals "no graph indexed, or this intent
-	// surfaced no structural context" — saves bytes over shipping
-	// `{nodes:[], edges:[]}` on every response.
+	// The assembler sets pack.Graph only when it has something to emit; the
+	// projection below leaves out.Graph absent otherwise. An absent `graph`
+	// key signals "no graph indexed, or this intent surfaced no structural
+	// context" — saves bytes over shipping `{nodes:[], edges:[]}` on every
+	// response.
 
 	// Load the graph view once per request. Nil view = no graph
 	// indexed; intents that need it will note this in `avoid`.
@@ -424,24 +425,42 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		out.Expanded = true
 	}
 
-	// Symbol lane — exact identifier lookups. Cheap, no embed required.
-	// Runs whenever the question contains identifier-shaped tokens, even
-	// for non-symbol intents (a behavior_search question that mentions
-	// `(*Store).Search` benefits from the structural lane too).
-	symbols, symbolPaths := s.runSymbolLane(ctx, st, candidates, k)
-	out.Symbols = symbols
+	// Evidence assembly (#95a / #103) — the symbol/semantic lanes, graph
+	// neighborhood, lane-agreement reweight and suggested-reads ranker now
+	// compose in internal/retrieve.Assembler, producing a ContextPack. The
+	// transport injects the two policies it deliberately owns (the call-graph
+	// role vocabulary and path classification, both shared across tools) plus
+	// the feedback A/B hooks, then projects the pack onto the wire response.
+	// Enrichment, inline byte-budgeting, confidence and the prose directives
+	// remain edge steps below until later cuts move them behind this seam.
+	pack, meta := retrieve.Assembler{
+		Service:    retrieve.Service{Embed: s.EmbedClient},
+		FormatRole: formatRole,
+		IsNonImpl:  isNonImplPath,
+	}.Assemble(ctx, st, retrieve.AssembleRequest{
+		Intent:       intent,
+		Question:     in.Question,
+		Candidates:   candidates,
+		K:            k,
+		Graph:        graphView,
+		EmbedText:    retrieve.ExpandedEmbedText(in.Question, exp),
+		FTSText:      retrieve.ExpandedFTSText(in.Question, exp),
+		Expanded:     out.Expanded,
+		RecordShadow: s.recordShadowPack,
+		Reweight:     s.reweightPack,
+	})
+	out.Symbols = fromPackSyms(pack.Symbols)
+	out.SemanticHits = fromPackSems(pack.SemanticHits)
+	if g := fromPackGraph(pack.Graph); g != nil {
+		out.Graph = g
+	}
+	out.SuggestedReads = fromPackReads(pack.SuggestedReads)
 
-	// Semantic lane — runs unless embed is offline. We always run it
-	// for recall even when the symbol lane has exact hits. The embed text
-	// stays the raw question (no extra GPU) unless full-mode HyDE is on;
-	// the BM25 text carries the expansion keywords/identifiers for free.
-	semHits, embedFailed := s.runSemanticLane(ctx, st, retrieve.ExpandedEmbedText(in.Question, exp), retrieve.ExpandedFTSText(in.Question, exp), k)
+	embedFailed := meta.EmbedFailed
 	leanNoEmbedder := s.EmbedClient == nil
 	if embedFailed && !leanNoEmbedder {
 		out.Endpoint = s.EmbedClient.Endpoint()
 	}
-	out.SemanticHits = semHits
-
 	if noLaneHits(embedFailed, leanNoEmbedder, &out) {
 		return nil, out, nil
 	}
@@ -456,14 +475,6 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 			out.Hint = hint
 		}
 	}
-
-	enrichGraph(&out, intent, graphView, out.SemanticHits, out.Symbols)
-	// #731: lane-agreement reweight — recordShadow logs static-vs-reweighted for
-	// regression monitoring; applyLiveReweight serves the reweighted order when
-	// DEX_FEEDBACK_LIVE=1. Lane provenance is final post-enrich.
-	s.recordShadow(intent, in.Question, out.SemanticHits)
-	out.SemanticHits = s.applyLiveReweight(intent, out.SemanticHits)
-	out.SuggestedReads = pickSuggestedReads(intent, out.SemanticHits, out.Symbols, symbolPaths, graphView)
 	inlineWorkingSet(p.Root, intent, graphView, &out, candidates.Identifiers, in.Question, in.NoInline)
 	(&Enricher{projectRoot: p.Root, Store: st, Spread: st}).Enrich(ctx, intent, k, &out)
 	topSem := maxSemanticScore(out.SemanticHits)
