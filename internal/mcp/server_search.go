@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -159,40 +158,33 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		out.Hint = note
 	}
 
-	hits, err := st.SearchFused(ctx, vecs[0], in.Query, candidateK)
-	if err != nil {
-		out.Status = "error"
-		out.Hint = fmt.Sprintf("search: %v", err)
-		return nil, out, nil
-	}
-
-	// Symbol leg: extract identifier tokens from the query, look them up
-	// by exact name, and RRF-fuse with the semantic results. Runs in the
-	// same request with no extra embedding round-trip — FindSymbol is a
-	// pure SQL index scan.
-	hits = collectSearchSymbolLeg(ctx, st, in.Query, hits, candidateK)
-
-	// Graph-proximity lane: spreading activation from session-recent files and
-	// the current semantic hits. Silently skips when no session exists or the
-	// graph hasn't been built — never fails the search.
+	// Session task feeds the ECS rerank inside the assembler and the activity
+	// nudge below.
 	var sessionTask string
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok {
 		sessionTask = ss.Task
 	}
-	hits = st.FuseSpreadingActivation(ctx, hits, vecs[0], candidateK)
 
-	hits, err = s.Retrieve.RerankFused(ctx, in.Query, hits, candidateK)
+	// Ranking core (#111): the search-verb assembler owns the fuse → symbol →
+	// spreading-activation → rerank → ECS → multi-scale sequence. The transport
+	// injects the TF-IDF multi-scale filter (it holds the multi-scale index
+	// cache) and keeps embedding, language/path_glob filtering, loop-detect,
+	// SLO and the wire projection.
+	asm := retrieve.SearchAssembler{Service: s.Retrieve}
+	hits, err := asm.Assemble(ctx, st, retrieve.SearchRequest{
+		Query:       in.Query,
+		Vec:         vecs[0],
+		CandidateK:  candidateK,
+		SessionTask: sessionTask,
+		MultiScale: func(h []store.Hit) []store.Hit {
+			return s.applyMultiScaleFilter(ctx, st, p.DBPath, in.Query, h)
+		},
+	})
 	if err != nil {
 		out.Status = "error"
-		out.Hint = fmt.Sprintf("rerank: %v", err)
+		out.Hint = err.Error()
 		return nil, out, nil
 	}
-	hits = retrieve.RerankECS(hits, sessionTask)
-
-	// Multi-scale TF-IDF path filter — moved here so it runs after the full
-	// fusion+rerank pipeline. Applying it earlier would prune the candidate
-	// pool before symbol fusion and spreading activation, starving both lanes.
-	hits = s.applyMultiScaleFilter(ctx, st, p.DBPath, in.Query, hits)
 
 	s.activityRecord(p.Root, 1)
 
@@ -239,23 +231,6 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// branch-specific hint assignments above (#543).
 	out.Hint = prependHint(out.Hint, kHint)
 	return nil, out, nil
-}
-
-// collectSearchSymbolLeg fuses exact-name symbol hits into the semantic result
-// set via RRF. A no-op when the query contains no identifier-shaped tokens.
-func collectSearchSymbolLeg(ctx context.Context, st *store.Store, query string, hits []store.Hit, candidateK int) []store.Hit {
-	idents := retrieve.ExtractIdentifiers(query)
-	if len(idents) == 0 {
-		return hits
-	}
-	symPool := candidateK * 3
-	if symPool < 15 {
-		symPool = 15
-	}
-	if symHits := collectSymbolHits(ctx, st, idents, symPool); len(symHits) > 0 {
-		hits = retrieve.FuseWithSymbols(hits, symHits, candidateK)
-	}
-	return hits
 }
 
 // searchBuildHits appends filtered SearchHits into out and applies loop-detect
@@ -310,37 +285,8 @@ func prependHint(existing, lead string) string {
 	}
 }
 
-// collectSymbolHits runs FindSymbol for each identifier and returns a
-// deduplicated hit list (keyed by path+start_line), in the order they
-// surfaced across all identifier queries.
-func collectSymbolHits(ctx context.Context, st *store.Store, idents []string, pool int) []store.Hit {
-	seen := map[string]struct{}{}
-	var out []store.Hit
-	for _, id := range idents {
-		bare := id
-		if i := strings.LastIndex(bare, "."); i >= 0 {
-			bare = bare[i+1:]
-		}
-		hits, err := st.FindSymbol(ctx, bare, pool)
-		if err != nil {
-			continue
-		}
-		for _, h := range hits {
-			key := h.Path + ":" + strconv.Itoa(h.StartLine)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, h)
-			if len(out) >= pool {
-				return out
-			}
-		}
-	}
-	return out
-}
-
-// Symbol-lane RRF fusion moved to internal/retrieve.FuseWithSymbols (#480).
+// Symbol-lane RRF fusion moved to internal/retrieve.FuseWithSymbols (#480);
+// the symbol leg + dedup moved to internal/retrieve.SearchAssembler (#111).
 
 // excluded returns true when path matches any entry in the exclude list.
 //
