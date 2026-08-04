@@ -427,25 +427,31 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 
 	// Evidence assembly (#95a / #103) — the symbol/semantic lanes, graph
 	// neighborhood, lane-agreement reweight and suggested-reads ranker now
-	// compose in internal/retrieve.Assembler, producing a ContextPack. The
-	// transport injects the two policies it deliberately owns (the call-graph
-	// role vocabulary and path classification, both shared across tools) plus
-	// the feedback A/B hooks, then projects the pack onto the wire response.
-	// Enrichment, inline byte-budgeting, confidence and the prose directives
-	// remain edge steps below until later cuts move them behind this seam.
+	// compose in internal/retrieve.Assembler, producing a complete ContextPack.
+	// The transport injects the policies it deliberately owns (the call-graph
+	// role vocabulary and path classification, both shared across tools; the
+	// byte-budget inline presentation pass; the feedback A/B hooks), then
+	// projects the pack onto the wire response and applies transport concerns
+	// (near-miss, session, throttle, answer synthesis, handles, dedup).
 	pack, meta := retrieve.Assembler{
 		Service:    retrieve.Service{Embed: s.EmbedClient},
 		FormatRole: formatRole,
 		IsNonImpl:  isNonImplPath,
 	}.Assemble(ctx, st, retrieve.AssembleRequest{
-		Intent:       intent,
-		Question:     in.Question,
-		Candidates:   candidates,
-		K:            k,
-		Graph:        graphView,
-		EmbedText:    retrieve.ExpandedEmbedText(in.Question, exp),
-		FTSText:      retrieve.ExpandedFTSText(in.Question, exp),
-		Expanded:     out.Expanded,
+		Intent:      intent,
+		Question:    in.Question,
+		Candidates:  candidates,
+		K:           k,
+		Graph:       graphView,
+		EmbedText:   retrieve.ExpandedEmbedText(in.Question, exp),
+		FTSText:     retrieve.ExpandedFTSText(in.Question, exp),
+		Expanded:    out.Expanded,
+		ProjectRoot: p.Root,
+		NoInline:    in.NoInline,
+		Spread:      st,
+		Inline: func(pk *retrieve.ContextPack) {
+			inlineWirePack(p.Root, intent, graphView, candidates.Identifiers, in.Question, in.NoInline, pk)
+		},
 		RecordShadow: s.recordShadowPack,
 		Reweight:     s.reweightPack,
 	})
@@ -455,6 +461,16 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		out.Graph = g
 	}
 	out.SuggestedReads = fromPackReads(pack.SuggestedReads)
+	out.References = fromNeutralRefs(pack.References)
+	out.Annotations = fromNeutralAnnotations(pack.Annotations)
+	out.RelatedFiles = pack.RelatedFiles
+	out.ContentBytesInlined = pack.ContentBytesInlined
+	if pack.Concerns.Covered != nil || pack.Concerns.Dropped != nil {
+		out.Concerns = &AssembleConcerns{Covered: pack.Concerns.Covered, Dropped: pack.Concerns.Dropped}
+	}
+	out.NextAction = pack.NextAction
+	out.Confidence = pack.Confidence
+	out.Avoid = pack.Avoid
 
 	embedFailed := meta.EmbedFailed
 	leanNoEmbedder := s.EmbedClient == nil
@@ -475,27 +491,6 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 			out.Hint = hint
 		}
 	}
-	inlineWorkingSet(p.Root, intent, graphView, &out, candidates.Identifiers, in.Question, in.NoInline)
-	enrichWire(ctx, p.Root, st, intent, k, &out)
-	topSem := maxSemanticScore(out.SemanticHits)
-	var graphEdgeCount int
-	if out.Graph != nil {
-		graphEdgeCount = len(out.Graph.Edges)
-	}
-	out.NextAction = buildNextAction(intent, out.SuggestedReads, out.Symbols, topSem,
-		graphEdgeCount, len(out.References), hasBlameAnnotations(out.Annotations))
-	out.Confidence = retrieve.ConfidenceLevel(intent, len(out.Symbols), topSem,
-		graphEdgeCount, hasBlameAnnotations(out.Annotations))
-	// #725: nudge edit-intent toward assemble, and caveat a partial assemble set.
-	out.NextAction = assembleNextActionHint(intent, out.NextAction, out.Concerns,
-		len(out.SuggestedReads), out.Symbols)
-	// If the directive's primary read was truncated at inline time,
-	// flag that so the agent knows the inlined Content isn't the full
-	// chunk and can Read the original line range for the rest.
-	if !in.NoInline && len(out.SuggestedReads) > 0 && out.SuggestedReads[0].Truncated {
-		out.NextAction += " The inlined content is truncated at inline-budget caps — Read the full line range if you need the tail."
-	}
-	out.Avoid = buildAvoid(intent, out.SemanticHits, out.Symbols, graphView != nil, len(out.References) > 0)
 	out.Status = "ok"
 	if embedFailed && out.Hint == "" {
 		out.Hint = "embed offline; results from symbol lane only."

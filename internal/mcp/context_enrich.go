@@ -1,44 +1,50 @@
 package mcp
 
 import (
-	"context"
-
+	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/retrieve"
-	"github.com/alehatsman/dex/internal/store"
 )
 
-// enrichWire is the transport wrapper over retrieve.Enricher — the same
-// wire↔neutral adapter shape inlineContent uses. The enrichment legs
-// (signatures/docs, sibling tests, nearest doc, git blame, CODEOWNERS, build
-// tags, references, spreading activation) are domain work and live in
-// internal/retrieve; this stamps their results back onto the wire
-// ContextOutput.
+// inlineWirePack is the transport's byte-budget inlining pass, injected into
+// retrieve.Assembler as the AssembleRequest.Inline hook. Inlining is
+// presentation policy (#725) over wire types — it stays in the transport; this
+// wire↔neutral adapter (the same shape enrichWire used) lets the L2 assembler
+// drive it at the right point in the sequence.
 //
-// Enrich mutates only Signature/Doc on the symbols (in place, order preserved,
-// so the copy-back is index-aligned) and sets References/Annotations/
-// RelatedFiles. Nothing else on the wire hits is touched.
-func enrichWire(ctx context.Context, root string, st *store.Store, intent string, k int, out *ContextOutput) {
-	pk := &retrieve.ContextPack{
-		Symbols:        toPackSyms(out.Symbols),
-		SuggestedReads: toPackReads(out.SuggestedReads),
+// inlineWorkingSet WIDENS the symbol set along the call graph (assemble intent)
+// and stamps Body/Content onto symbols/reads/sem plus Concerns. Symbols change
+// count, so they are rebuilt; sem and reads keep their count and order, so only
+// the inline overlay (Content/Truncated/Imports) is copied back — preserving
+// their Lanes and every other neutral field.
+func inlineWirePack(root, intent string, view *graphquery.View, identifiers []string, question string, noInline bool, pk *retrieve.ContextPack) {
+	tmp := ContextOutput{
+		Symbols:        fromPackSyms(pk.Symbols),
+		SemanticHits:   fromPackSems(pk.SemanticHits),
+		SuggestedReads: fromPackReads(pk.SuggestedReads),
 	}
-	(&retrieve.Enricher{ProjectRoot: root, Store: st, Spread: st}).Enrich(ctx, intent, k, pk)
+	inlineWorkingSet(root, intent, view, &tmp, identifiers, question, noInline)
 
-	for i := range out.Symbols {
-		out.Symbols[i].Signature = pk.Symbols[i].Signature
-		out.Symbols[i].Doc = pk.Symbols[i].Doc
+	pk.Symbols = toPackSyms(tmp.Symbols)
+	for i := range pk.SemanticHits {
+		pk.SemanticHits[i].Content = tmp.SemanticHits[i].Content
+		pk.SemanticHits[i].Truncated = tmp.SemanticHits[i].Truncated
 	}
-	out.References = fromNeutralRefs(pk.References)
-	out.Annotations = fromNeutralAnnotations(pk.Annotations)
-	if pk.RelatedFiles != nil {
-		out.RelatedFiles = pk.RelatedFiles
+	for i := range pk.SuggestedReads {
+		pk.SuggestedReads[i].Content = tmp.SuggestedReads[i].Content
+		pk.SuggestedReads[i].Truncated = tmp.SuggestedReads[i].Truncated
+		pk.SuggestedReads[i].Imports = tmp.SuggestedReads[i].Imports
+	}
+	pk.ContentBytesInlined = tmp.ContentBytesInlined
+	if tmp.Concerns != nil {
+		pk.Concerns = retrieve.Concerns{Covered: tmp.Concerns.Covered, Dropped: tmp.Concerns.Dropped}
+	} else {
+		pk.Concerns = retrieve.Concerns{}
 	}
 }
 
-// toPackSyms / toPackReads lift the wire hits into the rich pack twins the
-// Enricher works over (retrieve.SymbolHit / SuggestedRead — the same shape
-// fromPackSyms/fromPackReads project back). Field-explicit so an added wire
-// field never silently reaches the enrichment layer.
+// toPackSyms lifts the wire symbols into the rich pack twin the assembler and
+// Enricher work over (retrieve.SymbolHit — the shape fromPackSyms projects
+// back). Field-explicit so an added wire field never silently reaches L2.
 func toPackSyms(in []SymbolHit) []retrieve.SymbolHit {
 	if len(in) == 0 {
 		return nil
@@ -63,25 +69,8 @@ func toPackSyms(in []SymbolHit) []retrieve.SymbolHit {
 	return out
 }
 
-func toPackReads(in []SuggestedRead) []retrieve.SuggestedRead {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]retrieve.SuggestedRead, len(in))
-	for i := range in {
-		out[i] = retrieve.SuggestedRead{
-			Path:      in[i].Path,
-			StartLine: in[i].StartLine,
-			EndLine:   in[i].EndLine,
-			Reason:    in[i].Reason,
-			Content:   in[i].Content,
-			Truncated: in[i].Truncated,
-			Imports:   in[i].Imports,
-		}
-	}
-	return out
-}
-
+// fromNeutralRefs / fromNeutralAnnotations project the enrichment results the
+// Enricher writes on the pack back onto the wire ContextOutput.
 func fromNeutralRefs(in []retrieve.RefHit) []RefHit {
 	if len(in) == 0 {
 		return nil

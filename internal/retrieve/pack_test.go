@@ -23,6 +23,7 @@ func TestContextPackShape(t *testing.T) {
 				"Symbols", "SemanticHits", "SuggestedReads", "Graph", "References", "Annotations", "RelatedFiles",
 				"KnowledgeFacts", "ScopedNotes",
 				"Concerns",
+				"NextAction", "Confidence", "Avoid",
 				"Trust",
 				"ContentBytesInlined", "Expanded",
 			},

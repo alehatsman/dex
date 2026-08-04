@@ -15,12 +15,12 @@ import (
 // the search/symbol/graph tools — is injected as funcs rather than moved
 // down, per the design note on Service.SymHit.
 //
-// Assemble runs: symbol lane (+role +non-impl demotion) → semantic lane →
-// graph neighborhood → lane-agreement reweight → suggested reads, and
-// returns the populated evidence fields of a ContextPack. Enrichment
-// (signatures/blame/references/related), inline byte-budgeting, confidence
-// and the prose directives remain transport-edge steps for now; later cuts
-// move them down behind this same seam.
+// Assemble runs the whole `ask` domain sequence: symbol lane (+role +non-impl
+// demotion) → semantic lane → graph neighborhood → lane-agreement reweight →
+// suggested reads → inline byte-budgeting (injected presentation hook) →
+// enrichment (signatures/blame/references/related) → confidence and the prose
+// directives. It returns a complete ContextPack; the transport router only
+// projects it and applies transport concerns (session/throttle/answer/dedup).
 type Assembler struct {
 	// Service is the query-time retrieval engine (embedder + lanes).
 	Service Service
@@ -41,14 +41,23 @@ type Assembler struct {
 // needs. Intent/Candidates come from ResolveIntent; EmbedText/FTSText from
 // the expansion step; Graph is the per-request view (nil = none indexed).
 type AssembleRequest struct {
-	Intent     string
-	Question   string
-	Candidates IntentCandidates
-	K          int
-	Graph      *graphquery.View
-	EmbedText  string
-	FTSText    string
-	Expanded   bool
+	Intent      string
+	Question    string
+	Candidates  IntentCandidates
+	K           int
+	Graph       *graphquery.View
+	EmbedText   string
+	FTSText     string
+	Expanded    bool
+	ProjectRoot string          // repo root for the enrichment file/git legs
+	NoInline    bool            // caller opted out of body inlining
+	Spread      store.Spreader  // optional; nil = no spreading-activation related files
+
+	// Inline is the byte-budget inlining pass (#725 presentation policy). It
+	// widens the assemble working set along the call graph and stamps
+	// Body/Content/Concerns onto the pack. Transport-owned (it is presentation,
+	// not retrieval) and injected as a hook; nil skips inlining.
+	Inline func(pack *ContextPack)
 
 	// Reweight, when non-nil, reorders the semantic hits (lane-agreement
 	// feedback, #731) after graph enrichment. RecordShadow logs the
@@ -102,7 +111,96 @@ func (a Assembler) Assemble(ctx context.Context, st store.Searcher, req Assemble
 
 	pack.SuggestedReads = PickSuggestedReads(req.Intent, sems, rawSyms, symbolPaths, req.Graph, a.nonImpl)
 
+	// No lane produced anything: skip the tail (it would be a no-op on the
+	// evidence, but the prose builders always emit a directive — the empty-
+	// result messaging is the transport's noLaneHits responsibility). This
+	// gate matches noLaneHits' hit check exactly, keeping output byte-neutral.
+	if len(pack.Symbols) == 0 && len(pack.SemanticHits) == 0 {
+		return pack, AssembleMeta{EmbedFailed: embedFailed}
+	}
+
+	a.finish(ctx, st, req, &pack)
 	return pack, AssembleMeta{EmbedFailed: embedFailed}
+}
+
+// finish runs the post-evidence tail on the pack: inline (injected) →
+// enrichment → confidence + prose. Ordering is load-bearing: inline widens the
+// working set and computes Concerns over the pre-enrich signatures; enrichment
+// then fills signatures/refs/blame; the prose reads both. Mirrors the former
+// edge sequence exactly.
+func (a Assembler) finish(ctx context.Context, st store.Searcher, req AssembleRequest, pack *ContextPack) {
+	if req.Inline != nil {
+		req.Inline(pack)
+	}
+
+	(&Enricher{ProjectRoot: req.ProjectRoot, Store: st, Spread: req.Spread}).
+		Enrich(ctx, req.Intent, req.K, pack)
+
+	topSem := maxSemScore(pack.SemanticHits)
+	graphEdges := 0
+	if pack.Graph != nil {
+		graphEdges = len(pack.Graph.Edges)
+	}
+	hasBlame := hasBlameMeta(pack.Annotations)
+	syms := packSymHits(pack.Symbols)
+
+	pack.NextAction = BuildNextAction(req.Intent, pack.SuggestedReads, syms, topSem, graphEdges, len(pack.References), hasBlame)
+	pack.Confidence = ConfidenceLevel(req.Intent, len(pack.Symbols), topSem, graphEdges, hasBlame)
+	// #725: nudge edit-intent toward assemble, and caveat a partial assemble set.
+	pack.NextAction = AssembleNextActionHint(req.Intent, pack.NextAction, pack.Concerns, len(pack.SuggestedReads), syms)
+	// If the directive's primary read was truncated at inline time, flag that so
+	// the agent knows the inlined Content isn't the full chunk.
+	if !req.NoInline && len(pack.SuggestedReads) > 0 && pack.SuggestedReads[0].Truncated {
+		pack.NextAction += " The inlined content is truncated at inline-budget caps — Read the full line range if you need the tail."
+	}
+	pack.Avoid = BuildAvoid(req.Intent, pack.SemanticHits, syms, req.Graph != nil, len(pack.References) > 0)
+}
+
+// maxSemScore returns the top semantic Score (hits aren't strictly sorted —
+// summary merging and rerank permute them). Mirrors mcp.maxSemanticScore.
+func maxSemScore(hits []SemHit) float32 {
+	var top float32
+	for _, h := range hits {
+		if h.Score > top {
+			top = h.Score
+		}
+	}
+	return top
+}
+
+// hasBlameMeta reports whether any annotation carries git-blame data — the
+// signal the prose uses to claim editing provenance. Mirrors
+// mcp.hasBlameAnnotations over the neutral PathMeta.
+func hasBlameMeta(anns map[string]PathMeta) bool {
+	for _, m := range anns {
+		if m.LastCommit != "" || m.LastAuthor != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// packSymHits projects the rich pack SymbolHit onto the lean SymHit the prose
+// builders (BuildNextAction/BuildAvoid/AssembleConcerns) read — name, path and
+// the inlined body/signature that coverage and anchors key on.
+func packSymHits(in []SymbolHit) []SymHit {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]SymHit, len(in))
+	for i := range in {
+		out[i] = SymHit{
+			QualifiedName: in[i].QualifiedName,
+			Path:          in[i].Path,
+			StartLine:     in[i].StartLine,
+			EndLine:       in[i].EndLine,
+			Kind:          in[i].Kind,
+			Signature:     in[i].Signature,
+			Body:          in[i].Body,
+			Truncated:     in[i].Truncated,
+		}
+	}
+	return out
 }
 
 // nonImpl applies the injected classifier, defaulting to "everything is

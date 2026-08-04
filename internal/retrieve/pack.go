@@ -30,6 +30,11 @@ type ContextPack struct {
 	// --- Completeness (#725) ---
 	Concerns Concerns
 
+	// --- Prose directives (assembled from the evidence above) ---
+	NextAction string // what to do next given the bundle (#725/#729)
+	Confidence string // "high" | "medium" | "low" self-assessment
+	Avoid      string // anti-pattern warning for this intent
+
 	// --- Trust envelope (#95c) ---
 	Trust Trust
 
