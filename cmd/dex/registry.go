@@ -257,8 +257,8 @@ var verbs = []verbSpec{
 		summary: "graph traversal",
 		subs: []subSpec{
 			{"neighbors", "vector neighbours of a chunk"},
-				{"similar", "blocks semantically near a given block"},
-				{"clones", "clusters of near-duplicate code blocks"},
+			{"similar", "blocks semantically near a given block"},
+			{"clones", "clusters of near-duplicate code blocks"},
 			{"deps", "imports edges for a file or package"},
 			{"packages", "whole internal package import DAG"},
 			{"links", "markdown docs this doc links to"},

@@ -121,10 +121,10 @@ func NewWithConcurrency(baseURL, model string, batch, concurrency int, timeout t
 	}
 }
 
-func (c *Client) Endpoint() string       { return c.BaseURL }
-func (c *Client) ModelName() string      { return c.Model }
-func (c *Client) BatchSize() int         { return c.Batch }
-func (c *Client) EmbedConcurrency() int  { return c.Concurrency }
+func (c *Client) Endpoint() string      { return c.BaseURL }
+func (c *Client) ModelName() string     { return c.Model }
+func (c *Client) BatchSize() int        { return c.Batch }
+func (c *Client) EmbedConcurrency() int { return c.Concurrency }
 
 type embedRequest struct {
 	Model string   `json:"model"`

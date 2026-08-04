@@ -197,7 +197,7 @@ func reportToolContractDrift(t *testing.T, want, got []byte) {
 			}
 		}
 	}
-	t.Errorf("MCP tool-schema contract drift. If the change is intentional and reviewed, re-run:\n"+
+	t.Errorf("MCP tool-schema contract drift. If the change is intentional and reviewed, re-run:\n" +
 		"  go test ./internal/mcp -run TestToolSchemaContract -update-tool-contract")
 }
 
@@ -275,5 +275,5 @@ func setDiff(a, b []string) []string {
 	return out
 }
 
-func boolEq(a, b *bool) bool  { return derefBool(a) == derefBool(b) }
-func derefBool(b *bool) bool  { return b != nil && *b }
+func boolEq(a, b *bool) bool { return derefBool(a) == derefBool(b) }
+func derefBool(b *bool) bool { return b != nil && *b }
