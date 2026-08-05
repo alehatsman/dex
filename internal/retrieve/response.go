@@ -164,6 +164,12 @@ func readsSkimDirective(reads []SuggestedRead) string {
 	return "Skim " + strings.Join(parts, "; ") + " for the structural overview, then re-call with intent=symbol_lookup to drill into specific types, or intent=editing_context for files you want to modify."
 }
 
+// RecallCaveat is the Trust-envelope warning stamped when a surfaced call-graph
+// includes name-based (tree-sitter) edges (#95c). Gated on the computed
+// RecallPartial signal rather than intent alone, so it fires only when recall is
+// actually incomplete — stricter than BuildAvoid's intent-only heuristic.
+const RecallCaveat = "Call-graph includes name-based (tree-sitter) edges with incomplete recall — an empty or partial result is not proof. Verify with grep on the symbol name."
+
 // BuildAvoid emits a "what not to do" hint. Strong claims when we
 // have strong signals (exact symbol found → don't grep); softer
 // otherwise. `graphIndexed` is true when the project has a graph
@@ -171,6 +177,7 @@ func readsSkimDirective(reads []SuggestedRead) string {
 // either calls-edges or BM25 chunk search populated `references`,
 // the agent has the surface it needs, so the message shifts from
 // "verify with grep" to "do not re-grep, the list is here."
+
 func BuildAvoid(intent string, semHits []SemHit, symbols []SymbolHit, graphIndexed, hasRefs bool) string {
 	if intent == IntentCallers || intent == IntentCallees {
 		if hasRefs {

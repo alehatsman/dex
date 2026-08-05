@@ -1,6 +1,46 @@
 package mcp
 
-import "github.com/alehatsman/dex/internal/retrieve"
+import (
+	"time"
+
+	"github.com/alehatsman/dex/internal/retrieve"
+)
+
+// trustEnvelope is the wire form of retrieve.Trust (#95c): index freshness plus
+// evidence-derived confidence/recall signals. All omitempty so a zero envelope
+// projects to nil and adds nothing to the response.
+type trustEnvelope struct {
+	Stale         bool    `json:"stale,omitempty"`
+	Indexing      bool    `json:"indexing,omitempty"`
+	IndexedAt     string  `json:"indexed_at,omitempty"` // RFC3339
+	TopScore      float32 `json:"top_score,omitempty"`
+	LowConfidence bool    `json:"low_confidence,omitempty"`
+	GraphResolved bool    `json:"graph_resolved,omitempty"`
+	RecallPartial bool    `json:"recall_partial,omitempty"`
+	Caveat        string  `json:"caveat,omitempty"`
+}
+
+// fromPackTrust projects the neutral Trust envelope. Returns nil when every
+// field is zero so empty responses stay byte-neutral (omitempty on the field).
+func fromPackTrust(t retrieve.Trust) *trustEnvelope {
+	if !t.Stale && !t.Indexing && t.IndexedAt.IsZero() && t.TopScore == 0 &&
+		!t.LowConf && !t.GraphResolved && !t.RecallPartial && t.Caveat == "" {
+		return nil
+	}
+	env := &trustEnvelope{
+		Stale:         t.Stale,
+		Indexing:      t.Indexing,
+		TopScore:      t.TopScore,
+		LowConfidence: t.LowConf,
+		GraphResolved: t.GraphResolved,
+		RecallPartial: t.RecallPartial,
+		Caveat:        t.Caveat,
+	}
+	if !t.IndexedAt.IsZero() {
+		env.IndexedAt = t.IndexedAt.UTC().Format(time.RFC3339)
+	}
+	return env
+}
 
 // Neutral → wire projection for the assembled ContextPack (#95a / #103).
 // The evidence core is assembled in internal/retrieve over transport-free

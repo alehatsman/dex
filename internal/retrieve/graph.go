@@ -23,6 +23,12 @@ const (
 type GraphResult struct {
 	Nodes []GraphNode
 	Edges []GraphEdge
+
+	// Resolved / RecallPartial summarise the surfaced call edges for the
+	// Trust envelope (#95c). Domain-only — the transport maps just
+	// Nodes+Edges to the wire GraphResult; these feed pack.Trust instead.
+	Resolved      bool // all surfaced call edges are Go (type-resolved)
+	RecallPartial bool // a surfaced call edge is name-based → recall incomplete
 }
 
 type GraphNode struct {
@@ -88,6 +94,11 @@ func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols
 	if len(e.gr.Nodes) == 0 && len(e.gr.Edges) == 0 {
 		return nil, false
 	}
+	// Summarise call-edge resolution for the Trust envelope (#95c): a
+	// neighborhood is "resolved" only if it surfaced call edges and none
+	// were name-based (tree-sitter, non-Go).
+	e.gr.Resolved = e.sawCallEdge && !e.nameBasedCall
+	e.gr.RecallPartial = e.nameBasedCall
 	return e.gr, true
 }
 
@@ -101,6 +112,9 @@ type graphEnricher struct {
 	gr       *GraphResult
 	seenNode map[string]struct{}
 	seenEdge map[string]struct{}
+	// Trust-envelope tallies (#95c), accumulated as call edges are surfaced.
+	sawCallEdge   bool // any EdgeCalls surfaced → there is a resolved claim to judge
+	nameBasedCall bool // a surfaced call edge touches a non-Go (tree-sitter) node
 }
 
 func (e *graphEnricher) addNode(n graphquery.Node) {
@@ -151,6 +165,23 @@ func (e *graphEnricher) addEdge(ge graphquery.Edge) {
 		To:   to,
 		Kind: string(ge.Kind),
 	})
+	// Trust envelope (#95c): a surfaced call edge is type-resolved only when
+	// both endpoints are Go nodes; anything else is name-based (tree-sitter)
+	// with incomplete recall.
+	if ge.Kind == graph.EdgeCalls {
+		e.sawCallEdge = true
+		if !isGoNode(e.view, ge.SrcID) || !isGoNode(e.view, ge.DstID) {
+			e.nameBasedCall = true
+		}
+	}
+}
+
+// isGoNode reports whether id resolves to a Go node in the view. A missing or
+// non-Go endpoint is treated as name-based — an unresolved edge is not a
+// type-resolved claim.
+func isGoNode(view *graphquery.View, id string) bool {
+	n, ok := view.NodesByID[id]
+	return ok && n.Language() == "go"
 }
 
 // symbolNeighborhood surfaces each matched symbol's container (parent

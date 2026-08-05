@@ -215,9 +215,15 @@ type ContextOutput struct {
 	// payload) or "low" (weak ranking — verify with grep before relying on
 	// it). A structured mirror of the weak-semantic signal that otherwise
 	// only shows up in next_action prose (#102). Omitted on error/no-index.
-	Confidence     string          `json:"confidence,omitempty"`
-	Stale          bool            `json:"stale,omitempty"`
-	Indexing       bool            `json:"indexing,omitempty"` // a re-index is underway; results are partial (#531)
+	Confidence string `json:"confidence,omitempty"`
+	Stale      bool   `json:"stale,omitempty"`
+	Indexing   bool   `json:"indexing,omitempty"` // a re-index is underway; results are partial (#531)
+	// Trust is the confidence/freshness envelope (#95c): index freshness plus
+	// evidence-derived signals (top score, low-confidence, call-graph
+	// resolution, recall caveat) the Assembler computes once. Additive and
+	// omitempty; the legacy top-level stale/indexing above are retained for
+	// back-compat and de-duped in a follow-up.
+	Trust          *trustEnvelope  `json:"trust,omitempty"`
 	SemanticHits   []SemHit        `json:"semantic_hits,omitempty"`
 	Symbols        []SymbolHit     `json:"symbols,omitempty"`
 	Graph          *GraphResult    `json:"graph,omitempty"`
@@ -293,12 +299,18 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	return s.contextRouterStream(ctx, req, in, nil)
 }
 
-// contextRouterCheckStale updates out with stale/indexing annotations.
-func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextOutput, root string) {
-	if stats, statsErr := st.Stats(ctx); statsErr == nil && !stats.LastIndex.IsZero() && time.Since(stats.LastIndex) > 24*time.Hour {
-		out.Stale = true
-		out.Hint = appendHint(out.Hint, fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
-			time.Since(stats.LastIndex).Round(time.Hour), root))
+// contextRouterCheckStale updates out with stale/indexing annotations and
+// returns the index's last-indexed time (zero if unknown) for the Trust
+// envelope (#95c).
+func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextOutput, root string) time.Time {
+	var indexedAt time.Time
+	if stats, statsErr := st.Stats(ctx); statsErr == nil && !stats.LastIndex.IsZero() {
+		indexedAt = stats.LastIndex
+		if time.Since(stats.LastIndex) > 24*time.Hour {
+			out.Stale = true
+			out.Hint = appendHint(out.Hint, fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
+				time.Since(stats.LastIndex).Round(time.Hour), root))
+		}
 	}
 	// An active rebuild trumps age: evidence is being rewritten right now, so
 	// what we return is partial (#531).
@@ -307,6 +319,7 @@ func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextO
 		out.Indexing = true
 		out.Hint = note
 	}
+	return indexedAt
 }
 
 // loadContextFacts loads the session task and knowledge facts into out.
@@ -394,7 +407,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		return nil, out, nil
 	}
 
-	contextRouterCheckStale(ctx, st, &out, p.Root)
+	indexedAt := contextRouterCheckStale(ctx, st, &out, p.Root)
 	s.loadContextFacts(ctx, st, in, &out)
 
 	// The assembler sets pack.Graph only when it has something to emit; the
@@ -446,6 +459,9 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		Spread:       st,
 		RecordShadow: s.recordShadowPack,
 		Reweight:     s.reweightPack,
+		Stale:        out.Stale,
+		Indexing:     out.Indexing,
+		IndexedAt:    indexedAt,
 	})
 	out.Symbols = fromPackSyms(pack.Symbols)
 	out.SemanticHits = fromPackSems(pack.SemanticHits)
@@ -463,6 +479,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 	out.NextAction = pack.NextAction
 	out.Confidence = pack.Confidence
 	out.Avoid = pack.Avoid
+	out.Trust = fromPackTrust(pack.Trust)
 
 	embedFailed := meta.EmbedFailed
 	leanNoEmbedder := s.EmbedClient == nil

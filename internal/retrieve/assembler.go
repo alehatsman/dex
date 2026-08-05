@@ -3,6 +3,7 @@ package retrieve
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/store"
@@ -66,6 +67,15 @@ type AssembleRequest struct {
 	// core stays free of the A/B machinery.
 	Reweight     func(intent string, sem []SemHit) []SemHit
 	RecordShadow func(intent, question string, sem []SemHit)
+
+	// Freshness — index vs working tree, for the Trust envelope (#95c).
+	// Store metadata, not retrieval: store.Searcher deliberately omits
+	// Stats/IndexingInProgress, so the transport (which already computes
+	// these in contextRouterCheckStale) injects them and the domain core
+	// only stamps them onto pack.Trust — keeping the pack the single home.
+	Stale     bool
+	Indexing  bool
+	IndexedAt time.Time
 }
 
 // AssembleMeta carries the non-pack signals the transport still needs at the
@@ -79,6 +89,11 @@ type AssembleMeta struct {
 // same demotion, same graph-before-reweight-before-pick sequence.
 func (a Assembler) Assemble(ctx context.Context, st store.Searcher, req AssembleRequest) (ContextPack, AssembleMeta) {
 	pack := ContextPack{Intent: req.Intent, Question: req.Question, Expanded: req.Expanded}
+	// Freshness is stamped up front so it survives the empty-lane early return
+	// below — a stale or mid-rebuild index is often *why* a result is empty.
+	pack.Trust.Stale = req.Stale
+	pack.Trust.Indexing = req.Indexing
+	pack.Trust.IndexedAt = req.IndexedAt
 
 	// Symbol lane — exact identifier lookups. Demote test/doc/build/fixture
 	// paths (stable, by path only) so the prose directive lands on real
@@ -151,6 +166,19 @@ func (a Assembler) finish(ctx context.Context, st store.Searcher, req AssembleRe
 		pack.NextAction += " The inlined content is truncated at inline-budget caps — Read the full line range if you need the tail."
 	}
 	pack.Avoid = BuildAvoid(req.Intent, pack.SemanticHits, pack.Symbols, req.Graph != nil, len(pack.References) > 0)
+
+	// Evidence-derived Trust (#95c): confidence from the top fused score and
+	// call-graph resolution from the surfaced neighborhood. Freshness was
+	// stamped in Assemble.
+	pack.Trust.TopScore = topSem
+	pack.Trust.LowConf = topSem > 0 && topSem < LowConfidenceScore
+	if pack.Graph != nil {
+		pack.Trust.GraphResolved = pack.Graph.Resolved
+		pack.Trust.RecallPartial = pack.Graph.RecallPartial
+	}
+	if pack.Trust.RecallPartial {
+		pack.Trust.Caveat = RecallCaveat
+	}
 }
 
 // maxSemScore returns the top semantic Score (hits aren't strictly sorted —
