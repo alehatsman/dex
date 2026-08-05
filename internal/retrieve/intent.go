@@ -59,7 +59,11 @@ var (
 	reCallers      = regexp.MustCompile(`\b(callers?|who calls|what calls|called by|usage of|usages of|references? to|where is .* used|where is .* called)\b`)
 	reCallees      = regexp.MustCompile(`\b(callees?|what does .* call|calls from|outgoing calls|dependencies of)\b`)
 	reArchitecture = regexp.MustCompile(`\b(architecture|how does .* work|overview|big picture|design of|walk me through|how is .* organized)\b`)
-	rePackages     = regexp.MustCompile(`\b(packages?|modules?|topology|dependency graph|import graph|package layout)\b`)
+	// #118: require the *plural* "packages" (or a topology compound). A bare
+	// singular "package" is a common noun ("the graph package", "the store
+	// package") and never a topology signal — matching it stole architecture
+	// and callers questions whose real subject just happened to end in "package".
+	rePackages = regexp.MustCompile(`\b(packages|modules?|topology|dependency graph|import graph|package layout)\b`)
 	// `change` / `update` deliberately omitted — they fire on questions
 	// like "when X changes" or "update the timestamp on Y" that are
 	// really behavior_search, not editing_context.

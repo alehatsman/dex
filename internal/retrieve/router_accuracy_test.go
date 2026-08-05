@@ -17,16 +17,18 @@ import (
 // the measured baseline: it fails CI when a change *regresses* routing, without
 // pretending the heuristic router is perfect.
 //
-// Measured baseline as of #117: 39/44 = 88.6%. The five misroutes are honest
-// heuristic gaps the gate documents rather than hides — e.g. "overview of the
-// graph package" routes to package_topology, not architecture, because the
-// switch tests `packages` before `architecture` (a real weakness for the epic).
-// Floor is set at 0.85 (~2-case slack) so single-case noise doesn't fail CI but
-// a genuine regression does.
+// Measured baseline as of #118: 40/44 = 90.9%. #118 tightened rePackages so a
+// bare singular "package" (a common noun) no longer shadows architecture —
+// "overview of the graph package" now routes to architecture. The remaining
+// four misroutes are honest vocabulary gaps the gate documents rather than
+// hides: callers-vocab ("references PruneIndex", "depends on the store
+// package"), callees-vocab ("functions Assemble invokes"), and arch-vocab
+// ("explain how ask builds a response"). Floor is set at 0.88 (~1-case slack)
+// so single-case noise doesn't fail CI but a genuine regression does.
 //
 // When you improve the router, raise routerAccuracyFloor to the new measured
 // value. When you add a case, keep the label honest and re-measure.
-const routerAccuracyFloor = 0.85
+const routerAccuracyFloor = 0.88
 
 // routerCorpus spans the seven auto-routable intents (IntentAssemble is
 // explicit-only — never auto-routed — so it is intentionally absent).
