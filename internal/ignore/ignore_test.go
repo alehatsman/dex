@@ -465,6 +465,72 @@ index:
 	}
 }
 
+// mkLinkedWorktree synthesizes a linked git worktree of mainRoot (a `.git` file
+// pointing at mainRoot/.git/worktrees/<name>, with a commondir) and returns the
+// worktree path. No `git` invocation — the on-disk shape is what MainWorktree
+// parses.
+func mkLinkedWorktree(t *testing.T, mainRoot, name string) string {
+	t.Helper()
+	gitDir := filepath.Join(mainRoot, ".git", "worktrees", name)
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return wt
+}
+
+// TestWorktreeInheritsInclude — #108: a linked worktree with no .dex/config.yml
+// of its own inherits the main working tree's include allow-list, so it indexes
+// exactly like the parent instead of indexing nothing.
+func TestWorktreeInheritsInclude(t *testing.T) {
+	mainRoot := t.TempDir()
+	writeConfig(t, mainRoot, "index:\n  include:\n    - internal/\n    - \"*.md\"\n")
+	wt := mkLinkedWorktree(t, mainRoot, "feature")
+
+	m, err := New(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.IncludeConfigured() {
+		t.Fatal("IncludeConfigured() = false for worktree, want true (inherited)")
+	}
+	if m.Match("internal/x.go", false) {
+		t.Error("internal/x.go should be included via inherited allow-list")
+	}
+	if !m.Match("scripts/build.sh", false) {
+		t.Error("scripts/build.sh is outside the inherited include, want skipped")
+	}
+}
+
+// TestWorktreeLocalConfigWins — a worktree that carries its own config is not
+// overridden by inheritance; the local file wins.
+func TestWorktreeLocalConfigWins(t *testing.T) {
+	mainRoot := t.TempDir()
+	writeConfig(t, mainRoot, "index:\n  include:\n    - internal/\n")
+	wt := mkLinkedWorktree(t, mainRoot, "feature")
+	writeConfig(t, wt, "index:\n  include:\n    - cmd/\n")
+
+	m, err := New(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Match("internal/x.go", false) {
+		t.Error("internal/ is only in the parent config; local config should win and skip it")
+	}
+	if m.Match("cmd/dex/main.go", false) {
+		t.Error("cmd/ is in the worktree's own config; should be included")
+	}
+}
+
 func TestNoIncludeIndexesNothing(t *testing.T) {
 	root := t.TempDir() // no .dex/config.yml
 	m, err := New(root)

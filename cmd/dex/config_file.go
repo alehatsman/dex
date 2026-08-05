@@ -27,6 +27,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/alehatsman/dex/internal/gitworktree"
 )
 
 // fileConfig is the parsed .dex/config.yml. Values are read as strings where
@@ -71,6 +73,12 @@ func parseConfigFile(root string) (map[string]string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// #108: a linked git worktree has no .dex/config.yml of its own —
+			// inherit the main working tree's DEX_* knobs so endpoints/models
+			// resolve identically to the parent checkout.
+			if main, ok := gitworktree.MainWorktree(root); ok {
+				return parseConfigFile(main)
+			}
 			return out, nil
 		}
 		return out, err

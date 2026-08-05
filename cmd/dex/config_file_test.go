@@ -67,6 +67,60 @@ func TestParseConfigFileMissing(t *testing.T) {
 	}
 }
 
+// TestParseConfigFileWorktreeInherits — #108: a linked worktree with no
+// .dex/config.yml inherits the main working tree's DEX_* knobs.
+func TestParseConfigFileWorktreeInherits(t *testing.T) {
+	mainRoot := t.TempDir()
+	writeConfig(t, mainRoot, "endpoints:\n  embed: http://from-main:11434\n")
+	wt := mkLinkedWorktree(t, mainRoot, "feature")
+
+	got, err := parseConfigFile(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["DEX_EMBED_URL"] != "http://from-main:11434" {
+		t.Errorf("worktree did not inherit main config: DEX_EMBED_URL = %q", got["DEX_EMBED_URL"])
+	}
+}
+
+// TestParseConfigFileWorktreeLocalWins — a worktree with its own config is not
+// overridden by inheritance.
+func TestParseConfigFileWorktreeLocalWins(t *testing.T) {
+	mainRoot := t.TempDir()
+	writeConfig(t, mainRoot, "endpoints:\n  embed: http://from-main:11434\n")
+	wt := mkLinkedWorktree(t, mainRoot, "feature")
+	writeConfig(t, wt, "endpoints:\n  embed: http://from-worktree:11434\n")
+
+	got, err := parseConfigFile(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["DEX_EMBED_URL"] != "http://from-worktree:11434" {
+		t.Errorf("local worktree config should win: DEX_EMBED_URL = %q", got["DEX_EMBED_URL"])
+	}
+}
+
+// mkLinkedWorktree synthesizes a linked git worktree of mainRoot on disk (a
+// `.git` file + gitdir/commondir) without invoking git, and returns its path.
+func mkLinkedWorktree(t *testing.T, mainRoot, name string) string {
+	t.Helper()
+	gitDir := filepath.Join(mainRoot, ".git", "worktrees", name)
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return wt
+}
+
 func TestApplyProjectConfigEnvWins(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, root, `

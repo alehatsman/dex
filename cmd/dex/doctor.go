@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/gitworktree"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proxy"
@@ -298,12 +299,24 @@ func checkProjectConfig() doctorCheck {
 	}
 
 	cfgPath := filepath.Join(wd, ".dex", "config.yml")
+	// #108: a linked worktree with no config of its own inherits the main
+	// working tree's — report that instead of "nothing will be indexed", which
+	// would now contradict the indexer (ignore.New below inherits identically).
+	inheritedFrom := ""
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		return doctorCheck{
-			name:   "project cfg",
-			status: docSkip,
-			detail: "no .dex/config.yml in " + wd,
-			hints:  []string{"create .dex/config.yml with index.include to enable indexing"},
+		main, ok := gitworktree.MainWorktree(wd)
+		if ok {
+			if _, e := os.Stat(filepath.Join(main, ".dex", "config.yml")); e == nil {
+				inheritedFrom = main
+			}
+		}
+		if inheritedFrom == "" {
+			return doctorCheck{
+				name:   "project cfg",
+				status: docSkip,
+				detail: "no .dex/config.yml in " + wd,
+				hints:  []string{"create .dex/config.yml with index.include to enable indexing"},
+			}
 		}
 	}
 
@@ -319,6 +332,10 @@ func checkProjectConfig() doctorCheck {
 			detail: ".dex/config.yml present but no index.include — nothing will be indexed",
 			hints:  []string{"add index.include to .dex/config.yml"},
 		}
+	}
+	if inheritedFrom != "" {
+		return doctorCheck{name: "project cfg", status: docOK,
+			detail: ".dex/config.yml inherited from " + inheritedFrom + " (worktree)"}
 	}
 	return doctorCheck{name: "project cfg", status: docOK, detail: ".dex/config.yml  " + wd}
 }
