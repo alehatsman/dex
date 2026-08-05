@@ -23,6 +23,7 @@ func TestFromPackTrustPopulated(t *testing.T) {
 		Stale:         true,
 		Indexing:      true,
 		IndexedAt:     at,
+		Confidence:    "high",
 		TopScore:      0.83,
 		LowConf:       true,
 		GraphResolved: true,
@@ -34,6 +35,9 @@ func TestFromPackTrustPopulated(t *testing.T) {
 	}
 	if !got.Stale || !got.Indexing || !got.LowConfidence || !got.GraphResolved || !got.RecallPartial {
 		t.Fatalf("bool fields dropped: %+v", got)
+	}
+	if got.Confidence != "high" {
+		t.Fatalf("Confidence=%q, want high", got.Confidence)
 	}
 	if got.TopScore != 0.83 {
 		t.Fatalf("TopScore=%v, want 0.83", got.TopScore)

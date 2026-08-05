@@ -210,19 +210,13 @@ type ContextOutput struct {
 	Endpoint    string `json:"endpoint,omitempty"` // populated when embed is unreachable
 	Project     string `json:"project,omitempty"`
 	Intent      string `json:"intent,omitempty"`
-	// Confidence classifies how much to trust the top-ranked evidence:
-	// "high" (symbol hits, strong semantic score, or a strong intent
-	// payload) or "low" (weak ranking — verify with grep before relying on
-	// it). A structured mirror of the weak-semantic signal that otherwise
-	// only shows up in next_action prose (#102). Omitted on error/no-index.
-	Confidence string `json:"confidence,omitempty"`
-	Stale      bool   `json:"stale,omitempty"`
-	Indexing   bool   `json:"indexing,omitempty"` // a re-index is underway; results are partial (#531)
-	// Trust is the confidence/freshness envelope (#95c): index freshness plus
-	// evidence-derived signals (top score, low-confidence, call-graph
-	// resolution, recall caveat) the Assembler computes once. Additive and
-	// omitempty; the legacy top-level stale/indexing above are retained for
-	// back-compat and de-duped in a follow-up.
+	// Trust is the single confidence/freshness envelope for ask (#95c/#116):
+	// index freshness (stale/indexing/indexed_at), the "high|medium|low"
+	// confidence self-assessment, and evidence-derived signals (top score,
+	// low-confidence, call-graph resolution, recall caveat) the Assembler
+	// computes once. omitempty; present on every real ask, nil only on the
+	// no-lane early return. Supersedes the former top-level stale/indexing/
+	// confidence fields.
 	Trust          *trustEnvelope  `json:"trust,omitempty"`
 	SemanticHits   []SemHit        `json:"semantic_hits,omitempty"`
 	Symbols        []SymbolHit     `json:"symbols,omitempty"`
@@ -299,27 +293,27 @@ func (s *Server) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in
 	return s.contextRouterStream(ctx, req, in, nil)
 }
 
-// contextRouterCheckStale updates out with stale/indexing annotations and
-// returns the index's last-indexed time (zero if unknown) for the Trust
-// envelope (#95c).
-func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextOutput, root string) time.Time {
-	var indexedAt time.Time
+// contextRouterCheckStale sets the freshness hint on out and returns the facts
+// (stale, indexing, and the index's last-indexed time — zero if unknown) for the
+// Trust envelope (#95c/#116). The booleans ride pack.Trust rather than top-level
+// out fields, so the router threads them into the AssembleRequest.
+func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextOutput, root string) (stale, indexing bool, indexedAt time.Time) {
 	if stats, statsErr := st.Stats(ctx); statsErr == nil && !stats.LastIndex.IsZero() {
 		indexedAt = stats.LastIndex
 		if time.Since(stats.LastIndex) > 24*time.Hour {
-			out.Stale = true
+			stale = true
 			out.Hint = appendHint(out.Hint, fmt.Sprintf("index is %s old — run `dex index %s` to refresh.",
 				time.Since(stats.LastIndex).Round(time.Hour), root))
 		}
 	}
 	// An active rebuild trumps age: evidence is being rewritten right now, so
 	// what we return is partial (#531).
-	if indexing, note := indexingNotice(ctx, st); indexing {
-		out.Stale = true
-		out.Indexing = true
+	if inProgress, note := indexingNotice(ctx, st); inProgress {
+		stale = true
+		indexing = true
 		out.Hint = note
 	}
-	return indexedAt
+	return stale, indexing, indexedAt
 }
 
 // loadContextFacts loads the session task and knowledge facts into out.
@@ -407,7 +401,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		return nil, out, nil
 	}
 
-	indexedAt := contextRouterCheckStale(ctx, st, &out, p.Root)
+	stale, indexing, indexedAt := contextRouterCheckStale(ctx, st, &out, p.Root)
 	s.loadContextFacts(ctx, st, in, &out)
 
 	// The assembler sets pack.Graph only when it has something to emit; the
@@ -459,8 +453,8 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		Spread:       st,
 		RecordShadow: s.recordShadowPack,
 		Reweight:     s.reweightPack,
-		Stale:        out.Stale,
-		Indexing:     out.Indexing,
+		Stale:        stale,
+		Indexing:     indexing,
 		IndexedAt:    indexedAt,
 	})
 	out.Symbols = fromPackSyms(pack.Symbols)
@@ -477,7 +471,6 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		out.Concerns = &AssembleConcerns{Covered: pack.Concerns.Covered, Dropped: pack.Concerns.Dropped}
 	}
 	out.NextAction = pack.NextAction
-	out.Confidence = pack.Confidence
 	out.Avoid = pack.Avoid
 	out.Trust = fromPackTrust(pack.Trust)
 

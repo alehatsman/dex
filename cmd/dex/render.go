@@ -506,7 +506,7 @@ func printContextError(out mcp.ContextOutput) {
 
 func printContextHeader(out mcp.ContextOutput) {
 	fmt.Printf("intent: %s  project: %s\n", out.Intent, out.Project)
-	if out.Stale {
+	if out.Trust != nil && out.Trust.Stale {
 		fmt.Println("⚠ index is stale — refresh recommended")
 	}
 	if out.Hint != "" {

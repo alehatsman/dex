@@ -7,12 +7,14 @@ import (
 )
 
 // trustEnvelope is the wire form of retrieve.Trust (#95c): index freshness plus
-// evidence-derived confidence/recall signals. All omitempty so a zero envelope
-// projects to nil and adds nothing to the response.
+// evidence-derived confidence/recall signals — the single home for the ask
+// tool's trust surface (#116 folded in the former top-level stale/indexing/
+// confidence). All omitempty so a zero envelope projects to nil.
 type trustEnvelope struct {
 	Stale         bool    `json:"stale,omitempty"`
 	Indexing      bool    `json:"indexing,omitempty"`
 	IndexedAt     string  `json:"indexed_at,omitempty"` // RFC3339
+	Confidence    string  `json:"confidence,omitempty"` // "high" | "medium" | "low"
 	TopScore      float32 `json:"top_score,omitempty"`
 	LowConfidence bool    `json:"low_confidence,omitempty"`
 	GraphResolved bool    `json:"graph_resolved,omitempty"`
@@ -22,14 +24,17 @@ type trustEnvelope struct {
 
 // fromPackTrust projects the neutral Trust envelope. Returns nil when every
 // field is zero so empty responses stay byte-neutral (omitempty on the field).
+// In practice Confidence is always set on an assembled pack, so the envelope is
+// present on every real ask — the empty case is the no-lane early return.
 func fromPackTrust(t retrieve.Trust) *trustEnvelope {
-	if !t.Stale && !t.Indexing && t.IndexedAt.IsZero() && t.TopScore == 0 &&
-		!t.LowConf && !t.GraphResolved && !t.RecallPartial && t.Caveat == "" {
+	if !t.Stale && !t.Indexing && t.IndexedAt.IsZero() && t.Confidence == "" &&
+		t.TopScore == 0 && !t.LowConf && !t.GraphResolved && !t.RecallPartial && t.Caveat == "" {
 		return nil
 	}
 	env := &trustEnvelope{
 		Stale:         t.Stale,
 		Indexing:      t.Indexing,
+		Confidence:    t.Confidence,
 		TopScore:      t.TopScore,
 		LowConfidence: t.LowConf,
 		GraphResolved: t.GraphResolved,

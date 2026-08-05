@@ -32,7 +32,6 @@ type ContextPack struct {
 
 	// --- Prose directives (assembled from the evidence above) ---
 	NextAction string // what to do next given the bundle (#725/#729)
-	Confidence string // "high" | "medium" | "low" self-assessment
 	Avoid      string // anti-pattern warning for this intent
 
 	// --- Trust envelope (#95c) ---
@@ -56,8 +55,9 @@ type Trust struct {
 	IndexedAt time.Time // index mtime; drives age
 
 	// Confidence — how much to trust the ranking.
-	TopScore float32 // fused top semantic score
-	LowConf  bool    // TopScore < LowConfidenceScore (0.45)
+	TopScore   float32 // fused top semantic score
+	LowConf    bool    // TopScore < LowConfidenceScore (0.45)
+	Confidence string  // "high" | "medium" | "low" self-assessment (ConfidenceLevel)
 
 	// Claims — proven graph facts vs heuristic edges.
 	GraphResolved bool   // all graph edges type-resolved (Go)

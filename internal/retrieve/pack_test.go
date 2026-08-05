@@ -23,7 +23,7 @@ func TestContextPackShape(t *testing.T) {
 				"Symbols", "SemanticHits", "SuggestedReads", "Graph", "References", "Annotations", "RelatedFiles",
 				"KnowledgeFacts", "ScopedNotes",
 				"Concerns",
-				"NextAction", "Confidence", "Avoid",
+				"NextAction", "Avoid",
 				"Trust",
 				"ContentBytesInlined", "Expanded",
 			},
@@ -33,7 +33,7 @@ func TestContextPackShape(t *testing.T) {
 			typ:  reflect.TypeOf(Trust{}),
 			want: []string{
 				"Stale", "Indexing", "IndexedAt",
-				"TopScore", "LowConf",
+				"TopScore", "LowConf", "Confidence",
 				"GraphResolved", "RecallPartial", "Caveat",
 			},
 		},

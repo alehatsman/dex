@@ -172,11 +172,9 @@ indexedAt := contextRouterCheckStale(ctx, st, &out, p.Root)
 
 ## Non-goals / follow-ups
 
-- Removing the legacy top-level `out.Stale`/`out.Indexing` (now duplicated in
-  `trust`). Kept for back-compat; de-dup is one coherent wire migration, not
-  part of this issue.
-- Folding `Confidence` (the "high|medium|low" string) into Trust. It stays a
-  separate prose field.
+- ~~Removing the legacy top-level `out.Stale`/`out.Indexing`~~ and ~~folding
+  `Confidence` into Trust~~ — **done in #116**: the `trust` object is now the
+  single home; the top-level `stale`/`indexing`/`confidence` fields are gone.
 - Per-edge confidence scoring / weighting beyond the Go-vs-name-based split.
 
 ## Validation

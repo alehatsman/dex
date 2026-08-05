@@ -157,7 +157,7 @@ func (a Assembler) finish(ctx context.Context, st store.Searcher, req AssembleRe
 	hasBlame := hasBlameMeta(pack.Annotations)
 
 	pack.NextAction = BuildNextAction(req.Intent, pack.SuggestedReads, pack.Symbols, topSem, graphEdges, len(pack.References), hasBlame)
-	pack.Confidence = ConfidenceLevel(req.Intent, len(pack.Symbols), topSem, graphEdges, hasBlame)
+	pack.Trust.Confidence = ConfidenceLevel(req.Intent, len(pack.Symbols), topSem, graphEdges, hasBlame)
 	// #725: nudge edit-intent toward assemble, and caveat a partial assemble set.
 	pack.NextAction = AssembleNextActionHint(req.Intent, pack.NextAction, pack.Concerns, len(pack.SuggestedReads), pack.Symbols)
 	// If the directive's primary read was truncated at inline time, flag that so
