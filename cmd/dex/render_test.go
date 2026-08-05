@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/alehatsman/dex/internal/health"
+)
 
 // TestCollectEndpointsLean proves doctor/setup don't panic in the lean profile
 // (DEX_EMBED_ENGINE=none): newEmbedClient returns nil, and collectEndpoints
@@ -12,19 +16,19 @@ func TestCollectEndpointsLean(t *testing.T) {
 
 	probes := collectEndpoints() // must not panic
 
-	var embed *endpointProbe
+	var embed *health.Probe
 	for i := range probes {
-		if probes[i].name == "embed" {
+		if probes[i].Name == "embed" {
 			embed = &probes[i]
 		}
 	}
 	if embed == nil {
 		t.Fatal("collectEndpoints: no embed probe in lean profile")
 	}
-	if embed.health != nil {
+	if embed.Health != nil {
 		t.Error("lean embed probe must have a nil health func (nothing to probe)")
 	}
-	if embed.status != "not configured" {
-		t.Errorf("lean embed probe status = %q, want %q", embed.status, "not configured")
+	if embed.Status != "not configured" {
+		t.Errorf("lean embed probe status = %q, want %q", embed.Status, "not configured")
 	}
 }

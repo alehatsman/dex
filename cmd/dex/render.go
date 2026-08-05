@@ -14,42 +14,27 @@ import (
 
 	"github.com/alehatsman/dex/internal/chat"
 	"github.com/alehatsman/dex/internal/embed"
+	"github.com/alehatsman/dex/internal/health"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/output"
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// endpointProbe captures one configured backend for `dex index status`
-// to report. health is nil for probes that aren't reachable to begin with
-// (unset opt-in URL) — those skip the HTTP call
-// and use the pre-set status string.
-type endpointProbe struct {
-	name   string
-	url    string
-	model  string
-	health func(context.Context) error
-	// deep sends one minimal *real* capability request (embed a string, a tiny
-	// completion, rerank a pair) and validates the response shape. nil when the
-	// backend isn't configured. Only `dex doctor --deep` calls it — status and
-	// the default doctor stay liveness-only so they never trip on a cold model
-	// load (#78). See checkEndpointsDeep.
-	deep   func(context.Context) error
-	status string // ok | UNREACHABLE | not configured
-}
-
-// collectEndpoints builds the probe list the status command displays.
-// Mirrors the env wiring in main.go: embed/chat always present (they
-// have defaults); rerank is opt-in.
-func collectEndpoints() []endpointProbe {
-	probes := []endpointProbe{}
+// collectEndpoints builds the probe list the status and doctor commands
+// consume. This is the injection seam for internal/health: it does the env
+// wiring (embed/chat always present via defaults; rerank opt-in) and hands
+// health.CheckEndpoints / CheckEndpointsDeep a ready list of probes with their
+// liveness + deep-capability closures bound.
+func collectEndpoints() []health.Probe {
+	probes := []health.Probe{}
 
 	// A nil embedder is the lean profile (DEX_EMBED_ENGINE=none / bm25-only):
 	// no embedding backend is wired, so probe nothing rather than dereferencing
 	// it (#545). Mirrors the opt-in rerank branch below.
 	if em := newEmbedClient(""); em != nil {
-		probes = append(probes, endpointProbe{name: "embed", url: em.Endpoint(), model: em.ModelName(), health: em.Health,
-			deep: func(ctx context.Context) error {
-				vecs, err := em.Embed(ctx, []string{deepProbeText})
+		probes = append(probes, health.Probe{Name: "embed", URL: em.Endpoint(), Model: em.ModelName(), Health: em.Health,
+			Deep: func(ctx context.Context) error {
+				vecs, err := em.Embed(ctx, []string{health.DeepProbeText})
 				if err != nil {
 					return err
 				}
@@ -59,20 +44,20 @@ func collectEndpoints() []endpointProbe {
 				return nil
 			}})
 	} else {
-		probes = append(probes, endpointProbe{name: "embed", status: "not configured"})
+		probes = append(probes, health.Probe{Name: "embed", Status: "not configured"})
 	}
 
 	cc := newChatClient()
-	probes = append(probes, endpointProbe{name: "chat", url: cc.BaseURL, model: cc.Model, health: cc.Health,
-		deep: func(ctx context.Context) error {
-			_, err := cc.Generate(ctx, []chat.Message{{Role: "user", Content: deepProbeText}}, chat.Options{MaxTokens: 1})
+	probes = append(probes, health.Probe{Name: "chat", URL: cc.BaseURL, Model: cc.Model, Health: cc.Health,
+		Deep: func(ctx context.Context) error {
+			_, err := cc.Generate(ctx, []chat.Message{{Role: "user", Content: health.DeepProbeText}}, chat.Options{MaxTokens: 1})
 			return err
 		}})
 
 	if rc := newRerankClient(); rc != nil {
-		probes = append(probes, endpointProbe{name: "rerank", url: rc.Endpoint(), model: rc.ModelName(), health: rc.Health,
-			deep: func(ctx context.Context) error {
-				scores, err := rc.Rerank(ctx, deepProbeText, []string{"a candidate document"})
+		probes = append(probes, health.Probe{Name: "rerank", URL: rc.Endpoint(), Model: rc.ModelName(), Health: rc.Health,
+			Deep: func(ctx context.Context) error {
+				scores, err := rc.Rerank(ctx, health.DeepProbeText, []string{"a candidate document"})
 				if err != nil {
 					return err
 				}
@@ -82,7 +67,7 @@ func collectEndpoints() []endpointProbe {
 				return nil
 			}})
 	} else {
-		probes = append(probes, endpointProbe{name: "rerank", status: "not configured"})
+		probes = append(probes, health.Probe{Name: "rerank", Status: "not configured"})
 	}
 
 	return probes
@@ -100,20 +85,20 @@ func printEndpoints(ctx context.Context) {
 
 	var wg sync.WaitGroup
 	for i := range probes {
-		if probes[i].health == nil {
+		if probes[i].Health == nil {
 			continue
 		}
 		wg.Add(1)
-		go func(p *endpointProbe) {
+		go func(p *health.Probe) {
 			defer wg.Done()
-			err := p.health(ctx)
+			err := p.Health(ctx)
 			switch {
 			case err == nil:
-				p.status = "ok"
+				p.Status = "ok"
 			case errors.Is(err, chat.ErrModelNotFound):
-				p.status = fmt.Sprintf("DEGRADED model not found: %s", p.model)
+				p.Status = fmt.Sprintf("DEGRADED model not found: %s", p.Model)
 			default:
-				p.status = "UNREACHABLE"
+				p.Status = "UNREACHABLE"
 			}
 		}(&probes[i])
 	}
@@ -123,7 +108,7 @@ func printEndpoints(ctx context.Context) {
 	// degraded backend without reading the full table.
 	reachable := 0
 	for _, p := range probes {
-		if p.status == "ok" {
+		if p.Status == "ok" {
 			reachable++
 		}
 	}
@@ -137,10 +122,10 @@ func printEndpoints(ctx context.Context) {
 	modelW := len(headers.model)
 	urlW := len(headers.url)
 	for _, p := range probes {
-		nameW = max(nameW, len(p.name))
-		statusW = max(statusW, len(p.status))
-		modelW = max(modelW, len(displayCell(p.model)))
-		urlW = max(urlW, len(displayCell(p.url)))
+		nameW = max(nameW, len(p.Name))
+		statusW = max(statusW, len(p.Status))
+		modelW = max(modelW, len(displayCell(p.Model)))
+		urlW = max(urlW, len(displayCell(p.URL)))
 	}
 
 	fmt.Printf("endpoints (%d reachable)\n", reachable)
@@ -151,17 +136,17 @@ func printEndpoints(ctx context.Context) {
 		headers.url)
 	for _, p := range probes {
 		fmt.Printf("  %-*s  %-*s  %-*s  %s\n",
-			nameW, p.name,
-			statusW, p.status,
-			modelW, displayCell(p.model),
-			displayCell(p.url))
+			nameW, p.Name,
+			statusW, p.Status,
+			modelW, displayCell(p.Model),
+			displayCell(p.URL))
 	}
 
 	// When the embed endpoint is unreachable and ollama is running but has no
 	// embed models, offer a one-liner to fix it.
 	var embedUnreachable bool
 	for _, p := range probes {
-		if p.name == "embed" && p.status == "UNREACHABLE" {
+		if p.Name == "embed" && p.Status == "UNREACHABLE" {
 			embedUnreachable = true
 			break
 		}

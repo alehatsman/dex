@@ -4,6 +4,10 @@
 // wiring) and prints a labelled pass/fail table with actionable fix hints.
 // Exits 1 when any critical check fails (embed unreachable, index dir
 // missing/unwritable).
+//
+// The backend-readiness diagnosis (endpoint liveness + --deep capability
+// probes, and the check/status vocabulary) lives in internal/health; this file
+// keeps flag parsing, the non-backend checks, and terminal rendering.
 package main
 
 import (
@@ -18,30 +22,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alehatsman/dex/internal/embed"
 	"github.com/alehatsman/dex/internal/gitworktree"
+	"github.com/alehatsman/dex/internal/health"
 	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proxy"
 )
-
-// doctorStatus classifies the outcome of one check.
-type doctorStatus int
-
-const (
-	docOK   doctorStatus = iota // ✓
-	docWarn                     // ⚠ non-critical problem
-	docFail                     // ✗ critical failure
-	docSkip                     // — not configured / not applicable
-)
-
-type doctorCheck struct {
-	name     string
-	status   doctorStatus
-	detail   string
-	hints    []string // printed as "→ <hint>" under the row
-	critical bool     // docFail on a critical check → exit 1
-}
 
 func cmdDoctor(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
@@ -66,14 +52,14 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	epCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	var checks []doctorCheck
+	var checks []health.Check
 	checks = append(checks, checkIndexDir())
-	checks = append(checks, checkEndpoints(epCtx)...)
+	checks = append(checks, health.CheckEndpoints(epCtx, collectEndpoints())...)
 	if *deep {
 		// Deep probes cold-load models, so they get their own longer budget
 		// separate from the 5s liveness context.
 		deepCtx, dcancel := context.WithTimeout(ctx, 60*time.Second)
-		checks = append(checks, checkEndpointsDeep(deepCtx)...)
+		checks = append(checks, health.CheckEndpointsDeep(deepCtx, collectEndpoints())...)
 		dcancel()
 	}
 	checks = append(checks, checkProjectConfig())
@@ -83,21 +69,21 @@ func cmdDoctor(ctx context.Context, args []string) error {
 
 	labelW := 0
 	for _, c := range checks {
-		if len(c.name) > labelW {
-			labelW = len(c.name)
+		if len(c.Name) > labelW {
+			labelW = len(c.Name)
 		}
 	}
 
 	var issues, critFails int
 	for _, c := range checks {
-		fmt.Printf("  %-*s  %s  %s\n", labelW, c.name, docSym(c.status), c.detail)
-		for _, h := range c.hints {
+		fmt.Printf("  %-*s  %s  %s\n", labelW, c.Name, docSym(c.Status), c.Detail)
+		for _, h := range c.Hints {
 			fmt.Printf("  %-*s     →  %s\n", labelW, "", h)
 		}
-		if c.status == docFail || c.status == docWarn {
+		if c.Status == health.Fail || c.Status == health.Warn {
 			issues++
 		}
-		if c.status == docFail && c.critical {
+		if c.Status == health.Fail && c.Critical {
 			critFails++
 		}
 	}
@@ -114,13 +100,13 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	return nil
 }
 
-func docSym(s doctorStatus) string {
+func docSym(s health.Status) string {
 	switch s {
-	case docOK:
+	case health.OK:
 		return "✓"
-	case docWarn:
+	case health.Warn:
 		return "⚠"
-	case docFail:
+	case health.Fail:
 		return "✗"
 	default:
 		return "—"
@@ -129,39 +115,39 @@ func docSym(s doctorStatus) string {
 
 // ─── index dir ────────────────────────────────────────────────────────────────
 
-func checkIndexDir() doctorCheck {
+func checkIndexDir() health.Check {
 	base, err := indexDir()
 	if err != nil {
-		return doctorCheck{name: "index dir", status: docFail, critical: true,
-			detail: "cannot determine index dir: " + err.Error()}
+		return health.Check{Name: "index dir", Status: health.Fail, Critical: true,
+			Detail: "cannot determine index dir: " + err.Error()}
 	}
 
 	fi, err := os.Stat(base)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return doctorCheck{name: "index dir", status: docFail, critical: true,
-				detail: fmt.Sprintf("%s: %v", base, err)}
+			return health.Check{Name: "index dir", Status: health.Fail, Critical: true,
+				Detail: fmt.Sprintf("%s: %v", base, err)}
 		}
 		if mkErr := os.MkdirAll(base, 0o755); mkErr != nil {
-			return doctorCheck{
-				name: "index dir", status: docFail, critical: true,
-				detail: "does not exist and cannot be created: " + base,
-				hints:  []string{"mkdir -p " + base},
+			return health.Check{
+				Name: "index dir", Status: health.Fail, Critical: true,
+				Detail: "does not exist and cannot be created: " + base,
+				Hints:  []string{"mkdir -p " + base},
 			}
 		}
-		return doctorCheck{name: "index dir", status: docOK, detail: base + "  (created)"}
+		return health.Check{Name: "index dir", Status: health.OK, Detail: base + "  (created)"}
 	}
 	if !fi.IsDir() {
-		return doctorCheck{name: "index dir", status: docFail, critical: true,
-			detail: base + " exists but is not a directory"}
+		return health.Check{Name: "index dir", Status: health.Fail, Critical: true,
+			Detail: base + " exists but is not a directory"}
 	}
 
 	tmp, werr := os.CreateTemp(base, ".dex-doctor-")
 	if werr != nil {
-		return doctorCheck{
-			name: "index dir", status: docFail, critical: true,
-			detail: fmt.Sprintf("%s is not writable: %v", base, werr),
-			hints:  []string{"chmod u+w " + base},
+		return health.Check{
+			Name: "index dir", Status: health.Fail, Critical: true,
+			Detail: fmt.Sprintf("%s is not writable: %v", base, werr),
+			Hints:  []string{"chmod u+w " + base},
 		}
 	}
 	_ = os.Remove(tmp.Name())
@@ -174,14 +160,14 @@ func checkIndexDir() doctorCheck {
 	}
 	detail := fmt.Sprintf("%s  (%d %s)", base, n, noun)
 	if n == 0 {
-		return doctorCheck{
-			name:   "index dir",
-			status: docWarn,
-			detail: detail,
-			hints:  []string{"run: dex index <path> to index a project"},
+		return health.Check{
+			Name:   "index dir",
+			Status: health.Warn,
+			Detail: detail,
+			Hints:  []string{"run: dex index <path> to index a project"},
 		}
 	}
-	return doctorCheck{name: "index dir", status: docOK, detail: detail}
+	return health.Check{Name: "index dir", Status: health.OK, Detail: detail}
 }
 
 func countIndexedProjects(base string) int {
@@ -200,102 +186,13 @@ func countIndexedProjects(base string) int {
 	return n
 }
 
-// ─── endpoints ────────────────────────────────────────────────────────────────
-
-type probeResult struct {
-	name string
-	err  error
-}
-
-func checkEndpoints(ctx context.Context) []doctorCheck {
-	probes := collectEndpoints()
-
-	ch := make(chan probeResult, len(probes))
-	launched := 0
-	for i := range probes {
-		if probes[i].health == nil {
-			continue
-		}
-		p := &probes[i]
-		launched++
-		go func() { ch <- probeResult{p.name, p.health(ctx)} }()
-	}
-
-	errs := make(map[string]error, launched)
-	for range launched {
-		r := <-ch
-		errs[r.name] = r.err
-	}
-
-	out := make([]doctorCheck, 0, len(probes))
-	for _, p := range probes {
-		out = append(out, endpointCheck(p, errs[p.name]))
-	}
-	return out
-}
-
-func endpointCheck(p endpointProbe, err error) doctorCheck {
-	if p.health == nil {
-		detail := p.status
-		return doctorCheck{name: p.name, status: docSkip, detail: detail}
-	}
-
-	if err != nil {
-		status := docWarn
-		critical := false
-		if p.name == "embed" {
-			status = docFail
-			critical = true
-		}
-		return doctorCheck{
-			name:     p.name,
-			status:   status,
-			critical: critical,
-			detail:   fmt.Sprintf("UNREACHABLE  (%s)", p.url),
-			hints:    endpointHints(p.name, p.url),
-		}
-	}
-
-	detail := p.url
-	if p.model != "" {
-		detail = p.url + "  " + p.model
-	}
-	return doctorCheck{name: p.name, status: docOK, detail: detail}
-}
-
-func endpointHints(name, url string) []string {
-	switch name {
-	case "embed":
-		if scan, ok := embed.ScanOllama(context.Background()); ok {
-			if len(scan.EmbedModels) == 0 {
-				return []string{
-					fmt.Sprintf("ollama is running but has no embed model — run: ollama pull %s", embed.DefaultPullModel),
-					"or: dex reindex --pull-model <path>",
-				}
-			}
-			return []string{"check that the embedding service is running at " + url}
-		}
-		return []string{
-			"start ollama: ollama serve",
-			fmt.Sprintf("then: ollama pull %s", embed.DefaultPullModel),
-			"or set DEX_EMBED_URL to a running OpenAI-compatible embedding service",
-		}
-	case "chat":
-		return []string{
-			"start ollama (auto-detected) or set DEX_CHAT_URL",
-			"chat is required for: dex ask, dex generate, dex read --mode=summary",
-		}
-	}
-	return nil
-}
-
 // ─── project config ───────────────────────────────────────────────────────────
 
-func checkProjectConfig() doctorCheck {
+func checkProjectConfig() health.Check {
 	wd, err := os.Getwd()
 	if err != nil {
-		return doctorCheck{name: "project cfg", status: docWarn,
-			detail: "cannot determine cwd: " + err.Error()}
+		return health.Check{Name: "project cfg", Status: health.Warn,
+			Detail: "cannot determine cwd: " + err.Error()}
 	}
 
 	cfgPath := filepath.Join(wd, ".dex", "config.yml")
@@ -311,33 +208,33 @@ func checkProjectConfig() doctorCheck {
 			}
 		}
 		if inheritedFrom == "" {
-			return doctorCheck{
-				name:   "project cfg",
-				status: docSkip,
-				detail: "no .dex/config.yml in " + wd,
-				hints:  []string{"create .dex/config.yml with index.include to enable indexing"},
+			return health.Check{
+				Name:   "project cfg",
+				Status: health.Skip,
+				Detail: "no .dex/config.yml in " + wd,
+				Hints:  []string{"create .dex/config.yml with index.include to enable indexing"},
 			}
 		}
 	}
 
 	ig, err := ignore.New(wd)
 	if err != nil {
-		return doctorCheck{name: "project cfg", status: docWarn,
-			detail: ".dex/config.yml parse error: " + err.Error()}
+		return health.Check{Name: "project cfg", Status: health.Warn,
+			Detail: ".dex/config.yml parse error: " + err.Error()}
 	}
 	if !ig.IncludeConfigured() {
-		return doctorCheck{
-			name:   "project cfg",
-			status: docWarn,
-			detail: ".dex/config.yml present but no index.include — nothing will be indexed",
-			hints:  []string{"add index.include to .dex/config.yml"},
+		return health.Check{
+			Name:   "project cfg",
+			Status: health.Warn,
+			Detail: ".dex/config.yml present but no index.include — nothing will be indexed",
+			Hints:  []string{"add index.include to .dex/config.yml"},
 		}
 	}
 	if inheritedFrom != "" {
-		return doctorCheck{name: "project cfg", status: docOK,
-			detail: ".dex/config.yml inherited from " + inheritedFrom + " (worktree)"}
+		return health.Check{Name: "project cfg", Status: health.OK,
+			Detail: ".dex/config.yml inherited from " + inheritedFrom + " (worktree)"}
 	}
-	return doctorCheck{name: "project cfg", status: docOK, detail: ".dex/config.yml  " + wd}
+	return health.Check{Name: "project cfg", Status: health.OK, Detail: ".dex/config.yml  " + wd}
 }
 
 // ─── proxy (ANTHROPIC_BASE_URL seam) ────────────────────────────────────────
@@ -350,14 +247,14 @@ func checkProjectConfig() doctorCheck {
 //
 // Liveness is a plain TCP dial of the host:port, never an HTTP request, so the
 // probe doesn't forward anything upstream just to check reachability.
-func checkProxy(ctx context.Context) doctorCheck {
+func checkProxy(ctx context.Context) health.Check {
 	base := strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL"))
 	if base == "" {
-		return doctorCheck{
-			name:   "proxy",
-			status: docSkip,
-			detail: "ANTHROPIC_BASE_URL not set (opt-in)",
-			hints: []string{
+		return health.Check{
+			Name:   "proxy",
+			Status: health.Skip,
+			Detail: "ANTHROPIC_BASE_URL not set (opt-in)",
+			Hints: []string{
 				"start the proxy: dex proxy",
 				"then route Claude through it: export ANTHROPIC_BASE_URL=http://127.0.0.1:<port>",
 			},
@@ -366,11 +263,11 @@ func checkProxy(ctx context.Context) doctorCheck {
 
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" {
-		return doctorCheck{
-			name:   "proxy",
-			status: docWarn,
-			detail: "ANTHROPIC_BASE_URL is set but not a valid URL: " + base,
-			hints:  []string{"set it to e.g. http://127.0.0.1:8788, or unset it to talk to the API directly"},
+		return health.Check{
+			Name:   "proxy",
+			Status: health.Warn,
+			Detail: "ANTHROPIC_BASE_URL is set but not a valid URL: " + base,
+			Hints:  []string{"set it to e.g. http://127.0.0.1:8788, or unset it to talk to the API directly"},
 		}
 	}
 
@@ -384,11 +281,11 @@ func checkProxy(ctx context.Context) doctorCheck {
 	}
 	conn, derr := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if derr != nil {
-		return doctorCheck{
-			name:   "proxy",
-			status: docWarn,
-			detail: fmt.Sprintf("ANTHROPIC_BASE_URL=%s UNREACHABLE — Claude requests will fail", base),
-			hints: []string{
+		return health.Check{
+			Name:   "proxy",
+			Status: health.Warn,
+			Detail: fmt.Sprintf("ANTHROPIC_BASE_URL=%s UNREACHABLE — Claude requests will fail", base),
+			Hints: []string{
 				"start the proxy: dex proxy --addr " + u.Host,
 				"or unset ANTHROPIC_BASE_URL to talk to the API directly",
 			},
@@ -419,57 +316,57 @@ func checkProxy(ctx context.Context) doctorCheck {
 		}
 	}
 
-	return doctorCheck{name: "proxy", status: docOK, detail: detail, hints: hints}
+	return health.Check{Name: "proxy", Status: health.OK, Detail: detail, Hints: hints}
 }
 
 // ─── routing rules ────────────────────────────────────────────────────────────
 
-func checkRulesWiring() doctorCheck {
+func checkRulesWiring() health.Check {
 	st, path := checkRulesStatus()
 	switch st {
 	case rulesInSync:
-		return doctorCheck{name: "rules", status: docOK, detail: "up to date  (" + path + ")"}
+		return health.Check{Name: "rules", Status: health.OK, Detail: "up to date  (" + path + ")"}
 	case rulesMissing:
-		return doctorCheck{
-			name: "rules", status: docWarn,
-			detail: "routing rules file not found",
-			hints:  []string{"run: dex setup"},
+		return health.Check{
+			Name: "rules", Status: health.Warn,
+			Detail: "routing rules file not found",
+			Hints:  []string{"run: dex setup"},
 		}
 	case rulesNoMarkers:
-		return doctorCheck{
-			name: "rules", status: docWarn,
-			detail: "dex block missing in " + path,
-			hints:  []string{"run: dex setup to inject routing rules"},
+		return health.Check{
+			Name: "rules", Status: health.Warn,
+			Detail: "dex block missing in " + path,
+			Hints:  []string{"run: dex setup to inject routing rules"},
 		}
 	case rulesStale:
-		return doctorCheck{
-			name: "rules", status: docWarn,
-			detail: "stale version in " + path,
-			hints:  []string{"run: dex setup to update"},
+		return health.Check{
+			Name: "rules", Status: health.Warn,
+			Detail: "stale version in " + path,
+			Hints:  []string{"run: dex setup to update"},
 		}
 	case rulesDrifted:
-		return doctorCheck{
-			name: "rules", status: docWarn,
-			detail: "content drifted from canonical in " + path,
-			hints:  []string{"run: dex setup to restore"},
+		return health.Check{
+			Name: "rules", Status: health.Warn,
+			Detail: "content drifted from canonical in " + path,
+			Hints:  []string{"run: dex setup to restore"},
 		}
 	}
-	return doctorCheck{name: "rules", status: docOK, detail: path}
+	return health.Check{Name: "rules", Status: health.OK, Detail: path}
 }
 
 // ─── MCP wiring ───────────────────────────────────────────────────────────────
 
-func checkMCPWiring() doctorCheck {
+func checkMCPWiring() health.Check {
 	// Check multiple locations where dex MCP can be registered.
 	if where := dexMCPLocation(); where != "" {
-		return doctorCheck{name: "mcp", status: docOK, detail: "configured (" + where + ")"}
+		return health.Check{Name: "mcp", Status: health.OK, Detail: "configured (" + where + ")"}
 	}
 
-	return doctorCheck{
-		name:   "mcp",
-		status: docWarn,
-		detail: "dex not found in Claude Code MCP configuration",
-		hints: []string{
+	return health.Check{
+		Name:   "mcp",
+		Status: health.Warn,
+		Detail: "dex not found in Claude Code MCP configuration",
+		Hints: []string{
 			"run: claude mcp add --scope user dex -- dex mcp",
 			"or install via the plugin: dex has a .claude-plugin/manifest.json",
 		},

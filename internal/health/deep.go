@@ -1,4 +1,4 @@
-// `dex doctor --deep` — opt-in backend readiness checks.
+// Deep readiness — the opt-in `dex doctor --deep` capability probes.
 //
 // The default doctor (and `status`) probe liveness only: a metadata GET that
 // never touches the model, so a cold model load can't falsely report a healthy
@@ -7,7 +7,8 @@
 // (embed a string, a 1-token completion, rerank a pair) and classifies the
 // outcome — usable / model-not-ready / unreachable / cold-timeout — so an
 // operator can tell "listening" from "actually able to serve" before indexing.
-package main
+
+package health
 
 import (
 	"context"
@@ -22,8 +23,9 @@ import (
 	"github.com/alehatsman/dex/internal/rerank"
 )
 
-// deepProbeText is the throwaway input sent to every backend in deep mode.
-const deepProbeText = "dex readiness probe"
+// DeepProbeText is the throwaway input sent to every backend in deep mode.
+// Callers building the Probe.Deep closures use it as the request payload.
+const DeepProbeText = "dex readiness probe"
 
 // deepTimeouts bounds each backend's capability call. Chat gets the longest
 // budget because a cold LLM load dwarfs an embed/rerank warm-up.
@@ -33,12 +35,10 @@ var deepTimeouts = map[string]time.Duration{
 	"chat":   45 * time.Second,
 }
 
-// checkEndpointsDeep runs each configured backend's deep capability probe
+// CheckEndpointsDeep runs each configured backend's deep capability probe
 // concurrently under a per-backend timeout and returns one classified row per
-// probe. Probes without a deep closure (unconfigured backends) are skipped.
-func checkEndpointsDeep(ctx context.Context) []doctorCheck {
-	probes := collectEndpoints()
-
+// probe. Probes without a Deep closure (unconfigured backends) are skipped.
+func CheckEndpointsDeep(ctx context.Context, probes []Probe) []Check {
 	type result struct {
 		name string
 		err  error
@@ -46,19 +46,19 @@ func checkEndpointsDeep(ctx context.Context) []doctorCheck {
 	ch := make(chan result)
 	launched := 0
 	for i := range probes {
-		if probes[i].deep == nil {
+		if probes[i].Deep == nil {
 			continue
 		}
 		p := &probes[i]
 		launched++
-		to := deepTimeouts[p.name]
+		to := deepTimeouts[p.Name]
 		if to == 0 {
 			to = 15 * time.Second
 		}
 		go func() {
 			cctx, cancel := context.WithTimeout(ctx, to)
 			defer cancel()
-			ch <- result{p.name, p.deep(cctx)}
+			ch <- result{p.Name, p.Deep(cctx)}
 		}()
 	}
 
@@ -68,42 +68,42 @@ func checkEndpointsDeep(ctx context.Context) []doctorCheck {
 		errsByName[r.name] = r.err
 	}
 
-	out := make([]doctorCheck, 0, launched)
+	out := make([]Check, 0, launched)
 	for _, p := range probes {
-		if p.deep == nil {
+		if p.Deep == nil {
 			continue
 		}
-		out = append(out, classifyDeep(p, errsByName[p.name]))
+		out = append(out, ClassifyDeep(p, errsByName[p.Name]))
 	}
 	return out
 }
 
-// classifyDeep maps a deep probe's error into a labelled check. embed is the
+// ClassifyDeep maps a deep probe's error into a labelled check. embed is the
 // only backend whose readiness is critical (indexing can't proceed without it);
 // chat/rerank degrade, so their deep failures are warnings. A cold-load timeout
 // is always a warning — it's retryable, not a misconfiguration.
-func classifyDeep(p endpointProbe, err error) doctorCheck {
-	name := p.name + " (deep)"
-	critical := p.name == "embed"
-	failStatus := docWarn
+func ClassifyDeep(p Probe, err error) Check {
+	name := p.Name + " (deep)"
+	critical := p.Name == "embed"
+	failStatus := Warn
 	if critical {
-		failStatus = docFail
+		failStatus = Fail
 	}
 
 	if err == nil {
 		detail := "usable"
-		if p.model != "" {
-			detail = "usable  " + p.model
+		if p.Model != "" {
+			detail = "usable  " + p.Model
 		}
-		return doctorCheck{name: name, status: docOK, detail: detail}
+		return Check{Name: name, Status: OK, Detail: detail}
 	}
 
 	// Cold model still loading — reachable, retryable, never a misconfiguration.
 	if errors.Is(err, context.DeadlineExceeded) {
-		return doctorCheck{
-			name: name, status: docWarn,
-			detail: fmt.Sprintf("readiness timed out after %s (model may be cold-loading)", deepTimeouts[p.name]),
-			hints:  []string{"pre-warm the model, then re-run: dex doctor --deep"},
+		return Check{
+			Name: name, Status: Warn,
+			Detail: fmt.Sprintf("readiness timed out after %s (model may be cold-loading)", deepTimeouts[p.Name]),
+			Hints:  []string{"pre-warm the model, then re-run: dex doctor --deep"},
 		}
 	}
 
@@ -116,35 +116,35 @@ func classifyDeep(p endpointProbe, err error) doctorCheck {
 	var se *backendhttp.StatusError
 	if errors.As(err, &se) {
 		if se.Retryable() {
-			return doctorCheck{
-				name: name, status: docWarn, // transient, retryable — not critical
-				detail: fmt.Sprintf("reachable but overloaded/restarting (http %d) — retry", se.Code),
-				hints:  []string{"backend is up but can't serve right now; re-run once load subsides"},
+			return Check{
+				Name: name, Status: Warn, // transient, retryable — not critical
+				Detail: fmt.Sprintf("reachable but overloaded/restarting (http %d) — retry", se.Code),
+				Hints:  []string{"backend is up but can't serve right now; re-run once load subsides"},
 			}
 		}
 		// 4xx: model not served / bad request / incompatible response.
-		return doctorCheck{
-			name: name, status: failStatus, critical: critical,
-			detail: "reachable but not ready: " + err.Error(),
-			hints:  deepNotReadyHints(p.name, p.model, err),
+		return Check{
+			Name: name, Status: failStatus, Critical: critical,
+			Detail: "reachable but not ready: " + err.Error(),
+			Hints:  deepNotReadyHints(p.Name, p.Model, err),
 		}
 	}
 
 	// No HTTP status in the error → a transport-level failure (dial/timeout
 	// wrapped as the client's unreachable sentinel, or a bare network error).
 	if errors.Is(err, embed.ErrUnreachable) || errors.Is(err, chat.ErrUnreachable) || errors.Is(err, rerank.ErrUnreachable) {
-		return doctorCheck{
-			name: name, status: failStatus, critical: critical,
-			detail: "UNREACHABLE  (" + p.url + ")",
-			hints:  endpointHints(p.name, p.url),
+		return Check{
+			Name: name, Status: failStatus, Critical: critical,
+			Detail: "UNREACHABLE  (" + p.URL + ")",
+			Hints:  endpointHints(p.Name, p.URL),
 		}
 	}
 
 	// Reachable but the response was unusable (empty vectors, decode error, …).
-	return doctorCheck{
-		name: name, status: failStatus, critical: critical,
-		detail: "reachable but not ready: " + err.Error(),
-		hints:  deepNotReadyHints(p.name, p.model, err),
+	return Check{
+		Name: name, Status: failStatus, Critical: critical,
+		Detail: "reachable but not ready: " + err.Error(),
+		Hints:  deepNotReadyHints(p.Name, p.Model, err),
 	}
 }
 

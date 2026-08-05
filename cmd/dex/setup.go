@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alehatsman/dex/internal/health"
 	"github.com/alehatsman/dex/internal/mcp"
 	"github.com/alehatsman/dex/internal/proj"
 )
@@ -43,30 +44,30 @@ func cmdSetup(ctx context.Context, args []string) error {
 	epCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	checks := []doctorCheck{
+	checks := []health.Check{
 		checkIndexDir(),
 	}
-	checks = append(checks, checkEndpoints(epCtx)...)
+	checks = append(checks, health.CheckEndpoints(epCtx, collectEndpoints())...)
 	checks = append(checks, checkProjectConfig())
 	checks = append(checks, checkMCPWiring())
 
 	labelW := 0
 	for _, c := range checks {
-		if len(c.name) > labelW {
-			labelW = len(c.name)
+		if len(c.Name) > labelW {
+			labelW = len(c.Name)
 		}
 	}
 
 	var issues, critFails int
 	for _, c := range checks {
-		fmt.Printf("  %-*s  %s  %s\n", labelW, c.name, docSym(c.status), c.detail)
-		for _, h := range c.hints {
+		fmt.Printf("  %-*s  %s  %s\n", labelW, c.Name, docSym(c.Status), c.Detail)
+		for _, h := range c.Hints {
 			fmt.Printf("  %-*s     →  %s\n", labelW, "", h)
 		}
-		if c.status == docFail || c.status == docWarn {
+		if c.Status == health.Fail || c.Status == health.Warn {
 			issues++
 		}
-		if c.status == docFail && c.critical {
+		if c.Status == health.Fail && c.Critical {
 			critFails++
 		}
 	}
