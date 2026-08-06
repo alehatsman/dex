@@ -22,7 +22,7 @@ func TestTokenF1(t *testing.T) {
 	}
 	for _, c := range cases {
 		got := TokenF1(c.hyp, c.ref)
-		if abs(got-c.want) > 0.01 {
+		if math.Abs(got-c.want) > 0.01 {
 			t.Errorf("TokenF1(%q, %q) = %.4f, want %.4f", c.hyp, c.ref, got, c.want)
 		}
 	}
@@ -81,7 +81,7 @@ func TestComputeReport(t *testing.T) {
 	if rep.Overall.N != 3 {
 		t.Errorf("want 3 overall, got %d", rep.Overall.N)
 	}
-	if abs(rep.Overall.RecallAtK-2.0/3.0) > 0.001 {
+	if math.Abs(rep.Overall.RecallAtK-2.0/3.0) > 0.001 {
 		t.Errorf("recall@k want %.3f got %.3f", 2.0/3.0, rep.Overall.RecallAtK)
 	}
 	if len(rep.Categories) != 2 {
@@ -178,11 +178,4 @@ func TestRun(t *testing.T) {
 		t.Errorf("AvgTokenSavings=0: transcript=%d retrieved=%d",
 			results[0].TranscriptTokens, results[0].RetrievedTokens)
 	}
-}
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }

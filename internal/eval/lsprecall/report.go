@@ -131,10 +131,3 @@ func (s Suite) Drift(ref Suite, tol float64) []DriftResult {
 	}
 	return out
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

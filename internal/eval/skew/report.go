@@ -3,6 +3,7 @@ package skew
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -86,7 +87,7 @@ func (s Suite) Drift(ref Suite, tol float64) []Drift {
 			out = append(out, Drift{Repo: key.repo, Language: key.lang, Old: oldVal, New: 0})
 			continue
 		}
-		if abs(newVal-oldVal) > tol {
+		if math.Abs(newVal-oldVal) > tol {
 			out = append(out, Drift{Repo: key.repo, Language: key.lang, Old: oldVal, New: newVal})
 		}
 	}
@@ -100,7 +101,7 @@ func (s Suite) Drift(ref Suite, tol float64) []Drift {
 		if _, ok := base[key]; ok {
 			continue
 		}
-		if baseRepos[key.repo] && abs(newVal) > tol {
+		if baseRepos[key.repo] && math.Abs(newVal) > tol {
 			out = append(out, Drift{Repo: key.repo, Language: key.lang, Old: 0, New: newVal})
 		}
 	}
@@ -123,11 +124,4 @@ func skewIndex(s Suite) map[skewKey]float64 {
 		}
 	}
 	return m
-}
-
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
 }

@@ -3,6 +3,7 @@ package cochange
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -82,7 +83,7 @@ func (s Suite) Drift(ref Suite, tol float64) []Drift {
 			out = append(out, Drift{Repo: repo, Old: oldVal, New: 0})
 			continue
 		}
-		if abs(newVal-oldVal) > tol {
+		if math.Abs(newVal-oldVal) > tol {
 			out = append(out, Drift{Repo: repo, Old: oldVal, New: newVal})
 		}
 	}
@@ -96,11 +97,4 @@ func twoHopIndex(s Suite) map[string]float64 {
 		m[c.Repo] = c.Report.TwoHopShare()
 	}
 	return m
-}
-
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
 }
