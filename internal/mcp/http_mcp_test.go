@@ -20,7 +20,8 @@ func oneProjectRegistry(t *testing.T) (id, root string, projects map[string]stri
 	if err != nil {
 		t.Fatalf("BuildProjectRegistry: %v", err)
 	}
-	for id, root = range projects {
+	for id, root = range projects { // exactly one entry — grab it
+		break
 	}
 	return id, root, projects
 }

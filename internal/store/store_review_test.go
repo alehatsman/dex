@@ -9,7 +9,7 @@ import (
 
 // idByBody returns the row id of the fact with the given (unique) body.
 // KnowledgeAdd returns revision_count, not the id, so tests look it up here.
-func idByBody(t *testing.T, st *Store, ctx context.Context, body string) int64 {
+func idByBody(t *testing.T, ctx context.Context, st *Store, body string) int64 {
 	t.Helper()
 	var id int64
 	if err := st.db.QueryRowContext(ctx,
@@ -21,7 +21,7 @@ func idByBody(t *testing.T, st *Store, ctx context.Context, body string) int64 {
 
 // rewindUpdated backdates a fact's updated_at and zeroes its hit_count so the
 // staleness window applies.
-func rewindUpdated(t *testing.T, st *Store, ctx context.Context, id int64, d time.Duration) {
+func rewindUpdated(t *testing.T, ctx context.Context, st *Store, id int64, d time.Duration) {
 	t.Helper()
 	past := time.Now().Add(-d).UnixNano()
 	if _, err := st.db.ExecContext(ctx,
@@ -34,7 +34,7 @@ func TestPinnedExemptFromDecay(t *testing.T) {
 	st, ctx := newStore(t)
 	body := "a pinned fact that must not fade"
 	st.KnowledgeAdd(ctx, "Fact", body, 0.9)
-	if err := st.KnowledgeSetPinned(ctx, idByBody(t, st, ctx, body), true); err != nil {
+	if err := st.KnowledgeSetPinned(ctx, idByBody(t, ctx, st, body), true); err != nil {
 		t.Fatal(err)
 	}
 	// Baseline GC, then rewind last_gc 30 days so decay would normally bite.
@@ -61,7 +61,7 @@ func TestPinnedExemptFromEviction(t *testing.T) {
 	st.KnowledgeAdd(ctx, "Fact", pinned, 0.3)
 	st.KnowledgeAdd(ctx, "Fact", "middle confidence disposable note here", 0.6)
 	st.KnowledgeAdd(ctx, "Fact", "high confidence keeper note distinct words", 0.9)
-	if err := st.KnowledgeSetPinned(ctx, idByBody(t, st, ctx, pinned), true); err != nil {
+	if err := st.KnowledgeSetPinned(ctx, idByBody(t, ctx, st, pinned), true); err != nil {
 		t.Fatal(err)
 	}
 	// Cap of 2 over 3 facts → evict 1. The lowest-confidence fact is pinned, so
@@ -92,7 +92,7 @@ func TestPinnedExemptFromConsolidate(t *testing.T) {
 	st.KnowledgeAdd(ctx, "Gotcha", "alpha bravo charlie delta echo", 0.9)
 	dup := "alpha bravo charlie delta echo!"
 	st.KnowledgeAdd(ctx, "Gotcha", dup, 0.5)
-	if err := st.KnowledgeSetPinned(ctx, idByBody(t, st, ctx, dup), true); err != nil {
+	if err := st.KnowledgeSetPinned(ctx, idByBody(t, ctx, st, dup), true); err != nil {
 		t.Fatal(err)
 	}
 	res, err := st.KnowledgeGC(ctx, KnowledgeGCConfig{})
@@ -157,8 +157,8 @@ func TestKnowledgeReviewCategories(t *testing.T) {
 		st, ctx := newStore(t)
 		body := "an old never-recalled note destined to go stale"
 		st.KnowledgeAdd(ctx, "Observation", body, 0.4)
-		id := idByBody(t, st, ctx, body)
-		rewindUpdated(t, st, ctx, id, 40*24*time.Hour)
+		id := idByBody(t, ctx, st, body)
+		rewindUpdated(t, ctx, st, id, 40*24*time.Hour)
 		res, _ := st.KnowledgeReview(ctx)
 		if len(res.Stale) != 1 {
 			t.Fatalf("stale=%d, want 1", len(res.Stale))
@@ -182,7 +182,7 @@ func TestExportRestoreRoundTripsPinned(t *testing.T) {
 	}
 	body := "a permanent decision worth keeping"
 	st.KnowledgeAdd(ctx, "Decision", body, 0.9)
-	if err := st.KnowledgeSetPinned(ctx, idByBody(t, st, ctx, body), true); err != nil {
+	if err := st.KnowledgeSetPinned(ctx, idByBody(t, ctx, st, body), true); err != nil {
 		t.Fatal(err)
 	}
 	_ = st.Close()

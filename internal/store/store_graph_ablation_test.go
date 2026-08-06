@@ -11,7 +11,7 @@ import (
 // session-touched) and b.go (orthogonal to the query, reachable only via the
 // graph edge a.go→b.go). For a query along (1,0,0,0) the spreading-activation
 // lane is the only thing that pulls b.go into the hit set.
-func seedGraphLaneFixture(t *testing.T, st *Store, ctx context.Context) {
+func seedGraphLaneFixture(t *testing.T, ctx context.Context, st *Store) {
 	t.Helper()
 	now := time.Now()
 	if err := st.UpsertMany(ctx, []PendingChunk{
@@ -46,7 +46,7 @@ func graphFixtureStore(t *testing.T, ctx context.Context, name string, opts Opti
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	seedGraphLaneFixture(t, st, ctx)
+	seedGraphLaneFixture(t, ctx, st)
 	return st
 }
 
