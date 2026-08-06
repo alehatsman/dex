@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
+
+	"github.com/alehatsman/dex/internal/graph/resolve"
 )
 
 type jstsBase struct {
@@ -34,6 +36,11 @@ type jstsBase struct {
 	// `this.field.method()` resolve to `T.method` name-based.
 	fieldTypes map[string]map[string]string
 	warnings   []string
+	// workspace resolves non-relative specifiers (@bright/*, @/*) to project
+	// files via package.json names + tsconfig path aliases. Built once at the
+	// top of Finalize (projectRoot is set; it reads only disk config). Nil is
+	// safe — Candidates guards a nil receiver (#127).
+	workspace *resolve.Workspace
 }
 
 // classFieldKey is the fieldTypes outer key. The NUL separator can't
@@ -48,6 +55,10 @@ func (e *jstsBase) Init(_ context.Context, root string) error {
 }
 
 func (e *jstsBase) Finalize(_ context.Context) ([]Node, []Edge, []string, error) {
+	// Build the workspace resolver now: projectRoot is set and it reads only
+	// disk config (package.json / tsconfig), so it doesn't depend on knownFiles.
+	e.workspace = resolve.Load(e.projectRoot)
+
 	// Module specifiers were captured as raw strings during the walk;
 	// resolve them now that knownFiles is complete (a forward reference
 	// would otherwise miss because of walk order).
@@ -80,7 +91,37 @@ func (e *jstsBase) Finalize(_ context.Context) ([]Node, []Edge, []string, error)
 			EndLine:   c.line,
 		})
 	}
+
+	// Annotate import nodes with their resolution outcome so the package DAG
+	// and dependency lanes see real cross-package targets instead of opaque
+	// leaves. Node identity/display (the raw specifier) is unchanged (#127).
+	e.annotateImports()
+
 	return e.nodes, e.edges, e.warnings, nil
+}
+
+// annotateImports classifies each NodeImport's specifier and records the outcome
+// in its metadata: Metadata["target"] = resolved internal module path, or
+// Metadata["external"] = true for a bare npm dependency. An unresolved specifier
+// is left untouched. The importing file is recovered via knownFiles[PackagePath].
+func (e *jstsBase) annotateImports() {
+	for i := range e.nodes {
+		n := &e.nodes[i]
+		if n.Kind != NodeImport {
+			continue
+		}
+		fromFile := e.knownFiles[n.PackagePath]
+		target, class := e.classifySpecifier(n.QualifiedName, fromFile)
+		if n.Metadata == nil {
+			n.Metadata = map[string]any{}
+		}
+		switch class {
+		case specInternal:
+			n.Metadata["target"] = target
+		case specExternal:
+			n.Metadata["external"] = true
+		}
+	}
 }
 
 // emitFunctionNode emits the node/symbol/edge surface for a function or
@@ -698,29 +739,90 @@ func (e *jstsBase) resolveModuleSpecifier(specifier, fromFile string) string {
 	if specifier == "" {
 		return ""
 	}
-	if !strings.HasPrefix(specifier, ".") {
-		return specifier
-	}
-	if fromFile == "" {
-		return specifier
-	}
-	base := path.Dir(filepath.ToSlash(fromFile))
-	joined := path.Clean(path.Join(base, specifier))
-	if _, ok := e.knownFiles[joined]; ok {
-		return joined
-	}
-	// Explicit-extension specifier (Deno / browser-native ESM): strip the
-	// extension and retry, since knownFiles is keyed on extension-free paths.
-	if ext := path.Ext(joined); ext != "" {
-		stripped := joined[:len(joined)-len(ext)]
-		if _, ok := e.knownFiles[stripped]; ok {
-			return stripped
+	if strings.HasPrefix(specifier, ".") {
+		if fromFile == "" {
+			return specifier
 		}
+		base := path.Dir(filepath.ToSlash(fromFile))
+		joined := path.Clean(path.Join(base, specifier))
+		if resolved, ok := e.probeKnown(joined); ok {
+			return resolved
+		}
+		return specifier
 	}
-	if _, ok := e.knownFiles[joined+"/index"]; ok {
-		return joined + "/index"
+	// Non-relative: a workspace package or tsconfig path alias may still name a
+	// project file (@bright/*, @/*). A bare npm dep resolves nothing and is
+	// returned verbatim — the caller treats it as external.
+	if resolved, ok := e.resolveWorkspace(specifier); ok {
+		return resolved
 	}
 	return specifier
+}
+
+// probeKnown resolves an extension-free, project-relative candidate module path
+// against the indexed file set: exact hit, then explicit-extension strip (Deno /
+// browser-native ESM), then the dir/index barrel fallback. Shared by relative
+// and workspace resolution.
+func (e *jstsBase) probeKnown(candidate string) (string, bool) {
+	if _, ok := e.knownFiles[candidate]; ok {
+		return candidate, true
+	}
+	if ext := path.Ext(candidate); ext != "" {
+		stripped := candidate[:len(candidate)-len(ext)]
+		if _, ok := e.knownFiles[stripped]; ok {
+			return stripped, true
+		}
+	}
+	if _, ok := e.knownFiles[candidate+"/index"]; ok {
+		return candidate + "/index", true
+	}
+	return "", false
+}
+
+// resolveWorkspace probes the workspace resolver's candidates for a non-relative
+// specifier against the indexed file set; the first indexed hit wins. Returns
+// ("", false) when nothing resolves (a bare/external dependency).
+func (e *jstsBase) resolveWorkspace(specifier string) (string, bool) {
+	for _, cand := range e.workspace.Candidates(specifier) {
+		if resolved, ok := e.probeKnown(cand); ok {
+			return resolved, true
+		}
+	}
+	return "", false
+}
+
+// specifierClass labels how an import specifier resolved, for import-node
+// annotation.
+type specifierClass int
+
+const (
+	specUnresolved specifierClass = iota // matched no indexed project file
+	specInternal                         // resolved to an indexed project file
+	specExternal                         // non-relative, no workspace/alias candidate (bare dep)
+)
+
+// classifySpecifier resolves a specifier and classifies the outcome for import-
+// node metadata. Kept separate from resolveModuleSpecifier (which must keep
+// returning a string for the call-resolution maps).
+func (e *jstsBase) classifySpecifier(specifier, fromFile string) (string, specifierClass) {
+	if specifier == "" {
+		return "", specUnresolved
+	}
+	if strings.HasPrefix(specifier, ".") {
+		if resolved := e.resolveModuleSpecifier(specifier, fromFile); resolved != specifier {
+			return resolved, specInternal
+		}
+		return "", specUnresolved
+	}
+	if resolved, ok := e.resolveWorkspace(specifier); ok {
+		return resolved, specInternal
+	}
+	// Non-relative with no indexed target: external, unless the workspace knew a
+	// candidate that simply wasn't indexed (then it's internal-but-unindexed).
+	if len(e.workspace.Candidates(specifier)) > 0 {
+		return "", specUnresolved
+	}
+	return "", specExternal
 }
 
 func (e *jstsBase) addNode(n Node) bool {

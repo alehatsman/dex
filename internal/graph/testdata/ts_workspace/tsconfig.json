@@ -1,0 +1,10 @@
+{
+  // shared workspace path aliases
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["apps/base-view/src/*"],
+      "@bright/common": ["packages/bright-common/src/index.ts"],
+    }
+  }
+}
