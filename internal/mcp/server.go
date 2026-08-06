@@ -899,396 +899,405 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 	expert := expertEnabled()
 	if !weakModel {
-		// Default verb surface: brief (task context) / search / trace / locate /
-		// review_diff / verify_change / notes / read / shell / grep.
-		// ask is registered below — always-on when embed is unavailable (BM25
-		// fallback), expert-only when embed is present (brief takes over as primary).
-		// repo_map moved to expert: brief embeds orientation and freshness inline,
-		// making the standalone tool redundant for everyday work. index_status was
-		// removed entirely — brief covers single-project freshness, status covers
-		// cross-project health.
-		if embedAvailable {
-			addTool(srv, &sdk.Tool{
-				Name:        "search",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Hybrid semantic + BM25 search. Use when brief is overkill and you need raw " +
-					"ranked hits for a specific query. Identifier tokens (CamelCase, snake_case, qualified names) " +
-					"are automatically looked up by exact symbol name and fused via Reciprocal Rank Fusion — no " +
-					"separate lookup call needed. Supports exclude list, 'languages', and 'path_glob' filters. " +
-					"On error: 'no-index' (run dex index first), 'embedding-service-unreachable' (fall back to grep), or 'ok'."),
-			}, h.search)
-		}
-
-		addTool(srv, &sdk.Tool{
-			Name:        "trace",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
-				"who calls it), 'callees' (what it calls), 'path' (shortest call route to the `to` symbol), or " +
-				"'impact' (transitive caller blast-radius up to max_depth (default 3): every reachable function with " +
-				"its hop depth + PageRank, a risk tier, and `tests_to_run` — the sibling tests of the blast-radius " +
-				"files, so change→verify is one call (#654)). " +
-				"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
-				"recall, so an empty result there is not proof of none — verify with grep. Non-empty non-Go " +
-				"results are tagged `recall:partial` (callers/callees also fold a grep sweep into `grep_hits`; " +
-				"impact just flags the radius as possibly larger). TypeScript additionally resolves constructor-DI " +
-				"dispatch — `this.dep.method()` binds to the injected type's method (#85). For a Go method that " +
-				"implements a project interface, callers (and impact) also include the INTERFACE-dispatch call sites " +
-				"(calls through the interface value), each tagged with `via` naming the interface method — so dynamic " +
-				"dispatch isn't missed (#604). Accepts a bare name ('Foo'), " +
-				"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
-				"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
-		}, traceHandler(h))
-
+		registerEverydayTools(srv, h, td, embedAvailable)
 		if expert {
-			// lookup is not a standalone tool — `find` already fuses exact
-			// symbol-name hits via RRF, and `ask` detects identifiers and runs
-			// the same lookup automatically. The findSymbol handler stays (it
-			// backs find's fusion, locate's resolver, and the REST /lookup
-			// route); only the redundant tool exposure is removed (#685).
-			addTool(srv, &sdk.Tool{
-				Name:        "deps",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Return the `imports` edges for a file or package — the package the file belongs to, " +
-					"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
-					"Pass `path` (relative file inside the project) OR `package` (full package path). " +
-					"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing."),
-			}, h.graphDeps)
-			// callers/callees are not standalone tools — `trace --dir
-			// callers|callees` is the single call-graph entry point (#575).
-		}
-
-		// impact is not a standalone tool — `trace --dir impact` is the single
-		// call-graph entry point (#684, folded like callers/callees/path #575).
-
-		// locate is in the default lane (#636 / GitHub #65 S1): one-call
-		// orientation around a code location. It composes the everyday lanes
-		// (resolve → callers → tests → nearest doc → churn → notes) that an
-		// agent otherwise stitches together by hand dozens of times a session.
-		addTool(srv, &sdk.Tool{
-			Name:        "locate",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("One-call orientation around a code location. Give any one of `ref` " +
-				"('path:line'), `symbol` (a name), or `frame` (a raw stack-trace line) and locate resolves " +
-				"the enclosing symbol, then returns its callers (+ risk tier), sibling test files, the nearest " +
-				"doc (CLAUDE.md/doc.go/README.md walking up), the file's last commit + author, and related " +
-				"project notes — in one response. Pass `issues: true` to also list matching open GitHub issues " +
-				"via `gh` (best-effort). " +
-				"To batch-verify many cited 'file:line[:symbol]' locations in one call (e.g. confirm citations " +
-				"from notes/memory still resolve), use the `check` verb instead. " +
-				"Pure composition over the index; needs no chat model. Degrades cleanly: " +
-				"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
-				"Reach for locate when you already have a concrete path:line, symbol, or panic frame to orient on — " +
-				"ask remains the primary entry point for open-ended questions."),
-		}, h.locate)
-
-		// review is in the default lane (#639 / GitHub #65 S2): per-hunk PR
-		// intelligence. Code review is delta-shaped while every other verb is
-		// state-shaped — review composes the diff with callers, tests, churn,
-		// author history, and notes per hunk so the agent spends its budget on
-		// judgment, not context assembly.
-		addTool(srv, &sdk.Tool{
-			Name:        "review_diff",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Per-hunk intelligence for a diff or PR — use this when reviewing changes. " +
-				"Give one of `ref` ('HEAD~3..HEAD' or a single ref vs HEAD), `branch` (what it adds since " +
-				"diverging from the default branch), or `pr` (a GitHub PR number, resolved via `gh`). " +
-				"For each changed hunk review returns the touched symbols, their callers (+ a risk tier from " +
-				"caller blast radius and export status), and related notes; per file it adds sibling tests, the " +
-				"nearest doc, 30-day churn, last commit/author, recent author history, and any notes whose " +
-				"`scope` binds the file (gotcha-on-touch, #645). " +
-				"Pass `compact: true` to drop low-risk hunks. Pure composition over the index; needs no chat " +
-				"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
-				"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
-		}, h.review)
-
-		// verify is in the default lane (#686, epic #683): it closes the agent
-		// loop's missing half — change → verify → learn. Unlike every other query
-		// verb it is NOT read-only (it runs the test command), so no ReadOnlyHint.
-		addTool(srv, &sdk.Tool{
-			Name: "verify_change",
-			Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
-				"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
-				"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
-				"(its own test plus its callers', #654). Resolves changed files → Go packages and runs " +
-				"`go test` over them, routed through the shell pipeline so output is compressed and a failing " +
-				"run stages a `gotcha_candidate` you persist with `notes`. Override the command via `command` " +
-				"or $DEX_VERIFY_CMD with a '{{packages}}' placeholder (e.g. 'go test -tags sqlite_fts5 " +
-				"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
-				"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
-		}, h.verify)
-
-		// notes is in the default lane (#548): persistent project memory is the
-		// highest-leverage saver of repeat exploration, and the read path (facts
-		// auto-injected into ask) is useless if the agent can never write. Needs
-		// no embedder or chat model.
-		addTool(srv, &sdk.Tool{
-			Name: "notes",
-			Description: td("Persistent project memory — record and recall facts, patterns, and gotchas that " +
-				"survive session resets and reconnects (no embedding required). " +
-				"Actions: add (store a fact with an archetype and confidence — the response's " +
-				"`similar` list warns when a near-duplicate note already exists so you can `delete` " +
-				"the superseded one; pass `scope` to bind the fact to a file glob/path/package so `locate` " +
-				"surfaces it proactively when it touches a matching file, #645 — and if you omit `scope` but the " +
-				"note names a real project file/glob, the response's `scope_suggestion` proposes one), " +
-				"list (recall top-k facts ordered by salience), delete (remove a fact by id), " +
-				"review (read-only: suggest near-duplicate merges, overlaps to judge, and stale facts — " +
-				"dex never auto-applies these, you act on them), pin/unpin (mark a fact permanent — exempt " +
-				"from decay, eviction, and staleness proposals, #633), " +
-				"relate (create/reinforce a typed edge between facts via relate_from/relate_to/relate_kind: " +
-				"DependsOn|RelatedTo|Supports|Contradicts|Supersedes, #621), " +
-				"relations (list edges for a fact id, or set diagram=true for a Mermaid graph of all edges), " +
-				"gc (run the lifecycle pass: decay confidence, consolidate near-duplicates, evict past the cap), " +
-				"consolidate (one-shot merge of near-duplicate facts without the rest of gc), " +
-				"export/import (dump/load the full note set as JSON for backup or cross-project transfer). " +
-				"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding. " +
-				"ReviewFinding closes the review→edit loop (#87): after reviewing a file, persist what the next editor " +
-				"most needs (a god-object, a duplication, a layering-violation, an injection-risk — lead the body with a " +
-				"bracketed [kind]) as add(archetype=ReviewFinding, scope=<reviewed file>) so read/locate/review surface it " +
-				"on touch instead of it leaking into chat. " +
-				"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
-				"as knowledge_facts."),
-		}, h.knowledge)
-
-		if expert {
-			// plan_rename (#638): type-precise rename planner. Go-only, on-demand
-			// (no index). Moved to expert: niche workflow, byte-offset input shape
-			// that most agents don't construct naturally.
-			addTool(srv, &sdk.Tool{
-				Name:        "plan_rename",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Plan a type-precise rename and get back byte-exact edit triples to apply yourself " +
-					"(dex never writes files). Set `op` to 'rename_symbol' (default), `symbol` to the target " +
-					"(bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') and `to` to " +
-					"the new name. Returns every (path, start_byte, end_byte, replacement) edit across the module, " +
-					"resolved by the Go type checker — a method rename touches only that type's method, never " +
-					"same-named methods elsewhere. Apply edits highest-offset-first per file. The `etag` echoes the " +
-					"touched files' hash; pass it back to detect a stale plan. Go-only in v1 (returns " +
-					"'unsupported-language' otherwise); also 'not-found' / 'ambiguous' / 'stale'. Loads packages " +
-					"on-demand, so it is slower than the read verbs — reach for it when you're about to rename."),
-			}, h.refactor)
-
-			// rehearse_patch (#730): type-check a hypothetical edit in-memory.
-			// Moved to expert: complex byte-range splice input, Go-only, rarely
-			// called — agents typically edit then verify_change instead.
-			addTool(srv, &sdk.Tool{
-				Name:        "rehearse_patch",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Type-check a hypothetical edit in-memory and return new type errors, broken " +
-					"files, and tests to run — without writing anything. Closes the chain: " +
-					"`plan_rename` (plan) → `rehearse_patch` (prove it compiles) → `Edit` (apply) → `verify_change` (test). " +
-					"Pass `edits` as byte-range splices — the same shape `plan_rename` emits (path, start_byte, " +
-					"end_byte, replacement), applied highest-offset-first per file. Or pass `files` as whole-file " +
-					"replacements (path + contents); `files` takes precedence over `edits` for the same path. " +
-					"Returns `compiles` (bool), `diagnostics` (new type errors only — pre-existing errors are " +
-					"diffed out), `broken_files` (paths with new errors), and `tests_to_run` (sibling test files). " +
-					"Go-only in v1 (returns 'unsupported-language' for non-Go roots); also 'no-edits' when no " +
-					"edits/files are supplied. Loads packages on-demand — slower than the read verbs."),
-			}, h.rehearse)
-
-			// check (#708): batch citation verification. Moved to expert: meta-tool
-			// for QA of prior notes/citations, not primary coding workflow.
-			addTool(srv, &sdk.Tool{
-				Name:        "check",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Verify a batch of file:line[:symbol] references against the current index — " +
-					"use this after making or reviewing changes to confirm that cited locations are still valid. " +
-					"Pass `claims` as an array of {ref, symbol?} objects where `ref` is 'file:line', " +
-					"'file:line:symbol', or 'file:symbol'. Each result has `status`: " +
-					"ok (reference is valid), moved (symbol found at a different line in the same file, " +
-					"with `found_at`), gone (symbol/line no longer indexed), no_file (path has no indexed " +
-					"chunks), or parse_error (malformed ref). `symbol_at` reports what IS indexed at the " +
-					"given line when the expected symbol does not match."),
-			}, h.check)
-
-			addTool(srv, &sdk.Tool{
-				Name:        "routes",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
-					"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
-					"and callers of registration functions (Handle, HandleFunc, AddTool, RegisterService, etc.). " +
-					"Returns each handler with its file location and the registration function that wires it in. " +
-					"Requires a graph index (`dex index . --graph=only`)."),
-			}, h.routes)
-
-			addTool(srv, &sdk.Tool{
-				Name:        "smells",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("AST-based code quality signals derived from the graph index — no LLM required. " +
-					"Returns four categories: `long_functions` (bodies >= min_func_lines, default 80), " +
-					"`dead_exports` (exported functions/methods with no indexed callers), " +
-					"`god_files` (files with >= min_file_symbols symbols, default 30), and " +
-					"`god_nodes` (functions/methods with in_degree >= min_god_node_callers (20) OR " +
-					"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
-					"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
-			}, h.smells)
-
-			// clones / similar (#84): semantic duplication detection over the
-			// vectors already indexed for search. Vector-backed, so only wired
-			// when an embedder is present.
-			if embedAvailable {
-				addTool(srv, &sdk.Tool{
-					Name:        "clones",
-					Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-					Description: td("Find clusters of semantically near-duplicate code blocks (duplication hotspots) — " +
-						"the highest-leverage output for review/refactor work, and something grep can't do (it matches " +
-						"literals, not meaning). Scans indexed function/method blocks, KNNs each against the rest, and " +
-						"union-finds the near-duplicate edges into clusters. Returns clusters of `{path, start_line, " +
-						"end_line, kind, name}` with a `similarity` floor and `size`. Args: `path` (restrict to a file/dir " +
-						"prefix), `threshold` (min cosine similarity, default 0.90), `min_lines` (default 6), `k`, " +
-						"`max_clusters`. Reuses search vectors — no embedder round-trip; an index built without embeddings " +
-						"returns none."),
-				}, h.clones)
-
-				addTool(srv, &sdk.Tool{
-					Name:        "similar",
-					Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-					Description: td("Return code blocks across the repo semantically near a given block, ranked by " +
-						"similarity. Point it at a block via `path` + `start_line` (the block indexed at that line); set " +
-						"`threshold` (cosine similarity 0..1) to keep only genuine near-duplicates. Use it to answer " +
-						"'where else is this logic implemented?' before editing or de-duplicating. Vector KNN over the " +
-						"search index — no embedder round-trip."),
-				}, h.related)
-			}
-
-			// cohort (#643): blast radius of an intent. Given an interface, list
-			// the types you must edit in lockstep when its method set changes —
-			// complete implementors plus near-misses (the backend you forgot).
-			addTool(srv, &sdk.Tool{
-				Name:        "cohort",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Find the types that must change together with an interface. Given an `interface` " +
-					"name (bare 'toolSurface' or pkg-qualified 'mcp.toolSurface'), returns every type that " +
-					"implements it ('complete') plus near-misses that implement most of it but are missing methods " +
-					"('partial' — the backend you forgot to update), each with its declaration file:line and the " +
-					"missing method names. Pure go/types — no index needed; Go-only (returns 'unsupported-language' " +
-					"otherwise). Reach for it before adding/removing an interface method to plan the lockstep edit."),
-			}, h.cohort)
-
-			// refs (#604 Tier 1): type-precise Go symbol queries via go/types.
-			// references — all def+use sites; implementations — concrete types
-			// satisfying an interface; supertypes — embedded interfaces / interfaces
-			// a type satisfies; subtypes — implementing types / embedding structs.
-			addTool(srv, &sdk.Tool{
-				Name:        "refs",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Type-precise Go symbol queries via go/types — no index needed; Go-only. " +
-					"Give a `symbol` (bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') " +
-					"and an `action`: " +
-					"'references' (all def + use sites across the module), " +
-					"'implementations' (concrete types satisfying an interface), " +
-					"'supertypes' (interfaces embedded by an interface, or interfaces a concrete type satisfies within the module), " +
-					"'subtypes' (types implementing an interface, or structs embedding a struct). " +
-					"Returns a list of {path, line, kind} sites. Returns 'unsupported-language' for non-Go. " +
-					"For interface implementors, `cohort` gives richer coverage-gap analysis; refs gives the raw query."),
-			}, h.refs)
-
-			// `path` is not a standalone tool — `trace --dir path --to <dst>`
-			// finds the shortest route between two symbols (#575).
-			// `diff` removed: review_diff + trace direction=impact cover blast-radius
-			// from changed files. `budget` removed: session action=budget covers it.
-
-			addTool(srv, &sdk.Tool{
-				Name:        "clusters",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("List Louvain communities in the call/import graph — " +
-					"clusters of tightly-interconnected symbols. " +
-					"Communities are sorted by descending size. " +
-					"Top members per community are sorted by PageRank. " +
-					"Community IDs are stable across re-runs for unchanged subgraphs. " +
-					"Requires a graph index (`dex index . --graph=only`). " +
-					"Useful for understanding module boundaries, finding hidden coupling, and planning refactors."),
-			}, h.graphCommunities)
-
-			addTool(srv, &sdk.Tool{
-				Name:        "repo_map",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Deterministic, multi-zoom topology map of the project's top packages/dirs " +
-					"and how they connect — no embedding or chat required. " +
-					"Use for structural exploration when you need raw topology rather than a task context pack. " +
-					"For coding tasks, call `brief(task)` instead — it returns ranked files and orientation together. " +
-					"Returns 'no-index' when the project hasn't been indexed yet."),
-			}, mapHandler(h))
-
-			addTool(srv, &sdk.Tool{
-				Name:        "status",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times. " +
-					"For everyday use, single-project index freshness is embedded in `brief` responses — call this for cross-project health checks or debugging."),
-			}, h.status)
-
-			addTool(srv, &sdk.Tool{
-				Name: "session",
-				Description: td("Manage per-project session memory across tool calls. " +
-					"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
-					"add_file (track a file you read/wrote), get (retrieve the current session state), " +
-					"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
-					"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical), " +
-					"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files), " +
-					"export (serialise task + working-set files (path+etag, no content) + notes into a dex-session-v1 bundle for handoff across a context reset), " +
-					"import (restore that bundle into a fresh session and return a recovery digest, flagging any files changed since export). " +
-					"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
-					"don't lose context across reconnects. No embedding required."),
-			}, h.session)
-
-			addTool(srv, &sdk.Tool{
-				Name: "checkpoint",
-				Description: td("Private shadow git history of the working tree — checkpoint and review your " +
-					"own work-in-progress WITHOUT touching the user's .git (a separate repo under dex's cache). " +
-					"Actions: snapshot (commit the current working tree to the shadow; idempotent — no commit when " +
-					"unchanged; returns sha + files_changed), log (list checkpoints, newest first; limit default 20/max 200), " +
-					"diff (unified diff between two checkpoints, default HEAD~1..HEAD; from/to override; byte-capped). " +
-					"Use it to review what you've changed across a session, or to snapshot before a risky refactor. " +
-					"Read-only on the user's tree (dex never writes it, #551): apply any rollback yourself from the diff."),
-			}, h.checkpoint)
-		}
-
-		addTool(srv, &sdk.Tool{
-			Name:        "read",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Fetch exact source context for a file you already know. " +
-				"Use `brief` first — its `ranked_files` and `suggested_reads` will name the files worth reading. " +
-				"`mode` (default 'full') selects the view: 'full' = raw file content (no LLM, exact bytes); " +
-				"'signatures' = indexed symbols + source lines; 'skeleton' = exported type declarations in full plus " +
-				"function/method signatures with @B<n> body handles (expand one later via expand='@B<n>'); " +
-				"'map' = imports + exported symbols; 'lines:N-M' = raw line slice; " +
-				"'analyze' = a token-cost comparison of every mode plus a recommended mode and NO file content, so you " +
-				"can pick the cheapest sufficient view before paying to read it; its `handle` (#620) lets you analyze " +
-				"many files then lazily expand only the ones you need via read(handle=…, mode=…); " +
-				"'summary' = LLM-generated digest (the only mode needing a chat model — pass `focus` to steer, " +
-				"e.g. 'public API surface'; returns status='needs-chat' when no chat model is wired). " +
-				"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
-				"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
-				"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
-				"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
-				"If the file changed since the last read the server may return status=delta with a compact unified diff " +
-				"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
-				"Pass `task` (your current task from `session`) for automatic compression routing of the raw default. " +
-				"Pass `ref` (a git revision: HEAD~5, v1.0, a sha) to time-travel — read the file AS OF that commit, " +
-				"with mode=full (raw) or mode=signatures (the historical API); the file must still exist now (#644). " +
-				"Any note whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch, #645) — read it before you edit. " +
-				"Pass `slice` to extract a surgical subset of the content without sending the whole file: " +
-				"head:N (first N lines), tail:N (last N lines), range:L1-L2 (1-indexed inclusive), " +
-				"search:PATTERN (RE2 grep with ±3 context lines, groups separated by ---), " +
-				"json_path:EXPR (dot-path JSON extraction, e.g. $.dependencies). " +
-				"Slice composes with handle: the handle resolves to a range first, then slice extracts within it. " +
-				"Pass `ccr_hash` (a hex string from a dex:lc_expand:<hash> recovery marker) to retrieve an archived " +
-				"tool result from the proxy's CCR tee store; `slice` applies to the retrieved blob. " +
-				"On error, returns 'chat-service-unreachable' or 'error'."),
-		}, h.summarize)
-
-		if embedAvailable {
-			addTool(srv, &sdk.Tool{
-				Name:        "brief",
-				Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-				Description: td("PRIMARY ENTRYPOINT for coding tasks — call brief(task) before any file reads. " +
-					"Returns ranked_files (by semantic similarity to the task), relevant_symbols, " +
-					"local_rules (CLAUDE.md / specs), sibling tests, impact, index freshness, and next_calls. " +
-					"Replaces the read-everything pattern with a curated, budget-bounded working set. " +
-					"Follow up with read/locate only for missing exact details."),
-			}, h.brief)
+			registerExpertTools(srv, h, td, embedAvailable)
 		}
 	}
+	registerBaselineTools(srv, h, td)
+	if !embedAvailable || expert {
+		registerAskTool(srv, h, td)
+	}
+}
 
+// registerEverydayTools wires the default verb surface (#125): the lanes
+// everyday coding work needs, gated only by embedder availability.
+func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
+	if embedAvailable {
+		addTool(srv, &sdk.Tool{
+			Name:        "search",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Hybrid semantic + BM25 search. Use when brief is overkill and you need raw " +
+				"ranked hits for a specific query. Identifier tokens (CamelCase, snake_case, qualified names) " +
+				"are automatically looked up by exact symbol name and fused via Reciprocal Rank Fusion — no " +
+				"separate lookup call needed. Supports exclude list, 'languages', and 'path_glob' filters. " +
+				"On error: 'no-index' (run dex index first), 'embedding-service-unreachable' (fall back to grep), or 'ok'."),
+		}, h.search)
+	}
+
+	addTool(srv, &sdk.Tool{
+		Name:        "trace",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
+			"who calls it), 'callees' (what it calls), 'path' (shortest call route to the `to` symbol), or " +
+			"'impact' (transitive caller blast-radius up to max_depth (default 3): every reachable function with " +
+			"its hop depth + PageRank, a risk tier, and `tests_to_run` — the sibling tests of the blast-radius " +
+			"files, so change→verify is one call (#654)). " +
+			"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
+			"recall, so an empty result there is not proof of none — verify with grep. Non-empty non-Go " +
+			"results are tagged `recall:partial` (callers/callees also fold a grep sweep into `grep_hits`; " +
+			"impact just flags the radius as possibly larger). TypeScript additionally resolves constructor-DI " +
+			"dispatch — `this.dep.method()` binds to the injected type's method (#85). For a Go method that " +
+			"implements a project interface, callers (and impact) also include the INTERFACE-dispatch call sites " +
+			"(calls through the interface value), each tagged with `via` naming the interface method — so dynamic " +
+			"dispatch isn't missed (#604). Accepts a bare name ('Foo'), " +
+			"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
+			"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
+	}, traceHandler(h))
+
+	// impact is not a standalone tool — `trace --dir impact` is the single
+	// call-graph entry point (#684, folded like callers/callees/path #575).
+
+	// locate is in the default lane (#636 / GitHub #65 S1): one-call
+	// orientation around a code location. It composes the everyday lanes
+	// (resolve → callers → tests → nearest doc → churn → notes) that an
+	// agent otherwise stitches together by hand dozens of times a session.
+	addTool(srv, &sdk.Tool{
+		Name:        "locate",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("One-call orientation around a code location. Give any one of `ref` " +
+			"('path:line'), `symbol` (a name), or `frame` (a raw stack-trace line) and locate resolves " +
+			"the enclosing symbol, then returns its callers (+ risk tier), sibling test files, the nearest " +
+			"doc (CLAUDE.md/doc.go/README.md walking up), the file's last commit + author, and related " +
+			"project notes — in one response. Pass `issues: true` to also list matching open GitHub issues " +
+			"via `gh` (best-effort). " +
+			"To batch-verify many cited 'file:line[:symbol]' locations in one call (e.g. confirm citations " +
+			"from notes/memory still resolve), use the `check` verb instead. " +
+			"Pure composition over the index; needs no chat model. Degrades cleanly: " +
+			"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
+			"Reach for locate when you already have a concrete path:line, symbol, or panic frame to orient on — " +
+			"ask remains the primary entry point for open-ended questions."),
+	}, h.locate)
+
+	// review is in the default lane (#639 / GitHub #65 S2): per-hunk PR
+	// intelligence. Code review is delta-shaped while every other verb is
+	// state-shaped — review composes the diff with callers, tests, churn,
+	// author history, and notes per hunk so the agent spends its budget on
+	// judgment, not context assembly.
+	addTool(srv, &sdk.Tool{
+		Name:        "review_diff",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Per-hunk intelligence for a diff or PR — use this when reviewing changes. " +
+			"Give one of `ref` ('HEAD~3..HEAD' or a single ref vs HEAD), `branch` (what it adds since " +
+			"diverging from the default branch), or `pr` (a GitHub PR number, resolved via `gh`). " +
+			"For each changed hunk review returns the touched symbols, their callers (+ a risk tier from " +
+			"caller blast radius and export status), and related notes; per file it adds sibling tests, the " +
+			"nearest doc, 30-day churn, last commit/author, recent author history, and any notes whose " +
+			"`scope` binds the file (gotcha-on-touch, #645). " +
+			"Pass `compact: true` to drop low-risk hunks. Pure composition over the index; needs no chat " +
+			"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
+			"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
+	}, h.review)
+
+	// verify is in the default lane (#686, epic #683): it closes the agent
+	// loop's missing half — change → verify → learn. Unlike every other query
+	// verb it is NOT read-only (it runs the test command), so no ReadOnlyHint.
+	addTool(srv, &sdk.Tool{
+		Name: "verify_change",
+		Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
+			"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
+			"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
+			"(its own test plus its callers', #654). Resolves changed files → Go packages and runs " +
+			"`go test` over them, routed through the shell pipeline so output is compressed and a failing " +
+			"run stages a `gotcha_candidate` you persist with `notes`. Override the command via `command` " +
+			"or $DEX_VERIFY_CMD with a '{{packages}}' placeholder (e.g. 'go test -tags sqlite_fts5 " +
+			"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
+			"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
+	}, h.verify)
+
+	// notes is in the default lane (#548): persistent project memory is the
+	// highest-leverage saver of repeat exploration, and the read path (facts
+	// auto-injected into ask) is useless if the agent can never write. Needs
+	// no embedder or chat model.
+	addTool(srv, &sdk.Tool{
+		Name: "notes",
+		Description: td("Persistent project memory — record and recall facts, patterns, and gotchas that " +
+			"survive session resets and reconnects (no embedding required). " +
+			"Actions: add (store a fact with an archetype and confidence — the response's " +
+			"`similar` list warns when a near-duplicate note already exists so you can `delete` " +
+			"the superseded one; pass `scope` to bind the fact to a file glob/path/package so `locate` " +
+			"surfaces it proactively when it touches a matching file, #645 — and if you omit `scope` but the " +
+			"note names a real project file/glob, the response's `scope_suggestion` proposes one), " +
+			"list (recall top-k facts ordered by salience), delete (remove a fact by id), " +
+			"review (read-only: suggest near-duplicate merges, overlaps to judge, and stale facts — " +
+			"dex never auto-applies these, you act on them), pin/unpin (mark a fact permanent — exempt " +
+			"from decay, eviction, and staleness proposals, #633), " +
+			"relate (create/reinforce a typed edge between facts via relate_from/relate_to/relate_kind: " +
+			"DependsOn|RelatedTo|Supports|Contradicts|Supersedes, #621), " +
+			"relations (list edges for a fact id, or set diagram=true for a Mermaid graph of all edges), " +
+			"gc (run the lifecycle pass: decay confidence, consolidate near-duplicates, evict past the cap), " +
+			"consolidate (one-shot merge of near-duplicate facts without the rest of gc), " +
+			"export/import (dump/load the full note set as JSON for backup or cross-project transfer). " +
+			"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding. " +
+			"ReviewFinding closes the review→edit loop (#87): after reviewing a file, persist what the next editor " +
+			"most needs (a god-object, a duplication, a layering-violation, an injection-risk — lead the body with a " +
+			"bracketed [kind]) as add(archetype=ReviewFinding, scope=<reviewed file>) so read/locate/review surface it " +
+			"on touch instead of it leaking into chat. " +
+			"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
+			"as knowledge_facts."),
+	}, h.knowledge)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "read",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Fetch exact source context for a file you already know. " +
+			"Use `brief` first — its `ranked_files` and `suggested_reads` will name the files worth reading. " +
+			"`mode` (default 'full') selects the view: 'full' = raw file content (no LLM, exact bytes); " +
+			"'signatures' = indexed symbols + source lines; 'skeleton' = exported type declarations in full plus " +
+			"function/method signatures with @B<n> body handles (expand one later via expand='@B<n>'); " +
+			"'map' = imports + exported symbols; 'lines:N-M' = raw line slice; " +
+			"'analyze' = a token-cost comparison of every mode plus a recommended mode and NO file content, so you " +
+			"can pick the cheapest sufficient view before paying to read it; its `handle` (#620) lets you analyze " +
+			"many files then lazily expand only the ones you need via read(handle=…, mode=…); " +
+			"'summary' = LLM-generated digest (the only mode needing a chat model — pass `focus` to steer, " +
+			"e.g. 'public API surface'; returns status='needs-chat' when no chat model is wired). " +
+			"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
+			"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
+			"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
+			"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
+			"If the file changed since the last read the server may return status=delta with a compact unified diff " +
+			"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
+			"Pass `task` (your current task from `session`) for automatic compression routing of the raw default. " +
+			"Pass `ref` (a git revision: HEAD~5, v1.0, a sha) to time-travel — read the file AS OF that commit, " +
+			"with mode=full (raw) or mode=signatures (the historical API); the file must still exist now (#644). " +
+			"Any note whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch, #645) — read it before you edit. " +
+			"Pass `slice` to extract a surgical subset of the content without sending the whole file: " +
+			"head:N (first N lines), tail:N (last N lines), range:L1-L2 (1-indexed inclusive), " +
+			"search:PATTERN (RE2 grep with ±3 context lines, groups separated by ---), " +
+			"json_path:EXPR (dot-path JSON extraction, e.g. $.dependencies). " +
+			"Slice composes with handle: the handle resolves to a range first, then slice extracts within it. " +
+			"Pass `ccr_hash` (a hex string from a dex:lc_expand:<hash> recovery marker) to retrieve an archived " +
+			"tool result from the proxy's CCR tee store; `slice` applies to the retrieved blob. " +
+			"On error, returns 'chat-service-unreachable' or 'error'."),
+	}, h.summarize)
+
+	if embedAvailable {
+		addTool(srv, &sdk.Tool{
+			Name:        "brief",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("PRIMARY ENTRYPOINT for coding tasks — call brief(task) before any file reads. " +
+				"Returns ranked_files (by semantic similarity to the task), relevant_symbols, " +
+				"local_rules (CLAUDE.md / specs), sibling tests, impact, index freshness, and next_calls. " +
+				"Replaces the read-everything pattern with a curated, budget-bounded working set. " +
+				"Follow up with read/locate only for missing exact details."),
+		}, h.brief)
+	}
+}
+
+// registerExpertTools wires the power lanes behind DEX_EXPERT (#125):
+// deps/graph/refactor/quality tools kept off the everyday surface.
+func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
+	// lookup is not a standalone tool — `find` already fuses exact
+	// symbol-name hits via RRF, and `ask` detects identifiers and runs
+	// the same lookup automatically. The findSymbol handler stays (it
+	// backs find's fusion, locate's resolver, and the REST /lookup
+	// route); only the redundant tool exposure is removed (#685).
+	addTool(srv, &sdk.Tool{
+		Name:        "deps",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Return the `imports` edges for a file or package — the package the file belongs to, " +
+			"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
+			"Pass `path` (relative file inside the project) OR `package` (full package path). " +
+			"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing."),
+	}, h.graphDeps)
+	// callers/callees are not standalone tools — `trace --dir
+	// callers|callees` is the single call-graph entry point (#575).
+
+	// plan_rename (#638): type-precise rename planner. Go-only, on-demand
+	// (no index). Moved to expert: niche workflow, byte-offset input shape
+	// that most agents don't construct naturally.
+	addTool(srv, &sdk.Tool{
+		Name:        "plan_rename",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Plan a type-precise rename and get back byte-exact edit triples to apply yourself " +
+			"(dex never writes files). Set `op` to 'rename_symbol' (default), `symbol` to the target " +
+			"(bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') and `to` to " +
+			"the new name. Returns every (path, start_byte, end_byte, replacement) edit across the module, " +
+			"resolved by the Go type checker — a method rename touches only that type's method, never " +
+			"same-named methods elsewhere. Apply edits highest-offset-first per file. The `etag` echoes the " +
+			"touched files' hash; pass it back to detect a stale plan. Go-only in v1 (returns " +
+			"'unsupported-language' otherwise); also 'not-found' / 'ambiguous' / 'stale'. Loads packages " +
+			"on-demand, so it is slower than the read verbs — reach for it when you're about to rename."),
+	}, h.refactor)
+
+	// rehearse_patch (#730): type-check a hypothetical edit in-memory.
+	// Moved to expert: complex byte-range splice input, Go-only, rarely
+	// called — agents typically edit then verify_change instead.
+	addTool(srv, &sdk.Tool{
+		Name:        "rehearse_patch",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Type-check a hypothetical edit in-memory and return new type errors, broken " +
+			"files, and tests to run — without writing anything. Closes the chain: " +
+			"`plan_rename` (plan) → `rehearse_patch` (prove it compiles) → `Edit` (apply) → `verify_change` (test). " +
+			"Pass `edits` as byte-range splices — the same shape `plan_rename` emits (path, start_byte, " +
+			"end_byte, replacement), applied highest-offset-first per file. Or pass `files` as whole-file " +
+			"replacements (path + contents); `files` takes precedence over `edits` for the same path. " +
+			"Returns `compiles` (bool), `diagnostics` (new type errors only — pre-existing errors are " +
+			"diffed out), `broken_files` (paths with new errors), and `tests_to_run` (sibling test files). " +
+			"Go-only in v1 (returns 'unsupported-language' for non-Go roots); also 'no-edits' when no " +
+			"edits/files are supplied. Loads packages on-demand — slower than the read verbs."),
+	}, h.rehearse)
+
+	// check (#708): batch citation verification. Moved to expert: meta-tool
+	// for QA of prior notes/citations, not primary coding workflow.
+	addTool(srv, &sdk.Tool{
+		Name:        "check",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Verify a batch of file:line[:symbol] references against the current index — " +
+			"use this after making or reviewing changes to confirm that cited locations are still valid. " +
+			"Pass `claims` as an array of {ref, symbol?} objects where `ref` is 'file:line', " +
+			"'file:line:symbol', or 'file:symbol'. Each result has `status`: " +
+			"ok (reference is valid), moved (symbol found at a different line in the same file, " +
+			"with `found_at`), gone (symbol/line no longer indexed), no_file (path has no indexed " +
+			"chunks), or parse_error (malformed ref). `symbol_at` reports what IS indexed at the " +
+			"given line when the expected symbol does not match."),
+	}, h.check)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "routes",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Detect HTTP handlers, MCP tool registrations, and gRPC service implementations " +
+			"from the call graph. Matches ServeHTTP implementations, handle*/serve*-named functions, " +
+			"and callers of registration functions (Handle, HandleFunc, AddTool, RegisterService, etc.). " +
+			"Returns each handler with its file location and the registration function that wires it in. " +
+			"Requires a graph index (`dex index . --graph=only`)."),
+	}, h.routes)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "smells",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("AST-based code quality signals derived from the graph index — no LLM required. " +
+			"Returns four categories: `long_functions` (bodies >= min_func_lines, default 80), " +
+			"`dead_exports` (exported functions/methods with no indexed callers), " +
+			"`god_files` (files with >= min_file_symbols symbols, default 30), and " +
+			"`god_nodes` (functions/methods with in_degree >= min_god_node_callers (20) OR " +
+			"cross_pkg_callers >= min_god_node_pkg_callers (8) — over-coupled symbols constraining many callers). " +
+			"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
+	}, h.smells)
+
+	// clones / similar (#84): semantic duplication detection over the
+	// vectors already indexed for search. Vector-backed, so only wired
+	// when an embedder is present.
+	if embedAvailable {
+		addTool(srv, &sdk.Tool{
+			Name:        "clones",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Find clusters of semantically near-duplicate code blocks (duplication hotspots) — " +
+				"the highest-leverage output for review/refactor work, and something grep can't do (it matches " +
+				"literals, not meaning). Scans indexed function/method blocks, KNNs each against the rest, and " +
+				"union-finds the near-duplicate edges into clusters. Returns clusters of `{path, start_line, " +
+				"end_line, kind, name}` with a `similarity` floor and `size`. Args: `path` (restrict to a file/dir " +
+				"prefix), `threshold` (min cosine similarity, default 0.90), `min_lines` (default 6), `k`, " +
+				"`max_clusters`. Reuses search vectors — no embedder round-trip; an index built without embeddings " +
+				"returns none."),
+		}, h.clones)
+
+		addTool(srv, &sdk.Tool{
+			Name:        "similar",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Return code blocks across the repo semantically near a given block, ranked by " +
+				"similarity. Point it at a block via `path` + `start_line` (the block indexed at that line); set " +
+				"`threshold` (cosine similarity 0..1) to keep only genuine near-duplicates. Use it to answer " +
+				"'where else is this logic implemented?' before editing or de-duplicating. Vector KNN over the " +
+				"search index — no embedder round-trip."),
+		}, h.related)
+	}
+
+	// cohort (#643): blast radius of an intent. Given an interface, list
+	// the types you must edit in lockstep when its method set changes —
+	// complete implementors plus near-misses (the backend you forgot).
+	addTool(srv, &sdk.Tool{
+		Name:        "cohort",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Find the types that must change together with an interface. Given an `interface` " +
+			"name (bare 'toolSurface' or pkg-qualified 'mcp.toolSurface'), returns every type that " +
+			"implements it ('complete') plus near-misses that implement most of it but are missing methods " +
+			"('partial' — the backend you forgot to update), each with its declaration file:line and the " +
+			"missing method names. Pure go/types — no index needed; Go-only (returns 'unsupported-language' " +
+			"otherwise). Reach for it before adding/removing an interface method to plan the lockstep edit."),
+	}, h.cohort)
+
+	// refs (#604 Tier 1): type-precise Go symbol queries via go/types.
+	// references — all def+use sites; implementations — concrete types
+	// satisfying an interface; supertypes — embedded interfaces / interfaces
+	// a type satisfies; subtypes — implementing types / embedding structs.
+	addTool(srv, &sdk.Tool{
+		Name:        "refs",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Type-precise Go symbol queries via go/types — no index needed; Go-only. " +
+			"Give a `symbol` (bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') " +
+			"and an `action`: " +
+			"'references' (all def + use sites across the module), " +
+			"'implementations' (concrete types satisfying an interface), " +
+			"'supertypes' (interfaces embedded by an interface, or interfaces a concrete type satisfies within the module), " +
+			"'subtypes' (types implementing an interface, or structs embedding a struct). " +
+			"Returns a list of {path, line, kind} sites. Returns 'unsupported-language' for non-Go. " +
+			"For interface implementors, `cohort` gives richer coverage-gap analysis; refs gives the raw query."),
+	}, h.refs)
+
+	// `path` is not a standalone tool — `trace --dir path --to <dst>`
+	// finds the shortest route between two symbols (#575).
+	// `diff` removed: review_diff + trace direction=impact cover blast-radius
+	// from changed files. `budget` removed: session action=budget covers it.
+
+	addTool(srv, &sdk.Tool{
+		Name:        "clusters",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("List Louvain communities in the call/import graph — " +
+			"clusters of tightly-interconnected symbols. " +
+			"Communities are sorted by descending size. " +
+			"Top members per community are sorted by PageRank. " +
+			"Community IDs are stable across re-runs for unchanged subgraphs. " +
+			"Requires a graph index (`dex index . --graph=only`). " +
+			"Useful for understanding module boundaries, finding hidden coupling, and planning refactors."),
+	}, h.graphCommunities)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "repo_map",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Deterministic, multi-zoom topology map of the project's top packages/dirs " +
+			"and how they connect — no embedding or chat required. " +
+			"Use for structural exploration when you need raw topology rather than a task context pack. " +
+			"For coding tasks, call `brief(task)` instead — it returns ranked files and orientation together. " +
+			"Returns 'no-index' when the project hasn't been indexed yet."),
+	}, mapHandler(h))
+
+	addTool(srv, &sdk.Tool{
+		Name:        "status",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times. " +
+			"For everyday use, single-project index freshness is embedded in `brief` responses — call this for cross-project health checks or debugging."),
+	}, h.status)
+
+	addTool(srv, &sdk.Tool{
+		Name: "session",
+		Description: td("Manage per-project session memory across tool calls. " +
+			"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
+			"add_file (track a file you read/wrote), get (retrieve the current session state), " +
+			"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
+			"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical), " +
+			"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files), " +
+			"export (serialise task + working-set files (path+etag, no content) + notes into a dex-session-v1 bundle for handoff across a context reset), " +
+			"import (restore that bundle into a fresh session and return a recovery digest, flagging any files changed since export). " +
+			"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
+			"don't lose context across reconnects. No embedding required."),
+	}, h.session)
+
+	addTool(srv, &sdk.Tool{
+		Name: "checkpoint",
+		Description: td("Private shadow git history of the working tree — checkpoint and review your " +
+			"own work-in-progress WITHOUT touching the user's .git (a separate repo under dex's cache). " +
+			"Actions: snapshot (commit the current working tree to the shadow; idempotent — no commit when " +
+			"unchanged; returns sha + files_changed), log (list checkpoints, newest first; limit default 20/max 200), " +
+			"diff (unified diff between two checkpoints, default HEAD~1..HEAD; from/to override; byte-capped). " +
+			"Use it to review what you've changed across a session, or to snapshot before a risky refactor. " +
+			"Read-only on the user's tree (dex never writes it, #551): apply any rollback yourself from the diff."),
+	}, h.checkpoint)
+}
+
+// registerBaselineTools wires the always-on lanes (#125): shell + grep
+// stay exposed even under the weak-model profile.
+func registerBaselineTools(srv *sdk.Server, h toolSurface, td func(string) string) {
 	addTool(srv, &sdk.Tool{
 		Name: "shell",
 		Description: td("Execute a shell command and return compressed output. " +
@@ -1319,30 +1328,28 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 			"Pass `fixed:true` to match literally (like grep -F) — no escaping needed for foo.bar, arr[i], f(x). " +
 			"Returns 'no-matches' when nothing matches."),
 	}, h.searchGrep)
+}
 
-	// ask: always registered when embed is unavailable (BM25-only fallback and
-	// intent router); gated behind expert when embed is present so brief is the
-	// unambiguous coding entry point and ask doesn't compete with it.
-	if !embedAvailable || expert {
-		addTool(srv, &sdk.Tool{
-			Name:        "ask",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Intent-routing code-understanding tool. Composes semantic search + symbol lookup " +
-				"+ graph expansion into one call. Primary fallback when embed is unavailable (BM25 + symbol lanes " +
-				"still work). With embed: prefer `brief(task)` for coding tasks; use `ask` for open-ended " +
-				"questions where a context pack is overkill. " +
-				"By default synthesis is OFF — returns evidence bundle + `next_action` (no chat leg, no latency). " +
-				"Pass `answer_style: \"brief\"` to enable a synthesized, citation-bearing prose response. " +
-				"Returns `semantic_hits`, `symbols`, `suggested_reads` with contents inlined by default. " +
-				"Each SymbolHit carries `signature` and `doc` so you can see the API without reading the body. " +
-				"`annotations` per-path: sibling `tests`, `nearest_doc`; editing_context adds `last_commit`/`last_author`/`owners`; " +
-				"architecture adds `build_tags`/`package`. `references` carries call-graph edges for callers/callees intents. " +
-				"Intent inferred automatically (behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context) — " +
-				"pass `intent` only to override. Pass `no_inline:true` to omit content payloads. " +
-				"Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep."),
-		}, h.contextRouter)
-	}
-
+// registerAskTool wires the intent router (#125): the BM25 fallback when
+// no embedder is wired, and an expert-only lane when brief is primary.
+func registerAskTool(srv *sdk.Server, h toolSurface, td func(string) string) {
+	addTool(srv, &sdk.Tool{
+		Name:        "ask",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Intent-routing code-understanding tool. Composes semantic search + symbol lookup " +
+			"+ graph expansion into one call. Primary fallback when embed is unavailable (BM25 + symbol lanes " +
+			"still work). With embed: prefer `brief(task)` for coding tasks; use `ask` for open-ended " +
+			"questions where a context pack is overkill. " +
+			"By default synthesis is OFF — returns evidence bundle + `next_action` (no chat leg, no latency). " +
+			"Pass `answer_style: \"brief\"` to enable a synthesized, citation-bearing prose response. " +
+			"Returns `semantic_hits`, `symbols`, `suggested_reads` with contents inlined by default. " +
+			"Each SymbolHit carries `signature` and `doc` so you can see the API without reading the body. " +
+			"`annotations` per-path: sibling `tests`, `nearest_doc`; editing_context adds `last_commit`/`last_author`/`owners`; " +
+			"architecture adds `build_tags`/`package`. `references` carries call-graph edges for callers/callees intents. " +
+			"Intent inferred automatically (behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context) — " +
+			"pass `intent` only to override. Pass `no_inline:true` to omit content payloads. " +
+			"Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep."),
+	}, h.contextRouter)
 }
 
 // Version is the build version. A release build overrides it via
