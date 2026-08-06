@@ -1,0 +1,189 @@
+package resolve
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
+
+// writeFiles materializes a map of project-relative path → content under dir.
+func writeFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// monorepo lays out a small but representative workspace:
+//   - a root tsconfig with a "@/*" alias (baseUrl ".") and a "@bright/common"
+//     path alias, plus a base tsconfig it extends;
+//   - two workspace packages named via package.json.
+func monorepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"tsconfig.base.json": `{
+			// shared compiler options
+			"compilerOptions": {
+				"baseUrl": ".",
+				"paths": { "@app/*": ["apps/base-view/src/*"] }
+			}
+		}`,
+		"tsconfig.json": `{
+			"extends": "./tsconfig.base",
+			"compilerOptions": {
+				"baseUrl": ".",
+				"paths": {
+					"@/*": ["src/*"],
+					"@bright/common": ["packages/bright-common/src/index.ts"],
+				}
+			}
+		}`,
+		"packages/bright-common/package.json": `{
+			"name": "@bright/common",
+			"module": "src/index.ts"
+		}`,
+		"packages/bright-ui/package.json": `{
+			"name": "@bright/ui",
+			"exports": { ".": { "import": "./src/index.tsx" } }
+		}`,
+		"apps/base-view/package.json": `{ "name": "@bright/base-view" }`,
+	})
+	return root
+}
+
+func TestCandidates(t *testing.T) {
+	w := Load(monorepo(t))
+
+	cases := []struct {
+		name      string
+		specifier string
+		want      []string
+	}{
+		{
+			name:      "tsconfig glob alias with baseUrl",
+			specifier: "@/util/format",
+			want:      []string{"src/util/format"},
+		},
+		{
+			name:      "inherited alias from extends chain",
+			specifier: "@app/widget/Button",
+			want:      []string{"apps/base-view/src/widget/Button"},
+		},
+		{
+			name:      "exact tsconfig alias (no star) beats workspace name",
+			specifier: "@bright/common",
+			// exact alias fires first; workspace entries follow.
+			want: []string{
+				"packages/bright-common/src/index",
+				"packages/bright-common/index",
+				"packages/bright-common/src/main",
+				"packages/bright-common/lib/index",
+			},
+		},
+		{
+			name:      "workspace subpath import",
+			specifier: "@bright/ui/Button",
+			want:      []string{"packages/bright-ui/Button", "packages/bright-ui/src/Button"},
+		},
+		{
+			name:      "workspace bare import via exports",
+			specifier: "@bright/ui",
+			want: []string{
+				"packages/bright-ui/src/index",
+				"packages/bright-ui/index",
+				"packages/bright-ui/src/main",
+				"packages/bright-ui/lib/index",
+			},
+		},
+		{
+			name:      "bare npm dep is external (no candidates)",
+			specifier: "@mui/material",
+			want:      nil,
+		},
+		{
+			name:      "unscoped bare dep is external",
+			specifier: "react",
+			want:      nil,
+		},
+		{
+			name:      "relative specifier is not our job",
+			specifier: "./sibling",
+			want:      nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := w.Candidates(tc.specifier)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("Candidates(%q)\n got: %#v\nwant: %#v", tc.specifier, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestExactAliasPrecedence pins that "@bright/common" resolves the exact alias
+// target FIRST (index), guarding the most-specific-first ordering.
+func TestExactAliasPrecedence(t *testing.T) {
+	got := Load(monorepo(t)).Candidates("@bright/common")
+	if len(got) == 0 || got[0] != "packages/bright-common/src/index" {
+		t.Fatalf("expected exact alias target first, got %#v", got)
+	}
+}
+
+// TestEmptyWorkspace: a repo with no package.json/tsconfig resolves nothing, so
+// every non-relative specifier stays external (no regression for plain repos).
+func TestEmptyWorkspace(t *testing.T) {
+	w := Load(t.TempDir())
+	for _, spec := range []string{"@bright/common", "@/util", "react"} {
+		if got := w.Candidates(spec); got != nil {
+			t.Errorf("empty workspace Candidates(%q) = %#v, want nil", spec, got)
+		}
+	}
+	// nil receiver is safe too.
+	if got := (*Workspace)(nil).Candidates("@x/y"); got != nil {
+		t.Errorf("nil Workspace Candidates = %#v, want nil", got)
+	}
+}
+
+// TestSkipsNodeModules: a package.json under node_modules must not register as a
+// workspace package (no node_modules resolution).
+func TestSkipsNodeModules(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"node_modules/@bright/common/package.json": `{ "name": "@bright/common" }`,
+	})
+	if got := Load(root).Candidates("@bright/common"); got != nil {
+		t.Errorf("node_modules package leaked into workspace: %#v", got)
+	}
+}
+
+// TestJSONCTolerance: comments and trailing commas in tsconfig must not break
+// alias loading.
+func TestJSONCTolerance(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"tsconfig.json": `{
+			/* block comment */
+			"compilerOptions": {
+				"baseUrl": "./",
+				"paths": {
+					"@/*": ["src/*"], // trailing comma below
+				},
+			},
+		}`,
+	})
+	got := Load(root).Candidates("@/thing")
+	want := []string{"src/thing"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("JSONC alias: got %#v want %#v", got, want)
+	}
+}
