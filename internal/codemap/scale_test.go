@@ -49,7 +49,7 @@ func TestRenderScaleOmitsEmpty(t *testing.T) {
 
 func TestRenderScaleDeterministic(t *testing.T) {
 	s := Scale{Files: 10, Packages: 2, Symbols: 50, CallEdges: 80}
-	if RenderScale(s, 0) != RenderScale(s, 0) {
+	if a, b := RenderScale(s, 0), RenderScale(s, 0); a != b {
 		t.Error("RenderScale must be deterministic")
 	}
 }
