@@ -514,10 +514,27 @@ func runGraphCallEdges(ctx context.Context, args []string, callers bool) error {
 	if err != nil {
 		return err
 	}
+	// Parity with the MCP trace verb: incoming unresolved imports are potential
+	// hidden callers, so surface them for callers (not callees). #130.
+	if callers {
+		out.UnresolvedInbound = s.UnresolvedInboundForTargets(ctx, in.ProjectRoot, out.Targets)
+	}
 	if *format == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
+	}
+	// printInbound renders the unresolved-inbound block (#130) — shown in both the
+	// no-callers and the has-callers text paths, since it matters most at zero.
+	printInbound := func() {
+		if len(out.UnresolvedInbound) == 0 {
+			return
+		}
+		fmt.Printf("unresolved inbound (imports into this package dex could not bind to a symbol; name-based recall misses them):\n")
+		for _, r := range out.UnresolvedInbound {
+			fmt.Printf("  %s  ×%d\n", r.Specifier, r.Count)
+		}
+		fmt.Printf("hint: %s\n\n", mcp.UnresolvedInboundHint(out.UnresolvedInbound))
 	}
 	if out.Status != "ok" {
 		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
@@ -540,6 +557,8 @@ func runGraphCallEdges(ctx context.Context, args []string, callers bool) error {
 		if out.Hint != "" {
 			fmt.Printf("hint: %s\n", out.Hint)
 		}
+		fmt.Println()
+		printInbound()
 		return nil
 	}
 	fmt.Printf("%s (%d):\n", rel, len(out.Hits))
@@ -564,6 +583,7 @@ func runGraphCallEdges(ctx context.Context, args []string, callers bool) error {
 		}
 		fmt.Println()
 	}
+	printInbound()
 	return nil
 }
 

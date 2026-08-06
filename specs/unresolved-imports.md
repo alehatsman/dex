@@ -132,9 +132,23 @@ json:"unresolved_inbound,omitempty"`. In `traceVerb`:
 - Recall is already `partial` on non-Go targets; this augments it with specifics.
 - Zero unresolved-inbound ⇒ field omitted, no hint change.
 
-A new `toolSurface` method `unresolvedInbound(ctx, projectRoot, file, limit)`
-routes to the store (mirrors how `searchGrep` is reached), so REST and stdio
-agree and the `noop_surface` test double stays satisfiable.
+Surfaced only for **callers** and **impact** (incoming analyses — these edges are
+potential hidden callers); never for **callees** (outgoing), where inbound imports
+are irrelevant.
+
+The capability is an *optional* interface `unresolvedInbounder`, type-asserted
+inside the fold — implemented on `*Server` and its `projectScoped` wrapper, so no
+`toolSurface` widening and remote/maintenance/test surfaces skip gracefully. The
+merge + hint are factored into `mergeUnresolvedInbound` / `UnresolvedInboundHint`,
+shared with the CLI.
+
+**CLI parity.** `dex trace` uses its own path (`CallEdgeOutput` / `ImpactOutput`,
+not `TraceOutput`), so those two structs gain the same `unresolved_inbound`
+(`omitempty` — omitted, hence no shape change, on the MCP `graph_callers` /
+`graph_impact` tools). The CLI callers/impact runners populate it via
+`(*Server).UnresolvedInboundForTargets` and print it in text mode (shown even at
+zero resolved callers, where it matters most), so terminal `dex trace` matches
+the MCP verb.
 
 ## Edge cases
 

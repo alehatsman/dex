@@ -27,3 +27,12 @@ func (s *Server) unresolvedInbound(ctx context.Context, projectRoot, file string
 	}
 	return st.UnresolvedInboundForFile(ctx, file, limit)
 }
+
+// UnresolvedInboundForTargets merges unresolved-inbound imports across a trace's
+// non-Go targets — the CLI's route to the same signal the MCP trace fold
+// surfaces, so `dex trace` on the terminal agrees with the MCP verb (#130).
+func (s *Server) UnresolvedInboundForTargets(ctx context.Context, projectRoot string, targets []TargetMatch) []store.UnresolvedInbound {
+	return mergeUnresolvedInbound(targets, func(file string) ([]store.UnresolvedInbound, error) {
+		return s.unresolvedInbound(ctx, projectRoot, file, 0)
+	})
+}

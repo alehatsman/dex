@@ -289,9 +289,12 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 			if len(out.Hits) > 0 {
 				augmentPartialRecall(ctx, h, in.Symbol, in.ProjectRoot, &tOut)
 			}
-			// Independent of hit count: unresolved-inbound edges matter most when
-			// resolved callers are few or zero (that's exactly the undercount).
-			foldUnresolvedInbound(ctx, h, in.ProjectRoot, &tOut)
+			// Only for callers: unresolved *inbound* imports are potential hidden
+			// callers, and matter most when resolved callers are few or zero
+			// (that's exactly the undercount). They're irrelevant to callees.
+			if dir == "callers" {
+				foldUnresolvedInbound(ctx, h, in.ProjectRoot, &tOut)
+			}
 		}
 		return nil, tOut, err
 	case "path":
@@ -427,13 +430,35 @@ func foldUnresolvedInbound(ctx context.Context, h toolSurface, projectRoot strin
 	if !ok {
 		return
 	}
+	merged := mergeUnresolvedInbound(out.Targets, func(file string) ([]store.UnresolvedInbound, error) {
+		return ui.unresolvedInbound(ctx, projectRoot, file, 0)
+	})
+	if len(merged) == 0 {
+		return
+	}
+	out.UnresolvedInbound = merged
+	out.Recall = "partial"
+	hint := UnresolvedInboundHint(merged)
+	if out.Hint != "" {
+		out.Hint += " | " + hint
+	} else {
+		out.Hint = hint
+	}
+}
+
+// mergeUnresolvedInbound queries unresolved-inbound imports for each non-Go
+// target file (via query) and merges them by specifier, summed and sorted
+// most-frequent first (ties by specifier). Shared by the MCP trace fold and the
+// CLI so both surfaces report the same numbers. A per-file query error is
+// skipped, not fatal — the signal is best-effort. #130.
+func mergeUnresolvedInbound(targets []TargetMatch, query func(file string) ([]store.UnresolvedInbound, error)) []store.UnresolvedInbound {
 	sum := map[string]int{}
 	var order []string
-	for _, t := range out.Targets {
+	for _, t := range targets {
 		if t.Path == "" || strings.HasSuffix(t.Path, ".go") {
 			continue
 		}
-		rows, err := ui.unresolvedInbound(ctx, projectRoot, t.Path, 0)
+		rows, err := query(t.Path)
 		if err != nil {
 			continue
 		}
@@ -445,30 +470,33 @@ func foldUnresolvedInbound(ctx context.Context, h toolSurface, projectRoot strin
 		}
 	}
 	if len(order) == 0 {
-		return
+		return nil
 	}
-	// Stable order: most-frequent first, ties by specifier.
 	sort.SliceStable(order, func(i, j int) bool {
 		if sum[order[i]] != sum[order[j]] {
 			return sum[order[i]] > sum[order[j]]
 		}
 		return order[i] < order[j]
 	})
-	total := 0
+	out := make([]store.UnresolvedInbound, 0, len(order))
 	for _, spec := range order {
-		out.UnresolvedInbound = append(out.UnresolvedInbound, store.UnresolvedInbound{Specifier: spec, Count: sum[spec]})
-		total += sum[spec]
+		out = append(out, store.UnresolvedInbound{Specifier: spec, Count: sum[spec]})
 	}
-	out.Recall = "partial"
-	shown := order
-	if len(shown) > 3 {
-		shown = shown[:3]
+	return out
+}
+
+// UnresolvedInboundHint renders the one-line grep cue for a merged unresolved-
+// inbound set (up to the first three specifiers). Exported so the CLI prints the
+// same wording as the MCP hint. #130.
+func UnresolvedInboundHint(rows []store.UnresolvedInbound) string {
+	total := 0
+	shown := make([]string, 0, 3)
+	for i, r := range rows {
+		total += r.Count
+		if i < 3 {
+			shown = append(shown, r.Specifier)
+		}
 	}
-	hint := fmt.Sprintf("%d unresolved import(s) into this symbol's package (build-mediated / workspace subpath) that name-based recall cannot see — grep the specifier(s) to confirm: %s",
+	return fmt.Sprintf("%d unresolved import(s) into this symbol's package (build-mediated / workspace subpath) that name-based recall cannot see — grep the specifier(s) to confirm: %s",
 		total, strings.Join(shown, ", "))
-	if out.Hint != "" {
-		out.Hint += " | " + hint
-	} else {
-		out.Hint = hint
-	}
 }
