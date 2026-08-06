@@ -29,10 +29,9 @@ func TestAnswerMaxTokensForGivesExplorationMoreRoom(t *testing.T) {
 	}
 }
 
-// stubChatter returns a fixed Response, recording streamed tokens.
+// stubChatter returns a fixed Response.
 type stubChatter struct {
-	resp     chat.Response
-	streamed []string
+	resp chat.Response
 }
 
 func (s *stubChatter) Generate(_ context.Context, _ []chat.Message, _ chat.Options) (chat.Response, error) {

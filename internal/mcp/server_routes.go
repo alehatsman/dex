@@ -49,6 +49,8 @@ func goFuncHasHTTPHandlerSig(absPath string, startLine int) bool {
 			break
 		}
 	}
+	// Best-effort sniff: a scan error just means we matched on less text.
+	_ = sc.Err()
 
 	d := decl.String()
 	// http.Handler also matches the http.HandlerFunc return type. Within the
