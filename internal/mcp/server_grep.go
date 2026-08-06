@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/throttle"
 
@@ -201,6 +202,15 @@ func (s *Server) grepFileList(ctx context.Context, p *proj.Project, prefix, extF
 	if prefix != "" {
 		searchRoot = filepath.Join(p.Root, prefix)
 	}
+	// Apply the project's exclude rules to the fallback walk so an un-indexed
+	// project — the common case being a fresh git worktree before its first
+	// index — doesn't sweep build outputs, vendored trees, and gitignored junk
+	// into grep results and blow the token budget (#128). MatchExclude uses the
+	// exclude set only (defaults + .gitignore/.dexignore + config ignore); it
+	// deliberately skips the opt-in include allow-list so grep still works in a
+	// project with no .dex/config.yml. nil matcher (ignore.New failed) falls
+	// back to the hardcoded skips below.
+	matcher, _ := ignore.New(p.Root)
 	if err := filepath.Walk(searchRoot, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			if path == searchRoot {
@@ -208,11 +218,20 @@ func (s *Server) grepFileList(ctx context.Context, p *proj.Project, prefix, extF
 			}
 			return nil // skip inaccessible subdirectories
 		}
+		rel, relErr := filepath.Rel(p.Root, path)
 		if info.IsDir() {
 			switch info.Name() {
 			case ".git", "vendor", "node_modules", ".dex":
 				return filepath.SkipDir
 			}
+			// Never self-exclude the explicitly requested search root: if the
+			// caller scoped grep into an ignored dir, honor it.
+			if matcher != nil && relErr == nil && path != searchRoot && matcher.MatchExclude(rel, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if matcher != nil && relErr == nil && matcher.MatchExclude(rel, false) {
 			return nil
 		}
 		if extFilter != "" && !strings.HasSuffix(path, "."+extFilter) {
