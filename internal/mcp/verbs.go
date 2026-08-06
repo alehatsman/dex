@@ -285,8 +285,12 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 			Hits:      out.Hits,
 			Risk:      out.Risk,
 		}
-		if out.Status == "ok" && len(out.Hits) > 0 && hasNonGoTarget(out.Targets) {
-			augmentPartialRecall(ctx, h, in.Symbol, in.ProjectRoot, &tOut)
+		if out.Status == "ok" && hasNonGoTarget(out.Targets) {
+			if len(out.Hits) > 0 {
+				augmentPartialRecall(ctx, h, in.Symbol, in.ProjectRoot, &tOut)
+			}
+			// Independent of hit count: unresolved-inbound edges matter most when
+			// resolved callers are few or zero (that's exactly the undercount).
 			foldUnresolvedInbound(ctx, h, in.ProjectRoot, &tOut)
 		}
 		return nil, tOut, err
@@ -322,8 +326,10 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 			Elided:     out.Elided,
 			TestsToRun: out.TestsToRun,
 		}
-		if out.Status == "ok" && out.Total > 0 && hasNonGoTarget(out.Targets) {
-			markImpactPartialRecall(&tOut)
+		if out.Status == "ok" && hasNonGoTarget(out.Targets) {
+			if out.Total > 0 {
+				markImpactPartialRecall(&tOut)
+			}
 			foldUnresolvedInbound(ctx, h, in.ProjectRoot, &tOut)
 		}
 		return nil, tOut, err
