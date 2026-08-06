@@ -110,8 +110,11 @@ func (s *Store) CloneClusters(ctx context.Context, opts CloneOpts) ([]CloneClust
 		return nil, nil
 	}
 
-	// 2. Per-candidate KNN → deduped undirected duplicate edges.
-	knn := fmt.Sprintf(`SELECT rowid, distance FROM chunk_vecs
+	// 2. Per-candidate KNN → deduped undirected duplicate edges. The only
+	// interpolated value is vecMatchExpr(), a fixed internal SQL fragment (never
+	// user input), so the format is safe.
+	knn := fmt.Sprintf( //nolint:gosec // G201: vecMatchExpr is a constant internal fragment
+		`SELECT rowid, distance FROM chunk_vecs
 	 WHERE embedding MATCH %s AND k = ?
 	 ORDER BY distance`, s.vecMatchExpr())
 	type pair struct{ a, b int64 }
@@ -126,7 +129,7 @@ func (s *Store) CloneClusters(ctx context.Context, opts CloneOpts) ([]CloneClust
 			var nid int64
 			var dist float64
 			if err := nr.Scan(&nid, &dist); err != nil {
-				nr.Close()
+				_ = nr.Close()
 				return nil, err
 			}
 			if nid == id {
@@ -156,10 +159,10 @@ func (s *Store) CloneClusters(ctx context.Context, opts CloneOpts) ([]CloneClust
 			}
 		}
 		if err := nr.Err(); err != nil {
-			nr.Close()
+			_ = nr.Close()
 			return nil, err
 		}
-		nr.Close()
+		_ = nr.Close()
 	}
 	if len(edges) == 0 {
 		return nil, nil
