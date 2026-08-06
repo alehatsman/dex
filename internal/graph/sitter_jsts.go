@@ -35,7 +35,13 @@ type jstsBase struct {
 	// field declarations, and `field = new T()` initializers. Lets
 	// `this.field.method()` resolve to `T.method` name-based.
 	fieldTypes map[string]map[string]string
-	warnings   []string
+	// reExports records barrel re-exports (`export … from './x'`) per module
+	// packagePath, so a cross-package call whose import lands on an index.ts
+	// that only re-exports the definition still binds (#127 Phase 2). Raw
+	// specifiers are captured during the walk and resolved in Finalize, mirroring
+	// fileImports. Nil bucket is safe — resolveExport guards it.
+	reExports map[string]*reExportTable
+	warnings  []string
 	// workspace resolves non-relative specifiers (@bright/*, @/*) to project
 	// files via package.json names + tsconfig path aliases. Built once at the
 	// top of Finalize (projectRoot is set; it reads only disk config). Nil is
@@ -75,6 +81,10 @@ func (e *jstsBase) Finalize(_ context.Context) ([]Node, []Edge, []string, error)
 		}
 		delete(imp.modules, "__from__")
 	}
+
+	// Barrel re-exports were captured raw too; resolve their target specifiers to
+	// packagePaths now, before resolveCall consults them (#127 Phase 2).
+	e.resolveReExports()
 
 	for _, c := range e.pendingCalls {
 		dst := e.resolveCall(c)
@@ -663,7 +673,7 @@ func (e *jstsBase) resolveCall(c tsPendingCall) string {
 			return ""
 		}
 		if fi, ok := imports.fromImports[name]; ok {
-			return e.symbolIn(fi.pkg, fi.name)
+			return e.resolveExport(fi.pkg, fi.name, map[string]bool{})
 		}
 		return ""
 
@@ -701,13 +711,21 @@ func (e *jstsBase) resolveCall(c tsPendingCall) string {
 			if len(tail) != 1 {
 				return ""
 			}
-			return e.symbolIn(mod, tail[0])
+			// `import * as X from './barrel'; X.foo()` — foo may be re-exported.
+			return e.resolveExport(mod, tail[0], map[string]bool{})
 		}
 		if fi, ok := imports.fromImports[head]; ok {
-			if len(tail) == 1 {
-				return e.symbolIn(fi.pkg, fi.name+"."+tail[0])
+			if len(tail) != 1 {
+				return ""
 			}
-			return ""
+			// `import { String } from '@bright/common'; String.capitalize()` where
+			// the barrel binds String via `export * as String from './String'`.
+			if nsMod := e.namespaceTarget(fi.pkg, fi.name); nsMod != "" {
+				if id := e.resolveExport(nsMod, tail[0], map[string]bool{}); id != "" {
+					return id
+				}
+			}
+			return e.symbolIn(fi.pkg, fi.name+"."+tail[0])
 		}
 		return ""
 	}
@@ -736,7 +754,9 @@ func (e *jstsBase) resolveTypeMethod(pkg, filePath, typeName, method string) str
 		return ""
 	}
 	if fi, ok := imports.fromImports[typeName]; ok {
-		return e.symbolIn(fi.pkg, fi.name+"."+method)
+		// The class may be re-exported through a barrel; star re-exports forward
+		// the whole `Class.method` key, so resolveExport reaches it (#127 Phase 2).
+		return e.resolveExport(fi.pkg, fi.name+"."+method, map[string]bool{})
 	}
 	return ""
 }

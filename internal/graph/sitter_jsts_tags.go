@@ -25,6 +25,7 @@ const jsTagsQuery = `
 (lexical_declaration) @lexdecl
 (variable_declaration) @lexdecl
 (import_statement) @import
+(export_statement) @export
 (call_expression) @call
 (new_expression) @call
 (jsx_self_closing_element) @call
@@ -40,6 +41,7 @@ const tsTagsQuery = `
 (method_definition) @method
 (lexical_declaration) @lexdecl
 (import_statement) @import
+(export_statement) @export
 (call_expression) @call
 (new_expression) @call
 `
@@ -107,7 +109,7 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		e.query = q
 	}
 
-	var funcs, classes, ifaces, methods, lexdecls, imps, calls []*sitter.Node
+	var funcs, classes, ifaces, methods, lexdecls, imps, exps, calls []*sitter.Node
 	runTagsQuery(e.query, in.Root, func(capture string, n *sitter.Node) {
 		switch capture {
 		case "function":
@@ -122,6 +124,8 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 			lexdecls = append(lexdecls, n)
 		case "import":
 			imps = append(imps, n)
+		case "export":
+			exps = append(exps, n)
 		case "call":
 			calls = append(calls, n)
 		}
@@ -134,6 +138,16 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 			continue
 		}
 		e.parseImportStatement(n, in.Source, in.RelPath, pkg, fileID, imports)
+	}
+
+	// Re-exports — top-level `export … from './x'`, captured per module for
+	// barrel binding (#127 Phase 2). Local exports carry no source and are
+	// ignored by parseExportStatement.
+	for _, n := range exps {
+		if !jstsDeclTopLevel(n) {
+			continue
+		}
+		e.parseExportStatement(n, in.Source, pkg)
 	}
 
 	// Classes — reachable from the module through class/export nesting
