@@ -49,9 +49,9 @@ type Node struct {
 	Betweenness     float64
 	CommunityID     int
 	// MetadataJSON is the raw graph_nodes.metadata_json payload, kept
-	// unparsed so the hot paths pay nothing. The package-graph tool reads
-	// it to tell a Go package node (no "language" key) from a tree-sitter
-	// one (stamped with its language) — see isGoPackageNode.
+	// unparsed so the hot paths pay nothing. Accessors Language() and
+	// metaString() parse it lazily — e.g. the package-graph tool reads the
+	// "language" key and the resolver's import "target" annotation from it.
 	MetadataJSON []byte
 }
 
@@ -75,6 +75,22 @@ func (n Node) Language() string {
 		return lang
 	}
 	return "go"
+}
+
+// metaString returns the string value of a metadata key, or "" if the metadata
+// is absent, unparseable, or the key is missing / not a string. Parallels
+// Language()'s tolerant parse; used to read the workspace resolver's
+// import-target annotation (#127).
+func (n Node) metaString(key string) string {
+	if len(n.MetadataJSON) == 0 {
+		return ""
+	}
+	var md map[string]any
+	if err := json.Unmarshal(n.MetadataJSON, &md); err != nil {
+		return ""
+	}
+	s, _ := md[key].(string)
+	return s
 }
 
 type Edge struct {

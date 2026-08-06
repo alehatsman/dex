@@ -6,10 +6,10 @@ import (
 	"github.com/alehatsman/dex/internal/graph"
 )
 
-// PackageStat is one node in the package import graph: a Go package with its
-// import degrees, PageRank over the import DAG, and whether it is a main
-// (executable) package. Fields mirror the mcp wire type so callers convert
-// directly.
+// PackageStat is one node in the package import graph: a package (a Go package,
+// or a JS/TS per-file module) with its import degrees, PageRank over the import
+// DAG, and whether it is a main (executable) package. Fields mirror the mcp
+// wire type so callers convert directly.
 type PackageStat struct {
 	Package   string
 	InDegree  int
@@ -31,30 +31,44 @@ type PackageGraph struct {
 	Edges []PackageImport
 }
 
-// isGoPackageNode reports whether n is a Go package node. The package import
-// DAG is Go-only: the Go extractor emits package nodes with no "language" in
-// their metadata, while every tree-sitter extractor stamps its package nodes
-// with Metadata["language"] (sitter_javascript.go etc.). So a NodePackage
-// without a "language" key is Go; one with it is a non-Go package (web/src TS,
-// python/rust/js testdata fixtures) that has no place in this DAG. Nodes carry
-// no metadata at all (the common Go case) → Go.
-func isGoPackageNode(n Node) bool {
-	return n.Kind == graph.NodePackage && n.Language() == "go"
+// importTargetPath returns the internal module/package path an import node
+// points at, or "" when it has no resolved internal target. Go import nodes
+// carry the resolved import path in QualifiedName. Tree-sitter import nodes
+// carry the resolved-internal target in Metadata["target"] (set by the
+// workspace resolver, #127); an external / unresolved tree-sitter import has no
+// target and is dropped — its raw specifier (react, @mui/*) is not a project
+// module.
+func importTargetPath(n Node) string {
+	if n.Language() == "go" {
+		return n.QualifiedName
+	}
+	return n.metaString("target")
 }
 
-// BuildPackageGraph derives the internal package import DAG from a
-// loaded View. Pure (no I/O) so it unit-tests against a hand-built
-// view. The import graph lives on EdgeImports edges: src is the
-// importing package's NodePackage; dst is a NodeImport whose
-// QualifiedName is the imported path. An import is "internal" when that
-// path has its own NodePackage in the project — external imports
-// (stdlib / third-party) have no package node and are dropped.
+// BuildPackageGraph derives the internal package import DAG from a loaded View.
+// Pure (no I/O) so it unit-tests against a hand-built view. The import graph
+// lives on EdgeImports edges: src is the importing package's NodePackage; dst is
+// a NodeImport whose resolved target (see importTargetPath) names the imported
+// module. An import is "internal" when that target has its own NodePackage in
+// the project — external imports (stdlib / third-party / bare npm) have no
+// package node and are dropped.
+//
+// Both Go packages and JS/TS per-file modules participate. Go packages are
+// always emitted as nodes (preserving the Go-only behavior for Go repos); a
+// tree-sitter module is emitted only when it participates in at least one
+// resolved edge, so an isolated fixture file doesn't pad a mostly-Go repo's
+// dependency listing.
 func BuildPackageGraph(view *View) PackageGraph {
-	internal := map[string]struct{}{}
-	mainByPath := map[string]bool{} // package clause name == "main" → executable
+	internal := map[string]struct{}{} // every package path — valid edge endpoints
+	goPkg := map[string]struct{}{}    // Go packages — always emitted
+	mainByPath := map[string]bool{}   // package clause name == "main" → executable
 	for _, n := range view.NodesByID {
-		if isGoPackageNode(n) && n.PackagePath != "" {
-			internal[n.PackagePath] = struct{}{}
+		if n.Kind != graph.NodePackage || n.PackagePath == "" {
+			continue
+		}
+		internal[n.PackagePath] = struct{}{}
+		if n.Language() == "go" {
+			goPkg[n.PackagePath] = struct{}{}
 			if n.Name == "main" {
 				mainByPath[n.PackagePath] = true
 			}
@@ -81,13 +95,13 @@ func BuildPackageGraph(view *View) PackageGraph {
 		if !ok || dst.Kind != graph.NodeImport {
 			continue
 		}
-		from, to := src.PackagePath, dst.QualifiedName // import node carries the imported path
+		from, to := src.PackagePath, importTargetPath(dst)
 		if from == "" || to == "" || from == to {
 			continue
 		}
-		// Both endpoints must be Go packages in this project. `internal` is
-		// already the Go-package set, so this drops external imports and any
-		// edge touching a non-Go (tree-sitter) package node.
+		// Both endpoints must be packages in this project. `internal` holds every
+		// package path, so this drops external imports (no package node) and any
+		// edge whose resolved target isn't an indexed module.
 		if _, ok := internal[from]; !ok {
 			continue
 		}
@@ -107,18 +121,33 @@ func BuildPackageGraph(view *View) PackageGraph {
 		outAdj[from][to] = struct{}{}
 	}
 
+	// Emit set: every Go package (preserve Go-repo behavior, including isolated
+	// ones) plus any module that participates in a resolved edge. Isolated
+	// tree-sitter modules are dropped so they don't pad a mostly-Go repo's
+	// dependency listing with orphan fixture files.
+	emit := map[string]struct{}{}
+	for pkg := range goPkg {
+		emit[pkg] = struct{}{}
+	}
+	for pkg := range inDeg {
+		emit[pkg] = struct{}{}
+	}
+	for pkg := range outDeg {
+		emit[pkg] = struct{}{}
+	}
+
 	// PageRank over the import DAG. Rank flows importer → imported, so
 	// foundation packages many others depend on accumulate weight —
 	// the "load-bearing core floats up" signal even when raw in-degree
 	// is modest. Keyed by package path (the id space used in outAdj).
-	ids := make([]string, 0, len(internal))
-	for pkg := range internal {
+	ids := make([]string, 0, len(emit))
+	for pkg := range emit {
 		ids = append(ids, pkg)
 	}
 	ranks := graph.PageRank(ids, outAdj)
 
-	nodes := make([]PackageStat, 0, len(internal))
-	for pkg := range internal {
+	nodes := make([]PackageStat, 0, len(emit))
+	for pkg := range emit {
 		nodes = append(nodes, PackageStat{
 			Package:   pkg,
 			InDegree:  inDeg[pkg],
