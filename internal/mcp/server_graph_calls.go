@@ -12,6 +12,7 @@ import (
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/source"
+	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -87,6 +88,11 @@ type CallEdgeOutput struct {
 	// Risk is set on callers-direction queries only: Low | Medium | High |
 	// Critical, derived from a BFS at depth 5 over the callers direction.
 	Risk string `json:"risk,omitempty"`
+	// UnresolvedInbound lists known import edges into the target's package that
+	// the resolver could not bind to a symbol (build-mediated / workspace
+	// subpath). Populated by the CLI callers path for parity with the MCP trace
+	// verb; omitted (nil) on the MCP graph_callers tool. #130.
+	UnresolvedInbound []store.UnresolvedInbound `json:"unresolved_inbound,omitempty"`
 }
 
 func (s *Server) graphCallers(ctx context.Context, _ *sdk.CallToolRequest, in CallEdgeInput) (*sdk.CallToolResult, CallEdgeOutput, error) {

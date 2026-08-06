@@ -137,10 +137,23 @@ func cmdImpact(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Parity with the MCP trace verb: unresolved inbound imports are potential
+	// hidden callers the name-based blast radius misses. #130.
+	out.UnresolvedInbound = s.UnresolvedInboundForTargets(ctx, p.Root, out.Targets)
 	if *format == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
+	}
+	printInbound := func() {
+		if len(out.UnresolvedInbound) == 0 {
+			return
+		}
+		fmt.Printf("\nunresolved inbound (imports into this package dex could not bind to a symbol; name-based recall misses them):\n")
+		for _, r := range out.UnresolvedInbound {
+			fmt.Printf("  %s  ×%d\n", r.Specifier, r.Count)
+		}
+		fmt.Printf("hint: %s\n", mcp.UnresolvedInboundHint(out.UnresolvedInbound))
 	}
 	if out.Status != "ok" {
 		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
@@ -161,6 +174,7 @@ func cmdImpact(ctx context.Context, args []string) error {
 		}
 		fmt.Printf("  d%d  %s (%s) %s\n", n.Depth, n.QualifiedName, n.Kind, loc)
 	}
+	printInbound()
 	return nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/retrieve"
+	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -57,6 +58,12 @@ type ImpactOutput struct {
 	// files — the target's own test plus the tests covering the displayed callers
 	// — so 'change X → run these' is one call (#654). Heuristic, best-effort.
 	TestsToRun []string `json:"tests_to_run,omitempty"`
+	// UnresolvedInbound lists known import edges into the target's package that
+	// the resolver could not bind to a symbol (build-mediated / workspace
+	// subpath) — potential hidden callers the blast radius misses. Populated by
+	// the CLI impact path for parity with the MCP trace verb; omitted on the MCP
+	// graph_impact tool. #130.
+	UnresolvedInbound []store.UnresolvedInbound `json:"unresolved_inbound,omitempty"`
 }
 
 // DepthElision summarises the PageRank tail dropped at one BFS depth.
