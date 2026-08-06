@@ -305,6 +305,77 @@ func preserveOutput(clean string, exitCode int) ShellOutput {
 	return ShellOutput{Output: clean, ExitCode: exitCode, OriginalLines: n, OutputLines: n}
 }
 
+// compressedShellOutput assembles the result of a lossy/line-dropping pass:
+// the compressed text plus its before/after line counts and the derived
+// SavedPct. Centralizes the saved-percent arithmetic every compression branch
+// in shellRun would otherwise hand-roll identically (#122).
+func compressedShellOutput(text string, exitCode, origLines, outLines int) ShellOutput {
+	saved := 0
+	if origLines > 0 {
+		saved = (origLines - outLines) * 100 / origLines
+	}
+	return ShellOutput{
+		Output:        text,
+		ExitCode:      exitCode,
+		OriginalLines: origLines,
+		OutputLines:   outLines,
+		SavedPct:      saved,
+	}
+}
+
+// resolveShellCwd picks the working directory for a shell call and, when a
+// project root is set, contains it inside that root. Defaults to project_root,
+// then the server's cwd. Returns an absolute, contained path or an error when
+// cwd escapes the root (#122, extracted from shellRun).
+func resolveShellCwd(in ShellInput) (string, error) {
+	cwd := in.Cwd
+	if cwd == "" {
+		if in.ProjectRoot != "" {
+			cwd = in.ProjectRoot
+		} else {
+			wd, err := os.Getwd()
+			if err != nil {
+				return ".", nil
+			}
+			cwd = wd
+		}
+	}
+	if in.ProjectRoot == "" || cwd == "" {
+		return cwd, nil
+	}
+	root, err := filepath.Abs(in.ProjectRoot)
+	if err != nil {
+		return "", fmt.Errorf("shell: invalid project_root: %v", err)
+	}
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", fmt.Errorf("shell: invalid cwd: %v", err)
+	}
+	if abs != root && !strings.HasPrefix(abs+string(filepath.Separator), root+string(filepath.Separator)) {
+		return "", fmt.Errorf("shell: cwd %q is outside project root %q", abs, root)
+	}
+	return abs, nil
+}
+
+// shellExitCode maps a command's run error to an exit code. A cancelled context
+// (timeout) surfaces as 124 ahead of the SIGKILL artifact; a real ExitError
+// yields its code; anything else is a generic 1 (#122, extracted from shellRun).
+func shellExitCode(ctx context.Context, runErr error) int {
+	if runErr == nil {
+		return 0
+	}
+	// Timeout-by-cancel: CommandContext sends SIGKILL, which yields an
+	// ExitError with ExitCode()=-1. Check ctx first so the conventional
+	// 124 surfaces, not the SIGKILL artifact.
+	if ctx.Err() != nil {
+		return 124
+	}
+	if ee, ok := runErr.(*exec.ExitError); ok {
+		return ee.ExitCode()
+	}
+	return 1
+}
+
 // testRunnerPrefixes — commands known to produce test result output that must
 // be preserved verbatim regardless of length.
 var testRunnerPrefixes = []string{
@@ -824,32 +895,9 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 		return nil, ShellOutput{}, err
 	}
 
-	cwd := in.Cwd
-	if cwd == "" {
-		if in.ProjectRoot != "" {
-			cwd = in.ProjectRoot
-		} else {
-			var err error
-			cwd, err = os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-		}
-	}
-	// Contain the working directory to the project root when one is provided.
-	if in.ProjectRoot != "" && cwd != "" {
-		root, err := filepath.Abs(in.ProjectRoot)
-		if err != nil {
-			return nil, ShellOutput{}, fmt.Errorf("shell: invalid project_root: %v", err)
-		}
-		abs, err := filepath.Abs(cwd)
-		if err != nil {
-			return nil, ShellOutput{}, fmt.Errorf("shell: invalid cwd: %v", err)
-		}
-		if abs != root && !strings.HasPrefix(abs+string(filepath.Separator), root+string(filepath.Separator)) {
-			return nil, ShellOutput{}, fmt.Errorf("shell: cwd %q is outside project root %q", abs, root)
-		}
-		cwd = abs
+	cwd, err := resolveShellCwd(in)
+	if err != nil {
+		return nil, ShellOutput{}, err
 	}
 
 	// Re-entry: a parent (nested dex, lean-ctx, …) already compressed once.
@@ -881,24 +929,7 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	cmd.Stdout = buf
 	cmd.Stderr = buf
 
-	runErr := cmd.Run()
-
-	exitCode := 0
-	if runErr != nil {
-		// Timeout-by-cancel: CommandContext sends SIGKILL, which yields an
-		// ExitError with ExitCode()=-1. Check ctx first so the conventional
-		// 124 surfaces, not the SIGKILL artifact.
-		switch {
-		case ctx.Err() != nil:
-			exitCode = 124
-		default:
-			if ee, ok := runErr.(*exec.ExitError); ok {
-				exitCode = ee.ExitCode()
-			} else {
-				exitCode = 1
-			}
-		}
-	}
+	exitCode := shellExitCode(ctx, cmd.Run())
 
 	rawBytes := buf.String()
 
@@ -927,19 +958,7 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	// handled, and because pure whitespace removal is already lossless the
 	// line-dropping passes below must never touch it.
 	if compact, ok := compress.CompactJSONAuto(clean); ok {
-		orig := lineCount(clean)
-		outLines := lineCount(compact)
-		saved := 0
-		if orig > 0 {
-			saved = (orig - outLines) * 100 / orig
-		}
-		return nil, ShellOutput{
-			Output:        compact,
-			ExitCode:      exitCode,
-			OriginalLines: orig,
-			OutputLines:   outLines,
-			SavedPct:      saved,
-		}, nil
+		return nil, compressedShellOutput(compact, exitCode, lineCount(clean), lineCount(compact)), nil
 	}
 
 	// Explicit preserve intents (#86): counts/table are terse result shapes;
@@ -955,51 +974,21 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	// and dependency audits (#616) — keeps every diff/error/count line.
 	if policy == policyMinimal {
 		compressed, orig, out := CompressMinimal(clean)
-		saved := 0
-		if orig > 0 {
-			saved = (orig - out) * 100 / orig
-		}
 		s.activityRecord(cwd, shellActivityWeight(in.Command))
-		return nil, ShellOutput{
-			Output:        compressed,
-			ExitCode:      exitCode,
-			OriginalLines: orig,
-			OutputLines:   out,
-			SavedPct:      saved,
-		}, nil
+		return nil, compressedShellOutput(compressed, exitCode, orig, out), nil
 	}
 
 	// Verbatim: strip ANSI, preserve content (only hard-cap via maxLines).
 	if policy == policyVerbatim {
 		compressed, orig, out := CompressText(clean, "", 0) // empty command → generic pass (just caps lines)
-		saved := 0
-		if orig > 0 {
-			saved = (orig - out) * 100 / orig
-		}
-		return nil, ShellOutput{
-			Output:        compressed,
-			ExitCode:      exitCode,
-			OriginalLines: orig,
-			OutputLines:   out,
-			SavedPct:      saved,
-		}, nil
+		return nil, compressedShellOutput(compressed, exitCode, orig, out), nil
 	}
 
 	// Build tool with errors: preserve full diagnostics verbatim (#81).
 	if isBuildToolWithErrors(in.Command, clean) {
 		compressed, orig, out := CompressText(clean, "", 0)
-		saved := 0
-		if orig > 0 {
-			saved = (orig - out) * 100 / orig
-		}
 		s.activityRecord(cwd, shellActivityWeight(in.Command))
-		return nil, ShellOutput{
-			Output:        compressed,
-			ExitCode:      exitCode,
-			OriginalLines: orig,
-			OutputLines:   out,
-			SavedPct:      saved,
-		}, nil
+		return nil, compressedShellOutput(compressed, exitCode, orig, out), nil
 	}
 
 	// Compress: but protect auth-flow output from modification.
@@ -1009,19 +998,8 @@ func (s *Server) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellI
 	}
 
 	compressed, origLines, outLines := CompressText(clean, in.Command, 0)
-	saved := 0
-	if origLines > 0 {
-		saved = (origLines - outLines) * 100 / origLines
-	}
-
 	s.activityRecord(cwd, shellActivityWeight(in.Command))
-	return nil, ShellOutput{
-		Output:        compressed,
-		ExitCode:      exitCode,
-		OriginalLines: origLines,
-		OutputLines:   outLines,
-		SavedPct:      saved,
-	}, nil
+	return nil, compressedShellOutput(compressed, exitCode, origLines, outLines), nil
 }
 
 // shellActivityWeight returns an activity weight for a shell command.
