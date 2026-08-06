@@ -1,7 +1,14 @@
 # Design — #95 Architecture review: layers, primitives, and the road to the intelligence platform
 
-Status: **design / architecture** · Grounds the #95 platform epic against the as-built code.
-Decide the layering seam (§6.1) before any child-issue implementation.
+Status: **design / architecture — largely LANDED** · Grounds the #95 platform epic against the as-built code.
+
+> **Update (2026-08-06):** the §6.1 seam decision shipped. Assembly now lives in L2
+> (`retrieve/assembler.go`, `pack.go`, `inline_assemble.go`); `mcp/context.go` holds only
+> the JSON-tagged projection + transport concerns — exactly the §6.1 target. **6 of 7
+> child issues are done** (#95a–#95e, #95g); only **#95f** (multi-agent surface) is open
+> (issue #106), deferred as least-proven. The forward-looking framing below (§2 inversion
+> "risk", §5 "Step 0", §7 "proposed") is kept as the original as-of-design analysis —
+> read it as history, not a to-do list. Live per-issue status in §7.
 
 ## TL;DR — #95 is 60% consolidation, not a greenfield build
 
@@ -56,10 +63,11 @@ drawer) and the *absence* of an explicit L3 contract.
 - **Smell:** `cmd/dex` is enormous (~80+ files) and holds orchestration that belongs
   in L2/L3. `main_clients.go`, `doctor_deep.go`, `knowledge.go` are business logic
   wearing a CLI costume. `cmd/dex` — not any internal package — is the real god-module.
-- **Latent inversion risk:** `mcp` is starting to hold assembly logic
-  (`AssembleConcerns` lives in `internal/mcp/context.go`, not in `retrieve`). If
-  context-pack assembly grows inside the verb layer, L4 depends on L4 and the seam #95
-  needs calcifies in the wrong place.
+- **Latent inversion risk — RESOLVED (#95a):** at design time `mcp` was starting to
+  hold assembly logic. It has since moved down: `retrieve.Assembler.Assemble` (in
+  `retrieve/assembler.go`) produces a domain `ContextPack`, and `mcp/context.go` only
+  projects it onto the wire response. The `AssembleConcerns` type remaining in `mcp` is
+  now the JSON-tagged *wire* twin, not assembly logic — the intended §6.1 end state.
 
 ## 3. The primitives dex *must* have (the canonical set)
 
@@ -94,54 +102,51 @@ Each of the 10 workstreams checked against the actual code:
 |---|---|---|---|
 | 1 | Intent-based retrieval | `ResolveIntent`, 8 intents, auto-routing | 🟢 exists |
 | 2 | Repository knowledge graph | `graph_nodes/edges` + `knowledge_facts/relations` tables, all wired | 🟡 typed edges yes; typed *relations* thin |
-| 3 | Task-specific context packs | `IntentAssemble` (#687), `AssembleConcerns` | 🟡 assembles, but **no stable schema** |
+| 3 | Task-specific context packs | `retrieve.ContextPack` + `pack_test.go` contract (#95b) | 🟢 **done** — schema frozen in L2 |
 | 4 | Persistent repo memory | `notes`/`gotcha`/`review` (#87) + `knowledge_facts` | 🟡 exists, not unified |
-| 5 | Hierarchical summaries | `file_summaries` table + `main_summarize.go` | 🟡 **file-level only**, not hierarchical |
+| 5 | Hierarchical summaries | pkg/subsystem rollups (#95e) | 🟢 **done** (`4fba1e0`) |
 | 6 | Impact & risk | `trace impact` + `tests_to_run` (#654) | 🟢 exists, needs risk-score surfacing |
-| 7 | Confidence/trust envelope | `recall:partial` tags, type-resolved edges (#85/#604) | 🔴 **facts exist, no envelope field** |
-| 8 | Intent-specific policies | intent routing selects lanes | 🟡 routing yes, per-intent *evidence policies* no |
+| 7 | Confidence/trust envelope | trust envelope threaded onto the pack (#95c) | 🟢 **done** (`61fa5a4`, `#116`) |
+| 8 | Intent-specific policies | `EvidencePolicy` table per intent (#95d) | 🟢 **done** (`bba5257`) |
 | 9 | Repo health intelligence | `smells clusters clones cohesion heatmap` | 🟢 exists (DEX_EXPERT-gated) |
-| 10 | Multi-agent shared intel | `agents`/`agent_messages`/`sessions` tables | 🔴 **store-ready, not surfaced** — vestigial |
+| 10 | Multi-agent shared intel | `agents`/`agent_messages`/`sessions` tables | 🔴 **store-ready, not surfaced** — #95f open |
 
-**Verdict:** the primitives and even most of the storage already exist. The missing
-40% is concentrated in three places: **(WS3) a stable pack schema**, **(WS7) the trust
-envelope**, and **(WS10) surfacing the agent tables**. A much cheaper program than the
-prose implies.
+**Verdict (as of 2026-08-06):** the cheap-program thesis held. The three original gaps —
+(WS3) pack schema, (WS7) trust envelope — have **landed** (#95b, #95c); only **(WS10)
+surfacing the agent tables** (#95f) remains open, and WS4 (unified memory) is still
+partial. Everything else is 🟢.
 
 ## 5. Evolution path
 
 Reordered around the *architectural* dependency, not the feature list. Each step is a
 narrow, measurable child issue.
 
-**Step 0 — Move the seam to the right layer (pure refactor, no behavior change).**
-Pull `AssembleConcerns`/assembly out of `internal/mcp` into `internal/retrieve` (or a
-new `internal/pack`). Every WS3/WS8 child issue edits this code; it must live in L2,
-not L4, or the inversion in §2 hardens. Unblocks everything, ships at zero risk.
+**✅ Step 0 — Move the seam to the right layer (#95a, landed).**
+Assembly moved out of `internal/mcp` into `internal/retrieve` (`assembler.go`, `pack.go`,
+`inline_assemble.go`). L4 now only projects the pack onto the wire response. Shipped at
+zero behavior change, as planned — the tail-fold in `2746531` gave `Assemble` the full
+ask sequence.
 
-**Step 1 — Freeze the ContextPack schema (WS3, satisfies acceptance criterion #1).**
-One Go struct + a golden contract test — reuse the exact pattern from #93 (MCP
-tool-schema contract). Fields: `sources[] · freshness · confidence · claims{proven|inferred}`.
-This schema is the backbone the other workstreams hang metadata off.
+**✅ Step 1 — Freeze the ContextPack schema (#95b, landed).**
+`retrieve.ContextPack` is the frozen struct; `pack_test.go` is the golden contract
+(the #93 pattern). Backbone for the metadata the other workstreams hang off.
 
-**Step 2 — Trust envelope (WS7) — highest ROI, currently 🔴.**
-The facts already exist (`recall:partial`, type-resolved vs name-based edges). Pure
-plumbing: thread a `Confidence`/`Freshness` field from `graphquery`/`retrieve` up into
-the Step-1 pack schema. No new computation — stop discarding what dex already knows.
-Satisfies acceptance criterion #3.
+**✅ Step 2 — Trust envelope (#95c, landed).**
+Confidence/freshness now thread from `graphquery`/`retrieve` onto the pack (`61fa5a4`,
+consolidated in `#116`). No new computation — surfaces what dex already knew.
 
-**Step 3 — Per-intent evidence policies (WS8) on top of `ResolveIntent`.**
-`ResolveIntent` already picks intents; add a policy table mapping intent → lanes → pack
-sections. Bug-fix pulls recency+tests; security pulls input boundaries+crypto. Pure
-composition of existing lanes.
+**✅ Step 3 — Per-intent evidence policies (#95d, landed).**
+`EvidencePolicy` (`bba5257`) is the one-table intent → lanes → pack-sections mapping over
+`ResolveIntent`.
 
-**Step 4 — Hierarchical summaries (WS5).**
-Extend `file_summaries` upward: package/subsystem rollups with the same source-linked
-invalidation already present at file level. Cacheable, opt-in — keeps the default path
-fast.
+**✅ Step 4 — Hierarchical summaries (#95e, landed).**
+`file_summaries` extended upward to package/subsystem rollups (`4fba1e0`) with the same
+source-linked invalidation. Opt-in — default path stays fast.
 
-**Step 5 — Multi-agent surface (WS10).**
-Only after 1–4. Tables exist; expose `agents`/`agent_messages` through the verb layer so
-the pack becomes the shared context layer. Deferred deliberately — least-proven value.
+**⬜ Step 5 — Multi-agent surface (#95f, OPEN — issue #106).**
+The only unshipped step. Tables exist; expose `agents`/`agent_messages` through the verb
+layer so the pack becomes the shared context layer. Deferred deliberately — least-proven
+value.
 
 **Measurement gate (non-negotiable, per the #96/#97/#91 discipline):** every step ships
 with a before/after on *tool-calls-per-task* and *tokens-per-task* via
@@ -149,14 +154,15 @@ with a before/after on *tool-calls-per-task* and *tokens-per-task* via
 
 ## 6. Architectural tensions to decide now
 
-### 6.1 Where does assembly live? — domain vs wire (decided)
+### 6.1 Where does assembly live? — domain vs wire (decided → LANDED via #95a)
 
-The seam isn't misplaced, it's *smeared*: assembly runs across both `internal/retrieve`
+At design time the seam was *smeared*: assembly ran across both `internal/retrieve`
 (intent routing, lane selection, keyword assembly) and `internal/mcp` (concern-tagging,
 pool expansion, next-action hints on top of mcp-owned DTOs). The rule that untangles it
 is **domain vs wire** — and the codebase already half-applies it: `retrieve` defines
 domain `SemHit` (`service.go:47`) and `SuggestedRead` (`results.go:12`), while `mcp`
-defines JSON-tagged twins it maps to. #95 finishes that split for the pack + `SymbolHit`:
+defines JSON-tagged twins it maps to. #95a **completed** that split for the pack +
+`SymbolHit` (the SymHit→SymbolHit merge landed in #112):
 
 | Thing | Owner | Why |
 |---|---|---|
@@ -174,22 +180,27 @@ serialization; the #95c trust fields live natively in L2 where the facts are. Se
 writers with one reader?
 
 ### 6.3 `cmd/dex` weight
-It is the real god-module. Worth a grooming pass to push logic down into L2/L3, but out
-of #95 scope unless it blocks a child issue.
+It is the real god-module. A grooming pass (#95g) has started — `44b84cb` pushed the
+embed backend-defaults heuristic down to `internal/embed` — but `cmd/dex` remains the
+heaviest cluster (~90 symbols; `graph.go`/`knowledge.go`/`doctor.go` still fat). Ongoing,
+out of the critical path.
 
-## 7. Proposed child issues (narrow, measurable)
+## 7. Child issues — status (updated 2026-08-06)
 
-- **#95a** refactor: extract context-pack assembly `mcp → retrieve/pack` (no behavior change)
-- **#95b** feat: stable `ContextPack` schema + golden contract test
-- **#95c** feat: trust envelope (confidence/freshness) threaded into pack — *start here for value*
-- **#95d** feat: per-intent evidence policies over `ResolveIntent`
-- **#95e** feat: hierarchical (pkg/subsystem) summaries
-- **#95f** feat: surface agent/session tables as shared-context verbs
-- **#95g** chore: `cmd/dex` grooming (push logic to L2/L3) — independent
+- ✅ **#95a** refactor: extract context-pack assembly `mcp → retrieve/pack` — **done** (`2746531`, `876c5c6`; #111–#114 lifted the cores, #112 merged SymHit→SymbolHit)
+- ✅ **#95b** feat: stable `ContextPack` schema + golden contract test — **done** (`46ca6e3`, `pack_test.go`)
+- ✅ **#95c** feat: trust envelope threaded into pack — **done** (`61fa5a4`, consolidated in `#116`)
+- ✅ **#95d** feat: per-intent evidence policies over `ResolveIntent` — **done** (`bba5257`, `EvidencePolicy`)
+- ✅ **#95e** feat: hierarchical (pkg/subsystem) summaries — **done** (`4fba1e0`)
+- ⬜ **#95f** feat: surface agent/session tables as shared-context verbs — **OPEN** (issue #106); deferred, least-proven value
+- 🟡 **#95g** chore: `cmd/dex` grooming (push logic to L2/L3) — **partial** (`44b84cb` pushed embed backend-defaults down; `cmd/dex` is still the heaviest cluster)
 
-## 8. Bottom line
+## 8. Bottom line (updated 2026-08-06)
 
-dex already has the primitives and most of the storage for #95. The epic is really
-"name the context-pack contract, stop throwing away confidence signals, and move the
-assembly seam down one layer" — plus filling the two genuinely empty rooms (trust
-envelope, multi-agent surface). Start with **#95a → #95b → #95c**.
+The cheap-program thesis held: dex already had the primitives, so #95 was mostly
+"name the contract, stop throwing away confidence signals, move the assembly seam down
+one layer." **That work landed** — assembly lives in L2, the pack schema is frozen and
+contract-tested, and the trust envelope + evidence policies + hierarchical summaries all
+shipped. What's left is **#95f** (multi-agent surface — the least-proven room) and the
+tail of **#95g** (`cmd/dex` grooming). The original ordering was #95a → #95b → #95c;
+history followed it.
