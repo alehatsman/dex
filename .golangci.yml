@@ -2,7 +2,10 @@ version: "2"
 
 run:
   timeout: 5m
-  tests: false
+  # Lint test files too, so real test bugs (SA*, unused, govet, bodyclose) are
+  # caught. The idiomatic noise that carries no value in a throwaway test
+  # process is scoped out per-linter under exclusions.rules below.
+  tests: true
 
 linters:
   # Enable bug-catching linters; disable style-pedantry ones.
@@ -58,6 +61,10 @@ linters:
       rules:
         - name: blank-imports
         - name: context-as-argument
+          arguments:
+            # *testing.T conventionally comes first in test helpers; allow it
+            # before context.Context so the rule still flags real ordering bugs.
+            - allowTypesBefore: "*testing.T"
         - name: context-keys-type
         - name: dot-imports
         - name: error-return
@@ -85,6 +92,18 @@ linters:
 
   exclusions:
     rules:
+      # --- test-file idioms: tests ARE linted (run.tests: true) so real bugs
+      #     (SA*, unused, govet, bodyclose, ineffassign) are caught, but the
+      #     noise that carries no value in a throwaway test process is scoped
+      #     out here — mirroring the per-idiom production exclusions below. ---
+      - path: _test\.go
+        linters: [errcheck]  # setup/teardown Close/Release/Unsetenv errors are unactionable
+      - path: _test\.go
+        linters: [gosec]     # weak-rand / sha1 in fixtures is not a threat model
+      - path: _test\.go
+        linters: [revive]
+        text: "unused-parameter"  # httptest handler (w, r) and stub signatures
+
       # defer resp.Body.Close() — standard HTTP client pattern; error is
       # unactionable at the point of deferred close.
       - linters: [errcheck]

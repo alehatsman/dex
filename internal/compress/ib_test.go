@@ -83,11 +83,9 @@ func TestCompressIB_HitsTargetRatio(t *testing.T) {
 		t.Errorf("ratio %f too far from target 0.5 (delta %.2f)", actualRatio, math.Abs(actualRatio-0.5))
 	}
 
-	// Low-entropy lines should be preferentially dropped.
-	if strings.Contains(compressed, "foo foo foo foo foo") {
-		// It's OK if some survive (ratio target may require keeping them),
-		// but high-entropy lines must all survive.
-	}
+	// Low-entropy lines may or may not survive (the ratio target can require
+	// keeping some), so we don't assert on them. High-entropy lines, however,
+	// must all survive — checked next.
 	if !strings.Contains(compressed, "alpha beta gamma delta") {
 		t.Error("high-entropy lines should be preserved")
 	}

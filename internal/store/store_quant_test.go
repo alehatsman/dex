@@ -172,8 +172,8 @@ func TestVectorQuantMetaRoundTrip(t *testing.T) {
 	if err := st.UpsertMany(ctx, rows, now); err != nil {
 		t.Fatal(err)
 	}
-	assertMeta(t, st, ctx, metaVecQuant, "int8")
-	assertTopHit(t, st, ctx, []float32{1, 0, 0, 0}, "a.go")
+	assertMeta(t, ctx, st, metaVecQuant, "int8")
+	assertTopHit(t, ctx, st, []float32{1, 0, 0, 0}, "a.go")
 	_ = st.Close()
 
 	// 2. Reopen as float32 — a mode flip must rebuild chunk_vecs (no reindex).
@@ -181,8 +181,8 @@ func TestVectorQuantMetaRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertMeta(t, st, ctx, metaVecQuant, "float32")
-	assertTopHit(t, st, ctx, []float32{1, 0, 0, 0}, "a.go")
+	assertMeta(t, ctx, st, metaVecQuant, "float32")
+	assertTopHit(t, ctx, st, []float32{1, 0, 0, 0}, "a.go")
 	_ = st.Close()
 
 	// 3. Reopen as int8 again — flips back and still searches.
@@ -190,11 +190,11 @@ func TestVectorQuantMetaRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertMeta(t, st, ctx, metaVecQuant, "int8")
-	assertTopHit(t, st, ctx, []float32{1, 0, 0, 0}, "a.go")
+	assertMeta(t, ctx, st, metaVecQuant, "int8")
+	assertTopHit(t, ctx, st, []float32{1, 0, 0, 0}, "a.go")
 }
 
-func assertMeta(t *testing.T, st *Store, ctx context.Context, key, want string) {
+func assertMeta(t *testing.T, ctx context.Context, st *Store, key, want string) {
 	t.Helper()
 	var got string
 	if err := st.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, key).Scan(&got); err != nil {
@@ -205,7 +205,7 @@ func assertMeta(t *testing.T, st *Store, ctx context.Context, key, want string) 
 	}
 }
 
-func assertTopHit(t *testing.T, st *Store, ctx context.Context, q []float32, wantPath string) {
+func assertTopHit(t *testing.T, ctx context.Context, st *Store, q []float32, wantPath string) {
 	t.Helper()
 	hits, err := st.scoreSemantic(ctx, q, 3)
 	if err != nil {

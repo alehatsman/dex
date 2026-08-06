@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func pathByID(t *testing.T, st *Store, ctx context.Context, id int64) string {
+func pathByID(t *testing.T, ctx context.Context, st *Store, id int64) string {
 	t.Helper()
 	var p string
 	if err := st.db.QueryRowContext(ctx,
@@ -41,7 +41,7 @@ func TestFTSPathColumnCoversPathTokens(t *testing.T) {
 	if len(hits) != 1 {
 		t.Fatalf("expected exactly the path-matching chunk for 'handler'; got %d hits", len(hits))
 	}
-	if got := pathByID(t, st, ctx, hits[0].id); got != "internal/auth_handler.go" {
+	if got := pathByID(t, ctx, st, hits[0].id); got != "internal/auth_handler.go" {
 		t.Fatalf("path-token query matched the wrong chunk: %s", got)
 	}
 }
