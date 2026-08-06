@@ -249,7 +249,14 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	}
 	warnIfNoInclude(ig, p.Root)
 	ixOpts := index.Options{Verbose: verbose, Logger: cliLogger(), Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0)}
-	ix := index.New(p, st, newEmbedClient(priorEmbedModel), ig, ixOpts)
+	// One embedder + vector cache shared by the chunk and graph-embed passes.
+	// The cache survives the clearCacheKeepLock sweep below, so this reindex
+	// reuses vectors for unchanged content instead of re-embedding (#121).
+	em, vc := indexEmbedder(p, priorEmbedModel)
+	if vc != nil {
+		defer func() { _ = vc.Close() }()
+	}
+	ix := index.New(p, st, em, ig, ixOpts)
 	if err := ix.Run(ctx); err != nil {
 		return err
 	}
@@ -265,9 +272,8 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	if err != nil {
 		return err
 	}
-	embedModel := st.EmbedModel()
 	if gstats != nil {
-		if em := newEmbedClient(embedModel); em != nil {
+		if em != nil {
 			if _, err := embedGraphNodes(ctx, st, em, false, cliLogger()); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ graph-embed failed for %s: %v\n", p.Root, err)
 			}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/alehatsman/dex/internal/lock"
 	"github.com/alehatsman/dex/internal/proj"
+	"github.com/alehatsman/dex/internal/veccache"
 )
 
 func acquireProjectLock(ctx context.Context, p *proj.Project, cmdName, phase string, wait, breakLock bool) (*lock.Lock, error) {
@@ -92,6 +93,13 @@ func clearCacheKeepLock(p *proj.Project) error {
 	dbBase := filepath.Base(p.DBPath)
 	for _, e := range entries {
 		if e.Name() == lockBase || e.Name() == dbBase {
+			continue
+		}
+		// Preserve the content-addressed vector cache (and its WAL/SHM) so a
+		// reindex reuses vectors for unchanged content instead of re-embedding
+		// (#121). It survives precisely because this sweep skips it — and it is
+		// held open across this call, so removing it would corrupt a live conn.
+		if strings.HasPrefix(e.Name(), veccache.FileName) {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(p.CacheDir, e.Name())); err != nil {

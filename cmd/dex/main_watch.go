@@ -70,7 +70,14 @@ func cmdWatch(ctx context.Context, args []string) error {
 		Logger:      logger,
 		Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0),
 	}
-	ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, ixOpts)
+	// One embedder + vector cache shared by the chunk pass and every
+	// graph-embed flush for the daemon's lifetime, so re-indexes reuse
+	// vectors for unchanged content instead of re-embedding (#121).
+	em, vc := indexEmbedder(p, st.EmbedModel())
+	if vc != nil {
+		defer func() { _ = vc.Close() }()
+	}
+	ix := index.New(p, st, em, ig, ixOpts)
 
 	// Refresh the Go static graph after each chunk-index flush. The
 	// graph layer lives in the same SQLite file, so the chunk run has
@@ -79,7 +86,7 @@ func cmdWatch(ctx context.Context, args []string) error {
 		if _, err := runGraphPhase(c, p, st, *verbose); err != nil {
 			return err
 		}
-		if em := newEmbedClient(st.EmbedModel()); em != nil {
+		if em != nil {
 			if _, err := embedGraphNodes(c, st, em, false, logger); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ graph-embed failed: %v\n", err)
 			}

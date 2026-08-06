@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ import (
 	"github.com/alehatsman/dex/internal/slo"
 	"github.com/alehatsman/dex/internal/store"
 	"github.com/alehatsman/dex/internal/throttle"
+	"github.com/alehatsman/dex/internal/veccache"
 	"github.com/alehatsman/dex/internal/watch"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -688,11 +690,26 @@ func (s *Server) runWatcher(p *proj.Project) {
 		return
 	}
 
+	// Wrap the embed client with a project-scoped content-addressed vector
+	// cache so watch re-indexes reuse vectors for unchanged content instead of
+	// re-embedding (#121). Best-effort: on open failure fall back to the raw
+	// client. Only the indexing passes use it — the query path keeps the
+	// unwrapped s.EmbedClient.
+	indexEm := s.EmbedClient
+	if s.EmbedClient != nil {
+		if vc, err := veccache.Open(filepath.Join(p.CacheDir, veccache.FileName), veccache.DefaultMaxRows); err == nil {
+			indexEm = embed.WithCache(s.EmbedClient, vc)
+			defer func() { _ = vc.Close() }()
+		} else {
+			logger.Warn("mcp watch: vec cache open failed", "root", p.Root, "err", err)
+		}
+	}
+
 	ixOpts := index.Options{
 		Logger:      logger,
 		Concurrency: s.AutoWatch.IndexConcurrency,
 	}
-	ix := index.New(p, st, s.EmbedClient, ig, ixOpts)
+	ix := index.New(p, st, indexEm, ig, ixOpts)
 
 	wOpts := watch.Options{
 		Debounce: s.AutoWatch.Debounce,
@@ -707,8 +724,8 @@ func (s *Server) runWatcher(p *proj.Project) {
 			if _, err := graphrefresh.RunPhase(c, p, st, false, logger); err != nil {
 				return err
 			}
-			if s.EmbedClient != nil {
-				if _, err := graphrefresh.EmbedNodes(c, st, s.EmbedClient, false, logger); err != nil {
+			if indexEm != nil {
+				if _, err := graphrefresh.EmbedNodes(c, st, indexEm, false, logger); err != nil {
 					logger.Warn("mcp watch: graph-embed failed", "root", p.Root, "err", err)
 				}
 			}

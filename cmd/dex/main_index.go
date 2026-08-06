@@ -93,6 +93,15 @@ func cmdIndex(ctx context.Context, args []string) error {
 	}
 	defer st.Close()
 
+	// One embedder + vector cache shared by the chunk and graph-embed passes,
+	// so a reindex reuses vectors for unchanged content instead of re-embedding
+	// (#121). Built before phase 1 because --graph=only skips phase 1 but still
+	// runs the graph-embed pass below.
+	em, vc := indexEmbedder(p, st.EmbedModel())
+	if vc != nil {
+		defer func() { _ = vc.Close() }()
+	}
+
 	// Phase 1: chunk + embed (skipped when --graph=only).
 	if *graphMode != "only" {
 		warnIfNoInclude(ig, p.Root)
@@ -102,7 +111,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 			Concurrency: envInt("DEX_INDEX_CONCURRENCY", 0),
 			Progress:    indexProgressPrinter(*format),
 		}
-		ix := index.New(p, st, newEmbedClient(st.EmbedModel()), ig, opts)
+		ix := index.New(p, st, em, ig, opts)
 		if err := ix.Run(ctx); err != nil {
 			return err
 		}
@@ -133,7 +142,7 @@ func cmdIndex(ctx context.Context, args []string) error {
 	// Phase 2.5: embed graph nodes (symbol KNN index).
 	// Skipped when: embedder unavailable (lean/none profile) or graph was off.
 	if *graphMode != "off" && gstats != nil {
-		if em := newEmbedClient(st.EmbedModel()); em != nil {
+		if em != nil {
 			_ = lk.SetPhase("graph-embed")
 			if n, err := embedGraphNodes(ctx, st, em, *verbose, cliLogger()); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ graph-embed phase failed: %v\n", err)
