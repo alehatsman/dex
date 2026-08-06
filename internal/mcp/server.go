@@ -697,7 +697,7 @@ func (s *Server) runWatcher(p *proj.Project) {
 	// unwrapped s.EmbedClient.
 	indexEm := s.EmbedClient
 	if s.EmbedClient != nil {
-		if vc, err := veccache.Open(filepath.Join(p.CacheDir, veccache.FileName), veccache.DefaultMaxRows); err == nil {
+		if vc, err := veccache.Open(filepath.Join(p.CacheDir, veccache.FileName), veccache.MaxRowsFromEnv()); err == nil {
 			indexEm = embed.WithCache(s.EmbedClient, vc)
 			defer func() { _ = vc.Close() }()
 		} else {

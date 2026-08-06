@@ -18,6 +18,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"math"
+	"os"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3" // register the sqlite3 driver
@@ -28,15 +31,38 @@ import (
 const FileName = "veccache.db"
 
 // DefaultMaxRows bounds the cache. When the table exceeds it, the oldest-
-// inserted rows are pruned on Open. A generous default: the working set of a
-// reindex is "current index contents", bounded by repo size; historical
-// versions age out by insertion order.
+// inserted rows are pruned. A generous default: the working set of a reindex
+// is "current index contents", bounded by repo size; historical versions age
+// out by insertion order.
 const DefaultMaxRows = 500_000
+
+// defaultPruneEvery is how many inserted rows trigger a periodic prune. Prune
+// also runs on Open, but a long-lived process (the MCP auto-watcher opens the
+// cache once and keeps it for the server's lifetime) never reopens, so without
+// this the bound would only apply at startup. Overshoot above maxRows is thus
+// bounded by roughly this many rows.
+const defaultPruneEvery = 4096
+
+// MaxRowsFromEnv returns the row bound from DEX_VEC_CACHE_MAX, or
+// DefaultMaxRows when unset/invalid. An explicit 0 disables the bound.
+func MaxRowsFromEnv() int {
+	v := os.Getenv("DEX_VEC_CACHE_MAX")
+	if v == "" {
+		return DefaultMaxRows
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return DefaultMaxRows
+	}
+	return n
+}
 
 // Store is a sqlite-backed vector cache.
 type Store struct {
-	db      *sql.DB
-	maxRows int
+	db         *sql.DB
+	maxRows    int
+	pruneEvery int          // inserted-row interval between periodic prunes
+	sincePrune atomic.Int64 // rows inserted since the last prune
 }
 
 // Open opens (creating if needed) the cache at path and prunes it to maxRows.
@@ -60,7 +86,7 @@ func Open(path string, maxRows int) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, maxRows: maxRows}
+	s := &Store{db: db, maxRows: maxRows, pruneEvery: defaultPruneEvery}
 	s.prune(context.Background()) // best-effort
 	return s, nil
 }
@@ -132,7 +158,18 @@ func (s *Store) Put(ctx context.Context, entries map[string][]float32) error {
 		}
 	}
 	_ = stmt.Close()
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Periodic prune so the bound holds in a long-lived process that never
+	// reopens the cache (the MCP auto-watcher). Overshoot above maxRows is
+	// bounded by ~pruneEvery rows. Best-effort.
+	if s.maxRows > 0 && s.pruneEvery > 0 &&
+		s.sincePrune.Add(int64(len(entries))) >= int64(s.pruneEvery) {
+		s.sincePrune.Store(0)
+		s.prune(ctx)
+	}
+	return nil
 }
 
 // Close closes the underlying database.

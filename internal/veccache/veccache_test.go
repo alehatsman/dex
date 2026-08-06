@@ -119,6 +119,49 @@ func TestPruneBoundsRowCount(t *testing.T) {
 	}
 }
 
+// TestPeriodicPruneBoundsLongLivedStore: a Store that is never reopened (the
+// MCP auto-watcher case) still bounds its row count via periodic prune.
+func TestPeriodicPruneBoundsLongLivedStore(t *testing.T) {
+	s := openTemp(t, 3)
+	s.pruneEvery = 4 // white-box: prune every 4 inserted rows
+	ctx := context.Background()
+	for i := 0; i < 20; i++ {
+		if err := s.Put(ctx, map[string][]float32{fmt.Sprintf("k%02d", i): {float32(i)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.count(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n > s.maxRows+s.pruneEvery {
+		t.Fatalf("row count %d exceeds bound maxRows(%d)+pruneEvery(%d) — periodic prune not firing",
+			n, s.maxRows, s.pruneEvery)
+	}
+	if n >= 20 {
+		t.Fatalf("row count %d — nothing pruned across 20 inserts without a reopen", n)
+	}
+}
+
+func TestMaxRowsFromEnv(t *testing.T) {
+	t.Setenv("DEX_VEC_CACHE_MAX", "")
+	if got := MaxRowsFromEnv(); got != DefaultMaxRows {
+		t.Errorf("unset → %d, want default %d", got, DefaultMaxRows)
+	}
+	t.Setenv("DEX_VEC_CACHE_MAX", "42")
+	if got := MaxRowsFromEnv(); got != 42 {
+		t.Errorf("=42 → %d, want 42", got)
+	}
+	t.Setenv("DEX_VEC_CACHE_MAX", "0")
+	if got := MaxRowsFromEnv(); got != 0 {
+		t.Errorf("=0 → %d, want 0 (unbounded)", got)
+	}
+	t.Setenv("DEX_VEC_CACHE_MAX", "garbage")
+	if got := MaxRowsFromEnv(); got != DefaultMaxRows {
+		t.Errorf("garbage → %d, want default %d", got, DefaultMaxRows)
+	}
+}
+
 // TestOpenOnDirFails: a non-openable path surfaces an error at Open so the
 // caller can degrade to no-cache (WithCache(em, nil)).
 func TestOpenOnDirFails(t *testing.T) {

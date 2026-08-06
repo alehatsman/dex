@@ -25,7 +25,7 @@ func indexEmbedder(p *proj.Project, indexModel string) (embed.Embedder, io.Close
 	}
 	vc, err := veccache.Open(
 		filepath.Join(p.CacheDir, veccache.FileName),
-		envInt("DEX_VEC_CACHE_MAX", veccache.DefaultMaxRows))
+		veccache.MaxRowsFromEnv())
 	if err != nil {
 		return em, nil
 	}
