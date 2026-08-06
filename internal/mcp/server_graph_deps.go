@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
+	"github.com/alehatsman/dex/internal/graph/resolve"
 	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -136,6 +137,11 @@ func (s *Server) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in Graph
 
 type PackageGraphInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
+	// Level selects the aggregation granularity: "module" (default) is the
+	// per-file/per-Go-package DAG; "project" rolls JS/TS modules up to their
+	// workspace package (@bright/ui → @bright/common), dropping intra-project
+	// edges (#127 Phase 3).
+	Level string `json:"level,omitempty" jsonschema:"aggregation level: 'module' (default) or 'project' (roll JS/TS modules up to workspace packages)"`
 }
 
 // PackageNode is one internal package in the import DAG.
@@ -198,10 +204,18 @@ func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in Pa
 			Hint: fmt.Sprintf("graph not indexed for %s — run `dex index %s --graph=only`.", p.Root, p.Root)}, nil
 	}
 
-	pg := graphquery.BuildPackageGraph(view)
+	var pg graphquery.PackageGraph
+	if in.Level == "project" {
+		pg = graphquery.BuildProjectGraph(view, resolve.Load(p.Root).ProjectOf)
+	} else {
+		pg = graphquery.BuildPackageGraph(view)
+	}
 	if len(pg.Nodes) == 0 {
-		return nil, PackageGraphOutput{Status: "no-graph", Project: p.Root,
-			Hint: "no Go package import graph — this endpoint is Go-only today; non-Go repos return no-graph."}, nil
+		hint := "no Go package import graph — the module level is Go-only today; non-Go repos return no-graph. Try level=\"project\" for a JS/TS workspace rollup."
+		if in.Level == "project" {
+			hint = "no workspace-project graph — no package.json workspace packages resolved, or no cross-project imports were indexed."
+		}
+		return nil, PackageGraphOutput{Status: "no-graph", Project: p.Root, Hint: hint}, nil
 	}
 	return nil, PackageGraphOutput{
 		Status:  "ok",

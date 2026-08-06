@@ -190,6 +190,52 @@ func TestEmptyWorkspace(t *testing.T) {
 	}
 }
 
+// TestProjects: Projects() lists every workspace package (name + dir); the empty
+// / nil workspace yields nil.
+func TestProjects(t *testing.T) {
+	got := map[string]string{}
+	for _, p := range Load(monorepo(t)).Projects() {
+		got[p.Name] = p.Dir
+	}
+	want := map[string]string{
+		"@bright/common":    "packages/bright-common",
+		"@bright/ui":        "packages/bright-ui",
+		"@bright/base-view": "apps/base-view",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Projects() = %#v, want %#v", got, want)
+	}
+	if p := Load(t.TempDir()).Projects(); p != nil {
+		t.Errorf("empty workspace Projects() = %#v, want nil", p)
+	}
+	if p := (*Workspace)(nil).Projects(); p != nil {
+		t.Errorf("nil Workspace Projects() = %#v, want nil", p)
+	}
+}
+
+// TestProjectOf: a module path maps to its owning workspace project by
+// longest path-boundary prefix; unowned paths and boundary near-misses map to "".
+func TestProjectOf(t *testing.T) {
+	w := Load(monorepo(t))
+	cases := map[string]string{
+		"packages/bright-common/src/index":   "@bright/common",
+		"packages/bright-common":             "@bright/common", // exact dir
+		"packages/bright-ui/src/Button":      "@bright/ui",
+		"apps/base-view/src/main":            "@bright/base-view",
+		"packages/bright-common-extra/src/x": "", // boundary: not bright-common
+		"src/util":                           "", // owned by no package
+		"":                                   "",
+	}
+	for p, want := range cases {
+		if got := w.ProjectOf(p); got != want {
+			t.Errorf("ProjectOf(%q) = %q, want %q", p, got, want)
+		}
+	}
+	if got := (*Workspace)(nil).ProjectOf("packages/bright-ui/src/x"); got != "" {
+		t.Errorf("nil Workspace ProjectOf = %q, want \"\"", got)
+	}
+}
+
 // TestSkipsNodeModules: a package.json under node_modules must not register as a
 // workspace package (no node_modules resolution).
 func TestSkipsNodeModules(t *testing.T) {

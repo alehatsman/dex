@@ -214,6 +214,50 @@ func (w *Workspace) Classify(specifier string) Classification {
 	return c
 }
 
+// Project is one workspace package: its package.json name and project-relative,
+// slash-separated directory. The unit a #127 Phase 3 rollup aggregates to.
+type Project struct {
+	Name string // "@bright/common"
+	Dir  string // "packages/bright-common"
+}
+
+// Projects returns every workspace package discovered from a package.json. Nil
+// receiver (a repo with no workspace config) yields nil. Order follows the
+// internal package list (name-length desc); callers that need longest-dir-prefix
+// matching should use ProjectOf, which is order-independent.
+func (w *Workspace) Projects() []Project {
+	if w == nil || len(w.packages) == 0 {
+		return nil
+	}
+	out := make([]Project, 0, len(w.packages))
+	for _, p := range w.packages {
+		out = append(out, Project{Name: p.name, Dir: p.dir})
+	}
+	return out
+}
+
+// ProjectOf returns the name of the workspace project owning module path `p`
+// (the longest package dir that is a path-boundary prefix of `p`), or "" when no
+// workspace package owns it. `p` is a project-relative, slash-separated path
+// (a NodePackage.PackagePath / import target). Longest-prefix wins so a nested
+// package inside another's tree is attributed to the inner one.
+func (w *Workspace) ProjectOf(p string) string {
+	if w == nil || p == "" {
+		return ""
+	}
+	name, best := "", -1
+	for _, pk := range w.packages {
+		d := pk.dir
+		if d == "" {
+			continue
+		}
+		if (p == d || strings.HasPrefix(p, d+"/")) && len(d) > best {
+			name, best = pk.name, len(d)
+		}
+	}
+	return name
+}
+
 // apply returns the candidate paths this alias produces for a specifier, or nil
 // if the specifier doesn't match the alias pattern.
 func (a aliasRule) apply(specifier string) []string {
