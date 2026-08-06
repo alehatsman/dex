@@ -111,10 +111,16 @@ func rootFromClient(ctx context.Context, l rootLister, base string) string
 - First root that `proj.Resolve(path, base)` accepts wins (deterministic); none →
   "" → cwd.
 
-Signature: `resolveProject(ctx, req, projectRoot) (*proj.Project, string /*source*/, string /*errHint*/)`.
-`source ∈ {"arg","client-root","cwd"}`. The third return keeps today's
-error-hint semantics (handlers already do `if hint != "" { …Status:"error"… }`),
-so error handling at the 35 sites is unchanged; they additionally gain `source`.
+Signature: `resolveProject(ctx, projectRoot) (*proj.Project, string /*errHint*/)`
+— arity unchanged (avoids a source-label return the callers don't need), the
+error-hint semantics are untouched, and the **session reaches the resolver via
+`ctx`, not a new `req` param**: `addTool` (the single handler adapter) stashes
+`req.Session` into the context (`withSession`), and `resolveProject` recovers it
+(`listerFromContext`). So the 35 call sites change by inserting `ctx` only — no
+`_ *sdk.CallToolRequest`→`req` renames (which would trip revive's
+`unused-parameter` on handlers that don't otherwise touch the request). The CLI
+path calls handlers with a nil request, so no session is stashed and resolution
+falls straight through to cwd.
 
 ### B. Tell the agent to target the worktree (the fix for the driving scenario)
 
@@ -140,43 +146,47 @@ will pass the worktree path, and the driving scenario just works.
 
 ### C. Make the resolved root legible (safety net when B is forgotten)
 
-dex already half-does this: `SearchOutput.Project` / `LocateOutput.Project` are
-commented *"resolved project root."* Standardize and strengthen it:
+The resolved root is **already** echoed in every tool result: nearly all outputs
+carry `Project string json:"project,omitempty"` set to `p.Root`
+(`SearchOutput.Project` et al are commented *"resolved project root"*). So the
+resolution is not silent today — the result always states which project it hit;
+it is just easy to miss. Pillar C adds the one missing signal without disturbing
+that convention:
 
-- Every tool that resolves a project echoes the resolved **root path** in its
-  existing `Project` field (fill the gaps where it's missing).
-- Add the **source** so a fallback pick reads as one, e.g.
-  `project: "/…/dex (resolved from client workspace root — pass project_root to
-  target a different worktree)"` when `source != "arg"`. Empty/plain when the
-  caller passed an explicit arg (no noise on the happy path).
-- When `source == "cwd"`, also emit a **deduped stderr warning** (one line per
-  distinct fallback root per process, via `s.AutoWatch.Logger`, nil-guarded):
+- **Deduped stderr warning on the cwd backstop** — `warnCwdFallback`, one line
+  per distinct fallback root per process (package `sync.Map` guard), via the
+  package `slog` (matching the existing panic-guard logging in `addTool`):
 
   ```
-  mcp: resolved project_root from server cwd (<wd>); pass project_root or start
-  Claude inside the worktree to target it
+  resolved project_root from server cwd; pass project_root or start the client
+  inside the worktree to target it  cwd=<wd>
   ```
 
-Why this and not a per-result banner injected at the `addTool` adapter: the SDK
-synthesizes result text from the typed `Out` when `Content` is nil, so injecting
-a banner there suppresses that rendering for some tools. Reusing the existing
-`Project`/`Hint` field convention is uniform with dex's own idiom and low-risk.
-A universal provenance envelope across *all* 35 tools is deferred to the #110
-envelope work — pillar C covers the high-traffic tools that already carry the
-field, which is where the footgun bites.
+  This fires only when there was no explicit arg *and* no usable client root —
+  exactly the case pillar B is meant to prevent, now made loud.
+
+Deliberately **not** injecting a per-result provenance banner at the `addTool`
+adapter, nor threading a `source` label into the 35 outputs: the existing
+`Project` echo already carries the resolved path uniformly, and the SDK
+synthesizes result text from the typed `Out` when `Content` is nil, so an
+adapter-level banner would suppress that rendering for some tools. A *uniform*
+"resolved from X, pass project_root to retarget" provenance line belongs in the
+#110 universal envelope, where every tool result gets consistent provenance —
+tracked as a follow-up rather than bolted onto individual hot handlers here (their
+hint-priority ladders make ad-hoc injection fragile).
 
 ## Call-site update (35 sites)
 
-Mechanical: `s.resolveProject(in.ProjectRoot)` →
-`s.resolveProject(ctx, req, in.ProjectRoot)`, LHS `p, src, hint := …` (rename the
-discarded `_ *sdk.CallToolRequest` param to `req` where needed). Error handling
-line unchanged. High-traffic outputs additionally set `Project` from `p.Root` +
-`src`. CLI wrappers (`s.check(ctx, nil, in)`) pass `nil` → roots skipped, cwd
-backstop + warn. `server_summarize.go:432`'s separate `resolveProjectRoot` free
-function is brought under the same precedence (same helper).
+Mechanical: `s.resolveProject(in.ProjectRoot)` → `s.resolveProject(ctx,
+in.ProjectRoot)`. LHS and error handling unchanged. Three handlers named their
+context param `_ context.Context` (budget, index_status, summarizeResolveMode) —
+those get the param named `ctx` (now used, so no `unused-parameter` violation).
+`addTool` gains one line (`withSession(ctx, req.Session)`). The separate
+`resolveProjectRoot` free function (`server_summarize.go`) becomes a method
+`(s *Server) resolveProjectRoot(ctx, projectRoot)` under the same precedence.
 
 Behavior-neutral for the two dominant callers: explicit-`project_root` MCP calls
-and CLI (`nil` session).
+and CLI (nil request → no session → cwd path).
 
 ## Edge cases
 
@@ -198,18 +208,27 @@ and CLI (`nil` session).
 New `internal/mcp/roots_test.go`:
 
 - `TestRootFromClient_PicksWorktree` — fake `rootLister` returns
-  `file:///<tmp-worktree>`; `resolveProject(ctx, req, "")` yields `p.Root ==
-  worktree`, `source == "client-root"`, **not** cwd. (The worktree coverage #120
-  requires.)
+  `file:///<tmp-worktree>`; `rootFromClient` returns that path, and
+  `resolveProject(withSession(ctx, fake), "")` yields `p.Root == worktree`,
+  **not** cwd. (The worktree coverage #120 requires.)
 - `TestRootFromClient_{Empty,ListError,NonFileURI,NonexistentDir}` → each "".
-- `TestResolveProjectPrecedence` — table over {arg, roots, cwd}: arg > roots >
-  cwd; source label correct at each rung; cwd emits the warn.
-- `TestResolveProject_ExplicitArgSkipsRoots` — fake lister asserts `ListRoots`
-  is **not** called when the arg is non-empty (guards the round-trip cost).
-- `TestProjectRootDesc_SingleSource` — the centralized const is what the tools
-  advertise (guards against a reintroduced "defaults to cwd" copy).
+- `TestResolveProjectPrecedence` — arg wins over a fake root; a fake root wins
+  over cwd; no session ⇒ cwd.
+- `TestResolveProject_ExplicitArgSkipsRoots` — fake lister records that
+  `ListRoots` is **not** called when the arg is non-empty (guards the round-trip
+  cost on the common Claude-Code path).
+- `TestFileURIToPath` — `file:///a/b` → `/a/b`; bare `/a/b` → `/a/b`;
+  `http://x` / `""` → `"".`
 
-Fakes: `stubLister` implementing `rootLister`; `t.TempDir()` for roots/cwd.
+Fakes: a `stubLister` implementing `rootLister` (returns a canned
+`*sdk.ListRootsResult`, flips a `called` flag); `t.TempDir()` for roots/cwd. The
+`ctx`-stash seam means tests drive `resolveProject` through `withSession` without
+fabricating an SDK `CallToolRequest`.
+
+Pillar B is guarded by reflecting a representative input type's `ProjectRoot`
+`jsonschema` tag (struct tags can't hold a shared const, so the guard asserts the
+stale "defaults to the server's working directory" phrasing is gone and the
+worktree guidance is present).
 
 ## Validation / rollout
 

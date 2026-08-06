@@ -15,7 +15,7 @@ type SmellsInput struct {
 	MinGodNodeCallers    int    `json:"min_god_node_callers,omitempty" jsonschema:"min in_degree to flag a function as a god-node (default 20)"`
 	MinGodNodePkgCallers int    `json:"min_god_node_pkg_callers,omitempty" jsonschema:"min cross_pkg_callers to flag as a god-node (default 8)"`
 	Limit                int    `json:"limit,omitempty" jsonschema:"max results per category (default 20)"`
-	ProjectRoot          string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot          string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // SmellHit is one flagged symbol in the smells output.
@@ -52,7 +52,7 @@ func (s *Server) Smells(ctx context.Context, in SmellsInput) (SmellsOutput, erro
 }
 
 func (s *Server) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, SmellsOutput{Status: "error", Hint: hint}, nil
 	}

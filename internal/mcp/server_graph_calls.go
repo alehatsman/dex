@@ -30,7 +30,7 @@ func (s *Server) GraphCallees(ctx context.Context, in CallEdgeInput) (CallEdgeOu
 type CallEdgeInput struct {
 	Name        string `json:"name" jsonschema:"symbol to query: bare ('Foo'), receiver-qualified ('(*Server).RunStdio'), or package-tail-qualified ('mcp.NewServer')"`
 	Package     string `json:"package,omitempty" jsonschema:"optional package path filter when the same name is defined in multiple packages"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits to return (default 12, max 50)"`
 	Verbose     bool   `json:"verbose,omitempty" jsonschema:"return the full enclosing function body per hit instead of a window centred on the call site (default false)"`
 }
@@ -103,7 +103,7 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, CallEdgeOutput{Status: "error", Hint: "name is empty"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, CallEdgeOutput{Status: "error", Hint: hint}, nil
 	}

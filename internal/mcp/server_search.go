@@ -23,7 +23,7 @@ import (
 
 type SearchInput struct {
 	Query       string   `json:"query" jsonschema:"natural-language or code query"`
-	ProjectRoot string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string   `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	K           int      `json:"k,omitempty" jsonschema:"number of results to return (default 8, max 30)"`
 	Exclude     []string `json:"exclude,omitempty" jsonschema:"paths to skip: a plain entry is a directory prefix ('vendor/', 'internal/legacy/'); an entry with glob metacharacters (*?[) is matched as a glob against the full path and the basename ('*_test.go', 'testdata/**')"`
 	Languages   []string `json:"languages,omitempty" jsonschema:"restrict results to these languages (e.g. ['go','typescript']); accepts language names or raw extensions (.rs, .go)"`
@@ -95,7 +95,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, SearchOutput{Status: "error", Hint: "query is empty — pass a natural-language description or code fragment"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, SearchOutput{Status: "error", Hint: hint}, nil
 	}

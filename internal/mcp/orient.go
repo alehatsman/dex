@@ -19,7 +19,7 @@ import (
 // The community parameters mirror `dex map` (min-members 3, k 50, top-k 25) so
 // orientation, map(), and the nav-bench routing lane all see the same clusters.
 func (s *Server) orientResponse(ctx context.Context, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, ContextOutput{Status: "error", Hint: hint}, nil
 	}

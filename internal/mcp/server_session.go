@@ -21,7 +21,7 @@ import (
 )
 
 type SessionInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Action      string `json:"action"                 jsonschema:"set_task | add_note | add_file | get | clear | snapshot | recap | budget | heatmap | export | import"`
 	Task        string `json:"task,omitempty"         jsonschema:"task description for set_task action"`
 	Note        string `json:"note,omitempty"         jsonschema:"note text for add_note action"`
@@ -60,7 +60,7 @@ type SessionOutput struct {
 }
 
 func (s *Server) session(ctx context.Context, _ *sdk.CallToolRequest, in SessionInput) (*sdk.CallToolResult, SessionOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, SessionOutput{Status: "error", Hint: hint}, nil
 	}

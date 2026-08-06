@@ -17,7 +17,7 @@ type ClonesInput struct {
 	MinLines    int     `json:"min_lines,omitempty" jsonschema:"ignore blocks shorter than this many lines (default 6)"`
 	K           int     `json:"k,omitempty" jsonschema:"neighbours probed per block (default 10, max 50)"`
 	MaxClusters int     `json:"max_clusters,omitempty" jsonschema:"max clusters to return (default 20, max 100)"`
-	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string  `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // CloneMemberOut is one code block inside a duplication cluster.
@@ -55,7 +55,7 @@ func (s *Server) Clones(ctx context.Context, in ClonesInput) (ClonesOutput, erro
 // It reuses the vectors already indexed for search (sqlite-vec KNN), so it needs
 // no embedder round-trip; an index built without embeddings simply yields none.
 func (s *Server) clones(ctx context.Context, _ *sdk.CallToolRequest, in ClonesInput) (*sdk.CallToolResult, ClonesOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, ClonesOutput{Status: "error", Hint: hint}, nil
 	}

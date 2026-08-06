@@ -16,7 +16,7 @@ import (
 )
 
 type SearchGrepInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Pattern     string `json:"pattern"                jsonschema:"RE2 regex pattern to search for"`
 	Path        string `json:"path,omitempty"         jsonschema:"relative subdirectory to restrict the search (default: project root)"`
 	Ext         string `json:"ext,omitempty"          jsonschema:"file extension filter without leading dot, e.g. go or ts"`
@@ -51,7 +51,7 @@ func (s *Server) SearchGrep(ctx context.Context, in SearchGrepInput) (SearchGrep
 }
 
 func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, SearchGrepOutput{Status: "error", Hint: hint}, nil
 	}

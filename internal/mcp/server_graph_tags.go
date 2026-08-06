@@ -18,7 +18,7 @@ import (
 type TagInput struct {
 	Tag         string `json:"tag,omitempty" jsonschema:"a markdown #tag (without the leading #) — returns the documents carrying it"`
 	Doc         string `json:"doc,omitempty" jsonschema:"a document path — returns the tags that document carries; ignored when tag is set"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	K           int    `json:"k,omitempty" jsonschema:"max items to return (default 100, max 500)"`
 }
 
@@ -45,7 +45,7 @@ func (s *Server) graphTags(ctx context.Context, _ *sdk.CallToolRequest, in TagIn
 	if tag == "" && doc == "" {
 		return nil, TagOutput{Status: "error", Hint: "pass `tag` (→ documents) or `doc` (→ tags)"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, TagOutput{Status: "error", Hint: hint}, nil
 	}

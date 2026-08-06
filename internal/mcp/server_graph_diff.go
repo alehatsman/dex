@@ -24,7 +24,7 @@ var reValidRef = regexp.MustCompile(`^[a-zA-Z0-9~^:./_@{}-]+$`)
 type DiffInput struct {
 	Ref         string `json:"ref,omitempty" jsonschema:"git ref to diff against (default 'HEAD~1'); supports any ref git understands"`
 	MaxDepth    int    `json:"max_depth,omitempty" jsonschema:"BFS depth for blast-radius traversal (default 2, max 5)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 type DiffOutput struct {
@@ -45,7 +45,7 @@ func (s *Server) GraphDiff(ctx context.Context, in DiffInput) (DiffOutput, error
 }
 
 func (s *Server) graphDiff(ctx context.Context, _ *sdk.CallToolRequest, in DiffInput) (*sdk.CallToolResult, DiffOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, DiffOutput{Status: "error", Hint: hint}, nil
 	}

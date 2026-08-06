@@ -28,7 +28,7 @@ type RefactorInput struct {
 	Symbol      string `json:"symbol" jsonschema:"the symbol to rename: bare ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer')"`
 	To          string `json:"to" jsonschema:"the new identifier"`
 	Etag        string `json:"etag,omitempty" jsonschema:"optional plan etag from a prior call; if the touched files changed since, the verb returns status 'stale'"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // RefactorOutput is the edit plan. Edits is the full type-resolved set; the
@@ -68,7 +68,7 @@ func (s *Server) refactor(ctx context.Context, _ *sdk.CallToolRequest, in Refact
 			Hint: "rename_symbol needs both `symbol` and `to`"}, nil
 	}
 
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, RefactorOutput{Status: "error", Op: op, Hint: hint}, nil
 	}

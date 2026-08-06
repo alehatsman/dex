@@ -61,7 +61,7 @@ type ReviewInput struct {
 	Base        string `json:"base,omitempty" jsonschema:"base branch for branch/PR comparison (default 'main')"`
 	Compact     bool   `json:"compact,omitempty" jsonschema:"drop low-risk hunks, returning only medium/high-risk ones"`
 	K           int    `json:"k,omitempty" jsonschema:"max callers and notes per symbol (default 8, max 30)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // ReviewSymbol is a declaration a hunk touches, resolved to its enclosing chunk.
@@ -132,7 +132,7 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	if strings.TrimSpace(in.Ref) == "" && strings.TrimSpace(in.Branch) == "" && in.PR == 0 {
 		return nil, ReviewOutput{Status: "error", Hint: "review needs one of: ref, branch, pr"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, ReviewOutput{Status: "error", Hint: hint}, nil
 	}

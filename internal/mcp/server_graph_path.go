@@ -18,7 +18,7 @@ type PathInput struct {
 	Dst         string `json:"dst" jsonschema:"destination symbol name"`
 	Package     string `json:"package,omitempty" jsonschema:"optional package filter applied to both src and dst"`
 	MaxDepth    int    `json:"max_depth,omitempty" jsonschema:"BFS depth limit (default 8, max 15)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 type PathHop struct {
@@ -49,7 +49,7 @@ func (s *Server) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathI
 	if strings.TrimSpace(in.Src) == "" || strings.TrimSpace(in.Dst) == "" {
 		return nil, PathOutput{Status: "error", Hint: "src and dst must both be non-empty"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, PathOutput{Status: "error", Hint: hint}, nil
 	}

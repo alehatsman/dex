@@ -18,7 +18,7 @@ type CommunitiesInput struct {
 	MinMembers  int    `json:"min_members,omitempty" jsonschema:"min community size to include (default 3)"`
 	K           int    `json:"k,omitempty" jsonschema:"max communities to return (default 20, max 50)"`
 	TopK        int    `json:"top_k,omitempty" jsonschema:"max members to include per community (default 10)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 type CommunityMember struct {
@@ -91,7 +91,7 @@ func (s *Server) GraphCommunities(ctx context.Context, in CommunitiesInput) (Com
 }
 
 func (s *Server) graphCommunities(ctx context.Context, _ *sdk.CallToolRequest, in CommunitiesInput) (*sdk.CallToolResult, CommunitiesOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, CommunitiesOutput{Status: "error", Hint: hint}, nil
 	}

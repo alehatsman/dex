@@ -25,7 +25,7 @@ type RefsInput struct {
 	Action string `json:"action" jsonschema:"one of: references (all use+def sites), implementations (concrete types satisfying an interface), supertypes (embedded interfaces / interfaces a type satisfies), subtypes (implementing types or structs embedding this type)"`
 	// Symbol is a bare name, (*Recv).Method, or pkg.Name.
 	Symbol      string `json:"symbol" jsonschema:"symbol to query: bare name ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer')"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // RefsOutput is the query result.
@@ -60,7 +60,7 @@ func (s *Server) refs(ctx context.Context, _ *sdk.CallToolRequest, in RefsInput)
 		}, nil
 	}
 
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, RefsOutput{Status: "error", Hint: hint}, nil
 	}

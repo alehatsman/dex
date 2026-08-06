@@ -13,7 +13,7 @@ import (
 )
 
 type SearchTreeInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Path        string `json:"path,omitempty"         jsonschema:"relative directory within the project to list (default: project root)"`
 	Depth       int    `json:"depth,omitempty"        jsonschema:"max directory depth shown individually; dirs deeper than this are aggregated with their chunk totals (default 3, 0 = unlimited)"`
 }
@@ -43,7 +43,7 @@ func (s *Server) SearchTree(ctx context.Context, in SearchTreeInput) (SearchTree
 }
 
 func (s *Server) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, SearchTreeOutput{Status: "error", Hint: hint}, nil
 	}

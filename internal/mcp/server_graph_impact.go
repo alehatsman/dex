@@ -21,7 +21,7 @@ type ImpactInput struct {
 	Package     string `json:"package,omitempty" jsonschema:"optional package path filter when the same name appears in multiple packages"`
 	MaxDepth    int    `json:"max_depth,omitempty" jsonschema:"BFS depth limit (default 3, max 5) — depth 1 = direct callers, depth 2 = their callers, etc."`
 	K           int    `json:"k,omitempty" jsonschema:"max nodes shown per depth (default 8, max 200) — the tail is summarised as a '+N more' line. Set high (e.g. 200) for the full PageRank-sorted list."`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // ImpactNode is one symbol reachable by following callers transitively
@@ -74,7 +74,7 @@ func (s *Server) graphImpact(ctx context.Context, _ *sdk.CallToolRequest, in Imp
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, ImpactOutput{Status: "error", Hint: "name is empty"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, ImpactOutput{Status: "error", Hint: hint}, nil
 	}

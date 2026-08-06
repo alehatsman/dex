@@ -175,7 +175,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 const (
 	rulesMarker    = "# dex — semantic search & context routing"
 	rulesEndMarker = "<!-- /dex -->"
-	rulesVersion   = "<!-- dex-rules-v3 -->"
+	rulesVersion   = "<!-- dex-rules-v4 -->"
 )
 
 // rulesContent is a deliberately thin pointer block. dex injects the full,
@@ -184,12 +184,15 @@ const (
 // here only invites the staleness this block used to carry — keep it minimal
 // and let the MCP instructions be the single source of truth.
 const rulesContent = `# dex — semantic search & context routing
-<!-- dex-rules-v3 -->
+<!-- dex-rules-v4 -->
 
 dex is active as an MCP server. Its tool mapping and workflow are injected live
 as MCP server instructions, generated from the installed binary so they never
 drift — prefer those over any static copy of them. Start each session by calling
 ` + "`ask()`" + ` with the task description; use ` + "`map()`" + ` to orient in an unfamiliar repo.
+Working in a git worktree? Pass its absolute path as ` + "`project_root`" + ` to every
+dex call — the server can't see your shell's cwd and otherwise resolves the
+checkout it was started in.
 Power lanes (deps, diff, clusters, smells, session, …) are gated behind DEX_EXPERT.
 <!-- /dex -->`
 

@@ -20,7 +20,7 @@ import (
 // to `session`.
 
 type BudgetInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	TopN        int    `json:"top_n,omitempty"        jsonschema:"max top-files entries (default 10, max 50)"`
 }
 
@@ -61,8 +61,8 @@ const (
 	budgetMaxTopN     = 50
 )
 
-func (s *Server) budget(_ context.Context, _ *sdk.CallToolRequest, in BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
-	p, herr := s.resolveProject(in.ProjectRoot)
+func (s *Server) budget(ctx context.Context, _ *sdk.CallToolRequest, in BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
+	p, herr := s.resolveProject(ctx, in.ProjectRoot)
 	if herr != "" {
 		return nil, BudgetOutput{Status: "error", Error: herr}, nil
 	}

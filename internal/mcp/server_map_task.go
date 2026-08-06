@@ -38,7 +38,7 @@ func (s *Server) taskMap(ctx context.Context, in MapInput) (*sdk.CallToolResult,
 		}, nil
 	}
 
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, MapOutput{Status: "error", Hint: hint}, nil
 	}

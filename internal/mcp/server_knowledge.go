@@ -19,7 +19,7 @@ import (
 )
 
 type KnowledgeInput struct {
-	ProjectRoot string  `json:"project_root,omitempty"  jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string  `json:"project_root,omitempty"  jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Action      string  `json:"action"                  jsonschema:"add | list | delete | review | pin | unpin | export | import | consolidate | gc | relate | relations"`
 	Archetype   string  `json:"archetype,omitempty"     jsonschema:"Architecture | Gotcha | Convention | Decision | Observation (default) | ReviewFinding (a code-review finding, scope it to the reviewed file so the next toucher sees it — #87) | Hypothesis | Inference | VerifiedFact"`
 	Body        string  `json:"body,omitempty"          jsonschema:"fact text for add action; JSON array of {archetype,body,confidence} for import action"`
@@ -111,7 +111,7 @@ type KnowledgeOutput struct {
 const knowledgeSimilarThreshold = 0.5
 
 func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, KnowledgeOutput{Status: "error", Hint: hint}, nil
 	}

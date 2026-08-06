@@ -32,7 +32,7 @@ import (
 // ─── tool: ask ────────────────────────────────────────────────────────────
 
 type ContextInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Question    string `json:"question" jsonschema:"free-text question about the codebase (e.g. 'where is filesystem event debouncing handled?', 'how does indexing work?', 'callers of (*Store).Search')"`
 	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context|assemble (default: auto). assemble returns a budget-bounded working set — symbol bodies chosen by submodular keyword coverage, prose synthesis suppressed — instead of a prose answer (#687); the concerns field reports which query concerns the set covers vs drops, so a partial set isn't read as complete (#725)"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
@@ -357,7 +357,7 @@ func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolReque
 		// (#348 / #316 story 6). No inference, byte-stable, cache-friendly.
 		return s.orientResponse(ctx, in)
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, ContextOutput{Status: "error", Hint: hint}, nil
 	}

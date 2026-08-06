@@ -1002,7 +1002,7 @@ func TestApplyMultiScaleFilterFallsBackOnNoOverlap(t *testing.T) {
 	root := indexProject(t, projDir, cacheDir, srv.URL)
 	s := newServer(srv.URL, cacheDir)
 
-	p, hint := s.resolveProject(root)
+	p, hint := s.resolveProject(context.Background(), root)
 	if hint != "" {
 		t.Fatalf("resolveProject: %s", hint)
 	}
@@ -1035,7 +1035,7 @@ func TestApplyMultiScaleFilterRescuesBM25StrongHits(t *testing.T) {
 	root := indexProject(t, projDir, cacheDir, srv.URL)
 	s := newServer(srv.URL, cacheDir)
 
-	p, hint := s.resolveProject(root)
+	p, hint := s.resolveProject(context.Background(), root)
 	if hint != "" {
 		t.Fatalf("resolveProject: %s", hint)
 	}

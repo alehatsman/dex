@@ -52,7 +52,7 @@ func (s *Server) Check(ctx context.Context, in CheckInput) (CheckOutput, error) 
 }
 
 func (s *Server) check(ctx context.Context, _ *sdk.CallToolRequest, in CheckInput) (*sdk.CallToolResult, CheckOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, CheckOutput{}, errors.New(hint)
 	}

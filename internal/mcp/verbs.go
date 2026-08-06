@@ -47,7 +47,7 @@ type MapInput struct {
 	Around      string `json:"around,omitempty" jsonschema:"render a task-focused region around this symbol — its callers ∪ callees — instead of the repo overview; mutually exclusive with cluster and around_diff"`
 	AroundDiff  string `json:"around_diff,omitempty" jsonschema:"render the blast radius of a git diff: the ref to diff against (e.g. 'HEAD~1'); mutually exclusive with cluster and around"`
 	Task        string `json:"task,omitempty" jsonschema:"current task description — when set, every indexed file is scored against this task and returned as l0_files/l1_files/l2_count with per-file recommended_mode; requires an embed client (degrades to the normal topology map when none is wired)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // TaskFile is one entry in the task-filtered read list returned by map when
@@ -201,7 +201,7 @@ type TraceInput struct {
 	Package     string `json:"package,omitempty" jsonschema:"optional package-path filter when the same name is defined in multiple packages"`
 	MaxDepth    int    `json:"max_depth,omitempty" jsonschema:"BFS depth limit: path (default 8, max 15); impact (default 3, max 5). Ignored for callers/callees"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits to return: callers/callees (default 12, max 50); impact nodes per depth (default 8, max 200)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // TraceOutput is the unified envelope across the four directions. The

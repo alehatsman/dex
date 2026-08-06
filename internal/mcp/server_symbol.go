@@ -16,7 +16,7 @@ import (
 
 type FindSymbolInput struct {
 	Name        string `json:"name" jsonschema:"exact identifier name to look up (case-sensitive, e.g. 'MyFunc', 'HTTPHandler')"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	K           int    `json:"k,omitempty" jsonschema:"max results to return (default 10)"`
 }
 
@@ -31,7 +31,7 @@ func (s *Server) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in Find
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, FindSymbolOutput{Status: "error", Hint: "name is empty"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, FindSymbolOutput{Status: "error", Hint: hint}, nil
 	}

@@ -14,7 +14,7 @@ import (
 // ─── tool: graph_cycles ───────────────────────────────────────────────────
 
 type CyclesInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	MinSize     int    `json:"min_size,omitempty" jsonschema:"minimum SCC size to include (default 2 — only cycles, not trivially-acyclic nodes)"`
 	K           int    `json:"k,omitempty" jsonschema:"max cycles to return (default 20, max 100)"`
 }
@@ -48,7 +48,7 @@ func (s *Server) GraphCycles(ctx context.Context, in CyclesInput) (CyclesOutput,
 }
 
 func (s *Server) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, CyclesOutput{Status: "error", Hint: hint}, nil
 	}

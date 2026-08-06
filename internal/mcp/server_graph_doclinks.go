@@ -15,7 +15,7 @@ import (
 
 type DocLinkInput struct {
 	Doc         string `json:"doc" jsonschema:"path to a markdown document relative to the project root (e.g. 'docs/spec.md'); a bare basename like 'spec' is also accepted when unambiguous"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits to return (default 50, max 200)"`
 }
 
@@ -77,7 +77,7 @@ func (s *Server) docEdges(ctx context.Context, in DocLinkInput, backlinks bool) 
 	if strings.TrimSpace(in.Doc) == "" {
 		return nil, DocLinkOutput{Status: "error", Hint: "doc is empty"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, DocLinkOutput{Status: "error", Hint: hint}, nil
 	}

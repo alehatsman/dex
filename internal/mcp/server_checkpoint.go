@@ -21,7 +21,7 @@ type CheckpointInput struct {
 	From        string `json:"from,omitempty" jsonschema:"left checkpoint ref for action=diff (default HEAD~1)"`
 	To          string `json:"to,omitempty" jsonschema:"right checkpoint ref for action=diff (default HEAD)"`
 	Limit       int    `json:"limit,omitempty" jsonschema:"max checkpoints to list for action=log (default 20, max 200)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // CheckpointOutput is the checkpoint tool result. Only the fields relevant to
@@ -45,7 +45,7 @@ func (s *Server) Checkpoint(ctx context.Context, in CheckpointInput) (Checkpoint
 }
 
 func (s *Server) checkpoint(ctx context.Context, _ *sdk.CallToolRequest, in CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, CheckpointOutput{Status: "error", Hint: hint}, nil
 	}

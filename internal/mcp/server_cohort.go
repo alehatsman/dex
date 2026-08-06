@@ -23,7 +23,7 @@ import (
 // CohortInput drives the cohort verb.
 type CohortInput struct {
 	Interface   string `json:"interface" jsonschema:"the interface to analyse: bare ('toolSurface') or package-tail-qualified ('mcp.toolSurface')"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // CohortOutput mirrors cohesion.CohortResult.
@@ -48,7 +48,7 @@ func (s *Server) cohort(ctx context.Context, _ *sdk.CallToolRequest, in CohortIn
 	if strings.TrimSpace(in.Interface) == "" {
 		return nil, CohortOutput{Status: "error", Hint: "cohort needs an `interface` name"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, CohortOutput{Status: "error", Hint: hint}, nil
 	}

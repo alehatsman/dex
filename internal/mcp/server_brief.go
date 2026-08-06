@@ -16,7 +16,7 @@ type BriefInput struct {
 	Task         string   `json:"task" jsonschema:"task description — what you are about to implement or change"`
 	Sections     []string `json:"sections,omitempty" jsonschema:"sections to include: map, relevant_code, rules, tests, impact (default: all)"`
 	BudgetTokens int      `json:"budget_tokens,omitempty" jsonschema:"approximate token budget (default 6000)"`
-	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // BriefRelevantFile is one ranked file in the brief output.

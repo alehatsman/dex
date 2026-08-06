@@ -33,7 +33,7 @@ type VerifyInput struct {
 	Ref         string `json:"ref,omitempty" jsonschema:"git range or ref to test the changes of (e.g. 'HEAD~3..HEAD'); default (no symbol, no ref) tests the uncommitted working-tree changes vs HEAD"`
 	Command     string `json:"command,omitempty" jsonschema:"override the test command template; '{{packages}}' is substituted with the resolved Go package list (e.g. 'go test -tags sqlite_fts5 {{packages}}'). Falls back to $DEX_VERIFY_CMD then 'go test {{packages}}'"`
 	TimeoutSecs int    `json:"timeout_secs,omitempty" jsonschema:"test-run timeout in seconds (default 60, max 600)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // VerifyOutput carries the resolved test scope and the run result. On a failing
@@ -63,7 +63,7 @@ func (s *Server) Verify(ctx context.Context, in VerifyInput) (VerifyOutput, erro
 }
 
 func (s *Server) verify(ctx context.Context, req *sdk.CallToolRequest, in VerifyInput) (*sdk.CallToolResult, VerifyOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, VerifyOutput{Status: "error", Hint: hint}, nil
 	}

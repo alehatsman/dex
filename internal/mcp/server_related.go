@@ -15,7 +15,7 @@ import (
 type RelatedInput struct {
 	Path        string `json:"path" jsonschema:"relative file path of the source chunk (e.g. 'internal/store/store.go')"`
 	StartLine   int    `json:"start_line" jsonschema:"start line of the source chunk (1-indexed)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	K           int    `json:"k,omitempty" jsonschema:"number of related chunks to return (default 8, max 30)"`
 	// Threshold drops hits below this cosine similarity (0..1); 0 keeps all.
 	// The `similar` verb sets it to return only genuinely near-duplicate blocks.
@@ -36,7 +36,7 @@ func (s *Server) related(ctx context.Context, _ *sdk.CallToolRequest, in Related
 	if in.StartLine <= 0 {
 		return nil, RelatedOutput{Status: "error", Hint: "start_line must be ≥ 1"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, RelatedOutput{Status: "error", Hint: hint}, nil
 	}

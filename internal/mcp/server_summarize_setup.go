@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -48,7 +49,7 @@ func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string
 // task-aware overrides. The default `full` is raw file content (no LLM); the
 // only LLM path is `summary` (isLLM). The no-chat handling for summary lives
 // in the caller, which degrades it to a `needs-chat` status.
-func (s *Server) summarizeResolveMode(in SummarizeInput) (ReadMode, bool) {
+func (s *Server) summarizeResolveMode(ctx context.Context, in SummarizeInput) (ReadMode, bool) {
 	raw := strings.ToLower(strings.TrimSpace(in.Mode))
 	if raw == "" {
 		if in.ProjectRoot != "" {
@@ -66,7 +67,7 @@ func (s *Server) summarizeResolveMode(in SummarizeInput) (ReadMode, bool) {
 	// Generate task → signatures) to save tokens; it never forces the LLM.
 	if in.Task != "" && mode == ReadModeFull {
 		if override := compress.TaskToMode(in.Task); override != "" {
-			if p2, h2 := s.resolveProject(in.ProjectRoot); h2 == "" {
+			if p2, h2 := s.resolveProject(ctx, in.ProjectRoot); h2 == "" {
 				pt := compress.LoadPolicy(p2.CacheDir)
 				override = pt.ChooseMode(compress.IntentFromTask(in.Task), override)
 			}

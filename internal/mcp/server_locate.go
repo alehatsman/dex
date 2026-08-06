@@ -36,7 +36,7 @@ type LocateInput struct {
 	Frame       string `json:"frame,omitempty" jsonschema:"a raw stack-trace frame line; the file:line or symbol is parsed out of it"`
 	Issues      bool   `json:"issues,omitempty" jsonschema:"opt-in: also list related open GitHub issues via the 'gh' CLI (best-effort, skipped when gh is absent)"`
 	K           int    `json:"k,omitempty" jsonschema:"max callers and related notes to return (default 8, max 30)"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // LocatedFact is the compact projection of a knowledge fact surfaced next to
@@ -144,7 +144,7 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	if strings.TrimSpace(in.Ref) == "" && strings.TrimSpace(in.Symbol) == "" && strings.TrimSpace(in.Frame) == "" {
 		return nil, LocateOutput{Status: "error", Hint: "locate needs one of: ref, symbol, frame", Callers: []CallSite{}}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, LocateOutput{Status: "error", Hint: hint, Callers: []CallSite{}}, nil
 	}

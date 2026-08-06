@@ -56,7 +56,7 @@ func (s *Server) Rehearse(ctx context.Context, in RehearseInput) (RehearseOutput
 }
 
 func (s *Server) rehearse(ctx context.Context, _ *sdk.CallToolRequest, in RehearseInput) (*sdk.CallToolResult, RehearseOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, RehearseOutput{Status: "error", Hint: hint}, nil
 	}

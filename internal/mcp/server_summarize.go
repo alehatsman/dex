@@ -20,7 +20,7 @@ import (
 type SummarizeInput struct {
 	Path         string   `json:"path,omitempty" jsonschema:"file path to summarize; relative paths are resolved against project_root; required when paths is not set"`
 	Paths        []string `json:"paths,omitempty" jsonschema:"batch mode: list of files (max 10); all use the same mode; path is ignored when paths is non-empty"`
-	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot  string   `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Mode         string   `json:"mode,omitempty" jsonschema:"read mode (default 'full'): 'full' (raw file content, no LLM), 'signatures' (indexed symbols + source lines, no LLM), 'skeleton' (exported type decls in full + function/method signatures with @B<n> body handles, no LLM), 'map' (imports + exported symbols from index, no LLM), 'lines:N-M' (raw line slice, no LLM; also lines:N single line, lines:N- to EOF, lines:-M first M), 'analyze' (token-cost comparison of every mode + a recommended mode, NO file content — pick the cheapest sufficient view before paying to read it), 'summary' (LLM-generated digest — the only mode needing a chat model; returns status='needs-chat' when none is wired)"`
 	StartLine    int      `json:"start_line,omitempty" jsonschema:"first line to summarize (1-indexed, inclusive); 0 = beginning of file"`
 	EndLine      int      `json:"end_line,omitempty" jsonschema:"last line to summarize (1-indexed, inclusive); 0 = end of file"`
@@ -155,7 +155,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return nil, *bad, nil
 	}
 
-	mode, isLLM := s.summarizeResolveMode(in)
+	mode, isLLM := s.summarizeResolveMode(ctx, in)
 
 	// Did the caller explicitly name a mode? An explicit request (incl. a
 	// lines:N-M range) must win over the dependency-manifest shortcut below
@@ -199,7 +199,7 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	if strings.TrimSpace(in.Path) == "" {
 		return nil, SummarizeOutput{Status: "error", Hint: "path is empty"}, nil
 	}
-	root, rootErr := resolveProjectRoot(in.ProjectRoot)
+	root, rootErr := s.resolveProjectRoot(ctx, in.ProjectRoot)
 	if rootErr != nil {
 		return nil, SummarizeOutput{Status: "error", Hint: rootErr.Error()}, nil
 	}
@@ -427,16 +427,24 @@ func (s *Server) summarizeModeSlice(
 	return out, true
 }
 
-// resolveProjectRoot returns projectRoot if non-empty, otherwise falls back
-// to the working directory. The error message is already user-facing.
-func resolveProjectRoot(projectRoot string) (string, error) {
+// resolveProjectRoot returns projectRoot if non-empty; otherwise it consults the
+// client's declared workspace roots (#120) and falls back to the server cwd.
+// Same precedence as resolveProject, but yields the raw path summarize needs.
+// The error message is already user-facing.
+func (s *Server) resolveProjectRoot(ctx context.Context, projectRoot string) (string, error) {
 	if projectRoot != "" {
 		return projectRoot, nil
+	}
+	if l := listerFromContext(ctx); l != nil {
+		if r := rootFromClient(ctx, l, s.IndexDir); r != "" {
+			return r, nil
+		}
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", errors.New("could not determine project root; pass project_root explicitly")
 	}
+	warnCwdFallback(wd)
 	return wd, nil
 }
 

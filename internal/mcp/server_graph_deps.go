@@ -26,7 +26,7 @@ func (s *Server) PackageGraph(ctx context.Context, in PackageGraphInput) (Packag
 type GraphDepsInput struct {
 	Path        string `json:"path,omitempty" jsonschema:"relative file path inside the project — resolved to its package"`
 	Package     string `json:"package,omitempty" jsonschema:"full package path (e.g. 'github.com/foo/bar/internal/baz'); takes precedence over path"`
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // GraphDep is a single import relationship: from_package depends on
@@ -49,7 +49,7 @@ func (s *Server) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in Graph
 	if strings.TrimSpace(in.Path) == "" && strings.TrimSpace(in.Package) == "" {
 		return nil, GraphDepsOutput{Status: "error", Hint: "pass `path` (a file inside the project) or `package` (full package path)"}, nil
 	}
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, GraphDepsOutput{Status: "error", Hint: hint}, nil
 	}
@@ -135,7 +135,7 @@ func (s *Server) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in Graph
 // layer packages without N per-package round-trips.
 
 type PackageGraphInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // PackageNode is one internal package in the import DAG.
@@ -176,7 +176,7 @@ type PackageGraphOutput struct {
 }
 
 func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in PackageGraphInput) (*sdk.CallToolResult, PackageGraphOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, PackageGraphOutput{Status: "error", Hint: hint}, nil
 	}

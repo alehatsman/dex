@@ -61,7 +61,7 @@ func goFuncHasHTTPHandlerSig(absPath string, startLine int) bool {
 }
 
 type RoutesInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // RouteEntry is one detected handler or registration site.
@@ -88,7 +88,7 @@ func (s *Server) Routes(ctx context.Context, in RoutesInput) (RoutesOutput, erro
 }
 
 func (s *Server) routes(ctx context.Context, _ *sdk.CallToolRequest, in RoutesInput) (*sdk.CallToolResult, RoutesOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, RoutesOutput{Status: "error", Hint: hint}, nil
 	}

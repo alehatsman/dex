@@ -10,7 +10,7 @@ import (
 
 // IndexStatusInput is the input to the index_status tool.
 type IndexStatusInput struct {
-	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project root; defaults to the server's working directory"`
+	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
 // IndexStatusOutput is the output of the index_status tool.
@@ -24,8 +24,8 @@ type IndexStatusOutput struct {
 }
 
 // indexStatus checks whether the project index exists and is fresh.
-func (s *Server) indexStatus(_ context.Context, _ *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
-	p, hint := s.resolveProject(in.ProjectRoot)
+func (s *Server) indexStatus(ctx context.Context, _ *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
+	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
 		return nil, IndexStatusOutput{Status: "error", Hint: hint}, nil
 	}

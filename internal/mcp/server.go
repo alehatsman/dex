@@ -553,14 +553,25 @@ func (s *Server) IndexStatus(ctx context.Context, in IndexStatusInput) (IndexSta
 	return out, err
 }
 
-func (s *Server) resolveProject(projectRoot string) (*proj.Project, string) {
+// resolveProject maps a caller-supplied project_root to a Project. Precedence
+// when project_root is empty: the client's declared workspace root (MCP
+// roots/list, reached via the session stashed in ctx by addTool) first, then
+// the server's own cwd as a last resort. The cwd backstop is no longer silent —
+// it warns once per distinct fallback root so a wrong-worktree read is visible.
+func (s *Server) resolveProject(ctx context.Context, projectRoot string) (*proj.Project, string) {
 	root := projectRoot
+	if root == "" {
+		if l := listerFromContext(ctx); l != nil {
+			root = rootFromClient(ctx, l, s.IndexDir)
+		}
+	}
 	if root == "" {
 		wd, err := os.Getwd()
 		if err != nil {
 			return nil, "could not determine project root; pass project_root explicitly"
 		}
 		root = wd
+		warnCwdFallback(wd)
 	}
 	p, err := proj.Resolve(root, s.IndexDir)
 	if err != nil {
@@ -569,6 +580,21 @@ func (s *Server) resolveProject(projectRoot string) (*proj.Project, string) {
 	s.markForeground(p)
 	s.ensureWatcher(p)
 	return p, ""
+}
+
+// cwdWarned dedups the cwd-fallback warning to one line per distinct root per
+// process, so a chatty tool loop can't spam the log.
+var cwdWarned sync.Map
+
+// warnCwdFallback emits a single stderr warning when resolveProject had no
+// explicit project_root and no client root to fall back on, and defaulted to the
+// server's cwd. This is the safety net that keeps a wrong-worktree read from
+// being silent (#120).
+func warnCwdFallback(wd string) {
+	if _, loaded := cwdWarned.LoadOrStore(wd, struct{}{}); loaded {
+		return
+	}
+	slog.Warn("resolved project_root from server cwd; pass project_root or start the client inside the worktree to target it", "cwd", wd)
 }
 
 // markForeground records that a foreground query just touched project p
@@ -833,7 +859,10 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 				res = &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: fmt.Sprintf("internal error: %v", r)}}}
 			}
 		}()
-		return h(ctx, req, in)
+		// Carry the client session so resolveProject can consult the caller's
+		// declared workspace roots (#120) without threading req through every
+		// handler.
+		return h(withSession(ctx, req.Session), req, in)
 	})
 }
 
