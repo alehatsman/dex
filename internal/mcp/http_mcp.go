@@ -18,6 +18,7 @@ import (
 	"net/http"
 
 	"github.com/alehatsman/dex/internal/profiles"
+	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -75,6 +76,12 @@ func (p projectScoped) checkpoint(ctx context.Context, req *sdk.CallToolRequest,
 func (p projectScoped) search(ctx context.Context, req *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.search(ctx, req, in)
+}
+
+// unresolvedInbound pins the #130 attribution query to this session's project
+// root, so the HTTP-MCP surface gets the same trace recall augmentation as stdio.
+func (p projectScoped) unresolvedInbound(ctx context.Context, _ string, file string, limit int) ([]store.UnresolvedInbound, error) {
+	return p.s.unresolvedInbound(ctx, p.root, file, limit)
 }
 
 func (p projectScoped) findSymbol(ctx context.Context, req *sdk.CallToolRequest, in FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error) {
