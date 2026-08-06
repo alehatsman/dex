@@ -5,8 +5,10 @@ Status: **design / architecture — largely LANDED** · Grounds the #95 platform
 > **Update (2026-08-06):** the §6.1 seam decision shipped. Assembly now lives in L2
 > (`retrieve/assembler.go`, `pack.go`, `inline_assemble.go`); `mcp/context.go` holds only
 > the JSON-tagged projection + transport concerns — exactly the §6.1 target. **6 of 7
-> child issues are done** (#95a–#95e, #95g); only **#95f** (multi-agent surface) is open
-> (issue #106), deferred as least-proven. The forward-looking framing below (§2 inversion
+> child issues shipped** (#95a–#95e, #95g). The 7th, **#95f** (multi-agent surface), is
+> **closed as not-planned** (issue #106): superseded by the #110 four-verb redesign, which
+> retires `session`/`checkpoint` as tools and makes session an implicit envelope spine.
+> The forward-looking framing below (§2 inversion
 > "risk", §5 "Step 0", §7 "proposed") is kept as the original as-of-design analysis —
 > read it as history, not a to-do list. Live per-issue status in §7.
 
@@ -109,7 +111,7 @@ Each of the 10 workstreams checked against the actual code:
 | 7 | Confidence/trust envelope | trust envelope threaded onto the pack (#95c) | 🟢 **done** (`61fa5a4`, `#116`) |
 | 8 | Intent-specific policies | `EvidencePolicy` table per intent (#95d) | 🟢 **done** (`bba5257`) |
 | 9 | Repo health intelligence | `smells clusters clones cohesion heatmap` | 🟢 exists (DEX_EXPERT-gated) |
-| 10 | Multi-agent shared intel | `agents`/`agent_messages`/`sessions` tables | 🔴 **store-ready, not surfaced** — #95f open |
+| 10 | Multi-agent shared intel | `agents`/`agent_messages`/`sessions` tables | ⚫ **won't-do (now)** — #95f closed, superseded by #110 |
 
 **Verdict (as of 2026-08-06):** the cheap-program thesis held. The three original gaps —
 (WS3) pack schema, (WS7) trust envelope — have **landed** (#95b, #95c); only **(WS10)
@@ -143,10 +145,12 @@ consolidated in `#116`). No new computation — surfaces what dex already knew.
 `file_summaries` extended upward to package/subsystem rollups (`4fba1e0`) with the same
 source-linked invalidation. Opt-in — default path stays fast.
 
-**⬜ Step 5 — Multi-agent surface (#95f, OPEN — issue #106).**
-The only unshipped step. Tables exist; expose `agents`/`agent_messages` through the verb
-layer so the pack becomes the shared context layer. Deferred deliberately — least-proven
-value.
+**⚫ Step 5 — Multi-agent surface (#95f, CLOSED — not planned, issue #106).**
+Not built. The store tables stay, but surfacing them *as verbs* is superseded by the #110
+four-verb redesign (session becomes an implicit envelope spine; `session`/`checkpoint`
+are retired), and #95f's own "needs a concrete multi-agent consumer first" precondition is
+unmet. Reopen only when a real consumer exists — and then design it inside #110's envelope
+model, not as standalone tools.
 
 **Measurement gate (non-negotiable, per the #96/#97/#91 discipline):** every step ships
 with a before/after on *tool-calls-per-task* and *tokens-per-task* via
@@ -192,7 +196,7 @@ out of the critical path.
 - ✅ **#95c** feat: trust envelope threaded into pack — **done** (`61fa5a4`, consolidated in `#116`)
 - ✅ **#95d** feat: per-intent evidence policies over `ResolveIntent` — **done** (`bba5257`, `EvidencePolicy`)
 - ✅ **#95e** feat: hierarchical (pkg/subsystem) summaries — **done** (`4fba1e0`)
-- ⬜ **#95f** feat: surface agent/session tables as shared-context verbs — **OPEN** (issue #106); deferred, least-proven value
+- ⚫ **#95f** feat: surface agent/session tables as shared-context verbs — **CLOSED, not planned** (issue #106); superseded by #110, precondition (a real multi-agent consumer) unmet
 - 🟡 **#95g** chore: `cmd/dex` grooming (push logic to L2/L3) — **partial** (`44b84cb` pushed embed backend-defaults down; `cmd/dex` is still the heaviest cluster)
 
 ## 8. Bottom line (updated 2026-08-06)
@@ -201,6 +205,6 @@ The cheap-program thesis held: dex already had the primitives, so #95 was mostly
 "name the contract, stop throwing away confidence signals, move the assembly seam down
 one layer." **That work landed** — assembly lives in L2, the pack schema is frozen and
 contract-tested, and the trust envelope + evidence policies + hierarchical summaries all
-shipped. What's left is **#95f** (multi-agent surface — the least-proven room) and the
-tail of **#95g** (`cmd/dex` grooming). The original ordering was #95a → #95b → #95c;
-history followed it.
+shipped. **#95f** (multi-agent surface) is **closed as not-planned** — superseded by the
+#110 four-verb redesign and lacking a real consumer — so the only live tail is **#95g**
+(`cmd/dex` grooming). The original ordering was #95a → #95b → #95c; history followed it.
