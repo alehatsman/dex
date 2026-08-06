@@ -30,6 +30,7 @@ func newJSTSBase(lang string) jstsBase {
 		fileImports: map[string]*tsImportTable{},
 		knownFiles:  map[string]string{},
 		fieldTypes:  map[string]map[string]string{},
+		reExports:   map[string]*reExportTable{},
 	}
 }
 

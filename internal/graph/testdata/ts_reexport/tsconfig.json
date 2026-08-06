@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@bright/common": ["packages/bright-common/src/index.ts"]
+    }
+  }
+}
