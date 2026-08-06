@@ -59,6 +59,42 @@ func monorepo(t *testing.T) string {
 	return root
 }
 
+func TestClassify(t *testing.T) {
+	w := Load(monorepo(t))
+
+	cases := []struct {
+		name       string
+		specifier  string
+		wantOrigin Origin
+		wantPkgDir string
+	}{
+		{"path alias", "@app/util", OriginAlias, ""},
+		{"workspace subpath", "@bright/ui/Button", OriginWorkspace, "packages/bright-ui"},
+		{"bare dependency", "react", OriginExternal, ""},
+		{"relative is external-ish (no candidates)", "./sibling", OriginExternal, ""},
+		// @bright/common matches both an exact alias and a workspace name; the
+		// alias wins, matching Candidates' precedence.
+		{"alias beats workspace", "@bright/common", OriginAlias, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := w.Classify(tc.specifier)
+			if c.Origin != tc.wantOrigin {
+				t.Errorf("Classify(%q).Origin = %d, want %d", tc.specifier, c.Origin, tc.wantOrigin)
+			}
+			if c.PkgDir != tc.wantPkgDir {
+				t.Errorf("Classify(%q).PkgDir = %q, want %q", tc.specifier, c.PkgDir, tc.wantPkgDir)
+			}
+			// Candidates must equal Classify().Candidates — same source of truth.
+			if got := w.Candidates(tc.specifier); !reflect.DeepEqual(got, c.Candidates) {
+				t.Errorf("Candidates(%q)=%v disagrees with Classify().Candidates=%v",
+					tc.specifier, got, c.Candidates)
+			}
+		})
+	}
+}
+
 func TestCandidates(t *testing.T) {
 	w := Load(monorepo(t))
 
