@@ -690,14 +690,15 @@ func (s *Server) runWatcher(p *proj.Project) {
 		return
 	}
 
-	// Wrap the embed client with a project-scoped content-addressed vector
-	// cache so watch re-indexes reuse vectors for unchanged content instead of
-	// re-embedding (#121). Best-effort: on open failure fall back to the raw
+	// Wrap the embed client with a content-addressed vector cache so watch
+	// re-indexes reuse vectors for unchanged content instead of re-embedding
+	// (#121). The cache lives in p.VecCacheDir(), shared across a repo's
+	// worktrees (#123). Best-effort: on open failure fall back to the raw
 	// client. Only the indexing passes use it — the query path keeps the
 	// unwrapped s.EmbedClient.
 	indexEm := s.EmbedClient
 	if s.EmbedClient != nil {
-		if vc, err := veccache.Open(filepath.Join(p.CacheDir, veccache.FileName), veccache.MaxRowsFromEnv()); err == nil {
+		if vc, err := veccache.Open(filepath.Join(p.VecCacheDir(), veccache.FileName), veccache.MaxRowsFromEnv()); err == nil {
 			indexEm = embed.WithCache(s.EmbedClient, vc)
 			defer func() { _ = vc.Close() }()
 		} else {

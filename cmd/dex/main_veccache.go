@@ -10,10 +10,11 @@ import (
 )
 
 // indexEmbedder builds the embedder for an indexing pass, wrapping the live
-// embed client with a project-scoped content-addressed vector cache so a
-// reindex reuses vectors for unchanged content instead of re-embedding — the
-// dominant cost of a full rebuild (#121). The cache is best-effort: any open
-// failure yields the unwrapped client, so indexing always proceeds.
+// embed client with a content-addressed vector cache so a reindex reuses
+// vectors for unchanged content instead of re-embedding — the dominant cost of
+// a full rebuild (#121). The cache lives in p.VecCacheDir(), which is shared
+// across a repo's worktrees (#123). The cache is best-effort: any open failure
+// yields the unwrapped client, so indexing always proceeds.
 //
 // The returned embedder is nil in the lean/none profile, exactly like
 // newEmbedClient. The io.Closer is nil when there is nothing to close;
@@ -24,7 +25,7 @@ func indexEmbedder(p *proj.Project, indexModel string) (embed.Embedder, io.Close
 		return nil, nil
 	}
 	vc, err := veccache.Open(
-		filepath.Join(p.CacheDir, veccache.FileName),
+		filepath.Join(p.VecCacheDir(), veccache.FileName),
 		veccache.MaxRowsFromEnv())
 	if err != nil {
 		return em, nil

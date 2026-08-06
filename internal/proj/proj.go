@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/alehatsman/dex/internal/gitworktree"
 )
 
 // Project identifies an indexed project on disk.
@@ -110,6 +112,32 @@ func resolveNearestAncestor(path string) string {
 // EnsureCacheDir creates the per-project cache directory.
 func (p *Project) EnsureCacheDir() error {
 	return os.MkdirAll(p.CacheDir, 0o755)
+}
+
+// VecCacheDir returns the directory that should hold this project's vector
+// cache (veccache.db). For a linked git worktree it resolves to the main
+// checkout's cache dir, so every worktree of a repo shares one vector cache and
+// a fresh worktree reuses the vectors main already embedded for byte-identical
+// content instead of paying a full cold embed pass (#123). The cache key is
+// content-addressed (model ⧺ text), with no project component, so sharing is
+// always correct. Only the vector cache is shared — index.db stays per-project.
+//
+// For the main checkout, any root that is not a linked worktree, or on any
+// resolution failure, it returns the project's own CacheDir. Best-effort:
+// sharing is a convenience, never a hard dependency.
+func (p *Project) VecCacheDir() string {
+	main, ok := gitworktree.MainWorktree(p.Root)
+	if !ok || main == p.Root {
+		return p.CacheDir
+	}
+	mp, err := Resolve(main, filepath.Dir(p.CacheDir))
+	if err != nil {
+		return p.CacheDir
+	}
+	if err := mp.EnsureCacheDir(); err != nil {
+		return p.CacheDir
+	}
+	return mp.CacheDir
 }
 
 // MarkActivity stamps ActivityPath's mtime to now, recording that a
