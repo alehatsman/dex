@@ -39,7 +39,11 @@ them in the pipeline is the indexing spec.
 - WHERE nested `.gitignore`/`.dexignore` files exist below the root, they are
   intentionally not read — only the repo-root files contribute patterns.
 - WHILE applying DefaultPatterns, the matcher always excludes vendored/build
-  output trees, lockfiles and minified bundles, generated aggregates (`*.d.ts`,
+  output trees, lockfiles and minified bundles, bundler output that keeps a
+  `.js` extension (`*.bundle.js`, `*.chunk.js`), committed test-data dirs that
+  follow the double-underscore tool convention (`__snapshots__/`, `__mocks__/`,
+  `__fixtures__/` — the generic bare words `mocks/`/`fixtures/` are left to the
+  project's own ignore files, per #457/#715), generated aggregates (`*.d.ts`,
   `llms.txt`), secret-shaped filenames (`.env`, `*.pem`, key files), and
   license-family files, independent of the project's own ignore files.
 - WHEN a directory is matched, the matcher treats it as a directory (a trailing
