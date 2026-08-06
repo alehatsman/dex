@@ -331,9 +331,8 @@ func simpleTypeName(typeAnnotation *sitter.Node, src []byte) string {
 	// type_annotation wraps the actual type node; a bare type_identifier is
 	// the resolvable case, and a generic_type's own type is its container.
 	var t *sitter.Node
-	for i := 0; i < int(typeAnnotation.NamedChildCount()); i++ {
-		t = typeAnnotation.NamedChild(i)
-		break
+	if typeAnnotation.NamedChildCount() > 0 {
+		t = typeAnnotation.NamedChild(0)
 	}
 	for t != nil {
 		switch t.Type() {

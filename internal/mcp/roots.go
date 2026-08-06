@@ -7,6 +7,7 @@
 // the server asks for it via roots/list. This file carries the client session
 // (stashed into the request context by addTool) and the roots lookup that
 // resolveProject consults before the cwd backstop.
+
 package mcp
 
 import (
