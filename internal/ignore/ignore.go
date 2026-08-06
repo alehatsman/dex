@@ -104,6 +104,13 @@ var DefaultPatterns = []string{
 	"*.lock",
 	"*.min.js",
 	"*.min.css",
+	// Bundler output that keeps a .js extension (so the allow-list can't
+	// gate it) but is machine-emitted: code-split chunks and rolled-up
+	// bundles. Common enough across webpack/rollup/vite/esbuild to default;
+	// nested copies (apps/*/dist/*.bundle.js) escape the root-anchored
+	// /dist/ rule, so these are unanchored on the extension.
+	"*.bundle.js", // rolled-up bundle output
+	"*.chunk.js",  // code-split chunk output
 	// Generated / aggregated artifacts. These pass the extension
 	// allow-list (.ts / .txt / .json / .yaml) but hold machine-emitted
 	// content — duplicated prose or churned dependency graphs — that
@@ -118,6 +125,16 @@ var DefaultPatterns = []string{
 	".nyc_output/",
 	"/htmlcov/",
 	"__snapshots__/", // jest/vitest snapshot fixtures
+	// Committed test-data dirs that are NOT git-ignored, so nested-.gitignore
+	// support can't reach them. Measured at 53% of chunks (zero search value)
+	// on a real Rush monorepo. Double-underscore convention is tool-specific
+	// (jest manual mocks, fixtures) — safe to exclude unanchored at any depth,
+	// exactly like __snapshots__/ and __pycache__/ above. Bare mocks/ and
+	// fixtures/ are deliberately NOT defaulted: they're generic words that also
+	// name real source dirs (#457) and may hold live credentials (#715) — leave
+	// those to per-repo .dexignore / config.
+	"__mocks__/",    // jest manual mocks
+	"__fixtures__/", // common committed-fixtures convention
 	// License / legal-text files. They index successfully but their
 	// uniform legalese gives the embedder something to latch onto for
 	// almost any query, polluting RAG context with chunks that have

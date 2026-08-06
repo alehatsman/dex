@@ -128,6 +128,49 @@ func TestDefaultBuildPatternsAnchoredToRoot(t *testing.T) {
 	}
 }
 
+// TestDefaultTestDataPatterns pins the #126 contract: committed test-data dirs
+// following the double-underscore tool convention (__mocks__/, __fixtures__/)
+// are excluded at any depth like __snapshots__/, and bundler output that keeps
+// a .js extension (*.bundle.js, *.chunk.js) is excluded wherever it lands. The
+// generic bare words mocks/ and fixtures/ are DELIBERATELY not defaulted — they
+// name real source dirs (#457) and may hold live credentials (#715) — so they
+// must stay indexable unless a repo opts in via .dexignore / config.
+func TestDefaultTestDataPatterns(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, root, "index:\n  include: [\"*\"]\n")
+	m, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		path    string
+		isDir   bool
+		ignored bool
+	}{
+		// double-underscore test-data dirs: excluded at any depth
+		{"__mocks__", true, true},
+		{"__mocks__/api.ts", false, true},
+		{"apps/base-view/__mocks__/CMAuth.ts", false, true},
+		{"src/__fixtures__/sample.json", false, true},
+		// bundler output that keeps a .js extension: excluded at any depth,
+		// including nested dirs the root-anchored /dist/ rule can't reach
+		{"app/main.bundle.js", false, true},
+		{"apps/foo/dist/2.abc.chunk.js", false, true},
+		// deliberate omissions: generic bare words stay indexable (#457/#715)
+		{"src/mocks/mockClient.ts", false, false},
+		{"internal/fixtures/data.go", false, false},
+		{"mocks", true, false},
+		{"fixtures", true, false},
+		// a genuine hand-written .js must not be caught by the bundler globs
+		{"src/widget.js", false, false},
+	}
+	for _, c := range cases {
+		if got := m.Match(c.path, c.isDir); got != c.ignored {
+			t.Errorf("Match(%q, isDir=%v) = %v, want %v", c.path, c.isDir, got, c.ignored)
+		}
+	}
+}
+
 func TestGitignoreAndMcsearchIgnore(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"),
