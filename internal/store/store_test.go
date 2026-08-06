@@ -59,6 +59,57 @@ func TestUpsertAndSearch(t *testing.T) {
 	}
 }
 
+func TestCheckEmbedURL(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	ctx := context.Background()
+
+	st, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty url is a no-op.
+	if prev, changed := st.CheckEmbedURL(ctx, ""); changed || prev != "" {
+		t.Errorf("empty url: got (prev=%q, changed=%v), want (\"\", false)", prev, changed)
+	}
+
+	// First non-empty record is silent (no prior endpoint to drift from).
+	if prev, changed := st.CheckEmbedURL(ctx, "http://a:11434"); changed || prev != "" {
+		t.Errorf("first record: got (prev=%q, changed=%v), want (\"\", false)", prev, changed)
+	}
+	if got := st.EmbedURL(); got != "http://a:11434" {
+		t.Errorf("EmbedURL = %q, want http://a:11434", got)
+	}
+
+	// Same url is not a change.
+	if prev, changed := st.CheckEmbedURL(ctx, "http://a:11434"); changed || prev != "http://a:11434" {
+		t.Errorf("same url: got (prev=%q, changed=%v), want (http://a:11434, false)", prev, changed)
+	}
+
+	// A different url reports the drift and its previous value.
+	if prev, changed := st.CheckEmbedURL(ctx, "http://b:8080"); !changed || prev != "http://a:11434" {
+		t.Errorf("drift: got (prev=%q, changed=%v), want (http://a:11434, true)", prev, changed)
+	}
+	if got := st.EmbedURL(); got != "http://b:8080" {
+		t.Errorf("EmbedURL after drift = %q, want http://b:8080", got)
+	}
+
+	// Persistence: reopening recovers the last-recorded endpoint, and a matching
+	// url does not re-warn.
+	_ = st.Close()
+	st2, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	if got := st2.EmbedURL(); got != "http://b:8080" {
+		t.Errorf("EmbedURL after reopen = %q, want http://b:8080", got)
+	}
+	if prev, changed := st2.CheckEmbedURL(ctx, "http://b:8080"); changed || prev != "http://b:8080" {
+		t.Errorf("post-reopen same url: got (prev=%q, changed=%v), want (http://b:8080, false)", prev, changed)
+	}
+}
+
 func TestEnsureEmbedModel(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	ctx := context.Background()

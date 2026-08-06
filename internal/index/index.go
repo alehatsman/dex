@@ -159,6 +159,18 @@ func (ix *Indexer) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Advisory endpoint-drift check (#99): the transport URL is not part of the
+	// index identity, but if it changed the serving stack may have moved to a
+	// different vector space (e.g. ollama-GGUF -> infinity torch-fp) under the
+	// same model name — which EnsureEmbedModel cannot catch. Warn and proceed;
+	// the operator forces a real rebuild by changing DEX_EMBED_MODEL.
+	if ix.Embed != nil {
+		if prev, changed := ix.Store.CheckEmbedURL(ctx, ix.Embed.Endpoint()); changed {
+			ix.Options.Logger.Warn("index: embed endpoint changed since last index — if it points at a different serving stack, vectors may mix; run `dex reindex` if unsure",
+				"previous", prev, "current", ix.Embed.Endpoint())
+		}
+	}
+
 	prevStats, statsErr := ix.Store.Stats(ctx)
 	var lastIndexed time.Time
 	if statsErr == nil {

@@ -39,6 +39,7 @@ const (
 	metaLastIndexedAt = "last_indexed_at"
 	metaProjectRoot   = "project_root"
 	metaEmbedModel    = "embed_model"
+	metaEmbedURL      = "embed_url"
 	metaVecQuant      = "vec_quant"
 	metaSchemaVersion = "schema_version"
 	metaIndexingAt    = "indexing_started_at"
@@ -224,6 +225,7 @@ type Store struct {
 	dimInit    sync.Mutex        // serializes first-write dim init so concurrent first UpsertMany calls don't double-init
 	noVec      atomic.Bool       // true when index is BM25-only (DEX_EMBED_ENGINE=none) — no vec0 table, nil vecs
 	embedModel atomic.Value      // string: model identity; "" until set by EnsureEmbedModel or recovered from meta
+	embedURL   atomic.Value      // string: transport endpoint last used (advisory, not identity); "" until recorded
 	opts       Options           // immutable after Open
 	gitRecency GitRecencyBonuser // non-nil when a project root is known at open time
 
@@ -284,6 +286,19 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 		return nil, err
 	default:
 		s.embedModel.Store(em)
+	}
+	// Recover the recorded transport endpoint (advisory; see CheckEmbedURL).
+	// Missing on indexes built before this metadata existed — treated as "".
+	row = db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='`+metaEmbedURL+`'`)
+	var eu string
+	switch err := row.Scan(&eu); {
+	case errors.Is(err, sql.ErrNoRows):
+		s.embedURL.Store("")
+	case err != nil:
+		db.Close()
+		return nil, err
+	default:
+		s.embedURL.Store(eu)
 	}
 	// Materialize the vec0 table now if we know the dim — covers both
 	// brand-new opens (no chunks yet, dim known from a prior run) and
@@ -491,6 +506,47 @@ func (s *Store) EnsureEmbedModel(ctx context.Context, name string) error {
 	}
 	s.embedModel.Store(name)
 	return nil
+}
+
+// EmbedURL returns the transport endpoint (DEX_EMBED_URL) recorded at the
+// last index, or "" if none has been recorded yet.
+func (s *Store) EmbedURL() string {
+	v, _ := s.embedURL.Load().(string)
+	return v
+}
+
+// CheckEmbedURL records the active embedding transport endpoint and reports
+// whether it differs from the one recorded at the last index.
+//
+// Unlike EnsureEmbedModel this is ADVISORY, not a hard guard: the endpoint is
+// deliberately not part of the index identity, because URLs are volatile —
+// host/port cosmetics, failover pools, and load balancers all serve identical
+// vectors from different URLs, so URL-keyed identity would force spurious
+// reindexes. A change is only a *soft* signal that the serving stack (and thus
+// the vector space) may have moved; the caller warns but proceeds. The operator
+// forces a real rebuild by changing DEX_EMBED_MODEL, which trips EnsureEmbedModel.
+//
+// changed is true only when a non-empty prior endpoint differs from url, so the
+// first-ever index is silent. Best-effort: a failed write is reported as "no
+// change" (never warn about a drift we could not persist). Empty url is a no-op.
+func (s *Store) CheckEmbedURL(ctx context.Context, url string) (prev string, changed bool) {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return "", false
+	}
+	prev, _ = s.embedURL.Load().(string)
+	if prev == url {
+		return prev, false
+	}
+	// Track "last used", not "first seen": upsert the new endpoint so the
+	// warning fires once per change rather than on every run after a drift.
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO meta(key,value) VALUES('`+metaEmbedURL+`', ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, url); err != nil {
+		return prev, false
+	}
+	s.embedURL.Store(url)
+	return prev, prev != ""
 }
 
 // SetProjectRoot records the absolute project path this index belongs

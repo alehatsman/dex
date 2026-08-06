@@ -37,6 +37,31 @@ no embedding server. Requires operator-provided `DEX_ONNXRUNTIME_LIB`,
 `DEX_ONNX_MODEL`, `DEX_ONNX_TOKENIZER`, `DEX_ONNX_DIM`; nothing is bundled or
 auto-downloaded. ONNX vectors live in a distinct index namespace.
 
+**High-throughput GPU embeddings (infinity / CUDA).** The default HTTP engine
+is OpenAI-compatible, so any `/v1/embeddings` server works — including a CUDA
+[infinity](https://github.com/michaelfeil/infinity) instance for fast bulk
+embedding. Point dex at it and reindex:
+
+```
+DEX_EMBED_URL=http://cuda-box:7997     # infinity's OpenAI-compatible endpoint
+DEX_EMBED_MODEL=bge-small-en-v1.5      # whatever the server serves
+dex reindex
+```
+
+> **Repointing `DEX_EMBED_URL` to a different serving stack — reindex required.**
+> The embedding *model name* is the index identity, not the URL (URLs are
+> volatile: host/port cosmetics, failover pools, and load balancers all serve
+> identical vectors). So moving from, say, an ollama-GGUF backend to an
+> infinity torch-fp16 backend **under the same model name** does not trip the
+> `EnsureEmbedModel` guard, even though the two stacks can produce vectors in
+> different spaces — mixing them silently degrades search.
+>
+> When you repoint at a genuinely different serving stack, either run
+> `dex reindex`, or set `DEX_EMBED_MODEL` to a distinct identity tag (e.g.
+> `bge-small-en-v1.5@infinity`) so the guard hard-trips and forces a rebuild.
+> As a safety net, dex records the endpoint at index time and logs a one-time
+> WARNING on the next index if it changed — advisory only; indexing proceeds.
+
 ## Model selection
 
 Any OpenAI-compatible model works; these are sane defaults:
