@@ -30,12 +30,21 @@ func TestTSWorkspaceResolution(t *testing.T) {
 
 	cases := []struct {
 		specifier  string
-		wantTarget string // "" ⇒ expect external instead
+		wantTarget string // "" ⇒ expect external or unresolved instead
 		external   bool
+		unresolved bool
+		wantReason string // when unresolved
+		wantPkgDir string // when unresolved via a workspace subpath
 	}{
 		{specifier: "@bright/common", wantTarget: "packages/bright-common/src/index"},
 		{specifier: "@/util", wantTarget: "apps/base-view/src/util"},
 		{specifier: "./sibling", wantTarget: "apps/base-view/src/sibling"},
+		// Conventional subpath whose source file exists still resolves precisely.
+		{specifier: "@bright/common/helper", wantTarget: "packages/bright-common/src/helper"},
+		// Workspace subpath with no source file (the build-mediated-export shape,
+		// e.g. @bright/common/Uuid): honest unresolved, never a fabricated target.
+		{specifier: "@bright/common/Shim", unresolved: true,
+			wantReason: "workspace-subpath", wantPkgDir: "packages/bright-common"},
 		{specifier: "react", external: true},
 	}
 
@@ -52,6 +61,22 @@ func TestTSWorkspaceResolution(t *testing.T) {
 				}
 				if _, hasTarget := n.Metadata["target"]; hasTarget {
 					t.Errorf("import %q: external dep must not carry a target: %v", tc.specifier, n.Metadata)
+				}
+				return
+			}
+			if tc.unresolved {
+				if ok, _ := n.Metadata["unresolved"].(bool); !ok {
+					t.Errorf("import %q: want unresolved=true, metadata=%v", tc.specifier, n.Metadata)
+				}
+				if _, hasTarget := n.Metadata["target"]; hasTarget {
+					t.Errorf("import %q: unresolved import must not carry a fabricated target: %v",
+						tc.specifier, n.Metadata)
+				}
+				if got, _ := n.Metadata["reason"].(string); got != tc.wantReason {
+					t.Errorf("import %q: reason = %q, want %q", tc.specifier, got, tc.wantReason)
+				}
+				if got, _ := n.Metadata["pkg_dir"].(string); got != tc.wantPkgDir {
+					t.Errorf("import %q: pkg_dir = %q, want %q", tc.specifier, got, tc.wantPkgDir)
 				}
 				return
 			}

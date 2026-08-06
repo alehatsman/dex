@@ -111,7 +111,7 @@ func (e *jstsBase) annotateImports() {
 			continue
 		}
 		fromFile := e.knownFiles[n.PackagePath]
-		target, class := e.classifySpecifier(n.QualifiedName, fromFile)
+		target, class, reason, pkgDir := e.classifySpecifier(n.QualifiedName, fromFile)
 		if n.Metadata == nil {
 			n.Metadata = map[string]any{}
 		}
@@ -120,6 +120,17 @@ func (e *jstsBase) annotateImports() {
 			n.Metadata["target"] = target
 		case specExternal:
 			n.Metadata["external"] = true
+		case specUnresolved:
+			// Explicit state — never a silent blank. reason (and pkg_dir for a
+			// workspace subpath) let downstream tools surface the miss honestly
+			// instead of guessing whether it's a bug, an external, or unprocessed.
+			n.Metadata["unresolved"] = true
+			if reason != "" {
+				n.Metadata["reason"] = reason
+			}
+			if pkgDir != "" {
+				n.Metadata["pkg_dir"] = pkgDir
+			}
 		}
 	}
 }
@@ -802,26 +813,38 @@ const (
 
 // classifySpecifier resolves a specifier and classifies the outcome for import-
 // node metadata. Kept separate from resolveModuleSpecifier (which must keep
-// returning a string for the call-resolution maps).
-func (e *jstsBase) classifySpecifier(specifier, fromFile string) (string, specifierClass) {
+// returning a string for the call-resolution maps). For the unresolved class it
+// also returns a reason (why it didn't resolve) and, for a workspace subpath,
+// the matched package dir (pkgDir) — the join key that lets trace/impact
+// attribute the miss to a package. reason/pkgDir are empty for internal/external.
+func (e *jstsBase) classifySpecifier(specifier, fromFile string) (target string, class specifierClass, reason, pkgDir string) {
 	if specifier == "" {
-		return "", specUnresolved
+		return "", specUnresolved, "empty", ""
 	}
 	if strings.HasPrefix(specifier, ".") {
 		if resolved := e.resolveModuleSpecifier(specifier, fromFile); resolved != specifier {
-			return resolved, specInternal
+			return resolved, specInternal, "", ""
 		}
-		return "", specUnresolved
+		return "", specUnresolved, "relative", ""
 	}
 	if resolved, ok := e.resolveWorkspace(specifier); ok {
-		return resolved, specInternal
+		return resolved, specInternal, "", ""
 	}
 	// Non-relative with no indexed target: external, unless the workspace knew a
 	// candidate that simply wasn't indexed (then it's internal-but-unindexed).
-	if len(e.workspace.Candidates(specifier)) > 0 {
-		return "", specUnresolved
+	// The candidate's Origin tells us *why*, so the miss can be labeled honestly.
+	c := e.workspace.Classify(specifier)
+	if len(c.Candidates) > 0 {
+		switch c.Origin {
+		case resolve.OriginAlias:
+			return "", specUnresolved, "alias-unindexed", ""
+		case resolve.OriginWorkspace:
+			return "", specUnresolved, "workspace-subpath", c.PkgDir
+		default:
+			return "", specUnresolved, "unresolved", ""
+		}
 	}
-	return "", specExternal
+	return "", specExternal, "", ""
 }
 
 func (e *jstsBase) addNode(n Node) bool {

@@ -119,46 +119,99 @@ func Load(root string) *Workspace {
 	return w
 }
 
+// Origin records where a specifier's candidates came from, so an unresolved
+// import can be labeled honestly downstream — a path-alias target that isn't
+// indexed vs a workspace-package subpath that has no source file. Alias wins
+// over Workspace, matching Candidates' precedence.
+type Origin int
+
+const (
+	OriginExternal  Origin = iota // no match — a bare npm dependency
+	OriginAlias                   // matched a tsconfig/jsconfig path alias
+	OriginWorkspace               // matched a workspace package (bare or subpath)
+)
+
+// Classification is Candidates plus provenance: the candidate module paths, the
+// Origin that produced them, and — when Origin is OriginWorkspace — the matched
+// workspace package's directory (the join key used to attribute unresolved
+// imports to a package). It never touches the graph, DB, or filesystem.
+type Classification struct {
+	Candidates []string
+	Origin     Origin
+	PkgDir     string
+}
+
 // Candidates returns project-relative, extension-free module-path candidates for
 // a non-relative specifier, most-specific first. An empty result means the
 // specifier is external (a bare npm dependency) — the caller treats it as such.
 // Relative specifiers (leading ".") are the extractor's job and return nil here.
 func (w *Workspace) Candidates(specifier string) []string {
+	return w.Classify(specifier).Candidates
+}
+
+// Classify resolves a specifier to candidates and reports their provenance. It
+// is the single source of truth; Candidates is Classify minus the provenance.
+func (w *Workspace) Classify(specifier string) Classification {
+	var c Classification
 	if w == nil || specifier == "" || strings.HasPrefix(specifier, ".") {
-		return nil
+		return c
 	}
 	var out []string
-	add := func(c string) {
-		c = cleanCandidate(c)
-		if c == "" || slices.Contains(out, c) {
+	add := func(cand string) {
+		cand = cleanCandidate(cand)
+		if cand == "" || slices.Contains(out, cand) {
 			return
 		}
-		out = append(out, c)
+		out = append(out, cand)
 	}
 
 	// 1. Path aliases (most specific first) — an intentional redirect wins over
 	//    a workspace-name match.
+	aliasMatched := false
 	for _, a := range w.aliases {
-		for _, c := range a.apply(specifier) {
-			add(c)
+		for _, cand := range a.apply(specifier) {
+			aliasMatched = true
+			add(cand)
 		}
 	}
 
-	// 2. Workspace package names (longest first).
+	// 2. Workspace package names (longest first, so the first match is the most
+	//    specific and owns PkgDir).
+	wsMatched := false
+	pkgDir := ""
 	for _, p := range w.packages {
 		if specifier == p.name {
+			wsMatched = true
+			if pkgDir == "" {
+				pkgDir = p.dir
+			}
 			for _, e := range p.entries {
 				add(e)
 			}
 			continue
 		}
 		if strings.HasPrefix(specifier, p.name+"/") {
+			wsMatched = true
+			if pkgDir == "" {
+				pkgDir = p.dir
+			}
 			sub := specifier[len(p.name)+1:]
 			add(p.dir + "/" + sub)
 			add(p.dir + "/src/" + sub)
 		}
 	}
-	return out
+
+	c.Candidates = out
+	switch {
+	case aliasMatched:
+		c.Origin = OriginAlias
+	case wsMatched:
+		c.Origin = OriginWorkspace
+		c.PkgDir = pkgDir
+	default:
+		c.Origin = OriginExternal
+	}
+	return c
 }
 
 // apply returns the candidate paths this alias produces for a specifier, or nil
