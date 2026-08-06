@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/codemap"
 	"github.com/alehatsman/dex/internal/retrieve"
+	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -234,6 +236,12 @@ type TraceOutput struct {
 	// additional candidate sites surfaced by a name-based grep sweep.
 	Recall   string      `json:"recall,omitempty"`
 	GrepHits []GrepMatch `json:"grep_hits,omitempty"`
+	// UnresolvedInbound lists known import edges into the target symbol's package
+	// that the resolver could not bind to a symbol (build-mediated / workspace
+	// subpath, e.g. `@bright/common/Uuid`). Their specifier and the target's name
+	// differ, so the grep sweep above cannot see them — surfacing them counted
+	// turns a silent undercount into an actionable one (#130). Grep the specifier.
+	UnresolvedInbound []store.UnresolvedInbound `json:"unresolved_inbound,omitempty"`
 }
 
 // traceHandler adapts traceVerb to the SDK handler shape, capturing h.
@@ -279,6 +287,7 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 		}
 		if out.Status == "ok" && len(out.Hits) > 0 && hasNonGoTarget(out.Targets) {
 			augmentPartialRecall(ctx, h, in.Symbol, in.ProjectRoot, &tOut)
+			foldUnresolvedInbound(ctx, h, in.ProjectRoot, &tOut)
 		}
 		return nil, tOut, err
 	case "path":
@@ -315,6 +324,7 @@ func traceVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 		}
 		if out.Status == "ok" && out.Total > 0 && hasNonGoTarget(out.Targets) {
 			markImpactPartialRecall(&tOut)
+			foldUnresolvedInbound(ctx, h, in.ProjectRoot, &tOut)
 		}
 		return nil, tOut, err
 	default:
@@ -388,5 +398,71 @@ func augmentPartialRecall(ctx context.Context, h toolSurface, symbol, projectRoo
 		out.Hint += " | " + partial
 	} else {
 		out.Hint = partial
+	}
+}
+
+// unresolvedInbounder is the optional capability of a tool surface to attribute
+// known-unresolved imports to a file's package (#130). Only the local surfaces
+// (*Server and its projectScoped wrapper) implement it; remote/maintenance/test
+// surfaces don't, and foldUnresolvedInbound simply skips them — the trace is
+// still correct, just without the extra recall signal.
+type unresolvedInbounder interface {
+	unresolvedInbound(ctx context.Context, projectRoot, file string, limit int) ([]store.UnresolvedInbound, error)
+}
+
+// foldUnresolvedInbound queries known-unresolved imports into each non-Go target
+// file's package and folds the distinct specifiers (summed by count) into
+// out.UnresolvedInbound, plus a hint pointing at grep. Best-effort: skipped when
+// the surface can't answer or on any error, and a no-op when there are none, so
+// clean traces are byte-identical. Complements the bare-name grep sweep, which
+// cannot see these edges because the specifier and the target's name differ.
+func foldUnresolvedInbound(ctx context.Context, h toolSurface, projectRoot string, out *TraceOutput) {
+	ui, ok := h.(unresolvedInbounder)
+	if !ok {
+		return
+	}
+	sum := map[string]int{}
+	var order []string
+	for _, t := range out.Targets {
+		if t.Path == "" || strings.HasSuffix(t.Path, ".go") {
+			continue
+		}
+		rows, err := ui.unresolvedInbound(ctx, projectRoot, t.Path, 0)
+		if err != nil {
+			continue
+		}
+		for _, r := range rows {
+			if _, seen := sum[r.Specifier]; !seen {
+				order = append(order, r.Specifier)
+			}
+			sum[r.Specifier] += r.Count
+		}
+	}
+	if len(order) == 0 {
+		return
+	}
+	// Stable order: most-frequent first, ties by specifier.
+	sort.SliceStable(order, func(i, j int) bool {
+		if sum[order[i]] != sum[order[j]] {
+			return sum[order[i]] > sum[order[j]]
+		}
+		return order[i] < order[j]
+	})
+	total := 0
+	for _, spec := range order {
+		out.UnresolvedInbound = append(out.UnresolvedInbound, store.UnresolvedInbound{Specifier: spec, Count: sum[spec]})
+		total += sum[spec]
+	}
+	out.Recall = "partial"
+	shown := order
+	if len(shown) > 3 {
+		shown = shown[:3]
+	}
+	hint := fmt.Sprintf("%d unresolved import(s) into this symbol's package (build-mediated / workspace subpath) that name-based recall cannot see — grep the specifier(s) to confirm: %s",
+		total, strings.Join(shown, ", "))
+	if out.Hint != "" {
+		out.Hint += " | " + hint
+	} else {
+		out.Hint = hint
 	}
 }

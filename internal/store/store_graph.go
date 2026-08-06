@@ -508,6 +508,57 @@ func (s *Store) ExternalImports(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
+// UnresolvedInbound is one known-unresolved import edge into a package: an
+// import specifier the resolver matched to a workspace package but could not
+// bind to a source file (e.g. a build-mediated export like `@bright/common/Uuid`),
+// with how many times it appears. Name-based recall cannot see these — the
+// specifier and the target symbol's name differ — so trace/impact surface them
+// explicitly instead of silently undercounting (#130).
+type UnresolvedInbound struct {
+	Specifier string `json:"specifier"`
+	Count     int    `json:"count"`
+}
+
+// UnresolvedInboundForFile returns the workspace-subpath-unresolved import
+// specifiers whose target package directory (Metadata["pkg_dir"]) is a
+// path-prefix of file, grouped and counted, most-frequent first. These are
+// import edges into file's package that dex knows exist but could not resolve to
+// a symbol; empty when none. limit ≤ 0 means no limit. Only workspace-subpath
+// unresolved imports carry pkg_dir, so the IS NOT NULL clause selects exactly
+// them; the `|| '/'` guard makes the prefix match path-boundary-safe.
+func (s *Store) UnresolvedInboundForFile(ctx context.Context, file string, limit int) ([]UnresolvedInbound, error) {
+	if file == "" {
+		return nil, nil
+	}
+	q := `
+		SELECT qualified_name AS spec, COUNT(*) AS c
+		FROM graph_nodes
+		WHERE kind = 'import'
+		  AND json_extract(metadata_json, '$.pkg_dir') IS NOT NULL
+		  AND ? LIKE json_extract(metadata_json, '$.pkg_dir') || '/%'
+		GROUP BY qualified_name
+		ORDER BY c DESC, spec ASC`
+	args := []any{file}
+	if limit > 0 {
+		q += "\n\t\tLIMIT ?"
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []UnresolvedInbound
+	for rows.Next() {
+		var u UnresolvedInbound
+		if err := rows.Scan(&u.Specifier, &u.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // PackageImport is one internal package→package dependency edge: `From`
 // imports `To`, both project packages (#581 layers).
 type PackageImport struct {
