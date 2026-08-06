@@ -191,3 +191,53 @@ func TestSearchGrepFixed(t *testing.T) {
 		t.Errorf("unbalanced paren as a literal should be valid, got error: %s", okFixed.Hint)
 	}
 }
+
+// TestSearchGrepUnindexedRespectsExcludes covers #128: on an un-indexed project
+// (e.g. a fresh git worktree before its first index) grep falls back to a
+// filesystem walk, which must honor the project's exclude rules instead of
+// sweeping build outputs and gitignored junk into the results (which blew the
+// MCP token budget). The exclude set applies without the opt-in include
+// allow-list, so grep still finds source in a project with no .dex/config.yml.
+func TestSearchGrepUnindexedRespectsExcludes(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	s := newServer(srv.URL, t.TempDir())
+
+	projDir := t.TempDir()
+	// No index.db is created → grep uses the walk fallback.
+	// .gitignore excludes a build dir; a default build-output dir (dist/) is
+	// excluded by DefaultPatterns regardless of .gitignore.
+	if err := os.WriteFile(filepath.Join(projDir, ".gitignore"), []byte("build/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projDir, "keep.go"), []byte("package p\n// NEEDLE in source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"build", "dist"} {
+		if err := os.MkdirAll(filepath.Join(projDir, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(projDir, dir, "artifact.go"), []byte("// NEEDLE in "+dir+" artifact\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, out, err := s.searchGrep(context.Background(), nil, SearchGrepInput{
+		Pattern:     "NEEDLE",
+		ProjectRoot: projDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status = %q, want ok", out.Status)
+	}
+	if out.Total != 1 || out.Matches[0].Path != "keep.go" {
+		t.Fatalf("want exactly one match in keep.go, got %d: %+v", out.Total, out.Matches)
+	}
+	for _, m := range out.Matches {
+		if strings.HasPrefix(m.Path, "build/") || strings.HasPrefix(m.Path, "dist/") {
+			t.Errorf("excluded artifact leaked into grep results: %s", m.Path)
+		}
+	}
+}
