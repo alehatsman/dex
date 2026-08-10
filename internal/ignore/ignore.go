@@ -13,8 +13,10 @@
 //     later-pattern-wins). The sub-layers, in declaration order:
 //     a. DefaultPatterns — hard-coded: vendor dirs, build outputs,
 //     secret-shaped filenames, license-family files.
-//     b. .gitignore at the project root (root file only; nested
-//     .gitignore files are intentionally not read).
+//     b. .gitignore at the project root (root file only by default;
+//     nested per-directory .gitignore files are folded in, re-anchored
+//     to their own dir, only under `index.respect_nested_gitignore`
+//     — opt-in, default off, #74).
 //     c. .dexignore at the project root (same syntax).
 //     d. .dex/config.yml `index.ignore` (same syntax).
 //
@@ -252,6 +254,16 @@ func New(root string) (*Matcher, error) {
 			return nil, err
 		}
 		lines = append(lines, extra...)
+	}
+	// Nested per-directory .gitignore files (opt-in). Appended after the root
+	// files and before config.ignore, in walk order (shallower first) so a
+	// deeper file's rules win — approximating git's "deeper wins" (#74).
+	if cfg.RespectNestedGitignore {
+		nested, err := collectNestedGitignore(root)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, nested...)
 	}
 	lines = append(lines, cfg.Ignore...)
 

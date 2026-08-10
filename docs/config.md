@@ -21,7 +21,15 @@ index:
     - "**/*_generated.go"
   max_chunks_per_file: 500   # per-file chunk cap; 0 = default, negative disables
   skip_minified: true        # skip minified/bundled files before chunking
+  respect_nested_gitignore: false  # fold nested per-dir .gitignore files into excludes
 ```
+
+`respect_nested_gitignore` (default **off**) makes the exclude set honor every
+nested per-directory `.gitignore`, re-anchored to its own directory (git rules:
+a non-trailing `/` anchors, an unanchored pattern matches at any depth below).
+Enable it for monorepos where packages carry their own `.gitignore` (compiled
+`build/`, `dist/`, generated output) that the root-anchored defaults miss.
+Nested `.dexignore` files are still not read.
 
 `max_chunks_per_file` and `skip_minified` are the **chunk-density guard**: a
 file emitting more than the cap (default `500`) is skipped and logged — it is

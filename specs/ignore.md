@@ -36,8 +36,17 @@ them in the pipeline is the indexing spec.
   DefaultPatterns, the repo-root `.gitignore`, the repo-root `.dexignore`, and
   `.dex/config.yml` `index.ignore`, and evaluates them with full gitignore
   semantics (anchoring, negation, `**`, dir-only patterns, later-pattern-wins).
-- WHERE nested `.gitignore`/`.dexignore` files exist below the root, they are
-  intentionally not read — only the repo-root files contribute patterns.
+- WHERE nested `.gitignore` files exist below the root, they are read only when
+  `index.respect_nested_gitignore: true` is set (opt-in, default off, #74). When
+  enabled the matcher walks the tree once (skipping `.git`/`node_modules`/
+  `vendor`/`.dex`), re-anchors each nested pattern to its own directory following
+  git rules — a pattern with a non-trailing `/` anchors to that directory
+  (`/x`, `a/b` → `<dir>/x`, `<dir>/a/b`), an unanchored pattern matches at any
+  depth below it (`x` → `<dir>/**/x`), trailing-slash dir markers and `!`
+  negation are preserved — and appends them after the root files (shallower
+  first, so a deeper file's rules win). Default off keeps the exclude set the
+  predictable root-file + config model; nested `.dexignore` files are still not
+  read.
 - WHILE applying DefaultPatterns, the matcher always excludes vendored/build
   output trees, lockfiles and minified bundles, bundler output that keeps a
   `.js` extension (`*.bundle.js`, `*.chunk.js`), committed test-data dirs that
@@ -76,7 +85,7 @@ them in the pipeline is the indexing spec.
 - [x] Opt-in include allow-list (`.dex/config.yml` `index.include`); no include → select nothing
 - [x] Include gates files only; directories descend (file-only patterns work at depth)
 - [x] Exclude chain: DefaultPatterns + root `.gitignore` + root `.dexignore` + `index.ignore`, full gitignore semantics
-- [x] Nested ignore files below root intentionally not read
+- [x] Nested `.gitignore` files below root read only under `index.respect_nested_gitignore` (opt-in, default off); patterns re-anchored to their dir (#74)
 - [x] DefaultPatterns cover vendor/build/lockfiles/minified/generated/secret-name/license families
 - [x] Directory inputs get trailing-slash so dir-only patterns match
 - [x] Indexable extension allowlist + known indexable basenames
