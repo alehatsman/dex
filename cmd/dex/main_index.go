@@ -193,7 +193,7 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 		skipSecret   int
 		skipSize     int
 		skipMinified int
-		skipDense    int
+		packedDense  int
 		totalChunks  int
 	)
 
@@ -262,10 +262,11 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 			return nil
 		}
 		chunks, _ := chunk.Chunks(ctx, rel, data)
+		// Mirror the indexer: a file over the cap is coarsened by PackDense,
+		// not dropped.
 		if limit := guard.MaxChunksPerFile; limit > 0 && len(chunks) > limit {
-			skipped = append(skipped, skipEntry{path: rel, reason: "chunk-density"})
-			skipDense++
-			return nil
+			chunks = chunk.PackDense(rel, data, chunks)
+			packedDense++
 		}
 		included = append(included, fileEntry{path: rel, chunks: len(chunks)})
 		totalChunks += len(chunks)
@@ -284,29 +285,29 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 			Secret   int `json:"secret_pattern"`
 			TooLarge int `json:"too_large"`
 			Minified int `json:"minified"`
-			Dense    int `json:"chunk_density"`
 		}
 		type dryRunResult struct {
-			Project   string        `json:"project"`
-			DryRun    bool          `json:"dry_run"`
-			Files     int           `json:"files"`
-			Chunks    int           `json:"chunks"`
-			Skipped   int           `json:"skipped"`
-			Breakdown skipBreakdown `json:"skip_breakdown"`
+			Project     string        `json:"project"`
+			DryRun      bool          `json:"dry_run"`
+			Files       int           `json:"files"`
+			Chunks      int           `json:"chunks"`
+			PackedDense int           `json:"packed_dense"`
+			Skipped     int           `json:"skipped"`
+			Breakdown   skipBreakdown `json:"skip_breakdown"`
 		}
 		return json.NewEncoder(os.Stdout).Encode(dryRunResult{
-			Project: p.Root,
-			DryRun:  true,
-			Files:   len(included),
-			Chunks:  totalChunks,
-			Skipped: totalSkipped,
+			Project:     p.Root,
+			DryRun:      true,
+			Files:       len(included),
+			Chunks:      totalChunks,
+			PackedDense: packedDense,
+			Skipped:     totalSkipped,
 			Breakdown: skipBreakdown{
 				Ignored:  skipIgnore,
 				Binary:   skipBinary,
 				Secret:   skipSecret,
 				TooLarge: skipSize,
 				Minified: skipMinified,
-				Dense:    skipDense,
 			},
 		})
 	}
@@ -325,6 +326,9 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 
 	fmt.Printf("dry-run: %s\n", p.Root)
 	fmt.Printf("  would index: %d files  %d chunks\n", len(included), totalChunks)
+	if packedDense > 0 {
+		fmt.Printf("  dense-packed: %d files (coarsened above chunk cap, not dropped)\n", packedDense)
+	}
 
 	if totalSkipped > 0 || skipIgnore > 0 {
 		var parts []string
@@ -342,9 +346,6 @@ func runIndexDryRun(ctx context.Context, p *proj.Project, ig *ignore.Matcher, ve
 		}
 		if skipMinified > 0 {
 			parts = append(parts, fmt.Sprintf("%d minified", skipMinified))
-		}
-		if skipDense > 0 {
-			parts = append(parts, fmt.Sprintf("%d chunk-density", skipDense))
 		}
 		fmt.Printf("  skipped: %d files (%s)\n", totalSkipped, strings.Join(parts, ", "))
 	}

@@ -19,13 +19,13 @@ import (
 //	  max_chunks_per_file: 500   # per-file chunk cap; <=0 disables
 //	  skip_minified: true        # skip minified/bundled files before chunking
 const (
-	// DefaultMaxChunksPerFile is the per-file chunk cap applied when neither
-	// the caller nor .dex/config.yml set one. A single file emitting more
-	// chunks than this is almost always generated (a data fixture or a
-	// minified bundle) rather than hand-written source, so it is skipped and
-	// logged. Deliberately high: it is a safety net against pathological
-	// outliers, not a substitute for index.ignore rules. Ordinary large
-	// source files stay well under it.
+	// DefaultMaxChunksPerFile is the per-file chunk count above which a file is
+	// coarsened by chunk.PackDense (see index.go) when neither the caller nor
+	// .dex/config.yml set one. A file emitting more chunks than this is almost
+	// always a dense generated declaration table rather than hand-written
+	// source; packing bounds its vector count without dropping content.
+	// Deliberately high: ordinary large source files stay well under it and are
+	// never coarsened.
 	DefaultMaxChunksPerFile = 500
 
 	// minifiedMinBytes gates the minified heuristic: below this size a file

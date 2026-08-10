@@ -38,6 +38,9 @@ const WindowOverlap = 10
 const (
 	KindWindow = "window"
 	KindOrphan = "orphan"
+	// KindPacked marks a chunk produced by PackDense: a run of small adjacent
+	// declarations coalesced into one MaxBytes-bounded unit (see pack.go).
+	KindPacked = "packed"
 )
 
 // LineCount returns the number of lines in data. A trailing newline is
