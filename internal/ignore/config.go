@@ -17,6 +17,11 @@ import (
 type indexConfig struct {
 	Include []string
 	Ignore  []string
+	// RespectNestedGitignore, when true, folds every nested (per-directory)
+	// .gitignore into the exclude set (re-anchored to its own directory). Off by
+	// default so the exclude set stays the predictable root-file + config model
+	// (#74).
+	RespectNestedGitignore bool
 }
 
 // dexConfigFile is the subset of .dex/config.yml that the ignore package
@@ -24,8 +29,9 @@ type indexConfig struct {
 // ignored here — yaml.Unmarshal silently skips unknown keys.
 type dexConfigFile struct {
 	Index struct {
-		Include []string `yaml:"include"`
-		Ignore  []string `yaml:"ignore"`
+		Include                []string `yaml:"include"`
+		Ignore                 []string `yaml:"ignore"`
+		RespectNestedGitignore bool     `yaml:"respect_nested_gitignore"`
 	} `yaml:"index"`
 }
 
@@ -73,5 +79,6 @@ func readIndexConfig(root string) (cfg indexConfig, found bool, err error) {
 	}
 	cfg.Include = f.Index.Include
 	cfg.Ignore = f.Index.Ignore
+	cfg.RespectNestedGitignore = f.Index.RespectNestedGitignore
 	return cfg, true, nil
 }
