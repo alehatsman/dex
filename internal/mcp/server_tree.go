@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/store"
+
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -90,9 +92,31 @@ func (s *Server) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 		}
 	}
 
-	files, err := st.FileTree(ctx, prefix)
+	// The chunk index gives per-file chunk counts, but the authority for which
+	// files EXIST is the working tree: a file on disk with no chunks (generated
+	// and kept lean, over the density cap, or indexed only later) must still be
+	// listed, not silently dropped because it has no rows in `chunks` (#132).
+	indexed, err := st.FileTree(ctx, prefix)
 	if err != nil {
 		return nil, SearchTreeOutput{Status: "error", Hint: fmt.Sprintf("file tree: %v", err)}, nil
+	}
+	chunkByPath := make(map[string]int, len(indexed))
+	for _, f := range indexed {
+		chunkByPath[f.Path] = f.Chunks
+	}
+
+	absPaths, err := walkProjectFiles(p.Root, prefix)
+	if err != nil {
+		return nil, SearchTreeOutput{Status: "error", Hint: fmt.Sprintf("walk %s: %v", p.Root, err)}, nil
+	}
+	files := make([]store.FileEntry, 0, len(absPaths))
+	for _, abs := range absPaths {
+		rel, relErr := filepath.Rel(p.Root, abs)
+		if relErr != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		files = append(files, store.FileEntry{Path: rel, Chunks: chunkByPath[rel]})
 	}
 
 	// Separate shallow files from deep ones; aggregate the deep ones by dir.
