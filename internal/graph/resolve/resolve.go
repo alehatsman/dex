@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -39,6 +40,11 @@ type pkgEntry struct {
 	name    string   // "@bright/common"
 	dir     string   // "packages/bright-common" (project-relative, slash)
 	entries []string // ext-free candidates for the bare-package import
+	// subpaths maps an exact exports subpath key (ext-free, e.g. "Uuid") to its
+	// pre-resolved source candidates — direct, build→src retargeted, and (for a
+	// compiled re-export barrel) the barrel's source. Pre-computed at Load so
+	// Classify stays pure. nil when the package has no object exports (#130).
+	subpaths map[string][]string
 }
 
 // aliasRule is one tsconfig/jsconfig path-alias mapping, with targets already
@@ -196,6 +202,11 @@ func (w *Workspace) Classify(specifier string) Classification {
 				pkgDir = p.dir
 			}
 			sub := specifier[len(p.name)+1:]
+			// Exact exports subpath map wins (it may retarget a compiled artifact
+			// to its real source), then the generic dir/src probes (#130).
+			for _, c := range p.subpaths[cleanCandidate(sub)] {
+				add(c)
+			}
 			add(p.dir + "/" + sub)
 			add(p.dir + "/src/" + sub)
 		}
@@ -315,7 +326,7 @@ func loadPackageJSON(root, p string) (pkgEntry, bool) {
 		return pkgEntry{}, false
 	}
 	dir := relSlash(root, filepath.Dir(p))
-	e := pkgEntry{name: pj.Name, dir: dir}
+	e := pkgEntry{name: pj.Name, dir: dir, subpaths: loadSubpathExports(root, dir, pj.Exports)}
 	// Entry candidates for the bare-package import, most-authoritative first.
 	for _, entry := range []string{
 		exportsMain(pj.Exports), pj.Module, pj.Main, pj.Types, pj.Typings,
@@ -375,6 +386,115 @@ func firstStringLeaf(raw json.RawMessage, depth int) string {
 		}
 	}
 	return ""
+}
+
+// buildDirs are the compiled-output directory names an exports target may live
+// in; a target under one is retargeted to a sibling src/ source (#130).
+var buildDirs = map[string]bool{
+	"build": true, "dist": true, "lib": true, "out": true,
+	"es": true, "esm": true, "cjs": true,
+}
+
+// reexportFrom matches a single `export … from '<spec>'` re-export statement.
+var reexportFrom = regexp.MustCompile(`^export\b.*\bfrom\s*['"]([^'"]+)['"]`)
+
+// loadSubpathExports parses a package.json object "exports" and pre-resolves each
+// exact subpath key (e.g. "./Uuid") to source candidates. Star keys ("./*") are
+// skipped — their path rewrite already coincides with the generic dir/src probe.
+// All disk reads happen here (at Load) so Classify stays pure (#130).
+func loadSubpathExports(root, pkgDir string, raw json.RawMessage) map[string][]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return nil // "exports" is a bare string or array — no subpath map
+	}
+	out := map[string][]string{}
+	for key, val := range m {
+		if key == "." || !strings.HasPrefix(key, "./") || strings.Contains(key, "*") {
+			continue
+		}
+		target := firstStringLeaf(val, 0)
+		if target == "" {
+			continue
+		}
+		if cands := subpathCandidates(root, pkgDir, target); len(cands) > 0 {
+			out[cleanCandidate(strings.TrimPrefix(key, "./"))] = cands
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// subpathCandidates turns one exports target (relative to the package dir, e.g.
+// "./build/Uuid.js") into ordered, cleaned source candidates: the direct path, a
+// build→src retarget, and — when the target is a compiled re-export barrel on
+// disk — the barrel's source followed one hop (resolves the differently-named
+// src case, e.g. build/Uuid.js → src/UuidCodec.ts).
+func subpathCandidates(root, pkgDir, target string) []string {
+	var out []string
+	add := func(c string) {
+		if c = cleanCandidate(c); c != "" && !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	retarget := func(rel string) {
+		if seg, rest, ok := strings.Cut(rel, "/"); ok && buildDirs[seg] {
+			add(joinRel(pkgDir, "src/"+rest))
+			add(joinRel(pkgDir, rest))
+		} else {
+			add(joinRel(pkgDir, rel))
+		}
+	}
+
+	rel := path.Clean(strings.TrimPrefix(filepath.ToSlash(target), "./")) // "build/Uuid.js"
+	add(joinRel(pkgDir, rel))
+	retarget(rel)
+	for _, spec := range barrelReexports(root, joinRel(pkgDir, rel)) {
+		retarget(path.Clean(path.Join(path.Dir(rel), filepath.ToSlash(spec))))
+	}
+	return out
+}
+
+// barrelReexports returns the re-exported specifiers of a *pure* re-export
+// barrel — a small file where every statement is `export … from '…'` — or nil.
+// The size/statement bounds ensure a large compiled or minified module is never
+// read as a barrel. relFull is project-relative; root anchors it to disk.
+func barrelReexports(root, relFull string) []string {
+	abs := filepath.Join(root, filepath.FromSlash(relFull))
+	info, err := os.Stat(abs)
+	if err != nil || info.IsDir() || info.Size() > 2048 {
+		return nil
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return nil
+	}
+	var specs []string
+	stmts := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "//") || strings.HasPrefix(t, "/*") || strings.HasPrefix(t, "*") {
+			continue
+		}
+		if stmts++; stmts > 24 {
+			return nil
+		}
+		mt := reexportFrom.FindStringSubmatch(t)
+		if mt == nil {
+			return nil // a non-re-export statement — not a pure barrel
+		}
+		if strings.HasPrefix(mt[1], ".") {
+			specs = append(specs, mt[1])
+		}
+	}
+	if len(specs) == 0 {
+		return nil
+	}
+	return specs
 }
 
 type tsConfig struct {
