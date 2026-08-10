@@ -43,12 +43,13 @@ type Options struct {
 	// Called from the goroutine driving each phase — not thread-safe with
 	// itself, but callers that only write to a terminal are fine.
 	Progress func(phase string, done, total int)
-	// MaxChunksPerFile caps how many chunks a single file may contribute:
-	// a file over the cap is skipped entirely (its chunks are dropped and
-	// pruned) and logged, on the theory that a file emitting hundreds of
-	// chunks is generated — a data fixture or minified bundle — not
-	// searchable source. 0 = resolve from .dex/config.yml /
-	// DefaultMaxChunksPerFile; a negative value disables the cap. See guard.go.
+	// MaxChunksPerFile is the per-file chunk count above which a file is
+	// coarsened by chunk.PackDense (small declarations merged into windows,
+	// big ones kept standalone) rather than indexed one-chunk-per-declaration.
+	// A file emitting hundreds of chunks is a dense generated table; packing
+	// bounds its vector count without dropping content. 0 = resolve from
+	// .dex/config.yml / DefaultMaxChunksPerFile; a negative value disables
+	// packing (full precision always). See guard.go.
 	MaxChunksPerFile int
 	// SkipMinified, when set, skips machine-emitted (minified/bundled) files
 	// before chunking (LooksMinified). nil = resolve from .dex/config.yml
@@ -327,14 +328,17 @@ func (ix *Indexer) fileWorker(ctx context.Context, pathCh <-chan pathTask, resul
 			_, _ = ix.Store.TouchPath(ctx, task.rel, startTime)
 			continue
 		}
-		// Chunk-density guard, check 2: a single file over the per-file cap
-		// is a data fixture or generated blob, not source. Drop it (chunks
-		// omitted here get pruned by PruneUnseen) and log so the operator can
-		// add an index.ignore rule. limit <= 0 disables the guard.
+		// Chunk-density guard, check 2: a file over the per-file cap is a dense
+		// declaration table (generated tokens/types) whose one-chunk-per-decl
+		// partition would flood the vector index. Instead of dropping it (the
+		// old behaviour — silent, lossy), coarsen it: PackDense merges runs of
+		// small declarations into MaxBytes windows while keeping big ones
+		// standalone. Nothing is dropped, so the file stays greppable and
+		// searchable. limit <= 0 disables packing (full precision always).
 		if limit := ix.Options.MaxChunksPerFile; limit > 0 && len(chunks) > limit {
-			ix.Options.Logger.Warn("index: skip (chunk density cap exceeded)", "path", task.rel, "chunks", len(chunks), "cap", limit)
-			skipped.Add(1)
-			continue
+			packed := chunk.PackDense(task.rel, data, chunks)
+			ix.Options.Logger.Info("index: packed dense file", "path", task.rel, "chunks", len(chunks), "packed", len(packed), "cap", limit)
+			chunks = packed
 		}
 		select {
 		case resultCh <- slowFile{rel: task.rel, data: data, chunks: chunks}:
