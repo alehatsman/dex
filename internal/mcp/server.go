@@ -177,16 +177,17 @@ type patternState struct {
 }
 
 type Server struct {
-	EmbedClient  embed.Embedder
-	ChatClient   chat.Chatter         // optional — when nil, view_summarize is not registered
-	RerankClient rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through Retrieve / StoreOpts.Rerank
-	ExpandClient chat.Chatter         // optional — drives opt-in query-side expansion (#252); nil disables it
-	ExpandMode   string               // server default expand level (off|on|full) when a request omits it
-	IndexDir     string               // base dir holding per-project index folders
-	StoreOpts    store.Options        // applied to every Store opened by the server
-	Retrieve     retrieve.Service     // query-time ranking service; holds the cross-encoder + shared rerank cache (#473)
-	AutoWatch    AutoWatchConfig      // lazy per-project watcher; zero value disables
-	CCRDir       string               // optional override for the proxy CCR tee dir; defaults to ~/.cache/dex/proxy/tee (#630)
+	EmbedClient    embed.Embedder
+	ChatClient     chat.Chatter         // optional — when nil, view_summarize is not registered
+	ChatConfigured bool                 // true when a chat model was actually wired (explicit DEX_CHAT_MODEL or detected ollama model); gates the status chat probe so an unconfigured default isn't reported as DEGRADED (#133)
+	RerankClient   rerank.HealthChecker // optional — only consulted by `status` for health reporting; the actual rerank wiring goes through Retrieve / StoreOpts.Rerank
+	ExpandClient   chat.Chatter         // optional — drives opt-in query-side expansion (#252); nil disables it
+	ExpandMode     string               // server default expand level (off|on|full) when a request omits it
+	IndexDir       string               // base dir holding per-project index folders
+	StoreOpts      store.Options        // applied to every Store opened by the server
+	Retrieve       retrieve.Service     // query-time ranking service; holds the cross-encoder + shared rerank cache (#473)
+	AutoWatch      AutoWatchConfig      // lazy per-project watcher; zero value disables
+	CCRDir         string               // optional override for the proxy CCR tee dir; defaults to ~/.cache/dex/proxy/tee (#630)
 
 	watcherState  // project watcher goroutines
 	sessionState  // per-MCP-session tracking (throttle, dedup, body handles)
