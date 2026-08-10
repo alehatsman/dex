@@ -166,6 +166,72 @@ func TestCandidates(t *testing.T) {
 	}
 }
 
+// TestSubpathExports covers #130: exact exports subpath keys resolve through a
+// build→src retarget and, for a compiled re-export barrel, one hop to the real
+// (possibly differently-named) source.
+func TestSubpathExports(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"packages/bright-common/package.json": `{
+			"name": "@bright/common",
+			"exports": {
+				".": { "import": "./build/index.js" },
+				"./Uuid":   { "import": "./build/Uuid.js", "types": "./build/Uuid.d.ts" },
+				"./Direct": { "import": "./build/Direct.js" }
+			}
+		}`,
+		// A compiled re-export barrel whose source is differently named.
+		"packages/bright-common/build/Uuid.js":    "export * from './UuidCodec.js';\nexport { default } from './UuidCodec.js';\n",
+		"packages/bright-common/src/UuidCodec.ts": "export class Uuid {}\n",
+		// A same-named source: build→src path rewrite alone suffices.
+		"packages/bright-common/src/Direct.ts": "export const x = 1\n",
+	})
+	w := Load(root)
+
+	assertHas := func(spec, want string) {
+		t.Helper()
+		got := w.Candidates(spec)
+		if slicesContains(got, want) {
+			return
+		}
+		t.Errorf("Candidates(%q) = %v, missing %q", spec, got, want)
+	}
+	// Barrel follow: ./Uuid → build/Uuid.js → export * from './UuidCodec' → src/UuidCodec.
+	assertHas("@bright/common/Uuid", "packages/bright-common/src/UuidCodec")
+	// build→src retarget for a same-named source.
+	assertHas("@bright/common/Direct", "packages/bright-common/src/Direct")
+	// An import written with an explicit .js ext still matches the "Uuid" key.
+	assertHas("@bright/common/Uuid.js", "packages/bright-common/src/UuidCodec")
+}
+
+// TestSubpathExportsFallbackWhenUnbuilt: with an exports subpath but no artifact
+// on disk (a fresh, unbuilt checkout), resolution still offers the generic
+// workspace probes — no regression, no barrel crash.
+func TestSubpathExportsFallbackWhenUnbuilt(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"packages/p/package.json": `{
+			"name": "@x/p",
+			"exports": { "./Foo": { "import": "./build/Foo.js" } }
+		}`,
+	})
+	got := Load(root).Candidates("@x/p/Foo")
+	for _, want := range []string{"packages/p/Foo", "packages/p/src/Foo"} {
+		if !slicesContains(got, want) {
+			t.Errorf("Candidates(@x/p/Foo)=%v missing generic probe %q", got, want)
+		}
+	}
+}
+
+func slicesContains(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
+}
+
 // TestExactAliasPrecedence pins that "@bright/common" resolves the exact alias
 // target FIRST (index), guarding the most-specific-first ordering.
 func TestExactAliasPrecedence(t *testing.T) {
