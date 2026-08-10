@@ -2,14 +2,12 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/alehatsman/dex/internal/ignore"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/throttle"
 
@@ -87,7 +85,7 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 		prefix = ""
 	}
 	extFilter := strings.TrimPrefix(in.Ext, ".")
-	filePaths, early := s.grepFileList(ctx, p, prefix, extFilter)
+	filePaths, early := s.grepFileList(p, prefix, extFilter)
 	if early != nil {
 		return nil, *early, nil
 	}
@@ -162,87 +160,45 @@ outer:
 
 // grepFileList resolves the candidate files for a grep scan. A single-file
 // prefix scopes to exactly that file (an ext filter excluding it yields an
-// empty set → no-matches, never a whole-repo walk); a directory uses the index
-// when available and falls back to a filesystem walk. A non-nil return is a
-// terminal output (a genuinely missing path) the caller returns as-is — a
-// typo'd path must fail loud, not silently walk the whole root (#73).
-func (s *Server) grepFileList(ctx context.Context, p *proj.Project, prefix, extFilter string) ([]string, *SearchGrepOutput) {
-	var prefixIsFile bool
+// empty set → no-matches, never a whole-repo walk); a directory (or "") is
+// enumerated from the ignore-filtered working tree, NOT the chunk index, so a
+// file on disk but absent from the index (generated/over-cap/not-yet-indexed)
+// is still grep-able (#132). A non-nil return is a terminal output (a genuinely
+// missing path) the caller returns as-is — a typo'd path must fail loud, not
+// silently walk the whole root (#73).
+func (s *Server) grepFileList(p *proj.Project, prefix, extFilter string) ([]string, *SearchGrepOutput) {
 	if prefix != "" {
 		info, statErr := os.Stat(filepath.Join(p.Root, prefix))
 		if statErr != nil {
 			return nil, &SearchGrepOutput{Status: "not-found", Project: p.Root,
 				Hint: fmt.Sprintf("path %q does not exist under %s", prefix, p.Root)}
 		}
-		prefixIsFile = !info.IsDir()
+		if !info.IsDir() {
+			if extFilter == "" || strings.HasSuffix(prefix, "."+extFilter) {
+				return []string{filepath.Join(p.Root, prefix)}, nil
+			}
+			return nil, nil // scoped to one file the ext filter excludes → no-matches
+		}
 	}
 
-	var filePaths []string
-	if prefixIsFile {
-		if extFilter == "" || strings.HasSuffix(prefix, "."+extFilter) {
-			filePaths = append(filePaths, filepath.Join(p.Root, prefix))
+	paths, err := walkProjectFiles(p.Root, prefix)
+	if err != nil {
+		searchRoot := p.Root
+		if prefix != "" {
+			searchRoot = filepath.Join(p.Root, prefix)
 		}
-	} else if _, statErr := os.Stat(p.DBPath); !errors.Is(statErr, os.ErrNotExist) {
-		if st, openErr := s.openStore(p.DBPath); openErr == nil {
-			if files, treeErr := st.FileTree(ctx, prefix); treeErr == nil {
-				for _, f := range files {
-					if extFilter != "" && !strings.HasSuffix(f.Path, "."+extFilter) {
-						continue
-					}
-					filePaths = append(filePaths, filepath.Join(p.Root, f.Path))
-				}
-			}
-		}
-	}
-	if prefixIsFile || len(filePaths) > 0 {
-		return filePaths, nil
-	}
-
-	searchRoot := p.Root
-	if prefix != "" {
-		searchRoot = filepath.Join(p.Root, prefix)
-	}
-	// Apply the project's exclude rules to the fallback walk so an un-indexed
-	// project — the common case being a fresh git worktree before its first
-	// index — doesn't sweep build outputs, vendored trees, and gitignored junk
-	// into grep results and blow the token budget (#128). MatchExclude uses the
-	// exclude set only (defaults + .gitignore/.dexignore + config ignore); it
-	// deliberately skips the opt-in include allow-list so grep still works in a
-	// project with no .dex/config.yml. nil matcher (ignore.New failed) falls
-	// back to the hardcoded skips below.
-	matcher, _ := ignore.New(p.Root)
-	if err := filepath.Walk(searchRoot, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			if path == searchRoot {
-				return walkErr // propagate root-level errors (e.g. path doesn't exist)
-			}
-			return nil // skip inaccessible subdirectories
-		}
-		rel, relErr := filepath.Rel(p.Root, path)
-		if info.IsDir() {
-			switch info.Name() {
-			case ".git", "vendor", "node_modules", ".dex":
-				return filepath.SkipDir
-			}
-			// Never self-exclude the explicitly requested search root: if the
-			// caller scoped grep into an ignored dir, honor it.
-			if matcher != nil && relErr == nil && path != searchRoot && matcher.MatchExclude(rel, true) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if matcher != nil && relErr == nil && matcher.MatchExclude(rel, false) {
-			return nil
-		}
-		if extFilter != "" && !strings.HasSuffix(path, "."+extFilter) {
-			return nil
-		}
-		filePaths = append(filePaths, path)
-		return nil
-	}); err != nil {
 		return nil, &SearchGrepOutput{Status: "not-found", Hint: fmt.Sprintf("cannot walk %s: %v", searchRoot, err)}
 	}
-	return filePaths, nil
+	if extFilter == "" {
+		return paths, nil
+	}
+	filtered := paths[:0]
+	for _, path := range paths {
+		if strings.HasSuffix(path, "."+extFilter) {
+			filtered = append(filtered, path)
+		}
+	}
+	return filtered, nil
 }
 
 // newGrepMatch builds a match for the line at index i, attaching up to ctxN
