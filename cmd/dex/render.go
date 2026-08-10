@@ -47,12 +47,19 @@ func collectEndpoints() []health.Probe {
 		probes = append(probes, health.Probe{Name: "embed", Status: "not configured"})
 	}
 
-	cc := newChatClient()
-	probes = append(probes, health.Probe{Name: "chat", URL: cc.BaseURL, Model: cc.Model, Health: cc.Health,
-		Deep: func(ctx context.Context) error {
-			_, err := cc.Generate(ctx, []chat.Message{{Role: "user", Content: health.DeepProbeText}}, chat.Options{MaxTokens: 1})
-			return err
-		}})
+	// Chat is opt-in like rerank: probe it only when a chat model was actually
+	// wired. A bare DEX_CHAT_URL pointing at an embed-only ollama would otherwise
+	// probe a fabricated default model and report DEGRADED for a capability the
+	// user never configured (#133). Mirrors the embed/rerank "not configured" arm.
+	if cc, ok := newChatClientConfigured(); ok {
+		probes = append(probes, health.Probe{Name: "chat", URL: cc.BaseURL, Model: cc.Model, Health: cc.Health,
+			Deep: func(ctx context.Context) error {
+				_, err := cc.Generate(ctx, []chat.Message{{Role: "user", Content: health.DeepProbeText}}, chat.Options{MaxTokens: 1})
+				return err
+			}})
+	} else {
+		probes = append(probes, health.Probe{Name: "chat", Status: "not configured"})
+	}
 
 	if rc := newRerankClient(); rc != nil {
 		probes = append(probes, health.Probe{Name: "rerank", URL: rc.Endpoint(), Model: rc.ModelName(), Health: rc.Health,

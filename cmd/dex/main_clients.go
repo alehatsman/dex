@@ -121,8 +121,22 @@ func newONNXEmbedder() embed.Embedder {
 }
 
 func newChatClient() *chat.Client {
+	c, _ := newChatClientConfigured()
+	return c
+}
+
+// newChatClientConfigured builds the chat client and reports whether a chat
+// model was actually wired: an explicit DEX_CHAT_MODEL, or an auto-detected
+// ollama chat model. A bare DEX_CHAT_URL is NOT enough — it is often a shared
+// ollama endpoint that only serves embeddings, and without a model we fall back
+// to a fabricated default the endpoint won't serve. The client is always usable
+// (ask/summary degrade gracefully via the default), but configured=false lets
+// the status/doctor probes report "not configured" instead of DEGRADED against
+// a model the user never asked for — matching the embed/rerank probes.
+func newChatClientConfigured() (client *chat.Client, configured bool) {
 	url := os.Getenv("DEX_CHAT_URL")
 	model := os.Getenv("DEX_CHAT_MODEL")
+	configured = model != ""
 
 	if url == "" {
 		ensureOllamaRunning() // best-effort: start ollama if installed-but-down
@@ -131,6 +145,7 @@ func newChatClient() *chat.Client {
 			if model == "" {
 				model = om.Name
 			}
+			configured = true
 			fmt.Fprintf(os.Stderr, "dex: ollama chat model %q at %s\n", model, url)
 		} else {
 			url = "http://127.0.0.1:8081"
@@ -140,7 +155,7 @@ func newChatClient() *chat.Client {
 		model = "Qwen/Qwen2.5-Coder-7B-Instruct"
 	}
 	timeout := parseDuration("DEX_CHAT_TIMEOUT", envOr("DEX_CHAT_TIMEOUT", "120s"), 120*time.Second)
-	return chat.New(url, model, timeout)
+	return chat.New(url, model, timeout), configured
 }
 
 // newRerankClient returns a rerank.HealthChecker (either the Cohere-compatible

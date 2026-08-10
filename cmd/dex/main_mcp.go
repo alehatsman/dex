@@ -134,17 +134,18 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 		opts.Rerank = rerankSvc.RerankFused
 		opts.MaxCandidatePool = rerankPool()
 	}
-	chatClient := newChatClient()
+	chatClient, chatConfigured := newChatClientConfigured()
 	expandClient := newExpandClient(chatClient)
 	srv := &mcp.Server{
-		EmbedClient:  newEmbedClient(""),
-		ChatClient:   chatClient,
-		RerankClient: rerankClient,
-		ExpandMode:   expandDefaultMode(expandClient),
-		IndexDir:     base,
-		StoreOpts:    opts,
-		Retrieve:     rerankSvc,
-		AutoWatch:    autoWatchConfigFromEnv(),
+		EmbedClient:    newEmbedClient(""),
+		ChatClient:     chatClient,
+		ChatConfigured: chatConfigured,
+		RerankClient:   rerankClient,
+		ExpandMode:     expandDefaultMode(expandClient),
+		IndexDir:       base,
+		StoreOpts:      opts,
+		Retrieve:       rerankSvc,
+		AutoWatch:      autoWatchConfigFromEnv(),
 	}
 	// Only populate the interface field when a client is actually configured.
 	// newExpandClient returns a *chat.Client, so assigning its nil value

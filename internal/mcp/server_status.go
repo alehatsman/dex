@@ -79,8 +79,10 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 		out.Model = "none (lean profile)"
 	}
 
-	// Populate optional endpoint metadata before probing (read-only).
-	if s.ChatClient != nil {
+	// Populate optional endpoint metadata before probing (read-only). Only when
+	// a chat model was actually wired — an unconfigured default carries a
+	// fabricated URL+model we shouldn't advertise or probe (#133).
+	if s.ChatClient != nil && s.ChatConfigured {
 		out.ChatEndpoint = s.ChatClient.Endpoint()
 		out.ChatModel = s.ChatClient.ModelName()
 	}
@@ -124,7 +126,7 @@ func (s *Server) status(ctx context.Context, _ *sdk.CallToolRequest, _ StatusInp
 			out.Error = errMsg
 		})
 	}
-	if s.ChatClient != nil {
+	if s.ChatClient != nil && s.ChatConfigured {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
