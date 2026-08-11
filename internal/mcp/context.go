@@ -263,6 +263,12 @@ type ContextOutput struct {
 	// the static call/import graph and learned co-access (Hebbian) edges (#688),
 	// seeded on the assemble working set. Populated only for intent=assemble.
 	RelatedFiles []string `json:"related_files,omitempty"`
+	// Rules are the project's local rule/spec files (CLAUDE.md, .dex/rules.md,
+	// docs/*.md, specs/*.md) that govern edits to the working set — the
+	// constraints an agent must honour before touching code. Folded in from
+	// brief (#141) so intent=assemble is a complete task-start pack. Populated
+	// only for intent=assemble.
+	Rules []string `json:"rules,omitempty"`
 	// Concerns is the assemble completeness signal (#725): which query
 	// concerns the inlined working set is ABOUT (covered) vs which the byte
 	// budget dropped (no inlined symbol body is about them). It exists so a
@@ -555,6 +561,12 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 	s.activityRecord(p.Root, 1)
 	if out.Hint == "" {
 		out.Hint = s.activityNudge(p.Root, out.SessionTask)
+	}
+	// Task-start packs carry the local rules that govern the working set, so the
+	// agent sees the constraints before editing. Folded in from brief (#141);
+	// assemble is the "starting a task" intent, so only it pays this cost.
+	if intent == retrieve.IntentAssemble {
+		out.Rules = collectLocalRules(p.Root)
 	}
 	// Synthesize a grounded prose answer from the evidence just
 	// assembled. Best-effort: a missing/unreachable chat client leaves
