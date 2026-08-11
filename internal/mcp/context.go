@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -224,6 +225,13 @@ type ContextOutput struct {
 	SuggestedReads []SuggestedRead `json:"suggested_reads,omitempty"`
 	NextAction     string          `json:"next_action,omitempty"`
 	Avoid          string          `json:"avoid,omitempty"`
+	// Next is the structured form of the follow-up move, so the four-verb
+	// surface (#110) exposes one `next` key across ask/look/act/remember. It
+	// is derived from evidence ask already produced (the top suggested read),
+	// never re-inferred; NextAction stays as the canonical prose rationale.
+	// Absent when there is no concrete grounded step. ask keeps its richer
+	// trust / next_action — this only aligns the key name.
+	Next []NextStep `json:"next,omitempty"`
 	// Map is the deterministic L0+L1 orientation bundle, set only on the
 	// session-start orientation path (ask called with an empty question, #348 /
 	// #316 story 6). Zero inference, byte-stable across calls. Absent otherwise.
@@ -350,7 +358,45 @@ func capFactBody(body string) string {
 	return strings.TrimRight(string(r[:maxInjectedFactBody]), " ") + " …(truncated)"
 }
 
+// contextRouterStream is the single chokepoint all ask entry points (MCP tool,
+// CLI, HTTP) funnel through. It runs the router, then stamps the structured
+// `next` step so every path — success, degraded, orient, and error — carries the
+// four-verb envelope's `next` key without touching the router's many internal
+// returns.
 func (s *Server) contextRouterStream(ctx context.Context, req *sdk.CallToolRequest, in ContextInput, tokenSink func(string)) (*sdk.CallToolResult, ContextOutput, error) {
+	res, out, err := s.contextRouterStreamImpl(ctx, req, in, tokenSink)
+	deriveAskNext(&out)
+	return res, out, err
+}
+
+// deriveAskNext fills ContextOutput.Next from evidence ask already produced. The
+// grounded, non-inferred follow-up is to look at the top suggested read — ask has
+// already decided that file is worth opening. It never overwrites a Next the
+// router set explicitly, and emits nothing when there is no concrete target.
+func deriveAskNext(out *ContextOutput) {
+	if len(out.Next) > 0 || len(out.SuggestedReads) == 0 {
+		return
+	}
+	top := out.SuggestedReads[0]
+	if strings.TrimSpace(top.Path) == "" {
+		return
+	}
+	target := top.Path
+	if top.StartLine > 0 {
+		target = top.Path + ":" + strconv.Itoa(top.StartLine)
+	}
+	why := "open the top suggested read"
+	if strings.TrimSpace(top.Reason) != "" {
+		why = top.Reason
+	}
+	out.Next = []NextStep{{
+		Verb: "look",
+		Args: map[string]any{"target": target},
+		Why:  why,
+	}}
+}
+
+func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolRequest, in ContextInput, tokenSink func(string)) (*sdk.CallToolResult, ContextOutput, error) {
 	if strings.TrimSpace(in.Question) == "" {
 		// Empty question = session-start orientation: return the deterministic
 		// L0+L1 map so the agent names the right cluster before any find()
