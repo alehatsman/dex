@@ -8,12 +8,12 @@ import (
 )
 
 // remember is the durable-memory verb of the four-verb surface (#110): persist a
-// fact (write) or recall the facts relevant to a task (read), across session
-// resets. It is a thin, additive facade over the existing `notes`/knowledge
-// engine — same store, same salience and scope-binding — exposing just the two
-// everyday moves (write, recall). The admin/relate lanes (gc, export, import,
-// consolidate, pin, relate, review) stay on `notes` until the cutover and move
-// to the CLI afterward; remember deliberately keeps the hot path to two verbs.
+// fact (write), recall the facts relevant to a task (read), or supersede a stale
+// fact (upsert), across session resets. It is a thin, additive facade over the
+// knowledge engine — same store, same salience and scope-binding — exposing the
+// everyday memory moves (write, recall, supersede). The admin/relate lanes
+// (delete, gc, export, import, consolidate, pin, relate, review) stay on the
+// expert `notes` tool (#147); remember keeps the hot path to one verb.
 type RememberInput struct {
 	// Provide exactly one of Fact (write) or Query (recall).
 	Fact  string `json:"fact,omitempty"  jsonschema:"a durable fact to persist (write mode); lead a review finding or gotcha with a bracketed [kind]"`
@@ -22,6 +22,11 @@ type RememberInput struct {
 	Scope       string `json:"scope,omitempty"       jsonschema:"bind a written fact to a file glob/path/package so it surfaces when a file verb touches a match (#645); in recall mode, filter to facts scoped to this path"`
 	Archetype   string `json:"archetype,omitempty"  jsonschema:"write mode: Gotcha | Decision | Convention | Architecture | Observation | ReviewFinding | Pattern | Dependency | Fact (default Observation)"`
 	K           int    `json:"k,omitempty"          jsonschema:"recall mode: max facts to return (default 10)"`
+	// Supersedes upserts: write the new fact and mark an existing one inactive in
+	// one step (#606). Pass the `id` of a fact a prior recall or near-dup warning
+	// surfaced — this is the everyday way to correct a stale note without stacking
+	// duplicates (replaces the old notes(action=add, supersedes_id) move, #147).
+	Supersedes  int64  `json:"supersedes,omitempty" jsonschema:"write mode: id of an existing fact this write replaces — marks the old fact inactive immediately (#606). Use it to correct a stale note surfaced by recall or a near-duplicate warning."`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or worktree you are working in"`
 }
 
@@ -55,11 +60,12 @@ func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 	fact := strings.TrimSpace(in.Fact)
 	if fact != "" {
 		_, kn, err := h.knowledge(ctx, req, KnowledgeInput{
-			Action:      "add",
-			Body:        fact,
-			Scope:       in.Scope,
-			Archetype:   in.Archetype,
-			ProjectRoot: in.ProjectRoot,
+			Action:       "add",
+			Body:         fact,
+			Scope:        in.Scope,
+			Archetype:    in.Archetype,
+			SupersedesID: in.Supersedes,
+			ProjectRoot:  in.ProjectRoot,
 		})
 		if err != nil {
 			return nil, RememberOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
@@ -79,7 +85,7 @@ func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 		if len(kn.Similar) > 0 {
 			out.Next = append(out.Next, NextStep{
 				Verb: "remember",
-				Why:  "a near-duplicate fact already exists — consider superseding it via `notes` (action=add, supersedes_id) rather than stacking duplicates",
+				Why:  "a near-duplicate fact already exists — supersede it via `remember(fact=…, supersedes=<id>)` (the id is on the similar fact below) rather than stacking duplicates",
 			})
 		}
 		return nil, out, nil

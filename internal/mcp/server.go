@@ -42,7 +42,7 @@ import (
 func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
-Everyday surface = four verbs (ask · look · act · remember) + notes:
+Everyday surface = four verbs (ask · look · act · remember):
 1. ask(question) — START HERE for any coding task or question. Routes intent and returns a ranked evidence pack + next_action. Pass intent=assemble for a task-start working set (ranked files, symbols, and the local rules that govern them); ask("review my changes") returns a per-hunk review of your working tree.
 2. look(target) — exact fetch once you can name it: a path → read, a /regex/ → grep, a path:line → locate, a symbol → its call graph.
 3. edit — your job, not dex's.
@@ -52,14 +52,15 @@ Tool mapping (use these instead of native):
 - ask(question)   instead of Grep/rg for concept searches or reading files blindly — a routed evidence pack (semantic + symbol + graph); ask("review my changes") for a working-tree review
 - look(target)    instead of Read/rg/manual navigation — a path → read, a /regex/ → grep, a path:line → locate, a symbol → callers/callees
 - act(command)    instead of Bash — shell with compressed output in the envelope
-- remember(fact)  instead of re-deriving facts — persist a durable finding (recall via ask; notes for the full record/supersede surface)
+- remember(fact)  instead of re-deriving facts — write a durable finding, recall with query=…, or correct a stale one with fact + supersedes=<id>
 
 Power lanes (gated behind DEX_EXPERT — the verbs above cover everyday work):
 - shell / grep / read — the raw primitives act and look wrap; reach here for the primitive directly
+- notes — the full knowledge surface (delete, pin, gc, consolidate, export/import, relate); remember covers everyday write/recall/supersede
 - review_diff — targeted PR/branch/ref review (ask covers the working tree); verify_change — find and run the tests a change implicates
 - trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / session / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__look,mcp__dex__act,mcp__dex__remember,mcp__dex__notes" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__look,mcp__dex__act,mcp__dex__remember" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -907,58 +908,29 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	registerAskTool(srv, h, td)
 }
 
-// registerEverydayTools wires the memory verbs of the four-verb surface (#145):
-// notes + remember. The fetch/run/review primitives that used to live here
-// (read, review_diff, verify_change) demoted to expert once the verbs covered
-// them — act runs, look fetches, ask(review) reviews the working tree. look is
-// the always-on fetch floor, so it moved to registerBaselineTools.
+// registerEverydayTools wires the everyday non-baseline verb of the four-verb
+// surface: remember (durable memory). The other everyday primitives all demoted
+// once a verb covered them — act runs (shell), look fetches (read/grep),
+// ask(review) reviews, and remember absorbed notes' everyday moves (#147:
+// write/recall/supersede), leaving notes' admin/relate tail on the expert lane.
+// look/act live in registerBaselineTools as the always-on floor.
 func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
-	_ = embedAvailable // no everyday tool is embed-gated after the 5c collapse
+	_ = embedAvailable // no everyday tool is embed-gated after the 5c/5d collapse
 
-	// notes is in the default lane (#548): persistent project memory is the
-	// highest-leverage saver of repeat exploration, and the read path (facts
-	// auto-injected into ask) is useless if the agent can never write. Needs
-	// no embedder or chat model.
-	addTool(srv, &sdk.Tool{
-		Name: "notes",
-		Description: td("Persistent project memory — record and recall facts, patterns, and gotchas that " +
-			"survive session resets and reconnects (no embedding required). " +
-			"Actions: add (store a fact with an archetype and confidence — the response's " +
-			"`similar` list warns when a near-duplicate note already exists so you can `delete` " +
-			"the superseded one; pass `scope` to bind the fact to a file glob/path/package so `locate` " +
-			"surfaces it proactively when it touches a matching file, #645 — and if you omit `scope` but the " +
-			"note names a real project file/glob, the response's `scope_suggestion` proposes one), " +
-			"list (recall top-k facts ordered by salience), delete (remove a fact by id), " +
-			"review (read-only: suggest near-duplicate merges, overlaps to judge, and stale facts — " +
-			"dex never auto-applies these, you act on them), pin/unpin (mark a fact permanent — exempt " +
-			"from decay, eviction, and staleness proposals, #633), " +
-			"relate (create/reinforce a typed edge between facts via relate_from/relate_to/relate_kind: " +
-			"DependsOn|RelatedTo|Supports|Contradicts|Supersedes, #621), " +
-			"relations (list edges for a fact id, or set diagram=true for a Mermaid graph of all edges), " +
-			"gc (run the lifecycle pass: decay confidence, consolidate near-duplicates, evict past the cap), " +
-			"consolidate (one-shot merge of near-duplicate facts without the rest of gc), " +
-			"export/import (dump/load the full note set as JSON for backup or cross-project transfer). " +
-			"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding. " +
-			"ReviewFinding closes the review→edit loop (#87): after reviewing a file, persist what the next editor " +
-			"most needs (a god-object, a duplication, a layering-violation, an injection-risk — lead the body with a " +
-			"bracketed [kind]) as add(archetype=ReviewFinding, scope=<reviewed file>) so read/locate/review surface it " +
-			"on touch instead of it leaking into chat. " +
-			"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
-			"as knowledge_facts."),
-	}, h.knowledge)
-
-	// remember — the durable-memory verb (#110). A two-move envelope facade over
-	// notes: `fact` writes, `query` recalls. Same store and salience; the admin
-	// and relate lanes stay on `notes` until the cutover. Travels with the notes
-	// alias (default lane, no embedder needed).
+	// remember — the durable-memory verb (#110). An envelope facade over the
+	// knowledge engine covering the memory hot path: `fact` writes, `query`
+	// recalls, `supersedes` upserts (#147). Same store and salience as the expert
+	// `notes` tool, which retains the admin/relate tail. No embedder needed.
 	addTool(srv, &sdk.Tool{
 		Name: "remember",
 		Description: td("Durable project memory across session resets, inside the universal envelope " +
-			"{result, trust, next}. Two moves: pass `fact` to persist a durable fact (write — lead a " +
+			"{result, trust, next}. Three moves: pass `fact` to persist a durable fact (write — lead a " +
 			"review finding or gotcha with a bracketed [kind]; use `scope` to bind it to a file glob so it " +
-			"surfaces on touch, #645), or pass `query` to recall the facts most relevant to a task (read — " +
-			"empty query returns top facts by salience). Same store and salience as `notes` (its alias); " +
-			"the admin/relate lanes (gc, export, import, consolidate, pin, relate, review) stay on `notes`."),
+			"surfaces on touch, #645), pass `query` to recall the facts most relevant to a task (read — " +
+			"empty query returns top facts by salience), or pass `fact` with `supersedes=<id>` to correct a " +
+			"stale fact in one step (upsert — the id comes from a recall or a near-duplicate warning, #606). " +
+			"The admin/relate lanes (delete, gc, export, import, consolidate, pin, relate, review) live on the " +
+			"expert `notes` tool (DEX_EXPERT)."),
 	}, rememberHandler(h))
 }
 
@@ -1125,6 +1097,39 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
 			"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
 	}, h.verify)
+
+	// notes — the full knowledge surface (#147). remember covers the everyday
+	// hot path (write/recall/supersede); notes retains the admin/relate tail
+	// (delete, pin/unpin, gc, consolidate, export/import, relate/relations,
+	// review) that isn't the every-task loop. Needs no embedder or chat model.
+	addTool(srv, &sdk.Tool{
+		Name: "notes",
+		Description: td("Persistent project memory — the full knowledge surface (no embedding required). " +
+			"For the everyday write/recall/supersede loop prefer the `remember` verb; reach for `notes` for the " +
+			"admin/relate actions below. " +
+			"Actions: add (store a fact with an archetype and confidence — the response's " +
+			"`similar` list warns when a near-duplicate note already exists so you can `delete` " +
+			"the superseded one; pass `scope` to bind the fact to a file glob/path/package so `locate` " +
+			"surfaces it proactively when it touches a matching file, #645 — and if you omit `scope` but the " +
+			"note names a real project file/glob, the response's `scope_suggestion` proposes one), " +
+			"list (recall top-k facts ordered by salience), delete (remove a fact by id), " +
+			"review (read-only: suggest near-duplicate merges, overlaps to judge, and stale facts — " +
+			"dex never auto-applies these, you act on them), pin/unpin (mark a fact permanent — exempt " +
+			"from decay, eviction, and staleness proposals, #633), " +
+			"relate (create/reinforce a typed edge between facts via relate_from/relate_to/relate_kind: " +
+			"DependsOn|RelatedTo|Supports|Contradicts|Supersedes, #621), " +
+			"relations (list edges for a fact id, or set diagram=true for a Mermaid graph of all edges), " +
+			"gc (run the lifecycle pass: decay confidence, consolidate near-duplicates, evict past the cap), " +
+			"consolidate (one-shot merge of near-duplicate facts without the rest of gc), " +
+			"export/import (dump/load the full note set as JSON for backup or cross-project transfer). " +
+			"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding. " +
+			"ReviewFinding closes the review→edit loop (#87): after reviewing a file, persist what the next editor " +
+			"most needs (a god-object, a duplication, a layering-violation, an injection-risk — lead the body with a " +
+			"bracketed [kind]) as add(archetype=ReviewFinding, scope=<reviewed file>) so read/locate/review surface it " +
+			"on touch instead of it leaking into chat. " +
+			"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
+			"as knowledge_facts."),
+	}, h.knowledge)
 
 	// lookup is not a standalone tool — `find` already fuses exact
 	// symbol-name hits via RRF, and `ask` detects identifiers and runs

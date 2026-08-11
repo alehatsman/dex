@@ -21,8 +21,7 @@ var zeroInferenceTools = []string{
 	"ask",
 	"look",     // exact-fetch verb (symbol→trace, path:line→locate, path→read, /re/→grep); no embedder needed
 	"act",      // run verb (wraps shell); no embedder needed
-	"remember", // memory verb, no embedder needed
-	"notes",    // persistent memory, no embedder needed; default lane since #548
+	"remember", // memory verb (write/recall/supersede), no embedder needed; notes' admin tail is expert (#147)
 }
 
 func listToolNames(t *testing.T, srv *Server) map[string]bool {

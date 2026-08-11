@@ -83,3 +83,48 @@ func TestRememberWriteThenRecall(t *testing.T) {
 		t.Errorf("recall trust.provenance = %q, want exact", r.Trust.Provenance)
 	}
 }
+
+// TestRememberSupersede pins the 5d fold (#147): remember absorbs notes'
+// supersede move — a write with Supersedes=<id> marks the old fact inactive in
+// one call (no separate notes tool), so recall no longer returns the stale fact.
+// Uses the fakeEmbed+indexProject harness so add→recall genuinely round-trips
+// (a query equal to a fact body yields cosine 1.0).
+func TestRememberSupersede(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, projDir+"/main.go", "package main\n\nfunc main() {}\n")
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+	ctx := context.Background()
+
+	_, w0, err := rememberVerb(ctx, s, nil,
+		RememberInput{ProjectRoot: root, Archetype: "Convention", Fact: "indent with tabs"})
+	if err != nil || w0.Result.Mode != "wrote" {
+		t.Fatalf("write stale: mode=%q status=%q err=%v", w0.Result.Mode, w0.Status, err)
+	}
+	_, r0, err := rememberVerb(ctx, s, nil,
+		RememberInput{ProjectRoot: root, Query: "indent with tabs", K: 5})
+	if err != nil || len(r0.Result.Facts) == 0 {
+		t.Fatalf("recall stale: err=%v facts=%d", err, len(r0.Result.Facts))
+	}
+	staleID := r0.Result.Facts[0].ID
+
+	_, w1, err := rememberVerb(ctx, s, nil,
+		RememberInput{ProjectRoot: root, Archetype: "Convention", Fact: "indent with spaces", Supersedes: staleID})
+	if err != nil || w1.Result.Mode != "wrote" {
+		t.Fatalf("supersede: mode=%q status=%q err=%v", w1.Result.Mode, w1.Status, err)
+	}
+
+	_, r1, err := rememberVerb(ctx, s, nil,
+		RememberInput{ProjectRoot: root, Query: "indent with tabs", K: 5})
+	if err != nil {
+		t.Fatalf("recall after supersede: %v", err)
+	}
+	for _, f := range r1.Result.Facts {
+		if f.ID == staleID {
+			t.Errorf("superseded fact id=%d still recalled (body=%q); supersedes not wired through", staleID, f.Body)
+		}
+	}
+}
