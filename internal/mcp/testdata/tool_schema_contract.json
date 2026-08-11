@@ -318,6 +318,9 @@
         },
         "ref": {
           "type": "string"
+        },
+        "worktree": {
+          "type": "boolean"
         }
       }
     },
@@ -985,6 +988,9 @@
         },
         "ref": {
           "type": "string"
+        },
+        "worktree": {
+          "type": "boolean"
         }
       }
     },
@@ -1523,6 +1529,9 @@
         },
         "ref": {
           "type": "string"
+        },
+        "worktree": {
+          "type": "boolean"
         }
       }
     },

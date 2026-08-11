@@ -52,12 +52,14 @@ const (
 	reviewChurnWindow    = "30 days ago"
 )
 
-// ReviewInput selects the diff three ways. Exactly one of Ref / Branch / PR is
-// expected; precedence is Ref, then Branch, then PR.
+// ReviewInput selects the diff four ways. Precedence is Ref, then Branch, then
+// PR, then Worktree; with none given, review defaults to Worktree — "review my
+// uncommitted changes" is the common unanchored case (#137).
 type ReviewInput struct {
 	Ref         string `json:"ref,omitempty" jsonschema:"a git range ('HEAD~3..HEAD') or a single ref ('HEAD~3', diffed against HEAD)"`
 	Branch      string `json:"branch,omitempty" jsonschema:"a branch name; reviews what it adds since diverging from the default branch (main...branch)"`
 	PR          int    `json:"pr,omitempty" jsonschema:"a GitHub PR number; resolves its head branch via the 'gh' CLI (best-effort, needs gh + a remote)"`
+	Worktree    bool   `json:"worktree,omitempty" jsonschema:"review uncommitted working-tree changes (git diff HEAD — staged + unstaged); the default when no ref/branch/pr is given"`
 	Base        string `json:"base,omitempty" jsonschema:"base branch for branch/PR comparison (default 'main')"`
 	Compact     bool   `json:"compact,omitempty" jsonschema:"drop low-risk hunks, returning only medium/high-risk ones"`
 	K           int    `json:"k,omitempty" jsonschema:"max callers and notes per symbol (default 8, max 30)"`
@@ -138,8 +140,10 @@ func (s *Server) Review(ctx context.Context, in ReviewInput) (ReviewOutput, erro
 }
 
 func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewInput) (*sdk.CallToolResult, ReviewOutput, error) {
+	// No selector → review the uncommitted working tree ("review my changes"),
+	// the common unanchored case (#137). Explicit ref/branch/pr still win.
 	if strings.TrimSpace(in.Ref) == "" && strings.TrimSpace(in.Branch) == "" && in.PR == 0 {
-		return nil, ReviewOutput{Status: "error", Hint: "review needs one of: ref, branch, pr"}, nil
+		in.Worktree = true
 	}
 	p, hint := s.resolveProject(ctx, in.ProjectRoot)
 	if hint != "" {
@@ -170,8 +174,14 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	}
 	files := review.ParseUnified(diffText)
 	if len(files) == 0 {
-		return nil, ReviewOutput{Status: "no-changes", Project: p.Root, Range: rng,
-			Hint: fmt.Sprintf("no changes in %s", rng)}, nil
+		hint := fmt.Sprintf("no changes in %s", rng)
+		if in.Worktree {
+			hint = "working tree is clean (no uncommitted changes) — pass ref/branch/pr to review committed work"
+			if n := gitUntrackedCount(ctx, p.Root); n > 0 {
+				hint += fmt.Sprintf("; %d untracked file(s) are not shown (`git add -N` to include them)", n)
+			}
+		}
+		return nil, ReviewOutput{Status: "no-changes", Project: p.Root, Range: rng, Hint: hint}, nil
 	}
 
 	st, err := s.openStore(p.DBPath)
@@ -566,7 +576,8 @@ func chunkAtLine(chunks []chunk.Chunk, line int) (chunk.Chunk, bool) {
 // ─── range resolution + git helpers ──────────────────────────────────────
 
 // resolveReviewRange turns the input selector into a git range token for
-// `git diff`. Ref wins, then Branch, then PR (which resolves to a branch).
+// `git diff`. Ref wins, then Branch, then PR (which resolves to a branch), then
+// Worktree (bare HEAD → `git diff HEAD`, the uncommitted working tree, #137).
 func resolveReviewRange(ctx context.Context, root string, in ReviewInput) (rng, status, hint string) {
 	base := strings.TrimSpace(in.Base)
 	if base == "" {
@@ -594,14 +605,24 @@ func resolveReviewRange(ctx context.Context, root string, in ReviewInput) (rng, 
 	}
 
 	// PR: resolve the head branch via gh, then review it like a branch.
-	head := ghPRHeadBranch(ctx, root, in.PR)
-	if head == "" {
-		return "", "not-found", fmt.Sprintf("could not resolve PR #%d head branch — needs the `gh` CLI, a GitHub remote, and a fetched head", in.PR)
+	if in.PR != 0 {
+		head := ghPRHeadBranch(ctx, root, in.PR)
+		if head == "" {
+			return "", "not-found", fmt.Sprintf("could not resolve PR #%d head branch — needs the `gh` CLI, a GitHub remote, and a fetched head", in.PR)
+		}
+		if !reValidRef.MatchString(head) {
+			return "", "error", fmt.Sprintf("PR #%d head branch %q has unexpected characters", in.PR, head)
+		}
+		return base + "..." + head, "ok", ""
 	}
-	if !reValidRef.MatchString(head) {
-		return "", "error", fmt.Sprintf("PR #%d head branch %q has unexpected characters", in.PR, head)
+
+	// Worktree: bare HEAD so gitDiffUnified runs `git diff HEAD` — the working
+	// tree (staged + unstaged) vs HEAD. Ends at HEAD ⇒ no time-travel (#137).
+	if in.Worktree {
+		return "HEAD", "ok", ""
 	}
-	return base + "..." + head, "ok", ""
+
+	return "", "error", "review needs one of: ref, branch, pr, or worktree"
 }
 
 // rangeEndsAtHEAD reports whether a git range's right-hand side is HEAD (the
@@ -666,6 +687,26 @@ func gitChurnCount(ctx context.Context, root, path string) int {
 		return 0
 	}
 	return n
+}
+
+// gitUntrackedCount returns the number of untracked, non-ignored files in the
+// working tree (best-effort; 0 on any error). They are invisible to
+// `git diff HEAD`, so a clean-tree worktree review nudges about them (#137).
+func gitUntrackedCount(ctx context.Context, root string) int {
+	cctx, cancel := context.WithTimeout(ctx, reviewGitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "git", "-C", root,
+		"ls-files", "--others", "--exclude-standard")
+	cmd.Env = gitenv.Current()
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
 }
 
 // gitAuthorHistory returns the authors of the last 3 commits touching path,
