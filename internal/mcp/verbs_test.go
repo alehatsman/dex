@@ -16,18 +16,19 @@ var powerTools = []string{
 	// the raw primitives the verbs subsume, demoted in the 5c collapse (#145):
 	// act wraps shell; look routes to grep/read; ask(review) covers worktree review.
 	"shell", "grep", "read", "review_diff", "verify_change",
+	// notes' admin/relate tail folded into the expert lane in the 5d fold (#147);
+	// remember absorbed the everyday write/recall/supersede moves.
+	"notes",
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;
 // they don't need an embedder or chat model, so a lean stubServer advertises
-// them regardless of DEX_EXPERT. notes joined this lane in #548 — persistent
-// memory needs no models and is useless if the agent can't write it.
-// ask is default when no embed (lean); repo_map/trace/locate moved to expert.
-// look is the everyday exact-fetch verb that routes symbol→trace, path:line→
-// locate, path→read, /regex/→grep (#143). The 5c collapse (#145) demoted the
-// raw primitives (shell/grep/read/review_diff/verify_change) to expert, so the
-// default surface is now the four verbs + notes.
-var defaultVerbs = []string{"look", "ask", "notes", "act", "remember"}
+// them regardless of DEX_EXPERT. After the 5c collapse (#145, raw primitives →
+// expert) and the 5d fold (#147, notes' admin tail → expert; remember absorbed
+// write/recall/supersede), the default surface is the pure four verbs. look is
+// the exact-fetch verb (symbol→trace, path:line→locate, path→read, /regex/→grep);
+// act runs (wraps shell); ask degrades to BM25 when no embedder is wired.
+var defaultVerbs = []string{"look", "ask", "act", "remember"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

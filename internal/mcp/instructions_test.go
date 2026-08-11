@@ -12,12 +12,12 @@ import (
 // instructionTools are the tool names ServerInstructions() steers agents
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
-// Everyday tools only. Power lanes (shell, grep, read, review_diff,
-// verify_change, search, trace, locate, smells, …) are mentioned in the
-// instructions but gated behind DEX_EXPERT after the 5c collapse (#145), so
-// they are not required to be registered on the default surface — not listed here.
+// Everyday tools only — the pure four verbs after the 5d fold (#147). Power
+// lanes (notes, shell, grep, read, review_diff, verify_change, search, trace,
+// locate, smells, …) are mentioned in the instructions but gated behind
+// DEX_EXPERT, so they are not required on the default surface — not listed here.
 var instructionTools = []string{
-	"ask", "look", "act", "remember", "notes",
+	"ask", "look", "act", "remember",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the

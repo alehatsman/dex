@@ -94,75 +94,6 @@
       }
     },
     {
-      "name": "notes",
-      "additionalProperties": false,
-      "required": [
-        "action"
-      ],
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "archetype": {
-          "type": "string"
-        },
-        "body": {
-          "type": "string"
-        },
-        "confidence": {
-          "type": "number"
-        },
-        "diagram": {
-          "type": "boolean"
-        },
-        "evidence": {
-          "type": "boolean"
-        },
-        "gc_decay_per_day": {
-          "type": "number"
-        },
-        "gc_floor": {
-          "type": "number"
-        },
-        "gc_jaccard_merge": {
-          "type": "number"
-        },
-        "gc_max_facts": {
-          "type": "integer"
-        },
-        "id": {
-          "type": "integer"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "relate_from": {
-          "type": "integer"
-        },
-        "relate_kind": {
-          "type": "string"
-        },
-        "relate_to": {
-          "type": "integer"
-        },
-        "scope": {
-          "type": "string"
-        },
-        "supersedes_id": {
-          "type": "integer"
-        },
-        "valid_until": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "remember",
       "additionalProperties": false,
       "properties": {
@@ -183,6 +114,9 @@
         },
         "scope": {
           "type": "string"
+        },
+        "supersedes": {
+          "type": "integer"
         }
       }
     }
@@ -661,6 +595,9 @@
         },
         "scope": {
           "type": "string"
+        },
+        "supersedes": {
+          "type": "integer"
         }
       }
     },
@@ -1029,75 +966,6 @@
       }
     },
     {
-      "name": "notes",
-      "additionalProperties": false,
-      "required": [
-        "action"
-      ],
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "archetype": {
-          "type": "string"
-        },
-        "body": {
-          "type": "string"
-        },
-        "confidence": {
-          "type": "number"
-        },
-        "diagram": {
-          "type": "boolean"
-        },
-        "evidence": {
-          "type": "boolean"
-        },
-        "gc_decay_per_day": {
-          "type": "number"
-        },
-        "gc_floor": {
-          "type": "number"
-        },
-        "gc_jaccard_merge": {
-          "type": "number"
-        },
-        "gc_max_facts": {
-          "type": "integer"
-        },
-        "id": {
-          "type": "integer"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "relate_from": {
-          "type": "integer"
-        },
-        "relate_kind": {
-          "type": "string"
-        },
-        "relate_to": {
-          "type": "integer"
-        },
-        "scope": {
-          "type": "string"
-        },
-        "supersedes_id": {
-          "type": "integer"
-        },
-        "valid_until": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "remember",
       "additionalProperties": false,
       "properties": {
@@ -1118,6 +986,9 @@
         },
         "scope": {
           "type": "string"
+        },
+        "supersedes": {
+          "type": "integer"
         }
       }
     }
