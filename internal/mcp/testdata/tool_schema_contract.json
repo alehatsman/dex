@@ -334,33 +334,6 @@
       }
     },
     {
-      "name": "search",
-      "additionalProperties": false,
-      "required": [
-        "query"
-      ],
-      "properties": {
-        "exclude": {
-          "type": "array|null"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "languages": {
-          "type": "array|null"
-        },
-        "path_glob": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "shell",
       "additionalProperties": false,
       "required": [

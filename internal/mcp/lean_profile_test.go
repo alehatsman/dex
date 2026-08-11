@@ -3,17 +3,13 @@ package mcp
 import (
 	"context"
 	"testing"
-	"time"
-
-	"github.com/alehatsman/dex/internal/embed"
 )
 
-// embedBackedTools require a query-time embedder. Under the lean profile
-// (DEX_EMBED_ENGINE=none → nil EmbedClient) they must NOT be advertised — the
-// capability-derived exposure contract of #283/#290.
-var embedBackedTools = []string{
-	"search",
-}
+// Note: since #142 no embedder-backed tool lives on the everyday surface —
+// `search` moved to the DEX_EXPERT power lane (everyday concept-search is covered
+// by ask(behavior_search), which degrades to BM25). The embedder-derived exposure
+// contract (#283/#290) is now tested at the expert tier in TestClonesSimilarGating
+// (clones/similar/search appear iff an embedder is wired AND DEX_EXPERT is set).
 
 // zeroInferenceTools work with no embedder at all (ripgrep, the pre-computed
 // graph behind trace — including trace --dir impact, and the ask router which
@@ -44,40 +40,21 @@ func listToolNames(t *testing.T, srv *Server) map[string]bool {
 	return names
 }
 
-// TestLeanProfileOmitsSemanticTools proves the lean profile: with no embedder
-// wired, the embedding-backed tools disappear from the advertised surface while
-// the zero-inference lanes (and the degrading `ask` router) remain.
-func TestLeanProfileOmitsSemanticTools(t *testing.T) {
+// TestLeanProfileKeepsZeroInferenceTools proves the everyday surface degrades
+// gracefully: with no embedder wired, the zero-inference lanes and the (BM25-
+// degrading) `ask` router remain advertised. Since #142 no embedder-backed tool
+// lives on the everyday surface, so there is nothing to assert *omitted* here —
+// the embedder-derived exposure contract now lives in TestClonesSimilarGating.
+func TestLeanProfileKeepsZeroInferenceTools(t *testing.T) {
 	srv := stubServer(t) // stubServer wires no EmbedClient → lean profile
 	if srv.EmbedClient != nil {
 		t.Fatal("stubServer unexpectedly has an EmbedClient; test assumes lean (nil)")
 	}
 
 	names := listToolNames(t, srv)
-	for _, n := range embedBackedTools {
-		if names[n] {
-			t.Errorf("lean profile advertised embedding-backed tool %q; want it omitted", n)
-		}
-	}
 	for _, n := range zeroInferenceTools {
 		if !names[n] {
 			t.Errorf("lean profile omitted zero-inference tool %q; want it advertised", n)
-		}
-	}
-}
-
-// TestEmbedderAvailableExposesSemanticTools is the positive control: with an
-// embedder wired, the embedding-backed tools are advertised.
-func TestEmbedderAvailableExposesSemanticTools(t *testing.T) {
-	srv := stubServer(t)
-	// A non-nil embedder is all the gate checks; the endpoint is never dialed
-	// during ListTools, so an unused address is fine.
-	srv.EmbedClient = embed.New("http://127.0.0.1:0", "fake", 16, 200*time.Millisecond)
-
-	names := listToolNames(t, srv)
-	for _, n := range embedBackedTools {
-		if !names[n] {
-			t.Errorf("embedder available but embedding-backed tool %q not advertised", n)
 		}
 	}
 }

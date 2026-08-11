@@ -50,17 +50,16 @@ Primary workflow (coding tasks):
 5. verify_change(staged) — find and run the right tests.
 
 Tool mapping (use these instead of native):
-- ask(question)        instead of reading files blindly — a routed evidence pack (semantic + symbol + graph) for a task or question
-- search(query)        instead of Grep/rg for concept/intent searches
+- ask(question)        instead of Grep/rg for concept searches or reading files blindly — a routed evidence pack (semantic + symbol + graph) for a task or question
 - trace(symbol)        instead of manual cross-ref tracing — callers/callees/path/impact
 - read(path)           instead of Read for large files (signatures + summaries)
 - shell(command)       instead of Bash for shell commands (compressed output)
 - grep(pattern)        instead of rg for exact regex matches
 - notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
-Power lanes (deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. For review/audit/architecture work, use review_diff or enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
+Power lanes (search, deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. search returns raw ranked hits with the full scoring breakdown when ask's fused pack isn't enough. For review/audit/architecture work, use review_diff or enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__search,mcp__dex__grep,mcp__dex__read" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__grep,mcp__dex__read" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -910,18 +909,6 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 // registerEverydayTools wires the default verb surface (#125): the lanes
 // everyday coding work needs, gated only by embedder availability.
 func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
-	if embedAvailable {
-		addTool(srv, &sdk.Tool{
-			Name:        "search",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Hybrid semantic + BM25 search. Use when brief is overkill and you need raw " +
-				"ranked hits for a specific query. Identifier tokens (CamelCase, snake_case, qualified names) " +
-				"are automatically looked up by exact symbol name and fused via Reciprocal Rank Fusion — no " +
-				"separate lookup call needed. Supports exclude list, 'languages', and 'path_glob' filters. " +
-				"On error: 'no-index' (run dex index first), 'embedding-service-unreachable' (fall back to grep), or 'ok'."),
-		}, h.search)
-	}
-
 	addTool(srv, &sdk.Tool{
 		Name:        "trace",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
@@ -1105,6 +1092,23 @@ func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) strin
 // registerExpertTools wires the power lanes behind DEX_EXPERT (#125):
 // deps/graph/refactor/quality tools kept off the everyday surface.
 func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
+	if embedAvailable {
+		// Raw ranked hits with the full scoring breakdown (bm25/rrf/lane
+		// scores). Everyday concept-search is covered by ask(behavior_search);
+		// this power lane exposes the underlying ranking for debugging and
+		// precise, filtered queries (#142, demoted from the everyday surface).
+		addTool(srv, &sdk.Tool{
+			Name:        "search",
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+			Description: td("Hybrid semantic + BM25 search — raw ranked hits with the full scoring breakdown. " +
+				"For everyday concept-search prefer ask (it routes behavior_search and fuses the same lanes); reach " +
+				"for search when you need the raw ranking or precise filters. Identifier tokens (CamelCase, " +
+				"snake_case, qualified names) are automatically looked up by exact symbol name and fused via " +
+				"Reciprocal Rank Fusion — no separate lookup call needed. Supports exclude list, 'languages', and " +
+				"'path_glob' filters. On error: 'no-index' (run dex index first), 'embedding-service-unreachable' " +
+				"(fall back to grep), or 'ok'."),
+		}, h.search)
+	}
 	// lookup is not a standalone tool — `find` already fuses exact
 	// symbol-name hits via RRF, and `ask` detects identifiers and runs
 	// the same lookup automatically. The findSymbol handler stays (it
