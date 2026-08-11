@@ -28,6 +28,36 @@
       }
     },
     {
+      "name": "ask",
+      "additionalProperties": false,
+      "required": [
+        "question"
+      ],
+      "properties": {
+        "answer_style": {
+          "type": "string"
+        },
+        "expand": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "no_inline": {
+          "type": "boolean"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        }
+      }
+    },
+    {
       "name": "brief",
       "additionalProperties": false,
       "required": [
