@@ -400,14 +400,18 @@ func TestReviewWorktree(t *testing.T) {
 	}
 }
 
-// TestReviewInDefaultSurface guards that review_diff (the review MCP tool)
-// ships in the everyday tool surface (not behind DEX_EXPERT) — it's a headline
-// review verb.
-func TestReviewInDefaultSurface(t *testing.T) {
+// TestReviewIsExpertGated guards the 5c collapse (#145): review_diff is the
+// targeted PR/branch/ref review escape hatch, gated behind DEX_EXPERT — the
+// everyday worktree review is ask("review my changes") (#144). Absent from the
+// default surface, present once expert is on.
+func TestReviewIsExpertGated(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "")
-	names := listToolNames(t, stubServer(t))
-	if !names["review_diff"] {
-		t.Error("default surface omitted verb \"review_diff\"; want it advertised")
+	if listToolNames(t, stubServer(t))["review_diff"] {
+		t.Error("default surface advertised review_diff; want it gated behind DEX_EXPERT")
+	}
+	t.Setenv("DEX_EXPERT", "1")
+	if !listToolNames(t, stubServer(t))["review_diff"] {
+		t.Error("DEX_EXPERT=1 but review_diff not advertised")
 	}
 }
 

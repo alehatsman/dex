@@ -11,16 +11,18 @@ import (
 // contract (#283/#290) is now tested at the expert tier in TestClonesSimilarGating
 // (clones/similar/search appear iff an embedder is wired AND DEX_EXPERT is set).
 
-// zeroInferenceTools work with no embedder at all (ripgrep, the pre-computed
-// graph behind trace — including trace --dir impact, and the ask router which
-// degrades to BM25+symbol lanes). They are part of the default verb surface and
-// must always be advertised, lean or not. (repo_map is expert-only; exact-symbol
-// lookup has no standalone tool since #685 — search fuses it via RRF.)
+// zeroInferenceTools work with no embedder at all (the ask router degrades to
+// BM25+symbol lanes; look routes to grep/read over the pre-computed index; act
+// runs shell). They are the default verb surface and must always be advertised,
+// lean or not. After the 5c collapse (#145) the raw grep primitive moved to
+// expert — its lean-mode coverage is now via look("/regex/"). (repo_map is
+// expert-only; exact-symbol lookup has no standalone tool since #685.)
 var zeroInferenceTools = []string{
-	"grep",
 	"ask",
-	"look",  // exact-fetch verb (symbol→trace, path:line→locate, path→read, /re/→grep); no embedder needed
-	"notes", // persistent memory, no embedder needed; default lane since #548
+	"look",     // exact-fetch verb (symbol→trace, path:line→locate, path→read, /re/→grep); no embedder needed
+	"act",      // run verb (wraps shell); no embedder needed
+	"remember", // memory verb, no embedder needed
+	"notes",    // persistent memory, no embedder needed; default lane since #548
 }
 
 func listToolNames(t *testing.T, srv *Server) map[string]bool {

@@ -58,36 +58,6 @@
       }
     },
     {
-      "name": "grep",
-      "additionalProperties": false,
-      "required": [
-        "pattern"
-      ],
-      "properties": {
-        "context": {
-          "type": "integer"
-        },
-        "ext": {
-          "type": "string"
-        },
-        "fixed": {
-          "type": "boolean"
-        },
-        "max_results": {
-          "type": "integer"
-        },
-        "path": {
-          "type": "string"
-        },
-        "pattern": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "look",
       "additionalProperties": false,
       "required": [
@@ -193,69 +163,6 @@
       }
     },
     {
-      "name": "read",
-      "additionalProperties": false,
-      "properties": {
-        "budget_tokens": {
-          "type": "integer"
-        },
-        "cache_layout": {
-          "type": "string"
-        },
-        "ccr_hash": {
-          "type": "string"
-        },
-        "dedup": {
-          "type": "boolean|null"
-        },
-        "end_line": {
-          "type": "integer"
-        },
-        "etag": {
-          "type": "string"
-        },
-        "expand": {
-          "type": "string"
-        },
-        "focus": {
-          "type": "string"
-        },
-        "handle": {
-          "type": "string"
-        },
-        "max_tokens": {
-          "type": "integer"
-        },
-        "mode": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        },
-        "paths": {
-          "type": "array|null"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "slice": {
-          "type": "string"
-        },
-        "start_line": {
-          "type": "integer"
-        },
-        "task": {
-          "type": "string"
-        },
-        "temperature": {
-          "type": "number"
-        }
-      }
-    },
-    {
       "name": "remember",
       "additionalProperties": false,
       "properties": {
@@ -276,87 +183,6 @@
         },
         "scope": {
           "type": "string"
-        }
-      }
-    },
-    {
-      "name": "review_diff",
-      "additionalProperties": false,
-      "properties": {
-        "base": {
-          "type": "string"
-        },
-        "branch": {
-          "type": "string"
-        },
-        "compact": {
-          "type": "boolean"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "pr": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "worktree": {
-          "type": "boolean"
-        }
-      }
-    },
-    {
-      "name": "shell",
-      "additionalProperties": false,
-      "required": [
-        "command"
-      ],
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "expect": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "boolean"
-        },
-        "timeout_secs": {
-          "type": "integer"
-        }
-      }
-    },
-    {
-      "name": "verify_change",
-      "additionalProperties": false,
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        },
-        "timeout_secs": {
-          "type": "integer"
         }
       }
     }
@@ -1167,36 +993,6 @@
       }
     },
     {
-      "name": "grep",
-      "additionalProperties": false,
-      "required": [
-        "pattern"
-      ],
-      "properties": {
-        "context": {
-          "type": "integer"
-        },
-        "ext": {
-          "type": "string"
-        },
-        "fixed": {
-          "type": "boolean"
-        },
-        "max_results": {
-          "type": "integer"
-        },
-        "path": {
-          "type": "string"
-        },
-        "pattern": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "look",
       "additionalProperties": false,
       "required": [
@@ -1302,69 +1098,6 @@
       }
     },
     {
-      "name": "read",
-      "additionalProperties": false,
-      "properties": {
-        "budget_tokens": {
-          "type": "integer"
-        },
-        "cache_layout": {
-          "type": "string"
-        },
-        "ccr_hash": {
-          "type": "string"
-        },
-        "dedup": {
-          "type": "boolean|null"
-        },
-        "end_line": {
-          "type": "integer"
-        },
-        "etag": {
-          "type": "string"
-        },
-        "expand": {
-          "type": "string"
-        },
-        "focus": {
-          "type": "string"
-        },
-        "handle": {
-          "type": "string"
-        },
-        "max_tokens": {
-          "type": "integer"
-        },
-        "mode": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        },
-        "paths": {
-          "type": "array|null"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "slice": {
-          "type": "string"
-        },
-        "start_line": {
-          "type": "integer"
-        },
-        "task": {
-          "type": "string"
-        },
-        "temperature": {
-          "type": "number"
-        }
-      }
-    },
-    {
       "name": "remember",
       "additionalProperties": false,
       "properties": {
@@ -1385,87 +1118,6 @@
         },
         "scope": {
           "type": "string"
-        }
-      }
-    },
-    {
-      "name": "review_diff",
-      "additionalProperties": false,
-      "properties": {
-        "base": {
-          "type": "string"
-        },
-        "branch": {
-          "type": "string"
-        },
-        "compact": {
-          "type": "boolean"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "pr": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "worktree": {
-          "type": "boolean"
-        }
-      }
-    },
-    {
-      "name": "shell",
-      "additionalProperties": false,
-      "required": [
-        "command"
-      ],
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "expect": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "boolean"
-        },
-        "timeout_secs": {
-          "type": "integer"
-        }
-      }
-    },
-    {
-      "name": "verify_change",
-      "additionalProperties": false,
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        },
-        "timeout_secs": {
-          "type": "integer"
         }
       }
     }

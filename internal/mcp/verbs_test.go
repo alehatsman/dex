@@ -13,6 +13,9 @@ var powerTools = []string{
 	"plan_rename", "rehearse_patch", "check",
 	"repo_map",
 	"trace", "locate", // demoted from the everyday surface in #143
+	// the raw primitives the verbs subsume, demoted in the 5c collapse (#145):
+	// act wraps shell; look routes to grep/read; ask(review) covers worktree review.
+	"shell", "grep", "read", "review_diff", "verify_change",
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;
@@ -21,8 +24,10 @@ var powerTools = []string{
 // memory needs no models and is useless if the agent can't write it.
 // ask is default when no embed (lean); repo_map/trace/locate moved to expert.
 // look is the everyday exact-fetch verb that routes symbol→trace, path:line→
-// locate, path→read, /regex/→grep (#143).
-var defaultVerbs = []string{"look", "ask", "grep", "notes", "act", "remember"}
+// locate, path→read, /regex/→grep (#143). The 5c collapse (#145) demoted the
+// raw primitives (shell/grep/read/review_diff/verify_change) to expert, so the
+// default surface is now the four verbs + notes.
+var defaultVerbs = []string{"look", "ask", "notes", "act", "remember"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off
