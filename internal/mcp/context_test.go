@@ -485,7 +485,7 @@ func TestContextRouterEmptyQuestionRendersMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := codemap.RenderOrient(AdaptCommunities(comm.Communities), codemap.OrientExtras{Entrypoints: comm.Entrypoints, ImportEdges: CodemapImportEdges(comm.ImportEdges), Externals: comm.Externals, Scale: CodemapScale(comm.Scale)}, codemap.DefaultL0Budget, codemap.DefaultL1Budget); out.Map != want {
+	if want := codemap.RenderOrient(AdaptCommunities(comm.Communities), codemap.OrientExtras{Entrypoints: comm.Entrypoints, Commands: ExtractProjectCommands(comm.Project), ImportEdges: CodemapImportEdges(comm.ImportEdges), Externals: comm.Externals, Scale: CodemapScale(comm.Scale)}, codemap.DefaultL0Budget, codemap.DefaultL1Budget); out.Map != want {
 		t.Errorf("out.Map diverges from codemap.RenderOrient:\ngot:\n%s\nwant:\n%s", out.Map, want)
 	}
 }
