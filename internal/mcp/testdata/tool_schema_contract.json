@@ -103,6 +103,42 @@
       }
     },
     {
+      "name": "look",
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ],
+      "properties": {
+        "context": {
+          "type": "integer"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    {
       "name": "notes",
       "additionalProperties": false,
       "required": [
@@ -637,6 +673,42 @@
           "type": "string"
         },
         "symbol": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "look",
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ],
+      "properties": {
+        "context": {
+          "type": "integer"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "to": {
           "type": "string"
         }
       }
@@ -1231,6 +1303,42 @@
           "type": "string"
         },
         "symbol": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "look",
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ],
+      "properties": {
+        "context": {
+          "type": "integer"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "to": {
           "type": "string"
         }
       }
