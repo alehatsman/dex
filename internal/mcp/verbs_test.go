@@ -19,7 +19,7 @@ var powerTools = []string{
 // them regardless of DEX_EXPERT. notes joined this lane in #548 — persistent
 // memory needs no models and is useless if the agent can't write it.
 // ask is default when no embed (lean); repo_map moved to expert.
-var defaultVerbs = []string{"trace", "ask", "grep", "notes"}
+var defaultVerbs = []string{"trace", "ask", "grep", "notes", "act", "remember"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

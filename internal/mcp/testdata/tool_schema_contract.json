@@ -1,6 +1,33 @@
 {
   "default": [
     {
+      "name": "act",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "expect": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "boolean"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    },
+    {
       "name": "brief",
       "additionalProperties": false,
       "required": [
@@ -208,6 +235,30 @@
       }
     },
     {
+      "name": "remember",
+      "additionalProperties": false,
+      "properties": {
+        "archetype": {
+          "type": "string"
+        },
+        "fact": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        }
+      }
+    },
+    {
       "name": "review_diff",
       "additionalProperties": false,
       "properties": {
@@ -344,6 +395,33 @@
     }
   ],
   "expert": [
+    {
+      "name": "act",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "expect": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "boolean"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    },
     {
       "name": "ask",
       "additionalProperties": false,
@@ -755,6 +833,30 @@
       }
     },
     {
+      "name": "remember",
+      "additionalProperties": false,
+      "properties": {
+        "archetype": {
+          "type": "string"
+        },
+        "fact": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        }
+      }
+    },
+    {
       "name": "repo_map",
       "additionalProperties": false,
       "properties": {
@@ -1023,6 +1125,33 @@
   ],
   "lean": [
     {
+      "name": "act",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "expect": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "boolean"
+        },
+        "timeout_secs": {
+          "type": "integer"
+        }
+      }
+    },
+    {
       "name": "ask",
       "additionalProperties": false,
       "required": [
@@ -1235,6 +1364,30 @@
         },
         "temperature": {
           "type": "number"
+        }
+      }
+    },
+    {
+      "name": "remember",
+      "additionalProperties": false,
+      "properties": {
+        "archetype": {
+          "type": "string"
+        },
+        "fact": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
         }
       }
     },
