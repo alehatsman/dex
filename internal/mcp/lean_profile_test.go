@@ -19,7 +19,7 @@ import (
 var zeroInferenceTools = []string{
 	"grep",
 	"ask",
-	"trace",
+	"look",  // exact-fetch verb (symbol→trace, path:line→locate, path→read, /re/→grep); no embedder needed
 	"notes", // persistent memory, no embedder needed; default lane since #548
 }
 

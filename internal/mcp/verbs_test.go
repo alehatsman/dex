@@ -12,14 +12,17 @@ var powerTools = []string{
 	"clusters", "routes", "smells", "status", "session",
 	"plan_rename", "rehearse_patch", "check",
 	"repo_map",
+	"trace", "locate", // demoted from the everyday surface in #143
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;
 // they don't need an embedder or chat model, so a lean stubServer advertises
 // them regardless of DEX_EXPERT. notes joined this lane in #548 — persistent
 // memory needs no models and is useless if the agent can't write it.
-// ask is default when no embed (lean); repo_map moved to expert.
-var defaultVerbs = []string{"trace", "ask", "grep", "notes", "act", "remember"}
+// ask is default when no embed (lean); repo_map/trace/locate moved to expert.
+// look is the everyday exact-fetch verb that routes symbol→trace, path:line→
+// locate, path→read, /regex/→grep (#143).
+var defaultVerbs = []string{"look", "ask", "grep", "notes", "act", "remember"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

@@ -44,20 +44,20 @@ func ServerInstructions() string {
 
 Primary workflow (coding tasks):
 1. ask(question) — START HERE for any coding task or question. Routes intent and returns a ranked evidence pack + next_action. Pass intent=assemble for a task-start working set (ranked files, symbols, and the local rules that govern them).
-2. read/locate — only for missing exact details after ask.
+2. look/read — only for missing exact details after ask.
 3. edit — your job, not dex's.
 4. review_diff(staged) — inspect what you changed.
 5. verify_change(staged) — find and run the right tests.
 
 Tool mapping (use these instead of native):
 - ask(question)        instead of Grep/rg for concept searches or reading files blindly — a routed evidence pack (semantic + symbol + graph) for a task or question
-- trace(symbol)        instead of manual cross-ref tracing — callers/callees/path/impact
+- look(target)         instead of manual navigation — a symbol → its callers, a path:line → orientation, a path → read, a /regex/ → grep
 - read(path)           instead of Read for large files (signatures + summaries)
 - shell(command)       instead of Bash for shell commands (compressed output)
 - grep(pattern)        instead of rg for exact regex matches
 - notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
-Power lanes (search, deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. search returns raw ranked hits with the full scoring breakdown when ask's fused pack isn't enough. For review/audit/architecture work, use review_diff or enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
+Power lanes (search, trace, locate, deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. search returns raw ranked hits with the full scoring breakdown, and trace walks the call graph (callers/callees/path/impact), when ask's fused pack or look's shape-routing isn't enough. For review/audit/architecture work, use review_diff or enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
 
 IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__grep,mcp__dex__read" before first use.`
 }
@@ -909,49 +909,6 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 // registerEverydayTools wires the default verb surface (#125): the lanes
 // everyday coding work needs, gated only by embedder availability.
 func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
-	addTool(srv, &sdk.Tool{
-		Name:        "trace",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
-			"who calls it), 'callees' (what it calls), 'path' (shortest call route to the `to` symbol), or " +
-			"'impact' (transitive caller blast-radius up to max_depth (default 3): every reachable function with " +
-			"its hop depth + PageRank, a risk tier, and `tests_to_run` — the sibling tests of the blast-radius " +
-			"files, so change→verify is one call (#654)). " +
-			"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
-			"recall, so an empty result there is not proof of none — verify with grep. Non-empty non-Go " +
-			"results are tagged `recall:partial` (callers/callees also fold a grep sweep into `grep_hits`; " +
-			"impact just flags the radius as possibly larger). TypeScript additionally resolves constructor-DI " +
-			"dispatch — `this.dep.method()` binds to the injected type's method (#85). For a Go method that " +
-			"implements a project interface, callers (and impact) also include the INTERFACE-dispatch call sites " +
-			"(calls through the interface value), each tagged with `via` naming the interface method — so dynamic " +
-			"dispatch isn't missed (#604). Accepts a bare name ('Foo'), " +
-			"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
-			"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
-	}, traceHandler(h))
-
-	// impact is not a standalone tool — `trace --dir impact` is the single
-	// call-graph entry point (#684, folded like callers/callees/path #575).
-
-	// locate is in the default lane (#636 / GitHub #65 S1): one-call
-	// orientation around a code location. It composes the everyday lanes
-	// (resolve → callers → tests → nearest doc → churn → notes) that an
-	// agent otherwise stitches together by hand dozens of times a session.
-	addTool(srv, &sdk.Tool{
-		Name:        "locate",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("One-call orientation around a code location. Give any one of `ref` " +
-			"('path:line'), `symbol` (a name), or `frame` (a raw stack-trace line) and locate resolves " +
-			"the enclosing symbol, then returns its callers (+ risk tier), sibling test files, the nearest " +
-			"doc (CLAUDE.md/doc.go/README.md walking up), the file's last commit + author, and related " +
-			"project notes — in one response. Pass `issues: true` to also list matching open GitHub issues " +
-			"via `gh` (best-effort). " +
-			"To batch-verify many cited 'file:line[:symbol]' locations in one call (e.g. confirm citations " +
-			"from notes/memory still resolve), use the `check` verb instead. " +
-			"Pure composition over the index; needs no chat model. Degrades cleanly: " +
-			"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
-			"Reach for locate when you already have a concrete path:line, symbol, or panic frame to orient on — " +
-			"ask remains the primary entry point for open-ended questions."),
-	}, h.locate)
 
 	// review is in the default lane (#639 / GitHub #65 S2): per-hunk PR
 	// intelligence. Code review is delta-shaped while every other verb is
@@ -1109,6 +1066,49 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 				"(fall back to grep), or 'ok'."),
 		}, h.search)
 	}
+
+	// trace + locate: the call-graph and orientation lanes. Demoted from the
+	// everyday surface (#143) — everyday agents reach them through `look`
+	// (a bare symbol → trace callers, a path:line → locate) and through
+	// ask(intent=callers|callees|symbol_lookup|orient). Kept here as direct
+	// power lanes for path/impact and precise queries.
+	addTool(srv, &sdk.Tool{
+		Name:        "trace",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Walk the static call graph from a symbol. `direction`: 'callers' (default — " +
+			"who calls it), 'callees' (what it calls), 'path' (shortest call route to the `to` symbol), or " +
+			"'impact' (transitive caller blast-radius up to max_depth (default 3): every reachable function with " +
+			"its hop depth + PageRank, a risk tier, and `tests_to_run` — the sibling tests of the blast-radius " +
+			"files, so change→verify is one call (#654)). " +
+			"Go edges are type-resolved; Python/JS/TS/Rust/Java are name-based (tree-sitter) with incomplete " +
+			"recall, so an empty result there is not proof of none — verify with grep. Non-empty non-Go " +
+			"results are tagged `recall:partial` (callers/callees also fold a grep sweep into `grep_hits`; " +
+			"impact just flags the radius as possibly larger). TypeScript additionally resolves constructor-DI " +
+			"dispatch — `this.dep.method()` binds to the injected type's method (#85). For a Go method that " +
+			"implements a project interface, callers (and impact) also include the INTERFACE-dispatch call sites " +
+			"(calls through the interface value), each tagged with `via` naming the interface method — so dynamic " +
+			"dispatch isn't missed (#604). Accepts a bare name ('Foo'), " +
+			"receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer'). " +
+			"Returns 'no-graph' when calls edges haven't been indexed (`dex index . --graph=only`)."),
+	}, traceHandler(h))
+
+	addTool(srv, &sdk.Tool{
+		Name:        "locate",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("One-call orientation around a code location. Give any one of `ref` " +
+			"('path:line'), `symbol` (a name), or `frame` (a raw stack-trace line) and locate resolves " +
+			"the enclosing symbol, then returns its callers (+ risk tier), sibling test files, the nearest " +
+			"doc (CLAUDE.md/doc.go/README.md walking up), the file's last commit + author, and related " +
+			"project notes — in one response. Pass `issues: true` to also list matching open GitHub issues " +
+			"via `gh` (best-effort). " +
+			"To batch-verify many cited 'file:line[:symbol]' locations in one call (e.g. confirm citations " +
+			"from notes/memory still resolve), use the `check` verb instead. " +
+			"Pure composition over the index; needs no chat model. Degrades cleanly: " +
+			"callers are empty when the graph isn't indexed; returns 'no-index' / 'not-found' otherwise. " +
+			"Reach for locate when you already have a concrete path:line, symbol, or panic frame to orient on — " +
+			"ask remains the primary entry point for open-ended questions."),
+	}, h.locate)
+
 	// lookup is not a standalone tool — `find` already fuses exact
 	// symbol-name hits via RRF, and `ask` detects identifiers and runs
 	// the same lookup automatically. The findSymbol handler stays (it

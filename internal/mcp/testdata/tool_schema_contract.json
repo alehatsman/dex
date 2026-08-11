@@ -88,30 +88,6 @@
       }
     },
     {
-      "name": "locate",
-      "additionalProperties": false,
-      "properties": {
-        "frame": {
-          "type": "string"
-        },
-        "issues": {
-          "type": "boolean"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "look",
       "additionalProperties": false,
       "required": [
@@ -360,36 +336,6 @@
         },
         "timeout_secs": {
           "type": "integer"
-        }
-      }
-    },
-    {
-      "name": "trace",
-      "additionalProperties": false,
-      "required": [
-        "symbol"
-      ],
-      "properties": {
-        "direction": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "max_depth": {
-          "type": "integer"
-        },
-        "package": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
         }
       }
     },
@@ -1251,30 +1197,6 @@
       }
     },
     {
-      "name": "locate",
-      "additionalProperties": false,
-      "properties": {
-        "frame": {
-          "type": "string"
-        },
-        "issues": {
-          "type": "boolean"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "look",
       "additionalProperties": false,
       "required": [
@@ -1523,36 +1445,6 @@
         },
         "timeout_secs": {
           "type": "integer"
-        }
-      }
-    },
-    {
-      "name": "trace",
-      "additionalProperties": false,
-      "required": [
-        "symbol"
-      ],
-      "properties": {
-        "direction": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "max_depth": {
-          "type": "integer"
-        },
-        "package": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
         }
       }
     },
