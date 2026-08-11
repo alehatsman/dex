@@ -17,7 +17,8 @@ import (
 // the measured baseline: it fails CI when a change *regresses* routing, without
 // pretending the heuristic router is perfect.
 //
-// Measured baseline as of #118: 40/44 = 90.9%. #118 tightened rePackages so a
+// Measured baseline as of #135: 46/50 = 92.0% (six orient cases added, all
+// routed correctly). #118 tightened rePackages so a
 // bare singular "package" (a common noun) no longer shadows architecture —
 // "overview of the graph package" now routes to architecture. The remaining
 // four misroutes are honest vocabulary gaps the gate documents rather than
@@ -30,7 +31,7 @@ import (
 // value. When you add a case, keep the label honest and re-measure.
 const routerAccuracyFloor = 0.88
 
-// routerCorpus spans the seven auto-routable intents (IntentAssemble is
+// routerCorpus spans the eight auto-routable intents (IntentAssemble is
 // explicit-only — never auto-routed — so it is intentionally absent).
 var routerCorpus = []struct {
 	q    string
@@ -83,6 +84,14 @@ var routerCorpus = []struct {
 	{"inlineContent", IntentSymbolLookup},
 	{"PruneIndex", IntentSymbolLookup},
 	{"EnrichGraph", IntentSymbolLookup},
+
+	// ── orient (#135): whole-repo orientation, subject is the repo itself ──
+	{"understand this repo", IntentOrient},
+	{"give me an overview of the codebase", IntentOrient},
+	{"how is this project structured", IntentOrient},
+	{"walk me through the codebase", IntentOrient},
+	{"what does this repo do", IntentOrient},
+	{"orient me", IntentOrient},
 
 	// ── behavior_search: default; how/where/what/when without a structural cue ──
 	{"where do we open the SQLite store", IntentBehaviorSearch},
