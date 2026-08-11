@@ -906,9 +906,11 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 		}
 	}
 	registerBaselineTools(srv, h, td)
-	if !embedAvailable || expert {
-		registerAskTool(srv, h, td)
-	}
+	// ask is the always-on front door (#140, ask-merge slice 1): the intent-routed
+	// entry every profile sees. It was formerly gated to the no-embedder fallback
+	// and the expert lane; the four-verb surface makes it unconditional. It
+	// BM25-falls-back on its own when no embedder is wired.
+	registerAskTool(srv, h, td)
 }
 
 // registerEverydayTools wires the default verb surface (#125): the lanes
@@ -1378,16 +1380,16 @@ func registerBaselineTools(srv *sdk.Server, h toolSurface, td func(string) strin
 	}, h.searchGrep)
 }
 
-// registerAskTool wires the intent router (#125): the BM25 fallback when
-// no embedder is wired, and an expert-only lane when brief is primary.
+// registerAskTool wires the intent router (#125) as the always-on front door
+// (#140): the intent-routed entry every profile sees for understanding code. It
+// BM25-falls-back on its own when no embedder is wired.
 func registerAskTool(srv *sdk.Server, h toolSurface, td func(string) string) {
 	addTool(srv, &sdk.Tool{
 		Name:        "ask",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Intent-routing code-understanding tool. Composes semantic search + symbol lookup " +
-			"+ graph expansion into one call. Primary fallback when embed is unavailable (BM25 + symbol lanes " +
-			"still work). With embed: prefer `brief(task)` for coding tasks; use `ask` for open-ended " +
-			"questions where a context pack is overkill. " +
+		Description: td("Front door for understanding code: ask a question, get an evidence bundle. " +
+			"Routes intent and composes semantic search + symbol lookup + graph expansion into one call " +
+			"(BM25 + symbol lanes still work when no embedder is wired). " +
 			"By default synthesis is OFF — returns evidence bundle + `next_action` (no chat leg, no latency). " +
 			"Pass `answer_style: \"brief\"` to enable a synthesized, citation-bearing prose response. " +
 			"Returns `semantic_hits`, `symbols`, `suggested_reads` with contents inlined by default. " +
