@@ -102,14 +102,26 @@ The correctness bar for any future fold is the same: the demoted tool's distinct
 output must exist on `ask` *before* the tool is removed — proven by dogfood, not
 assumed.
 
-### review output-union (deferred, own slice)
+### review output-union (delivered in 5a, #144)
 
 review is delta-shaped; every other ask intent is state-shaped (`ContextOutput`).
-Routing `ask("review my changes")` into the review composition needs a
-discriminated-union `review{}` field on the response (or a distinct shape) so a
-delta-shaped result isn't crammed into state-shaped `ContextOutput`. This is the
-crux the #83 `isReviewIntent` NL-half retirement waits on. Its own slice; until
-then `review_diff` stays an everyday tool.
+Routing `ask("review my changes")` into the review composition uses a
+discriminated-union `Review *ReviewOutput` field on `ContextOutput` (`json:"review"`):
+when the router picks `IntentReview`, `reviewResponse` (mirroring `orientResponse`)
+short-circuits, calls `s.Review` with a worktree default, and carries the delta in
+`out.Review` while the state lanes stay empty — a delta result is never crammed
+into the state shape. `IntentReview` is auto-routed by a start-anchored `reReview`
+classifier (imperative "review …" head, or "review <possessive> <diff-noun>"),
+checked first so it wins; the negative control "how does the review verb work"
+stays `architecture`. The #83 `isReviewIntent` NL-half was already retired with
+brief in slice 2b — nothing left to remove.
+
+**Selector reach (deliberate, not a gap):** the ask NL path reviews the WORKING
+TREE only (the everyday edit→verify_change→review loop). Targeted PR/branch/ref
+review has no clean NL expression (parsing branch names from prose is brittle;
+"explicit > magic"), so it stays on the structured `review_diff` tool / `dex
+review` CLI. This asymmetry is why 5b (demote `review_diff`) is a genuine
+decision, not the clean structural parity slices 3–4 had.
 
 ## Slice sequencing (each additive, shippable, alias-retaining)
 
@@ -137,8 +149,16 @@ then `review_diff` stays an everyday tool.
    Internal consumers (locate, review) call `traceVerb` directly — unaffected.
    `look` replaces `trace` in the everyday zero-inference verb set; instructions +
    golden updated; `dex trace`/`dex locate` CLI unaffected.
-5. **review output-union.** Discriminated `review{}` shape; route `ask("review …")`;
-   retire the #83 `isReviewIntent` NL half; demote `review_diff`.
+5a. **review output-union (done, #144).** Added `IntentReview` + start-anchored
+   `reReview` classifier; `ContextOutput.Review *ReviewOutput` discriminated-union
+   field; `reviewResponse` short-circuit routing `ask("review my changes")` →
+   worktree review. Router corpus +7 cases (53/57 = 93%, floor 0.88 holds);
+   union-wiring test asserts state lanes stay empty. Purely additive — `review_diff`
+   unchanged. `isReviewIntent` was already gone (2b).
+5b. **Demote `review_diff` → expert (DECISION PENDING).** NOT the clean parity of
+   3–4: ask's NL path covers only the worktree case, so demoting narrows the
+   everyday surface's targeted-review reach (PR/branch/ref → expert + CLI only).
+   Fork surfaced to Aleh rather than silently picked, per the surface-conflict rule.
 6. **Checkpoint.** Re-run both gates (router #9, anti-accretion #10 at ceiling 0),
    dogfood the four-verb surface end-to-end, then decide on final alias cleanup.
 

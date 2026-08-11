@@ -36,13 +36,21 @@ const (
 	// retrieval reuses the default lanes; what differs is that symbol bodies are
 	// inlined by submodular keyword coverage and prose synthesis is suppressed.
 	IntentAssemble = "assemble"
+	// IntentReview (#144, ask-merge slice 5a) routes "review my changes" to the
+	// per-hunk review composition instead of the search lanes — the everyday
+	// review loop (edit → verify_change → review) reached from the four-verb
+	// front door. The result is delta-shaped, so the transport carries it in a
+	// discriminated-union field (ContextOutput.Review) rather than the
+	// state-shaped lanes. The auto path only targets the working tree; targeted
+	// PR/branch/ref review stays on the review_diff tool / `dex review` CLI.
+	IntentReview = "review"
 )
 
 var validIntents = map[string]struct{}{
 	IntentAuto: {}, IntentBehaviorSearch: {}, IntentSymbolLookup: {},
 	IntentCallers: {}, IntentCallees: {}, IntentArchitecture: {},
 	IntentPackageTopology: {}, IntentEditingContext: {}, IntentAssemble: {},
-	IntentOrient: {},
+	IntentOrient: {}, IntentReview: {},
 }
 
 // Identifier detection patterns. Conservative — false positives are
@@ -63,6 +71,15 @@ var (
 	reSnake = regexp.MustCompile(`\b[a-z][a-z0-9_]*_[a-z0-9_]+\b`)
 
 	// Intent keyword regexes for auto routing.
+	// #144: code review. Two strong, narrow signals: (1) an imperative "review"
+	// at the head of the question ("review my changes", "code review this pr",
+	// "please review the diff"), and (2) a "review <possessive> <diff-noun>"
+	// object anywhere. Checked FIRST so it wins outright. It deliberately does
+	// NOT match "how does the review verb work" (subject "how", object not a
+	// diff-noun) — that stays behavior_search. Bare "code" is excluded from the
+	// diff-nouns so "review the code" isn't stolen from behavior_search.
+	reReview = regexp.MustCompile(`(?:^\s*(?:please\s+|can you\s+|could you\s+)?(?:code\s+)?review\b)|` +
+		`\breview (?:my|the|this|these|your) (?:changes?|diffs?|prs?|pull requests?|patch|work|commits?|branch|edits?|changeset)\b`)
 	// #135: whole-repo orientation. Narrow by construction — the subject must be
 	// the repository itself (an explicit repo|repository|codebase|project|code
 	// noun), or a subjectless "orient me" command. This steals only the
@@ -118,6 +135,8 @@ func ResolveIntent(question, intent string) (string, IntentCandidates) {
 
 	q := strings.ToLower(question)
 	switch {
+	case reReview.MatchString(q):
+		return IntentReview, cand
 	case reOrient.MatchString(q):
 		return IntentOrient, cand
 	case reCallers.MatchString(q):

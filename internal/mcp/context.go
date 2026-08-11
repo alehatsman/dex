@@ -35,7 +35,7 @@ import (
 type ContextInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Question    string `json:"question" jsonschema:"free-text question about the codebase (e.g. 'where is filesystem event debouncing handled?', 'how does indexing work?', 'callers of (*Store).Search')"`
-	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context|assemble (default: auto). assemble returns a budget-bounded working set — symbol bodies chosen by submodular keyword coverage, prose synthesis suppressed — instead of a prose answer (#687); the concerns field reports which query concerns the set covers vs drops, so a partial set isn't read as complete (#725)"`
+	Intent      string `json:"intent,omitempty" jsonschema:"force a strategy: auto|behavior_search|symbol_lookup|callers|callees|architecture|package_topology|editing_context|assemble|review (default: auto). review returns a delta-shaped code review of your working-tree changes in the review field (#144); for targeted PR/branch/ref review use the review_diff tool. assemble returns a budget-bounded working set — symbol bodies chosen by submodular keyword coverage, prose synthesis suppressed — instead of a prose answer (#687); the concerns field reports which query concerns the set covers vs drops, so a partial set isn't read as complete (#725)"`
 	K           int    `json:"k,omitempty" jsonschema:"max hits per lane (default 8, max 30)"`
 	NoInline    bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
 	Expand      string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
@@ -275,6 +275,13 @@ type ContextOutput struct {
 	// partial set isn't mistaken for complete — an honest partial beats a
 	// false floor. Populated only for intent=assemble with coverage keys.
 	Concerns *AssembleConcerns `json:"concerns,omitempty"`
+	// Review is the delta-shaped result of intent=review (#144, ask-merge slice
+	// 5a). Code review is a diff-scoped delta, not the state-shaped evidence the
+	// lanes above carry, so it rides its own discriminated-union field: when this
+	// is set the state lanes are empty, and vice versa. Populated only when the
+	// router picks IntentReview ("review my changes"); the auto path reviews the
+	// working tree. Targeted PR/branch/ref review stays on review_diff / the CLI.
+	Review *ReviewOutput `json:"review,omitempty"`
 }
 
 // AssembleConcerns reports the per-concern completeness of an assemble
@@ -432,6 +439,15 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 		// narrow (explicit repo subject); an explicit non-orient intent override
 		// still wins because ResolveIntent honours it first.
 		return s.orientResponse(ctx, in)
+	}
+	if intent == retrieve.IntentReview {
+		// #144: "review my changes" routes to the per-hunk review composition,
+		// not the search lanes. Its result is delta-shaped, so reviewResponse
+		// carries it in the discriminated-union ContextOutput.Review field. The
+		// auto path reviews the working tree (Review's #137 default); targeted
+		// PR/branch/ref review stays on review_diff / `dex review`. An explicit
+		// non-review intent override still wins — ResolveIntent honours it first.
+		return s.reviewResponse(ctx, in)
 	}
 	out := ContextOutput{Project: p.Root, Intent: intent}
 	if hint != "" {
