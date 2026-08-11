@@ -1086,6 +1086,25 @@ func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"On error, returns 'chat-service-unreachable' or 'error'."),
 	}, h.summarize)
 
+	// look is the exact-fetch verb of the four-verb surface (#110): one entry
+	// point for a target you can already name. It classifies `target` and routes
+	// to the right exact lane — a file path → read, a `/regex/` → grep, a symbol →
+	// trace, a `path:line` → locate — so the agent stops guessing which of four
+	// tools to reach for. Added additively; read/grep/trace/locate stay valid as
+	// aliases until the cutover. Where `ask` infers, `look` fetches.
+	addTool(srv, &sdk.Tool{
+		Name:        "look",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Exact fetch for a target you can already name — dex classifies `target` and routes " +
+			"to the right lane: a file path ('internal/mcp/server.go') → read, a `/regex/` ('/func .*Verb/') → " +
+			"grep, a `path:line` ('server.go:829') → locate, anything else → trace the symbol's call graph " +
+			"('NewServer', '(*Server).Run', 'mcp.NewServer'). Pass `kind` (read|grep|trace|locate) to force the " +
+			"lane for an ambiguous target. Lane pass-throughs: `mode` (read), `direction`/`to` (trace), " +
+			"`context`/`fixed` (grep), `k` (result cap). Every result carries `trust: exact` — look never infers; " +
+			"reach for `ask` when you cannot yet name the target. Returns the underlying lane's status " +
+			"(ok / no-index / not-found / no-matches / …) and, after a grep, a `next` step to read the first hit."),
+	}, lookHandler(h))
+
 	if embedAvailable {
 		addTool(srv, &sdk.Tool{
 			Name:        "brief",
