@@ -31,7 +31,7 @@ import (
 // value. When you add a case, keep the label honest and re-measure.
 const routerAccuracyFloor = 0.88
 
-// routerCorpus spans the eight auto-routable intents (IntentAssemble is
+// routerCorpus spans the nine auto-routable intents (IntentAssemble is
 // explicit-only — never auto-routed — so it is intentionally absent).
 var routerCorpus = []struct {
 	q    string
@@ -92,6 +92,17 @@ var routerCorpus = []struct {
 	{"walk me through the codebase", IntentOrient},
 	{"what does this repo do", IntentOrient},
 	{"orient me", IntentOrient},
+
+	// ── review (#144): imperative "review" or "review <possessive> <diff-noun>" ──
+	{"review my changes", IntentReview},
+	{"review the diff", IntentReview},
+	{"code review this pr", IntentReview},
+	{"please review my working tree changes", IntentReview}, // head-imperative alt
+	{"review my staged edits", IntentReview},
+	{"can you review the patch", IntentReview},
+	// negative control: "review" as the SUBJECT of a how-question is architecture,
+	// not an imperative review request — reReview must not over-capture it.
+	{"how does the review verb work", IntentArchitecture},
 
 	// ── behavior_search: default; how/where/what/when without a structural cue ──
 	{"where do we open the SQLite store", IntentBehaviorSearch},

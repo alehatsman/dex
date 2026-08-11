@@ -139,6 +139,29 @@ func (s *Server) Review(ctx context.Context, in ReviewInput) (ReviewOutput, erro
 	return out, err
 }
 
+// reviewResponse routes an intent=review ask ("review my changes") to the
+// per-hunk review composition and wraps its delta-shaped result in the
+// discriminated-union ContextOutput.Review field, so the four-verb front door
+// reaches the everyday review loop without cramming a delta into the
+// state-shaped lanes. Mirrors orientResponse's short-circuit contract (returns
+// a nil CallToolResult; the ask wrapper serializes the ContextOutput). The auto
+// path reviews the working tree via Review's #137 no-selector default; targeted
+// PR/branch/ref review stays on the review_diff tool / `dex review` CLI.
+func (s *Server) reviewResponse(ctx context.Context, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
+	ro, err := s.Review(ctx, ReviewInput{ProjectRoot: in.ProjectRoot, K: in.K})
+	if err != nil {
+		return nil, ContextOutput{Status: "error", Intent: retrieve.IntentReview, Hint: err.Error()}, nil
+	}
+	out := ContextOutput{
+		Status:  ro.Status,
+		Project: ro.Project,
+		Intent:  retrieve.IntentReview,
+		Hint:    ro.Hint,
+		Review:  &ro,
+	}
+	return nil, out, nil
+}
+
 func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewInput) (*sdk.CallToolResult, ReviewOutput, error) {
 	// No selector → review the uncommitted working tree ("review my changes"),
 	// the common unanchored case (#137). Explicit ref/branch/pr still win.

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alehatsman/dex/internal/retrieve"
 )
 
 func TestHunkRisk(t *testing.T) {
@@ -157,6 +159,37 @@ func TestReviewNoSelectorDefaultsToWorktree(t *testing.T) {
 	_, out, _ := s.review(context.Background(), nil, ReviewInput{ProjectRoot: t.TempDir()})
 	if out.Status != "no-index" {
 		t.Errorf("review(empty) = (%q,%q), want no-index (worktree default, not a selector error)", out.Status, out.Hint)
+	}
+}
+
+// TestReviewResponseWrapsUnion asserts the #144 ask-merge slice-5a wiring: an
+// intent=review ask short-circuits to reviewResponse, which carries the
+// delta-shaped ReviewOutput in the discriminated-union ContextOutput.Review
+// field and leaves the state-shaped lanes empty. The no-index temp dir just
+// exercises the wrapping seam (the review composition's own paths are covered
+// by TestReviewIntegration); what matters is that the union is populated, the
+// intent is stamped, and no state lane leaks into a delta result.
+func TestReviewResponseWrapsUnion(t *testing.T) {
+	if got, _ := retrieve.ResolveIntent("review my changes", ""); got != retrieve.IntentReview {
+		t.Fatalf("ResolveIntent(review my changes) = %q, want %q", got, retrieve.IntentReview)
+	}
+	s := &Server{IndexDir: t.TempDir()}
+	_, out, _ := s.reviewResponse(context.Background(), ContextInput{ProjectRoot: t.TempDir()})
+	if out.Intent != retrieve.IntentReview {
+		t.Errorf("intent = %q, want %q", out.Intent, retrieve.IntentReview)
+	}
+	if out.Review == nil {
+		t.Fatal("Review union field is nil; want the delta-shaped result carried here")
+	}
+	if out.Review.Status != "no-index" {
+		t.Errorf("Review.Status = %q, want no-index (worktree default seam)", out.Review.Status)
+	}
+	if out.Status != out.Review.Status {
+		t.Errorf("top-level Status %q should mirror Review.Status %q", out.Status, out.Review.Status)
+	}
+	if len(out.SemanticHits) != 0 || len(out.Symbols) != 0 || len(out.SuggestedReads) != 0 {
+		t.Errorf("state lanes must stay empty for a delta result: hits=%d symbols=%d reads=%d",
+			len(out.SemanticHits), len(out.Symbols), len(out.SuggestedReads))
 	}
 }
 
