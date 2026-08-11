@@ -19,11 +19,11 @@ import (
 // tolerated across the default tool surface. Set to the measured baseline; drive
 // it toward zero as descriptions are cleaned, one tool at a time.
 //
-// Baseline = 1: the `ask` description negotiates with `brief` ("prefer brief for
-// coding tasks; use ask where a context pack is overkill"). That single offense
-// is retired by construction in step 4 (the ask-merge folds brief into an ask
-// intent, so there is no sibling left to negotiate with) — drop this to 0 then.
-const antiAccretionCeiling = 1
+// Baseline = 0: the lone offense (ask's description negotiating with brief) was
+// retired when brief was folded into ask(assemble) and removed (#141). A future
+// change that reintroduces sibling-negotiation phrasing must reword it, not raise
+// this floor without a reviewed reason.
+const antiAccretionCeiling = 0
 
 // siblingNegotiation matches phrasing that only exists because tools compete:
 //   - redirection to a different tool ("use X instead") — anchored on the "use

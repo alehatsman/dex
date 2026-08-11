@@ -211,10 +211,6 @@ func (p projectScoped) refs(ctx context.Context, req *sdk.CallToolRequest, in Re
 	return p.s.refs(ctx, req, in)
 }
 
-func (p projectScoped) brief(ctx context.Context, req *sdk.CallToolRequest, in BriefInput) (*sdk.CallToolResult, BriefOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.brief(ctx, req, in)
-}
 
 func (p projectScoped) indexStatus(ctx context.Context, req *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
 	in.ProjectRoot = p.root

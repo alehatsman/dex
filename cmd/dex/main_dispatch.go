@@ -39,7 +39,6 @@ func dispatchCmd(ctx context.Context, cmd string, args []string) error {
 		"index":          cmdIndexDispatch,
 		"status":         cmdIndexStatus, // top-level alias for `dex index status` (#501)
 		"ask":            cmdAsk,
-		"brief":          cmdBrief,
 		"summarize":      cmdSummarize,
 		"read":           cmdRead,
 		"graph":          cmdGraph,
