@@ -102,6 +102,7 @@ func TestHTTPMCPSession(t *testing.T) {
 // targeted rather than disabled wholesale.
 func TestHTTPMCPShellSchemaAcceptsDescription(t *testing.T) {
 	ctx := context.Background()
+	t.Setenv("DEX_EXPERT", "1") // shell demoted to the expert lane in the 5c collapse (#145)
 	srv := stubServer(t)
 	id, _, projects := oneProjectRegistry(t)
 	ts := startTestHTTPServer(t, srv, RunHTTPOptions{Projects: projects})

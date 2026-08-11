@@ -42,24 +42,24 @@ import (
 func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
-Primary workflow (coding tasks):
-1. ask(question) — START HERE for any coding task or question. Routes intent and returns a ranked evidence pack + next_action. Pass intent=assemble for a task-start working set (ranked files, symbols, and the local rules that govern them).
-2. look/read — only for missing exact details after ask.
+Everyday surface = four verbs (ask · look · act · remember) + notes:
+1. ask(question) — START HERE for any coding task or question. Routes intent and returns a ranked evidence pack + next_action. Pass intent=assemble for a task-start working set (ranked files, symbols, and the local rules that govern them); ask("review my changes") returns a per-hunk review of your working tree.
+2. look(target) — exact fetch once you can name it: a path → read, a /regex/ → grep, a path:line → locate, a symbol → its call graph.
 3. edit — your job, not dex's.
-4. review_diff(staged) — inspect what you changed.
-5. verify_change(staged) — find and run the right tests.
+4. act(command) — run builds/tests/git; compressed output inside the universal envelope.
 
 Tool mapping (use these instead of native):
-- ask(question)        instead of Grep/rg for concept searches or reading files blindly — a routed evidence pack (semantic + symbol + graph) for a task or question
-- look(target)         instead of manual navigation — a symbol → its callers, a path:line → orientation, a path → read, a /regex/ → grep
-- read(path)           instead of Read for large files (signatures + summaries)
-- shell(command)       instead of Bash for shell commands (compressed output)
-- grep(pattern)        instead of rg for exact regex matches
-- notes(action)        instead of re-deriving facts — recall and persist durable project memory
+- ask(question)   instead of Grep/rg for concept searches or reading files blindly — a routed evidence pack (semantic + symbol + graph); ask("review my changes") for a working-tree review
+- look(target)    instead of Read/rg/manual navigation — a path → read, a /regex/ → grep, a path:line → locate, a symbol → callers/callees
+- act(command)    instead of Bash — shell with compressed output in the envelope
+- remember(fact)  instead of re-deriving facts — persist a durable finding (recall via ask; notes for the full record/supersede surface)
 
-Power lanes (search, trace, locate, deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. search returns raw ranked hits with the full scoring breakdown, and trace walks the call graph (callers/callees/path/impact), when ask's fused pack or look's shape-routing isn't enough. For review/audit/architecture work, use review_diff or enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
+Power lanes (gated behind DEX_EXPERT — the verbs above cover everyday work):
+- shell / grep / read — the raw primitives act and look wrap; reach here for the primitive directly
+- review_diff — targeted PR/branch/ref review (ask covers the working tree); verify_change — find and run the tests a change implicates
+- trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / session / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__grep,mcp__dex__read" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__look,mcp__dex__act,mcp__dex__remember,mcp__dex__notes" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -883,11 +883,12 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // (semantic search behind `find`/`ask`) are only registered when
 // embedAvailable is true. With no embedder wired (the lean profile,
 // DEX_EMBED_ENGINE=none), those are omitted entirely and the surface degrades
-// to BM25 (`grep`) + symbol + graph + file lanes; `ask` stays and routes to
-// the non-semantic lanes. `read` is always registered (its structural modes
-// need no chat); only `read mode=summary` needs a chat model and returns
-// status='needs-chat' when chatAvailable is false. When weakModel is true the
-// full tool surface is hidden and only ask, grep, and shell are exposed.
+// to BM25 + symbol + graph + file lanes (reached via `look` and `ask`, which
+// routes to the non-semantic lanes). After the 5c collapse (#145) the always-on
+// floor is the index-free verbs `ask` + `look` (fetch) + `act` (run); the raw
+// primitives they subsume — `shell`, `grep`, `read` — moved to the expert lane.
+// When weakModel is true the full tool surface is hidden and only ask, look, and
+// act are exposed.
 func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
 	_ = chatAvailable // read no longer gates on chat; summary degrades at call time
 	td := func(s string) string { return compressToolDesc(s, descMode) }
@@ -906,45 +907,13 @@ func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable
 	registerAskTool(srv, h, td)
 }
 
-// registerEverydayTools wires the default verb surface (#125): the lanes
-// everyday coding work needs, gated only by embedder availability.
+// registerEverydayTools wires the memory verbs of the four-verb surface (#145):
+// notes + remember. The fetch/run/review primitives that used to live here
+// (read, review_diff, verify_change) demoted to expert once the verbs covered
+// them — act runs, look fetches, ask(review) reviews the working tree. look is
+// the always-on fetch floor, so it moved to registerBaselineTools.
 func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
-
-	// review is in the default lane (#639 / GitHub #65 S2): per-hunk PR
-	// intelligence. Code review is delta-shaped while every other verb is
-	// state-shaped — review composes the diff with callers, tests, churn,
-	// author history, and notes per hunk so the agent spends its budget on
-	// judgment, not context assembly.
-	addTool(srv, &sdk.Tool{
-		Name:        "review_diff",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Per-hunk intelligence for a diff or PR — use this when reviewing changes. " +
-			"Give one of `ref` ('HEAD~3..HEAD' or a single ref vs HEAD), `branch` (what it adds since " +
-			"diverging from the default branch), or `pr` (a GitHub PR number, resolved via `gh`). " +
-			"For each changed hunk review returns the touched symbols, their callers (+ a risk tier from " +
-			"caller blast radius and export status), and related notes; per file it adds sibling tests, the " +
-			"nearest doc, 30-day churn, last commit/author, recent author history, and any notes whose " +
-			"`scope` binds the file (gotcha-on-touch, #645). " +
-			"Pass `compact: true` to drop low-risk hunks. Pure composition over the index; needs no chat " +
-			"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
-			"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
-	}, h.review)
-
-	// verify is in the default lane (#686, epic #683): it closes the agent
-	// loop's missing half — change → verify → learn. Unlike every other query
-	// verb it is NOT read-only (it runs the test command), so no ReadOnlyHint.
-	addTool(srv, &sdk.Tool{
-		Name: "verify_change",
-		Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
-			"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
-			"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
-			"(its own test plus its callers', #654). Resolves changed files → Go packages and runs " +
-			"`go test` over them, routed through the shell pipeline so output is compressed and a failing " +
-			"run stages a `gotcha_candidate` you persist with `notes`. Override the command via `command` " +
-			"or $DEX_VERIFY_CMD with a '{{packages}}' placeholder (e.g. 'go test -tags sqlite_fts5 " +
-			"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
-			"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
-	}, h.verify)
+	_ = embedAvailable // no everyday tool is embed-gated after the 5c collapse
 
 	// notes is in the default lane (#548): persistent project memory is the
 	// highest-leverage saver of repeat exploration, and the read path (facts
@@ -991,59 +960,6 @@ func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"empty query returns top facts by salience). Same store and salience as `notes` (its alias); " +
 			"the admin/relate lanes (gc, export, import, consolidate, pin, relate, review) stay on `notes`."),
 	}, rememberHandler(h))
-
-	addTool(srv, &sdk.Tool{
-		Name:        "read",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Fetch exact source context for a file you already know. " +
-			"Use `brief` first — its `ranked_files` and `suggested_reads` will name the files worth reading. " +
-			"`mode` (default 'full') selects the view: 'full' = raw file content (no LLM, exact bytes); " +
-			"'signatures' = indexed symbols + source lines; 'skeleton' = exported type declarations in full plus " +
-			"function/method signatures with @B<n> body handles (expand one later via expand='@B<n>'); " +
-			"'map' = imports + exported symbols; 'lines:N-M' = raw line slice; " +
-			"'analyze' = a token-cost comparison of every mode plus a recommended mode and NO file content, so you " +
-			"can pick the cheapest sufficient view before paying to read it; its `handle` (#620) lets you analyze " +
-			"many files then lazily expand only the ones you need via read(handle=…, mode=…); " +
-			"'summary' = LLM-generated digest (the only mode needing a chat model — pass `focus` to steer, " +
-			"e.g. 'public API surface'; returns status='needs-chat' when no chat model is wired). " +
-			"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
-			"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
-			"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
-			"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
-			"If the file changed since the last read the server may return status=delta with a compact unified diff " +
-			"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
-			"Pass `task` (your current task from `session`) for automatic compression routing of the raw default. " +
-			"Pass `ref` (a git revision: HEAD~5, v1.0, a sha) to time-travel — read the file AS OF that commit, " +
-			"with mode=full (raw) or mode=signatures (the historical API); the file must still exist now (#644). " +
-			"Any note whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch, #645) — read it before you edit. " +
-			"Pass `slice` to extract a surgical subset of the content without sending the whole file: " +
-			"head:N (first N lines), tail:N (last N lines), range:L1-L2 (1-indexed inclusive), " +
-			"search:PATTERN (RE2 grep with ±3 context lines, groups separated by ---), " +
-			"json_path:EXPR (dot-path JSON extraction, e.g. $.dependencies). " +
-			"Slice composes with handle: the handle resolves to a range first, then slice extracts within it. " +
-			"Pass `ccr_hash` (a hex string from a dex:lc_expand:<hash> recovery marker) to retrieve an archived " +
-			"tool result from the proxy's CCR tee store; `slice` applies to the retrieved blob. " +
-			"On error, returns 'chat-service-unreachable' or 'error'."),
-	}, h.summarize)
-
-	// look is the exact-fetch verb of the four-verb surface (#110): one entry
-	// point for a target you can already name. It classifies `target` and routes
-	// to the right exact lane — a file path → read, a `/regex/` → grep, a symbol →
-	// trace, a `path:line` → locate — so the agent stops guessing which of four
-	// tools to reach for. Added additively; read/grep/trace/locate stay valid as
-	// aliases until the cutover. Where `ask` infers, `look` fetches.
-	addTool(srv, &sdk.Tool{
-		Name:        "look",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Exact fetch for a target you can already name — dex classifies `target` and routes " +
-			"to the right lane: a file path ('internal/mcp/server.go') → read, a `/regex/` ('/func .*Verb/') → " +
-			"grep, a `path:line` ('server.go:829') → locate, anything else → trace the symbol's call graph " +
-			"('NewServer', '(*Server).Run', 'mcp.NewServer'). Pass `kind` (read|grep|trace|locate) to force the " +
-			"lane for an ambiguous target. Lane pass-throughs: `mode` (read), `direction`/`to` (trace), " +
-			"`context`/`fixed` (grep), `k` (result cap). Every result carries `trust: exact` — look never infers; " +
-			"reach for `ask` when you cannot yet name the target. Returns the underlying lane's status " +
-			"(ok / no-index / not-found / no-matches / …) and, after a grep, a `next` step to read the first hit."),
-	}, lookHandler(h))
 }
 
 // registerExpertTools wires the power lanes behind DEX_EXPERT (#125):
@@ -1108,6 +1024,107 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"Reach for locate when you already have a concrete path:line, symbol, or panic frame to orient on — " +
 			"ask remains the primary entry point for open-ended questions."),
 	}, h.locate)
+
+	// The four raw primitives the verbs subsume (#145): shell (act wraps it),
+	// grep + read (look routes /regex/→grep, path→read), and review_diff
+	// (ask("review my changes") covers the everyday worktree case #144 — this is
+	// the targeted ref/branch/pr escape hatch). All index-free, so unconditional.
+	addTool(srv, &sdk.Tool{
+		Name: "shell",
+		Description: td("Execute a shell command and return compressed output. " +
+			"Applies the same compression pipeline as compress_output — collapses build noise, " +
+			"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
+			"so raw command output never hits your context budget. " +
+			"Use raw:true to skip compression. " +
+			"Runs via bash when available (falls back to POSIX sh), so pipefail and bash-only " +
+			"syntax work; override with DEX_SHELL. " +
+			"File-write redirects (> >>) and tee are blocked by default; use the Write tool instead, " +
+			"or set DEX_SHELL_ALLOW_WRITES=1 to permit them. " +
+			"On a non-zero exit whose output matches a known failure signature, the response carries a " +
+			"low-confidence `gotcha_candidate` — confirm it with `notes` (action=add) to persist the pitfall. " +
+			"Timeout: 60 s."),
+	}, h.shellRun)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "grep",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Exact RE2 regex search over indexed project files — no embedding required. " +
+			"Use for literal pattern matches that semantic search misses: cross-cutting symbol references, " +
+			"import paths, string literals, regex-sensitive identifiers. Also the primary search lane when " +
+			"the embedding service is unavailable. " +
+			"Searches the indexed file list when available (respects .gitignore); " +
+			"falls back to walking the project directory and skipping .git/vendor/node_modules. " +
+			"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
+			"Pass `context` (1-10) for surrounding lines (like grep -C). " +
+			"Pass `fixed:true` to match literally (like grep -F) — no escaping needed for foo.bar, arr[i], f(x). " +
+			"Returns 'no-matches' when nothing matches."),
+	}, h.searchGrep)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "read",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Fetch exact source context for a file you already know. " +
+			"Prefer `look(path)` — the fetch verb routes here; use `read` directly for its full mode/slice surface. " +
+			"`mode` (default 'full') selects the view: 'full' = raw file content (no LLM, exact bytes); " +
+			"'signatures' = indexed symbols + source lines; 'skeleton' = exported type declarations in full plus " +
+			"function/method signatures with @B<n> body handles (expand one later via expand='@B<n>'); " +
+			"'map' = imports + exported symbols; 'lines:N-M' = raw line slice; " +
+			"'analyze' = a token-cost comparison of every mode plus a recommended mode and NO file content, so you " +
+			"can pick the cheapest sufficient view before paying to read it; its `handle` (#620) lets you analyze " +
+			"many files then lazily expand only the ones you need via read(handle=…, mode=…); " +
+			"'summary' = LLM-generated digest (the only mode needing a chat model — pass `focus` to steer, " +
+			"e.g. 'public API surface'; returns status='needs-chat' when no chat model is wired). " +
+			"Path must resolve inside project_root. Files larger than 64 KB are truncated. " +
+			"Pass paths[] (up to 10) to read multiple files in one call — all use the same mode. " +
+			"Re-read savings: every response includes `etag` (content hash). On re-reads pass that etag back; " +
+			"if the file is unchanged the server returns status=unchanged — reuse the content already in context. " +
+			"If the file changed since the last read the server may return status=delta with a compact unified diff " +
+			"in Content (saves 40-60% tokens vs re-sending the full file); update your mental model from the diff. " +
+			"Pass `task` (your current task from `session`) for automatic compression routing of the raw default. " +
+			"Pass `ref` (a git revision: HEAD~5, v1.0, a sha) to time-travel — read the file AS OF that commit, " +
+			"with mode=full (raw) or mode=signatures (the historical API); the file must still exist now (#644). " +
+			"Any note whose `scope` binds the file is returned in `scoped_notes` (gotcha-on-touch, #645) — read it before you edit. " +
+			"Pass `slice` to extract a surgical subset of the content without sending the whole file: " +
+			"head:N (first N lines), tail:N (last N lines), range:L1-L2 (1-indexed inclusive), " +
+			"search:PATTERN (RE2 grep with ±3 context lines, groups separated by ---), " +
+			"json_path:EXPR (dot-path JSON extraction, e.g. $.dependencies). " +
+			"Slice composes with handle: the handle resolves to a range first, then slice extracts within it. " +
+			"Pass `ccr_hash` (a hex string from a dex:lc_expand:<hash> recovery marker) to retrieve an archived " +
+			"tool result from the proxy's CCR tee store; `slice` applies to the retrieved blob. " +
+			"On error, returns 'chat-service-unreachable' or 'error'."),
+	}, h.summarize)
+
+	addTool(srv, &sdk.Tool{
+		Name:        "review_diff",
+		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
+		Description: td("Per-hunk intelligence for a diff or PR — the targeted-selector review lane " +
+			"(ask(\"review my changes\") covers the everyday worktree case, #144). " +
+			"Give one of `ref` ('HEAD~3..HEAD' or a single ref vs HEAD), `branch` (what it adds since " +
+			"diverging from the default branch), or `pr` (a GitHub PR number, resolved via `gh`). " +
+			"For each changed hunk review returns the touched symbols, their callers (+ a risk tier from " +
+			"caller blast radius and export status), and related notes; per file it adds sibling tests, the " +
+			"nearest doc, 30-day churn, last commit/author, recent author history, and any notes whose " +
+			"`scope` binds the file (gotcha-on-touch, #645). " +
+			"Pass `compact: true` to drop low-risk hunks. Pure composition over the index; needs no chat " +
+			"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
+			"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
+	}, h.review)
+
+	// verify_change is NOT read-only (it runs the test command), so no ReadOnlyHint.
+	// Demoted to expert (#145) pending #146: today it guesses `go test`; until it
+	// delegates to the detected canonical command it loses to the project task runner.
+	addTool(srv, &sdk.Tool{
+		Name: "verify_change",
+		Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
+			"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
+			"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
+			"(its own test plus its callers', #654). Resolves changed files → Go packages and runs " +
+			"`go test` over them, routed through the shell pipeline so output is compressed and a failing " +
+			"run stages a `gotcha_candidate` you persist with `notes`. Override the command via `command` " +
+			"or $DEX_VERIFY_CMD with a '{{packages}}' placeholder (e.g. 'go test -tags sqlite_fts5 " +
+			"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
+			"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
+	}, h.verify)
 
 	// lookup is not a standalone tool — `find` already fuses exact
 	// symbol-name hits via RRF, and `ask` detects identifiers and runs
@@ -1317,25 +1334,12 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 	}, h.checkpoint)
 }
 
-// registerBaselineTools wires the always-on lanes (#125): shell + grep
-// stay exposed even under the weak-model profile.
+// registerBaselineTools wires the always-on floor (#145): the index-free verbs
+// act (run) + look (fetch) stay exposed under every profile, including the
+// weak-model one. shell/grep/read demoted to expert — act wraps shell, look
+// routes /regex/→grep and path→read — so the floor is the verbs, not the raw
+// primitives they subsume.
 func registerBaselineTools(srv *sdk.Server, h toolSurface, td func(string) string) {
-	addTool(srv, &sdk.Tool{
-		Name: "shell",
-		Description: td("Execute a shell command and return compressed output. " +
-			"Applies the same compression pipeline as compress_output — collapses build noise, " +
-			"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
-			"so raw command output never hits your context budget. " +
-			"Use raw:true to skip compression. " +
-			"Runs via bash when available (falls back to POSIX sh), so pipefail and bash-only " +
-			"syntax work; override with DEX_SHELL. " +
-			"File-write redirects (> >>) and tee are blocked by default; use the Write tool instead, " +
-			"or set DEX_SHELL_ALLOW_WRITES=1 to permit them. " +
-			"On a non-zero exit whose output matches a known failure signature, the response carries a " +
-			"low-confidence `gotcha_candidate` — confirm it with `notes` (action=add) to persist the pitfall. " +
-			"Timeout: 60 s."),
-	}, h.shellRun)
-
 	// act — the "run and verify" verb (#110). A thin envelope facade over shell:
 	// same execution/compression, plus a trust/cost envelope and a routed next
 	// step to `remember` when the command fails with a recognized signature.
@@ -1350,20 +1354,24 @@ func registerBaselineTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"signature, a next step to remember the gotcha. Use raw:true to skip compression. Timeout: 60 s."),
 	}, actHandler(h))
 
+	// look — the exact-fetch verb of the four-verb surface (#110), promoted to the
+	// always-on floor (#145) so every profile keeps fetch with no index/embedder.
+	// It classifies `target` and routes to the right exact lane — a file path →
+	// read, a `/regex/` → grep, a `path:line` → locate, a symbol → trace — so the
+	// agent stops guessing which primitive to reach for. Deterministic classifier,
+	// no chat needed. Where `ask` infers, `look` fetches.
 	addTool(srv, &sdk.Tool{
-		Name:        "grep",
+		Name:        "look",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Exact RE2 regex search over indexed project files — no embedding required. " +
-			"Use for literal pattern matches that semantic search misses: cross-cutting symbol references, " +
-			"import paths, string literals, regex-sensitive identifiers. Also the primary search lane when " +
-			"the embedding service is unavailable. " +
-			"Searches the indexed file list when available (respects .gitignore); " +
-			"falls back to walking the project directory and skipping .git/vendor/node_modules. " +
-			"Returns up to max_results matches (default 50) with path, line number, and trimmed content. " +
-			"Pass `context` (1-10) for surrounding lines (like grep -C). " +
-			"Pass `fixed:true` to match literally (like grep -F) — no escaping needed for foo.bar, arr[i], f(x). " +
-			"Returns 'no-matches' when nothing matches."),
-	}, h.searchGrep)
+		Description: td("Exact fetch for a target you can already name — dex classifies `target` and routes " +
+			"to the right lane: a file path ('internal/mcp/server.go') → read, a `/regex/` ('/func .*Verb/') → " +
+			"grep, a `path:line` ('server.go:829') → locate, anything else → trace the symbol's call graph " +
+			"('NewServer', '(*Server).Run', 'mcp.NewServer'). Pass `kind` (read|grep|trace|locate) to force the " +
+			"lane for an ambiguous target. Lane pass-throughs: `mode` (read), `direction`/`to` (trace), " +
+			"`context`/`fixed` (grep), `k` (result cap). Every result carries `trust: exact` — look never infers; " +
+			"reach for `ask` when you cannot yet name the target. Returns the underlying lane's status " +
+			"(ok / no-index / not-found / no-matches / …) and, after a grep, a `next` step to read the first hit."),
+	}, lookHandler(h))
 }
 
 // registerAskTool wires the intent router (#125) as the always-on front door
