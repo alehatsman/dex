@@ -129,8 +129,14 @@ then `review_diff` stays an everyday tool.
    Aleh chose demotion — `ask` is strictly richer for the everyday path and `grep`
    remains the literal-search primitive. Instructions + golden updated; `dex search`
    CLI unaffected.
-4. **Demote trace + locate → expert.** Confirm callers/callees/symbol_lookup/orient
-   coverage + `look` shape-routing; keep `path`/`impact` reachable via `intent=`.
+4. **Demote trace + locate → expert (done, #143).** Parity is structural: the
+   `trace` tool handler *is* `traceVerb` and `look` calls the same; the `locate`
+   tool and `look` both call `h.locate`. Everyday agents reach them via `look`
+   (symbol→trace, path:line→locate) and ask(intent=callers|callees|symbol_lookup|
+   orient); path/impact stay reachable via look's Direction/To and DEX_EXPERT.
+   Internal consumers (locate, review) call `traceVerb` directly — unaffected.
+   `look` replaces `trace` in the everyday zero-inference verb set; instructions +
+   golden updated; `dex trace`/`dex locate` CLI unaffected.
 5. **review output-union.** Discriminated `review{}` shape; route `ask("review …")`;
    retire the #83 `isReviewIntent` NL half; demote `review_diff`.
 6. **Checkpoint.** Re-run both gates (router #9, anti-accretion #10 at ceiling 0),

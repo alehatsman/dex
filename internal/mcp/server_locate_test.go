@@ -150,13 +150,17 @@ func TestLocateNoTarget(t *testing.T) {
 	}
 }
 
-// TestLocateInDefaultSurface guards that locate ships in the everyday tool
-// surface (not behind DEX_EXPERT) — it's a headline orientation verb.
-func TestLocateInDefaultSurface(t *testing.T) {
+// TestLocateIsExpertGated guards the #143 demotion: locate is a DEX_EXPERT power
+// lane, not an everyday tool — everyday agents reach it via `look path:line` and
+// ask(intent=symbol_lookup|orient). It appears only under DEX_EXPERT.
+func TestLocateIsExpertGated(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "")
-	names := listToolNames(t, stubServer(t))
-	if !names["locate"] {
-		t.Error("default surface omitted verb \"locate\"; want it advertised")
+	if listToolNames(t, stubServer(t))["locate"] {
+		t.Error("default surface advertised \"locate\"; want it expert-gated (#143)")
+	}
+	t.Setenv("DEX_EXPERT", "1")
+	if !listToolNames(t, stubServer(t))["locate"] {
+		t.Error("DEX_EXPERT surface omitted \"locate\"; want it advertised")
 	}
 }
 

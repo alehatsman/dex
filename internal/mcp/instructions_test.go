@@ -12,11 +12,11 @@ import (
 // instructionTools are the tool names ServerInstructions() steers agents
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
-// Everyday tools only. Power lanes (search, smells, deps, …) are mentioned in
-// the instructions but gated behind DEX_EXPERT, so they are not required to be
-// registered on the default surface — they are not listed here.
+// Everyday tools only. Power lanes (search, trace, locate, smells, …) are
+// mentioned in the instructions but gated behind DEX_EXPERT, so they are not
+// required to be registered on the default surface — they are not listed here.
 var instructionTools = []string{
-	"ask", "trace", "read", "shell", "grep", "notes",
+	"ask", "look", "read", "shell", "grep", "notes",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the
@@ -32,7 +32,7 @@ var deadToolNames = []string{
 var goodParamSignatures = []string{
 	"read(path)",    // read takes path, not "file"
 	"ask(question)", // ContextInput: question field
-	"trace(symbol)", // trace takes symbol
+	"look(target)",  // LookInput: target field
 }
 
 // staleParamSignatures are the pre-#525 param drifts: prose that named params
