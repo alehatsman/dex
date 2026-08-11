@@ -13,7 +13,7 @@ import (
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
 var instructionTools = []string{
-	"brief", "search", "trace", "read", "shell", "grep", "notes",
+	"ask", "search", "trace", "read", "shell", "grep", "notes",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the
@@ -27,10 +27,10 @@ var deadToolNames = []string{
 // goodParamSignatures are the tool mnemonics whose param names match the real
 // input schema. Each MUST appear verbatim in ServerInstructions().
 var goodParamSignatures = []string{
-	"search(query)", // SearchInput: query field
-	"read(path)",    // read takes path, not "file"
-	"brief(task)",   // BriefInput: task field
-	"trace(symbol)", // trace takes symbol
+	"search(query)",  // SearchInput: query field
+	"read(path)",     // read takes path, not "file"
+	"ask(question)",  // ContextInput: question field
+	"trace(symbol)",  // trace takes symbol
 }
 
 // staleParamSignatures are the pre-#525 param drifts: prose that named params

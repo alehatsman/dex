@@ -89,9 +89,14 @@ are different jobs. So folding is **port-then-remove**, not delete:
   `collectLocalRules(root)` on `intent=assemble`. Dogfood confirms byte-identical
   rule sets between `dex brief` and `dex ask --intent assemble`. Additive; brief
   untouched.
-- **2b:** with parity proven, remove `brief` (tool + `BriefOutput` + handler + CLI
-  + the "brief START HERE" MCP-instructions), routing task-start through
-  `ask(assemble)`. Drop `antiAccretionCeiling` 1→0.
+- **2b (done, #141):** with parity proven, removed `brief` — MCP tool +
+  `BriefInput`/`BriefOutput`/`BriefReview` + handler + `dex brief` CLI + the
+  `toolSurface`/noop/remote/http plumbing + the "brief START HERE"
+  MCP-instructions (now `ask(question)`) + tests. `collectLocalRules` moved to
+  `local_rules.go` (ask depends on it); the brief-only review-inline
+  (`isReviewIntent`/`briefReviewPack`) retired with it — review lives in
+  `review_diff` and, later, ask's review intent (step 5). Dropped
+  `antiAccretionCeiling` 1→0. Task-start now routes through `ask(assemble)`.
 
 The correctness bar for any future fold is the same: the demoted tool's distinctive
 output must exist on `ask` *before* the tool is removed — proven by dogfood, not

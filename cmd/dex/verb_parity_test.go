@@ -11,7 +11,6 @@ var mcpToolSurface = []string{
 	"deps", "clusters",
 	"smells", "clones", "similar", "routes", "cohort", "refs", "verify_change", "check",
 	"status", "notes", "session", "checkpoint",
-	"brief",
 }
 
 // cliToMCPName maps CLI verb names to MCP tool names when they differ.

@@ -58,27 +58,6 @@
       }
     },
     {
-      "name": "brief",
-      "additionalProperties": false,
-      "required": [
-        "task"
-      ],
-      "properties": {
-        "budget_tokens": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "sections": {
-          "type": "array|null"
-        },
-        "task": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "grep",
       "additionalProperties": false,
       "required": [
@@ -517,27 +496,6 @@
           "type": "string"
         },
         "question": {
-          "type": "string"
-        }
-      }
-    },
-    {
-      "name": "brief",
-      "additionalProperties": false,
-      "required": [
-        "task"
-      ],
-      "properties": {
-        "budget_tokens": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "sections": {
-          "type": "array|null"
-        },
-        "task": {
           "type": "string"
         }
       }

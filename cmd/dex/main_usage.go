@@ -25,9 +25,8 @@ func usageConcise() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
 
 SEARCH & UNDERSTAND
-  dex brief  [<path>] <task...>          task context pack — call before any coding task
+  dex ask      [<path>] <q...>           START HERE — routed evidence pack (intent=assemble for a task working set)
   dex repo_map [--cluster <id>] [<path>] repo overview — run first in an unfamiliar repo
-  dex ask      [<path>] <q...>           answer a codebase question (semantic + symbol + graph)
   dex search   [<path>] <q...>           hybrid search — raw ranking (ask composes this)
   dex read     <file>                    read a file (--mode signatures|skeleton|summary)
   dex locate   [<path>] <sym|path:line>  full context for one symbol: callers, tests, doc, blame, notes
@@ -80,10 +79,6 @@ quickstart:
   <path> defaults to cwd on every query/graph command.
 
 query — core verbs (CLI names match the MCP tool names):
-  dex brief  [<path>] <task...>         task-specific context pack (MCP: brief). Returns
-                                          ranked files, local rules, tests, and next_calls
-                                          for the given task. Requires an embedder.
-                                          Flags: --budget, --sections, --format=text|json
   dex repo_map [--cluster <id>] [<path>] repo orientation (MCP: repo_map). No --cluster: the
                                           first-touch bundle (L0 overview + a zoom into
                                           the most-central cluster). --cluster <id>: zoom
@@ -91,6 +86,9 @@ query — core verbs (CLI names match the MCP tool names):
   dex ask    [<path>] <q...>            one-shot router (MCP: ask). Picks intent,
                                           fuses semantic + symbol + graph; returns
                                           suggested_reads and a prose next_action.
+                                          --intent assemble returns a task working set:
+                                          ranked files, symbols, and the local rules
+                                          (CLAUDE.md / specs) that govern them.
                                           Flags: --intent, --k, --format=text|json,
                                           --no-inline, --max-content-bytes, -v
   dex search [<path>] <q...>            hybrid semantic top-k chunks, fuses exact

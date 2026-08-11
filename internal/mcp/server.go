@@ -43,14 +43,14 @@ func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
 Primary workflow (coding tasks):
-1. brief(task) — START HERE for any coding task. Returns ranked files, rules, tests, impact.
-2. read/locate — only for missing exact details after brief.
+1. ask(question) — START HERE for any coding task or question. Routes intent and returns a ranked evidence pack + next_action. Pass intent=assemble for a task-start working set (ranked files, symbols, and the local rules that govern them).
+2. read/locate — only for missing exact details after ask.
 3. edit — your job, not dex's.
 4. review_diff(staged) — inspect what you changed.
 5. verify_change(staged) — find and run the right tests.
 
 Tool mapping (use these instead of native):
-- brief(task)          instead of reading files blindly — get a curated context pack first
+- ask(question)        instead of reading files blindly — a routed evidence pack (semantic + symbol + graph) for a task or question
 - search(query)        instead of Grep/rg for concept/intent searches
 - trace(symbol)        instead of manual cross-ref tracing — callers/callees/path/impact
 - read(path)           instead of Read for large files (signatures + summaries)
@@ -58,9 +58,9 @@ Tool mapping (use these instead of native):
 - grep(pattern)        instead of rg for exact regex matches
 - notes(action)        instead of re-deriving facts — recall and persist durable project memory
 
-Power lanes (deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. For review/audit/architecture tasks, brief(task) inlines a curated structural pack (god-modules, high fan-in, clusters, duplication clones) from these lanes; enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly for the full report. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
+Power lanes (deps, clusters, routes, smells, clones, similar, cohort, refs, status, session, repo_map) are gated behind DEX_EXPERT — the verbs above cover everyday work. For review/audit/architecture work, use review_diff or enable DEX_EXPERT=1 to call smells/clusters/clones/similar/repo_map directly. clones finds semantic duplication hotspots (near-duplicate code blocks) and similar finds blocks near a given one — vector work grep can't do.
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__brief,mcp__dex__shell,mcp__dex__search,mcp__dex__grep,mcp__dex__read" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__shell,mcp__dex__search,mcp__dex__grep,mcp__dex__read" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -546,11 +546,6 @@ func (s *Server) Budget(ctx context.Context, in BudgetInput) (BudgetOutput, erro
 	return out, err
 }
 
-func (s *Server) Brief(ctx context.Context, in BriefInput) (BriefOutput, error) {
-	_, out, err := s.brief(ctx, nil, in)
-	return out, err
-}
-
 func (s *Server) IndexStatus(ctx context.Context, in IndexStatusInput) (IndexStatusOutput, error) {
 	_, out, err := s.indexStatus(ctx, nil, in)
 	return out, err
@@ -862,7 +857,6 @@ type toolSurface interface {
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 	budget(context.Context, *sdk.CallToolRequest, BudgetInput) (*sdk.CallToolResult, BudgetOutput, error)
-	brief(context.Context, *sdk.CallToolRequest, BriefInput) (*sdk.CallToolResult, BriefOutput, error)
 	indexStatus(context.Context, *sdk.CallToolRequest, IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error)
 }
 
@@ -1106,18 +1100,6 @@ func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"reach for `ask` when you cannot yet name the target. Returns the underlying lane's status " +
 			"(ok / no-index / not-found / no-matches / …) and, after a grep, a `next` step to read the first hit."),
 	}, lookHandler(h))
-
-	if embedAvailable {
-		addTool(srv, &sdk.Tool{
-			Name:        "brief",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("PRIMARY ENTRYPOINT for coding tasks — call brief(task) before any file reads. " +
-				"Returns ranked_files (by semantic similarity to the task), relevant_symbols, " +
-				"local_rules (CLAUDE.md / specs), sibling tests, impact, index freshness, and next_calls. " +
-				"Replaces the read-everything pattern with a curated, budget-bounded working set. " +
-				"Follow up with read/locate only for missing exact details."),
-		}, h.brief)
-	}
 }
 
 // registerExpertTools wires the power lanes behind DEX_EXPERT (#125):
@@ -1294,7 +1276,7 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 		Description: td("Deterministic, multi-zoom topology map of the project's top packages/dirs " +
 			"and how they connect — no embedding or chat required. " +
 			"Use for structural exploration when you need raw topology rather than a task context pack. " +
-			"For coding tasks, call `brief(task)` instead — it returns ranked files and orientation together. " +
+			"For coding tasks, call `ask(task, intent=assemble)` instead — it returns ranked files and orientation together. " +
 			"Returns 'no-index' when the project hasn't been indexed yet."),
 	}, mapHandler(h))
 
@@ -1302,7 +1284,7 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 		Name:        "status",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 		Description: td("Report dex endpoint health and the list of indexed projects with their chunk counts and last-indexed times. " +
-			"For everyday use, single-project index freshness is embedded in `brief` responses — call this for cross-project health checks or debugging."),
+			"For everyday use, single-project index freshness is embedded in `ask` responses — call this for cross-project health checks or debugging."),
 	}, h.status)
 
 	addTool(srv, &sdk.Tool{
