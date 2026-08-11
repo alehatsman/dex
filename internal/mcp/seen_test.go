@@ -39,6 +39,41 @@ func TestSeenMarksRepeatsAcrossTurns(t *testing.T) {
 	}
 }
 
+// TestSeenReinlinesChangedContent guards #138: a range whose bytes changed since
+// it was surfaced must be re-inlined, not suppressed as "seen turn N".
+func TestSeenReinlinesChangedContent(t *testing.T) {
+	s := &Server{}
+	const key = "sess-1"
+	mk := func(body string) *ContextOutput {
+		return &ContextOutput{
+			SemanticHits: []SemHit{{Path: "a.go", StartLine: 1, EndLine: 10, Content: body}},
+			Symbols:      []SymbolHit{{Path: "b.go", StartLine: 5, EndLine: 9, Body: body}},
+		}
+	}
+
+	s.applySeenContext(key, mk("v1")) // turn 1: first surface
+
+	// Turn 2: SAME range, CHANGED bytes → fresh key → re-inlined, not suppressed.
+	changed := mk("v2-edited")
+	s.applySeenContext(key, changed)
+	if changed.SemanticHits[0].SeenTurn != 0 || changed.SemanticHits[0].Content == "" {
+		t.Errorf("changed sem hit suppressed: SeenTurn=%d content=%q, want 0 / kept",
+			changed.SemanticHits[0].SeenTurn, changed.SemanticHits[0].Content)
+	}
+	if changed.Symbols[0].SeenTurn != 0 || changed.Symbols[0].Body == "" {
+		t.Errorf("changed symbol suppressed: SeenTurn=%d body=%q, want 0 / kept",
+			changed.Symbols[0].SeenTurn, changed.Symbols[0].Body)
+	}
+
+	// Turn 3: the changed bytes now repeat unchanged → suppressed, first seen turn 2.
+	repeat := mk("v2-edited")
+	s.applySeenContext(key, repeat)
+	if repeat.SemanticHits[0].SeenTurn != 2 || repeat.SemanticHits[0].Content != "" {
+		t.Errorf("unchanged repeat of changed bytes: SeenTurn=%d content=%q, want 2 / empty",
+			repeat.SemanticHits[0].SeenTurn, repeat.SemanticHits[0].Content)
+	}
+}
+
 func TestSeenIsolatesSessions(t *testing.T) {
 	s := &Server{}
 	mk := func() *ContextOutput {
