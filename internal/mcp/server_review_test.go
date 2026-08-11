@@ -136,6 +136,9 @@ func TestResolveReviewRange(t *testing.T) {
 		{ReviewInput{Branch: "feat/x"}, "main...feat/x", "ok"},
 		{ReviewInput{Branch: "feat/x", Base: "dev"}, "dev...feat/x", "ok"},
 		{ReviewInput{Branch: "bad branch"}, "", "error"},
+		{ReviewInput{Worktree: true}, "HEAD", "ok"},                       // #137: working tree vs HEAD
+		{ReviewInput{Ref: "HEAD~3..HEAD", Worktree: true}, "HEAD~3..HEAD", "ok"}, // ref wins over worktree
+		{ReviewInput{}, "", "error"},                                      // nothing selected still errors at this layer
 	}
 	for _, c := range cases {
 		rng, status, _ := resolveReviewRange(ctx, t.TempDir(), c.in)
@@ -145,11 +148,15 @@ func TestResolveReviewRange(t *testing.T) {
 	}
 }
 
-func TestReviewNoSelector(t *testing.T) {
+// TestReviewNoSelectorDefaultsToWorktree locks the #137 default: an empty
+// selector no longer errors — review() defaults to the uncommitted working tree.
+// With no index built it stops at no-index (proving it passed the selector guard
+// rather than rejecting the call for a missing ref/branch/pr).
+func TestReviewNoSelectorDefaultsToWorktree(t *testing.T) {
 	s := &Server{IndexDir: t.TempDir()}
 	_, out, _ := s.review(context.Background(), nil, ReviewInput{ProjectRoot: t.TempDir()})
-	if out.Status != "error" || !strings.Contains(out.Hint, "one of") {
-		t.Errorf("review(empty) = (%q,%q), want error mentioning 'one of'", out.Status, out.Hint)
+	if out.Status != "no-index" {
+		t.Errorf("review(empty) = (%q,%q), want no-index (worktree default, not a selector error)", out.Status, out.Hint)
 	}
 }
 
@@ -302,6 +309,61 @@ func TestReviewIntegration(t *testing.T) {
 	}
 	if len(f.Tests) == 0 || f.Tests[0] != "greet_test.go" {
 		t.Errorf("tests = %v, want [greet_test.go]", f.Tests)
+	}
+}
+
+// TestReviewWorktree (#137) commits v1, then edits the working tree WITHOUT
+// committing, and reviews with Worktree:true — the uncommitted change to Greet
+// must surface via `git diff HEAD`, proving the working-tree lane composes like
+// the committed-range lane.
+func TestReviewWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	srv := fakeEmbed(t, 16)
+	t.Cleanup(srv.Close)
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+
+	gitRun(t, projDir, "init", "-q")
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\nfunc Greet(name string) string { return \"hi \" + name }\n")
+	writeFile(t, filepath.Join(projDir, "greet_test.go"),
+		"package main\n\nimport \"testing\"\n\nfunc TestGreet(t *testing.T) { _ = Greet(\"y\") }\n")
+	gitRun(t, projDir, "add", ".")
+	gitRun(t, projDir, "commit", "-q", "-m", "v1")
+	// Uncommitted edit to Greet's body — this is what "review my changes" means.
+	writeFile(t, filepath.Join(projDir, "greet.go"),
+		"package main\n\nfunc Greet(name string) string { return \"hello \" + name }\n")
+
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	s := newServer(srv.URL, cacheDir)
+
+	_, out, err := s.review(context.Background(), nil, ReviewInput{
+		Worktree: true, ProjectRoot: root,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("status = %q, want ok (hint: %q)", out.Status, out.Hint)
+	}
+	if out.Range != "HEAD" {
+		t.Errorf("range = %q, want HEAD (working tree vs HEAD)", out.Range)
+	}
+	if len(out.Files) != 1 || out.Files[0].Path != "greet.go" {
+		t.Fatalf("files = %+v, want one greet.go", out.Files)
+	}
+	var sawGreet bool
+	for _, h := range out.Files[0].Hunks {
+		for _, sym := range h.SymbolsTouched {
+			if sym.Name == "Greet" {
+				sawGreet = true
+			}
+		}
+	}
+	if !sawGreet {
+		t.Errorf("expected Greet among touched symbols, hunks=%+v", out.Files[0].Hunks)
 	}
 }
 

@@ -22,10 +22,12 @@ func cmdReview(ctx context.Context, args []string) error {
 		"dex review_diff [flags] [<path>]",
 		"dex review_diff --ref HEAD~3..HEAD",
 		"dex review_diff --branch feat/foo",
+		"dex review_diff --worktree",
 		"dex review_diff --pr 42 --compact")
 	ref := fs.String("ref", "", "git range ('HEAD~3..HEAD') or a single ref (vs HEAD); defaults to HEAD~1..HEAD")
 	branch := fs.String("branch", "", "branch name; reviews what it adds since diverging from --base")
 	pr := fs.Int("pr", 0, "GitHub PR number (resolved via the gh CLI)")
+	worktree := fs.Bool("worktree", false, "review uncommitted working-tree changes (git diff HEAD)")
 	base := fs.String("base", "", "base branch for --branch/--pr comparison (default 'main')")
 	compact := fs.Bool("compact", false, "drop low-risk hunks, returning only medium/high-risk ones")
 	k := fs.Int("k", 0, "max callers and notes per symbol (default 8, max 30)")
@@ -37,8 +39,9 @@ func cmdReview(ctx context.Context, args []string) error {
 	if len(rest) != 0 {
 		return fmt.Errorf("review_diff takes no positional args besides an optional path (got %d extra)", len(rest))
 	}
-	// CLI convenience: no selector → review the last commit.
-	if *ref == "" && *branch == "" && *pr == 0 {
+	// CLI convenience: no selector → review the last commit. (--worktree opts
+	// into the uncommitted working tree instead; MCP defaults there, #137.)
+	if *ref == "" && *branch == "" && *pr == 0 && !*worktree {
 		*ref = "HEAD~1..HEAD"
 	}
 
@@ -55,6 +58,7 @@ func cmdReview(ctx context.Context, args []string) error {
 		Ref:         *ref,
 		Branch:      *branch,
 		PR:          *pr,
+		Worktree:    *worktree,
 		Base:        *base,
 		Compact:     *compact,
 		K:           *k,

@@ -23,9 +23,12 @@ model is required; all lanes are structural (graph, git metadata, store notes).
 
 **Input selection** (`ReviewInput`):
 
-- Exactly one of `ref`, `branch`, or `pr` is expected; precedence is
-  `ref` > `branch` > `pr`.
-- IF none is provided, the verb returns `status=error`.
+- One of `ref`, `branch`, `pr`, or `worktree` is expected; precedence is
+  `ref` > `branch` > `pr` > `worktree`.
+- IF none is provided, the MCP verb defaults to `worktree` — "review my
+  uncommitted changes" is the common unanchored case (#137). (`resolveReviewRange`
+  itself still returns `status=error` for a truly empty input; the default is
+  applied one layer up, in `review()`.)
 - WHEN `ref` is a single ref without `..` (e.g. `HEAD~3`), it is expanded to
   `ref..HEAD`.
 - WHEN `branch` is given, the range is `base...branch` (three-dot symmetric
@@ -34,7 +37,13 @@ model is required; all lanes are structural (graph, git metadata, store notes).
 - WHEN `pr` is given, resolves the head branch via `gh pr view <n> --json
   headRefName`, then treats it as `branch`. Best-effort: requires the `gh` CLI,
   a GitHub remote, and a fetched head; returns `status=not-found` on failure.
-- CLI default (no selector): `HEAD~1..HEAD`.
+- WHEN `worktree` is set, the range token is a bare `HEAD` → `git diff HEAD`,
+  the uncommitted working tree (staged + unstaged) vs HEAD. It ends at HEAD, so
+  no time-travel: symbols resolve against the live index. Untracked files are
+  invisible to `git diff HEAD`; a clean-tree result counts them and nudges
+  `git add -N` (read-only — review never mutates the index).
+- CLI default (no selector): `HEAD~1..HEAD`; `--worktree` opts into the
+  uncommitted working tree instead.
 
 **Diff acquisition**: runs `git diff --unified=0 --no-color <range>` in the
 project root (5-second timeout, 4 MB hard cap on raw bytes). Raw input uses zero
@@ -194,7 +203,8 @@ the per-symbol `caller_count` tells you how hot it is without the join.
 
 ## Checklist
 
-- [x] All three selectors (ref/branch/pr) resolve to a valid git range
+- [x] All four selectors (ref/branch/pr/worktree) resolve to a valid git range
+- [x] Empty MCP selector defaults to `worktree` (`git diff HEAD`); ref wins over worktree
 - [x] Single-ref input auto-expanded to `ref..HEAD`
 - [x] Branch uses three-dot symmetric range (`base...branch`)
 - [x] PR resolution is best-effort and returns `not-found` gracefully
