@@ -24,6 +24,12 @@ const (
 	IntentArchitecture    = "architecture"
 	IntentPackageTopology = "package_topology"
 	IntentEditingContext  = "editing_context"
+	// IntentOrient (#135, spec step 5) is whole-repo orientation: the question's
+	// subject is the repository itself ("understand this repo", "overview of the
+	// codebase"), not a specific component. The transport answers it from the
+	// deterministic orient bundle (L0/L1 map + build/test commands) rather than
+	// the semantic-search + synthesis path — same output as an empty question.
+	IntentOrient = "orient"
 	// IntentAssemble (#687) is an explicit-only mode: ask assembles a
 	// budget-bounded working set instead of answering. It is never auto-routed
 	// (no keyword/identifier heuristic selects it) — the agent opts in. Its
@@ -36,6 +42,7 @@ var validIntents = map[string]struct{}{
 	IntentAuto: {}, IntentBehaviorSearch: {}, IntentSymbolLookup: {},
 	IntentCallers: {}, IntentCallees: {}, IntentArchitecture: {},
 	IntentPackageTopology: {}, IntentEditingContext: {}, IntentAssemble: {},
+	IntentOrient: {},
 }
 
 // Identifier detection patterns. Conservative — false positives are
@@ -56,6 +63,19 @@ var (
 	reSnake = regexp.MustCompile(`\b[a-z][a-z0-9_]*_[a-z0-9_]+\b`)
 
 	// Intent keyword regexes for auto routing.
+	// #135: whole-repo orientation. Narrow by construction — the subject must be
+	// the repository itself (an explicit repo|repository|codebase|project|code
+	// noun), or a subjectless "orient me" command. This steals only the
+	// repo-scoped variants of overview/structure/walkthrough from reArchitecture;
+	// "how does the watcher work" / "overview of the graph package" keep their
+	// component subject and stay architecture. Checked before reArchitecture.
+	reOrient = regexp.MustCompile(`\b(` +
+		`orient me|get me oriented|help me get oriented|where (?:do|should) i start|` +
+		`(?:understand|navigate|explore|tour|walk me through|walk through|explain|describe|give me (?:an? )?(?:overview|tour) of) (?:this|the|our) (?:repo|repository|codebase|code ?base|project)|` +
+		`(?:overview|tour|structure|layout|shape|high[- ]level (?:overview|view)) of (?:this|the|our) (?:repo|repository|codebase|code ?base|project)|` +
+		`(?:what is|what's|what does) (?:this|the) (?:repo|repository|codebase|code ?base|project)(?: do| contain| look like)?|` +
+		`how (?:is|are) (?:this|the|our) (?:repo|repository|codebase|code ?base|project) (?:structured|organized|organised|laid out|set up|put together)` +
+		`)\b`)
 	reCallers      = regexp.MustCompile(`\b(callers?|who calls|what calls|called by|usage of|usages of|references? to|where is .* used|where is .* called)\b`)
 	reCallees      = regexp.MustCompile(`\b(callees?|what does .* call|calls from|outgoing calls|dependencies of)\b`)
 	reArchitecture = regexp.MustCompile(`\b(architecture|how does .* work|overview|big picture|design of|walk me through|how is .* organized)\b`)
@@ -98,6 +118,8 @@ func ResolveIntent(question, intent string) (string, IntentCandidates) {
 
 	q := strings.ToLower(question)
 	switch {
+	case reOrient.MatchString(q):
+		return IntentOrient, cand
 	case reCallers.MatchString(q):
 		return IntentCallers, cand
 	case reCallees.MatchString(q):

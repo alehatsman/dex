@@ -418,6 +418,15 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 	}
 
 	intent, candidates := retrieve.ResolveIntent(in.Question, in.Intent)
+	if intent == retrieve.IntentOrient {
+		// #135: a whole-repo orientation question ("understand this repo",
+		// "overview of the codebase") gets the same deterministic orient bundle
+		// as an empty question — the L0/L1 map + build/test commands answer it
+		// better than semantic search + LLM synthesis. The classifier keeps this
+		// narrow (explicit repo subject); an explicit non-orient intent override
+		// still wins because ResolveIntent honours it first.
+		return s.orientResponse(ctx, in)
+	}
 	out := ContextOutput{Project: p.Root, Intent: intent}
 	if hint != "" {
 		out.Hint = hint

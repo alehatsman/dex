@@ -24,6 +24,22 @@ func TestResolveIntent(t *testing.T) {
 		{"architecture", "how does indexing work", "", IntentArchitecture},
 		{"overview", "give me an overview of the indexer", "", IntentArchitecture},
 		{"packages", "show the package topology", "", IntentPackageTopology},
+
+		// Orient (#135): whole-repo orientation → the orient bundle.
+		{"orient understand repo", "understand this repo", "", IntentOrient},
+		{"orient overview codebase", "give me an overview of the codebase", "", IntentOrient},
+		{"orient how structured", "how is this project structured", "", IntentOrient},
+		{"orient walk me through", "walk me through the codebase", "", IntentOrient},
+		{"orient subjectless", "orient me", "", IntentOrient},
+		{"orient where start", "where do i start", "", IntentOrient},
+		{"orient what does repo do", "what does this repo do", "", IntentOrient},
+		{"explicit orient", "some question", "orient", IntentOrient},
+		// Narrowness guards — a specific component subject stays architecture,
+		// not orient. The repo|codebase|project noun is the trigger, not the verb.
+		{"orient not: component how", "how does the watcher work", "", IntentArchitecture},
+		{"orient not: component structure", "how is the store organized", "", IntentArchitecture},
+		{"orient not: package overview", "overview of the graph package", "", IntentArchitecture},
+		{"orient not: code path", "explain the code path for auth", "", IntentBehaviorSearch},
 		{"editing", "fix the rerank pool overflow", "", IntentEditingContext},
 
 		// Bare identifier query → symbol_lookup.
