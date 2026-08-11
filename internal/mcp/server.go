@@ -1038,6 +1038,20 @@ func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"as knowledge_facts."),
 	}, h.knowledge)
 
+	// remember — the durable-memory verb (#110). A two-move envelope facade over
+	// notes: `fact` writes, `query` recalls. Same store and salience; the admin
+	// and relate lanes stay on `notes` until the cutover. Travels with the notes
+	// alias (default lane, no embedder needed).
+	addTool(srv, &sdk.Tool{
+		Name: "remember",
+		Description: td("Durable project memory across session resets, inside the universal envelope " +
+			"{result, trust, next}. Two moves: pass `fact` to persist a durable fact (write — lead a " +
+			"review finding or gotcha with a bracketed [kind]; use `scope` to bind it to a file glob so it " +
+			"surfaces on touch, #645), or pass `query` to recall the facts most relevant to a task (read — " +
+			"empty query returns top facts by salience). Same store and salience as `notes` (its alias); " +
+			"the admin/relate lanes (gc, export, import, consolidate, pin, relate, review) stay on `notes`."),
+	}, rememberHandler(h))
+
 	addTool(srv, &sdk.Tool{
 		Name:        "read",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
@@ -1314,6 +1328,20 @@ func registerBaselineTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"low-confidence `gotcha_candidate` — confirm it with `notes` (action=add) to persist the pitfall. " +
 			"Timeout: 60 s."),
 	}, h.shellRun)
+
+	// act — the "run and verify" verb (#110). A thin envelope facade over shell:
+	// same execution/compression, plus a trust/cost envelope and a routed next
+	// step to `remember` when the command fails with a recognized signature.
+	// Registered in baseline so exec stays available under every profile, exactly
+	// like the shell alias it wraps.
+	addTool(srv, &sdk.Tool{
+		Name: "act",
+		Description: td("Run a shell command and get compressed output back inside the universal " +
+			"envelope {result, trust, cost, next}. act is the run/verify verb: builds, tests, git, " +
+			"formatters — writes and verification, not context-gathering. Same execution, sandboxing, " +
+			"and compression as `shell` (its alias); adds cost.saved_pct and, on a recognized failure " +
+			"signature, a next step to remember the gotcha. Use raw:true to skip compression. Timeout: 60 s."),
+	}, actHandler(h))
 
 	addTool(srv, &sdk.Tool{
 		Name:        "grep",
