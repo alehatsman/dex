@@ -121,8 +121,14 @@ then `review_diff` stays an everyday tool.
    `local_rules` into `ask(assemble)` (`ContextOutput.Rules`), dogfood parity. 2b:
    remove `brief` once parity holds. Resolves the anti-accretion offense → drop
    `antiAccretionCeiling` 1→0.
-3. **Demote search → expert.** Verify `ask`/`ask(intent=behavior_search)` parity on
-   real queries; move `search` into `registerExpertTools`.
+3. **Demote search → expert (done, #142).** Dogfooded `ask`/`ask(intent=behavior_search)`
+   parity (same-or-superset ranked hits); moved `search` into `registerExpertTools`
+   (embed+expert gated, like `clones`/`similar`). Everyday concept-search → `ask`;
+   raw scoring breakdown stays a power lane. Discussed keeping `search` as a
+   fundamental primitive alongside `grep`/`read` (search is dex's core capability);
+   Aleh chose demotion — `ask` is strictly richer for the everyday path and `grep`
+   remains the literal-search primitive. Instructions + golden updated; `dex search`
+   CLI unaffected.
 4. **Demote trace + locate → expert.** Confirm callers/callees/symbol_lookup/orient
    coverage + `look` shape-routing; keep `path`/`impact` reachable via `intent=`.
 5. **review output-union.** Discriminated `review{}` shape; route `ask("review …")`;
@@ -138,8 +144,9 @@ then `review_diff` stays an everyday tool.
 - **Weak model.** `registerEverydayTools` is skipped entirely for weak models
   (server.go:902); this spec does not change that branch.
 - **DEX_EXPERT users.** See a superset (front door + all power lanes) — unchanged.
-- **CLI parity.** `dex search`/`trace`/`locate`/`brief` CLI subcommands are
-  unaffected by MCP profile gating; demotion is an MCP-surface change only.
+- **CLI parity.** `dex search`/`trace`/`locate` CLI subcommands are unaffected by
+  MCP profile gating; demotion is an MCP-surface change only. (`dex brief` was
+  removed outright in slice 2b — its job is `dex ask --intent assemble`.)
 
 ## Validation
 
