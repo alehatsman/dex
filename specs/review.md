@@ -77,6 +77,12 @@ context lines so hunks stay tight around the actual change.
   `hadGraph=false` is propagated to `hunkRisk`.
 - `k` defaults to 30, capped at 30. (The default 30 matches `reviewCallerHigh`
   so the high-risk threshold is reachable.)
+- **Callers are hoisted to a single top-level `callers_by_symbol` map** keyed by
+  symbol name (#136). A symbol touched by N hunks previously duplicated its full
+  caller list — each with source content — N times, the largest payload in the
+  response. Now each hunk names its symbols in `symbols_touched` (each carrying a
+  `caller_count`); the caller bodies live once in `callers_by_symbol[name]`. Only
+  symbols present in emitted hunks (post-`compact`, post-truncation) are included.
 
 **Risk tier** (`hunkRisk`):
 
@@ -140,6 +146,7 @@ project     string
 range       string       // resolved git range actually diffed
 total_hunks int
 truncated   bool
+callers_by_symbol map[string][]CallSite  // #136: caller bodies once per symbol, not per hunk
 files       []ReviewFile
   file             string
   old_path         string        // non-empty on renames
@@ -154,20 +161,22 @@ files       []ReviewFile
   hunks            []ReviewHunk
     old_start, old_lines, new_start, new_lines  int
     heading          string
-    symbols_touched  []ReviewSymbol{name,kind,exported,start_line,end_line}
-    callers_of_touched []CallSite
+    symbols_touched  []ReviewSymbol{name,kind,exported,start_line,end_line,caller_count}
     notes            []LocatedFact
     risk_tier        string   // low | medium | high
     risk_reason      string
 ```
+
+Look up a touched symbol's callers via `callers_by_symbol[symbols_touched[i].name]`;
+the per-symbol `caller_count` tells you how hot it is without the join.
 
 **CLI** (`dex review`):
 
 - Flags: `--ref`, `--branch`, `--pr`, `--base` (default `main`), `--compact`,
   `--k`, `--format text|json`.
 - Takes an optional `<path>` positional arg (project root); no other positional args.
-- Text output renders one section per file with per-hunk risk tiers, symbol list,
-  caller count, and note count. Non-ok status prints to stderr.
+- Text output renders one section per file with per-hunk risk tiers, symbol list
+  (each with its caller count), and note count. Non-ok status prints to stderr.
 
 ## Non-goals
 

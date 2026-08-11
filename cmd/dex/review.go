@@ -119,10 +119,11 @@ func renderReviewText(out mcp.ReviewOutput) {
 				if sym.Exported {
 					exp = " (exported)"
 				}
-				fmt.Printf("       • %s%s\n", sym.Name, exp)
-			}
-			if len(h.Callers) > 0 {
-				fmt.Printf("       callers: %d\n", len(h.Callers))
+				callers := ""
+				if sym.CallerCount > 0 {
+					callers = fmt.Sprintf(" — %d callers", sym.CallerCount)
+				}
+				fmt.Printf("       • %s%s%s\n", sym.Name, exp, callers)
 			}
 			if len(h.Notes) > 0 {
 				fmt.Printf("       notes: %d related\n", len(h.Notes))

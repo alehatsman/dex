@@ -38,6 +38,58 @@ func TestHunkRisk(t *testing.T) {
 	}
 }
 
+// TestCollectCallersBySymbol locks the #136 dedup invariant: a symbol touched by
+// many hunks contributes its caller list to the top-level map exactly ONCE, and
+// only symbols present in emitted hunks (post-compact/truncation) — with a
+// non-empty cached caller lane — are included.
+func TestCollectCallersBySymbol(t *testing.T) {
+	// Greet is touched by two hunks (in two files); Helper by one; Orphan is in
+	// the cache but no hunk touches it; Bare is touched but has no callers.
+	files := []ReviewFile{
+		{Hunks: []ReviewHunk{
+			{SymbolsTouched: []ReviewSymbol{{Name: "Greet"}, {Name: "Bare"}}},
+			{SymbolsTouched: []ReviewSymbol{{Name: "Greet"}}},
+		}},
+		{Hunks: []ReviewHunk{
+			{SymbolsTouched: []ReviewSymbol{{Name: "Helper"}}},
+		}},
+	}
+	cache := map[string]traceResult{
+		"Greet":  {callers: []CallSite{{Path: "a.go", StartLine: 1}, {Path: "b.go", StartLine: 2}}, count: 2},
+		"Helper": {callers: []CallSite{{Path: "c.go", StartLine: 3}}, count: 1},
+		"Bare":   {callers: nil, count: 0},           // touched, no callers → omitted
+		"Orphan": {callers: []CallSite{{Path: "x.go"}}}, // has callers but untouched → omitted
+	}
+
+	got := collectCallersBySymbol(files, cache)
+
+	if len(got) != 2 {
+		t.Fatalf("map size = %d, want 2 (Greet, Helper); got keys %v", len(got), keysOf(got))
+	}
+	if g := got["Greet"]; len(g) != 2 {
+		t.Errorf("Greet callers = %d, want 2 (deduped to one entry despite two hunks)", len(g))
+	}
+	if _, ok := got["Bare"]; ok {
+		t.Errorf("Bare has no callers; must be omitted, not keyed empty")
+	}
+	if _, ok := got["Orphan"]; ok {
+		t.Errorf("Orphan is untouched by any hunk; must not leak into the map")
+	}
+
+	// Empty result → nil so the JSON field is omitted, not `{}`.
+	if collectCallersBySymbol(nil, cache) != nil {
+		t.Errorf("no emitted hunks → want nil map (omitempty), got non-nil")
+	}
+}
+
+func keysOf(m map[string][]CallSite) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}
+
 func TestRangeEndsAtHEAD(t *testing.T) {
 	cases := []struct {
 		rng  string
@@ -228,6 +280,20 @@ func TestReviewIntegration(t *testing.T) {
 			if count > 1 {
 				t.Errorf("hunk @%d has %d duplicate entries for note id=%d (want 1)", h.NewStart, count, id)
 			}
+		}
+	}
+	// #136: caller bodies are hoisted to the top-level map, keyed by symbol.
+	// Its keys must always be a subset of the symbols the emitted hunks touch —
+	// no orphan entries (holds even when the graph lane is empty, as here).
+	touched := map[string]bool{}
+	for _, h := range f.Hunks {
+		for _, sym := range h.SymbolsTouched {
+			touched[sym.Name] = true
+		}
+	}
+	for name := range out.CallersBySymbol {
+		if !touched[name] {
+			t.Errorf("CallersBySymbol has orphan key %q not in any emitted hunk", name)
 		}
 	}
 	// File-level history legs are best-effort but should be populated here.

@@ -65,17 +65,22 @@ type ReviewInput struct {
 }
 
 // ReviewSymbol is a declaration a hunk touches, resolved to its enclosing chunk.
+// CallerCount is how many callers the symbol has (its caller bodies live once in
+// ReviewOutput.CallersBySymbol, keyed by Name — #136).
 type ReviewSymbol struct {
-	Name      string `json:"name"`
-	Kind      string `json:"kind,omitempty"`
-	Exported  bool   `json:"exported"`
-	StartLine int    `json:"start_line,omitempty"`
-	EndLine   int    `json:"end_line,omitempty"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind,omitempty"`
+	Exported    bool   `json:"exported"`
+	StartLine   int    `json:"start_line,omitempty"`
+	EndLine     int    `json:"end_line,omitempty"`
+	CallerCount int    `json:"caller_count,omitempty"`
 }
 
 // ReviewHunk is one @@ block plus its composed intelligence. Symbol-level lanes
-// (symbols, callers, notes, risk) live here; file-level lanes (tests, doc,
-// churn, author) live on ReviewFile to avoid repeating them per hunk.
+// (symbols, notes, risk) live here; file-level lanes (tests, doc, churn, author)
+// live on ReviewFile to avoid repeating them per hunk. Caller bodies are NOT
+// here — a symbol touched by many hunks would duplicate them; they are hoisted
+// to ReviewOutput.CallersBySymbol and joined via SymbolsTouched[i].Name (#136).
 type ReviewHunk struct {
 	OldStart       int            `json:"old_start"`
 	OldLines       int            `json:"old_lines"`
@@ -83,7 +88,6 @@ type ReviewHunk struct {
 	NewLines       int            `json:"new_lines"`
 	Heading        string         `json:"heading,omitempty"`
 	SymbolsTouched []ReviewSymbol `json:"symbols_touched,omitempty"`
-	Callers        []CallSite     `json:"callers_of_touched,omitempty"`
 	Notes          []LocatedFact  `json:"notes,omitempty"`
 	RiskTier       string         `json:"risk_tier"`             // "low" | "medium" | "high"
 	RiskReason     string         `json:"risk_reason,omitempty"` // dominant signal
@@ -112,13 +116,18 @@ type ReviewFile struct {
 // means that lane found nothing (or degraded — callers is empty with no graph),
 // never an error.
 type ReviewOutput struct {
-	Status     string       `json:"status"` // ok | no-index | no-changes | not-found | error
-	Hint       string       `json:"hint,omitempty"`
-	Project    string       `json:"project,omitempty"`
-	Range      string       `json:"range,omitempty"` // resolved git range actually diffed
-	Files      []ReviewFile `json:"files,omitempty"`
-	TotalHunks int          `json:"total_hunks"`
-	Truncated  bool         `json:"truncated,omitempty"`
+	Status  string       `json:"status"` // ok | no-index | no-changes | not-found | error
+	Hint    string       `json:"hint,omitempty"`
+	Project string       `json:"project,omitempty"`
+	Range   string       `json:"range,omitempty"` // resolved git range actually diffed
+	Files   []ReviewFile `json:"files,omitempty"`
+	// CallersBySymbol holds each touched symbol's callers ONCE, keyed by symbol
+	// name (#136). Hunks reference it via SymbolsTouched[i].Name instead of
+	// embedding the caller bodies per hunk — the same symbol is often touched by
+	// many hunks, and the caller source was the largest duplicated payload.
+	CallersBySymbol map[string][]CallSite `json:"callers_by_symbol,omitempty"`
+	TotalHunks      int                   `json:"total_hunks"`
+	Truncated       bool                  `json:"truncated,omitempty"`
 }
 
 // Review runs the review verb for callers without an SDK request — the REST
@@ -212,6 +221,10 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 			break
 		}
 	}
+	// Hoist caller bodies to a single top-level map keyed by symbol (#136). Only
+	// symbols that survive in emitted hunks (post-compact, post-truncation) are
+	// included; each hunk joins via SymbolsTouched[i].Name + CallerCount.
+	out.CallersBySymbol = collectCallersBySymbol(out.Files, callerCache)
 	if out.Truncated {
 		out.Hint = appendHint(out.Hint, fmt.Sprintf("output capped at %d hunks / %d files — narrow the range for full coverage", reviewMaxHunks, reviewMaxFiles))
 	}
@@ -228,6 +241,31 @@ type traceResult struct {
 	callers []CallSite
 	count   int
 	noGraph bool
+}
+
+// collectCallersBySymbol hoists caller bodies out of the hunks into a single map
+// keyed by symbol name (#136). It walks the EMITTED files/hunks (so compacted and
+// truncated-away symbols are excluded) and pulls each referenced symbol's cached
+// callers once. Returns nil when no touched symbol has callers, so the field is
+// omitted from JSON.
+func collectCallersBySymbol(files []ReviewFile, cache map[string]traceResult) map[string][]CallSite {
+	out := map[string][]CallSite{}
+	for _, f := range files {
+		for _, h := range f.Hunks {
+			for _, sym := range h.SymbolsTouched {
+				if _, done := out[sym.Name]; done {
+					continue
+				}
+				if tr, ok := cache[sym.Name]; ok && len(tr.callers) > 0 {
+					out[sym.Name] = tr.callers
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // reviewFile composes one file's hunks. File-level history legs (tests, doc,
@@ -311,9 +349,8 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.En
 			if len(syms) == 0 {
 				hadGraph = true
 			}
-			seenCaller := map[string]bool{}
 			seenNote := map[int64]bool{}
-			for _, sym := range syms {
+			for i, sym := range syms {
 				if sym.Exported {
 					exported = true
 				}
@@ -324,13 +361,10 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.En
 				if tr.count > maxCallers {
 					maxCallers = tr.count
 				}
-				for _, c := range tr.callers {
-					key := c.Path + ":" + strconv.Itoa(c.StartLine)
-					if !seenCaller[key] {
-						seenCaller[key] = true
-						rh.Callers = append(rh.Callers, c)
-					}
-				}
+				// Caller BODIES are hoisted to out.CallersBySymbol (#136); the hunk
+				// keeps only the per-symbol count so a reader sees how hot each
+				// touched symbol is without the join.
+				rh.SymbolsTouched[i].CallerCount = tr.count
 				// Dedup notes by ID across symbols: two symbols in the same hunk
 				// often share the same note (e.g. a gotcha scoped to the file),
 				// which would produce duplicates per hunk with many probes (#701).
