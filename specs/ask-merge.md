@@ -58,7 +58,7 @@ under `DEX_EXPERT` and via `intent=`):
 | `search` | `ask` | `behavior_search` intent |
 | `trace` | `ask` / `look` | `callers`/`callees` intent; `look <symbol>`; `path`/`impact` via `intent=` or DEX_EXPERT |
 | `locate` | `ask` / `look` | `orient`/`symbol_lookup`; `look path:line` |
-| `brief` | `ask` | folded — `assemble`/`editing_context` intent (**removed, not just demoted**: genuine duplicate) |
+| `brief` | `ask` | folded — `assemble` intent, **after** porting brief's `local_rules` into `ask` (slice-1 dogfood disproved the "pure duplicate" premise: brief uniquely carried project rules). Port-then-remove (#141). |
 | `notes` | `remember` | everyday add/query via `remember`; admin/relate lanes stay on `notes` under DEX_EXPERT |
 | `review_diff` | `ask` (once review-union lands) | `review` intent; **stays everyday until then** (delta-shaped, no intent yet) |
 
@@ -77,15 +77,25 @@ Result: everyday drops from ~11 to ~7, and the flagship verb is finally present.
 - **`look` catches the shape-routable cases** the regex router is weakest on
   (a bare symbol, a `path:line`) — so the two lanes back each other up.
 
-### The one genuinely hard piece: brief↔ask output shape
+### brief↔ask: not a pure duplicate (corrected by the slice-1 dogfood)
 
-`brief` and `ask` do the same job (curated pack for a task) but return **different
-types** — `brief`→`BriefOutput`, `ask`→`ContextOutput`. Folding brief means ask's
-`assemble`/`editing_context` intent must produce a brief-quality pack. Options:
-(a) route ask-assemble through the brief composer, returning `ContextOutput` shaped
-from it; (b) keep the brief composer, have ask call it and adapt. Slice 2 decides;
-the correctness bar is "ask(assemble) is at least as good as brief(task) on the
-same input" (measured on a handful of real tasks, dogfooded).
+The original premise — "brief is a genuine duplicate of ask(assemble)" — was
+**wrong**, and the slice-1 dogfood caught it: `ask --intent assemble` structurally
+lacked `brief`'s `local_rules` (`ContextOutput` had no rules field at all). `brief`
+(task→working-set **with the rules that govern it**) and `ask` (question→evidence)
+are different jobs. So folding is **port-then-remove**, not delete:
+
+- **2a (done, #141):** add `ContextOutput.Rules`, populated by the existing
+  `collectLocalRules(root)` on `intent=assemble`. Dogfood confirms byte-identical
+  rule sets between `dex brief` and `dex ask --intent assemble`. Additive; brief
+  untouched.
+- **2b:** with parity proven, remove `brief` (tool + `BriefOutput` + handler + CLI
+  + the "brief START HERE" MCP-instructions), routing task-start through
+  `ask(assemble)`. Drop `antiAccretionCeiling` 1→0.
+
+The correctness bar for any future fold is the same: the demoted tool's distinctive
+output must exist on `ask` *before* the tool is removed — proven by dogfood, not
+assumed.
 
 ### review output-union (deferred, own slice)
 
@@ -102,9 +112,10 @@ then `review_diff` stays an everyday tool.
    the everyday profile always (it already BM25-falls-back with no embedder).
    Purely additive: nothing demoted yet. Golden contract regen. This alone makes
    the flagship verb present and is the prerequisite for every later slice.
-2. **Fold brief → ask(assemble).** Reconcile the output shape; make ask-assemble
-   match brief quality; remove `brief` (the one true duplicate). Resolves the
-   anti-accretion offense → drop `antiAccretionCeiling` 1→0.
+2. **Fold brief → ask(assemble), port-then-remove (#141).** 2a: port brief's
+   `local_rules` into `ask(assemble)` (`ContextOutput.Rules`), dogfood parity. 2b:
+   remove `brief` once parity holds. Resolves the anti-accretion offense → drop
+   `antiAccretionCeiling` 1→0.
 3. **Demote search → expert.** Verify `ask`/`ask(intent=behavior_search)` parity on
    real queries; move `search` into `registerExpertTools`.
 4. **Demote trace + locate → expert.** Confirm callers/callees/symbol_lookup/orient
