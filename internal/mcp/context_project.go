@@ -6,40 +6,32 @@ import (
 	"github.com/alehatsman/dex/internal/retrieve"
 )
 
-// trustEnvelope is the wire form of retrieve.Trust (#95c): index freshness plus
-// evidence-derived confidence/recall signals — the single home for the ask
-// tool's trust surface (#116 folded in the former top-level stale/indexing/
-// confidence). All omitempty so a zero envelope projects to nil.
-type trustEnvelope struct {
-	Stale         bool    `json:"stale,omitempty"`
-	Indexing      bool    `json:"indexing,omitempty"`
-	IndexedAt     string  `json:"indexed_at,omitempty"` // RFC3339
-	Confidence    string  `json:"confidence,omitempty"` // "high" | "medium" | "low"
-	TopScore      float32 `json:"top_score,omitempty"`
-	LowConfidence bool    `json:"low_confidence,omitempty"`
-	GraphResolved bool    `json:"graph_resolved,omitempty"`
-	RecallPartial bool    `json:"recall_partial,omitempty"`
-	Caveat        string  `json:"caveat,omitempty"`
-}
-
-// fromPackTrust projects the neutral Trust envelope. Returns nil when every
-// field is zero so empty responses stay byte-neutral (omitempty on the field).
-// In practice Confidence is always set on an assembled pack, so the envelope is
-// present on every real ask — the empty case is the no-lane early return.
-func fromPackTrust(t retrieve.Trust) *trustEnvelope {
+// fromPackTrust projects retrieve.Trust (#95c) onto the single EnvTrust shape
+// shared by every verb (#110 step 2 — ask no longer has its own trustEnvelope).
+// Provenance is "semantic" (ask is the embedding-retrieval verb); the two
+// freshness booleans (stale, indexing) fold into one `fresh` plus a caveat when
+// an index build is in flight, losing no information. Returns nil when every
+// field is zero so empty (no-lane) responses stay byte-neutral. In practice
+// Confidence is always set on an assembled pack, so trust is present on every
+// real ask.
+func fromPackTrust(t retrieve.Trust) *EnvTrust {
 	if !t.Stale && !t.Indexing && t.IndexedAt.IsZero() && t.Confidence == "" &&
 		t.TopScore == 0 && !t.LowConf && !t.GraphResolved && !t.RecallPartial && t.Caveat == "" {
 		return nil
 	}
-	env := &trustEnvelope{
-		Stale:         t.Stale,
-		Indexing:      t.Indexing,
+	fresh := !t.Stale && !t.Indexing
+	env := &EnvTrust{
+		Provenance:    "semantic",
+		Fresh:         &fresh,
 		Confidence:    t.Confidence,
 		TopScore:      t.TopScore,
 		LowConfidence: t.LowConf,
 		GraphResolved: t.GraphResolved,
 		RecallPartial: t.RecallPartial,
 		Caveat:        t.Caveat,
+	}
+	if t.Indexing && env.Caveat == "" {
+		env.Caveat = "index build in progress — results may be incomplete"
 	}
 	if !t.IndexedAt.IsZero() {
 		env.IndexedAt = t.IndexedAt.UTC().Format(time.RFC3339)

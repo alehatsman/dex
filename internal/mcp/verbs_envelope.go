@@ -32,6 +32,14 @@ type EnvTrust struct {
 	Confidence string `json:"confidence,omitempty"`
 	// Caveat is a one-line honesty note, e.g. "name-based recall may be partial".
 	Caveat string `json:"caveat,omitempty"`
+
+	// Evidence signals — set by the semantic verb (ask) only; omitempty so exact
+	// verbs still project to {provenance:"exact"}. Folded in from the former
+	// parallel trustEnvelope (#110 step 2) so ask shares this one trust shape.
+	TopScore      float32 `json:"top_score,omitempty"`      // top retrieval score
+	LowConfidence bool    `json:"low_confidence,omitempty"` // self-assessed weak match
+	GraphResolved bool    `json:"graph_resolved,omitempty"` // call-graph edges resolved
+	RecallPartial bool    `json:"recall_partial,omitempty"` // name-based recall may be partial
 }
 
 // EnvCost reports what the response cost the caller's context budget and how much

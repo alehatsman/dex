@@ -15,8 +15,9 @@ func TestFromPackTrustZeroIsNil(t *testing.T) {
 	}
 }
 
-// A populated envelope carries every field through, with IndexedAt rendered as
-// RFC3339 UTC.
+// A populated envelope carries every field through onto the unified EnvTrust
+// (#110 step 2): provenance is "semantic", the two freshness booleans fold into
+// fresh, evidence signals pass through, IndexedAt renders RFC3339 UTC.
 func TestFromPackTrustPopulated(t *testing.T) {
 	at := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
 	got := fromPackTrust(retrieve.Trust{
@@ -33,8 +34,14 @@ func TestFromPackTrustPopulated(t *testing.T) {
 	if got == nil {
 		t.Fatal("populated Trust must project to a non-nil envelope")
 	}
-	if !got.Stale || !got.Indexing || !got.LowConfidence || !got.GraphResolved || !got.RecallPartial {
-		t.Fatalf("bool fields dropped: %+v", got)
+	if got.Provenance != "semantic" {
+		t.Fatalf("Provenance=%q, want semantic", got.Provenance)
+	}
+	if got.Fresh == nil || *got.Fresh {
+		t.Fatalf("stale+indexing must fold to fresh=false, got %+v", got.Fresh)
+	}
+	if !got.LowConfidence || !got.GraphResolved || !got.RecallPartial {
+		t.Fatalf("evidence bool fields dropped: %+v", got)
 	}
 	if got.Confidence != "high" {
 		t.Fatalf("Confidence=%q, want high", got.Confidence)
@@ -50,12 +57,24 @@ func TestFromPackTrustPopulated(t *testing.T) {
 	}
 }
 
+// An indexing-in-flight Trust with no explicit caveat gets the build-in-progress
+// caveat so the folded freshness state stays visible.
+func TestFromPackTrustIndexingCaveat(t *testing.T) {
+	got := fromPackTrust(retrieve.Trust{Indexing: true})
+	if got == nil || got.Fresh == nil || *got.Fresh {
+		t.Fatalf("indexing Trust must project with fresh=false, got %+v", got)
+	}
+	if got.Caveat == "" {
+		t.Fatal("indexing-in-flight must surface a caveat")
+	}
+}
+
 // Freshness alone (no evidence signals) still projects — a stale index is worth
 // surfacing even on an otherwise empty envelope.
 func TestFromPackTrustFreshnessOnly(t *testing.T) {
 	got := fromPackTrust(retrieve.Trust{Stale: true})
-	if got == nil || !got.Stale {
-		t.Fatalf("freshness-only Trust must project with Stale set, got %+v", got)
+	if got == nil || got.Fresh == nil || *got.Fresh {
+		t.Fatalf("freshness-only Trust must project with fresh=false, got %+v", got)
 	}
 	if got.IndexedAt != "" {
 		t.Fatalf("zero IndexedAt must stay empty, got %q", got.IndexedAt)
