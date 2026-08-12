@@ -307,9 +307,16 @@ deprecation window.
    on-disk render; diff-anchored review; retire the #83 string-sniff.
 6. **`look` merge** — read/grep/trace under one exact fetch verb with `view`.
 7. **`act` / `remember` merges**; `notes` admin → CLI.
-8. **Profiles** replace the 4-flag matrix.
-9. **Router-accuracy harness** — gates the final alias removal (four-verb cutover).
-10. **Anti-accretion lint** — standing guard.
+8. **Profiles** replace the 4-flag matrix. **(done, #148)** `registerTools` no
+   longer branches the verb set on `weakModel`: the four verbs (ask·look·act·
+   remember) register in every profile — this fixed a drift where a weak local
+   model got ask·look·act but not `remember` (stale from before #147 folded it in).
+   DEX_EXPERT is an additive overlay, orthogonal to the profile. Invariant locked by
+   `TestFourVerbsConstantAcrossProfiles` (in-memory transport drives the otherwise
+   process-global weak profile). Vestigial `registerTools` params (weakModel,
+   chatAvailable) left for a separate cleanup.
+9. **Router-accuracy harness** — gates the final alias removal (four-verb cutover). **(done, #9)**
+10. **Anti-accretion lint** — standing guard. **(done, #10)**
 
 ## Edge cases
 

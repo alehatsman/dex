@@ -888,24 +888,35 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // routes to the non-semantic lanes). After the 5c collapse (#145) the always-on
 // floor is the index-free verbs `ask` + `look` (fetch) + `act` (run); the raw
 // primitives they subsume — `shell`, `grep`, `read` — moved to the expert lane.
-// When weakModel is true the full tool surface is hidden and only ask, look, and
-// act are exposed.
+//
+// Named profiles, not a boolean matrix (#110 step 8, spec: tool-surface.md).
+// The deployment shape is one of three profiles — full (embedder+chat),
+// bm25-only (no embedder), lean (weak local model) — but the VERB SET is
+// constant across all three: ask · look · act · remember. A profile changes only
+// ask's internal capability (synthesis → lexical → hits-only, degraded at call
+// time from embed/chat), never which tools an agent sees. remember registers even
+// for a weak local model: a weaker model forgets more, so durable memory helps it
+// most. DEX_EXPERT is an additive power-lane overlay, orthogonal to the profile —
+// never a different shape of the everyday surface.
 func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
 	_ = chatAvailable // read no longer gates on chat; summary degrades at call time
+	_ = weakModel     // the profile no longer gates the verb set (#110 step 8); the
+	//                   four verbs are constant, only ask's capability degrades. Param
+	//                   retained (call sites still trigger profiles.Active's token-family
+	//                   side effect); a vestigial-param cleanup is tracked separately.
 	td := func(s string) string { return compressToolDesc(s, descMode) }
-	expert := expertEnabled()
-	if !weakModel {
-		registerEverydayTools(srv, h, td, embedAvailable)
-		if expert {
-			registerExpertTools(srv, h, td, embedAvailable)
-		}
-	}
-	registerBaselineTools(srv, h, td)
+
+	// The four verbs — constant across every profile.
+	registerBaselineTools(srv, h, td) // look (fetch) + act (run): the index-free floor
 	// ask is the always-on front door (#140, ask-merge slice 1): the intent-routed
-	// entry every profile sees. It was formerly gated to the no-embedder fallback
-	// and the expert lane; the four-verb surface makes it unconditional. It
-	// BM25-falls-back on its own when no embedder is wired.
+	// entry every profile sees. It BM25-falls-back on its own when no embedder is wired.
 	registerAskTool(srv, h, td)
+	registerEverydayTools(srv, h, td, embedAvailable) // remember (durable memory)
+
+	// DEX_EXPERT overlays the granular power lanes additively, in any profile.
+	if expertEnabled() {
+		registerExpertTools(srv, h, td, embedAvailable)
+	}
 }
 
 // registerEverydayTools wires the everyday non-baseline verb of the four-verb
