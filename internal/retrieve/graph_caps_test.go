@@ -43,7 +43,7 @@ func TestEnrichGraphCaps(t *testing.T) {
 			view.NodesByPackage[pkg] = append(view.NodesByPackage[pkg], n)
 			view.NodesByPath[n.FilePath] = append(view.NodesByPath[n.FilePath], n)
 		}
-		gr, ok := EnrichGraph(IntentArchitecture, view, []SemHit{{Path: "bigpkg/bigpkg.go"}}, nil)
+		gr, ok := EnrichGraph(IntentArchitecture, view, []SemHit{{Path: "bigpkg/bigpkg.go"}}, nil, nil)
 		if !ok || gr == nil {
 			t.Fatal("expected a rollup from the package flood")
 		}
@@ -80,7 +80,7 @@ func TestEnrichGraphCaps(t *testing.T) {
 			view.EdgesBySrc[srcPkg.ID] = append(view.EdgesBySrc[srcPkg.ID], e)
 			view.EdgesByDst[dstID] = append(view.EdgesByDst[dstID], e)
 		}
-		gr, ok := EnrichGraph(IntentPackageTopology, view, []SemHit{{Path: "src/src.go"}}, nil)
+		gr, ok := EnrichGraph(IntentPackageTopology, view, []SemHit{{Path: "src/src.go"}}, nil, nil)
 		if !ok || gr == nil {
 			t.Fatal("expected a rollup from the imports flood")
 		}
@@ -131,7 +131,7 @@ func TestArchitectureAnchorsOnPageRank(t *testing.T) {
 		view.NodesByPath[s.file] = append(view.NodesByPath[s.file], pkgNode)
 	}
 	// semHits point only at a doc file — no graph nodes there.
-	gr, ok := EnrichGraph(IntentArchitecture, view, []SemHit{{Path: "README.md"}}, nil)
+	gr, ok := EnrichGraph(IntentArchitecture, view, []SemHit{{Path: "README.md"}}, nil, nil)
 	if !ok || gr == nil {
 		t.Fatal("expected graph rollup anchored on PageRank when semHits are docs")
 	}
@@ -175,7 +175,7 @@ func TestArchitectureAnchorAugmentedBySemHits(t *testing.T) {
 		view.NodesByPackage[n.PackagePath] = append(view.NodesByPackage[n.PackagePath], n)
 		view.NodesByPath[n.FilePath] = append(view.NodesByPath[n.FilePath], n)
 	}
-	gr, ok := EnrichGraph(IntentArchitecture, view, []SemHit{{Path: "leaf/leaf.go"}}, nil)
+	gr, ok := EnrichGraph(IntentArchitecture, view, []SemHit{{Path: "leaf/leaf.go"}}, nil, nil)
 	if !ok || gr == nil {
 		t.Fatal("expected graph rollup")
 	}

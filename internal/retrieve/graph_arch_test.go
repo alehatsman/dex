@@ -62,7 +62,7 @@ func TestEnrichGraphArchitectureRollup(t *testing.T) {
 		},
 	}
 
-	gr, ok := EnrichGraph(IntentArchitecture, view, nil, nil)
+	gr, ok := EnrichGraph(IntentArchitecture, view, nil, nil, nil)
 	if !ok || gr == nil {
 		t.Fatal("EnrichGraph returned no result for architecture")
 	}
@@ -140,7 +140,7 @@ func TestEnrichGraphArchitecturePrefersExportedReps(t *testing.T) {
 		EdgesByKind: map[graph.EdgeKind][]graphquery.Edge{},
 	}
 
-	gr, ok := EnrichGraph(IntentArchitecture, view, nil, nil)
+	gr, ok := EnrichGraph(IntentArchitecture, view, nil, nil, nil)
 	if !ok || gr == nil {
 		t.Fatal("EnrichGraph returned no result for architecture")
 	}

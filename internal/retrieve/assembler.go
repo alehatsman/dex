@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/alehatsman/dex/internal/graph/resolve"
 	"github.com/alehatsman/dex/internal/graphquery"
 	"github.com/alehatsman/dex/internal/store"
 )
@@ -110,7 +111,7 @@ func (a Assembler) Assemble(ctx context.Context, st store.Searcher, req Assemble
 
 	// Graph neighborhood — computed over the pre-reweight order (lane
 	// provenance is final post-enrich).
-	if gr, ok := EnrichGraph(req.Intent, req.Graph, sems, rawSyms); ok {
+	if gr, ok := EnrichGraph(req.Intent, req.Graph, sems, rawSyms, projectOfFor(req)); ok {
 		pack.Graph = gr
 	}
 
@@ -136,6 +137,22 @@ func (a Assembler) Assemble(ctx context.Context, st store.Searcher, req Assemble
 
 	a.finish(ctx, st, req, &pack)
 	return pack, AssembleMeta{EmbedFailed: embedFailed}
+}
+
+// projectOfFor returns the workspace-project mapper EnrichGraph uses to roll a
+// JS/TS module DAG up to workspace projects for package_topology (#151). It is
+// built only for that intent — resolve.Load walks the tree for package.json
+// workspace globs, so the common read intents must not pay for it — and only for
+// a genuine workspace root (IsWorkspaceRoot). The root gate is what keeps a Go
+// repo off the rollup: resolve.Load happily discovers buried JS/TS test-fixture
+// package.json files (dex's own graph/resolve/testdata), so without it a Go repo
+// would regress from its real package DAG to a 3-node fixture graph. nil disables
+// the rollup — package_topology then answers from the module lane.
+func projectOfFor(req AssembleRequest) func(string) string {
+	if req.Intent != IntentPackageTopology || !resolve.IsWorkspaceRoot(req.ProjectRoot) {
+		return nil
+	}
+	return resolve.Load(req.ProjectRoot).ProjectOf
 }
 
 // finish runs the post-evidence tail on the pack: inline (native, #113) →

@@ -42,7 +42,7 @@ func recallView(langC string) *graphquery.View {
 
 // An all-Go call neighborhood is fully type-resolved: Resolved, not partial.
 func TestEnrichGraphResolvedAllGo(t *testing.T) {
-	gr, ok := EnrichGraph(IntentCallers, recallView(""), nil, []SymbolHit{{QualifiedName: "A", Path: "a.go"}})
+	gr, ok := EnrichGraph(IntentCallers, recallView(""), nil, []SymbolHit{{QualifiedName: "A", Path: "a.go"}}, nil)
 	if !ok || gr == nil {
 		t.Fatal("expected a call graph")
 	}
@@ -54,7 +54,7 @@ func TestEnrichGraphResolvedAllGo(t *testing.T) {
 // A call edge touching a non-Go (tree-sitter) node is name-based: RecallPartial,
 // not Resolved — an empty/partial result on such a language is not proof.
 func TestEnrichGraphRecallPartialNonGo(t *testing.T) {
-	gr, ok := EnrichGraph(IntentCallers, recallView("python"), nil, []SymbolHit{{QualifiedName: "A", Path: "a.go"}})
+	gr, ok := EnrichGraph(IntentCallers, recallView("python"), nil, []SymbolHit{{QualifiedName: "A", Path: "a.go"}}, nil)
 	if !ok || gr == nil {
 		t.Fatal("expected a call graph")
 	}
@@ -73,7 +73,7 @@ func TestEnrichGraphNoCallEdgesUnresolved(t *testing.T) {
 	v.EdgesBySrc = map[string][]graphquery.Edge{}
 	v.EdgesByDst = map[string][]graphquery.Edge{}
 	v.EdgesByKind = map[graph.EdgeKind][]graphquery.Edge{}
-	gr, ok := EnrichGraph(IntentSymbolLookup, v, nil, []SymbolHit{{QualifiedName: "A", Path: "a.go"}})
+	gr, ok := EnrichGraph(IntentSymbolLookup, v, nil, []SymbolHit{{QualifiedName: "A", Path: "a.go"}}, nil)
 	if !ok || gr == nil {
 		t.Fatal("expected the symbol node to surface")
 	}

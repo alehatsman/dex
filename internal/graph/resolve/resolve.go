@@ -125,6 +125,37 @@ func Load(root string) *Workspace {
 	return w
 }
 
+// IsWorkspaceRoot reports whether root is the root of a genuine JS/TS monorepo
+// workspace — it has a top-level workspace manifest (pnpm-workspace.yaml,
+// rush.json, lerna.json, or a package.json with a "workspaces" field). This is
+// deliberately a ROOT-only check, unlike Load, which walks the whole tree for
+// package.json (and so discovers buried test-fixture packages too). Consumers
+// that must not confuse a fixture-bearing Go repo for a workspace — e.g. the
+// package_topology project rollup (#151) — gate on this rather than on Load
+// returning any packages.
+func IsWorkspaceRoot(root string) bool {
+	if root == "" {
+		return false
+	}
+	for _, f := range []string{"pnpm-workspace.yaml", "rush.json", "lerna.json"} {
+		if fi, err := os.Stat(filepath.Join(root, f)); err == nil && !fi.IsDir() {
+			return true
+		}
+	}
+	// npm/yarn workspaces live in the root package.json "workspaces" field.
+	data, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		return false
+	}
+	var pkg struct {
+		Workspaces json.RawMessage `json:"workspaces"`
+	}
+	if json.Unmarshal(data, &pkg) != nil {
+		return false
+	}
+	return len(pkg.Workspaces) > 0
+}
+
 // Origin records where a specifier's candidates came from, so an unresolved
 // import can be labeled honestly downstream — a path-alias target that isn't
 // indexed vs a workspace-package subpath that has no source file. Alias wins
