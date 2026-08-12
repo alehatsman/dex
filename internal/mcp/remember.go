@@ -19,9 +19,9 @@ type RememberInput struct {
 	Fact  string `json:"fact,omitempty"  jsonschema:"a durable fact to persist (write mode); lead a review finding or gotcha with a bracketed [kind]"`
 	Query string `json:"query,omitempty" jsonschema:"recall the facts most relevant to this task/question (read mode); empty query returns top facts by salience"`
 	// Scope binds a written fact — or filters a recall — to a file glob/path/package.
-	Scope       string `json:"scope,omitempty"       jsonschema:"bind a written fact to a file glob/path/package so it surfaces when a file verb touches a match (#645); in recall mode, filter to facts scoped to this path"`
-	Archetype   string `json:"archetype,omitempty"  jsonschema:"write mode: Gotcha | Decision | Convention | Architecture | Observation | ReviewFinding | Pattern | Dependency | Fact (default Observation)"`
-	K           int    `json:"k,omitempty"          jsonschema:"recall mode: max facts to return (default 10)"`
+	Scope     string `json:"scope,omitempty"       jsonschema:"bind a written fact to a file glob/path/package so it surfaces when a file verb touches a match (#645); in recall mode, filter to facts scoped to this path"`
+	Archetype string `json:"archetype,omitempty"  jsonschema:"write mode: Gotcha | Decision | Convention | Architecture | Observation | ReviewFinding | Pattern | Dependency | Fact (default Observation)"`
+	K         int    `json:"k,omitempty"          jsonschema:"recall mode: max facts to return (default 10)"`
 	// Supersedes upserts: write the new fact and mark an existing one inactive in
 	// one step (#606). Pass the `id` of a fact a prior recall or near-dup warning
 	// surfaced — this is the everyday way to correct a stale note without stacking

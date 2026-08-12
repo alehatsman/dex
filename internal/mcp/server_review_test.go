@@ -59,7 +59,7 @@ func TestCollectCallersBySymbol(t *testing.T) {
 	cache := map[string]traceResult{
 		"Greet":  {callers: []CallSite{{Path: "a.go", StartLine: 1}, {Path: "b.go", StartLine: 2}}, count: 2},
 		"Helper": {callers: []CallSite{{Path: "c.go", StartLine: 3}}, count: 1},
-		"Bare":   {callers: nil, count: 0},           // touched, no callers → omitted
+		"Bare":   {callers: nil, count: 0},              // touched, no callers → omitted
 		"Orphan": {callers: []CallSite{{Path: "x.go"}}}, // has callers but untouched → omitted
 	}
 
@@ -138,9 +138,9 @@ func TestResolveReviewRange(t *testing.T) {
 		{ReviewInput{Branch: "feat/x"}, "main...feat/x", "ok"},
 		{ReviewInput{Branch: "feat/x", Base: "dev"}, "dev...feat/x", "ok"},
 		{ReviewInput{Branch: "bad branch"}, "", "error"},
-		{ReviewInput{Worktree: true}, "HEAD", "ok"},                       // #137: working tree vs HEAD
+		{ReviewInput{Worktree: true}, "HEAD", "ok"},                              // #137: working tree vs HEAD
 		{ReviewInput{Ref: "HEAD~3..HEAD", Worktree: true}, "HEAD~3..HEAD", "ok"}, // ref wins over worktree
-		{ReviewInput{}, "", "error"},                                      // nothing selected still errors at this layer
+		{ReviewInput{}, "", "error"},                                             // nothing selected still errors at this layer
 	}
 	for _, c := range cases {
 		rng, status, _ := resolveReviewRange(ctx, t.TempDir(), c.in)
