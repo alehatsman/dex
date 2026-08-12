@@ -179,12 +179,18 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 		if err != nil {
 			return nil, LookOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 		}
-		return nil, LookOutput{
+		out := LookOutput{
 			Status: ro.Status,
 			Hint:   ro.Hint,
 			Result: LookResult{Kind: "read", Read: &ro},
 			Trust:  exactTrust(),
-		}, nil
+		}
+		// Automatic session dedup (#110 step 3): suppress the bytes if this exact
+		// range was already surfaced this session — no etag round-trip required.
+		if sl, ok := h.(seenLooker); ok {
+			sl.applySeenLook(sessionKey(req), &out)
+		}
+		return nil, out, nil
 
 	case "grep":
 		_, grepOut, err := h.searchGrep(ctx, req, SearchGrepInput{

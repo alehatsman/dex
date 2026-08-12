@@ -132,6 +132,12 @@ func (p projectScoped) summarize(ctx context.Context, req *sdk.CallToolRequest, 
 	in.ProjectRoot = p.root
 	return p.s.summarize(ctx, req, in)
 }
+
+// applySeenLook delegates look's read-lane session dedup to the underlying
+// server ledger (#110 step 3) so the http (multi-project) path dedups too.
+func (p projectScoped) applySeenLook(key string, out *LookOutput) {
+	p.s.applySeenLook(key, out)
+}
 func (p projectScoped) smells(ctx context.Context, req *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.smells(ctx, req, in)

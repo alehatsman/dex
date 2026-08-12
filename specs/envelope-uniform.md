@@ -78,11 +78,16 @@ meaningless for `act` (runs a command — no dedupable content) and for
 exactly the padding verbs_envelope.go's omitempty design set out to avoid.
 
 Resolution: the spine is **consistent where it applies**, not literally on every
-response. look gains seen-turn dedup on its read/grep lanes (same fingerprint
-mechanism ask uses); ask keeps its per-hit seen; act and remember-write omit it
-(nothing to dedup). This honors the intent ("never re-send what the agent already
-has") without noise. remember-recall (which returns facts) MAY carry seen later —
-deferred, low value (facts are short).
+response. Implemented: look's **read lane** now auto-dedups against the same
+server-side ledger + turn counter ask uses (`advanceSeen`), so a range ask inlined
+on turn N is suppressed when look re-reads the same bytes on turn N+1 — automatic,
+cross-verb, **no etag round-trip** (the epic's "not opt-in"). ask keeps its per-hit
+seen; act and remember-write omit it (nothing to dedup).
+
+Scoping: range-less whole-file reads (start < 1) are left to the existing etag
+path (no locator to key on); look's **grep lane** is deferred — matches are tiny,
+dedup savings marginal. remember-recall MAY carry seen later (facts are short,
+low value).
 
 ### 4. handles
 Unchanged: ask keeps per-hit handles (the progressive-disclosure mechanism). look
@@ -103,7 +108,7 @@ the contract is explicit that `handles` is a per-hit field, not a top-level arra
   change (the new optional `budget` param).
 
 ## Increments (checkpoint after each)
-1. **Trust unification** — EnvTrust superset; ask → EnvTrust; delete trustEnvelope. (no conflict)
-2. **cost.tokens_returned** — stamp on all four; optional `budget` → budget_left.
-3. **Session spine** — look read/grep seen-turn dedup.
+1. **Trust unification** — EnvTrust superset; ask → EnvTrust; delete trustEnvelope. ✅ (2a)
+2. **cost.tokens_returned** — stamp on all four; optional `budget` → budget_left. ✅ (2b)
+3. **Session spine** — look read-lane auto seen dedup on the shared ledger. ✅ (3)
 4. **Validate + close #110.**

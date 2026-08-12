@@ -58,17 +58,23 @@ func locatorKey(path string, start, end int) string {
 	return path + ":" + strconv.Itoa(start) + "-" + strconv.Itoa(end)
 }
 
-// applySeenContext marks every locator in an ask bundle that was already
-// surfaced on an earlier turn of the same session, clearing its inlined content
-// so the bytes aren't resent. The three lanes share one turn — they all came
-// from this single call. A no-op when key is "" (dedup disabled).
-func (s *Server) applySeenContext(key string, out *ContextOutput) {
+// advanceSeen locks the session's dedup ledger, advances its turn counter once,
+// and returns a note closure plus a release func the caller MUST defer. note
+// records a locator+content key for this turn and reports the first-seen turn
+// when those exact bytes were already surfaced on an EARLIER turn. Folding the
+// content fingerprint into the key means changed bytes miss (fresh key →
+// re-inlined, #138) and different renderings of one range track independently. A
+// key first seen on the current turn (same bytes in two lanes) is not a repeat.
+//
+// Every content-returning verb (ask, look-read) shares this one ledger and turn
+// counter per session, so dedup is automatic and cross-verb: a range ask inlined
+// on turn N is suppressed when look re-reads it on turn N+1 (#110 step 3).
+// Returns nil,noop when key is "" (dedup disabled — one-shot CLI/test calls).
+func (s *Server) advanceSeen(key string) (note func(path string, start, end int, content string) (int, bool), release func()) {
 	if key == "" {
-		return
+		return nil, func() {}
 	}
 	s.seenMu.Lock()
-	defer s.seenMu.Unlock()
-
 	if s.seen == nil {
 		s.seen = make(map[string]*seenState)
 	}
@@ -85,14 +91,7 @@ func (s *Server) applySeenContext(key string, out *ContextOutput) {
 	}
 	st.turn++
 	cur := st.turn
-
-	// note records a locator+content key for this turn and reports the first-seen
-	// turn when those exact bytes were already surfaced on an EARLIER turn. Folding
-	// the content fingerprint into the key means changed bytes miss (fresh key →
-	// re-inlined, #138) and lane renderings that differ for one range (raw vs a
-	// summary) track independently instead of clobbering each other. A key first
-	// seen on the current turn (e.g. the same bytes in two lanes) is not a repeat.
-	note := func(path string, start, end int, content string) (firstTurn int, seen bool) {
+	note = func(path string, start, end int, content string) (int, bool) {
 		base := locatorKey(path, start, end)
 		if base == "" {
 			return 0, false
@@ -107,6 +106,19 @@ func (s *Server) applySeenContext(key string, out *ContextOutput) {
 		st.first[k] = cur
 		return 0, false
 	}
+	return note, s.seenMu.Unlock
+}
+
+// applySeenContext marks every locator in an ask bundle that was already
+// surfaced on an earlier turn of the same session, clearing its inlined content
+// so the bytes aren't resent. The three lanes share one turn — they all came
+// from this single call. A no-op when key is "" (dedup disabled).
+func (s *Server) applySeenContext(key string, out *ContextOutput) {
+	note, release := s.advanceSeen(key)
+	if note == nil {
+		return
+	}
+	defer release()
 
 	for i := range out.SemanticHits {
 		if ft, seen := note(out.SemanticHits[i].Path, out.SemanticHits[i].StartLine, out.SemanticHits[i].EndLine, out.SemanticHits[i].Content); seen {
@@ -125,5 +137,42 @@ func (s *Server) applySeenContext(key string, out *ContextOutput) {
 			out.SuggestedReads[i].SeenTurn = ft
 			out.SuggestedReads[i].Content = ""
 		}
+	}
+}
+
+// seenLooker is implemented by toolSurfaces backed by a Server session ledger
+// (*Server directly, projectScoped by delegation) so look's exact-read lane can
+// auto-dedup content already surfaced this session — automatic and server-side,
+// matching ask rather than the opt-in etag path the epic called out (#110 step 3).
+type seenLooker interface {
+	applySeenLook(key string, out *LookOutput)
+}
+
+// applySeenLook suppresses look's read-lane content when the same file range was
+// already surfaced on an earlier turn of this session (by ask or a prior look),
+// sharing ask's ledger and turn counter. Whole-file reads without a line range
+// (start < 1) are skipped — the etag path still covers those. A no-op when dedup
+// is disabled or the lane returned no content.
+func (s *Server) applySeenLook(key string, out *LookOutput) {
+	r := out.Result.Read
+	if r == nil || r.Content == "" {
+		return
+	}
+	note, release := s.advanceSeen(key)
+	if note == nil {
+		return
+	}
+	defer release()
+
+	if ft, seen := note(r.Path, r.StartLine, r.EndLine, r.Content); seen {
+		r.SeenTurn = ft
+		r.Content = ""
+		if r.Status == "" || r.Status == "ok" {
+			r.Status = "unchanged"
+		}
+		if r.Hint == "" {
+			r.Hint = "already surfaced this session (turn " + strconv.Itoa(ft) + "); content omitted — reuse what you have"
+		}
+		out.Status = r.Status
 	}
 }
