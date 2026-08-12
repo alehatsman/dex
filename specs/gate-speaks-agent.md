@@ -83,11 +83,16 @@ Two directions, both reusing the schema:
   (`./` stripped) so emitter/diff path shapes match. A hint notes the count and
   points at `mooncake task findings` to refresh. Wiring: dex consumes go-quality
   v0.3.1 + a `findings` task producing the artifact.
-- **Emit — pending.** dex's `smells` / `clones` / `similar` lanes gain the same
-  finding schema (`--format jsonl`), so dex's semantic analysis is gate-pluggable
-  — a project can add `dex smells --format jsonl` as a gate step and it aggregates
-  like any other. This is where dex eats its own dogfood: the richest findings
-  (vector clones, cohesion smells) come from dex itself.
+- **Emit — DONE.** `dex smells --format jsonl` and `dex clones --format jsonl`
+  project into the shared schema (`SmellsOutput.GateFindings()` /
+  `ClonesOutput.GateFindings()`), so dex's own analysis is gate-pluggable — a
+  project can add them as gate steps and they aggregate like any other emitter.
+  smells → `long-function`/`dead-export`/`god-file`/`god-node`; clones → one
+  `clone` finding per member block; all advisory (`level:warning`). A non-ok
+  status (no-index/no-graph) yields no rows, not an error, matching the
+  go-quality emitters. This is where dex eats its own dogfood: the richest
+  findings (vector clones, cohesion smells) come from dex itself. (`similar`
+  deferred — same pattern when wanted.)
 
 ## Design constraints
 

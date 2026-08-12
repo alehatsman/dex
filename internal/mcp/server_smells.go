@@ -9,6 +9,34 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// GateFindings projects a smells report into shared-schema findings (#155 P3
+// emit) so `dex smells --format jsonl` is gate-pluggable — dex's own structural
+// analysis becomes another emitter the goq/findings aggregator can ingest. All
+// smells are advisory, so they emit at level:warning.
+func (o SmellsOutput) GateFindings() []GateFinding {
+	var fs []GateFinding
+	add := func(rule, path string, line int, msg string) {
+		fs = append(fs, GateFinding{
+			Tool: "smells", Rule: rule, Level: "warning",
+			Path: path, Line: line, Message: msg,
+			Fingerprint: fmt.Sprintf("%s:%s:%d", rule, path, line),
+		})
+	}
+	for _, h := range o.LongFunctions {
+		add("long-function", h.Path, h.StartLine, fmt.Sprintf("long function %s (%d lines)", h.QualifiedName, h.Lines))
+	}
+	for _, h := range o.DeadExports {
+		add("dead-export", h.Path, h.StartLine, fmt.Sprintf("dead export %s (no callers)", h.QualifiedName))
+	}
+	for _, h := range o.GodFiles {
+		add("god-file", h.Path, 1, fmt.Sprintf("god file (%d symbols)", h.SymbolCount))
+	}
+	for _, h := range o.GodNodes {
+		add("god-node", h.Path, h.StartLine, fmt.Sprintf("god-node %s (over-coupled)", h.QualifiedName))
+	}
+	return fs
+}
+
 type SmellsInput struct {
 	MinFuncLines         int    `json:"min_func_lines,omitempty" jsonschema:"minimum function body length to flag as long (default 80)"`
 	MinFileSymbols       int    `json:"min_file_symbols,omitempty" jsonschema:"minimum symbols per file to flag as a god file (default 30)"`

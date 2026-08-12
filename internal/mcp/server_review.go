@@ -124,16 +124,20 @@ type ReviewFile struct {
 }
 
 // GateFinding is one machine-readable quality-gate finding (#155) — the shared
-// schema emitted by goq/findings' `--format jsonl` steps. It is attached to the
-// ReviewFile whose path it names, so review surfaces the gate inline. Path is
-// implied by the enclosing ReviewFile; fingerprint is dropped as review noise.
+// schema emitted by goq/findings' `--format jsonl` steps and by dex's own
+// `smells`/`clones --format jsonl` (P3 emit). Two projections of one shape:
+// attached under a ReviewFile (ingest) Path/Fingerprint are omitted — path is
+// the enclosing file; emitted standalone they are set. Field order matches the
+// go-quality emitters so the JSONL keys line up across producers.
 type GateFinding struct {
-	Tool    string `json:"tool"`
-	Rule    string `json:"rule"`
-	Level   string `json:"level"` // error | warning | note
-	Line    int    `json:"line,omitempty"`
-	Col     int    `json:"col,omitempty"`
-	Message string `json:"message,omitempty"`
+	Tool        string `json:"tool"`
+	Rule        string `json:"rule"`
+	Level       string `json:"level"` // error | warning | note
+	Path        string `json:"path,omitempty"`
+	Line        int    `json:"line,omitempty"`
+	Col         int    `json:"col,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // ReviewOutput is the per-hunk bundle. Every lane is best-effort: an empty list

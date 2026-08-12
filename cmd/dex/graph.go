@@ -210,7 +210,7 @@ func cmdGraphClones(ctx context.Context, args []string) error {
 	minLines := fs.Int("min-lines", 0, "ignore blocks shorter than this many lines (default 6)")
 	k := fs.Int("k", 0, "neighbours probed per block (default 10, max 50)")
 	maxClusters := fs.Int("max-clusters", 0, "max clusters to return (default 20, max 100)")
-	format := fs.String("format", "text", "output format: text | json")
+	format := fs.String("format", "text", "output format: text | json | jsonl (gate findings)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -242,6 +242,9 @@ func cmdGraphClones(ctx context.Context, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
+	}
+	if *format == "jsonl" {
+		return writeFindingsJSONL(out.Status, out.GateFindings())
 	}
 	if out.Status != "ok" {
 		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
@@ -1123,6 +1126,24 @@ func cmdGraphCommunities(ctx context.Context, args []string) error {
 	return nil
 }
 
+// writeFindingsJSONL prints findings as one JSON object per line (#155 P3 emit:
+// `dex smells|clones --format jsonl`) — the shared gate finding schema the
+// goq/findings aggregator ingests, making dex's own analysis gate-pluggable. A
+// non-ok status (no-index / graph not built) yields no rows, not an error: this
+// is a findings feed, consistent with the go-quality emitters.
+func writeFindingsJSONL(status string, findings []mcp.GateFinding) error {
+	if status != "ok" {
+		return nil
+	}
+	enc := json.NewEncoder(os.Stdout)
+	for _, f := range findings {
+		if err := enc.Encode(f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func cmdGraphSmells(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph smells", flag.ContinueOnError)
 	setHelp(fs,
@@ -1133,7 +1154,7 @@ func cmdGraphSmells(ctx context.Context, args []string) error {
 	minGodCallers := fs.Int("min-god-node-callers", 0, "min in-degree to flag a god-node (default 20)")
 	minGodPkgCallers := fs.Int("min-god-node-pkg-callers", 0, "min cross-pkg callers to flag a god-node (default 8)")
 	limit := fs.Int("limit", 0, "max results per category (default 20)")
-	format := fs.String("format", "text", "output format: text | json")
+	format := fs.String("format", "text", "output format: text | json | jsonl (gate findings)")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
@@ -1165,6 +1186,9 @@ func cmdGraphSmells(ctx context.Context, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
+	}
+	if *format == "jsonl" {
+		return writeFindingsJSONL(out.Status, out.GateFindings())
 	}
 	if out.Status != "ok" {
 		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)

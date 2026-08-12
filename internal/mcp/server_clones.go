@@ -11,6 +11,29 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
+// GateFindings projects clone clusters into shared-schema findings (#155 P3
+// emit): one finding per member block, so each near-duplicate location is
+// flagged where it lives (mirroring go-quality dupl, but vector-based). Advisory
+// → level:warning.
+func (o ClonesOutput) GateFindings() []GateFinding {
+	var fs []GateFinding
+	for _, c := range o.Clusters {
+		for _, m := range c.Members {
+			name := m.Name
+			if name == "" {
+				name = m.Kind
+			}
+			fs = append(fs, GateFinding{
+				Tool: "clones", Rule: "clone", Level: "warning",
+				Path: m.Path, Line: m.StartLine,
+				Message:     fmt.Sprintf("near-duplicate block (cluster of %d, ≥%.2f similar): %s", c.Size, c.Similarity, name),
+				Fingerprint: fmt.Sprintf("clone:%s:%d", m.Path, m.StartLine),
+			})
+		}
+	}
+	return fs
+}
+
 type ClonesInput struct {
 	Path        string  `json:"path,omitempty" jsonschema:"restrict the scan to blocks under this relative path prefix (file or dir); empty scans the whole repo"`
 	Threshold   float32 `json:"threshold,omitempty" jsonschema:"min cosine similarity for a duplicate edge, 0..1 (default 0.90)"`
