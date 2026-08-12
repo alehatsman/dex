@@ -138,6 +138,12 @@ func (p projectScoped) summarize(ctx context.Context, req *sdk.CallToolRequest, 
 func (p projectScoped) applySeenLook(key string, out *LookOutput) {
 	p.s.applySeenLook(key, out)
 }
+
+// indexRebuilding delegates look's rebuild caveat probe (#152) to the underlying
+// server, pinned to this scope's project root.
+func (p projectScoped) indexRebuilding(ctx context.Context, _ string) (bool, string) {
+	return p.s.indexRebuilding(ctx, p.root)
+}
 func (p projectScoped) smells(ctx context.Context, req *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.smells(ctx, req, in)

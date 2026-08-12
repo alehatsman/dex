@@ -226,24 +226,30 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 		if err != nil {
 			return nil, LookOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 		}
-		return nil, LookOutput{
+		out := LookOutput{
 			Status: to.Status,
 			Hint:   to.Hint,
 			Result: LookResult{Kind: "trace", Trace: &to},
 			Trust:  exactTrust(),
-		}, nil
+		}
+		// An index-backed empty during a destructive reindex is not authoritative
+		// absence — flag it so the agent retries rather than trusts the gap (#152).
+		flagRebuildIfEmpty(ctx, h, in.ProjectRoot, to.Status, &out)
+		return nil, out, nil
 
 	case "locate":
 		_, lo, err := h.locate(ctx, req, LocateInput{Ref: cleaned, K: in.K, ProjectRoot: in.ProjectRoot})
 		if err != nil {
 			return nil, LookOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 		}
-		return nil, LookOutput{
+		out := LookOutput{
 			Status: lo.Status,
 			Hint:   lo.Hint,
 			Result: LookResult{Kind: "locate", Locate: &lo},
 			Trust:  exactTrust(),
-		}, nil
+		}
+		flagRebuildIfEmpty(ctx, h, in.ProjectRoot, lo.Status, &out)
+		return nil, out, nil
 
 	default:
 		return nil, LookOutput{
