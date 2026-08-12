@@ -185,7 +185,7 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 		}, nil
 
 	case "grep":
-		_, go_, err := h.searchGrep(ctx, req, SearchGrepInput{
+		_, grepOut, err := h.searchGrep(ctx, req, SearchGrepInput{
 			Pattern: cleaned, Context: in.Context, Fixed: in.Fixed,
 			MaxResults: in.K, ProjectRoot: in.ProjectRoot,
 		})
@@ -193,15 +193,15 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 			return nil, LookOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 		}
 		out := LookOutput{
-			Status: go_.Status,
-			Hint:   go_.Hint,
-			Result: LookResult{Kind: "grep", Grep: &go_},
+			Status: grepOut.Status,
+			Hint:   grepOut.Hint,
+			Result: LookResult{Kind: "grep", Grep: &grepOut},
 			Trust:  exactTrust(),
 		}
 		// Route the agent to read the first hit in place — the natural next move
 		// after a grep is to look at where it matched.
-		if len(go_.Matches) > 0 {
-			m := go_.Matches[0]
+		if len(grepOut.Matches) > 0 {
+			m := grepOut.Matches[0]
 			out.Next = append(out.Next, NextStep{
 				Verb: "look",
 				Args: map[string]any{"target": firstMatchRef(m)},

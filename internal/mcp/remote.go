@@ -124,6 +124,7 @@ func (rc *remoteClient) do(ctx context.Context, method, url string, in, out any)
 		}
 		body = bytes.NewReader(buf)
 	}
+	//nolint:gosec // G704: url is the operator-configured dex serve endpoint (remoteClient.base + fixed path), not user/network-tainted input — this shim exists to call that endpoint
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return err
@@ -135,6 +136,7 @@ func (rc *remoteClient) do(ctx context.Context, method, url string, in, out any)
 		req.Header.Set("Authorization", "Bearer "+rc.token)
 	}
 
+	//nolint:gosec // G704: req.URL is the operator-configured dex serve endpoint, not user/network-tainted input
 	resp, err := rc.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("dex serve %s %s: %w", method, url, err)

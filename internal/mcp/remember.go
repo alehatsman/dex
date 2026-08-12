@@ -7,12 +7,12 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// remember is the durable-memory verb of the four-verb surface (#110): persist a
-// fact (write), recall the facts relevant to a task (read), or supersede a stale
-// fact (upsert), across session resets. It is a thin, additive facade over the
-// knowledge engine — same store, same salience and scope-binding — exposing the
-// everyday memory moves (write, recall, supersede). The admin/relate lanes
-// (delete, gc, export, import, consolidate, pin, relate, review) stay on the
+// RememberInput drives remember, the durable-memory verb of the four-verb surface
+// (#110): persist a fact (write), recall the facts relevant to a task (read), or
+// supersede a stale fact (upsert), across session resets. It is a thin, additive
+// facade over the knowledge engine — same store, same salience and scope-binding —
+// exposing the everyday memory moves (write, recall, supersede). The admin/relate
+// lanes (delete, gc, export, import, consolidate, pin, relate, review) stay on the
 // expert `notes` tool (#147); remember keeps the hot path to one verb.
 type RememberInput struct {
 	// Provide exactly one of Fact (write) or Query (recall).
