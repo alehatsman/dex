@@ -52,6 +52,16 @@ func (s *Server) synthesizeAnswer(ctx context.Context, logTok func(string), inte
 	if s.ChatClient == nil {
 		return
 	}
+	// A chat client exists but no model was actually selected (#160): a bare
+	// DEX_CHAT_URL points at a shared endpoint while DEX_CHAT_MODEL is empty,
+	// so the client carries a fabricated default the endpoint won't serve.
+	// Firing the call just leaks an upstream 404 into the hint; instead skip
+	// synthesis and tell the caller how to enable it. Mirrors the status
+	// probe's ChatConfigured gate (#133) so the two paths agree.
+	if !s.ChatConfigured {
+		out.Hint = strings.TrimSpace(out.Hint + " (answer synthesis skipped: chat model not configured — set DEX_CHAT_MODEL)")
+		return
+	}
 	evidence := buildAnswerEvidence(intent, out)
 	if strings.TrimSpace(evidence) == "" {
 		return

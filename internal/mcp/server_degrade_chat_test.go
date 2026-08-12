@@ -31,6 +31,10 @@ func chatDownServer(t *testing.T, cacheDir string, chatClient chat.Chatter) *Ser
 	t.Cleanup(embedSrv.Close)
 	s := newServer(embedSrv.URL, cacheDir)
 	s.ChatClient = chatClient
+	// A wired client stands in for a real, selected model: mark it configured
+	// so the synthesis gate (#160) treats it as usable. Cases that need the
+	// unconfigured-default path (client wired, no model) override this to false.
+	s.ChatConfigured = chatClient != nil
 	return s
 }
 
@@ -105,6 +109,30 @@ func TestAskDegradesWhenChatDown(t *testing.T) {
 		assertEvidence(t, out)
 		if out.Answer == "" {
 			t.Fatal("Answer is empty with answer_style:brief and healthy chat")
+		}
+	})
+
+	// #160: a chat client is wired but no model was actually selected (bare
+	// DEX_CHAT_URL, empty DEX_CHAT_MODEL → the client carries a fabricated
+	// default the endpoint won't serve). answer_style:brief must NOT fire the
+	// call — doing so leaks an upstream 404 into the hint. The endpoint here is
+	// HEALTHY on purpose: it proves the ChatConfigured gate, not a broken chat,
+	// is what suppresses synthesis, and that the hint steers to DEX_CHAT_MODEL.
+	t.Run("chat wired but not configured skips synthesis with hint", func(t *testing.T) {
+		chatSrv := fakeChat(t, "Authenticate validates a bearer token (auth.go).")
+		defer chatSrv.Close()
+		s := chatDownServer(t, cacheDir, chat.New(chatSrv.URL, "fake", 5*time.Second))
+		s.ChatConfigured = false // model was never selected; default is fabricated
+		_, out, err := s.contextRouter(ctx, nil, ContextInput{Question: question, ProjectRoot: projRoot, AnswerStyle: "brief"})
+		if err != nil {
+			t.Fatalf("ask errored with unconfigured chat: %v", err)
+		}
+		assertEvidence(t, out)
+		if out.Answer != "" {
+			t.Errorf("Answer = %q, want empty (synthesis must be gated when chat is not configured)", out.Answer)
+		}
+		if !strings.Contains(strings.ToLower(out.Hint), "not configured") {
+			t.Errorf("hint = %q, want a 'not configured' note pointing at DEX_CHAT_MODEL", out.Hint)
 		}
 	})
 }
