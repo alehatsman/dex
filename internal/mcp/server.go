@@ -1090,11 +1090,11 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 		Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
 			"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
 			"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
-			"(its own test plus its callers', #654). Resolves changed files → Go packages and runs " +
-			"`go test` over them, routed through the shell pipeline so output is compressed and a failing " +
-			"run stages a `gotcha_candidate` you persist with `notes`. Override the command via `command` " +
-			"or $DEX_VERIFY_CMD with a '{{packages}}' placeholder (e.g. 'go test -tags sqlite_fts5 " +
-			"{{packages}}') — required for projects whose tests need build tags. Go-only in v1: returns " +
+			"(its own test plus its callers', #654). Resolves changed files → Go packages and runs the " +
+			"project's declared test command (tasks.yml/Makefile/package.json — e.g. `mooncake task test`), " +
+			"re-scoped to those packages for a plain `go test`, routed through the shell pipeline so output " +
+			"is compressed and a failing run stages a `gotcha_candidate` you persist with `notes`. Override " +
+			"via `command` or $DEX_VERIFY_CMD with a '{{packages}}' placeholder. Go-only in v1: returns " +
 			"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
 	}, h.verify)
 

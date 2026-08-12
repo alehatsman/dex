@@ -31,7 +31,7 @@ import (
 type VerifyInput struct {
 	Symbol      string `json:"symbol,omitempty" jsonschema:"test a symbol's blast-radius (its own test plus its callers'); bare ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer')"`
 	Ref         string `json:"ref,omitempty" jsonschema:"git range or ref to test the changes of (e.g. 'HEAD~3..HEAD'); default (no symbol, no ref) tests the uncommitted working-tree changes vs HEAD"`
-	Command     string `json:"command,omitempty" jsonschema:"override the test command template; '{{packages}}' is substituted with the resolved Go package list (e.g. 'go test -tags sqlite_fts5 {{packages}}'). Falls back to $DEX_VERIFY_CMD then 'go test {{packages}}'"`
+	Command     string `json:"command,omitempty" jsonschema:"override the test command template; '{{packages}}' is substituted with the resolved Go package list (e.g. 'go test -tags sqlite_fts5 {{packages}}'). Falls back to $DEX_VERIFY_CMD, then the project's declared test command (tasks.yml/Makefile/package.json), then 'go test {{packages}}'"`
 	TimeoutSecs int    `json:"timeout_secs,omitempty" jsonschema:"test-run timeout in seconds (default 60, max 600)"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
@@ -81,7 +81,8 @@ func (s *Server) verify(ctx context.Context, req *sdk.CallToolRequest, in Verify
 			Hint: "no Go package is implicated by the change — verify is Go-only in v1"}, nil
 	}
 
-	cmd := testscope.SynthVerifyCommand(in.Command, pkgs)
+	canonical := canonicalTestCommand(p.Root)
+	cmd := testscope.SynthVerifyCommand(in.Command, canonical, pkgs)
 	_, sh, err := s.shellRun(ctx, req, ShellInput{Command: cmd, Cwd: p.Root, TimeoutSecs: in.TimeoutSecs})
 	if err != nil {
 		return nil, VerifyOutput{Status: "error", Project: p.Root, Mode: mode, Command: cmd,
@@ -95,12 +96,40 @@ func (s *Server) verify(ctx context.Context, req *sdk.CallToolRequest, in Verify
 		Packages:        pkgs,
 		Tests:           testscope.SiblingTestFiles(files),
 		Command:         cmd,
+		Hint:            verifyRunHint(in.Command, canonical, cmd),
 		ExitCode:        sh.ExitCode,
 		Passed:          sh.ExitCode == 0,
 		Output:          sh.Output,
 		SavedPct:        sh.SavedPct,
 		GotchaCandidate: sh.GotchaCandidate,
 	}, nil
+}
+
+// canonicalTestCommand returns the repo's declared test command — the same source
+// orient surfaces (tasks.yml → Makefile → package.json → language default) — or ""
+// when no runner is detected. verify prefers it over a guessed `go test` so
+// tag-requiring projects (e.g. this repo's `mooncake task test`) run correctly (#146).
+func canonicalTestCommand(root string) string {
+	for _, c := range ExtractProjectCommands(root) {
+		if c.Label == "test" {
+			return c.Cmd
+		}
+	}
+	return ""
+}
+
+// verifyRunHint flags the case where the canonical command ran the whole suite
+// verbatim (a task runner, no user override) — so Packages is read as the change's
+// blast radius, not the executed scope. Empty otherwise (a scoped go-test run
+// tests exactly Packages).
+func verifyRunHint(override, canonical, cmd string) string {
+	if strings.TrimSpace(override) != "" || strings.TrimSpace(canonical) == "" {
+		return ""
+	}
+	if cmd == strings.TrimSpace(canonical) { // ran verbatim, not re-scoped
+		return "ran the project's canonical test command (whole suite); Packages lists the change's blast radius, not the executed scope"
+	}
+	return ""
 }
 
 // verifyResolve picks the mode from the inputs and returns the implicated Go
