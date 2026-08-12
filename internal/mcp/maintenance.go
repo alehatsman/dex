@@ -48,7 +48,7 @@ func RunStdioMaintenance(ctx context.Context, reason string) error {
 	// Register the full tool surface so every tool the agent might call is
 	// present and returns an immediate error — ensures no tool is silently
 	// absent (which would cause the SDK to return "unknown tool").
-	registerTools(srv, mc, true, true, false, DescModeFull)
+	registerTools(srv, mc, true, DescModeFull)
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
 

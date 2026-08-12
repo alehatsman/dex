@@ -7,17 +7,18 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// registeredToolNames drives registerTools directly for a chosen profile shape
-// (embedAvailable/weakModel) and DEX_EXPERT state, enumerating the advertised
-// tools over an in-memory transport. This is the only seam that can force the
-// weak-model profile: the production path derives it from profiles.Active, which
-// is process-global (sync.Once) and not test-injectable.
-func registeredToolNames(t *testing.T, embedAvailable, weakModel bool) map[string]bool {
+// registeredToolNames drives registerTools directly for a chosen embedder
+// availability and DEX_EXPERT state, enumerating the advertised tools over an
+// in-memory transport. Post-#149 registerTools no longer takes a weakModel flag:
+// the tool set cannot branch on the model profile by construction. The weak-model
+// behavior is ask's call-time capability degradation (via process-global
+// profiles.Active), exercised elsewhere — not a difference in the advertised set.
+func registeredToolNames(t *testing.T, embedAvailable bool) map[string]bool {
 	t.Helper()
 	ctx := context.Background()
 	srv := sdk.NewServer(&sdk.Implementation{Name: "dex", Version: "test"}, nil)
 	registerTools(srv, projectScoped{s: stubServer(t), root: t.TempDir()},
-		false /*chatAvailable*/, embedAvailable, weakModel, descriptionModeFromEnv())
+		embedAvailable, descriptionModeFromEnv())
 
 	st, ct := sdk.NewInMemoryTransports()
 	if _, err := srv.Connect(ctx, st, nil); err != nil {
@@ -42,25 +43,22 @@ func registeredToolNames(t *testing.T, embedAvailable, weakModel bool) map[strin
 }
 
 // The four verbs are constant across every profile (#110 step 8): ask · look · act
-// · remember appear whether or not an embedder is wired and whether or not the
-// deployment is a weak local model. This is the regression guard for the bug where
-// registerTools gated remember behind `if !weakModel` — a weak model silently lost
-// durable memory. The verb set never changes with deployment; only ask's internal
-// capability degrades (that path is exercised elsewhere).
+// · remember appear whether or not an embedder is wired. This is the regression
+// guard for the bug where registerTools gated remember behind `if !weakModel` — a
+// weak model silently lost durable memory. Post-#149 the gate is structurally
+// impossible (registerTools takes no model flag); the verb set never changes with
+// deployment, only ask's internal capability degrades (exercised elsewhere).
 func TestFourVerbsConstantAcrossProfiles(t *testing.T) {
 	verbs := []string{"ask", "look", "act", "remember"}
 	profiles := []struct {
 		name           string
 		embedAvailable bool
-		weakModel      bool
 	}{
-		{"full", true, false},
-		{"bm25-only", false, false},
-		{"lean/weak", false, true},
-		{"weak-with-embedder", true, true},
+		{"full", true},
+		{"bm25-only", false},
 	}
 	for _, p := range profiles {
-		names := registeredToolNames(t, p.embedAvailable, p.weakModel)
+		names := registeredToolNames(t, p.embedAvailable)
 		for _, v := range verbs {
 			if !names[v] {
 				t.Errorf("[%s] verb %q missing — the four verbs must be constant across profiles", p.name, v)
@@ -74,14 +72,14 @@ func TestFourVerbsConstantAcrossProfiles(t *testing.T) {
 // entirely) exposes EXACTLY the four verbs — no expert tool leaks in.
 func TestNonExpertProfilesExposeOnlyFourVerbs(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "")
-	for _, weak := range []bool{false, true} {
-		names := registeredToolNames(t, false, weak)
+	for _, embed := range []bool{false, true} {
+		names := registeredToolNames(t, embed)
 		if len(names) != 4 {
-			t.Errorf("weak=%v: expected exactly 4 verbs, got %d: %v", weak, len(names), names)
+			t.Errorf("embed=%v: expected exactly 4 verbs, got %d: %v", embed, len(names), names)
 		}
 		for _, leaked := range []string{"search", "trace", "shell", "grep", "read", "notes", "review_diff"} {
 			if names[leaked] {
-				t.Errorf("weak=%v: expert tool %q leaked into the non-expert surface", weak, leaked)
+				t.Errorf("embed=%v: expert tool %q leaked into the non-expert surface", embed, leaked)
 			}
 		}
 	}
@@ -92,13 +90,13 @@ func TestNonExpertProfilesExposeOnlyFourVerbs(t *testing.T) {
 // the four verbs remain present.
 func TestExpertOverlayIsOrthogonalToProfile(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "1")
-	for _, weak := range []bool{false, true} {
-		names := registeredToolNames(t, true, weak)
+	for _, embed := range []bool{false, true} {
+		names := registeredToolNames(t, embed)
 		if !names["remember"] || !names["ask"] {
-			t.Errorf("weak=%v: four verbs must survive the expert overlay", weak)
+			t.Errorf("embed=%v: four verbs must survive the expert overlay", embed)
 		}
 		if !names["trace"] || !names["shell"] {
-			t.Errorf("weak=%v: DEX_EXPERT power lanes must overlay regardless of profile", weak)
+			t.Errorf("embed=%v: DEX_EXPERT power lanes must overlay regardless of profile", embed)
 		}
 	}
 }

@@ -758,7 +758,8 @@ func (s *Server) RunStdio(ctx context.Context) error {
 		Instructions: ServerInstructions(),
 	})
 
-	registerTools(sdkSrv, s, s.ChatClient != nil, s.EmbedClient != nil, profiles.Active("").StrictAnchors(), descriptionModeFromEnv())
+	profiles.Active("") // prime default-profile token-family detection at registration time
+	registerTools(sdkSrv, s, s.EmbedClient != nil, descriptionModeFromEnv())
 
 	// Restore session state from a prior exec-reload (set by the SIGUSR1
 	// handler below). Clear it immediately so child processes don't inherit it.
@@ -898,12 +899,7 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // for a weak local model: a weaker model forgets more, so durable memory helps it
 // most. DEX_EXPERT is an additive power-lane overlay, orthogonal to the profile —
 // never a different shape of the everyday surface.
-func registerTools(srv *sdk.Server, h toolSurface, chatAvailable, embedAvailable, weakModel bool, descMode DescriptionMode) {
-	_ = chatAvailable // read no longer gates on chat; summary degrades at call time
-	_ = weakModel     // the profile no longer gates the verb set (#110 step 8); the
-	//                   four verbs are constant, only ask's capability degrades. Param
-	//                   retained (call sites still trigger profiles.Active's token-family
-	//                   side effect); a vestigial-param cleanup is tracked separately.
+func registerTools(srv *sdk.Server, h toolSurface, embedAvailable bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 
 	// The four verbs — constant across every profile.
