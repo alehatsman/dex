@@ -68,27 +68,36 @@ const (
 //	                    refactors know what else uses the type.
 //	architecture      — package/type roll-up for packages surfaced by the
 //	                    semantic lane, anchored on PageRank.
-//	package_topology  — import edges between packages in the neighborhood.
+//	package_topology  — the workspace-project import DAG when the repo is a
+//	                    JS/TS monorepo (projectOf resolves projects), else the
+//	                    module-level import edges between packages in the
+//	                    neighborhood. See projectTopology / packageTopology (#151).
 //	callers           — incoming calls edges into matched symbols (Go-only;
 //	                    other languages fall back to BM25 chunk search).
 //	callees           — outgoing calls edges from matched symbols.
+//
+// projectOf maps an internal module/package path to its owning workspace
+// project (resolve.Workspace.ProjectOf), injected by the caller so this layer
+// stays transport-free; nil (no root / not a workspace) disables the project
+// rollup and package_topology falls back to the module lane.
 //
 // Node IDs and edge from/to are rewritten to a compact form
 // (`<pkg-tail>.<qualified-name>`) so agents don't have to parse
 // `<module>::<pkg>::<kind>::<qname>` for every reference. The full
 // IDs remain available via the in-memory view for any future query
 // that takes a graph ID as input.
-func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols []SymbolHit) (*GraphResult, bool) {
+func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols []SymbolHit, projectOf func(string) string) (*GraphResult, bool) {
 	if view == nil {
 		return nil, false
 	}
 	e := &graphEnricher{
-		view:     view,
-		semHits:  semHits,
-		symbols:  symbols,
-		gr:       &GraphResult{Nodes: []GraphNode{}, Edges: []GraphEdge{}},
-		seenNode: map[string]struct{}{},
-		seenEdge: map[string]struct{}{},
+		view:      view,
+		semHits:   semHits,
+		symbols:   symbols,
+		projectOf: projectOf,
+		gr:        &GraphResult{Nodes: []GraphNode{}, Edges: []GraphEdge{}},
+		seenNode:  map[string]struct{}{},
+		seenEdge:  map[string]struct{}{},
 	}
 	e.runForIntent(intent)
 	if len(e.gr.Nodes) == 0 && len(e.gr.Edges) == 0 {
@@ -106,12 +115,13 @@ func EnrichGraph(intent string, view *graphquery.View, semHits []SemHit, symbols
 // Hoisting the closures off EnrichGraph into methods keeps the dispatch
 // switch short and the helpers individually testable.
 type graphEnricher struct {
-	view     *graphquery.View
-	semHits  []SemHit
-	symbols  []SymbolHit
-	gr       *GraphResult
-	seenNode map[string]struct{}
-	seenEdge map[string]struct{}
+	view      *graphquery.View
+	semHits   []SemHit
+	symbols   []SymbolHit
+	projectOf func(string) string // #151: workspace-project mapper, nil when N/A
+	gr        *GraphResult
+	seenNode  map[string]struct{}
+	seenEdge  map[string]struct{}
 	// Trust-envelope tallies (#95c), accumulated as call edges are surfaced.
 	sawCallEdge   bool // any EdgeCalls surfaced → there is a resolved claim to judge
 	nameBasedCall bool // a surfaced call edge touches a non-Go (tree-sitter) node
@@ -419,6 +429,45 @@ func (e *graphEnricher) packageTopology() {
 	}
 }
 
+// projectTopology surfaces the workspace-project import DAG for a JS/TS
+// monorepo (#151): it rolls the per-file module import graph up to workspace
+// projects via graphquery.BuildProjectGraph and emits one node per project +
+// the deduped cross-project import edges. The project names are already the
+// compact IDs, so the nodes/edges go straight onto the wire with no view
+// lookup. Returns false (emitting nothing) when there is no project mapper (the
+// caller only supplies one for a genuine workspace root, so this is the Go path)
+// or the workspace has no cross-project edges — the package_topology dispatch
+// then falls back to the neighborhood module topology.
+//
+// Node order from BuildProjectGraph is in-degree descending, so when the
+// MaxGraphNodes/MaxGraphEdges caps bite, the most load-bearing foundation
+// projects are what survive.
+func (e *graphEnricher) projectTopology() bool {
+	if e.projectOf == nil {
+		return false
+	}
+	pg := graphquery.BuildProjectGraph(e.view, e.projectOf)
+	if len(pg.Nodes) == 0 {
+		return false
+	}
+	for _, n := range pg.Nodes {
+		if _, ok := e.seenNode[n.Package]; ok || len(e.gr.Nodes) >= MaxGraphNodes {
+			continue
+		}
+		e.seenNode[n.Package] = struct{}{}
+		e.gr.Nodes = append(e.gr.Nodes, GraphNode{ID: n.Package, Kind: string(graph.NodePackage)})
+	}
+	for _, ed := range pg.Edges {
+		key := ed.FromPackage + "|" + string(graph.EdgeImports) + "|" + ed.ToPackage
+		if _, ok := e.seenEdge[key]; ok || len(e.gr.Edges) >= MaxGraphEdges {
+			continue
+		}
+		e.seenEdge[key] = struct{}{}
+		e.gr.Edges = append(e.gr.Edges, GraphEdge{From: ed.FromPackage, To: ed.ToPackage, Kind: string(graph.EdgeImports)})
+	}
+	return len(e.gr.Nodes) > 0
+}
+
 // runForIntent dispatches to the right expansion mix for the intent.
 // Default branch (unrecognized intents) unions symbol-neighborhood +
 // pkg rollup. behavior_search is explicit: symbol-neighborhood only,
@@ -461,7 +510,17 @@ func (e *graphEnricher) runForIntent(intent string) {
 		// ("these nodes ARE the structural overview") would be a lie (#537).
 		e.importEdgesAmong(pkgs)
 	case GraphLanePackageTopology:
-		e.packageTopology()
+		// Project rollup first (#151): when projectOf is set — the caller resolved
+		// a genuine workspace root (resolve.IsWorkspaceRoot) — the whole-workspace
+		// project DAG is the right answer for a JS/TS monorepo, and is stable
+		// regardless of which files the semantic lane happened to surface. It is
+		// nil for a Go repo (no workspace root), so projectTopology emits nothing
+		// and we fall back to the neighborhood module topology, which is correct
+		// for Go. The root gate — not the emptiness of the rollup — is what keeps a
+		// Go repo's buried JS/TS test fixtures from ever surfacing here.
+		if !e.projectTopology() {
+			e.packageTopology()
+		}
 	default: // GraphLaneNeighborhoodRollup — assemble + unrecognized intents
 		e.symbolNeighborhood()
 		e.packageRollup(packagesFromPaths(e.view, e.semHits))
