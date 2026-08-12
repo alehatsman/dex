@@ -2,8 +2,8 @@
 # Setup git hooks for dex development.
 #
 #   pre-commit → go build + mooncake task ci-fast
-#     Fast gate (<5s on warm cache): compile check, go vet, gofmt on staged
-#     files, ai-lint on staged files. Catches cheap mistakes before they land.
+#     Fast gate (<5s on warm cache): compile check, go vet, repo-wide gofmt
+#     (#150), ai-lint on staged files. Catches cheap mistakes before they land.
 #
 #   pre-push → mooncake task ci
 #     Full gate: repo-wide gofmt + build + test + lint + vuln + arch-snapshot + budget + dupl.
