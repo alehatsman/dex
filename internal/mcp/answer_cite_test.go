@@ -89,7 +89,7 @@ func TestSynthesizeAnswerAppendsNoteForHallucinatedPath(t *testing.T) {
 	// must append the deterministic steering note. End-to-end repro of #526.
 	chatSrv := fakeChat(t, "The watcher is wired up in internal/mcp/watch.go.")
 	defer chatSrv.Close()
-	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second)}
+	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second), ChatConfigured: true}
 
 	out := &ContextOutput{
 		SuggestedReads: []SuggestedRead{

@@ -17,7 +17,7 @@ import (
 func TestSynthesizeAnswerPopulatesAnswer(t *testing.T) {
 	chatSrv := fakeChat(t, "The debounce lives in watch.go:42.")
 	defer chatSrv.Close()
-	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second)}
+	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second), ChatConfigured: true}
 
 	out := &ContextOutput{
 		SuggestedReads: []SuggestedRead{
@@ -66,7 +66,7 @@ func TestSynthesizeAnswerStreamsTokens(t *testing.T) {
 	tokens := []string{"The ", "debounce ", "lives ", "in ", "internal/watch/watch.go:42."}
 	chatSrv := fakeStreamChat(t, tokens)
 	defer chatSrv.Close()
-	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second)}
+	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake-14b", 5*time.Second), ChatConfigured: true}
 
 	out := &ContextOutput{
 		SuggestedReads: []SuggestedRead{
@@ -102,7 +102,7 @@ func TestSynthesizeAnswerNoEvidence(t *testing.T) {
 
 	chatSrv := fakeChat(t, "should not be called")
 	defer chatSrv.Close()
-	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake", 5*time.Second)}
+	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake", 5*time.Second), ChatConfigured: true}
 	out := &ContextOutput{} // empty bundle
 	s.synthesizeAnswer(context.Background(), nil, retrieve.IntentBehaviorSearch, "q", out)
 	if out.Answer != "" {
@@ -113,7 +113,7 @@ func TestSynthesizeAnswerNoEvidence(t *testing.T) {
 func TestSynthesizeAnswerUnreachableDegrades(t *testing.T) {
 
 	// Point at a closed port so Generate returns ErrUnreachable.
-	s := &Server{ChatClient: chat.New(closedURL(t), "fake", 200*time.Millisecond)}
+	s := &Server{ChatClient: chat.New(closedURL(t), "fake", 200*time.Millisecond), ChatConfigured: true}
 	out := &ContextOutput{
 		Status:         "ok",
 		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "func A(){}"}},
@@ -144,7 +144,7 @@ func TestSynthesizeAnswerCacheHit(t *testing.T) {
 		})
 	}))
 	defer chatSrv.Close()
-	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake", 5*time.Second)}
+	s := &Server{ChatClient: chat.New(chatSrv.URL, "fake", 5*time.Second), ChatConfigured: true}
 
 	mk := func() *ContextOutput {
 		return &ContextOutput{SuggestedReads: []SuggestedRead{{Path: "a.go", StartLine: 1, EndLine: 2, Content: "func A(){}"}}}
