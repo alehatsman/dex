@@ -63,6 +63,8 @@ tasks:
       - shell: go install github.com/loov/goda@latest
       - log: "→ Installing dupl..."
       - shell: go install github.com/mibk/dupl@latest
+      - log: "→ Installing deadcode..."
+      - shell: go install golang.org/x/tools/cmd/deadcode@latest
       - log: "✓ Tools installed. Verify with 'mooncake task check-tools'."
 
   check-tools:
@@ -71,7 +73,7 @@ tasks:
       - name: verify each tool
         shell: |
           missing=0
-          for tool in golangci-lint govulncheck gocyclo goda dupl; do
+          for tool in golangci-lint govulncheck gocyclo goda dupl deadcode; do
             if command -v "$tool" >/dev/null 2>&1 || [ -x "$(go env GOPATH)/bin/$tool" ]; then
               printf "  ✓ %s\n" "$tool"
             else
@@ -249,6 +251,35 @@ tasks:
 
   dupl: goq/dupl
 
+  # Kept local (#153): monotonic ratchet over the structural soft-caps. The
+  # shared goq/budget-status + goq/dupl + deadcode only PRINT drift — nothing
+  # fails, so god files / over-cap complexity / clone pairs / dead code can grow
+  # forever. This freezes each count in benchmark/structure/baseline.json and
+  # fails `ci` when any count grows (counts may shrink; refresh to lock in).
+  # Same one-way-door idiom as the eval baselines (dex bench --check). Wired into
+  # `ci` below (not ci-fast — keeps the pre-commit gate cheap). To be upstreamed
+  # into go-quality once the shape proves out.
+  structure-check:
+    desc: Ratchet god-files/gocyclo/dupl/deadcode counts against benchmark/structure/baseline.json (fail on growth)
+    steps:
+      - shell: bash ./scripts/structure-check.sh --ci
+
+  structure-refresh:
+    desc: Regenerate benchmark/structure/baseline.json from the current tree (lock in improvements)
+    steps:
+      - shell: bash ./scripts/structure-check.sh --refresh
+
+  # Kept local (#153): go.mod/go.sum drift check for the pre-PUSH gate. The
+  # shared goq/ci-fast (pre-commit) already runs a tidy drift check, but the full
+  # goq/ci (pre-push, what moongit CI runs) does NOT — so drift that skips the
+  # commit hook reaches CI unguarded. This closes that hole and mechanically
+  # enforces the "minimal deps" principle. Restores go.mod/go.sum on drift so a
+  # failing run leaves the tree clean (mirrors go-quality's fast.sh).
+  tidy-check:
+    desc: Fail if go.mod / go.sum are not tidy (pre-push gate; ci-fast already covers pre-commit)
+    steps:
+      - shell: bash ./scripts/tidy-check.sh
+
   # ── Setup ───────────────────────────────────────────────────────────────
   setup-hooks:
     desc: Install pre-commit and pre-push git hooks (mooncake task ci-fast / mooncake task ci)
@@ -286,10 +317,16 @@ tasks:
   # (goq/ci's golangci-lint doesn't enforce formatting). Then the shared
   # goq/ci gate (build + test + lint + vuln + arch + budget + dupl).
   ci:
-    desc: Full pre-push gate — repo-wide gofmt check, then goq/ci (build + test + lint + vuln + arch + budget + dupl).
+    desc: Full pre-push gate — gofmt + go.mod tidy checks, goq/ci (build + test + lint + vuln + arch + budget + dupl), then the structural ratchet.
     steps:
       - shell: bash ./scripts/fmt-check.sh
+      # go.mod/go.sum drift: cheap, and goq/ci (unlike goq/ci-fast) doesn't check
+      # it — fail fast before the expensive build/test/lint (#153).
+      - shell: bash ./scripts/tidy-check.sh
       - use: goq/ci
+      # Structural ratchet last — its inputs (gocyclo/dupl/deadcode) are only
+      # meaningful after the build passes; --ci makes a missing tool fatal (#153).
+      - shell: bash ./scripts/structure-check.sh --ci
 
   # ── ONNX build-tag matrix gate (issue #180). The in-process ONNX embedder
   # is opt-in behind `-tags onnx`; the default ci/ci-fast gates stay
