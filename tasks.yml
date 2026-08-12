@@ -267,7 +267,18 @@ tasks:
           args: "--all"
 
   # ── Fast gate — pre-commit. Cheap checks only (<5s on warm cache). ─────
-  ci-fast: goq/ci-fast
+  # Repo-wide gofmt check runs first (#150) — goq/ci-fast's gofmt step only
+  # inspects STAGED files, so drift in a formatted-then-edited or unstaged file
+  # slips past the fast gate and merges clean (main went red on full ci this
+  # way). scripts/fmt-check.sh is `gofmt -l` over the whole tree (~300ms), well
+  # inside the <5s budget, and staging-agnostic — closing that gap at the gate
+  # that actually runs on every commit. (golangci-lint stays on the pre-push
+  # `ci` gate: a full lint pass would blow the fast gate's latency budget.)
+  ci-fast:
+    desc: Fast pre-commit gate — repo-wide gofmt check, then goq/ci-fast (vet + go mod tidy + staged gofmt + ai-lint + budget).
+    steps:
+      - shell: bash ./scripts/fmt-check.sh
+      - use: goq/ci-fast
 
   # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
   # Repo-wide gofmt check runs first (#677) — cheap and staging-agnostic, so it
