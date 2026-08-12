@@ -18,7 +18,7 @@ func TestReanchorPattern(t *testing.T) {
 		{"p/q", "   ", ""},                                  // blank
 		{"p/q", "# comment", ""},                            // comment
 		{"p/q", "\tspaced  ", "p/q/**/spaced"},              // trims whitespace
-		{"a/cm", "cm/labextension", "a/cm/cm/labextension"}, // real bright case
+		{"a/cm", "cm/labextension", "a/cm/cm/labextension"}, // real acme case
 	}
 	for _, c := range cases {
 		if got := reanchorPattern(c.dir, c.in); got != c.want {

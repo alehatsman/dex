@@ -15,8 +15,8 @@ covers:
 
 #127 Phase 1 resolves non-relative JS/TS specifiers to real files. What it does
 **not** — and by design **cannot** — resolve is a specifier whose target only
-exists at build stage. The canonical case, found live on `bright-frontend`:
-`@bright/common/Uuid` (589 imports) is a public export declared in
+exists at build stage. The canonical case, found live on `acme-frontend`:
+`@acme/common/Uuid` (589 imports) is a public export declared in
 `package.json` `exports["./Uuid"]` → `build/Uuid.js`, a file a `vite` plugin
 writes in `closeBundle` as a compatibility shim re-exporting `src/UuidCodec.ts`
 (dodging a case-insensitive-FS collision with the npm `uuid` package). The
@@ -34,7 +34,7 @@ Today an unresolved import is a *silent third state*: `{"language":"ts"}` with
 neither `target` nor `external` — indistinguishable from "not processed" or
 "bug". And `trace(UuidCodec, callers)` reports its 5 in-package callers as if
 complete; the existing name-grep recall sweep greps `UuidCodec`, but the 589
-hidden call sites say `@bright/common/Uuid`, so it finds none. The undercount is
+hidden call sites say `@acme/common/Uuid`, so it finds none. The undercount is
 invisible.
 
 ## Scope
@@ -104,7 +104,7 @@ mutually exclusive and total for every JS/TS import.
 
 ```go
 type UnresolvedInbound struct {
-    Specifier string `json:"specifier"` // e.g. "@bright/common/Uuid"
+    Specifier string `json:"specifier"` // e.g. "@acme/common/Uuid"
     Count     int    `json:"count"`
 }
 
@@ -154,11 +154,11 @@ the MCP verb.
 
 - **No unresolved imports** (clean Go repo, or fully-resolved JS/TS): every path
   no-ops; `unresolved_inbound` omitted; existing output byte-identical.
-- **Typo import** (`@bright/common/Nope`): labeled `workspace-subpath` like a
+- **Typo import** (`@acme/common/Nope`): labeled `workspace-subpath` like a
   build shim. Honest — dex can't tell them apart from source, and both are "a
   workspace subpath with no source file." The grep hint lets the agent decide.
-- **pkg_dir prefix safety**: match uses `pkg_dir || '/'` so `packages/bright`
-  never matches `packages/bright-common/...`. Trailing slash is mandatory.
+- **pkg_dir prefix safety**: match uses `pkg_dir || '/'` so `packages/acme`
+  never matches `packages/acme-common/...`. Trailing slash is mandatory.
 - **Non-workspace unresolved** (relative miss, alias-unindexed): carries
   `unresolved`+`reason` but **no** `pkg_dir`, so it never appears in a Step 2
   join — those aren't package-inbound edges. Status is still explicit.
@@ -181,15 +181,15 @@ the MCP verb.
   unresolved-inbound imports populates `UnresolvedInbound` and the hint; a Go
   symbol and a clean package do not.
 - `mooncake task ci` green.
-- Acceptance (manual, `bright-frontend`): `@bright/common/Uuid` imports carry
-  `unresolved=true, reason=workspace-subpath, pkg_dir=packages/bright-common`;
+- Acceptance (manual, `acme-frontend`): `@acme/common/Uuid` imports carry
+  `unresolved=true, reason=workspace-subpath, pkg_dir=packages/acme-common`;
   `trace UuidCodec callers` reports its in-package callers **plus**
-  `unresolved_inbound: [{@bright/common/Uuid, 589}]` and the grep hint;
+  `unresolved_inbound: [{@acme/common/Uuid, 589}]` and the grep hint;
   `UuidCodec` gains **no** fabricated cross-package caller edge.
 
 ## Refs
 - #130 (this work); #127 / `specs/module-resolution.md` (the resolver it refines);
   #604 (LSP lane — where build-artifact / re-export-chain resolution is deferred).
-- Evidence: `packages/bright-common/vite.config.ts` `uuidCompatibilityShim`
+- Evidence: `packages/acme-common/vite.config.ts` `uuidCompatibilityShim`
   (`closeBundle` writes `build/Uuid.js` = `export * from './UuidCodec.js'`).
 </content>

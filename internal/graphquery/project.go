@@ -8,8 +8,8 @@ import (
 
 // BuildProjectGraph rolls the per-module import DAG up to workspace projects
 // (#127 Phase 3). It is BuildPackageGraph with each endpoint mapped to its owning
-// project via projectOf and intra-project edges dropped, so `@bright/ui →
-// @bright/common` surfaces once regardless of how many files cross that boundary.
+// project via projectOf and intra-project edges dropped, so `@acme/ui →
+// @acme/common` surfaces once regardless of how many files cross that boundary.
 //
 // Pure: projectOf is injected (the caller wires resolve.Workspace.ProjectOf), so
 // this unit-tests against a hand view with a map-backed mapper — no disk. A

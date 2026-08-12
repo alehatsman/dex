@@ -20,7 +20,7 @@ func TestPackageGraphProjectLevelGate(t *testing.T) {
 	nonWS := t.TempDir()
 	writeFile(t, filepath.Join(nonWS, "go.mod"), "module example.com/x\n\ngo 1.24\n")
 	writeFile(t, filepath.Join(nonWS, "internal", "testdata", "pkg", "package.json"),
-		`{"name":"@bright/fixture","version":"0.0.0"}`)
+		`{"name":"@acme/fixture","version":"0.0.0"}`)
 
 	s := stubServer(t)
 	_, out, err := s.packageGraph(context.Background(), nil, PackageGraphInput{ProjectRoot: nonWS, Level: "project"})

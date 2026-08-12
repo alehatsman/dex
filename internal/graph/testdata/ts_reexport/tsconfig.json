@@ -2,7 +2,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@bright/common": ["packages/bright-common/src/index.ts"]
+      "@acme/common": ["packages/acme-common/src/index.ts"]
     }
   }
 }

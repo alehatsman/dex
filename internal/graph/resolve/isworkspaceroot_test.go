@@ -35,7 +35,7 @@ func TestIsWorkspaceRoot(t *testing.T) {
 				t.Fatal(err)
 			}
 			write(d, "go.mod", "module x\n")
-			write(sub, "package.json", `{"name":"@bright/common","workspaces":["x"]}`)
+			write(sub, "package.json", `{"name":"@acme/common","workspaces":["x"]}`)
 		}, false},
 		{"empty root", func(string) {}, false},
 	}

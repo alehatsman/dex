@@ -19,27 +19,27 @@ only *re-exports* the definition, so `trace`/`impact` stop under-reporting.
 
 Phase 1 already binds **direct/subpath** cross-package calls: an import specifier
 resolves to a module path, and `e.symbols` is keyed by that same module-path
-space, so `import { capitalize } from '@bright/common/String'` →
-`symbolIn("packages/bright-common/src/String", "capitalize")` already works
+space, so `import { capitalize } from '@acme/common/String'` →
+`symbolIn("packages/acme-common/src/String", "capitalize")` already works
 (verified live: `trace capitalize` → 12 cross-package callers).
 
-The remaining gap is the **barrel**: `import { Button } from '@bright/ui'`
-resolves to `packages/bright-ui/src/index`, whose `index.ts` says
+The remaining gap is the **barrel**: `import { Button } from '@acme/ui'`
+resolves to `packages/acme-ui/src/index`, whose `index.ts` says
 `export * from './Button'` — it *defines* nothing named `Button`, so
 `symbolIn(index, "Button")` misses and the call edge is dropped.
 
 ## Scope — the three re-export shapes that actually occur
 
-Measured across `packages/*/src/index.ts` in bright-frontend:
+Measured across `packages/*/src/index.ts` in acme-frontend:
 
 | Shape | Count | Powers | Example |
 |-------|-------|--------|---------|
-| `export * from './x'` | 75 | `@bright/ui` (671 imp), `@bright/api` (527) | star |
-| `export * as NS from './x'` | 26 | `@bright/common` barrel | namespace |
+| `export * from './x'` | 75 | `@acme/ui` (671 imp), `@acme/api` (527) | star |
+| `export * as NS from './x'` | 26 | `@acme/common` barrel | namespace |
 | `export { a, b as c } from './x'` | 16 (+6 `type`) | misc | named |
 
 All three are in scope. They are the complete re-export vocabulary of these
-barrels; delivering only star would leave `@bright/common`'s namespace barrel
+barrels; delivering only star would leave `@acme/common`'s namespace barrel
 (`String.capitalize()`) dark.
 
 ## Design
@@ -103,11 +103,11 @@ same-package `symbolIn` calls (`callerPkg` lookups) are unchanged — a call to 
 locally-defined symbol never needs re-export following.
 
 **Namespace** handling lives in the **attr** case. Today `String.capitalize()`
-with `import { String } from '@bright/common'` reaches
+with `import { String } from '@acme/common'` reaches
 `fi = fromImports["String"] = {pkg: index, name: "String"}` and tries
 `symbolIn(index, "String.capitalize")` — a miss. Add: if `re.namespaces[fi.name]`
 names a target module `m`, resolve `resolveExport(m, tail[0], 0)`. This binds
-`String.capitalize` to `packages/bright-common/src/String`'s `capitalize`.
+`String.capitalize` to `packages/acme-common/src/String`'s `capitalize`.
 
 ### Cycle & fan-out safety
 
@@ -123,7 +123,7 @@ line order, preserved by the query walk).
 - **Wildcard `export *` name *collision* arbitration** — if two star targets both
   export `X`, first-in-source-order wins. Real barrels don't collide; exactness
   is a type-checker's job.
-- **Build-mediated re-exports** (the `@bright/common/Uuid` vite shim) — stays
+- **Build-mediated re-exports** (the `@acme/common/Uuid` vite shim) — stays
   unresolved + honestly surfaced per [[specs/unresolved-imports.md]]. Re-export
   binding only follows re-exports that exist *in source*.
 - **Default re-export** (`export { default } from './x'`) — rare in these
@@ -134,7 +134,7 @@ line order, preserved by the query walk).
 - Unit: extend `sitter_ts_workspace_test.go` — a barrel `index.ts` with all three
   shapes re-exporting sibling modules; assert cross-package call edges bind
   through it (star, named, namespace) and that a cycle terminates.
-- Live (bright-frontend): a symbol exported only via `export *` from `@bright/ui`
+- Live (acme-frontend): a symbol exported only via `export *` from `@acme/ui`
   (e.g. a `Button`-like) gains its `apps/` callers in `trace --dir callers`;
   count cross-package `calls` edges before/after; confirm no explosion in edge
   count from fan-out (sanity bound).

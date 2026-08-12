@@ -238,7 +238,7 @@ type TraceOutput struct {
 	GrepHits []GrepMatch `json:"grep_hits,omitempty"`
 	// UnresolvedInbound lists known import edges into the target symbol's package
 	// that the resolver could not bind to a symbol (build-mediated / workspace
-	// subpath, e.g. `@bright/common/Uuid`). Their specifier and the target's name
+	// subpath, e.g. `@acme/common/Uuid`). Their specifier and the target's name
 	// differ, so the grep sweep above cannot see them — surfacing them counted
 	// turns a silent undercount into an actionable one (#130). Grep the specifier.
 	UnresolvedInbound []store.UnresolvedInbound `json:"unresolved_inbound,omitempty"`

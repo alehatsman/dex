@@ -28,8 +28,8 @@ import (
 // repository root. Build one with Load; it is read-only afterwards.
 type Workspace struct {
 	// packages is sorted by name length descending so the longest (most
-	// specific) package name wins a prefix match — "@bright/common/sub" must
-	// prefer "@bright/common" over a hypothetical "@bright".
+	// specific) package name wins a prefix match — "@acme/common/sub" must
+	// prefer "@acme/common" over a hypothetical "@acme".
 	packages []pkgEntry
 	// aliases is sorted most-specific first (see aliasLess).
 	aliases []aliasRule
@@ -37,8 +37,8 @@ type Workspace struct {
 
 // pkgEntry is one workspace package discovered from a package.json.
 type pkgEntry struct {
-	name    string   // "@bright/common"
-	dir     string   // "packages/bright-common" (project-relative, slash)
+	name    string   // "@acme/common"
+	dir     string   // "packages/acme-common" (project-relative, slash)
 	entries []string // ext-free candidates for the bare-package import
 	// subpaths maps an exact exports subpath key (ext-free, e.g. "Uuid") to its
 	// pre-resolved source candidates — direct, build→src retargeted, and (for a
@@ -259,8 +259,8 @@ func (w *Workspace) Classify(specifier string) Classification {
 // Project is one workspace package: its package.json name and project-relative,
 // slash-separated directory. The unit a #127 Phase 3 rollup aggregates to.
 type Project struct {
-	Name string // "@bright/common"
-	Dir  string // "packages/bright-common"
+	Name string // "@acme/common"
+	Dir  string // "packages/acme-common"
 }
 
 // Projects returns every workspace package discovered from a package.json. Nil

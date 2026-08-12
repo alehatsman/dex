@@ -1,5 +1,5 @@
-import { capitalize, b64encode, Arr } from "@bright/common";
-import { ghost } from "@bright/common/loop_a";
+import { capitalize, b64encode, Arr } from "@acme/common";
+import { ghost } from "@acme/common/loop_a";
 
 // Every callee is bound only through the barrel index.ts re-export table:
 //   capitalize — star re-export      (=> String.ts)

@@ -139,7 +139,7 @@ type PackageGraphInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	// Level selects the aggregation granularity: "module" (default) is the
 	// per-file/per-Go-package DAG; "project" rolls JS/TS modules up to their
-	// workspace package (@bright/ui → @bright/common), dropping intra-project
+	// workspace package (@acme/ui → @acme/common), dropping intra-project
 	// edges (#127 Phase 3).
 	Level string `json:"level,omitempty" jsonschema:"aggregation level: 'module' (default) or 'project' (roll JS/TS modules up to workspace packages)"`
 }

@@ -16,10 +16,10 @@ covers:
 On a real monorepo the single most valuable thing a code-intel tool can report —
 *what depends on what* — is exactly what dex is blind to for JavaScript/TypeScript.
 The tree-sitter extractor resolves only **relative** import specifiers (`./foo`,
-`../bar`); every non-relative specifier — workspace packages (`@bright/*`), path
+`../bar`); every non-relative specifier — workspace packages (`@acme/*`), path
 aliases (`@/*`), bare npm deps (`react`, `@mui/*`) — is stored verbatim as a
 dangling import-leaf and never linked to a target. Measured on the 27-project
-`bright-frontend` Rush monorepo: 30,809 import edges, 100% dead-ending at synthetic
+`acme-frontend` Rush monorepo: 30,809 import edges, 100% dead-ending at synthetic
 leaves; 0 of 3,416 call edges cross a package boundary; the package-import DAG is
 Go-only by construction so no JS/TS dependency graph exists at all.
 
@@ -84,11 +84,11 @@ Resolution order inside `Candidates`:
 1. **tsconfig/jsconfig path aliases** — longest/most-specific pattern first. A
    pattern `@/*` → `["src/*"]` with `baseUrl:"."` maps `@/util/x` →
    `src/util/x`. Exact (non-`*`) patterns match the whole specifier.
-2. **Workspace package names** — longest name first. `@bright/common` →
-   `packages/bright-common`; a bare package import (`@bright/common`) yields the
+2. **Workspace package names** — longest name first. `@acme/common` →
+   `packages/acme-common`; a bare package import (`@acme/common`) yields the
    package's *entry candidates* (from `exports`/`main`/`module`/`types`, plus
    `<dir>/index` and `<dir>/src/index` probes); a subpath import
-   (`@bright/common/String`) yields `<dir>/String` (and `<dir>/src/String`).
+   (`@acme/common/String`) yields `<dir>/String` (and `<dir>/src/String`).
 3. Otherwise empty (external).
 
 All candidates are returned extension-free and project-root-relative with forward
@@ -150,7 +150,7 @@ survives serialization (`MarshalMetadata`) and is readable post-load via
   config's own `baseUrl` from the **repo root**, not per-package cwd — this is the
   documented dependency-cruiser pitfall (#862) and dex must avoid it. `extends`
   is followed; `references` is not required for path resolution in Phase 1.
-- **Subpath with explicit extension** (`@bright/common/String.js` importing a
+- **Subpath with explicit extension** (`@acme/common/String.js` importing a
   `.ts` source): candidates are emitted ext-free after stripping a known JS/TS
   extension, so the `.ts` source still matches.
 - **Candidate matched but file not indexed** (workspace package excluded by
@@ -177,8 +177,8 @@ survives serialization (`MarshalMetadata`) and is readable post-load via
   DAG edge via `Metadata["target"]`; Go packages still appear; an external
   import (no target, no package node) is still dropped; `IsMain` stays Go-only.
 - Whole change gated by `mooncake task ci`.
-- Acceptance (manual, on `bright-frontend`): the package-import DAG lists
-  `apps/* → @bright/*` dependencies; `@bright/*` / `@/*` imports resolve to
+- Acceptance (manual, on `acme-frontend`): the package-import DAG lists
+  `apps/* → @acme/*` dependencies; `@acme/*` / `@/*` imports resolve to
   internal targets; `@mui/*` labeled external, not leaf. (`trace capitalize`
   cross-package recall is Phase 2, not asserted here.)
 

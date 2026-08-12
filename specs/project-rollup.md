@@ -19,9 +19,9 @@ extends:
 Give a JS/TS monorepo a **project-level** dependency view above the per-file
 module graph, and make the reindex "N packages" counter report real projects.
 
-Today `NodePackage` for JS/TS is **per source file** (`packages/bright-ui/src/Button`
-is a "package"). A monorepo has ~30 real workspace projects (`@bright/ui`,
-`@bright/common`, …) but the package graph has 3000+ per-file nodes, and reindex
+Today `NodePackage` for JS/TS is **per source file** (`packages/acme-ui/src/Button`
+is a "package"). A monorepo has ~30 real workspace projects (`@acme/ui`,
+`@acme/common`, …) but the package graph has 3000+ per-file nodes, and reindex
 reports `graph: 0 packages` (only `ExtractGo` increments the counter; the sitter
 path never contributes it).
 
@@ -37,7 +37,7 @@ workspace boundaries the resolver already knows. Contained and reversible.
   is a view, not persisted graph.
 - **Impact project rollup** — folding a symbol's blast radius to project
   granularity is a natural follow-up but out of this phase; keep it bounded.
-- **The chunk-density-cap skip** (large `bright-api` files dropped at cap=500) —
+- **The chunk-density-cap skip** (large `acme-api` files dropped at cap=500) —
   separate recall gap, filed independently.
 - **Cross-language projects** — a project is a JS/TS workspace package (package.json
   name + dir). Go keeps its existing dir-level package model unchanged.
@@ -74,7 +74,7 @@ func BuildProjectGraph(view *View, projects []Project) PackageGraph
 `BuildProjectGraph` reuses `BuildPackageGraph`'s edge-walk and sort/dedup: it is
 the same aggregation with `ProjectOf(endpoint)` substituted for the raw module
 path and a project-boundary drop. `PackageStat.Package` then holds a project name
-(`@bright/ui`); `IsMain` is false (projects aren't executables). Prefix match is
+(`@acme/ui`); `IsMain` is false (projects aren't executables). Prefix match is
 boundary-safe: `p == Dir || strings.HasPrefix(p, Dir+"/")`.
 
 ### 3. Fix the "N packages" counter
@@ -113,12 +113,12 @@ no behavior change for existing callers.
 ## Validation
 
 - Unit (`resolve`): `Projects()` returns the fixture's packages, dir-desc.
-- Unit (`graphquery`): `ProjectOf` — boundary safety (`packages/bright` vs
-  `packages/bright-common`), longest-prefix, unowned → ""; `BuildProjectGraph`
+- Unit (`graphquery`): `ProjectOf` — boundary safety (`packages/acme` vs
+  `packages/acme-common`), longest-prefix, unowned → ""; `BuildProjectGraph`
   on a hand view — module edges roll up, intra-project dropped, degrees/PageRank
   correct, deterministic order.
 - Unit (counter): a JS/TS fixture reports its real project count (not 0, not
   per-file); a Go fixture is unchanged; mixed sums.
-- Live (bright-frontend): `dex graph packages --level project` yields ~30
-  projects with `@bright/common` / `@bright/ui` high in-degree (foundation
+- Live (acme-frontend): `dex graph packages --level project` yields ~30
+  projects with `@acme/common` / `@acme/ui` high in-degree (foundation
   packages); reindex reports a real `N packages` (was 0). `mooncake task ci` green.

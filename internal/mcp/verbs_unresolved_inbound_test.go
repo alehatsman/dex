@@ -22,26 +22,26 @@ func (f *fakeInbound) unresolvedInbound(_ context.Context, _, file string, _ int
 
 func TestFoldUnresolvedInbound(t *testing.T) {
 	h := &fakeInbound{rows: map[string][]store.UnresolvedInbound{
-		"packages/bright-common/src/UuidCodec.ts": {
-			{Specifier: "@bright/common/Uuid", Count: 5},
+		"packages/acme-common/src/UuidCodec.ts": {
+			{Specifier: "@acme/common/Uuid", Count: 5},
 		},
-		"packages/bright-common/src/Other.ts": {
-			{Specifier: "@bright/common/Uuid", Count: 4}, // merges with above -> 9
-			{Specifier: "@bright/common/Thing", Count: 1},
+		"packages/acme-common/src/Other.ts": {
+			{Specifier: "@acme/common/Uuid", Count: 4}, // merges with above -> 9
+			{Specifier: "@acme/common/Thing", Count: 1},
 		},
 	}}
 
 	t.Run("populates, merges, sorts", func(t *testing.T) {
 		out := &TraceOutput{Targets: []TargetMatch{
-			{Path: "packages/bright-common/src/UuidCodec.ts"},
-			{Path: "packages/bright-common/src/Other.ts"},
+			{Path: "packages/acme-common/src/UuidCodec.ts"},
+			{Path: "packages/acme-common/src/Other.ts"},
 			{Path: "some/thing.go"}, // Go target: skipped
 		}}
 		foldUnresolvedInbound(context.Background(), h, "", out)
 
 		want := []store.UnresolvedInbound{
-			{Specifier: "@bright/common/Uuid", Count: 9},
-			{Specifier: "@bright/common/Thing", Count: 1},
+			{Specifier: "@acme/common/Uuid", Count: 9},
+			{Specifier: "@acme/common/Thing", Count: 1},
 		}
 		if len(out.UnresolvedInbound) != len(want) {
 			t.Fatalf("got %v, want %v", out.UnresolvedInbound, want)
@@ -54,7 +54,7 @@ func TestFoldUnresolvedInbound(t *testing.T) {
 		if out.Recall != "partial" {
 			t.Errorf("Recall = %q, want partial", out.Recall)
 		}
-		if !strings.Contains(out.Hint, "@bright/common/Uuid") || !strings.Contains(out.Hint, "grep") {
+		if !strings.Contains(out.Hint, "@acme/common/Uuid") || !strings.Contains(out.Hint, "grep") {
 			t.Errorf("hint missing specifier/grep cue: %q", out.Hint)
 		}
 	})
@@ -68,7 +68,7 @@ func TestFoldUnresolvedInbound(t *testing.T) {
 	})
 
 	t.Run("surface without the capability is a no-op", func(t *testing.T) {
-		out := &TraceOutput{Targets: []TargetMatch{{Path: "packages/bright-common/src/UuidCodec.ts"}}}
+		out := &TraceOutput{Targets: []TargetMatch{{Path: "packages/acme-common/src/UuidCodec.ts"}}}
 		foldUnresolvedInbound(context.Background(), &noopSurface{}, "", out)
 		if out.UnresolvedInbound != nil || out.Hint != "" {
 			t.Errorf("uncapable surface should skip, got %+v / %q", out.UnresolvedInbound, out.Hint)

@@ -22,7 +22,7 @@ func writeFiles(t *testing.T, dir string, files map[string]string) {
 }
 
 // monorepo lays out a small but representative workspace:
-//   - a root tsconfig with a "@/*" alias (baseUrl ".") and a "@bright/common"
+//   - a root tsconfig with a "@/*" alias (baseUrl ".") and a "@acme/common"
 //     path alias, plus a base tsconfig it extends;
 //   - two workspace packages named via package.json.
 func monorepo(t *testing.T) string {
@@ -42,19 +42,19 @@ func monorepo(t *testing.T) string {
 				"baseUrl": ".",
 				"paths": {
 					"@/*": ["src/*"],
-					"@bright/common": ["packages/bright-common/src/index.ts"],
+					"@acme/common": ["packages/acme-common/src/index.ts"],
 				}
 			}
 		}`,
-		"packages/bright-common/package.json": `{
-			"name": "@bright/common",
+		"packages/acme-common/package.json": `{
+			"name": "@acme/common",
 			"module": "src/index.ts"
 		}`,
-		"packages/bright-ui/package.json": `{
-			"name": "@bright/ui",
+		"packages/acme-ui/package.json": `{
+			"name": "@acme/ui",
 			"exports": { ".": { "import": "./src/index.tsx" } }
 		}`,
-		"apps/base-view/package.json": `{ "name": "@bright/base-view" }`,
+		"apps/base-view/package.json": `{ "name": "@acme/base-view" }`,
 	})
 	return root
 }
@@ -69,12 +69,12 @@ func TestClassify(t *testing.T) {
 		wantPkgDir string
 	}{
 		{"path alias", "@app/util", OriginAlias, ""},
-		{"workspace subpath", "@bright/ui/Button", OriginWorkspace, "packages/bright-ui"},
+		{"workspace subpath", "@acme/ui/Button", OriginWorkspace, "packages/acme-ui"},
 		{"bare dependency", "react", OriginExternal, ""},
 		{"relative is external-ish (no candidates)", "./sibling", OriginExternal, ""},
-		// @bright/common matches both an exact alias and a workspace name; the
+		// @acme/common matches both an exact alias and a workspace name; the
 		// alias wins, matching Candidates' precedence.
-		{"alias beats workspace", "@bright/common", OriginAlias, ""},
+		{"alias beats workspace", "@acme/common", OriginAlias, ""},
 	}
 
 	for _, tc := range cases {
@@ -115,28 +115,28 @@ func TestCandidates(t *testing.T) {
 		},
 		{
 			name:      "exact tsconfig alias (no star) beats workspace name",
-			specifier: "@bright/common",
+			specifier: "@acme/common",
 			// exact alias fires first; workspace entries follow.
 			want: []string{
-				"packages/bright-common/src/index",
-				"packages/bright-common/index",
-				"packages/bright-common/src/main",
-				"packages/bright-common/lib/index",
+				"packages/acme-common/src/index",
+				"packages/acme-common/index",
+				"packages/acme-common/src/main",
+				"packages/acme-common/lib/index",
 			},
 		},
 		{
 			name:      "workspace subpath import",
-			specifier: "@bright/ui/Button",
-			want:      []string{"packages/bright-ui/Button", "packages/bright-ui/src/Button"},
+			specifier: "@acme/ui/Button",
+			want:      []string{"packages/acme-ui/Button", "packages/acme-ui/src/Button"},
 		},
 		{
 			name:      "workspace bare import via exports",
-			specifier: "@bright/ui",
+			specifier: "@acme/ui",
 			want: []string{
-				"packages/bright-ui/src/index",
-				"packages/bright-ui/index",
-				"packages/bright-ui/src/main",
-				"packages/bright-ui/lib/index",
+				"packages/acme-ui/src/index",
+				"packages/acme-ui/index",
+				"packages/acme-ui/src/main",
+				"packages/acme-ui/lib/index",
 			},
 		},
 		{
@@ -172,8 +172,8 @@ func TestCandidates(t *testing.T) {
 func TestSubpathExports(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{
-		"packages/bright-common/package.json": `{
-			"name": "@bright/common",
+		"packages/acme-common/package.json": `{
+			"name": "@acme/common",
 			"exports": {
 				".": { "import": "./build/index.js" },
 				"./Uuid":   { "import": "./build/Uuid.js", "types": "./build/Uuid.d.ts" },
@@ -181,10 +181,10 @@ func TestSubpathExports(t *testing.T) {
 			}
 		}`,
 		// A compiled re-export barrel whose source is differently named.
-		"packages/bright-common/build/Uuid.js":    "export * from './UuidCodec.js';\nexport { default } from './UuidCodec.js';\n",
-		"packages/bright-common/src/UuidCodec.ts": "export class Uuid {}\n",
+		"packages/acme-common/build/Uuid.js":    "export * from './UuidCodec.js';\nexport { default } from './UuidCodec.js';\n",
+		"packages/acme-common/src/UuidCodec.ts": "export class Uuid {}\n",
 		// A same-named source: build→src path rewrite alone suffices.
-		"packages/bright-common/src/Direct.ts": "export const x = 1\n",
+		"packages/acme-common/src/Direct.ts": "export const x = 1\n",
 	})
 	w := Load(root)
 
@@ -197,11 +197,11 @@ func TestSubpathExports(t *testing.T) {
 		t.Errorf("Candidates(%q) = %v, missing %q", spec, got, want)
 	}
 	// Barrel follow: ./Uuid → build/Uuid.js → export * from './UuidCodec' → src/UuidCodec.
-	assertHas("@bright/common/Uuid", "packages/bright-common/src/UuidCodec")
+	assertHas("@acme/common/Uuid", "packages/acme-common/src/UuidCodec")
 	// build→src retarget for a same-named source.
-	assertHas("@bright/common/Direct", "packages/bright-common/src/Direct")
+	assertHas("@acme/common/Direct", "packages/acme-common/src/Direct")
 	// An import written with an explicit .js ext still matches the "Uuid" key.
-	assertHas("@bright/common/Uuid.js", "packages/bright-common/src/UuidCodec")
+	assertHas("@acme/common/Uuid.js", "packages/acme-common/src/UuidCodec")
 }
 
 // TestSubpathExportsFallbackWhenUnbuilt: with an exports subpath but no artifact
@@ -232,11 +232,11 @@ func slicesContains(xs []string, want string) bool {
 	return false
 }
 
-// TestExactAliasPrecedence pins that "@bright/common" resolves the exact alias
+// TestExactAliasPrecedence pins that "@acme/common" resolves the exact alias
 // target FIRST (index), guarding the most-specific-first ordering.
 func TestExactAliasPrecedence(t *testing.T) {
-	got := Load(monorepo(t)).Candidates("@bright/common")
-	if len(got) == 0 || got[0] != "packages/bright-common/src/index" {
+	got := Load(monorepo(t)).Candidates("@acme/common")
+	if len(got) == 0 || got[0] != "packages/acme-common/src/index" {
 		t.Fatalf("expected exact alias target first, got %#v", got)
 	}
 }
@@ -245,7 +245,7 @@ func TestExactAliasPrecedence(t *testing.T) {
 // every non-relative specifier stays external (no regression for plain repos).
 func TestEmptyWorkspace(t *testing.T) {
 	w := Load(t.TempDir())
-	for _, spec := range []string{"@bright/common", "@/util", "react"} {
+	for _, spec := range []string{"@acme/common", "@/util", "react"} {
 		if got := w.Candidates(spec); got != nil {
 			t.Errorf("empty workspace Candidates(%q) = %#v, want nil", spec, got)
 		}
@@ -264,9 +264,9 @@ func TestProjects(t *testing.T) {
 		got[p.Name] = p.Dir
 	}
 	want := map[string]string{
-		"@bright/common":    "packages/bright-common",
-		"@bright/ui":        "packages/bright-ui",
-		"@bright/base-view": "apps/base-view",
+		"@acme/common":    "packages/acme-common",
+		"@acme/ui":        "packages/acme-ui",
+		"@acme/base-view": "apps/base-view",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Projects() = %#v, want %#v", got, want)
@@ -284,20 +284,20 @@ func TestProjects(t *testing.T) {
 func TestProjectOf(t *testing.T) {
 	w := Load(monorepo(t))
 	cases := map[string]string{
-		"packages/bright-common/src/index":   "@bright/common",
-		"packages/bright-common":             "@bright/common", // exact dir
-		"packages/bright-ui/src/Button":      "@bright/ui",
-		"apps/base-view/src/main":            "@bright/base-view",
-		"packages/bright-common-extra/src/x": "", // boundary: not bright-common
-		"src/util":                           "", // owned by no package
-		"":                                   "",
+		"packages/acme-common/src/index":   "@acme/common",
+		"packages/acme-common":             "@acme/common", // exact dir
+		"packages/acme-ui/src/Button":      "@acme/ui",
+		"apps/base-view/src/main":          "@acme/base-view",
+		"packages/acme-common-extra/src/x": "", // boundary: not acme-common
+		"src/util":                         "", // owned by no package
+		"":                                 "",
 	}
 	for p, want := range cases {
 		if got := w.ProjectOf(p); got != want {
 			t.Errorf("ProjectOf(%q) = %q, want %q", p, got, want)
 		}
 	}
-	if got := (*Workspace)(nil).ProjectOf("packages/bright-ui/src/x"); got != "" {
+	if got := (*Workspace)(nil).ProjectOf("packages/acme-ui/src/x"); got != "" {
 		t.Errorf("nil Workspace ProjectOf = %q, want \"\"", got)
 	}
 }
@@ -307,9 +307,9 @@ func TestProjectOf(t *testing.T) {
 func TestSkipsNodeModules(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{
-		"node_modules/@bright/common/package.json": `{ "name": "@bright/common" }`,
+		"node_modules/@acme/common/package.json": `{ "name": "@acme/common" }`,
 	})
-	if got := Load(root).Candidates("@bright/common"); got != nil {
+	if got := Load(root).Candidates("@acme/common"); got != nil {
 		t.Errorf("node_modules package leaked into workspace: %#v", got)
 	}
 }

@@ -42,7 +42,7 @@ type jstsBase struct {
 	// fileImports. Nil bucket is safe — resolveExport guards it.
 	reExports map[string]*reExportTable
 	warnings  []string
-	// workspace resolves non-relative specifiers (@bright/*, @/*) to project
+	// workspace resolves non-relative specifiers (@acme/*, @/*) to project
 	// files via package.json names + tsconfig path aliases. Built once at the
 	// top of Finalize (projectRoot is set; it reads only disk config). Nil is
 	// safe — Candidates guards a nil receiver (#127).
@@ -718,7 +718,7 @@ func (e *jstsBase) resolveCall(c tsPendingCall) string {
 			if len(tail) != 1 {
 				return ""
 			}
-			// `import { String } from '@bright/common'; String.capitalize()` where
+			// `import { String } from '@acme/common'; String.capitalize()` where
 			// the barrel binds String via `export * as String from './String'`.
 			if nsMod := e.namespaceTarget(fi.pkg, fi.name); nsMod != "" {
 				if id := e.resolveExport(nsMod, tail[0], map[string]bool{}); id != "" {
@@ -781,7 +781,7 @@ func (e *jstsBase) resolveModuleSpecifier(specifier, fromFile string) string {
 		return specifier
 	}
 	// Non-relative: a workspace package or tsconfig path alias may still name a
-	// project file (@bright/*, @/*). A bare npm dep resolves nothing and is
+	// project file (@acme/*, @/*). A bare npm dep resolves nothing and is
 	// returned verbatim — the caller treats it as external.
 	if resolved, ok := e.resolveWorkspace(specifier); ok {
 		return resolved

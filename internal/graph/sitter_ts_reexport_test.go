@@ -7,7 +7,7 @@ import (
 
 // TestTSReExportBinding exercises cross-package symbol binding through a barrel
 // index.ts that only re-exports (#127 Phase 2). testdata/ts_reexport has a
-// consumer calling three symbols imported from `@bright/common`, each defined in
+// consumer calling three symbols imported from `@acme/common`, each defined in
 // a sibling module and surfaced only via a re-export shape (star, named+rename,
 // namespace). Before Phase 2 these calls bound to nothing — the barrel defines
 // no such symbol. A fourth call (`ghost`) goes through a re-export cycle and
@@ -31,11 +31,11 @@ func TestTSReExportBinding(t *testing.T) {
 	cases := []struct {
 		name, dstPkg, dstName, shape string
 	}{
-		{"star re-export", "packages/bright-common/src/String", "capitalize",
+		{"star re-export", "packages/acme-common/src/String", "capitalize",
 			"export * from './String'"},
-		{"named+rename re-export", "packages/bright-common/src/Base64", "encode",
+		{"named+rename re-export", "packages/acme-common/src/Base64", "encode",
 			"export { encode as b64encode } from './Base64'"},
-		{"namespace re-export", "packages/bright-common/src/Arr", "first",
+		{"namespace re-export", "packages/acme-common/src/Arr", "first",
 			"export * as Arr from './Arr'; Arr.first()"},
 	}
 	for _, c := range cases {

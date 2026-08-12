@@ -8,7 +8,7 @@ import (
 // TestTSWorkspaceResolution exercises workspace-aware module resolution (#127
 // Phase 1) against testdata/ts_workspace, a two-package monorepo with a
 // tsconfig `paths` alias (`@/*`), an exact alias to a workspace package
-// (`@bright/common`), a relative import, and a bare npm dep. Each import node in
+// (`@acme/common`), a relative import, and a bare npm dep. Each import node in
 // apps/base-view/src/main must be annotated with the right resolution outcome.
 func TestTSWorkspaceResolution(t *testing.T) {
 	root := copyFixture(t, "ts_workspace")
@@ -36,15 +36,15 @@ func TestTSWorkspaceResolution(t *testing.T) {
 		wantReason string // when unresolved
 		wantPkgDir string // when unresolved via a workspace subpath
 	}{
-		{specifier: "@bright/common", wantTarget: "packages/bright-common/src/index"},
+		{specifier: "@acme/common", wantTarget: "packages/acme-common/src/index"},
 		{specifier: "@/util", wantTarget: "apps/base-view/src/util"},
 		{specifier: "./sibling", wantTarget: "apps/base-view/src/sibling"},
 		// Conventional subpath whose source file exists still resolves precisely.
-		{specifier: "@bright/common/helper", wantTarget: "packages/bright-common/src/helper"},
+		{specifier: "@acme/common/helper", wantTarget: "packages/acme-common/src/helper"},
 		// Workspace subpath with no source file (the build-mediated-export shape,
-		// e.g. @bright/common/Uuid): honest unresolved, never a fabricated target.
-		{specifier: "@bright/common/Shim", unresolved: true,
-			wantReason: "workspace-subpath", wantPkgDir: "packages/bright-common"},
+		// e.g. @acme/common/Uuid): honest unresolved, never a fabricated target.
+		{specifier: "@acme/common/Shim", unresolved: true,
+			wantReason: "workspace-subpath", wantPkgDir: "packages/acme-common"},
 		{specifier: "react", external: true},
 	}
 

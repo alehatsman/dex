@@ -15,7 +15,7 @@ extends:
 
 Make `ask(intent=package_topology)` return the **workspace-project import DAG** on
 JS/TS monorepos, the same structure `dex graph packages --level project` already
-prints (23 projects / 90 edges on bright-frontend, PageRank-ranked). Today the
+prints (23 projects / 90 edges on acme-frontend, PageRank-ranked). Today the
 intent returns an empty graph + semantic-doc noise there; the fix
 (`graphquery.BuildProjectGraph`, #127 Phase 3) exists but is unreachable from the
 `ask` retrieve path.
@@ -45,7 +45,7 @@ workspace and gated so a Go repo never reaches it.
   walks the *whole tree* for `package.json`, so it discovers buried JS/TS **test
   fixtures** in a Go repo (dex's own `graph/resolve/testdata` → 3 bogus projects).
   Gating on a real workspace root — not on `Load` returning any packages — is what
-  separates a JS/TS monorepo from a fixture-bearing Go repo. Verified: bright-frontend
+  separates a JS/TS monorepo from a fixture-bearing Go repo. Verified: acme-frontend
   has `rush.json`; dex has only `go.mod`.
 - **Thread `projectOf func(string) string` into `EnrichGraph`** as its last param,
   injected by `projectOfFor(req)` in the assembler — built **only** for
@@ -81,6 +81,6 @@ Non-goals (filed as follow-ups on #151):
   dropped). A Go-style view with `projectOf → ""` → unchanged module fallback
   (same output as today). `projectOf == nil` → module fallback.
 - **Regression:** the 9 existing `EnrichGraph` test callers pass `nil` and stay green.
-- **Live (bright-frontend):** `ask(package_topology)` surfaces the 23-project DAG
-  in `graph.edges` (`@bright/common`/`@bright/build-helpers` high in-degree).
+- **Live (acme-frontend):** `ask(package_topology)` surfaces the 23-project DAG
+  in `graph.edges` (`@acme/common`/`@acme/build-helpers` high in-degree).
 - `mooncake task ci` green.

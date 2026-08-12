@@ -106,7 +106,7 @@ func findEdge(edges []Edge, kind EdgeKind, srcID, dstID string) *Edge {
 // TestJSTSProjectCounter: a JS/TS workspace reports its real workspace-project
 // count (#127 Phase 3), not 0 (the pre-fix value) and not the per-file module
 // count. ts_workspace has two package.json packages (apps/base-view,
-// packages/bright-common), each owning indexed modules.
+// packages/acme-common), each owning indexed modules.
 func TestJSTSProjectCounter(t *testing.T) {
 	root := copyFixture(t, "ts_workspace")
 	st := openTestStore(t)
@@ -116,7 +116,7 @@ func TestJSTSProjectCounter(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	if stats.Packages != 2 {
-		t.Errorf("Packages = %d, want 2 (apps/base-view + packages/bright-common)", stats.Packages)
+		t.Errorf("Packages = %d, want 2 (apps/base-view + packages/acme-common)", stats.Packages)
 	}
 }
 

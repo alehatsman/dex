@@ -7,7 +7,7 @@ that re-exports a differently-named source.
 
 ## Motivating case
 
-`@bright/common/Uuid` is imported 589× across bright-frontend and was 100%
+`@acme/common/Uuid` is imported 589× across acme-frontend and was 100%
 unresolved. The chain:
 
 ```
@@ -16,7 +16,7 @@ build/Uuid.js  ->  export * from './UuidCodec.js';   (a re-export barrel)
 src/UuidCodec.ts  (the actual source; NO src/Uuid.ts exists)
 ```
 
-Survey of bright-frontend: 9 packages, 22 subpath keys, **20 targets under
+Survey of acme-frontend: 9 packages, 22 subpath keys, **20 targets under
 `build/`**, **0** with a direct `build/→src/` sibling. So a pure path rewrite
 (`build/Uuid.js` → `src/Uuid.ts`) resolves nothing — `src/Uuid.ts` doesn't
 exist. The name only connects through the barrel. Resolution therefore requires
@@ -68,9 +68,9 @@ They keep the existing behavior.
 - `go test -tags sqlite_fts5 ./internal/graph/resolve/...` — golden cases:
   exact subpath → direct src, build→src retarget, barrel-follow to a
   differently-named source, and graceful fallback when the artifact is absent.
-- Extractor-level testdata: a `bright-common`-shaped fixture with a `build/`
+- Extractor-level testdata: a `acme-common`-shaped fixture with a `build/`
   barrel asserts the subpath import gains `Metadata["target"]` = the real source.
-- Manual acceptance on bright-frontend: `@bright/common/Uuid` moves from
+- Manual acceptance on acme-frontend: `@acme/common/Uuid` moves from
   unresolved → resolved (was 589 misses); reindex + `trace` shows the callers.
 
 ## Non-goals

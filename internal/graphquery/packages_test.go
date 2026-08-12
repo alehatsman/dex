@@ -54,7 +54,7 @@ func TestBuildPackageGraph(t *testing.T) {
 			"tx":    tsPkg("tx", "web/x"),
 			"ty":    tsPkg("ty", "web/y"),
 			"tz":    tsPkg("tz", "web/z"), // isolated module — not emitted
-			"tx-y":  tsImp("tx-y", "web/x", "@bright/y", "web/y"),
+			"tx-y":  tsImp("tx-y", "web/x", "@acme/y", "web/y"),
 			"tx-rc": tsImp("tx-rc", "web/x", "react", ""), // external — dropped
 		},
 		EdgesByKind: map[graph.EdgeKind][]Edge{

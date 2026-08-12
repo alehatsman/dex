@@ -510,7 +510,7 @@ func (s *Store) ExternalImports(ctx context.Context) ([]string, error) {
 
 // UnresolvedInbound is one known-unresolved import edge into a package: an
 // import specifier the resolver matched to a workspace package but could not
-// bind to a source file (e.g. a build-mediated export like `@bright/common/Uuid`),
+// bind to a source file (e.g. a build-mediated export like `@acme/common/Uuid`),
 // with how many times it appears. Name-based recall cannot see these — the
 // specifier and the target symbol's name differ — so trace/impact surface them
 // explicitly instead of silently undercounting (#130).

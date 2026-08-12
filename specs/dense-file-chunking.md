@@ -20,7 +20,7 @@ reaped by `PruneUnseen`). That is silent, unpredictable data loss at an
 arbitrary threshold.
 
 The cap fires on **dense declaration files** — overwhelmingly generated ones.
-Live evidence (`bright-frontend`, measured via the structural chunker):
+Live evidence (`acme-frontend`, measured via the structural chunker):
 
 | File | bytes | structural chunks | decl-size p50 / p90 / max |
 |------|------:|------------------:|---------------------------|
@@ -142,14 +142,14 @@ never dropped). `SkipMinified` / `LooksMinified` stay unchanged (check 1).
     with all-big members returns unchanged.
 - **Pipeline** (`internal/index`): file > cap is packed (≪ structural count,
   0 dropped); file < cap is unchanged; `MaxChunksPerFile <= 0` disables packing.
-- **Live** (bright-frontend): reindex; assert CMDevice.ts drops from 1849 → ~56
+- **Live** (acme-frontend): reindex; assert CMDevice.ts drops from 1849 → ~56
   chunks and stays searchable (a specific `X_TOKEN` string still found by
   `grep`/`search`); assert Device.ts / Metadata.ts chunk counts unchanged;
   measure total index time and vector count vs baseline; spot-check `brief` /
   `search` quality on a device-domain query.
 - **Gate:** `mooncake task ci`.
 
-### Validation results (live, bright-frontend, 8b6370e)
+### Validation results (live, acme-frontend, 8b6370e)
 
 - `mooncake task ci` green (build + test + vet + fmt).
 - Dry-run: **6 files dense-packed**, total 31824 chunks vs 31621 baseline
