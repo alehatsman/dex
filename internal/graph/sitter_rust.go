@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/graph/resolve"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/rust"
 )
@@ -71,6 +72,10 @@ type rustExtractor struct {
 	fileImports map[string]*rustImportTable
 
 	pendingCalls []rustPendingCall
+
+	// cargo is the Cargo workspace model (nil off-workspace / single-crate), used
+	// to derive crate-relative package paths so cross-crate `use` edges resolve.
+	cargo *resolve.CargoWorkspace
 
 	warnings []string
 }
@@ -117,7 +122,30 @@ func (e *rustExtractor) Extensions() []string       { return []string{".rs"} }
 
 func (e *rustExtractor) Init(_ context.Context, root string) error {
 	e.projectRoot = root
+	// nil on a single-crate or non-Cargo repo — packagePathFor then falls back to
+	// the layout-only rustPackagePath, preserving today's behavior.
+	e.cargo = resolve.LoadCargo(root)
 	return nil
+}
+
+// packagePathFor derives a file's Rust package path. In a Cargo workspace it is
+// crate-relative (crates/foo-core/src/a/b.rs → foo_core::a::b, …/src/lib.rs →
+// crate root foo_core), so a cross-crate `use foo_core::…` resolves to a real
+// package and the crate DAG has edges. Off-workspace it defers to the
+// layout-only rustPackagePath (single-crate — unchanged).
+func (e *rustExtractor) packagePathFor(relPath string) string {
+	crate, memberDir, ok := e.cargo.CrateForFile(relPath)
+	if !ok {
+		return rustPackagePath(relPath)
+	}
+	p := strings.TrimSuffix(filepath.ToSlash(relPath), ".rs")
+	rel := strings.TrimPrefix(p, memberDir+"/")
+	rel = strings.TrimPrefix(rel, "src/")
+	if rel == "lib" || rel == "main" || rel == "" {
+		return crate // crate root
+	}
+	rel = strings.TrimSuffix(rel, "/mod")
+	return crate + "::" + strings.ReplaceAll(rel, "/", "::")
 }
 
 // emitScaffold emits the package and file nodes and the package→file
@@ -173,7 +201,55 @@ func (e *rustExtractor) Finalize(_ context.Context) ([]Node, []Edge, []string, e
 			EndLine:   c.line,
 		})
 	}
+	e.resolveImportTargets()
 	return e.nodes, e.edges, e.warnings, nil
+}
+
+// resolveImportTargets stamps each Rust NodeImport with the internal package it
+// refers to, so graphquery.importTargetPath (which reads Metadata["target"] for
+// every non-Go language) can turn Rust import edges into internal package edges.
+// The target is the longest prefix of the import path that is a real package in
+// the project — `use foo_core::a::Thing` → foo_core::a when that module is
+// indexed, else the crate root foo_core; an external crate matches no prefix and
+// stays unset (dropped as external, like a bare npm import). Runs once in
+// Finalize with the full package set in hand — the Rust analogue of the JS
+// resolver writing `target` at extract time.
+func (e *rustExtractor) resolveImportTargets() {
+	pkgs := make(map[string]struct{})
+	for _, n := range e.nodes {
+		if n.Kind == NodePackage {
+			pkgs[n.PackagePath] = struct{}{}
+		}
+	}
+	for i := range e.nodes {
+		n := &e.nodes[i]
+		if n.Kind != NodeImport || n.Metadata == nil {
+			continue
+		}
+		if lang, _ := n.Metadata["language"].(string); lang != "rust" {
+			continue
+		}
+		if tgt := longestPackagePrefix(n.QualifiedName, pkgs); tgt != "" {
+			n.Metadata["target"] = tgt
+		}
+	}
+}
+
+// longestPackagePrefix returns the longest `::`-prefix of path present in pkgs,
+// or "" when none is — dropping the imported item's trailing segments until a
+// module package is hit.
+func longestPackagePrefix(path string, pkgs map[string]struct{}) string {
+	for path != "" {
+		if _, ok := pkgs[path]; ok {
+			return path
+		}
+		i := strings.LastIndex(path, "::")
+		if i < 0 {
+			return ""
+		}
+		path = path[:i]
+	}
+	return ""
 }
 
 // addFunction registers a top-level fn or a method inside an impl or trait.

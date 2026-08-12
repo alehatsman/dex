@@ -363,24 +363,33 @@ func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
 	result.Edges = append(result.Edges, sitterRes.Edges...)
 	result.Warnings = append(result.Warnings, sitterRes.Warnings...)
 
-	// #127 Phase 3: contribute the JS/TS workspace-project count. ExtractGo sets
+	// #127 Phase 3 / #162: contribute the workspace-project count. ExtractGo sets
 	// result.Packages for Go; the sitter path emits per-file module nodes and
-	// never counted projects, so a JS/TS monorepo reported "0 packages". Count
-	// distinct workspace packages owning at least one emitted module — once here
-	// (not per language extractor) so js+ts don't double-count the same
-	// workspace. ProjectOf only matches JS/TS package dirs, so non-JS/TS module
-	// paths map to "" and are skipped; Go's count is untouched.
-	if ws := resolve.Load(g.project.Root); ws != nil {
+	// never counted projects, so a JS/TS monorepo — and a Cargo workspace —
+	// reported "0 packages". Count distinct workspace projects/crates owning at
+	// least one emitted module, once here (not per language extractor) so js+ts
+	// don't double-count the same workspace. Each mapper only matches its own
+	// ecosystem's paths (JS/TS project dirs / Cargo crates), so foreign module
+	// paths map to "" and are skipped; Go's count is untouched. Uses the
+	// permissive loaders (not the strict ProjectOfForRoot root gate) — this is a
+	// count, not the DAG rollup, so a project.json/crate found anywhere counts.
+	countProjects := func(projectOf func(string) string) {
 		projects := map[string]struct{}{}
 		for i := range sitterRes.Nodes {
 			if sitterRes.Nodes[i].Kind != NodePackage {
 				continue
 			}
-			if proj := ws.ProjectOf(sitterRes.Nodes[i].PackagePath); proj != "" {
+			if proj := projectOf(sitterRes.Nodes[i].PackagePath); proj != "" {
 				projects[proj] = struct{}{}
 			}
 		}
 		result.Packages += len(projects)
+	}
+	if ws := resolve.Load(g.project.Root); ws != nil {
+		countProjects(ws.ProjectOf)
+	}
+	if cw := resolve.LoadCargo(g.project.Root); cw != nil {
+		countProjects(cw.ProjectOf)
 	}
 	if g.opts.Verbose {
 		g.log.Info("graph extracted",

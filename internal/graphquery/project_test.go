@@ -116,3 +116,59 @@ func TestBuildProjectGraphEmpty(t *testing.T) {
 		t.Errorf("nil mapper: nodes = %d, want 0", len(out.Nodes))
 	}
 }
+
+// TestBuildProjectGraphRust rolls a Rust module view up to Cargo crates (#162):
+// the mapper is "first :: segment" (as resolve.CargoWorkspace.ProjectOf yields),
+// and two app→core_lib imports (one into the crate root, one into a submodule)
+// collapse to a single crate edge. Proves the crate rollup rides the same
+// language-agnostic BuildProjectGraph the JS/TS rollup uses.
+func TestBuildProjectGraphRust(t *testing.T) {
+	rsPkg := func(id, path string) Node {
+		return Node{ID: id, Kind: graph.NodePackage, PackagePath: path,
+			MetadataJSON: []byte(`{"language":"rust"}`)}
+	}
+	rsImp := func(id, importer, usePath, target string) Node {
+		md := `{"language":"rust"}`
+		if target != "" {
+			md = `{"language":"rust","target":"` + target + `"}`
+		}
+		return Node{ID: id, Kind: graph.NodeImport, PackagePath: importer,
+			QualifiedName: usePath, MetadataJSON: []byte(md)}
+	}
+	edge := func(src, imp string) Edge { return Edge{Kind: graph.EdgeImports, SrcID: src, DstID: imp} }
+
+	view := &View{
+		NodesByID: map[string]Node{
+			"p-app":  rsPkg("p-app", "app"),
+			"p-core": rsPkg("p-core", "core_lib"),
+			"p-util": rsPkg("p-util", "core_lib::util"),
+			// app imports an item in the crate root and one in a submodule; both
+			// roll up to crate core_lib and dedup to a single crate edge.
+			"i1": rsImp("i1", "app", "core_lib::Widget", "core_lib"),
+			"i2": rsImp("i2", "app", "core_lib::util::help", "core_lib::util"),
+			// external crate — no target, dropped.
+			"i3": rsImp("i3", "app", "serde::Deserialize", ""),
+		},
+		EdgesByKind: map[graph.EdgeKind][]Edge{
+			graph.EdgeImports: {edge("p-app", "i1"), edge("p-app", "i2"), edge("p-app", "i3")},
+		},
+	}
+
+	// resolve.CargoWorkspace.ProjectOf in essence: first "::" segment.
+	projectOf := func(p string) string {
+		if i := strings.Index(p, "::"); i >= 0 {
+			return p[:i]
+		}
+		return p
+	}
+
+	out := BuildProjectGraph(view, projectOf)
+
+	wantEdges := []PackageImport{{FromPackage: "app", ToPackage: "core_lib"}}
+	if len(out.Edges) != len(wantEdges) || out.Edges[0] != wantEdges[0] {
+		t.Fatalf("edges = %+v, want %+v (submodule + external must fold/drop)", out.Edges, wantEdges)
+	}
+	if len(out.Nodes) != 2 {
+		t.Fatalf("nodes = %d, want 2 (app, core_lib) — %+v", len(out.Nodes), out.Nodes)
+	}
+}

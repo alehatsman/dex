@@ -186,15 +186,17 @@ func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in Pa
 	if hint != "" {
 		return nil, PackageGraphOutput{Status: "error", Hint: hint}, nil
 	}
-	// Gate the project rollup on a ROOT-only workspace marker (#154), before
+	// Gate the project rollup on a ROOT-only workspace marker (#154/#162), before
 	// any index work — the workspace-root fact is index-independent. resolve.Load
 	// walks the whole tree for package.json, so on a non-workspace repo (e.g. a
 	// Go module with buried JS/TS test fixtures) it would invent bogus workspace
-	// projects from those fixtures. This is the same gate the ask(package_topology)
-	// path uses (projectOfFor, #151); the CLI/MCP power lane never had it.
-	if in.Level == "project" && !resolve.IsWorkspaceRoot(p.Root) {
+	// projects from those fixtures. ProjectOfForRoot is the same gate + mapper the
+	// ask(package_topology) path uses (projectOfFor, #151); it recognizes both a
+	// JS/TS workspace and a Cargo workspace and hands back the matching mapper.
+	projectOf, isWorkspace := resolve.ProjectOfForRoot(p.Root)
+	if in.Level == "project" && !isWorkspace {
 		return nil, PackageGraphOutput{Status: "no-graph", Project: p.Root,
-			Hint: fmt.Sprintf("level=project needs a JS/TS workspace root (pnpm-workspace.yaml / rush.json / lerna.json / package.json \"workspaces\"); %s is not one — use the default module level.", p.Root)}, nil
+			Hint: fmt.Sprintf("level=project needs a JS/TS workspace root (pnpm-workspace.yaml / rush.json / lerna.json / package.json \"workspaces\") or a Cargo workspace root (Cargo.toml [workspace]); %s is not one — use the default module level.", p.Root)}, nil
 	}
 	if _, err := os.Stat(p.DBPath); errors.Is(err, os.ErrNotExist) {
 		return nil, PackageGraphOutput{Status: "no-index", Project: p.Root,
@@ -216,14 +218,14 @@ func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in Pa
 
 	var pg graphquery.PackageGraph
 	if in.Level == "project" {
-		pg = graphquery.BuildProjectGraph(view, resolve.Load(p.Root).ProjectOf)
+		pg = graphquery.BuildProjectGraph(view, projectOf)
 	} else {
 		pg = graphquery.BuildPackageGraph(view)
 	}
 	if len(pg.Nodes) == 0 {
-		hint := "no Go package import graph — the module level is Go-only today; non-Go repos return no-graph. Try level=\"project\" for a JS/TS workspace rollup."
+		hint := "no package import graph — the module level covers Go, JS/TS, Python and Rust; a repo in another language returns no-graph. Try level=\"project\" for a JS/TS or Cargo workspace rollup."
 		if in.Level == "project" {
-			hint = "no workspace-project graph — no package.json workspace packages resolved, or no cross-project imports were indexed."
+			hint = "no workspace-project graph — no workspace packages/crates resolved, or no cross-project imports were indexed."
 		}
 		return nil, PackageGraphOutput{Status: "no-graph", Project: p.Root, Hint: hint}, nil
 	}

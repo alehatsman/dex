@@ -49,7 +49,7 @@ func (e *rustTagsExtractor) Language() *sitter.Language { return rust.GetLanguag
 func (e *rustTagsExtractor) Extensions() []string       { return []string{".rs"} }
 
 func (e *rustTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
-	pkg := rustPackagePath(in.RelPath)
+	pkg := e.packagePathFor(in.RelPath)
 	fileID := e.emitScaffold(in, pkg)
 
 	imports := &rustImportTable{fromImports: map[string]rustImport{}}
