@@ -28,6 +28,7 @@ type RememberInput struct {
 	// duplicates (replaces the old notes(action=add, supersedes_id) move, #147).
 	Supersedes  int64  `json:"supersedes,omitempty" jsonschema:"write mode: id of an existing fact this write replaces — marks the old fact inactive immediately (#606). Use it to correct a stale note surfaced by recall or a near-duplicate warning."`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or worktree you are working in"`
+	Budget      int    `json:"budget,omitempty" jsonschema:"optional context-token budget; when set, the response reports cost.budget_left = budget − tokens_returned"`
 }
 
 // RememberResult is the verb-specific payload under the envelope's `result`.
@@ -45,6 +46,7 @@ type RememberOutput struct {
 	Hint   string         `json:"hint,omitempty"`
 	Result RememberResult `json:"result"`
 	Trust  EnvTrust       `json:"trust"`
+	Cost   *EnvCost       `json:"cost,omitempty"`
 	Next   []NextStep     `json:"next,omitempty"`
 }
 
