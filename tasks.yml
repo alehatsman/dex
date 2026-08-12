@@ -273,12 +273,35 @@ tasks:
         props:
           refresh: "--refresh"
 
-  # Machine-readable gate findings (#155 P1/P3). Runs every emitter's
-  # --format jsonl and aggregates to .gate/findings.jsonl (gitignored) — the
-  # agent-facing view of the gate that `ask("review my changes")` folds in.
-  # Pure producer: does not re-gate (goq/ci enforces). deadcode_pkg=./cmd/dex
-  # from the goq default props.
-  findings: goq/findings
+  # Machine-readable gate findings (#155 P1/P3). Aggregates every emitter's
+  # --format jsonl into .gate/findings.jsonl (gitignored) — the agent-facing
+  # view of the gate that `ask("review my changes")` folds in. Pure producer:
+  # does not re-gate (goq/ci enforces). deadcode_pkg=./cmd/dex from the goq
+  # default props.
+  #
+  # Two feeds. goq/findings supplies the shared shell-tool emitters (ai-lint,
+  # structure-ratchet, dupl, budget) and truncates the file first, so it must
+  # run before the appends. Then dex's own semantic emitters (graph smells +
+  # graph clones --format jsonl, #155 P3 emit) append dex-native findings —
+  # cohesion smells and vector clones the shell tools can't see. Without this
+  # second feed the emit half is built but unwired: review() would never
+  # surface dex's own findings. Best-effort: the dex append is skipped when dex
+  # isn't on PATH or this repo has no index (graph smells exits non-zero), so
+  # the shared feed still lands on any machine.
+  findings:
+    desc: Aggregate gate findings (shared emitters + dex-native smells/clones) into .gate/findings.jsonl
+    steps:
+      - use: goq/findings
+      - name: append dex-native smells + clones
+        shell: |
+          out=.gate/findings.jsonl
+          if command -v dex >/dev/null 2>&1; then
+            dex graph smells --format jsonl >> "$out" 2>/dev/null || true
+            dex graph clones --format jsonl >> "$out" 2>/dev/null || true
+          else
+            echo "dex not on PATH — dex-native findings skipped (shared feed only)" >&2
+          fi
+          echo "findings: $(grep -c . "$out" 2>/dev/null || true) total, $(grep -c '"level":"error"' "$out" 2>/dev/null || true) error(s) -> $out"
 
   # Project the findings stream into SARIF 2.1.0 (.gate/findings.sarif) for
   # GitHub code scanning / IDEs (#155 P2). On-demand: run `findings` first.
