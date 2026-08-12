@@ -82,7 +82,7 @@ func RunStdioRemote(ctx context.Context, opts RemoteOptions) error {
 	// chatAvailable=embedAvailable=true. If the remote lacks a chat or embed
 	// client the corresponding endpoint returns '…-service-unreachable' — the
 	// same degradation a local server reports — so over-registering is harmless.
-	registerTools(srv, rc, true, true, false, descriptionModeFromEnv())
+	registerTools(srv, rc, true, descriptionModeFromEnv())
 
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }

@@ -227,13 +227,13 @@ func (s *Server) newMCPHandler(projects map[string]string) http.Handler {
 		return nil
 	}
 
-	chatAvailable := s.ChatClient != nil
 	embedAvailable := s.EmbedClient != nil
 
 	servers := make(map[string]*sdk.Server, len(projects))
 	for id, root := range projects {
 		srv := sdk.NewServer(&sdk.Implementation{Name: "dex", Version: Version}, nil)
-		registerTools(srv, projectScoped{s: s, root: root}, chatAvailable, embedAvailable, profiles.Active(root).StrictAnchors(), descriptionModeFromEnv())
+		profiles.Active(root) // prime per-root token-family detection at registration time
+		registerTools(srv, projectScoped{s: s, root: root}, embedAvailable, descriptionModeFromEnv())
 		servers[id] = srv
 	}
 
