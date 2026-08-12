@@ -40,10 +40,16 @@ modules:
   # ai-lint, fmt, tools, sync-config) silently ignore them. This is exactly
   # the set each prop used to be passed to by hand.
   goq:
-    source: "github.com/alehatsman/go-quality@v0.1.2"
+    source: "github.com/alehatsman/go-quality@v0.2.0"
     props:
       go_tags: "{{ GO_TAGS }}"
       pkg: "{{ PKG }}"
+      # #153 upstreamed: goq/ci now runs the structural ratchet + go.mod tidy
+      # check itself. dex is single-main, so pin deadcode's entry to ./cmd/dex
+      # (the shared default ./... would over-report unreachable funcs from
+      # unimported internal packages, diverging from our frozen baseline).
+      # Reaches goq/ci + goq/structure-ratchet; every other export ignores it.
+      deadcode_pkg: "./cmd/dex"
 
 tasks:
 
@@ -251,34 +257,24 @@ tasks:
 
   dupl: goq/dupl
 
-  # Kept local (#153): monotonic ratchet over the structural soft-caps. The
-  # shared goq/budget-status + goq/dupl + deadcode only PRINT drift — nothing
-  # fails, so god files / over-cap complexity / clone pairs / dead code can grow
-  # forever. This freezes each count in benchmark/structure/baseline.json and
-  # fails `ci` when any count grows (counts may shrink; refresh to lock in).
-  # Same one-way-door idiom as the eval baselines (dex bench --check). Wired into
-  # `ci` below (not ci-fast — keeps the pre-commit gate cheap). To be upstreamed
-  # into go-quality once the shape proves out.
-  structure-check:
-    desc: Ratchet god-files/gocyclo/dupl/deadcode counts against benchmark/structure/baseline.json (fail on growth)
-    steps:
-      - shell: bash ./scripts/structure-check.sh --ci
+  # Monotonic ratchet over the structural soft-caps (#153, upstreamed to
+  # go-quality). goq/budget-status + goq/dupl + deadcode only PRINT drift, so god
+  # files / over-cap complexity / clone pairs / dead code could grow forever;
+  # goq/structure-ratchet freezes each count in benchmark/structure/baseline.json
+  # and fails when any grows (counts may shrink; structure-refresh to lock in).
+  # deadcode_pkg=./cmd/dex comes from the goq default props. Enforced inside
+  # goq/ci (pre-push); this standalone task is the manual/non-fatal view.
+  structure-check: goq/structure-ratchet
 
   structure-refresh:
     desc: Regenerate benchmark/structure/baseline.json from the current tree (lock in improvements)
     steps:
-      - shell: bash ./scripts/structure-check.sh --refresh
+      - use: goq/structure-ratchet
+        props:
+          refresh: "--refresh"
 
-  # Kept local (#153): go.mod/go.sum drift check for the pre-PUSH gate. The
-  # shared goq/ci-fast (pre-commit) already runs a tidy drift check, but the full
-  # goq/ci (pre-push, what moongit CI runs) does NOT — so drift that skips the
-  # commit hook reaches CI unguarded. This closes that hole and mechanically
-  # enforces the "minimal deps" principle. Restores go.mod/go.sum on drift so a
-  # failing run leaves the tree clean (mirrors go-quality's fast.sh).
-  tidy-check:
-    desc: Fail if go.mod / go.sum are not tidy (pre-push gate; ci-fast already covers pre-commit)
-    steps:
-      - shell: bash ./scripts/tidy-check.sh
+  # (go.mod/go.sum tidy is now enforced by goq/ci itself — the upstreamed full
+  # gate runs the drift check the local tidy-check.sh script used to; dropped.)
 
   # ── Setup ───────────────────────────────────────────────────────────────
   setup-hooks:
@@ -314,19 +310,16 @@ tasks:
   # ── Full CI gate — pre-push. First failure stops the pipeline. ─────────
   # Repo-wide gofmt check runs first (#677) — cheap and staging-agnostic, so it
   # fails fast before the expensive build/test/lint when a file landed dirty
-  # (goq/ci's golangci-lint doesn't enforce formatting). Then the shared
-  # goq/ci gate (build + test + lint + vuln + arch + budget + dupl).
+  # (goq/ci's golangci-lint doesn't enforce formatting). Then the shared goq/ci
+  # gate, which now (v-bump #153) runs build + test + go.mod tidy + lint + vuln +
+  # arch + budget + dupl + structural ratchet — the tidy + ratchet steps that
+  # used to be dex-local shell steps are now inside goq/ci (deadcode_pkg pinned
+  # via the goq default props).
   ci:
-    desc: Full pre-push gate — gofmt + go.mod tidy checks, goq/ci (build + test + lint + vuln + arch + budget + dupl), then the structural ratchet.
+    desc: Full pre-push gate — repo-wide gofmt check, then goq/ci (build + test + tidy + lint + vuln + arch + budget + dupl + structural ratchet).
     steps:
       - shell: bash ./scripts/fmt-check.sh
-      # go.mod/go.sum drift: cheap, and goq/ci (unlike goq/ci-fast) doesn't check
-      # it — fail fast before the expensive build/test/lint (#153).
-      - shell: bash ./scripts/tidy-check.sh
       - use: goq/ci
-      # Structural ratchet last — its inputs (gocyclo/dupl/deadcode) are only
-      # meaningful after the build passes; --ci makes a missing tool fatal (#153).
-      - shell: bash ./scripts/structure-check.sh --ci
 
   # ── ONNX build-tag matrix gate (issue #180). The in-process ONNX embedder
   # is opt-in behind `-tags onnx`; the default ci/ci-fast gates stay
