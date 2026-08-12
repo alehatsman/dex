@@ -40,7 +40,7 @@ modules:
   # ai-lint, fmt, tools, sync-config) silently ignore them. This is exactly
   # the set each prop used to be passed to by hand.
   goq:
-    source: "github.com/alehatsman/go-quality@v0.3.1"
+    source: "github.com/alehatsman/go-quality@v0.3.3"
     props:
       go_tags: "{{ GO_TAGS }}"
       pkg: "{{ PKG }}"
@@ -279,6 +279,10 @@ tasks:
   # Pure producer: does not re-gate (goq/ci enforces). deadcode_pkg=./cmd/dex
   # from the goq default props.
   findings: goq/findings
+
+  # Project the findings stream into SARIF 2.1.0 (.gate/findings.sarif) for
+  # GitHub code scanning / IDEs (#155 P2). On-demand: run `findings` first.
+  sarif: goq/sarif
 
   # (go.mod/go.sum tidy is now enforced by goq/ci itself — the upstreamed full
   # gate runs the drift check the local tidy-check.sh script used to; dropped.)
