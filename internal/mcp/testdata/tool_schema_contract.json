@@ -7,6 +7,9 @@
         "command"
       ],
       "properties": {
+        "budget": {
+          "type": "integer"
+        },
         "command": {
           "type": "string"
         },
@@ -37,6 +40,9 @@
         "answer_style": {
           "type": "string"
         },
+        "budget": {
+          "type": "integer"
+        },
         "expand": {
           "type": "string"
         },
@@ -64,6 +70,9 @@
         "target"
       ],
       "properties": {
+        "budget": {
+          "type": "integer"
+        },
         "context": {
           "type": "integer"
         },
@@ -100,6 +109,9 @@
         "archetype": {
           "type": "string"
         },
+        "budget": {
+          "type": "integer"
+        },
         "fact": {
           "type": "string"
         },
@@ -129,6 +141,9 @@
         "command"
       ],
       "properties": {
+        "budget": {
+          "type": "integer"
+        },
         "command": {
           "type": "string"
         },
@@ -158,6 +173,9 @@
       "properties": {
         "answer_style": {
           "type": "string"
+        },
+        "budget": {
+          "type": "integer"
         },
         "expand": {
           "type": "string"
@@ -354,6 +372,9 @@
         "target"
       ],
       "properties": {
+        "budget": {
+          "type": "integer"
+        },
         "context": {
           "type": "integer"
         },
@@ -580,6 +601,9 @@
       "properties": {
         "archetype": {
           "type": "string"
+        },
+        "budget": {
+          "type": "integer"
         },
         "fact": {
           "type": "string"
@@ -879,6 +903,9 @@
         "command"
       ],
       "properties": {
+        "budget": {
+          "type": "integer"
+        },
         "command": {
           "type": "string"
         },
@@ -909,6 +936,9 @@
         "answer_style": {
           "type": "string"
         },
+        "budget": {
+          "type": "integer"
+        },
         "expand": {
           "type": "string"
         },
@@ -936,6 +966,9 @@
         "target"
       ],
       "properties": {
+        "budget": {
+          "type": "integer"
+        },
         "context": {
           "type": "integer"
         },
@@ -971,6 +1004,9 @@
       "properties": {
         "archetype": {
           "type": "string"
+        },
+        "budget": {
+          "type": "integer"
         },
         "fact": {
           "type": "string"

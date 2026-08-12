@@ -23,6 +23,7 @@ type ActInput struct {
 	Raw         bool   `json:"raw,omitempty"          jsonschema:"skip compression and return full output"`
 	Expect      string `json:"expect,omitempty"       jsonschema:"output-intent hint biasing compression: counts|table|json|logs|raw. Empty = auto-detect."`
 	TimeoutSecs int    `json:"timeout_secs,omitempty" jsonschema:"per-call timeout in seconds (default 60, max 600); 0 uses the default"`
+	Budget      int    `json:"budget,omitempty"       jsonschema:"optional context-token budget; when set, the response reports cost.budget_left = budget − tokens_returned"`
 }
 
 // ActResult is the verb-specific payload under the envelope's `result`.

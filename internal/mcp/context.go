@@ -40,6 +40,7 @@ type ContextInput struct {
 	NoInline    bool   `json:"no_inline,omitempty" jsonschema:"skip inlining file contents into suggested_reads and semantic_hits. Default off: both lanes carry their line-range content from one shared per-intent byte pool (per-range cap ~60 lines / 4 KB; total cap ~20 KB targeted / ~40 KB exploration; oversize ranges are clipped with truncated=true). Set true if you already have the files open, or in long sessions where context budget is limited — check content_bytes_inlined from a prior ask to gauge how much was consumed."`
 	Expand      string `json:"expand,omitempty" jsonschema:"opt-in query-side expansion (#252): off|on|full. on adds model-generated keywords+identifiers to the BM25 and symbol lanes (no extra embedding); full also embeds a hypothetical-answer passage into the vector lane. Empty defers to the server default (DEX_EXPAND_MODE). Requires DEX_EXPAND_MODEL to be configured; otherwise a no-op."`
 	AnswerStyle string `json:"answer_style,omitempty" jsonschema:"controls chat synthesis: brief runs the LLM synthesis leg and returns an answer field; none skips synthesis entirely and returns only the evidence bundle. Default is none — pass brief to get a synthesized answer."`
+	Budget      int    `json:"budget,omitempty" jsonschema:"optional context-token budget; when set, the response reports cost.budget_left = budget − tokens_returned (cost.tokens_returned is always reported)"`
 }
 
 // SemHit is a semantic-search result reduced to the wire shape the
@@ -232,6 +233,10 @@ type ContextOutput struct {
 	// Absent when there is no concrete grounded step. ask keeps its richer
 	// trust / next_action — this only aligns the key name.
 	Next []NextStep `json:"next,omitempty"`
+	// Cost is the uniform token envelope (#110 step 2): tokens_returned is
+	// stamped on every response; budget_left appears when the caller passed a
+	// budget. content_bytes_inlined stays as ask's byte-level inline gauge.
+	Cost *EnvCost `json:"cost,omitempty"`
 	// Map is the deterministic L0+L1 orientation bundle, set only on the
 	// session-start orientation path (ask called with an empty question, #348 /
 	// #316 story 6). Zero inference, byte-stable across calls. Absent otherwise.

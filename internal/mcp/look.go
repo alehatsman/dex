@@ -38,6 +38,7 @@ type LookInput struct {
 	// shared.
 	K           int    `json:"k,omitempty" jsonschema:"max results for the grep/trace/locate lanes"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
+	Budget      int    `json:"budget,omitempty" jsonschema:"optional context-token budget; when set, the response reports cost.budget_left = budget − tokens_returned"`
 }
 
 // LookResult carries whichever lane ran; the other pointers stay nil. `kind`
@@ -57,6 +58,7 @@ type LookOutput struct {
 	Hint   string     `json:"hint,omitempty"`
 	Result LookResult `json:"result"`
 	Trust  EnvTrust   `json:"trust"`
+	Cost   *EnvCost   `json:"cost,omitempty"`
 	Next   []NextStep `json:"next,omitempty"`
 }
 

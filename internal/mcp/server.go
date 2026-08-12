@@ -876,7 +876,14 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 		// Carry the client session so resolveProject can consult the caller's
 		// declared workspace roots (#120) without threading req through every
 		// handler.
-		return h(withSession(ctx, req.Session), req, in)
+		res, out, err = h(withSession(ctx, req.Session), req, in)
+		// Stamp the uniform cost envelope (#110 step 2): tokens_returned on every
+		// four-verb success, plus budget_left when the input carried a budget.
+		// No-op for tools whose output doesn't implement costStamper.
+		if err == nil {
+			stampEnvelopeCost(&out, in)
+		}
+		return res, out, err
 	})
 }
 

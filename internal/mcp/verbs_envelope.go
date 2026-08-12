@@ -1,5 +1,11 @@
 package mcp
 
+import (
+	"encoding/json"
+
+	"github.com/alehatsman/dex/internal/tokens"
+)
+
 // The universal response envelope for the four-verb surface (#110,
 // specs/tool-surface.md). Every verb response carries the same top-level shape —
 // {result, trust, cost, next, handles} — so an agent reads provenance, cost, and
@@ -61,3 +67,64 @@ type NextStep struct {
 // exactTrust is the envelope for a deterministic verb: the result is exactly what
 // was asked for, no index or inference involved.
 func exactTrust() EnvTrust { return EnvTrust{Provenance: "exact"} }
+
+// costStamper is implemented by the four-verb outputs so the addTool choke point
+// records cost.tokens_returned (and budget_left when the caller passed a budget)
+// uniformly (#110 step 2), without each handler duplicating the math.
+type costStamper interface {
+	stampCost(tokensReturned, budgetLeft int)
+}
+
+// budgetCarrier is implemented by the four-verb inputs that accept an optional
+// token budget; when >0 the envelope reports budget_left = budget − tokens_returned.
+type budgetCarrier interface {
+	budgetTokens() int
+}
+
+// stampEnvelopeCost measures a verb output's serialized size and records it as
+// cost.tokens_returned, plus budget_left when the input carried a budget. No-op
+// for outputs that don't implement costStamper (every non-verb tool), so the
+// generic choke point stays cheap and only the four verbs opt in.
+func stampEnvelopeCost(out any, in any) {
+	cs, ok := out.(costStamper)
+	if !ok {
+		return
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return
+	}
+	toks := tokens.Count(string(b))
+	left := 0
+	if bc, ok := in.(budgetCarrier); ok {
+		if budget := bc.budgetTokens(); budget > 0 {
+			if left = budget - toks; left < 0 {
+				left = 0
+			}
+		}
+	}
+	cs.stampCost(toks, left)
+}
+
+// withCost folds a measured token count (and optional budget_left) into an
+// EnvCost, preserving any saved_pct a verb already recorded.
+func withCost(c *EnvCost, tokensReturned, budgetLeft int) *EnvCost {
+	if c == nil {
+		c = &EnvCost{}
+	}
+	c.TokensReturned = tokensReturned
+	if budgetLeft > 0 {
+		c.BudgetLeft = budgetLeft
+	}
+	return c
+}
+
+func (o *ContextOutput) stampCost(t, left int)  { o.Cost = withCost(o.Cost, t, left) }
+func (o *LookOutput) stampCost(t, left int)     { o.Cost = withCost(o.Cost, t, left) }
+func (o *ActOutput) stampCost(t, left int)      { o.Cost = withCost(o.Cost, t, left) }
+func (o *RememberOutput) stampCost(t, left int) { o.Cost = withCost(o.Cost, t, left) }
+
+func (in ContextInput) budgetTokens() int  { return in.Budget }
+func (in LookInput) budgetTokens() int     { return in.Budget }
+func (in ActInput) budgetTokens() int      { return in.Budget }
+func (in RememberInput) budgetTokens() int { return in.Budget }
