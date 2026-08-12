@@ -21,6 +21,7 @@ linters:
     - bodyclose
     - revive
     - cyclop
+    - depguard    # enforce a few architectural import invariants (see settings.depguard)
   disable:
     - errname
     - exhaustive
@@ -89,6 +90,38 @@ linters:
     staticcheck:
       # Keep SA* (real-bug checks); drop QF/ST/S style suggestions.
       checks: ["all", "-QF*", "-ST1005", "-ST1020", "-S1008", "-S1017", "-S1034"]
+
+    depguard:
+      # Enforced architectural invariants — turns the descriptive arch-snapshot
+      # into compile-time guards. Started conservative: only edges that are
+      # already clean across the whole tree, so this is a pure forward-guard
+      # (no pre-existing violations). Extend as new invariants prove out.
+      rules:
+        # The MCP layer (internal/mcp) is a top-level consumer — the CLI wires it
+        # up. No library under internal/ may depend back on it; invert instead.
+        no-mcp-in-libs:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "!**/internal/mcp/**"
+          deny:
+            - pkg: github.com/alehatsman/dex/internal/mcp
+              desc: >-
+                low-level packages must not import the MCP presentation/orchestration
+                layer; invert the dependency (pass values in, don't reach up)
+        # internal/output is presentation formatting — only the MCP layer (and
+        # cmd/) render through it. Keep it out of the core libraries.
+        no-output-in-libs:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "!**/internal/mcp/**"
+            - "!**/internal/output/**"
+          deny:
+            - pkg: github.com/alehatsman/dex/internal/output
+              desc: >-
+                core libraries must not import the output/presentation layer;
+                return data and let the caller (mcp/cmd) format it
 
   exclusions:
     rules:
