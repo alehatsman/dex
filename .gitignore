@@ -11,6 +11,9 @@ coverage.txt
 /scratch/
 /tmp/
 
+# machine-readable gate findings (mooncake task findings / goq/findings)
+.gate/
+
 # editor
 .vscode/
 .idea/
