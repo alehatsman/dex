@@ -1,12 +1,15 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -111,7 +114,26 @@ type ReviewFile struct {
 	// each tagged with the matching glob/path. Distinct from per-hunk Notes,
 	// which are recalled by the touched symbol.
 	ScopedNotes []LocatedFact `json:"scoped_notes,omitempty"`
-	Hunks       []ReviewHunk  `json:"hunks"`
+	// GateFindings are machine-readable quality-gate findings (#155) whose path
+	// is this file, read from .gate/findings.jsonl (the goq/findings artifact).
+	// Best-effort: empty when the artifact is absent or the file has none. Lets
+	// "review my changes" show the gate's verdict on the touched files inline —
+	// the ingest half of the gate-speaks-agent flywheel.
+	GateFindings []GateFinding `json:"gate_findings,omitempty"`
+	Hunks        []ReviewHunk  `json:"hunks"`
+}
+
+// GateFinding is one machine-readable quality-gate finding (#155) — the shared
+// schema emitted by goq/findings' `--format jsonl` steps. It is attached to the
+// ReviewFile whose path it names, so review surfaces the gate inline. Path is
+// implied by the enclosing ReviewFile; fingerprint is dropped as review noise.
+type GateFinding struct {
+	Tool    string `json:"tool"`
+	Rule    string `json:"rule"`
+	Level   string `json:"level"` // error | warning | note
+	Line    int    `json:"line,omitempty"`
+	Col     int    `json:"col,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // ReviewOutput is the per-hunk bundle. Every lane is best-effort: an empty list
@@ -258,6 +280,21 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	// symbols that survive in emitted hunks (post-compact, post-truncation) are
 	// included; each hunk joins via SymbolsTouched[i].Name + CallerCount.
 	out.CallersBySymbol = collectCallersBySymbol(out.Files, callerCache)
+	// Fold in machine-readable gate findings (#155): attach each finding whose
+	// path is a reviewed file, so "review my changes" shows the quality gate's
+	// verdict on the touched files. Best-effort snapshot of .gate/findings.jsonl.
+	if gate := loadGateFindings(p.Root); len(gate) > 0 {
+		nGate := 0
+		for i := range out.Files {
+			if fs := gate[cleanRelPath(out.Files[i].Path)]; len(fs) > 0 {
+				out.Files[i].GateFindings = fs
+				nGate += len(fs)
+			}
+		}
+		if nGate > 0 {
+			out.Hint = appendHint(out.Hint, fmt.Sprintf("%d gate finding(s) on touched files from .gate/findings.jsonl (run `mooncake task findings` to refresh)", nGate))
+		}
+	}
 	if out.Truncated {
 		out.Hint = appendHint(out.Hint, fmt.Sprintf("output capped at %d hunks / %d files — narrow the range for full coverage", reviewMaxHunks, reviewMaxFiles))
 	}
@@ -267,6 +304,44 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 		out.Hint = appendHint(out.Hint, "persist a finding the next editor needs via notes(action=add, archetype=ReviewFinding, scope=<file>, body=\"[kind] …\") — it then surfaces in read/locate/review scoped_notes on touch")
 	}
 	return nil, out, nil
+}
+
+// loadGateFindings reads .gate/findings.jsonl under root (the goq/findings
+// artifact) and groups findings by cleaned path. Best-effort: a missing file or
+// an unparseable line yields no findings for that path, never an error — the
+// gate view is optional context, not a review dependency (#155).
+func loadGateFindings(root string) map[string][]GateFinding {
+	f, err := os.Open(filepath.Join(root, ".gate", "findings.jsonl"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	out := map[string][]GateFinding{}
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var rec struct {
+			GateFinding
+			Path string `json:"path"`
+		}
+		if json.Unmarshal([]byte(line), &rec) != nil || rec.Path == "" {
+			continue // tolerate a malformed line rather than sink the whole read
+		}
+		key := cleanRelPath(rec.Path)
+		out[key] = append(out[key], rec.GateFinding)
+	}
+	return out
+}
+
+// cleanRelPath normalizes a finding/diff path for matching: forward slashes, no
+// leading "./". Emitters vary (god-file paths carry "./"; gocyclo/dupl/ai-lint
+// don't; git diff paths are bare repo-relative), so both sides are cleaned.
+func cleanRelPath(p string) string {
+	return strings.TrimPrefix(filepath.ToSlash(p), "./")
 }
 
 // traceResult is the cached caller lane for one symbol.

@@ -75,14 +75,19 @@ demand / in CI, never in the local fast path.
 
 ### P3 — the dex flywheel (dex)
 Two directions, both reusing the schema:
-- **Ingest:** `ask("review my changes")` reads `.gate/findings.jsonl` when present
-  and folds gate findings into the review evidence pack — the agent sees the gate
-  verdict as first-class evidence next to the diff, not as scraped terminal text.
-- **Emit:** dex's `smells` / `clones` / `similar` lanes gain the same finding
-  schema, so dex's semantic analysis is gate-pluggable — a project can add
-  `dex smells --format jsonl` as a gate step and it aggregates like any other.
-  This is where dex eats its own dogfood: the richest findings (vector clones,
-  cohesion smells) come from dex itself.
+- **Ingest — DONE.** `ask("review my changes")` reads `.gate/findings.jsonl` when
+  present and attaches each finding to the `ReviewFile` whose path it names
+  (`ReviewFile.GateFindings`), so the agent sees the gate verdict as first-class
+  evidence next to the diff, not as scraped terminal text. Best-effort: a missing
+  artifact or malformed line yields no findings, never an error; paths are cleaned
+  (`./` stripped) so emitter/diff path shapes match. A hint notes the count and
+  points at `mooncake task findings` to refresh. Wiring: dex consumes go-quality
+  v0.3.1 + a `findings` task producing the artifact.
+- **Emit — pending.** dex's `smells` / `clones` / `similar` lanes gain the same
+  finding schema (`--format jsonl`), so dex's semantic analysis is gate-pluggable
+  — a project can add `dex smells --format jsonl` as a gate step and it aggregates
+  like any other. This is where dex eats its own dogfood: the richest findings
+  (vector clones, cohesion smells) come from dex itself.
 
 ## Design constraints
 

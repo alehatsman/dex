@@ -398,6 +398,32 @@ func TestReviewWorktree(t *testing.T) {
 	if !sawGreet {
 		t.Errorf("expected Greet among touched symbols, hunks=%+v", out.Files[0].Hunks)
 	}
+
+	// #155 P3: a .gate/findings.jsonl artifact should fold into the review —
+	// findings for a touched file attach to it (path-cleaned), findings for an
+	// untouched file are excluded, and a malformed line is tolerated.
+	gateDir := filepath.Join(projDir, ".gate")
+	if err := os.MkdirAll(gateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(gateDir, "findings.jsonl"),
+		`{"tool":"budget","rule":"god-file","level":"warning","path":"./greet.go","line":1,"message":"x"}`+"\n"+
+			`{"tool":"dupl","rule":"clone-pair","level":"warning","path":"other.go","line":9,"message":"y"}`+"\n"+
+			`{ not valid json`+"\n")
+	_, out2, err := s.review(context.Background(), nil, ReviewInput{Worktree: true, ProjectRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out2.Files) != 1 {
+		t.Fatalf("files = %+v, want one", out2.Files)
+	}
+	gf := out2.Files[0].GateFindings
+	if len(gf) != 1 || gf[0].Rule != "god-file" {
+		t.Fatalf("GateFindings = %+v, want exactly the god-file finding (./greet.go cleaned + matched; other.go excluded; bad line skipped)", gf)
+	}
+	if !strings.Contains(out2.Hint, "gate finding") {
+		t.Errorf("hint = %q, want a gate-findings note", out2.Hint)
+	}
 }
 
 // TestReviewIsExpertGated guards the 5c collapse (#145): review_diff is the

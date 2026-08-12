@@ -118,6 +118,13 @@ context lines so hunks stay tight around the actual change.
   This is the read side of the review→edit loop (#87): a prior review's
   `ReviewFinding` notes (see specs/review-finding.md) land here on the very files
   a later PR touches.
+- `gate_findings`: machine-readable quality-gate findings (`{tool, rule, level,
+  line?, col?, message}`) whose `path` is this file, read from
+  `.gate/findings.jsonl` (the go-quality `goq/findings` artifact; #155 P3 ingest,
+  see specs/gate-speaks-agent.md). Best-effort: empty when the artifact is absent
+  or the file has none; a hint reports the total and points at `mooncake task
+  findings`. Lets "review my changes" show the gate's verdict on touched files
+  inline instead of the agent re-running and scraping the gate.
 
 When a review returns files, its `hint` nudges the reviewer to persist a
 confirmed finding as `notes(action=add, archetype=ReviewFinding, scope=<file>,
