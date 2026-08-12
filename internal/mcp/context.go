@@ -218,7 +218,7 @@ type ContextOutput struct {
 	// computes once. omitempty; present on every real ask, nil only on the
 	// no-lane early return. Supersedes the former top-level stale/indexing/
 	// confidence fields.
-	Trust          *trustEnvelope  `json:"trust,omitempty"`
+	Trust          *EnvTrust       `json:"trust,omitempty"`
 	SemanticHits   []SemHit        `json:"semantic_hits,omitempty"`
 	Symbols        []SymbolHit     `json:"symbols,omitempty"`
 	Graph          *GraphResult    `json:"graph,omitempty"`
