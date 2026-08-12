@@ -828,8 +828,38 @@ type specifierClass int
 const (
 	specUnresolved specifierClass = iota // matched no indexed project file
 	specInternal                         // resolved to an indexed project file
-	specExternal                         // non-relative, no workspace/alias candidate (bare dep)
+	specExternal                         // non-code import: bare dep, or a static asset (css/image/font)
 )
+
+// assetExts are non-code resources a JS/TS bundler imports as static assets, not
+// code modules. From the code import graph they are external resources, never
+// unresolved code edges — so classifying them as unresolved (and, for a workspace
+// asset like `@acme/ui/x.css`, stamping a pkg_dir) would surface a stylesheet as
+// a phantom caller in unresolved_inbound (#157). They carry no source symbol.
+var assetExts = map[string]bool{
+	// stylesheets
+	".css": true, ".scss": true, ".sass": true, ".less": true, ".styl": true,
+	// images
+	".svg": true, ".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".webp": true, ".avif": true, ".ico": true, ".bmp": true,
+	// fonts
+	".woff": true, ".woff2": true, ".ttf": true, ".eot": true, ".otf": true,
+}
+
+// isAssetSpecifier reports whether an import specifier names a static asset by
+// extension. A query/hash suffix (`./x.svg?raw`, `x.css#id`) is trimmed first so
+// bundler import queries still classify as assets.
+func isAssetSpecifier(specifier string) bool {
+	s := specifier
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+	dot := strings.LastIndexByte(s, '.')
+	if dot < 0 {
+		return false
+	}
+	return assetExts[strings.ToLower(s[dot:])]
+}
 
 // classifySpecifier resolves a specifier and classifies the outcome for import-
 // node metadata. Kept separate from resolveModuleSpecifier (which must keep
@@ -840,6 +870,13 @@ const (
 func (e *jstsBase) classifySpecifier(specifier, fromFile string) (target string, class specifierClass, reason, pkgDir string) {
 	if specifier == "" {
 		return "", specUnresolved, "empty", ""
+	}
+	// A static-asset import (css/image/font) is not a code module — label it
+	// external-to-the-code-graph so it never becomes an unresolved code edge or a
+	// phantom caller (#157). Covers both relative (`./x.css`) and workspace
+	// (`@acme/ui/x.css`) asset specifiers, before any resolution attempt.
+	if isAssetSpecifier(specifier) {
+		return "", specExternal, "", ""
 	}
 	if strings.HasPrefix(specifier, ".") {
 		if resolved := e.resolveModuleSpecifier(specifier, fromFile); resolved != specifier {

@@ -81,6 +81,16 @@ func (w *Workspace) Classify(specifier string) Classification
 
 ### `sitter_jsts.go` — reason on the unresolved class
 
+Before any resolution attempt, `classifySpecifier` short-circuits a **static-asset
+import** — a specifier ending in a stylesheet (`.css/.scss/.sass/.less/.styl`),
+image (`.svg/.png/.jpg/.jpeg/.gif/.webp/.avif/.ico/.bmp`) or font
+(`.woff/.woff2/.ttf/.eot/.otf`) extension (a `?query`/`#hash` suffix is trimmed
+first) — to `specExternal`. A bundler imports these as resources, not code
+modules; from the code graph they are external, never an unresolved code edge.
+This is what keeps a workspace-prefixed asset (`@scope/ui/theme.css`) from
+reaching the `OriginWorkspace` branch and acquiring a `pkg_dir`, which would
+otherwise surface a stylesheet as a phantom caller in `unresolved_inbound` (#157).
+
 `classifySpecifier` gains a third return, `reason string`, non-empty only for
 the `specUnresolved` class:
 - `relative` — a `./x` / `../x` that probed no indexed file.
