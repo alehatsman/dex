@@ -36,15 +36,15 @@ func TestClassifyLookTarget(t *testing.T) {
 
 		// regex — explicit /.../ delimiters win over everything.
 		{"/func .*Verb/", "grep", "func .*Verb"},
-		{"/a/b/", "grep", "a/b"},           // slashes inside are content, not a path
+		{"/a/b/", "grep", "a/b"}, // slashes inside are content, not a path
 		{"/server.go:1/", "grep", "server.go:1"},
 
 		// symbols — no path signal; the trace default.
 		{"NewServer", "trace", "NewServer"},
 		{"handleRequest", "trace", "handleRequest"},
 		{"(*Server).Run", "trace", "(*Server).Run"}, // dot present, ext "Run" not in allowlist
-		{"mcp.NewServer", "trace", "mcp.NewServer"},  // package-tail, NOT a path
-		{"Foo:12", "trace", "Foo:12"},                // bare-symbol head → not a location
+		{"mcp.NewServer", "trace", "mcp.NewServer"}, // package-tail, NOT a path
+		{"Foo:12", "trace", "Foo:12"},               // bare-symbol head → not a location
 
 		// whitespace is trimmed before classification.
 		{"  NewServer  ", "trace", "NewServer"},
