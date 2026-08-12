@@ -97,6 +97,11 @@ type SummarizeOutput struct {
 	// tagged with the matching glob/path. The proactive "you're about to edit
 	// this, here's the gotcha" signal, on the verb agents touch files with most.
 	ScopedNotes []LocatedFact `json:"scoped_notes,omitempty"`
+	// SeenTurn is set when look's read lane suppressed this range's content
+	// because the same bytes were surfaced on an earlier turn of this session
+	// (#110 step 3): the turn they were first sent. Content is cleared; reuse
+	// what you already have.
+	SeenTurn int `json:"seen_turn,omitempty"`
 }
 
 // maxSummarizeBytes caps the slice we send to the chat endpoint. Above
