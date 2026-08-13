@@ -350,10 +350,16 @@ tasks:
   # used to be dex-local shell steps are now inside goq/ci (deadcode_pkg pinned
   # via the goq default props).
   ci:
-    desc: Full pre-push gate — repo-wide gofmt check, then goq/ci (build + test + tidy + lint + vuln + arch + budget + dupl + structural ratchet).
+    desc: Full pre-push gate — repo-wide gofmt check, goq/ci (build + test + tidy + lint + vuln + arch + budget + dupl + structural ratchet), then the race detector.
     steps:
       - shell: bash ./scripts/fmt-check.sh
       - use: goq/ci
+      # goq/ci runs plain `go test`; the race detector is a dex-local variant
+      # (go-quality has no race component). Run it last in the pre-push gate so
+      # the cheaper checks fail fast first — a separate -race compile is the
+      # price for catching concurrency bugs plain test masks.
+      - name: race detector
+        shell: go test -race -tags '{{ GO_TAGS }}' {{ PKG }}
 
   # ── ONNX build-tag matrix gate (issue #180). The in-process ONNX embedder
   # is opt-in behind `-tags onnx`; the default ci/ci-fast gates stay
