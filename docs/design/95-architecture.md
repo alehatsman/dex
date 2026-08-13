@@ -155,6 +155,15 @@ model, not as standalone tools.
 **Measurement gate (non-negotiable, per the #96/#97/#91 discipline):** every step ships
 with a before/after on *tool-calls-per-task* and *tokens-per-task* via
 `internal/eval` + `bench`. #95's acceptance criteria demand this; the harness exists.
+**Landed** for the headline modify-symbol workflow as `internal/bench/pack`
+(`dex bench pack`, issue #163): on dex's own repo the one-call `ask(intent=assemble)`
+pack vs the primitive multi-call path (locate → read → trace callers → trace callees →
+find tests → read each) measures **9.0 → 1.0 tool calls (−88.9%)** and
+**~20.5k → ~3.0k tokens (−85.2%)** at **100% reach** and **~59% call-graph ripple
+recall** — recall reported as the correctness floor (a cheap-but-thin pack shows up as
+lower recall, not a hidden gain). That satisfies AC #2 (materially fewer calls) and
+AC #6 (fewer tokens with correctness measured, not asserted); the ~59% recall is the
+one honest caveat — headroom in the assemble intent's call-graph coverage.
 
 ## 6. Architectural tensions to decide now
 
@@ -198,13 +207,19 @@ out of the critical path.
 - ✅ **#95e** feat: hierarchical (pkg/subsystem) summaries — **done** (`4fba1e0`)
 - ⚫ **#95f** feat: surface agent/session tables as shared-context verbs — **CLOSED, not planned** (issue #106); superseded by #110, precondition (a real multi-agent consumer) unmet
 - 🟡 **#95g** chore: `cmd/dex` grooming (push logic to L2/L3) — **partial** (`44b84cb` pushed embed backend-defaults down; `cmd/dex` is still the heaviest cluster)
+- ✅ **#163** bench: pack-efficiency lane — **done** (`internal/bench/pack`, `dex bench pack`); proves AC #2 (−88.9% calls) + AC #6 (−85.2% tokens) at ~59% ripple recall, closing the epic's measurement gate
 
-## 8. Bottom line (updated 2026-08-06)
+## 8. Bottom line (updated 2026-08-13)
 
 The cheap-program thesis held: dex already had the primitives, so #95 was mostly
 "name the contract, stop throwing away confidence signals, move the assembly seam down
 one layer." **That work landed** — assembly lives in L2, the pack schema is frozen and
 contract-tested, and the trust envelope + evidence policies + hierarchical summaries all
-shipped. **#95f** (multi-agent surface) is **closed as not-planned** — superseded by the
-#110 four-verb redesign and lacking a real consumer — so the only live tail is **#95g**
-(`cmd/dex` grooming). The original ordering was #95a → #95b → #95c; history followed it.
+shipped. The measurement gate — the epic's one "non-negotiable" that had lagged the
+features — now has its instrument: `dex bench pack` (#163) demonstrates the modify-symbol
+pack workflow at **−88.9% tool calls and −85.2% tokens** vs primitives, satisfying AC #2
+and AC #6. **#95f** (multi-agent surface) is **closed as not-planned** — superseded by the
+#110 four-verb redesign and lacking a real consumer, though #159 (cross-agent coordination)
+may become that consumer. The only live tail is **#95g** (`cmd/dex` grooming), out of the
+critical path. With all seven acceptance criteria now met, **the epic is ready to close.**
+The original ordering was #95a → #95b → #95c; history followed it.

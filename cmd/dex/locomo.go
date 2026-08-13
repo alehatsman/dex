@@ -47,6 +47,8 @@ func runBench(ctx context.Context, args []string) error {
 		return runBenchPerf(ctx, rest)
 	case "nav":
 		return runBenchNav(ctx, rest)
+	case "pack":
+		return runBenchPack(ctx, rest)
 	case "trace":
 		return runBenchTrace(ctx, rest)
 	case "skew":

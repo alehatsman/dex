@@ -1,0 +1,16 @@
+{
+  "num_tasks": 25,
+  "num_hit": 25,
+  "num_covered": 2,
+  "reach_rate": 1,
+  "full_cover_rate": 0.08,
+  "mean_coverage": 0.5920000000000001,
+  "mean_primitive_calls": 9,
+  "mean_primitive_tokens": 20535.68,
+  "mean_pack_calls": 1,
+  "mean_pack_tokens": 3011.76,
+  "median_calls_delta": -8,
+  "median_tokens_delta": -17364,
+  "calls_saved_pct": 0.8888888888888888,
+  "tokens_saved_pct": 0.8533401377504908
+}
