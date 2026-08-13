@@ -162,6 +162,14 @@ func cmdIndex(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if emptyErr := emptyIncludeErr(p.Root, stats.Chunks, ig); emptyErr != nil {
+		// Still emit the JSON object so machine consumers get structured
+		// chunks:0, but fail the exit code either way (#161).
+		if *format == "json" {
+			_ = reportIndexResult(p.Root, stats, gstats)
+		}
+		return emptyErr
+	}
 	if *format == "json" {
 		return reportIndexResult(p.Root, stats, gstats)
 	}

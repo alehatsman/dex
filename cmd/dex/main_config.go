@@ -287,6 +287,18 @@ func warnIfNoInclude(ig *ignore.Matcher, root string) {
 	}
 }
 
+// emptyIncludeErr returns a non-nil error when a run produced 0 chunks solely
+// because no `index.include` allow-list is configured. `dex index`/`reindex`
+// then fail loudly (non-zero exit) instead of printing ✓ over a silently-empty
+// index (#161). A 0-chunk run WITH an include set is a different situation
+// (over-narrow include / empty tree) and is left alone.
+func emptyIncludeErr(root string, chunks int, ig *ignore.Matcher) error {
+	if chunks == 0 && !ig.IncludeConfigured() {
+		return fmt.Errorf("nothing indexed: no index.include in %s/.dex/config.yml — add an include allow-list (run `dex doctor` for the diagnosis), then re-run", root)
+	}
+	return nil
+}
+
 // isStaleEmbed reports whether the index's recorded embed model is known to
 // differ from the active model. It only compares against the explicit
 // DEX_EMBED_MODEL env var — no network calls. Returns false when either side

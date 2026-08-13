@@ -299,6 +299,9 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 	cliLogger().Info("index: done", logx.Phase("done"),
 		"chunks", stats.Chunks, "files", stats.Files)
 
+	if emptyErr := emptyIncludeErr(p.Root, stats.Chunks, ig); emptyErr != nil {
+		return emptyErr
+	}
 	fmt.Fprintf(os.Stderr, "✓ reindexed %s\n", p.Root)
 	fmt.Fprintf(os.Stderr, "  chunks: %d  files: %d  dim: %d\n", stats.Chunks, stats.Files, stats.Dim)
 	if gstats != nil {

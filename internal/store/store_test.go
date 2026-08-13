@@ -59,6 +59,32 @@ func TestUpsertAndSearch(t *testing.T) {
 	}
 }
 
+func TestIsEmpty(t *testing.T) {
+	st, ctx := newStore(t)
+
+	empty, err := st.IsEmpty(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !empty {
+		t.Fatal("fresh store: IsEmpty = false, want true")
+	}
+
+	rows := []PendingChunk{
+		{Path: "a.go", Kind: "fn", StartLine: 1, EndLine: 2, ContentSHA: "h1", Content: "func A(){}", Vec: []float32{1, 0, 0, 0}},
+	}
+	if err := st.UpsertMany(ctx, rows, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	empty, err = st.IsEmpty(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty {
+		t.Fatal("after upsert: IsEmpty = true, want false")
+	}
+}
+
 func TestCheckEmbedURL(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	ctx := context.Background()

@@ -199,7 +199,7 @@ type SuggestedRead struct {
 }
 
 type ContextOutput struct {
-	Status string `json:"status"` // ok | no-index | embedding-service-unreachable | error
+	Status string `json:"status"` // ok | no-index | index-empty | embedding-service-unreachable | error
 	Hint   string `json:"hint,omitempty"`
 	// Answer is the synthesized prose response to the question, grounded
 	// in the evidence below and citing `path:line`. Populated when a chat
@@ -561,8 +561,17 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 	if embedFailed && !leanNoEmbedder {
 		out.Endpoint = s.EmbedClient.Endpoint()
 	}
-	if noLaneHits(embedFailed, leanNoEmbedder, &out) {
-		return nil, out, nil
+	// Probe index emptiness only when both lanes whiffed — keeps the EXISTS
+	// query off the hot path, and lets a 0-chunk index (e.g. no index.include)
+	// be reported as a config problem rather than a no-match (#161).
+	if len(out.Symbols) == 0 && len(out.SemanticHits) == 0 {
+		indexEmpty := false
+		if empty, err := st.IsEmpty(ctx); err == nil {
+			indexEmpty = empty
+		}
+		if noLaneHits(embedFailed, leanNoEmbedder, indexEmpty, &out) {
+			return nil, out, nil
+		}
 	}
 
 	// Near-miss surface for symbol_lookup whiffs — only when the symbol lane
@@ -711,9 +720,19 @@ func resolveLogSink(ctx context.Context, tokenSink func(string), req *sdk.CallTo
 
 // noLaneHits sets out.Status/Hint and returns true when both retrieval lanes
 // returned nothing. The caller should return immediately on true.
-func noLaneHits(embedFailed, leanNoEmbedder bool, out *ContextOutput) bool {
+func noLaneHits(embedFailed, leanNoEmbedder, indexEmpty bool, out *ContextOutput) bool {
 	if len(out.Symbols) > 0 || len(out.SemanticHits) > 0 {
 		return false
+	}
+	// An empty index is the dominant, retry-proof cause — no query and no
+	// embedder state can conjure a match from 0 chunks. Report it ahead of the
+	// embed-failed / no-match branches so the agent fixes the config, not the
+	// phrasing (#161).
+	if indexEmpty {
+		out.Status = "index-empty"
+		out.Hint = "index is empty (0 chunks) — likely no index.include in .dex/config.yml; run `dex doctor` for the diagnosis, then `dex index`."
+		out.NextAction = "This repo's index has 0 chunks, so no query can match. Add an index.include allow-list (see dex doctor), re-run dex index, then retry — do not rephrase."
+		return true
 	}
 	if embedFailed {
 		if leanNoEmbedder {

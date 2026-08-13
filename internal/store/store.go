@@ -339,6 +339,16 @@ type Stats struct {
 // will accept null-vector rows before attempting an upsert.
 func (s *Store) Dim() int64 { return s.dim.Load() }
 
+// IsEmpty reports whether the chunk store holds no rows — a fast EXISTS probe
+// (SQLite stops at the first row) used to tell an empty index apart from a
+// valid-but-unmatched query (#161). An empty index is a config problem (no
+// index.include), not a miss no rephrasing can fix.
+func (s *Store) IsEmpty(ctx context.Context) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM chunks)`).Scan(&exists)
+	return exists == 0, err
+}
+
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	var st Stats
 	st.Dim = int(s.dim.Load())
