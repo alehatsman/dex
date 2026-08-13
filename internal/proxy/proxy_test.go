@@ -668,10 +668,22 @@ func TestFeedbackHookFired(t *testing.T) {
 	t.Cleanup(upSrv.Close)
 	upURL, _ := url.Parse(upSrv.URL)
 
+	// The feedback hook fires on the proxy's server goroutine, inside
+	// tw.Done() — after rp.ServeHTTP has already streamed the response. The
+	// client roundtrip below can therefore return before the hook writes, so
+	// asserting on gotOutput/gotInput directly is a data race. Signal on a
+	// buffered channel and wait for it: the send→receive establishes the
+	// happens-before edge that makes the reads safe. Non-blocking send keeps
+	// the server goroutine unblocked and tolerates an unexpected second fire.
+	fired := make(chan struct{}, 1)
 	var gotOutput, gotInput int64
 	hook := func(outputTokens, inputTokens int64) {
 		gotOutput = outputTokens
 		gotInput = inputTokens
+		select {
+		case fired <- struct{}{}:
+		default:
+		}
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -684,6 +696,14 @@ func TestFeedbackHookFired(t *testing.T) {
 	}
 	_, _ = io.ReadAll(resp.Body)
 	resp.Body.Close()
+
+	// Wait for the hook to fire before reading its captured values — see the
+	// buffered-channel comment above.
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("FeedbackHook did not fire within 2s")
+	}
 
 	if gotOutput != 40 {
 		t.Errorf("FeedbackHook outputTokens = %d, want 40", gotOutput)
