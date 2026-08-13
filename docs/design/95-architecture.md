@@ -105,7 +105,7 @@ Each of the 10 workstreams checked against the actual code:
 | 1 | Intent-based retrieval | `ResolveIntent`, 8 intents, auto-routing | 🟢 exists |
 | 2 | Repository knowledge graph | `graph_nodes/edges` + `knowledge_facts/relations` tables, all wired | 🟡 typed edges yes; typed *relations* thin |
 | 3 | Task-specific context packs | `retrieve.ContextPack` + `pack_test.go` contract (#95b) | 🟢 **done** — schema frozen in L2 |
-| 4 | Persistent repo memory | `notes`/`gotcha`/`review` (#87) + `knowledge_facts` | 🟡 exists, not unified |
+| 4 | Persistent repo memory | `knowledge_facts` (one store, written by `remember`/consolidate, read by `recallFacts`); `gotcha`/`review`/gate findings are a separate change-scoped lane | 🟢 one store, one reader (§6.2 decided) |
 | 5 | Hierarchical summaries | pkg/subsystem rollups (#95e) | 🟢 **done** (`4fba1e0`) |
 | 6 | Impact & risk | `trace impact` + `tests_to_run` (#654) | 🟢 exists, needs risk-score surfacing |
 | 7 | Confidence/trust envelope | trust envelope threaded onto the pack (#95c) | 🟢 **done** (`61fa5a4`, `#116`) |
@@ -187,10 +187,20 @@ The `ContextPack` domain type *is* the #95b schema; `ContextOutput` becomes its
 serialization; the #95c trust fields live natively in L2 where the facts are. See
 [95-context-pack.md](95-context-pack.md) for the schema and the field-by-field mapping.
 
-### 6.2 One knowledge store or three?
-`notes` + `gotcha`/`review` + `knowledge_facts` are three memory systems. WS4 wants
-"persistent repo memory" as one thing. Unify behind one read path, or keep separate
-writers with one reader?
+### 6.2 One knowledge store or three? — **decided 2026-08-13: one store, one reader**
+The premise has already largely resolved itself. There is no separate `notes` table:
+the durable-memory surface **is** `knowledge_facts`, written by the `remember` verb and
+`knowledge consolidate`, and read by the **single** `recallFacts` path shared by `ask`,
+`locate`, and `review`. So the durable lane is already one store behind one reader —
+no schema unification is warranted (merging would be a lossy union for no agent-visible
+gain; *reject unnecessary complexity*).
+
+`gotcha`/`review` + the gate findings (`.gate/findings.jsonl`, #155) are **not** a
+competing memory store — they are a deliberately separate, **change-scoped** advisory
+lane attached per-file at review time, not durable repo knowledge. Keeping them separate
+is correct, not a gap. Decision: **keep the three writers, one reader (`recallFacts`);
+do not unify storage.** Surfacing review/gate findings through general recall is an
+explicit non-goal — they age out with the change that produced them.
 
 ### 6.3 `cmd/dex` weight
 It is the real god-module. A grooming pass (#95g) has started — `44b84cb` pushed the
