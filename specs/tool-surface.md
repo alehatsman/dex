@@ -1,7 +1,7 @@
 ---
 id: tool-surface
-status: proposed
-last_verified: 44b84cb
+status: accepted
+last_verified: ceb7e33
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"

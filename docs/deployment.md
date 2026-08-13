@@ -8,7 +8,7 @@ profile that matches your hardware.
 
 | Role | Required? | Env | Used by |
 |------|-----------|-----|---------|
-| Embeddings | for semantic search | `DEX_EMBED_URL` (default `http://localhost:11434`), `DEX_EMBED_MODEL` | indexing, `find`, `ask` |
+| Embeddings | for semantic search | `DEX_EMBED_URL` (default `http://localhost:11434`), `DEX_EMBED_MODEL` | indexing, `ask` semantic lane |
 | Chat | optional | `DEX_CHAT_URL`, `DEX_CHAT_MODEL` | `ask` answer synthesis, `read --mode=summary` |
 | Reranker | optional | `DEX_RERANK_URL`, `DEX_RERANK_MODEL` | reorders the top candidate pool |
 
@@ -28,8 +28,9 @@ model for `ask` answers and a reranker for best ranking.
 
 **Lean (no GPU).** `DEX_EMBED_ENGINE=none` drops embeddings entirely: retrieval
 runs on BM25 + exact symbol + call-graph lanes with **zero inference** — ideal
-for laptops, CI, containers, and air-gapped boxes. `find` is hidden; `ask`
-routes across the remaining lanes. Nothing to pull, nothing to serve.
+for laptops, CI, containers, and air-gapped boxes. The semantic lane is skipped;
+`ask` routes across the remaining lanes on its own. Nothing to pull, nothing to
+serve.
 
 **In-process embeddings (CPU, no server).** Build with `-tags onnx` and set
 `DEX_EMBED_ENGINE=onnx` to embed locally via onnxruntime — semantic search with

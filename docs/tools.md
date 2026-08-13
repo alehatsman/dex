@@ -1,61 +1,58 @@
 # Tools
 
-This is the **query/tool contract** — the verbs an agent (over MCP) and a human
-(on the CLI) share. Their names are identical, so the two surfaces speak one
-vocabulary. CLI form: `dex <verb> [path] <args…>` (`path` defaults to cwd); over
-MCP they are tools the agent calls directly.
+This is the **query/tool contract**. Since the #110 cutover the agent surface
+(over MCP) and the human surface (on the CLI) **diverged on purpose**:
 
-The CLI *also* carries lifecycle/ops commands that have **no MCP form** and are
-not part of this contract — `index`, `reindex`, `watch`, `serve`, `mcp`,
-`proxy`, `setup`, `doctor`, `config`, `env`, `clone`, `bench`, `compact`,
-`compress`, `hook`. Those build, serve, and maintain the index rather than query
-it; see the README or `dex help all`.
+- **Over MCP** an agent sees **four verbs** — `ask`, `look`, `act`, `remember` —
+  plus `index_status`. That set is constant across every deployment profile.
+- **On the CLI** the granular verbs live on directly (`dex ask` / `search` /
+  `read` / `locate` / `trace` / `review` / `verify` / `grep` / `notes`), because
+  a human at a prompt wants to name the lane. CLI form:
+  `dex <verb> [path] <args…>` (`path` defaults to cwd).
 
-## Surface
+The two are one engine: the CLI verbs *are* the lanes `ask` and `look` route to
+internally. The CLI also carries lifecycle/ops commands with **no MCP form** —
+`index`, `reindex`, `watch`, `serve`, `mcp`, `proxy`, `setup`, `doctor`,
+`config`, `env`, `nuke`, `clone`, `bench`, `compact`, `compress`, `hook`. Those
+build, serve, and maintain the index rather than query it; see the README or
+`dex help all`.
 
-| Tool     | Purpose | Backend |
+## The four MCP verbs
+
+| Verb | Purpose | Backend |
 |----------|---------|---------|
-| `ask`    | One-shot router: picks intent, fuses lanes, returns `suggested_reads`, a `next_action`, and (with chat) a cited answer | always |
-| `find`   | Hybrid semantic + lexical top-k search | embedder |
-| `map`    | Deterministic repo orientation map | always |
-| `trace`  | Call graph: `--dir callers\|callees\|path\|impact` (impact = transitive caller blast-radius + risk tier + `tests_to_run`) | graph |
-| `locate` | One-call orientation around `ref` (`path:line`) / `symbol` / `frame`: callers, sibling tests, nearest doc, last commit, related notes. Or pass `claims` (a batch of `{ref, symbol?}` citations) to verify them in one call — each `ok` / `moved` (with `found_at`) / `gone` / `no_file` (#708) | always (callers need graph) |
-| `review` | Per-hunk PR intelligence for a `ref` / `branch` / `pr`: touched symbols, callers (+ risk tier), tests, nearest doc, churn, author history, notes (+ per-file scope-bound notes, #645) | always (callers need graph) |
-| `verify` | Run the tests a change implicates — working tree (default) / `ref` range / `symbol` blast-radius — and return pass/fail; routes through the shell pipeline so a failing run stages a `gotcha_candidate`. Override the command via `command` / `$DEX_VERIFY_CMD` (`{{packages}}`). Go-only v1 | Go toolchain |
-| `read`   | Read a file (see modes below) | always (`summary` needs chat) |
-| `grep`   | Exact regex over indexed files | always |
-| `shell`  | Run a command, return compressed output. `expect` hint (`counts`/`table`/`json`/`logs`/`raw`) biases compression toward preserving terse results; small output (<50 lines or <4 KB) auto-preserves | always |
-| `notes`  | Persistent project memory: `add`/`list`/`delete`/`gc` facts; high-salience ones auto-inject into `ask`; `add` warns (`similar`) on a near-duplicate note | always |
-| `refactor` `rehearse` `check` `deps` `diff` `clusters` `routes` `smells` `clones` `similar` `cohort` `status` `budget` `session` `checkpoint` | DEX_EXPERT power lane (`refactor`/`rehearse`: Go-only rename + type-check; `check`: citation QA; `clones`: semantic duplication clusters; `similar`: blocks near a block; `checkpoint`: shadow-git work history) | graph / Go toolchain / vectors |
+| `ask` | Front door: routes intent (behavior_search / symbol_lookup / callers / callees / architecture / package_topology / editing_context / assemble / review), fuses the semantic + symbol + graph lanes, returns a ranked evidence pack, a `next_action`, and (with a chat model) a cited answer. `ask("review my changes")` reviews the working tree. | always (semantic lane needs embedder; degrades to BM25 + symbol + graph) |
+| `look` | Exact fetch for a target you can already name — dex classifies it: a path → read, a `/regex/` → grep, a `path:line` → locate, a symbol → its call graph. Every result carries `trust: exact`. | always (call graph needs graph) |
+| `act` | Run a command, get compressed output inside the universal `{result, trust, cost, next}` envelope. Blocks writes (`>`/`>>`/`tee`) unless `DEX_SHELL_ALLOW_WRITES=1`; 60 s timeout; `raw:true` to skip compression. | always |
+| `remember` | Durable project memory: write a fact (optionally `scope`-bound to a glob), recall the most relevant by `query`, or correct a stale one with `supersedes=<id>`. High-salience facts auto-inject into `ask` as `knowledge_facts`. | always |
 
-## Capability-derived exposure
+## Profiles, not tiers
 
-A tool is registered only when the backend it needs is available, so the surface
-matches the deployment:
+The verb set is constant; a deployment **profile** only changes what `ask` can do
+internally (synthesis → lexical → hits-only), never which tools an agent sees:
 
-- **Always on** (no models at all): `ask`, `grep`, `shell`.
-- **Default verbs** (non-weak model): add `map`, `trace` (incl. `--dir impact`), `locate`, `review`, `verify`, `read`, `notes`.
-- **`find`**: only when a query-time embedder is wired; otherwise retrieval
-  degrades to BM25 + symbol + graph and `ask` routes around it.
-- **Power lane** (`refactor`, `rehearse`, `check`, `deps`, `diff`, `clusters`, `routes`, `smells`, `clones`,
-  `similar`, `cohort`, `status`, `budget`, `session`, `checkpoint`): behind `DEX_EXPERT=1`, to keep the everyday
-  agent tool list small. `clones` finds clusters of semantically near-duplicate code blocks (duplication hotspots)
-  and `similar` finds blocks near a given one — semantic work grep can't do; both reuse the search vectors, so
-  they need an embedder (#84).
-  For review/audit/architecture tasks these lanes are not invisible: `brief(task)` detects review intent and
-  inlines a curated `review` pack (god files, high fan-in nodes, long functions, dead-export count, top clusters,
-  top duplication clones) drawn from `smells`/`clusters`/`clones`, so a review agent gets structural assessment
-  without setting `DEX_EXPERT` (#83, #84).
-  Call-graph walks (callers/callees/shortest path) are not standalone tools —
-  `trace --dir callers|callees|path` is the single entry point. (On the CLI
-  every verb, plus the full `dex graph <sub>` set, is always available.)
-  Several `dex graph` subcommands are **CLI-only** with no MCP tool —
-  `neighbors`, `packages`, `links`, `backlinks`, `tags`, `cycles`, `export` —
-  so they don't count toward the tool surface above.
-- **Weak/local model detected**: only the always-on lane is exposed.
+- **full** (embedder + chat): `ask` synthesizes cited answers.
+- **bm25-only** (`DEX_EMBED_ENGINE=none`): no embedder — `ask` falls back to
+  BM25 + symbol + graph on its own; the semantic lane is skipped, not a missing
+  tool.
+- **lean** (weak local model): same four verbs; `remember` matters most here,
+  since a weaker model forgets more.
 
-This is a flat, prefix-free surface of up to 12 tools by default — no `category_` prefixes,
-no tiers.
+`DEX_EXPERT=1` is an **additive overlay**, orthogonal to the profile. It exposes
+the raw primitives the verbs wrap — `search` (raw ranked hits with the full
+scoring breakdown), `trace` (`--dir callers|callees|path|impact`), `locate`,
+`grep`, `read`, `shell` — plus the graph/quality lanes `deps`, `diff`,
+`clusters`, `routes`, `smells`, `clones`, `similar`, `cohort`, `status`,
+`session`, `checkpoint`, `refactor`, `rehearse`, `check`, and the full `notes`
+knowledge surface. `clones` finds clusters of semantically near-duplicate code
+blocks and `similar` finds blocks near a given one — semantic work grep can't do;
+both reuse the search vectors, so they need an embedder (#84). The overlay never
+changes the shape of the four everyday verbs.
+
+On the CLI every verb, plus the full `dex graph <sub>` set, is always available
+without the flag. Several `dex graph` subcommands are **CLI-only** with no MCP
+tool — `neighbors`, `packages`, `links`, `backlinks`, `tags`, `cycles`,
+`export`.
 
 ## `read` modes
 
@@ -96,10 +93,9 @@ recover (e.g. run `dex index`, retry with another mode) instead of giving up.
 `ask` always returns a `next_action` directive telling you what to do next.
 
 dex is **read-only by design** (#551): every tool is `readOnlyHint: true` and
-there is no edit/write/apply verb. dex locates and explains (`find`, `trace`,
-`read`); the host agent makes the changes with its own editing tools.
-The only persistence verb, `notes`, writes dex's knowledge store — never project
-files.
+there is no edit/write/apply verb. `ask` and `look` locate and explain; the host
+agent makes the changes with its own editing tools. The only persistence verb,
+`remember`, writes dex's knowledge store — never project files.
 
 ## Transports
 

@@ -7,7 +7,7 @@ Indexes your repo — chunks, symbols, embeddings, call graph — and exposes a 
 Claude arrives at a repo blind. `dex` gives it a fast local map: ranked files, callers, tests, and conventions for the task at hand.
 
 ```text
-brief(task) → read → edit → review_diff → verify_change
+ask(task) → look(target) → edit → ask("review my changes")
 ```
 
 ## Install
@@ -45,19 +45,20 @@ dex doctor
 
 ## MCP tools
 
-| Tool | What it does |
-|---|---|
-| `brief` | Ranked files, symbols, rules, tests, and risks for a task. Start here. |
-| `search` | Hybrid: semantic + BM25 + symbol + graph |
-| `read` | Exact file or symbol context |
-| `locate` | Definition, callers, tests, notes around one ref |
-| `trace` | Callers/callees/path/impact graph |
-| `review_diff` | Per-hunk analysis of staged/ref/branch diff |
-| `verify_change` | Select or run tests implicated by staged changes |
-| `notes` | Scoped, cited repo-local memory |
-| `shell` | Run commands with compressed output |
+The agent-facing surface is **four verbs**, constant across every deployment
+profile (full / bm25-only / lean):
 
-`ask`, `repo_map`, and `grep` are hidden by default. Enable with `DEX_EXPERT=1` when you need raw graph or planning tools.
+| Verb | What it does |
+|---|---|
+| `ask` | Front door for any task. Routes intent, fuses semantic + symbol + graph lanes, returns a ranked evidence pack and a `next_action`. `ask("review my changes")` reviews your working tree; `intent=assemble` returns a budget-bounded working set. |
+| `look` | Exact fetch once you can name the target: a path → read, a `/regex/` → grep, a `path:line` → locate, a symbol → its call graph. |
+| `act` | Run builds / tests / git; compressed output inside the universal `{result, trust, cost, next}` envelope. |
+| `remember` | Durable project memory: write a fact, recall by query, or correct a stale one with `supersedes`. |
+
+Everything else — the raw `search`, `trace`, `locate`, `grep`, `read`, `shell`
+primitives plus the `deps` / `clusters` / `smells` / `clones` graph lanes — is a
+power-lane overlay behind `DEX_EXPERT=1`. The four verbs cover everyday work; the
+overlay never changes their shape.
 
 ## CLI
 
@@ -65,7 +66,9 @@ dex doctor
 dex <verb> [path] <args>
 ```
 
-`path` defaults to `.`.
+`path` defaults to `.`. The CLI keeps the granular verbs (they map onto the four
+MCP verbs' lanes — `dex search`/`read`/`locate`/`trace` are what `ask` and `look`
+route to internally).
 
 | Command | Purpose |
 |---|---|
@@ -74,11 +77,10 @@ dex <verb> [path] <args>
 | `dex env` | Print effective config |
 | `dex config init` | Create `.dex/config.yml` |
 | `dex index [path]` | Build/update index |
-| `dex index status [path]` | Show index freshness |
-| `dex index watch [path]` | Keep index current |
-| `dex brief [path] <task>` | Task context pack |
-| `dex ask [path] <question>` | Open-ended repo question |
-| `dex find [path] <query>` | Hybrid search |
+| `dex status [path]` | Show index freshness |
+| `dex watch [path]` | Keep index current |
+| `dex ask [path] <question>` | Task pack / open-ended repo question |
+| `dex search [path] <query>` | Hybrid semantic + BM25 + symbol + graph search |
 | `dex read <file\|symbol>` | Read exact context |
 | `dex locate [path] <ref>` | Orient around one object |
 | `dex trace [path] <symbol>` | Callers/callees/impact |
@@ -86,12 +88,11 @@ dex <verb> [path] <args>
 | `dex verify [path]` | Select/run implicated checks |
 | `dex notes add\|list\|delete\|gc` | Repo-local memory |
 | `dex grep [path] <regex>` | Regex search |
-| `dex shell -- <cmd>` | Command with compressed output |
 | `dex mcp` | Serve MCP |
 
 ```sh
-dex brief . "add OAuth support"
-dex find . "retry logic"
+dex ask . "add OAuth support"
+dex search . "retry logic"
 dex locate . AuthMiddleware
 dex trace . Run --dir callers
 dex review . --staged
@@ -132,7 +133,10 @@ DEX_EMBED_ENGINE=none
 DEX_EXPERT=1
 ```
 
-Unlocks: `repo_map`, `ask`, `grep`, `plan_rename`, `rehearse_patch`, `graph_*`, `risk_scan`, `similar_changes`, `context_budget`.
+Overlays the power lanes onto the four verbs: the raw primitives `search`,
+`trace`, `locate`, `grep`, `read`, `shell` plus the graph/quality lanes `deps`,
+`clusters`, `routes`, `smells`, `clones`, `similar`, `cohort`, `session`, and the
+full `notes` knowledge surface.
 
 Graph tools are also available from the CLI without the flag:
 
