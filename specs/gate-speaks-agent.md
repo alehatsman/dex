@@ -91,8 +91,12 @@ Two directions, both reusing the schema:
   `clone` finding per member block; all advisory (`level:warning`). A non-ok
   status (no-index/no-graph) yields no rows, not an error, matching the
   go-quality emitters. This is where dex eats its own dogfood: the richest
-  findings (vector clones, cohesion smells) come from dex itself. (`similar`
-  deferred — same pattern when wanted.)
+  findings (vector clones, cohesion smells) come from dex itself. (`similar` is
+  deliberately **not** a gate emitter: it is an anchored query — given a block
+  (`<file> <line>`) it returns that block's nearest neighbours — so it cannot run
+  repo-wide the way the aggregator invokes `smells`/`clones`, and a "near your
+  query block" hit is meaningless without the query. Emitting it purely for
+  surface symmetry would be accretion; the trio is complete at two.)
 
 ## Design constraints
 
@@ -120,7 +124,8 @@ Two directions, both reusing the schema:
 
 - go-quality: `--format jsonl` on the five step scripts + `ai-lint.sh`;
   `GATE_FORMAT` env honored by `ci/full.sh`; `scripts/findings-to-sarif.sh`.
-- dex: `--format jsonl` on `smells`/`clones`/`similar`; `ask` review lane reads
+- dex: `--format jsonl` on `smells`/`clones` (repo-wide emitters; `similar` is an
+  anchored query, not an emitter — see Emit above); `ask` review lane reads
   `.gate/findings.jsonl`. No wire-schema change to the four everyday verbs.
 
 ## Validation
