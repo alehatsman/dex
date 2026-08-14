@@ -62,6 +62,16 @@ type EvidencePolicy struct {
 var (
 	capsDense    = InlineCaps{MaxLinesPerRead: 120, MaxBytesPerRead: 8 * 1024, TotalBytesCap: 40 * 1024}
 	capsTargeted = InlineCaps{MaxLinesPerRead: 60, MaxBytesPerRead: 4 * 1024, TotalBytesCap: 20 * 1024}
+
+	// capsAssembleDense is a right-sized dense pool for the assemble intent
+	// (#164). assemble is the only intent that pairs a dense pool with
+	// BodyFillCoverage — submodular body-packing that fills the pool with many
+	// symbol bodies — so at capsDense (40 KB) its envelope ceiling lands at
+	// 40+10 = 50 KB, exactly the client tool-result reject point (a real
+	// (*Server).recallFacts assemble hard-errored at 50,328 chars). 28 KB keeps
+	// the empirically-good working set (~28 KB / 14 bodies) while dropping the
+	// derived ceiling to 38 KB, leaving headroom for the callers/callees graph.
+	capsAssembleDense = InlineCaps{MaxLinesPerRead: 120, MaxBytesPerRead: 8 * 1024, TotalBytesCap: 28 * 1024}
 )
 
 // defaultPolicy is returned for auto/unknown intents. It matches the old
@@ -108,9 +118,11 @@ var evidencePolicies = map[string]EvidencePolicy{
 		BodyFill: BodyFillNone, MaxReads: 5, AnswerMaxTokens: 900,
 	},
 	// assemble (#687) reuses the default lanes (neighborhood+rollup) but takes
-	// the dense budget and coverage-ordered body fill.
+	// a right-sized dense budget (capsAssembleDense, #164 — capsDense overflows
+	// the client tool-result limit once coverage body-fill packs it) and
+	// coverage-ordered body fill.
 	IntentAssemble: {
-		GraphLane: GraphLaneNeighborhoodRollup, InlineCaps: capsDense,
+		GraphLane: GraphLaneNeighborhoodRollup, InlineCaps: capsAssembleDense,
 		BodyFill: BodyFillCoverage, MaxReads: 2, AnswerMaxTokens: 400,
 	},
 }

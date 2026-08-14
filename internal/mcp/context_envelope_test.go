@@ -11,11 +11,27 @@ import (
 // envelopeCeilingBytes must leave headroom above the inline pool for the lanes
 // that sit outside it (graph, knowledge_facts, answer).
 func TestEnvelopeCeilingExceedsInlinePool(t *testing.T) {
-	for _, intent := range []string{retrieve.IntentArchitecture, retrieve.IntentBehaviorSearch} {
+	for _, intent := range []string{retrieve.IntentArchitecture, retrieve.IntentBehaviorSearch, retrieve.IntentAssemble} {
 		pool := retrieve.InlineCapsFor(intent).TotalBytesCap
 		if got := envelopeCeilingBytes(intent); got <= pool {
 			t.Errorf("envelopeCeilingBytes(%s)=%d, want > pool cap %d", intent, got, pool)
 		}
+	}
+}
+
+// #164 regression: a real (*Server).recallFacts assemble hard-errored at 50,328
+// chars because assemble's ceiling (capsDense 40 KB + 10 KB headroom = 50 KB)
+// sat at the client tool-result reject point. The assemble ceiling must stay
+// safely below that observed failure size.
+func TestAssembleCeilingBelowClientRejectSize(t *testing.T) {
+	const observedRejectBytes = 50 * 1024 // ~50,328 chars rejected in the wild
+	got := envelopeCeilingBytes(retrieve.IntentAssemble)
+	if got >= observedRejectBytes {
+		t.Errorf("assemble ceiling=%d must be < observed reject size %d", got, observedRejectBytes)
+	}
+	// And it must have shrunk from the shared dense pool that caused the overflow.
+	if pool := retrieve.InlineCapsFor(retrieve.IntentAssemble).TotalBytesCap; pool >= 40*1024 {
+		t.Errorf("assemble inline pool=%d must be smaller than the 40 KB dense pool", pool)
 	}
 }
 

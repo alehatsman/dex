@@ -17,7 +17,7 @@ func TestPolicyFor(t *testing.T) {
 		{IntentCallees, EvidencePolicy{GraphLaneCalleesOutbound, capsTargeted, BodyFillNone, 2, 400}},
 		{IntentArchitecture, EvidencePolicy{GraphLaneArchitecture, capsDense, BodyFillNone, 5, 900}},
 		{IntentPackageTopology, EvidencePolicy{GraphLanePackageTopology, capsDense, BodyFillNone, 5, 900}},
-		{IntentAssemble, EvidencePolicy{GraphLaneNeighborhoodRollup, capsDense, BodyFillCoverage, 2, 400}},
+		{IntentAssemble, EvidencePolicy{GraphLaneNeighborhoodRollup, capsAssembleDense, BodyFillCoverage, 2, 400}},
 		// auto/unknown fall back to defaultPolicy.
 		{IntentAuto, defaultPolicy},
 		{"nonsense-intent", defaultPolicy},
@@ -57,5 +57,17 @@ func TestInlineCapsTiers(t *testing.T) {
 	}
 	if capsTargeted != (InlineCaps{MaxLinesPerRead: 60, MaxBytesPerRead: 4 * 1024, TotalBytesCap: 20 * 1024}) {
 		t.Errorf("capsTargeted drifted: %+v", capsTargeted)
+	}
+}
+
+// #164: assemble must use a smaller dense pool than the shared capsDense, whose
+// 40 KB cap overflowed the client tool-result limit once BodyFillCoverage packed
+// it. The assemble policy must point at that smaller pool.
+func TestAssemblePoolSmallerThanDense(t *testing.T) {
+	if capsAssembleDense.TotalBytesCap >= capsDense.TotalBytesCap {
+		t.Errorf("capsAssembleDense=%d must be < capsDense=%d", capsAssembleDense.TotalBytesCap, capsDense.TotalBytesCap)
+	}
+	if got := PolicyFor(IntentAssemble).InlineCaps; got != capsAssembleDense {
+		t.Errorf("assemble policy caps=%+v, want capsAssembleDense=%+v", got, capsAssembleDense)
 	}
 }
