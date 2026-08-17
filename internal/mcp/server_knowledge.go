@@ -70,6 +70,13 @@ type KnowledgeFactOutput struct {
 	// ValidUntil is the expiry date (RFC3339) for time-bounded facts (#618).
 	// Empty when no expiry is set.
 	ValidUntil string `json:"valid_until,omitempty"`
+	// NeedsVerification is set at recall when every code referent the fact names
+	// (path, path:line, or symbol) has gone dead against the current index (#167).
+	// Computed, never persisted; a flag, not a downgrade — confidence is untouched.
+	NeedsVerification bool `json:"needs_verification,omitempty"`
+	// VerificationNote names the dead referents behind NeedsVerification so the
+	// agent knows exactly what to re-check. Empty unless NeedsVerification is set.
+	VerificationNote string `json:"verification_note,omitempty"`
 }
 
 // KnowledgeRelationOutput is one edge in the relation graph (#621).
@@ -202,6 +209,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 				out.Facts = append(out.Facts, knowledgeFactOut(f))
 			}
 		}
+		s.annotateLiveness(ctx, st, out.Facts)
 		return nil, out, nil
 	}
 
@@ -217,6 +225,7 @@ func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in Knowl
 	for _, f := range facts {
 		out.Facts = append(out.Facts, knowledgeFactOut(f))
 	}
+	s.annotateLiveness(ctx, st, out.Facts)
 	return nil, out, nil
 }
 

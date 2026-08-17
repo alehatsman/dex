@@ -104,10 +104,23 @@ func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 	if err != nil {
 		return nil, RememberOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 	}
-	return nil, RememberOutput{
+	out := RememberOutput{
 		Status: kn.Status,
 		Hint:   kn.Hint,
 		Result: RememberResult{Mode: "recalled", Facts: kn.Facts},
 		Trust:  exactTrust(),
-	}, nil
+	}
+	// A recalled fact whose named referent has gone dead (#167) is worse than no
+	// fact — route the agent to re-verify before relying on it, rather than
+	// silently acting on stale ground truth.
+	for _, f := range kn.Facts {
+		if f.NeedsVerification {
+			out.Next = append(out.Next, NextStep{
+				Verb: "look",
+				Why:  "a recalled fact names a code referent that no longer resolves against the index (needs_verification) — confirm it against current HEAD, then `remember(fact=…, supersedes=<id>)` if stale",
+			})
+			break
+		}
+	}
+	return nil, out, nil
 }
