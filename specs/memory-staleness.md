@@ -1,17 +1,39 @@
 ---
 id: memory-staleness
-status: draft
-last_verified: b4e4b1c
+status: shipped
+last_verified: ec521df
 owners: [aleh]
 covers:
   - "internal/store/store_knowledge.go"
   - "internal/mcp/server_knowledge.go"
+  - "internal/mcp/referent.go"
   - "internal/mcp/remember.go"
   - "internal/store/store_search.go"
 tracking: alehatsman/dex#167
 ---
 
 # Memory staleness discipline: decay + liveness-check recalled facts
+
+<!--
+STATUS 2026-08-17 — ALL THREE PARTS SHIPPED, #167 closable.
+- Part 2 liveness — shipped dbd0868 (annotateLiveness / referent.go).
+- Part 1 decay taper — the recall scanner now ranks on max(updated_at,
+  last_retrieved). `KnowledgeFact.LastRetrieved` populated by every scanFacts-fed
+  recall SELECT; `scanFacts` Salience + `KnowledgeQueryVec` wRecency key on
+  `lastTouched`. Deviation from draft: the SQL-ordered `KnowledgeQuery` LIMITs
+  before Go scores, so the taper reorders where the consumer sorts by score
+  (the semantic `KnowledgeQueryVec` path) and is metadata elsewhere; export /
+  by-id / by-scope reads stay on updated_at (not recall rankers).
+- Part 3 referent-overlap supersede — write-time nudge surfaces active facts
+  sharing a code referent (file collapses line; symbol by name) the Jaccard
+  word-overlap misses. Deviations from draft: (a) ZERO store changes — reused
+  `KnowledgeExportAll`'s active-set scan (the ≤active-set in-memory scan the
+  spec sanctioned) rather than a new LIKE-probe; (b) folded into the existing
+  `Similar` list + a distinct hint clause ("already speak to <file>") instead of
+  a sibling `Contradicts` list (minimal interface); (c) gated on
+  supersedes_id==0 so a write that is already resolving isn't nagged.
+-->
+
 
 ## Goal
 
