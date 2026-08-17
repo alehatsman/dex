@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -116,6 +117,10 @@ type KnowledgeOutput struct {
 // threshold (0.85) so the author is warned BEFORE two notes would auto-merge,
 // while still requiring substantial overlap to avoid noise.
 const knowledgeSimilarThreshold = 0.5
+
+// knowledgeReferentMax caps how many referent-overlap supersede candidates a
+// write surfaces (#167 Part 3) — advisory, kept small so the nudge stays legible.
+const knowledgeReferentMax = 3
 
 func (s *Server) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
 	p, hint := s.resolveProject(ctx, in.ProjectRoot)
@@ -322,6 +327,20 @@ func (s *Server) knowledgeAdd(ctx context.Context, st *store.Store, p *proj.Proj
 		opts.ValidUntil = t
 	}
 	similar, _ := st.KnowledgeSimilar(ctx, in.Body, knowledgeSimilarThreshold, 3)
+	// #167 Part 3: referent-overlap supersede candidates — facts naming the same
+	// file/symbol the word-overlap check misses. Skip when already superseding
+	// (the author is resolving) and dedupe against the Jaccard hits above.
+	var (
+		refMatches []store.KnowledgeFact
+		refShared  map[int64]string
+	)
+	if in.SupersedesID == 0 {
+		excl := make(map[int64]bool, len(similar))
+		for _, sf := range similar {
+			excl[sf.ID] = true
+		}
+		refMatches, refShared = s.referentSupersedeMatches(ctx, st, in.Body, excl)
+	}
 	var (
 		rev int
 		err error
@@ -345,6 +364,25 @@ func (s *Server) knowledgeAdd(ctx context.Context, st *store.Store, p *proj.Proj
 	if len(out.Similar) > 0 {
 		out.Hint += fmt.Sprintf(" ⚠ %d similar note(s) already exist (ids %s) — use supersedes_id to replace one.",
 			len(out.Similar), similarIDs(out.Similar))
+	}
+	if len(refMatches) > 0 {
+		anchors := make(map[string]bool)
+		refOut := make([]KnowledgeFactOutput, 0, len(refMatches))
+		for _, f := range refMatches {
+			fo := knowledgeFactOut(f)
+			refOut = append(refOut, fo)
+			out.Similar = append(out.Similar, fo)
+			for _, a := range strings.Split(refShared[f.ID], ", ") {
+				anchors[a] = true
+			}
+		}
+		names := make([]string, 0, len(anchors))
+		for a := range anchors {
+			names = append(names, a)
+		}
+		sort.Strings(names)
+		out.Hint += fmt.Sprintf(" ⚠ %d note(s) already speak to %s (ids %s) — supersede rather than stack a contradiction.",
+			len(refMatches), strings.Join(names, ", "), similarIDs(refOut))
 	}
 	if in.Scope == "" {
 		if sug := suggestScope(p.Root, in.Body); sug != "" {
@@ -425,6 +463,39 @@ func similarIDs(facts []KnowledgeFactOutput) string {
 		ids[i] = "#" + strconv.FormatInt(f.ID, 10)
 	}
 	return strings.Join(ids, ", ")
+}
+
+// referentSupersedeMatches scans the active fact set for notes that name a code
+// referent (file or symbol) in common with body but were not already surfaced as
+// Jaccard word-overlap similar — supersede candidates the word check misses when
+// the same anchor is worded differently (#167 Part 3). Advisory: the agent decides
+// whether to supersede. Bounded by the ≤active-set scan (mirrors KnowledgeSimilar);
+// best-effort, a store error yields no matches rather than failing the write.
+func (s *Server) referentSupersedeMatches(ctx context.Context, st *store.Store, body string, exclude map[int64]bool) ([]store.KnowledgeFact, map[int64]string) {
+	if len(referentKeys(extractReferents(body))) == 0 {
+		return nil, nil
+	}
+	all, err := st.KnowledgeExportAll(ctx)
+	if err != nil {
+		return nil, nil
+	}
+	var matched []store.KnowledgeFact
+	shared := make(map[int64]string)
+	for _, f := range all {
+		if f.Body == body || exclude[f.ID] {
+			continue
+		}
+		hits := sharedReferents(body, f.Body)
+		if len(hits) == 0 {
+			continue
+		}
+		matched = append(matched, f)
+		shared[f.ID] = strings.Join(hits, ", ")
+		if len(matched) >= knowledgeReferentMax {
+			break
+		}
+	}
+	return matched, shared
 }
 
 // knowledgeExportRow is the portable JSON shape used for export/import.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -208,4 +209,41 @@ func deadReferentNote(refs []referent, paths map[string]int, exts map[string]boo
 		return ""
 	}
 	return "names " + strings.Join(deadParts, ", ") + " — verify against current HEAD before relying on this fact"
+}
+
+// referentKeys folds a fact's referents into canonical anchor keys for
+// overlap comparison (#167 Part 3). Paths collapse to the file (a fact about
+// `server.go:42` and one about `server.go:99` speak to the same file — line
+// numbers drift, the file is the anchor an author supersedes at); symbols key
+// on the name. The value is the human token to name in the supersede nudge.
+func referentKeys(refs []referent) map[string]string {
+	keys := make(map[string]string, len(refs))
+	for _, r := range refs {
+		switch r.Kind {
+		case kindPath, kindPathLine:
+			keys["path:"+r.Path] = r.Path
+		case kindSymbol:
+			keys["sym:"+r.Name] = r.Name
+		}
+	}
+	return keys
+}
+
+// sharedReferents returns the human tokens (files / symbols) that body and
+// other both name, empty if none. The Jaccard word-overlap in KnowledgeSimilar
+// misses these when the same anchor is described in different words — this is
+// the structural companion (#167 Part 3).
+func sharedReferents(body, other string) []string {
+	want := referentKeys(extractReferents(body))
+	if len(want) == 0 {
+		return nil
+	}
+	var hits []string
+	for k, disp := range referentKeys(extractReferents(other)) {
+		if _, ok := want[k]; ok {
+			hits = append(hits, disp)
+		}
+	}
+	sort.Strings(hits)
+	return hits
 }
