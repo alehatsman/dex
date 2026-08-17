@@ -28,6 +28,83 @@ func TestRecencyFactor(t *testing.T) {
 	}
 }
 
+// TestLastTouched verifies the #167 Part 1 taper anchor: max(updated, retrieved),
+// falling back to updated when the fact was never recalled.
+func TestLastTouched(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := base.Add(48 * time.Hour)
+	cases := []struct {
+		name      string
+		updated   time.Time
+		retrieved time.Time
+		want      time.Time
+	}{
+		{"never recalled falls back to updated", base, time.Time{}, base},
+		{"recalled more recently wins", base, newer, newer},
+		{"confirmed more recently wins", newer, base, newer},
+		{"equal returns either", base, base, base},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := lastTouched(KnowledgeFact{UpdatedAt: c.updated, LastRetrieved: c.retrieved})
+			if !got.Equal(c.want) {
+				t.Errorf("lastTouched = %s, want %s", got, c.want)
+			}
+		})
+	}
+}
+
+// TestDecayTaper_RecalledFactRanksHigher is the #167 Part 1 win case: two facts
+// identical in semantics and quality, both stale by write-time, differ only in
+// that one was recalled recently (last_retrieved bumped). The recalled one must
+// sink slower and rank above the cold one in KnowledgeQueryVec's hybrid score.
+func TestDecayTaper_RecalledFactRanksHigher(t *testing.T) {
+	st, ctx := newStore(t)
+	const coldBody, warmBody = "cold fact left untouched", "warm fact still recalled"
+	for _, body := range []string{coldBody, warmBody} {
+		if _, err := st.KnowledgeAdd(ctx, "Fact", body, 0.8); err != nil {
+			t.Fatal(err)
+		}
+	}
+	idOf := func(body string) int64 {
+		t.Helper()
+		var id int64
+		if err := st.db.QueryRowContext(ctx, `SELECT id FROM knowledge_facts WHERE body=?`, body).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	// Same vector → identical semantic similarity; recency is the only tie-breaker.
+	vec := []float32{0, 1, 0, 0}
+	for _, body := range []string{coldBody, warmBody} {
+		if err := st.KnowledgeUpsertVecByBody(ctx, body, vec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Age BOTH facts' updated_at 60 days back (recencyFactor ≈ 0.33 on updated_at).
+	stale := time.Now().Add(-60 * 24 * time.Hour).UnixNano()
+	if _, err := st.db.ExecContext(ctx, `UPDATE knowledge_facts SET updated_at=?`, stale); err != nil {
+		t.Fatal(err)
+	}
+	// Recall the warm fact now → last_retrieved=now, taper anchors on today.
+	if err := st.KnowledgeBump(ctx, idOf(warmBody)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.KnowledgeQueryVec(ctx, vec, 2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 facts, got %d", len(got))
+	}
+	if got[0].Body != warmBody {
+		t.Errorf("top fact = %q, want warm fact %q — recalled fact must sink slower", got[0].Body, warmBody)
+	}
+	if got[1].Body != coldBody {
+		t.Errorf("second fact = %q, want cold fact %q", got[1].Body, coldBody)
+	}
+}
+
 func TestKnowledgeQueryVec_SemanticRanking(t *testing.T) {
 	st, ctx := newStore(t)
 	facts := []struct {

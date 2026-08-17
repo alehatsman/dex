@@ -17,12 +17,18 @@ type knowledgeStore struct{ db *sql.DB }
 
 // KnowledgeFact is one persisted fact about the project.
 type KnowledgeFact struct {
-	ID            int64
-	Archetype     string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding | Hypothesis | Inference | VerifiedFact
-	Body          string
-	Confidence    float64 // 0–1
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID         int64
+	Archetype  string // Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding | Hypothesis | Inference | VerifiedFact
+	Body       string
+	Confidence float64 // 0–1
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	// LastRetrieved is the wall-clock time the fact was last surfaced by recall
+	// (bumped by KnowledgeBump, #167 Part 1). Zero for a fact never recalled.
+	// The decay taper ranks on max(UpdatedAt, LastRetrieved) so a fact still
+	// being retrieved fades slower than one left cold. Populated only by reads
+	// that select last_retrieved; other reads leave it zero (⇒ ranks on UpdatedAt).
+	LastRetrieved time.Time
 	HitCount      int
 	RevisionCount int
 	Salience      float64 // pre-computed: confidence * archetypeWeight * recency
@@ -347,6 +353,18 @@ func qualityWeight(f KnowledgeFact) float64 {
 	return f.Confidence * archetypeWeight(f.Archetype)
 }
 
+// lastTouched is the more recent of confirmation (updated_at) and recall
+// (last_retrieved) — the anchor the decay taper measures staleness from (#167
+// Part 1). A fact still being surfaced fades slower than one left cold. Falls
+// back to UpdatedAt when the fact was never recalled (LastRetrieved zero) or
+// the reader didn't select last_retrieved.
+func lastTouched(f KnowledgeFact) time.Time {
+	if f.LastRetrieved.After(f.UpdatedAt) {
+		return f.LastRetrieved
+	}
+	return f.UpdatedAt
+}
+
 // activeFilter is the WHERE clause fragment that excludes superseded and
 // expired facts. Must be ANDed into every recall query.
 // valid_until=0 means no expiry.
@@ -364,8 +382,8 @@ func scanFacts(rows interface {
 	var out []KnowledgeFact
 	for rows.Next() {
 		var f KnowledgeFact
-		var cNs, uNs, vuNs int64
-		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &vuNs); err != nil {
+		var cNs, uNs, vuNs, lrNs int64
+		if err := rows.Scan(&f.ID, &f.Archetype, &f.Body, &f.Confidence, &cNs, &uNs, &f.HitCount, &f.RevisionCount, &vuNs, &lrNs); err != nil {
 			return nil, err
 		}
 		f.CreatedAt = time.Unix(0, cNs)
@@ -373,7 +391,10 @@ func scanFacts(rows interface {
 		if vuNs != 0 {
 			f.ValidUntil = time.Unix(0, vuNs)
 		}
-		f.Salience = qualityWeight(f) * recencyFactor(f.UpdatedAt)
+		if lrNs != 0 {
+			f.LastRetrieved = time.Unix(0, lrNs)
+		}
+		f.Salience = qualityWeight(f) * recencyFactor(lastTouched(f))
 		out = append(out, f)
 	}
 	return out, rows.Err()
@@ -397,7 +418,7 @@ func (s *knowledgeStore) KnowledgeQuery(ctx context.Context, k int) ([]Knowledge
 	k = clampK(k)
 	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until, last_retrieved
 		   FROM knowledge_facts
 		   WHERE `+activeFilter(now)+`
 		   ORDER BY confidence DESC, updated_at DESC
@@ -418,7 +439,7 @@ func (s *knowledgeStore) KnowledgeQueryArchetype(ctx context.Context, archetype 
 	k = clampK(k)
 	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until, last_retrieved
 		   FROM knowledge_facts
 		   WHERE `+activeFilter(now)+` AND archetype = ?
 		   ORDER BY confidence DESC, updated_at DESC
@@ -451,7 +472,7 @@ func (s *knowledgeStore) KnowledgeSimilar(ctx context.Context, body string, thre
 	}
 	now := time.Now().UnixNano()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
+		`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until, last_retrieved
 		   FROM knowledge_facts WHERE `+activeFilter(now))
 	if err != nil {
 		return nil, err
@@ -795,7 +816,7 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 		limit = 128
 	}
 	nowNs := time.Now().UnixNano()
-	q := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
+	q := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until, last_retrieved
 	        FROM knowledge_facts f
 	       WHERE ` + activeFilter(nowNs) + ` AND NOT EXISTS (SELECT 1 FROM fact_vecs v WHERE v.rowid = f.id)
 	       ORDER BY updated_at DESC
@@ -804,7 +825,7 @@ func (s *knowledgeStore) KnowledgeFactsMissingVec(ctx context.Context, limit int
 	if err != nil {
 		// fact_vecs missing → treat all facts as missing.
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until
+			`SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until, last_retrieved
 			   FROM knowledge_facts WHERE `+activeFilter(nowNs)+` ORDER BY updated_at DESC LIMIT ?`, limit)
 		if err != nil {
 			return nil, err
@@ -887,7 +908,7 @@ func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float
 	}
 
 	nowNs := time.Now().UnixNano()
-	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until FROM knowledge_facts WHERE ` + activeFilter(nowNs) + ` AND id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args
+	factQ := `SELECT id, archetype, body, confidence, created_at, updated_at, hit_count, revision_count, valid_until, last_retrieved FROM knowledge_facts WHERE ` + activeFilter(nowNs) + ` AND id IN (` + inPlaceholders(len(ids)) + `)` //nolint:gosec // placeholder count is generated; ids passed as bind args
 	frows, err := s.db.QueryContext(ctx, factQ, int64sToAny(ids)...)
 	if err != nil {
 		return nil, err
@@ -915,7 +936,7 @@ func (s *knowledgeStore) KnowledgeQueryVec(ctx context.Context, queryVec []float
 			sem = 0
 		}
 		q := qualityWeight(f) / maxWeight
-		score := wSemantic*sem + wQuality*q + wRecency*recencyFactor(f.UpdatedAt)
+		score := wSemantic*sem + wQuality*q + wRecency*recencyFactor(lastTouched(f))
 		scoredFacts = append(scoredFacts, ranked{f, score})
 	}
 	sort.SliceStable(scoredFacts, func(i, j int) bool { return scoredFacts[i].score > scoredFacts[j].score })
