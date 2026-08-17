@@ -31,43 +31,10 @@
       }
     },
     {
-      "name": "ask",
+      "name": "query",
       "additionalProperties": false,
       "required": [
-        "question"
-      ],
-      "properties": {
-        "answer_style": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "expand": {
-          "type": "string"
-        },
-        "intent": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "no_inline": {
-          "type": "boolean"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "question": {
-          "type": "string"
-        }
-      }
-    },
-    {
-      "name": "look",
-      "additionalProperties": false,
-      "required": [
-        "target"
+        "input"
       ],
       "properties": {
         "budget": {
@@ -76,11 +43,11 @@
         "context": {
           "type": "integer"
         },
-        "direction": {
-          "type": "string"
-        },
         "fixed": {
           "type": "boolean"
+        },
+        "input": {
+          "type": "string"
         },
         "k": {
           "type": "integer"
@@ -88,16 +55,13 @@
         "kind": {
           "type": "string"
         },
-        "mode": {
-          "type": "string"
-        },
         "project_root": {
           "type": "string"
         },
-        "target": {
+        "to": {
           "type": "string"
         },
-        "to": {
+        "want": {
           "type": "string"
         }
       }
@@ -161,39 +125,6 @@
         },
         "timeout_secs": {
           "type": "integer"
-        }
-      }
-    },
-    {
-      "name": "ask",
-      "additionalProperties": false,
-      "required": [
-        "question"
-      ],
-      "properties": {
-        "answer_style": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "expand": {
-          "type": "string"
-        },
-        "intent": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "no_inline": {
-          "type": "boolean"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "question": {
-          "type": "string"
         }
       }
     },
@@ -366,45 +297,6 @@
       }
     },
     {
-      "name": "look",
-      "additionalProperties": false,
-      "required": [
-        "target"
-      ],
-      "properties": {
-        "budget": {
-          "type": "integer"
-        },
-        "context": {
-          "type": "integer"
-        },
-        "direction": {
-          "type": "string"
-        },
-        "fixed": {
-          "type": "boolean"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "kind": {
-          "type": "string"
-        },
-        "mode": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "target": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "notes",
       "additionalProperties": false,
       "required": [
@@ -494,6 +386,42 @@
           "type": "string"
         },
         "to": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "query",
+      "additionalProperties": false,
+      "required": [
+        "input"
+      ],
+      "properties": {
+        "budget": {
+          "type": "integer"
+        },
+        "context": {
+          "type": "integer"
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "input": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "want": {
           "type": "string"
         }
       }
@@ -927,43 +855,10 @@
       }
     },
     {
-      "name": "ask",
+      "name": "query",
       "additionalProperties": false,
       "required": [
-        "question"
-      ],
-      "properties": {
-        "answer_style": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "expand": {
-          "type": "string"
-        },
-        "intent": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "no_inline": {
-          "type": "boolean"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "question": {
-          "type": "string"
-        }
-      }
-    },
-    {
-      "name": "look",
-      "additionalProperties": false,
-      "required": [
-        "target"
+        "input"
       ],
       "properties": {
         "budget": {
@@ -972,11 +867,11 @@
         "context": {
           "type": "integer"
         },
-        "direction": {
-          "type": "string"
-        },
         "fixed": {
           "type": "boolean"
+        },
+        "input": {
+          "type": "string"
         },
         "k": {
           "type": "integer"
@@ -984,16 +879,13 @@
         "kind": {
           "type": "string"
         },
-        "mode": {
-          "type": "string"
-        },
         "project_root": {
           "type": "string"
         },
-        "target": {
+        "to": {
           "type": "string"
         },
-        "to": {
+        "want": {
           "type": "string"
         }
       }

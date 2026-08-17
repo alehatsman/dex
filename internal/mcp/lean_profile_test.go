@@ -11,15 +11,15 @@ import (
 // contract (#283/#290) is now tested at the expert tier in TestClonesSimilarGating
 // (clones/similar/search appear iff an embedder is wired AND DEX_EXPERT is set).
 
-// zeroInferenceTools work with no embedder at all (the ask router degrades to
-// BM25+symbol lanes; look routes to grep/read over the pre-computed index; act
-// runs shell). They are the default verb surface and must always be advertised,
-// lean or not. After the 5c collapse (#145) the raw grep primitive moved to
-// expert — its lean-mode coverage is now via look("/regex/"). (repo_map is
-// expert-only; exact-symbol lookup has no standalone tool since #685.)
+// zeroInferenceTools work with no embedder at all (query's router degrades to
+// BM25+symbol lanes; the exact lanes route to grep/signatures over the
+// pre-computed index; act runs shell). They are the default verb surface and
+// must always be advertised, lean or not. After the 5c collapse (#145) the raw
+// grep primitive moved to expert — its lean-mode coverage is now via
+// query("/regex/"). (repo_map is expert-only; exact-symbol lookup has no
+// standalone tool since #685.)
 var zeroInferenceTools = []string{
-	"ask",
-	"look",     // exact-fetch verb (symbol→trace, path:line→locate, path→read, /re/→grep); no embedder needed
+	"query",    // the read verb (merges ask+look, #196): symbol→graph, path:line→slice, path→signatures, /re/→grep; degrades to BM25 without an embedder
 	"act",      // run verb (wraps shell); no embedder needed
 	"remember", // memory verb (write/recall/supersede), no embedder needed; notes' admin tail is expert (#147)
 }

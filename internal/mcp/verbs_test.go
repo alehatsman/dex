@@ -24,11 +24,12 @@ var powerTools = []string{
 // defaultVerbs are the zero-inference verbs that headline the default surface;
 // they don't need an embedder or chat model, so a lean stubServer advertises
 // them regardless of DEX_EXPERT. After the 5c collapse (#145, raw primitives →
-// expert) and the 5d fold (#147, notes' admin tail → expert; remember absorbed
-// write/recall/supersede), the default surface is the pure four verbs. look is
-// the exact-fetch verb (symbol→trace, path:line→locate, path→read, /regex/→grep);
-// act runs (wraps shell); ask degrades to BM25 when no embedder is wired.
-var defaultVerbs = []string{"look", "ask", "act", "remember"}
+// expert), the 5d fold (#147, notes' admin tail → expert), and the #196 two-read-
+// verb merge (ask+look → query), the default surface is query · act · remember.
+// query is the read verb (symbol→graph, path:line→slice, path→signatures,
+// /regex/→grep, prose→evidence pack; degrades to BM25 when no embedder is wired);
+// act runs (wraps shell); remember absorbs write/recall/supersede.
+var defaultVerbs = []string{"query", "act", "remember"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

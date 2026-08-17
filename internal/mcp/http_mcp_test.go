@@ -44,7 +44,7 @@ func mcpConnect(t *testing.T, ctx context.Context, baseURL, path string, hc *htt
 }
 
 // TestHTTPMCPSession is the end-to-end transport test: a real MCP client
-// initializes over streamable HTTP, lists tools, and calls `ask`. It asserts
+// initializes over streamable HTTP, lists tools, and calls `query`. It asserts
 // the session works and that the per-project scoping injected the bound root
 // (the tool resolves the registry project, not the daemon default).
 func TestHTTPMCPSession(t *testing.T) {
@@ -59,25 +59,27 @@ func TestHTTPMCPSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	var hasAsk bool
+	var hasQuery bool
 	for _, tool := range tools.Tools {
-		if tool.Name == "ask" {
-			hasAsk = true
+		if tool.Name == "query" {
+			hasQuery = true
 		}
 	}
-	if !hasAsk {
-		t.Fatalf("ask tool not advertised; got %d tools", len(tools.Tools))
+	if !hasQuery {
+		t.Fatalf("query tool not advertised; got %d tools", len(tools.Tools))
 	}
 
+	// A prose input routes query to the semantic lane (contextRouter); the pack
+	// is wrapped under result.ask in the query envelope.
 	res, err := cs.CallTool(ctx, &sdk.CallToolParams{
-		Name:      "ask",
-		Arguments: map[string]any{"question": "anything"},
+		Name:      "query",
+		Arguments: map[string]any{"input": "anything at all as a question"},
 	})
 	if err != nil {
-		t.Fatalf("CallTool ask: %v", err)
+		t.Fatalf("CallTool query: %v", err)
 	}
 
-	var out ContextOutput
+	var out QueryOutput
 	raw, _ := json.Marshal(res.StructuredContent)
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatalf("decode structured content: %v (raw=%s)", err, raw)
@@ -85,10 +87,13 @@ func TestHTTPMCPSession(t *testing.T) {
 	if out.Status != "no-index" {
 		t.Errorf("status = %q, want no-index (empty index)", out.Status)
 	}
+	if out.Result.Ask == nil {
+		t.Fatalf("prose input should populate result.ask, got %+v", out.Result)
+	}
 	// Scoping proof: the handler stamped the registry root onto the Input, so
 	// the tool resolved the bound project rather than the server default.
-	if out.Project != root {
-		t.Errorf("project = %q, want bound root %q", out.Project, root)
+	if out.Result.Ask.Project != root {
+		t.Errorf("project = %q, want bound root %q", out.Result.Ask.Project, root)
 	}
 }
 

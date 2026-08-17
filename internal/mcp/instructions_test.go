@@ -12,12 +12,13 @@ import (
 // instructionTools are the tool names ServerInstructions() steers agents
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
-// Everyday tools only — the pure four verbs after the 5d fold (#147). Power
-// lanes (notes, shell, grep, read, review_diff, verify_change, search, trace,
-// locate, smells, …) are mentioned in the instructions but gated behind
-// DEX_EXPERT, so they are not required on the default surface — not listed here.
+// Everyday tools only — query (read) · act (run) · remember (write) after the
+// #196 two-read-verb fold (ask+look → query). Power lanes (notes, shell, grep,
+// read, review_diff, verify_change, search, trace, locate, smells, …) are
+// mentioned in the instructions but gated behind DEX_EXPERT, so they are not
+// required on the default surface — not listed here.
 var instructionTools = []string{
-	"ask", "look", "act", "remember",
+	"query", "act", "remember",
 }
 
 // deadToolNames are pre-rename names that must never reappear in the
@@ -31,8 +32,7 @@ var deadToolNames = []string{
 // goodParamSignatures are the tool mnemonics whose param names match the real
 // input schema. Each MUST appear verbatim in ServerInstructions().
 var goodParamSignatures = []string{
-	"ask(question)",  // ContextInput: question field
-	"look(target)",   // LookInput: target field
+	"query(input)",   // QueryInput: input field (merges ask+look, #196)
 	"act(command)",   // ActInput: command field
 	"remember(fact)", // RememberInput: fact field
 }

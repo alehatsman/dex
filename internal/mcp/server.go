@@ -42,25 +42,23 @@ import (
 func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
-Everyday surface = four verbs (ask · look · act · remember):
-1. ask(question) — START HERE for any coding task or question. Routes intent and returns a ranked evidence pack + next_action. Pass intent=assemble for a task-start working set (ranked files, symbols, and the local rules that govern them); ask("review my changes") returns a per-hunk review of your working tree.
-2. look(target) — exact fetch once you can name it: a path → read, a /regex/ → grep, a path:line → locate, a symbol → its call graph.
-3. edit — your job, not dex's.
-4. act(command) — run builds/tests/git; compressed output inside the universal envelope.
+Everyday surface = query (read) · record via remember (write); act runs commands:
+1. query(input) — START HERE for any coding task or question. Its input SHAPE picks the lane, and the answer's precision tracks the input's: a file path → its compressed signatures (raw bytes: use native Read), a path:line or range → that slice, a /regex/ → grep, a bare symbol ('NewServer', '(*Server).Run') → JUST its call graph, a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Force the lane with kind=… and the facet with want=… (want=assemble for a task-start working set; kind=review for a working-tree review). The envelope's route echoes the shape detected and the road not taken.
+2. edit — your job, not dex's.
+3. act(command) — run builds/tests/git; compressed output inside the universal envelope.
 
 Tool mapping (use these instead of native):
-- ask(question)   instead of Grep/rg for concept searches or reading files blindly — a routed evidence pack (semantic + symbol + graph); ask("review my changes") for a working-tree review
-- look(target)    instead of Read/rg/manual navigation — a path → read, a /regex/ → grep, a path:line → locate, a symbol → callers/callees
+- query(input)    instead of Grep/rg/Read/manual navigation — one read verb: a path → signatures, a /regex/ → grep, a path:line → slice, a symbol → call graph, prose → routed evidence pack (semantic + symbol + graph). Raw file bytes are still the native Read tool's job.
 - act(command)    instead of Bash — shell with compressed output in the envelope
 - remember(fact)  instead of re-deriving facts — write a durable finding, recall with query=…, or correct a stale one with fact + supersedes=<id>
 
 Power lanes (gated behind DEX_EXPERT — the verbs above cover everyday work):
-- shell / grep / read — the raw primitives act and look wrap; reach here for the primitive directly
+- shell / grep / read — the raw primitives act and query wrap; reach here for the primitive directly
 - notes — the full knowledge surface (delete, pin, gc, consolidate, export/import, relate); remember covers everyday write/recall/supersede
-- review_diff — targeted PR/branch/ref review (ask covers the working tree); verify_change — find and run the tests a change implicates
+- review_diff — targeted PR/branch/ref review (query kind=review covers the working tree); verify_change — find and run the tests a change implicates
 - trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / session / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__ask,mcp__dex__look,mcp__dex__act,mcp__dex__remember" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query,mcp__dex__act,mcp__dex__remember" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -911,11 +909,10 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 func registerTools(srv *sdk.Server, h toolSurface, embedAvailable bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 
-	// The four verbs — constant across every profile.
-	registerBaselineTools(srv, h, td) // look (fetch) + act (run): the index-free floor
-	// ask is the always-on front door (#140, ask-merge slice 1): the intent-routed
-	// entry every profile sees. It BM25-falls-back on its own when no embedder is wired.
-	registerAskTool(srv, h, td)
+	// The two-verb read surface (#196, epic #195): query merges ask+look into one
+	// classifier over the same engine. act remains until S3 removes it.
+	registerBaselineTools(srv, h, td)                 // act (run): the index-free floor
+	registerQueryTool(srv, h, td)                     // query — the single read verb (merges ask + look)
 	registerEverydayTools(srv, h, td, embedAvailable) // remember (durable memory)
 
 	// DEX_EXPERT overlays the granular power lanes additively, in any profile.
@@ -1374,47 +1371,30 @@ func registerBaselineTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"and compression as `shell` (its alias); adds cost.saved_pct and, on a recognized failure " +
 			"signature, a next step to remember the gotcha. Use raw:true to skip compression. Timeout: 60 s."),
 	}, actHandler(h))
-
-	// look — the exact-fetch verb of the four-verb surface (#110), promoted to the
-	// always-on floor (#145) so every profile keeps fetch with no index/embedder.
-	// It classifies `target` and routes to the right exact lane — a file path →
-	// read, a `/regex/` → grep, a `path:line` → locate, a symbol → trace — so the
-	// agent stops guessing which primitive to reach for. Deterministic classifier,
-	// no chat needed. Where `ask` infers, `look` fetches.
-	addTool(srv, &sdk.Tool{
-		Name:        "look",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Exact fetch for a target you can already name — dex classifies `target` and routes " +
-			"to the right lane: a file path ('internal/mcp/server.go') → read, a `/regex/` ('/func .*Verb/') → " +
-			"grep, a `path:line` ('server.go:829') → locate, anything else → trace the symbol's call graph " +
-			"('NewServer', '(*Server).Run', 'mcp.NewServer'). Pass `kind` (read|grep|trace|locate) to force the " +
-			"lane for an ambiguous target. Lane pass-throughs: `mode` (read), `direction`/`to` (trace), " +
-			"`context`/`fixed` (grep), `k` (result cap). Every result carries `trust: exact` — look never infers; " +
-			"reach for `ask` when you cannot yet name the target. Returns the underlying lane's status " +
-			"(ok / no-index / not-found / no-matches / …) and, after a grep, a `next` step to read the first hit."),
-	}, lookHandler(h))
 }
 
-// registerAskTool wires the intent router (#125) as the always-on front door
-// (#140): the intent-routed entry every profile sees for understanding code. It
-// BM25-falls-back on its own when no embedder is wired.
-func registerAskTool(srv *sdk.Server, h toolSurface, td func(string) string) {
+// registerQueryTool wires the single read verb of the two-verb surface (#196,
+// epic #195, spec specs/two-verb-surface.md). query merges the four-verb `ask`
+// (infer intent from a question) and `look` (exact fetch of a named target) into
+// one classifier over the same engine — output precision tracks input precision.
+// It BM25-falls-back on its own when no embedder is wired.
+func registerQueryTool(srv *sdk.Server, h toolSurface, td func(string) string) {
 	addTool(srv, &sdk.Tool{
-		Name:        "ask",
+		Name:        "query",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Front door for understanding code: ask a question, get an evidence bundle. " +
-			"Routes intent and composes semantic search + symbol lookup + graph expansion into one call " +
-			"(BM25 + symbol lanes still work when no embedder is wired). " +
-			"By default synthesis is OFF — returns evidence bundle + `next_action` (no chat leg, no latency). " +
-			"Pass `answer_style: \"brief\"` to enable a synthesized, citation-bearing prose response. " +
-			"Returns `semantic_hits`, `symbols`, `suggested_reads` with contents inlined by default. " +
-			"Each SymbolHit carries `signature` and `doc` so you can see the API without reading the body. " +
-			"`annotations` per-path: sibling `tests`, `nearest_doc`; editing_context adds `last_commit`/`last_author`/`owners`; " +
-			"architecture adds `build_tags`/`package`. `references` carries call-graph edges for callers/callees intents. " +
-			"Intent inferred automatically (behavior_search/symbol_lookup/callers/callees/architecture/package_topology/editing_context) — " +
-			"pass `intent` only to override. Pass `no_inline:true` to omit content payloads. " +
-			"Returns 'no-index' / 'embedding-service-unreachable' for graceful fallback to grep."),
-	}, h.contextRouter)
+		Description: td("The read verb — one call to read the codebase intelligence. Its input SHAPE picks " +
+			"the lane and the answer's precision: a file path ('internal/mcp/server.go') → its compressed " +
+			"signatures (raw bytes are the native Read tool's job), a `path:line` " +
+			"('server.go:829') or range ('server.go:120-140') → that slice, a `/regex/` ('/func .*Verb/') → grep, a bare symbol ('NewServer', " +
+			"'(*Server).Run', 'mcp.NewServer') → JUST its call graph, and a prose question ('how are edits " +
+			"debounced?') → a ranked semantic evidence pack (semantic_hits + symbols + suggested_reads, contents " +
+			"inlined). A named symbol earns a precise (graph) answer, never a fuzzy one — that is the narrow " +
+			"default. Force the lane with `kind` (read|grep|locate|symbol|callers|callees|impact|path|search|" +
+			"editing|assemble|architecture|packages|orient|review) and the facet with `want`. The envelope's " +
+			"`route` echoes the shape it detected and the alternative it did not take; `trust` carries per-result " +
+			"provenance (exact | semantic | name-based); `next` offers the road not taken. Empty input returns the " +
+			"session-start orientation map."),
+	}, queryHandler(h))
 }
 
 // Version is the build version. A release build overrides it via

@@ -42,14 +42,15 @@ func registeredToolNames(t *testing.T, embedAvailable bool) map[string]bool {
 	return names
 }
 
-// The four verbs are constant across every profile (#110 step 8): ask · look · act
-// · remember appear whether or not an embedder is wired. This is the regression
-// guard for the bug where registerTools gated remember behind `if !weakModel` — a
-// weak model silently lost durable memory. Post-#149 the gate is structurally
-// impossible (registerTools takes no model flag); the verb set never changes with
-// deployment, only ask's internal capability degrades (exercised elsewhere).
-func TestFourVerbsConstantAcrossProfiles(t *testing.T) {
-	verbs := []string{"ask", "look", "act", "remember"}
+// The everyday verbs are constant across every profile (#110 step 8, #196):
+// query · act · remember appear whether or not an embedder is wired. This is the
+// regression guard for the bug where registerTools gated remember behind
+// `if !weakModel` — a weak model silently lost durable memory. Post-#149 the gate
+// is structurally impossible (registerTools takes no model flag); the verb set
+// never changes with deployment, only query's internal capability degrades
+// (exercised elsewhere). (Post-#196 the two read verbs ask+look are one: query.)
+func TestVerbsConstantAcrossProfiles(t *testing.T) {
+	verbs := []string{"query", "act", "remember"}
 	profiles := []struct {
 		name           string
 		embedAvailable bool
@@ -61,7 +62,7 @@ func TestFourVerbsConstantAcrossProfiles(t *testing.T) {
 		names := registeredToolNames(t, p.embedAvailable)
 		for _, v := range verbs {
 			if !names[v] {
-				t.Errorf("[%s] verb %q missing — the four verbs must be constant across profiles", p.name, v)
+				t.Errorf("[%s] verb %q missing — the everyday verbs must be constant across profiles", p.name, v)
 			}
 		}
 	}
@@ -69,17 +70,17 @@ func TestFourVerbsConstantAcrossProfiles(t *testing.T) {
 
 // A profile never adds power lanes on its own: with DEX_EXPERT unset, every profile
 // (including the weak-model one that previously suppressed the everyday tools
-// entirely) exposes EXACTLY the four verbs — no expert tool leaks in.
-func TestNonExpertProfilesExposeOnlyFourVerbs(t *testing.T) {
+// entirely) exposes EXACTLY the everyday verbs — no expert tool leaks in.
+func TestNonExpertProfilesExposeOnlyEverydayVerbs(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "")
 	for _, embed := range []bool{false, true} {
 		names := registeredToolNames(t, embed)
-		if len(names) != 4 {
-			t.Errorf("embed=%v: expected exactly 4 verbs, got %d: %v", embed, len(names), names)
+		if len(names) != 3 {
+			t.Errorf("embed=%v: expected exactly 3 verbs (query·act·remember), got %d: %v", embed, len(names), names)
 		}
-		for _, leaked := range []string{"search", "trace", "shell", "grep", "read", "notes", "review_diff"} {
+		for _, leaked := range []string{"ask", "look", "search", "trace", "shell", "grep", "read", "notes", "review_diff"} {
 			if names[leaked] {
-				t.Errorf("embed=%v: expert tool %q leaked into the non-expert surface", embed, leaked)
+				t.Errorf("embed=%v: tool %q leaked into the non-expert surface", embed, leaked)
 			}
 		}
 	}
@@ -87,13 +88,13 @@ func TestNonExpertProfilesExposeOnlyFourVerbs(t *testing.T) {
 
 // DEX_EXPERT is an additive overlay, orthogonal to the profile: setting it exposes
 // the power lanes even for a weak local model (an explicit operator opt-in), while
-// the four verbs remain present.
+// the everyday verbs remain present.
 func TestExpertOverlayIsOrthogonalToProfile(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "1")
 	for _, embed := range []bool{false, true} {
 		names := registeredToolNames(t, embed)
-		if !names["remember"] || !names["ask"] {
-			t.Errorf("embed=%v: four verbs must survive the expert overlay", embed)
+		if !names["remember"] || !names["query"] {
+			t.Errorf("embed=%v: everyday verbs must survive the expert overlay", embed)
 		}
 		if !names["trace"] || !names["shell"] {
 			t.Errorf("embed=%v: DEX_EXPERT power lanes must overlay regardless of profile", embed)
