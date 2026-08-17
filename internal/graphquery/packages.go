@@ -2,9 +2,23 @@ package graphquery
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/alehatsman/dex/internal/graph"
 )
+
+// isFixturePkgPath reports whether a package path is a test fixture or vendored
+// module that must not appear in the project's package DAG. Mirrors the
+// exclusion store.InternalPackageImports applies in SQL (NOT LIKE '%testdata%'
+// / '/vendor/') so the two package-graph surfaces agree — otherwise JS/TS
+// fixtures under internal/**/testdata/**/src/* leak in as first-class packages
+// and pollute the node count, fan-in, and PageRank (#181).
+func isFixturePkgPath(p string) bool {
+	return strings.HasPrefix(p, "testdata/") ||
+		strings.Contains(p, "/testdata/") ||
+		strings.HasPrefix(p, "vendor/") ||
+		strings.Contains(p, "/vendor/")
+}
 
 // PackageStat is one node in the package import graph: a package (a Go package,
 // or a JS/TS per-file module) with its import degrees, PageRank over the import
@@ -65,6 +79,9 @@ func BuildPackageGraph(view *View) PackageGraph {
 	for _, n := range view.NodesByID {
 		if n.Kind != graph.NodePackage || n.PackagePath == "" {
 			continue
+		}
+		if isFixturePkgPath(n.PackagePath) {
+			continue // test fixtures / vendored modules are not project packages (#181)
 		}
 		internal[n.PackagePath] = struct{}{}
 		if n.Language() == "go" {

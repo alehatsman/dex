@@ -148,6 +148,63 @@ func TestBuildPackageGraphNoPackages(t *testing.T) {
 	}
 }
 
+// TestBuildPackageGraphExcludesFixtures: JS/TS fixture modules under a
+// testdata/ tree that import each other (so they'd survive the isolated-module
+// guard) must NOT leak into the DAG — they are not project packages. Only the
+// real Go package chain survives. Mirrors store.InternalPackageImports' SQL
+// exclusion so the two package-graph surfaces agree (#181).
+func TestBuildPackageGraphExcludesFixtures(t *testing.T) {
+	pkg := func(id, path, name string) Node {
+		return Node{ID: id, Kind: graph.NodePackage, Name: name, PackagePath: path}
+	}
+	imp := func(id, importer, imported string) Node {
+		return Node{ID: id, Kind: graph.NodeImport, PackagePath: importer, QualifiedName: imported}
+	}
+	tsPkg := func(id, path string) Node {
+		return Node{ID: id, Kind: graph.NodePackage, PackagePath: path,
+			MetadataJSON: []byte(`{"language":"typescript"}`)}
+	}
+	tsImp := func(id, importer, specifier, target string) Node {
+		return Node{ID: id, Kind: graph.NodeImport, PackagePath: importer,
+			QualifiedName: specifier,
+			MetadataJSON:  []byte(`{"language":"typescript","target":"` + target + `"}`)}
+	}
+	edge := func(srcPkgID, impID string) Edge {
+		return Edge{Kind: graph.EdgeImports, SrcID: srcPkgID, DstID: impID}
+	}
+	view := &View{
+		NodesByID: map[string]Node{
+			"pa":   pkg("pa", "mod/a", "a"),
+			"pb":   pkg("pb", "mod/b", "b"),
+			"ia-b": imp("ia-b", "mod/a", "mod/b"),
+			// fixture pair with a *resolved intra-fixture edge* — would otherwise emit.
+			"fx":   tsPkg("fx", "internal/graph/testdata/ts_simple/src/main"),
+			"fy":   tsPkg("fy", "internal/graph/testdata/ts_simple/src/handler"),
+			"fx-y": tsImp("fx-y", "internal/graph/testdata/ts_simple/src/main", "./handler", "internal/graph/testdata/ts_simple/src/handler"),
+			// vendored module — also excluded.
+			"vz": tsPkg("vz", "web/vendor/left-pad/index"),
+		},
+		EdgesByKind: map[graph.EdgeKind][]Edge{
+			graph.EdgeImports: {
+				edge("pa", "ia-b"),
+				edge("fx", "fx-y"), // fixture edge — must be dropped
+			},
+		},
+	}
+	out := BuildPackageGraph(view)
+	for _, n := range out.Nodes {
+		if isFixturePkgPath(n.Package) {
+			t.Errorf("fixture/vendor package leaked into DAG: %q", n.Package)
+		}
+	}
+	if len(out.Nodes) != 2 { // only mod/a, mod/b
+		t.Fatalf("nodes = %d, want 2 (real Go packages only): %+v", len(out.Nodes), out.Nodes)
+	}
+	if len(out.Edges) != 1 || out.Edges[0].FromPackage != "mod/a" || out.Edges[0].ToPackage != "mod/b" {
+		t.Errorf("edges = %+v, want single mod/a→mod/b", out.Edges)
+	}
+}
+
 // Node.Language follows the extractor convention: tree-sitter stamps
 // Metadata["language"]; the Go extractor leaves it absent. So missing,
 // unparseable, or language-less metadata reads as Go (#582).
