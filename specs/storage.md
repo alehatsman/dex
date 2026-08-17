@@ -62,6 +62,17 @@ query specs'.
 - WHEN concurrent writers contend for the index, each waits a bounded time for
   the write lock (WAL journaling, bounded busy-timeout) rather than failing
   immediately, so a `watch` re-index and a manual `dex index` can overlap.
+- WHERE a single process holds the store, access is pinned to **one connection**
+  (`SetMaxOpenConns(1)`, mirroring `veccache` and the #95 §6.2 one-store/one-reader
+  decision), so intra-process reads and writes serialize through that connection.
+  This closes the `SQLITE_BUSY_SNAPSHOT` gap (#185): the DSN `_busy_timeout` retries
+  a plain `SQLITE_BUSY` but *not* a snapshot that a second pool connection upgrades
+  read→write, which deadlocks non-retriably. One connection cannot hold a stale
+  snapshot against itself, so the failure mode is structurally impossible rather
+  than merely bounded. Safe because every write transaction is self-contained
+  (uses only its `tx` handle, never re-enters the pool), so the single connection
+  is never awaited by its own holder. Cross-process contention is unchanged — each
+  process owns its own connection and still relies on WAL + `_busy_timeout`.
 - WHEN a re-index completes, the store prunes chunks not seen in that pass, so
   vanished files leave no stale rows.
 - WHEN search reads the index, the store serves both a vector-similarity leg and
@@ -111,7 +122,8 @@ query specs'.
   `migrate: no such module: fts5` and a reindex from such a binary wipes the
   index. (Enforced in `tasks.yml`/`Dockerfile`.)
 - [x] Concurrent writers are bounded by WAL + busy-timeout; prune removes stale
-  chunks.
+  chunks. Intra-process access is pinned to one connection (`SetMaxOpenConns(1)`),
+  making `SQLITE_BUSY_SNAPSHOT` structurally impossible (#185).
 - [x] Hybrid read path (vector + BM25 fused) with graceful FTS-parse fallback and
   a bounded rerank cache.
 - [x] `knowledge_facts.revision_count` incremented on ON CONFLICT UPDATE; migrated

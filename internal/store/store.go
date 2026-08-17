@@ -255,6 +255,18 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	// Pin the store to a single connection (#185, mirroring veccache and the #95
+	// §6.2 one-store/one-reader decision). `_busy_timeout` retries a plain
+	// SQLITE_BUSY but NOT a SQLITE_BUSY_SNAPSHOT — a read snapshot that a second
+	// pool connection upgrades to a write, which deadlocks non-retriably. One
+	// connection cannot hold a stale snapshot against itself, so intra-process
+	// reads and writes serialize through it and the snapshot race is structurally
+	// impossible. Safe against nested-acquire deadlock because every write
+	// transaction is self-contained: it uses only its own `tx` handle and never
+	// re-enters the pool while the connection is held. Cross-process contention is
+	// unchanged — each process owns its own connection and still relies on WAL +
+	// `_busy_timeout`.
+	db.SetMaxOpenConns(1)
 	s := &Store{db: db, opts: opts, knowledgeStore: knowledgeStore{db: db}}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
