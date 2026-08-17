@@ -357,6 +357,9 @@ func (s *Server) loadContextFacts(ctx context.Context, st *store.Store, in Conte
 			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+capFactBody(f.Body))
 		}
 	}
+	// Fold peer agents' bus findings after durable facts — lower-trust, clearly
+	// tagged, self-filtered and TTL-bounded (#180 swarm findings bus).
+	s.foldPeerFindings(ctx, st, in, out)
 }
 
 // maxInjectedFactBody bounds how much of one fact body ask inlines into

@@ -66,6 +66,7 @@ func dispatchCmd(ctx context.Context, cmd string, args []string) error {
 		"clone":          cmdClone,
 		"hook":           cmdHook,
 		"notes":          cmdKnowledge,
+		"agent":          cmdAgent,
 		"compress":       noCtx(cmdCompress),
 		"compress-stdin": noCtx(cmdCompressStdin),
 		"shell-hook":     noCtx(cmdShellHook),

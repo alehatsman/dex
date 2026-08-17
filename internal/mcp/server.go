@@ -188,6 +188,8 @@ type Server struct {
 	Retrieve       retrieve.Service     // query-time ranking service; holds the cross-encoder + shared rerank cache (#473)
 	AutoWatch      AutoWatchConfig      // lazy per-project watcher; zero value disables
 	CCRDir         string               // optional override for the proxy CCR tee dir; defaults to ~/.cache/dex/proxy/tee (#630)
+	AgentID        string               // this process's identity on the swarm findings bus (#180); minted per-process, overridable via DEX_AGENT_ID. Self-filters own findings out of the recall fold.
+	AgentRole      string               // optional human-legible role for bus provenance (DEX_AGENT_ROLE); empty = none
 
 	watcherState  // project watcher goroutines
 	sessionState  // per-MCP-session tracking (throttle, dedup, body handles)

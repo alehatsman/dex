@@ -58,6 +58,11 @@ var allEnvVars = []envVar{
 	{"DEX_WATCH_DEBOUNCE", "500ms", "Quiet window before the MCP auto-watcher re-indexes after a burst of fs events.", "watch", false},
 	{"DEX_WATCH_MAX_DELAY", "5s", "Cap on how long a never-quiet stream of saves can defer a re-index; once the burst's first event is older than this, the next event flushes. Negative disables.", "watch", false},
 
+	// swarm — the multi-agent findings bus (#180). Identity is per-process by
+	// default; set these to give concurrent agents a stable, legible handle.
+	{"DEX_AGENT_ID", "auto", "This process's identity on the swarm findings bus. Unset = a random per-process id minted at startup. Set to a stable handle so `dex agent post` (via act) and the MCP server share one identity, and so peer findings are self-filtered correctly.", "swarm", false},
+	{"DEX_AGENT_ROLE", "", "Optional human-legible role for bus provenance (e.g. reviewer, builder). Surfaced in the [peer-agent:<id>] tag on folded findings.", "swarm", true},
+
 	// tuning — hidden unless --all. Most installs leave these alone.
 	{"DEX_EMBED_DIM", "0", "Truncate embedding vectors to this many dimensions and re-normalise (Matryoshka truncation). 0 = use full model output. Requires `dex reindex` after changing.", "tuning", false},
 	{"DEX_EMBED_BATCH", "auto", "Max chunks per /v1/embeddings call. Unset = backend-aware auto: 16 for auto-detected ollama; else VRAM-sized (8/64/256 for <4 GB/4-16 GB/>16 GB). Explicit value overrides.", "tuning", false},

@@ -749,36 +749,12 @@ func (s *knowledgeStore) KnowledgeTopForAsk(ctx context.Context, k int) ([]Knowl
 // different dimension (e.g. the embed model changed), it is dropped and
 // recreated — the embeddings are re-backfilled lazily on the next recall.
 func (s *knowledgeStore) ensureFactVecTable(ctx context.Context, dim int) error {
-	if dim <= 0 {
-		return nil
-	}
-	var recorded string
-	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='fact_vecs_dim'`).Scan(&recorded)
-	want := fmt.Sprintf("%d", dim)
-	if recorded != "" && recorded != want {
-		if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS fact_vecs`); err != nil {
-			return fmt.Errorf("ensure fact vec table: drop on dim change: %w", err)
-		}
-	}
-	stmts := []string{
-		fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS fact_vecs USING vec0(
-		   embedding FLOAT[%d] distance_metric=cosine
-		 )`, dim),
-		`CREATE TRIGGER IF NOT EXISTS knowledge_facts_vec_ad AFTER DELETE ON knowledge_facts BEGIN
-		   DELETE FROM fact_vecs WHERE rowid = old.id;
-		 END`,
-	}
-	for _, q := range stmts {
-		if _, err := s.db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("ensure fact vec table: %w", err)
-		}
-	}
-	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO meta(key, value) VALUES('fact_vecs_dim', ?)
-		   ON CONFLICT(key) DO UPDATE SET value=excluded.value`, want); err != nil {
-		return fmt.Errorf("ensure fact vec table: record dim: %w", err)
-	}
-	return nil
+	return ensureSidecarVecTable(ctx, s.db, sidecarVecSpec{
+		vecTable:   "fact_vecs",
+		srcTable:   "knowledge_facts",
+		trigger:    "knowledge_facts_vec_ad",
+		dimMetaKey: "fact_vecs_dim",
+	}, dim)
 }
 
 // KnowledgeUpsertVec stores (or replaces) the embedding for a fact id in the

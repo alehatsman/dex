@@ -97,10 +97,19 @@ findings and durable facts then rank on one axis. FTS stays only as a keyword
 fallback when no embedder is configured (`DEX_EMBED_ENGINE=none` / BM25-only).
 
 - New store method `AgentQueryVec(ctx, queryVec, category, k, minSim)` mirroring
-  `KnowledgeQueryVec` — same hybrid rank shape, scoped to `agent_messages` with a
-  vector column added to the table (migration; nullable, back-compat).
-- `AgentPost` grows an embed side-effect on `category=finding` (best-effort, same
-  as `embedFact`: no embedder → row still stored, FTS-only recall).
+  `KnowledgeQueryVec` — cosine KNN + `minSim` floor + category filter, scoped to
+  `agent_messages`. Vectors live in an **`agent_msg_vecs` sidecar `vec0` table**
+  keyed on the message rowid, the same shape as `fact_vecs` — *not* a nullable
+  column on the row (SHIPPED as such; the earlier "nullable column" wording was
+  reconciled to reality: the codebase's vector pattern is a sidecar vec0 table,
+  which gives KNN `MATCH`/`distance` for free and cascades on delete via an
+  `AFTER DELETE` trigger). The DDL for both sidecars is one shared
+  `ensureSidecarVecTable` helper. Recall self-filters the caller's own `agent_id`
+  and applies the TTL at fold time.
+- `AgentPostVec` grows an embed side-effect on `category=finding` (best-effort,
+  same as `embedFact`: no embedder → row still stored, FTS-OR recall via
+  `AgentReadAny`). Write-time GC (`AgentPrune`, 7-day retention, wider than the
+  fold TTL) bounds bus growth so findings age out instead of accreting.
 
 **Constraint 2 — provenance + liveness.** A peer finding is unverified. It folds
 in tagged `[peer-agent:<id>]` (never `[<archetype>]`, so the agent can tell a
@@ -172,6 +181,17 @@ S1 next (reuses the same bus + the `indexingNotice` caveat rail; independent of
 S2's vector work). S3 last — orthogonal substrate (`share_cache`), lowest risk,
 pure latency/token win. Each lands as its own PR with its own before/after gate,
 matching the #95/#155 epic+narrow-child pattern.
+
+**S2 SHIPPED (#180):** `agent_msg_vecs` sidecar + `AgentQueryVec`/`AgentReadAny`,
+per-process agent identity (`DEX_AGENT_ID`/`DEX_AGENT_ROLE`), real `dex agent`
+CLI verb (promotes the throwaway beacon), and the `foldPeerFindings` read-side
+fold into the `ask()` pack (vector recall + `[peer-agent:<id>]` provenance +
+`annotateLiveness` + 24h TTL, self-filtered). Full `ci` (incl. -race) green;
+live two-process vector recall validated (a no-keyword-overlap query recalled a
+peer finding that FTS implicit-AND misses). **Deferred to when #167 Parts 1/3
+land:** the promotion-to-durable half of the lifecycle (a finding graduating to
+a fact via the `last_retrieved` bump + referent-overlap supersede) — the
+ephemeral/TTL half ships now; promotion has no machinery yet.
 
 ## Measurement gate (epic-level, from #169)
 
