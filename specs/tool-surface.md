@@ -15,6 +15,12 @@ tracking: alehatsman/dex#110
 
 # Tool surface — the agent-facing contract
 
+> **Superseded going forward by [`two-verb-surface.md`](two-verb-surface.md)
+> (#195).** This spec documents the **shipped** four-verb surface
+> (`ask · look · act · remember`) and remains the accepted record of what is in
+> the tree today. The forward direction collapses it to two verbs
+> (`query · record`); read the successor for the target design.
+
 ## Goal
 
 Redefine dex's agent-facing interface from scratch into the most token-efficient
