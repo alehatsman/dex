@@ -160,6 +160,12 @@ type GraphNode struct {
 	ID            string `json:"id"`
 	QualifiedName string `json:"qualified_name,omitempty"`
 	Kind          string `json:"kind,omitempty"`
+	// Import-graph centrality — populated only by the package_topology lane so
+	// an agent can rank the load-bearing packages in one call (#190). omitempty
+	// keeps every other intent's nodes at the old {id,kind} shape.
+	InDegree  int     `json:"in_degree,omitempty"`
+	OutDegree int     `json:"out_degree,omitempty"`
+	PageRank  float64 `json:"page_rank,omitempty"`
 }
 
 type GraphEdge struct {

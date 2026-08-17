@@ -61,18 +61,26 @@ workspace and gated so a Go repo never reaches it.
   compact IDs — no view lookup, no wire-shape change. Node order is preserved
   (in-degree desc), so the `MaxGraphNodes`/`MaxGraphEdges` caps keep the most
   load-bearing foundation projects.
-- **Dispatch (rollup-first):** `GraphLanePackageTopology` tries `projectTopology()`;
-  it emits nothing when `projectOf == nil` (Go / non-workspace), so the dispatch
-  falls back to the existing neighborhood `packageTopology()`. **The root gate —
-  not the emptiness of the rollup — decides**, so the JS/TS answer is the whole
-  workspace DAG **stable regardless of which files the semantic lane surfaced**,
-  and the Go answer is its module topology with fixtures never in reach.
+- **Dispatch (whole-DAG, three tiers — #190):** `GraphLanePackageTopology` tries,
+  in order, `projectTopology()` (JS/TS workspace rollup, gated on a workspace
+  root), then `moduleTopology()` (the module import DAG, every internal package
+  ranked by fan-in — parity with `dex graph packages`), then `packageTopology()`
+  (the old neighborhood lane, only if the repo has no indexed package graph at
+  all). Every tier returns the *whole* DAG, so the answer is **stable regardless
+  of which files the semantic lane surfaced** — the defect that forced a
+  bottom-up read onto the CLI. The root gate keeps JS/TS fixtures out of the
+  project tier; `BuildPackageGraph`'s testdata/vendor filter (#181) keeps them
+  out of the module tier.
+- **Ranking on the wire (#190):** both topology tiers project each
+  `PackageStat`'s `InDegree`/`OutDegree`/`PageRank` onto `GraphNode`
+  (`in_degree`/`out_degree`/`page_rank`, all `omitempty`). Only these lanes
+  populate them, so every other intent's nodes keep the lean `{id,kind}` shape.
+  This is the fan-in profile a bottom-up architecture read needs — no second
+  CLI call.
 
 Non-goals (filed as follow-ups on #151):
 - Suppressing doc-window inlining for the topology intent (the ~15 KB waste is the
   #113 inline pass, separable).
-- Carrying in/out-degree + PageRank into the `GraphNode` wire type (ID/kind only
-  today) — would change the wire shape; out of scope.
 
 ## Validation
 
@@ -81,6 +89,13 @@ Non-goals (filed as follow-ups on #151):
   dropped). A Go-style view with `projectOf → ""` → unchanged module fallback
   (same output as today). `projectOf == nil` → module fallback.
 - **Regression:** the 9 existing `EnrichGraph` test callers pass `nil` and stay green.
+- **Unit (module DAG, #190):** a Go-style view (a→b, a→c, b→c) with `projectOf ==
+  nil` and *no* semHits → `package_topology` emits all 3 packages ranked by fan-in
+  (c first, in=2), each carrying in/out-degree + PageRank, buried testdata
+  fixtures excluded. Proves the answer is independent of the semantic neighborhood.
 - **Live (acme-frontend):** `ask(package_topology)` surfaces the 23-project DAG
   in `graph.edges` (`@acme/common`/`@acme/build-helpers` high in-degree).
+- **Live (dex, Go, #190):** `ask(package_topology)` returns the whole module DAG
+  ranked by fan-in with `in_degree`/`page_rank` per node — parity with
+  `dex graph packages`, no CLI drop-out.
 - `mooncake task ci` green.

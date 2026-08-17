@@ -35,6 +35,15 @@ type GraphNode struct {
 	ID            string
 	QualifiedName string
 	Kind          string
+
+	// Import-graph centrality, populated only by the package_topology lane
+	// (projectTopology / moduleTopology) so an agent can rank the load-bearing
+	// packages — the fan-in profile that *is* a bottom-up architecture read.
+	// Zero for every other intent; the wire twin drops them via omitempty so
+	// call-graph neighborhoods stay lean (#190).
+	InDegree  int     // internal packages importing this one
+	OutDegree int     // internal packages this one imports
+	PageRank  float64 // PageRank over the import DAG (importer → imported)
 }
 
 type GraphEdge struct {
@@ -446,24 +455,66 @@ func (e *graphEnricher) projectTopology() bool {
 	if e.projectOf == nil {
 		return false
 	}
-	pg := graphquery.BuildProjectGraph(e.view, e.projectOf)
+	// Project names are already compact IDs (`@acme/common`) — emit them verbatim.
+	return e.emitPackageGraph(graphquery.BuildProjectGraph(e.view, e.projectOf), func(pkg string) string { return pkg })
+}
+
+// moduleTopology surfaces the whole module import DAG — every internal package
+// ranked by import fan-in — for a Go (or any non-workspace) repo, matching what
+// `dex graph packages` produces on the CLI. This is the #190 fix: the old
+// package_topology fallback (packageTopology) only surfaced the packages the
+// semantic lane happened to touch, so a bottom-up architecture read had no
+// agent-surface path and had to drop to the CLI. BuildPackageGraph orders nodes
+// in-degree descending, so when the MaxGraphNodes/MaxGraphEdges caps bite, the
+// load-bearing core is what survives. Returns false (emitting nothing) when the
+// repo has no indexed package graph, so the dispatch can still fall through to
+// the neighborhood lane.
+func (e *graphEnricher) moduleTopology() bool {
+	// Full path → compact tail (`.../internal/store` → `store`), matching the
+	// package IDs the rest of the ask graph uses (see CompactID).
+	return e.emitPackageGraph(graphquery.BuildPackageGraph(e.view), PkgTail)
+}
+
+// emitPackageGraph projects a computed package/project import DAG onto the wire
+// GraphResult, shared by projectTopology (JS/TS) and moduleTopology (Go). It
+// carries in/out-degree + PageRank onto each node (#190) so an agent can rank
+// packages without a second CLI call; compactID maps the DAG's package key to
+// the ID an agent sees. Honors the node/edge caps and the seen-sets so it
+// composes with anything already emitted. Returns whether any node landed.
+func (e *graphEnricher) emitPackageGraph(pg graphquery.PackageGraph, compactID func(string) string) bool {
 	if len(pg.Nodes) == 0 {
 		return false
 	}
 	for _, n := range pg.Nodes {
-		if _, ok := e.seenNode[n.Package]; ok || len(e.gr.Nodes) >= MaxGraphNodes {
+		id := compactID(n.Package)
+		if _, ok := e.seenNode[id]; ok || len(e.gr.Nodes) >= MaxGraphNodes {
 			continue
 		}
-		e.seenNode[n.Package] = struct{}{}
-		e.gr.Nodes = append(e.gr.Nodes, GraphNode{ID: n.Package, Kind: string(graph.NodePackage)})
+		e.seenNode[id] = struct{}{}
+		// Carry the full path only when the compact ID lost information — for
+		// Go, id is the tail (`store`) and the path disambiguates; for JS/TS
+		// projects id already is the full name, so drop the redundant twin.
+		qname := n.Package
+		if qname == id {
+			qname = ""
+		}
+		e.gr.Nodes = append(e.gr.Nodes, GraphNode{
+			ID:            id,
+			QualifiedName: qname,
+			Kind:          string(graph.NodePackage),
+			InDegree:      n.InDegree,
+			OutDegree:     n.OutDegree,
+			PageRank:      n.PageRank,
+		})
 	}
 	for _, ed := range pg.Edges {
-		key := ed.FromPackage + "|" + string(graph.EdgeImports) + "|" + ed.ToPackage
+		from, to := compactID(ed.FromPackage), compactID(ed.ToPackage)
+		key := from + "|" + string(graph.EdgeImports) + "|" + to
 		if _, ok := e.seenEdge[key]; ok || len(e.gr.Edges) >= MaxGraphEdges {
 			continue
 		}
 		e.seenEdge[key] = struct{}{}
-		e.gr.Edges = append(e.gr.Edges, GraphEdge{From: ed.FromPackage, To: ed.ToPackage, Kind: string(graph.EdgeImports)})
+		e.gr.Edges = append(e.gr.Edges, GraphEdge{From: from, To: to, Kind: string(graph.EdgeImports)})
 	}
 	return len(e.gr.Nodes) > 0
 }
@@ -510,15 +561,22 @@ func (e *graphEnricher) runForIntent(intent string) {
 		// ("these nodes ARE the structural overview") would be a lie (#537).
 		e.importEdgesAmong(pkgs)
 	case GraphLanePackageTopology:
-		// Project rollup first (#151): when projectOf is set — the caller resolved
-		// a genuine workspace root (resolve.IsWorkspaceRoot) — the whole-workspace
-		// project DAG is the right answer for a JS/TS monorepo, and is stable
-		// regardless of which files the semantic lane happened to surface. It is
-		// nil for a Go repo (no workspace root), so projectTopology emits nothing
-		// and we fall back to the neighborhood module topology, which is correct
-		// for Go. The root gate — not the emptiness of the rollup — is what keeps a
-		// Go repo's buried JS/TS test fixtures from ever surfacing here.
-		if !e.projectTopology() {
+		// Three tiers, each the whole DAG ranked by fan-in — never the semantic
+		// neighborhood, so the answer is stable regardless of which files the
+		// lane surfaced (#190):
+		//  1. projectTopology — JS/TS workspace: rolled up to workspace projects,
+		//     gated on a genuine workspace root (#151). nil projectOf on Go, so
+		//     it emits nothing and we fall through.
+		//  2. moduleTopology — the module import DAG, every internal package
+		//     ranked by import fan-in (parity with `dex graph packages`). The
+		//     Go / non-workspace answer, and the #190 fix: a bottom-up read no
+		//     longer has to drop to the CLI.
+		//  3. packageTopology — neighborhood fallback, only if the repo has no
+		//     indexed package graph at all (both builders came back empty).
+		// The root gate keeps a Go repo's buried JS/TS test fixtures out of the
+		// project tier; BuildPackageGraph's own testdata/vendor filter (#181)
+		// keeps them out of the module tier.
+		if !e.projectTopology() && !e.moduleTopology() {
 			e.packageTopology()
 		}
 	default: // GraphLaneNeighborhoodRollup — assemble + unrecognized intents

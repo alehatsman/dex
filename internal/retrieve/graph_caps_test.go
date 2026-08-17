@@ -66,19 +66,27 @@ func TestEnrichGraphCaps(t *testing.T) {
 			EdgesByDst:       map[string][]graphquery.Edge{},
 			EdgesByKind:      map[graph.EdgeKind][]graphquery.Edge{},
 		}
+		// A realistic import graph: src (a Go NodePackage) imports 100 internal
+		// packages. Each import is a NodePackage dst plus a NodeImport node on src
+		// whose resolved target is the dst's path — the shape BuildPackageGraph
+		// (the package_topology lane, #190) resolves, and both endpoints being
+		// internal is what keeps the edge.
 		const src = "example.com/src"
 		srcPkg := graphquery.Node{ID: "src", Kind: graph.NodePackage, Name: "src", PackagePath: src, FilePath: "src/src.go"}
 		view.NodesByID[srcPkg.ID] = srcPkg
 		view.NodesByPackage[src] = append(view.NodesByPackage[src], srcPkg)
 		view.NodesByPath[srcPkg.FilePath] = append(view.NodesByPath[srcPkg.FilePath], srcPkg)
 		for i := range 100 {
-			dstID := fmt.Sprintf("dst%d", i)
-			dst := graphquery.Node{ID: dstID, Kind: graph.NodePackage, Name: dstID, PackagePath: "example.com/" + dstID}
-			view.NodesByID[dstID] = dst
-			e := graphquery.Edge{Kind: graph.EdgeImports, SrcID: srcPkg.ID, DstID: dstID}
+			dstPath := fmt.Sprintf("example.com/dst%d", i)
+			dst := graphquery.Node{ID: fmt.Sprintf("dst%d", i), Kind: graph.NodePackage, Name: fmt.Sprintf("dst%d", i), PackagePath: dstPath}
+			imp := graphquery.Node{ID: fmt.Sprintf("imp%d", i), Kind: graph.NodeImport, PackagePath: src, QualifiedName: dstPath}
+			view.NodesByID[dst.ID] = dst
+			view.NodesByID[imp.ID] = imp
+			view.NodesByPackage[dstPath] = append(view.NodesByPackage[dstPath], dst)
+			e := graphquery.Edge{Kind: graph.EdgeImports, SrcID: srcPkg.ID, DstID: imp.ID}
 			view.EdgesByKind[graph.EdgeImports] = append(view.EdgesByKind[graph.EdgeImports], e)
 			view.EdgesBySrc[srcPkg.ID] = append(view.EdgesBySrc[srcPkg.ID], e)
-			view.EdgesByDst[dstID] = append(view.EdgesByDst[dstID], e)
+			view.EdgesByDst[imp.ID] = append(view.EdgesByDst[imp.ID], e)
 		}
 		gr, ok := EnrichGraph(IntentPackageTopology, view, []SemHit{{Path: "src/src.go"}}, nil, nil)
 		if !ok || gr == nil {

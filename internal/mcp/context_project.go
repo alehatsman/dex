@@ -125,6 +125,9 @@ func fromPackGraph(in *retrieve.GraphResult) *GraphResult {
 			ID:            in.Nodes[i].ID,
 			QualifiedName: in.Nodes[i].QualifiedName,
 			Kind:          in.Nodes[i].Kind,
+			InDegree:      in.Nodes[i].InDegree,
+			OutDegree:     in.Nodes[i].OutDegree,
+			PageRank:      in.Nodes[i].PageRank,
 		}
 	}
 	for i := range in.Edges {
