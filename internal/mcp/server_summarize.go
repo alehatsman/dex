@@ -322,12 +322,25 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		}
 	}
 
+	// Shared warm cache (#171 S3): reuse a peer agent's compression of this
+	// exact (path, content, mode) instead of paying the render again. The
+	// deferred metrics/scoped-notes/session-cache all still fire on this return.
+	if cached, hit := s.warmCachePull(ctx, p, relTarget, mode, etag); hit {
+		out = cached
+		out.Project, out.Path = p.Root, relTarget
+		s.readCacheMark(sessionID, relTarget, etag, string(mode))
+		return nil, out, nil
+	}
+
 	w := summarizeWork{
 		ctx: ctx, req: req, in: in, p: p, data: data,
 		realTarget: realTarget, relTarget: relTarget,
 		sessionID: sessionID, etag: etag, bt: bt, out: out,
 	}
 	result, out, err = s.summarizeModeDispatch(w, mode)
+	if err == nil {
+		s.warmCachePush(ctx, p, relTarget, mode, etag, out)
+	}
 	return
 }
 

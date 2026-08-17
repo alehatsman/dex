@@ -62,6 +62,7 @@ var allEnvVars = []envVar{
 	// default; set these to give concurrent agents a stable, legible handle.
 	{"DEX_AGENT_ID", "auto", "This process's identity on the swarm findings bus. Unset = a random per-process id minted at startup. Set to a stable handle so `dex agent post` (via act) and the MCP server share one identity, and so peer findings are self-filtered correctly.", "swarm", false},
 	{"DEX_AGENT_ROLE", "", "Optional human-legible role for bus provenance (e.g. reviewer, builder). Surfaced in the [peer-agent:<id>] tag on folded findings.", "swarm", true},
+	{"DEX_SWARM_WARMCACHE", "on", "Shared warm cache for compressed reads (signatures/skeleton/map/aggressive): a peer's render is reused across agents via share_cache (content-hash gated). Set to 'off' to disable.", "swarm", true},
 
 	// tuning — hidden unless --all. Most installs leave these alone.
 	{"DEX_EMBED_DIM", "0", "Truncate embedding vectors to this many dimensions and re-normalise (Matryoshka truncation). 0 = use full model output. Requires `dex reindex` after changing.", "tuning", false},
