@@ -190,6 +190,9 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 		if sl, ok := h.(seenLooker); ok {
 			sl.applySeenLook(sessionKey(req), &out)
 		}
+		// A concurrent peer editing this same file surfaces as a trust caveat so
+		// the agent coordinates before overwriting (#170 S1). Advisory only.
+		flagPeerClaims(ctx, h, in.ProjectRoot, cleaned, &out)
 		return nil, out, nil
 
 	case "grep":

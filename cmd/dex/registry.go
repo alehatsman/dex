@@ -431,7 +431,7 @@ var verbs = []verbSpec{
 	},
 
 	// ---- hidden (dispatched, not advertised) ----
-	{name: "agent", group: groupHidden, args: "announce|post|read|list", summary: "multi-agent coordination bus (swarm findings)"},
+	{name: "agent", group: groupHidden, args: "announce|post|read|list|claim|release", summary: "multi-agent coordination bus (swarm findings + edit claims)"},
 	{name: "compress-stdin", group: groupHidden, summary: "compress stdin through dex patterns", noFiles: true},
 	{name: "shell-hook", group: groupHidden, summary: "print eval-able shell hook for passive compression", noFiles: true},
 }

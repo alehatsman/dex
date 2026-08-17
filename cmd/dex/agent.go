@@ -35,17 +35,23 @@ func cmdAgent(ctx context.Context, args []string) error {
 		return cmdAgentRead(ctx, rest)
 	case "list":
 		return cmdAgentList(ctx, rest)
+	case "claim":
+		return cmdAgentClaim(ctx, rest)
+	case "release":
+		return cmdAgentRelease(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
   dex agent announce [<path>] [--role R]              register/refresh this agent on the bus
   dex agent post [<path>] --category finding <body>   post a message (findings are embedded for peer recall)
   dex agent read [<path>] [--query Q] [--category C]   recall bus messages (vector recall; --any for FTS-OR)
   dex agent list [<path>]                             list registered agents
+  dex agent claim <file> [intent]                     claim a file you are editing (peers see a caveat)
+  dex agent release <file>                             release your claim on a file
 
   identity: DEX_AGENT_ID (else a per-process random id) + DEX_AGENT_ROLE`)
 		return nil
 	default:
-		return fmt.Errorf("unknown agent subcommand: %s (have: announce, post, read, list)", sub)
+		return fmt.Errorf("unknown agent subcommand: %s (have: announce, post, read, list, claim, release)", sub)
 	}
 }
 
@@ -120,10 +126,14 @@ func cmdAgentPost(ctx context.Context, args []string) error {
 	// Embed the body so a peer's natural-language ask() recalls this terse
 	// finding by meaning, not shared keywords. Best-effort: no embedder (or an
 	// embed error) leaves it FTS-only, matching the DEX_EMBED_ENGINE=none path.
+	// Only findings are embedded — claims/status/etc. are surfaced by topic or
+	// keyword, never by vector recall, so embedding them just burns an embed call.
 	var vec []float32
-	if em := newEmbedClient(st.EmbedModel()); em != nil {
-		if vecs, eerr := em.Embed(ctx, []string{body}); eerr == nil && len(vecs) > 0 {
-			vec = vecs[0]
+	if *category == "finding" {
+		if em := newEmbedClient(st.EmbedModel()); em != nil {
+			if vecs, eerr := em.Embed(ctx, []string{body}); eerr == nil && len(vecs) > 0 {
+				vec = vecs[0]
+			}
 		}
 	}
 	msgID, err := st.AgentPostVec(ctx, id, *topic, *category, body, vec)
@@ -244,6 +254,82 @@ func cmdAgentList(ctx context.Context, args []string) error {
 	for _, a := range agents {
 		fmt.Printf("%s%s  last-seen %s\n", a.ID, roleSuffix(a.Role), a.LastSeenAt.Format(time.RFC3339))
 	}
+	return nil
+}
+
+// cmdAgentClaim records that this agent is actively editing a file, so a
+// concurrent peer's look() on that path surfaces a trust caveat (#170 S1). A
+// claim is a category=claim bus message with topic=<file> and an optional
+// intent body; re-claiming refreshes it, `release` retracts it. Advisory only —
+// the spine informs, it never gates or locks.
+func cmdAgentClaim(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("agent claim", flag.ContinueOnError)
+	setHelp(fs,
+		"Claim a file you are editing so peers see a caveat before touching it.",
+		"dex agent claim <file> [intent...]",
+		`dex agent claim internal/store/store_agent.go "adding AgentQueryVec"`,
+	)
+	format := fs.String("format", "text", "output format: text|json")
+	projectRoot := registerProjectFlag(fs)
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := projectFromFlag(*projectRoot, fs.Args())
+	if len(rest) == 0 {
+		return fmt.Errorf("agent claim needs a <file>")
+	}
+	file := rest[0]
+	intent := strings.TrimSpace(strings.Join(rest[1:], " "))
+	if intent == "" {
+		intent = "editing"
+	}
+	return postClaim(ctx, path, file, intent, *format, "claimed")
+}
+
+// cmdAgentRelease retracts this agent's claim on a file by posting a
+// tombstone (empty-intent claim). The surface takes the latest claim per
+// (agent, file), so a release supersedes an earlier active claim.
+func cmdAgentRelease(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("agent release", flag.ContinueOnError)
+	setHelp(fs,
+		"Release your claim on a file.",
+		"dex agent release <file>",
+		`dex agent release internal/store/store_agent.go`,
+	)
+	format := fs.String("format", "text", "output format: text|json")
+	projectRoot := registerProjectFlag(fs)
+	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
+		return err
+	}
+	path, rest := projectFromFlag(*projectRoot, fs.Args())
+	if len(rest) == 0 {
+		return fmt.Errorf("agent release needs a <file>")
+	}
+	return postClaim(ctx, path, rest[0], store.ClaimReleaseMarker, *format, "released")
+}
+
+func postClaim(ctx context.Context, projectPath, file, intent, format, verb string) error {
+	id, role := agentIdentity()
+	st, _, err := openProjectStore(ctx, projectPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+	_ = st.AgentAnnounce(ctx, id, role)
+
+	// topic = the claimed file (normalized), category = claim; never embedded.
+	if _, err := st.AgentPost(ctx, id, store.NormalizeClaimPath(file), "claim", intent); err != nil {
+		return err
+	}
+	if format == "json" {
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			Status  string `json:"status"`
+			AgentID string `json:"agent_id"`
+			File    string `json:"file"`
+			Verb    string `json:"verb"`
+		}{"ok", id, store.NormalizeClaimPath(file), verb})
+	}
+	fmt.Printf("✓ %s %s as %s\n", verb, store.NormalizeClaimPath(file), id)
 	return nil
 }
 
