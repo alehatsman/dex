@@ -1,6 +1,9 @@
 package tokens
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestCountEmpty(t *testing.T) {
 	if Count("") != 0 {
@@ -81,6 +84,21 @@ func TestGeminiCorrection(t *testing.T) {
 	}
 	if base >= 10 && gem == base {
 		t.Errorf("gemini correction should raise the count for non-trivial input (base=%d)", base)
+	}
+}
+
+func TestHeuristicGeminiCorrection(t *testing.T) {
+	// The BPE-less fallback must stay family-honest: Gemini gets the same
+	// 1.08x correction bpeCounter applies, so a broken embedded-ranks load
+	// doesn't silently under-count Gemini (#183).
+	s := "the quick brown fox jumps over the lazy dog and runs away quickly today"
+	base := (&heuristicCounter{family: O200kBase}).Count(s)
+	gem := (&heuristicCounter{family: Gemini}).Count(s)
+	if gem <= base {
+		t.Errorf("heuristic gemini count %d must exceed o200k base %d", gem, base)
+	}
+	if want := int(math.Ceil(float64(base) * geminiCorrection)); gem < base && gem != want {
+		t.Errorf("heuristic gemini = %d, want ~%d (base %d * %.2f)", gem, want, base, geminiCorrection)
 	}
 }
 

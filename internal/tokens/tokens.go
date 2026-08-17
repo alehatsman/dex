@@ -199,7 +199,11 @@ func (c *heuristicCounter) Count(s string) int {
 	if s == "" {
 		return 0
 	}
-	return int(math.Ceil(float64(len([]rune(s))) / charsPerTokenEstimate))
+	est := float64(len([]rune(s))) / charsPerTokenEstimate
+	if c.family == Gemini {
+		est *= geminiCorrection // match bpeCounter — the fallback stays family-honest
+	}
+	return int(math.Ceil(est))
 }
 
 // New returns a Counter for the default family.
