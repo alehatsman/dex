@@ -2,7 +2,7 @@ module github.com/alehatsman/dex
 
 go 1.26.4
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
