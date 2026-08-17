@@ -32,22 +32,26 @@ criteria and de-risks the rest.
 
 ## 1. What dex actually is today
 
-Ground truth from the tree: **40 internal packages**, one fat `cmd/dex`, a SQLite
-store with **15 tables**, an MCP verb surface of **~21 tools**. Fan-in (how many
-internal packages import a package) ranks the load-bearing walls:
+Ground truth from the tree: **57 internal packages** (`go list ./internal/...`),
+one fat `cmd/dex`, a SQLite store with **15 tables**, an MCP verb surface of
+**~21 tools**. Fan-in (how many internal packages import a package) ranks the
+load-bearing walls:
 
 ```
-store 12 · graph 9 · embed 8 · tokens 7 · graphquery 7 · ignore 6 · gitenv 6 · proj 5
+store 12 · graph 9 · embed 9 · gitenv 7 · graphquery 7 · tokens 7 · ignore 6 · proj 5
 ```
 
 That fan-in profile *is* the architecture. `store` and `graph` are the gravity wells;
-everything else orbits them.
+everything else orbits them. The ranking is now re-derivable on the agent surface —
+`ask(intent=package_topology)` carries `in_degree`/`out_degree`/`page_rank` per
+package (#190), so this table stays self-checking instead of drifting.
 
 ## 2. The layers (as-built, bottom-up)
 
-The 40 packages stratify cleanly into 5 layers. Key claim: **the layering is already
-mostly correct** — dependencies point downward. The mess is at L4 (`cmd/dex` is a junk
-drawer) and the *absence* of an explicit L3 contract.
+They stratify cleanly into 5 layers (the table names the load-bearing packages per
+layer, not every leaf). Key claim: **the layering is already mostly correct** —
+dependencies point downward. The mess is at L4 (`cmd/dex` is a junk drawer) and the
+*absence* of an explicit L3 contract.
 
 | Layer | Packages | Role |
 |---|---|---|
