@@ -1,15 +1,29 @@
 ---
 id: swarm-context-spine
-status: draft
-last_verified: b4e4b1c
+status: shipped
+last_verified: 95fda64
 owners: [aleh]
 covers:
   - "internal/store/store_agent.go"
+  - "internal/store/store_claim.go"
   - "internal/store/store_share.go"
+  - "internal/mcp/peer_findings.go"
+  - "internal/mcp/peer_claims.go"
+  - "internal/mcp/warm_cache.go"
   - "internal/mcp/context.go"
-  - "internal/mcp/server_knowledge.go"
+  - "internal/mcp/server_summarize.go"
 tracking: alehatsman/dex#169
 ---
+
+<!-- STATUS: all three slices shipped to main.
+     S2 findings bus  → #180 (60f1271)  — vector recall of peer findings into ask()
+     S1 claim map     → #170 (5b2746f)  — peer-edit trust caveat on look()
+     S3 warm cache    → #171 (95fda64)  — cross-agent reuse of compressed renders
+     Identity is per-process (DEX_AGENT_ID/ROLE) + the real `dex agent` CLI verb.
+     Deferred: the promotion-to-durable half of the findings lifecycle (a finding
+     graduating to a fact) rides #167 Parts 1/3 (last_retrieved decay + referent-
+     overlap supersede), both still open. -->
+
 
 # Swarm context spine: make good context compound across parallel agents
 
