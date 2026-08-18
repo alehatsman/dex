@@ -77,6 +77,27 @@ func TestForcedKindDirection(t *testing.T) {
 	}
 }
 
+// TestNormalizeNext locks the clean-break invariant: no next-step hint points at
+// a removed verb. The wrapped lane handlers still emit look/ask + target/question;
+// query must retarget them to query(input=…).
+func TestNormalizeNext(t *testing.T) {
+	steps := []NextStep{
+		{Verb: "look", Args: map[string]any{"target": "x.go:12"}, Why: "read match"},
+		{Verb: "ask", Args: map[string]any{"question": "how?"}},
+		{Verb: "act", Args: map[string]any{"command": "go test"}}, // untouched
+	}
+	normalizeNext(steps)
+	if steps[0].Verb != "query" || steps[0].Args["input"] != "x.go:12" || steps[0].Args["target"] != nil {
+		t.Errorf("look/target not retargeted: %+v", steps[0])
+	}
+	if steps[1].Verb != "query" || steps[1].Args["input"] != "how?" || steps[1].Args["question"] != nil {
+		t.Errorf("ask/question not retargeted: %+v", steps[1])
+	}
+	if steps[2].Verb != "act" || steps[2].Args["command"] != "go test" {
+		t.Errorf("act must pass through untouched: %+v", steps[2])
+	}
+}
+
 func TestLooksLikeSymbol(t *testing.T) {
 	yes := []string{"Foo", "foo_bar", "(*Server).Run", "Server.Run", "mcp.NewServer", "a.b.c", "T::method"}
 	no := []string{"how are you", "where is x", "foo bar", "what?", "is this a symbol?", "", "  "}
