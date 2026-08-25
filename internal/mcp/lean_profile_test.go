@@ -19,8 +19,8 @@ import (
 // (repo_map is expert-only; exact-symbol lookup has no standalone tool since
 // #685.)
 var zeroInferenceTools = []string{
-	"query",    // the read verb (merges ask+look, #196): symbol→graph, path:line→slice, path→signatures, /re/→grep; degrades to BM25 without an embedder
-	"remember", // memory verb (write/recall/supersede), no embedder needed; notes' admin tail is expert (#147)
+	"query",  // the read verb (merges ask+look, #196): symbol→graph, path:line→slice, path→signatures, /re/→grep; degrades to BM25 without an embedder
+	"record", // memory verb (write/recall/supersede), no embedder needed; notes' admin tail is CLI-only (#147, #195)
 }
 
 func listToolNames(t *testing.T, srv *Server) map[string]bool {

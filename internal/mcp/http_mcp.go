@@ -154,11 +154,6 @@ func (p projectScoped) knowledge(ctx context.Context, req *sdk.CallToolRequest, 
 	return p.s.knowledge(ctx, req, in)
 }
 
-func (p projectScoped) session(ctx context.Context, req *sdk.CallToolRequest, in SessionInput) (*sdk.CallToolResult, SessionOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.session(ctx, req, in)
-}
-
 func (p projectScoped) searchTree(ctx context.Context, req *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.searchTree(ctx, req, in)
@@ -175,10 +170,6 @@ func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.status(ctx, req, in)
 }
 
-func (p projectScoped) budget(ctx context.Context, req *sdk.CallToolRequest, in BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.budget(ctx, req, in)
-}
 func (p projectScoped) graphCycles(ctx context.Context, req *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.graphCycles(ctx, req, in)

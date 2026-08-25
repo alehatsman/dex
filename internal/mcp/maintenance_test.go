@@ -64,8 +64,6 @@ func TestMaintenanceClientAllMethods(t *testing.T) {
 	assertMaintenance("searchGrep", err)
 	_, _, err = mc.knowledge(ctx, nil, KnowledgeInput{})
 	assertMaintenance("knowledge", err)
-	_, _, err = mc.session(ctx, nil, SessionInput{})
-	assertMaintenance("session", err)
 	_, _, err = mc.status(ctx, nil, StatusInput{})
 	assertMaintenance("status", err)
 	_, _, err = mc.summarize(ctx, nil, SummarizeInput{})

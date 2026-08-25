@@ -98,17 +98,11 @@ func (n *noopSurface) searchGrep(_ context.Context, _ *sdk.CallToolRequest, _ Se
 func (n *noopSurface) knowledge(_ context.Context, _ *sdk.CallToolRequest, _ KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
 	return nil, KnowledgeOutput{}, n.err()
 }
-func (n *noopSurface) session(_ context.Context, _ *sdk.CallToolRequest, _ SessionInput) (*sdk.CallToolResult, SessionOutput, error) {
-	return nil, SessionOutput{}, n.err()
-}
 func (n *noopSurface) status(_ context.Context, _ *sdk.CallToolRequest, _ StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
 	return nil, StatusOutput{}, n.err()
 }
 func (n *noopSurface) summarize(_ context.Context, _ *sdk.CallToolRequest, _ SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	return nil, SummarizeOutput{}, n.err()
-}
-func (n *noopSurface) budget(_ context.Context, _ *sdk.CallToolRequest, _ BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
-	return nil, BudgetOutput{}, n.err()
 }
 func (n *noopSurface) check(_ context.Context, _ *sdk.CallToolRequest, _ CheckInput) (*sdk.CallToolResult, CheckOutput, error) {
 	return nil, CheckOutput{}, n.err()

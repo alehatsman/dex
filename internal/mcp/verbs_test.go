@@ -9,28 +9,29 @@ import (
 // They must be absent from the default surface and present once expert is on.
 var powerTools = []string{
 	"deps",
-	"clusters", "routes", "smells", "status", "session",
+	"clusters", "routes", "smells", "status",
 	"plan_rename", "rehearse_patch", "check",
 	"repo_map",
 	"trace", "locate", // demoted from the everyday surface in #143
 	// the raw primitives query subsumes, demoted in the 5c collapse (#145):
 	// query routes /regex/→grep and path→read; kind=review covers worktree review.
 	"grep", "read", "review_diff",
-	// notes' admin/relate tail folded into the expert lane in the 5d fold (#147);
-	// remember absorbed the everyday write/recall/supersede moves.
-	"notes",
+	// notes' admin surface + the session tool were removed from the MCP surface in
+	// #195 S4: record covers the write/recall/supersede hot path, notes' admin tail
+	// is CLI-only (`dex notes`), and session dedup stays internal (not a verb).
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;
 // they don't need an embedder or chat model, so a lean stubServer advertises
 // them regardless of DEX_EXPERT. After the 5c collapse (#145, raw primitives →
 // expert), the 5d fold (#147, notes' admin tail → expert), the #196 two-read-verb
-// merge (ask+look → query), and the #197 advisory-only cut (act/shell/verify/
-// checkpoint removed), the default surface is the two verbs query · remember.
+// merge (ask+look → query), the #197 advisory-only cut (act/shell/verify/
+// checkpoint removed), and the #198 S4 rename (remember → record), the default
+// surface is the two verbs query · record.
 // query is the read verb (symbol→graph, path:line→slice, path→signatures,
 // /regex/→grep, prose→evidence pack; degrades to BM25 when no embedder is wired);
-// remember absorbs write/recall/supersede.
-var defaultVerbs = []string{"query", "remember"}
+// record absorbs write/recall/supersede.
+var defaultVerbs = []string{"query", "record"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

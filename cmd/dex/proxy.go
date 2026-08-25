@@ -158,7 +158,7 @@ func cmdProxy(ctx context.Context, args []string) error {
 	// Wire token-ratio feedback into the adaptive compression policy (#610).
 	// Each response fires the hook with provider-reported token counts; the hook
 	// reads the current task from ~/.cache/dex/current_task (written by the MCP
-	// server on session(action=set_task)), derives intent + predicted mode, and
+	// server when query receives a prose task, #195 S4), derives intent + predicted mode, and
 	// records the output/input ratio as a penalty signal.
 	var feedbackHook func(outputTokens, inputTokens int64)
 	if idir, err := indexDir(); err == nil {
@@ -290,7 +290,7 @@ func printProxyStats(ctx context.Context, addr, token string) error {
 	return enc.Encode(snap)
 }
 
-// readCurrentTask returns the task last set via session(action=set_task), or ""
+// readCurrentTask returns the task from the last prose query (#195 S4), or ""
 // if the file is absent or unreadable. Written by writeCurrentTask in the MCP
 // server whenever the agent updates its working task description.
 func readCurrentTask() string {

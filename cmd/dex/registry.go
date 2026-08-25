@@ -89,9 +89,10 @@ func serverReadMode(m string) bool { return serverReadModes[m] }
 // `dex <tool>` points at the MCP surface instead of a bare "unknown command"
 // (#521). These tools stay off the `verbs` registry by design — the MCP-only
 // contract is locked by verb_parity_test.go.
-var mcpOnlyToolHints = map[string]string{
-	"session": "session is available via the MCP tool surface, not the CLI — it recaps an active MCP connection's working set (DEX_EXPERT power lane).",
-}
+//
+// Empty since #195 S4 removed the only member (session) from the MCP surface;
+// kept as the seam for future MCP-only tools.
+var mcpOnlyToolHints = map[string]string{}
 
 // mcpOnlyToolHint returns the MCP-only help message for cmd, if any.
 func mcpOnlyToolHint(cmd string) (string, bool) {

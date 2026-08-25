@@ -7,14 +7,14 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// RememberInput drives remember, the durable-memory verb of the four-verb surface
-// (#110): persist a fact (write), recall the facts relevant to a task (read), or
+// RecordInput drives record, the durable-memory verb of the two-verb surface
+// (#195): persist a fact (write), recall the facts relevant to a task (read), or
 // supersede a stale fact (upsert), across session resets. It is a thin, additive
 // facade over the knowledge engine — same store, same salience and scope-binding —
 // exposing the everyday memory moves (write, recall, supersede). The admin/relate
-// lanes (delete, gc, export, import, consolidate, pin, relate, review) stay on the
-// expert `notes` tool (#147); remember keeps the hot path to one verb.
-type RememberInput struct {
+// lanes (delete, gc, export, import, consolidate, pin, relate, review) live on the
+// CLI (`dex notes`, #147); record keeps the hot path to one verb.
+type RecordInput struct {
 	// Provide exactly one of Fact (write) or Query (recall).
 	Fact  string `json:"fact,omitempty"  jsonschema:"a durable fact to persist (write mode); lead a review finding or gotcha with a bracketed [kind]"`
 	Query string `json:"query,omitempty" jsonschema:"recall the facts most relevant to this task/question (read mode); empty query returns top facts by salience"`
@@ -31,34 +31,34 @@ type RememberInput struct {
 	Budget      int    `json:"budget,omitempty" jsonschema:"optional context-token budget; when set, the response reports cost.budget_left = budget − tokens_returned"`
 }
 
-// RememberResult is the verb-specific payload under the envelope's `result`.
-type RememberResult struct {
+// RecordResult is the verb-specific payload under the envelope's `result`.
+type RecordResult struct {
 	Mode            string                `json:"mode"` // "wrote" | "recalled"
 	Facts           []KnowledgeFactOutput `json:"facts,omitempty"`
 	Similar         []KnowledgeFactOutput `json:"similar,omitempty"` // near-duplicate warnings on write
 	ScopeSuggestion string                `json:"scope_suggestion,omitempty"`
 }
 
-// RememberOutput is the universal envelope for remember. Provenance is exact — a
+// RecordOutput is the universal envelope for record. Provenance is exact — a
 // note was read from or written to the store, no inference involved.
-type RememberOutput struct {
-	Status string         `json:"status"` // ok | no-index | error
-	Hint   string         `json:"hint,omitempty"`
-	Result RememberResult `json:"result"`
-	Trust  EnvTrust       `json:"trust"`
-	Cost   *EnvCost       `json:"cost,omitempty"`
-	Next   []NextStep     `json:"next,omitempty"`
+type RecordOutput struct {
+	Status string       `json:"status"` // ok | no-index | error
+	Hint   string       `json:"hint,omitempty"`
+	Result RecordResult `json:"result"`
+	Trust  EnvTrust     `json:"trust"`
+	Cost   *EnvCost     `json:"cost,omitempty"`
+	Next   []NextStep   `json:"next,omitempty"`
 }
 
-func rememberHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, RememberInput) (*sdk.CallToolResult, RememberOutput, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, in RememberInput) (*sdk.CallToolResult, RememberOutput, error) {
-		return rememberVerb(ctx, h, req, in)
+func recordHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, RecordInput) (*sdk.CallToolResult, RecordOutput, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, in RecordInput) (*sdk.CallToolResult, RecordOutput, error) {
+		return recordVerb(ctx, h, req, in)
 	}
 }
 
-// rememberVerb composes over the knowledge handler: Fact → add, otherwise Query
+// recordVerb composes over the knowledge handler: Fact → add, otherwise Query
 // → list (recall). It only re-shapes the response into the universal envelope.
-func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in RememberInput) (*sdk.CallToolResult, RememberOutput, error) {
+func recordVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in RecordInput) (*sdk.CallToolResult, RecordOutput, error) {
 	fact := strings.TrimSpace(in.Fact)
 	if fact != "" {
 		_, kn, err := h.knowledge(ctx, req, KnowledgeInput{
@@ -70,12 +70,12 @@ func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 			ProjectRoot:  in.ProjectRoot,
 		})
 		if err != nil {
-			return nil, RememberOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
+			return nil, RecordOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 		}
-		out := RememberOutput{
+		out := RecordOutput{
 			Status: kn.Status,
 			Hint:   kn.Hint,
-			Result: RememberResult{
+			Result: RecordResult{
 				Mode:            "wrote",
 				Facts:           kn.Facts,
 				Similar:         kn.Similar,
@@ -86,8 +86,8 @@ func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 		// A near-duplicate already exists → route the agent to supersede it.
 		if len(kn.Similar) > 0 {
 			out.Next = append(out.Next, NextStep{
-				Verb: "remember",
-				Why:  "a near-duplicate fact already exists — supersede it via `remember(fact=…, supersedes=<id>)` (the id is on the similar fact below) rather than stacking duplicates",
+				Verb: "record",
+				Why:  "a near-duplicate fact already exists — supersede it via `record(fact=…, supersedes=<id>)` (the id is on the similar fact below) rather than stacking duplicates",
 			})
 		}
 		return nil, out, nil
@@ -102,12 +102,12 @@ func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 		ProjectRoot: in.ProjectRoot,
 	})
 	if err != nil {
-		return nil, RememberOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
+		return nil, RecordOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 	}
-	out := RememberOutput{
+	out := RecordOutput{
 		Status: kn.Status,
 		Hint:   kn.Hint,
-		Result: RememberResult{Mode: "recalled", Facts: kn.Facts},
+		Result: RecordResult{Mode: "recalled", Facts: kn.Facts},
 		Trust:  exactTrust(),
 	}
 	// A recalled fact whose named referent has gone dead (#167) is worse than no
@@ -116,8 +116,8 @@ func rememberVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 	for _, f := range kn.Facts {
 		if f.NeedsVerification {
 			out.Next = append(out.Next, NextStep{
-				Verb: "look",
-				Why:  "a recalled fact names a code referent that no longer resolves against the index (needs_verification) — confirm it against current HEAD, then `remember(fact=…, supersedes=<id>)` if stale",
+				Verb: "query",
+				Why:  "a recalled fact names a code referent that no longer resolves against the index (needs_verification) — confirm it against current HEAD, then `record(fact=…, supersedes=<id>)` if stale",
 			})
 			break
 		}

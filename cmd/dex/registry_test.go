@@ -99,29 +99,26 @@ func TestVersionFlagAliasesDispatch(t *testing.T) {
 	}
 }
 
-// TestMCPOnlyToolHint covers #521: `dex session` (an MCP-only tool with no CLI
-// verb) must point at the MCP surface instead of a bare "unknown command", and
-// the hint list must not drift into claiming a real CLI verb.
+// TestMCPOnlyToolHint covers #521: the MCP-only hint seam must never return a
+// hint for an unknown command, and no hinted name may drift into also being a
+// registered CLI verb. The map is empty since #195 S4 removed its only member
+// (session) from the MCP surface — the mechanism is retained for future tools.
 func TestMCPOnlyToolHint(t *testing.T) {
-	hint, ok := mcpOnlyToolHint("session")
-	if !ok {
-		t.Fatal("session should have an MCP-only hint (#521)")
-	}
-	if !strings.Contains(hint, "MCP") {
-		t.Errorf("session hint should mention MCP: %q", hint)
-	}
 	if _, ok := mcpOnlyToolHint("definitely-not-a-tool"); ok {
 		t.Error("unknown command must not return an MCP-only hint")
 	}
-	// An MCP-only hinted name must NOT also be a registered CLI verb — that
-	// would mean it gained a CLI surface and the hint is stale.
+	// Any hinted name must reference a real MCP tool with no CLI verb — it must
+	// NOT also be a registered CLI verb, or the hint is stale.
 	registered := map[string]bool{}
 	for _, name := range allDispatchNames() {
 		registered[name] = true
 	}
-	for name := range mcpOnlyToolHints {
+	for name, hint := range mcpOnlyToolHints {
 		if registered[name] {
 			t.Errorf("%q has an MCP-only hint but is a registered CLI verb", name)
+		}
+		if !strings.Contains(hint, "MCP") {
+			t.Errorf("%q hint should mention MCP: %q", name, hint)
 		}
 	}
 }

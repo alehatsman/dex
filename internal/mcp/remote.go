@@ -290,12 +290,6 @@ func (rc *remoteClient) knowledge(ctx context.Context, _ *sdk.CallToolRequest, i
 	return nil, out, err
 }
 
-func (rc *remoteClient) session(ctx context.Context, _ *sdk.CallToolRequest, in SessionInput) (*sdk.CallToolResult, SessionOutput, error) {
-	var out SessionOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/session"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
 	var out SearchTreeOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/ls"), in, &out)
@@ -333,11 +327,6 @@ func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ St
 	return nil, out, err
 }
 
-func (rc *remoteClient) budget(ctx context.Context, _ *sdk.CallToolRequest, in BudgetInput) (*sdk.CallToolResult, BudgetOutput, error) {
-	var out BudgetOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/budget"), in, &out)
-	return nil, out, err
-}
 func (rc *remoteClient) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
 	var out CyclesOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/cycles"), in, &out)

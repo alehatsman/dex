@@ -88,11 +88,13 @@ func hookInject(ctx context.Context) error {
 	return emitInjectContext(nudge, joinContext(sessionCtx, buildInjectContext(out)))
 }
 
-// buildSessionContext returns a compact "[DEX] Active session" block when the
-// current project's session has a task and contains notes or at least three
-// file touches. Also appends a budget pressure warning when context utilization
-// reaches compress (>60%) or higher. Returns "" when the session is empty,
-// the index does not exist, or any lookup fails.
+// buildSessionContext returns a compact "[DEX] Session working set" block when
+// the current project's session has touched at least three files, plus a budget
+// pressure warning when context utilization reaches compress (>60%) or higher.
+// The working set is the internal seen/delta dedup that survived the #195 S4
+// session-tool removal — file touches are auto-tracked (sessionAutoFile); task/
+// notes declaration is gone (that was agent-facing session admin). Returns ""
+// when the session is thin, the index does not exist, or any lookup fails.
 func buildSessionContext(ctx context.Context, dbPath, projectRoot string) string {
 	if _, err := os.Stat(dbPath); err != nil {
 		return "" // index not yet created
@@ -104,30 +106,15 @@ func buildSessionContext(ctx context.Context, dbPath, projectRoot string) string
 	defer func() { _ = st.Close() }()
 
 	ss, ok, err := st.SessionGet(ctx)
-	if err != nil || !ok || ss.Task == "" {
+	if err != nil || !ok {
 		return ""
 	}
-
-	noteCount := 0
-	if ss.Notes != "" {
-		noteCount = strings.Count(ss.Notes, "\n") + 1
-	}
-	if noteCount == 0 && len(ss.Files) < 3 {
+	if len(ss.Files) < 3 {
 		return "" // no substance yet — skip to avoid noise on freshly-started sessions
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "[DEX] Active session: %s\n", ss.Task)
-	if ss.Notes != "" {
-		notes := ss.Notes
-		if runes := []rune(notes); len(runes) > 600 {
-			notes = string(runes[:600]) + "…"
-		}
-		fmt.Fprintf(&b, "Notes: %s\n", notes)
-	}
-	if len(ss.Files) > 0 {
-		fmt.Fprintf(&b, "Working set: %d file(s) — call session(action=get) for detail.\n", len(ss.Files))
-	}
+	fmt.Fprintf(&b, "[DEX] Session working set: %d file(s) auto-tracked this session.\n", len(ss.Files))
 
 	if warn := sessionBudgetWarn(ss, projectRoot); warn != "" {
 		b.WriteString(warn)
@@ -163,7 +150,7 @@ func sessionBudgetWarn(ss store.SessionState, projectRoot string) string {
 	if ledger.Pressure() == dexctx.PressureNormal {
 		return ""
 	}
-	return fmt.Sprintf("[DEX] Context pressure: %s (%.0f%% of %dk tokens) — call session(action=recap, budget=4000) to compress.\n",
+	return fmt.Sprintf("[DEX] Context pressure: %s (%.0f%% of %dk tokens) — consider compacting the conversation.\n",
 		ledger.Pressure(), ledger.Utilization()*100, ledger.WindowSize/1000)
 }
 

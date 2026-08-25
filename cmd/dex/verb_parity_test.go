@@ -10,7 +10,10 @@ var mcpToolSurface = []string{
 	"grep",
 	"deps", "clusters",
 	"smells", "clones", "similar", "routes", "cohort", "refs", "check",
-	"status", "notes", "session",
+	"status",
+	// notes + session were removed from the MCP surface in #195 S4: record covers
+	// the write/recall/supersede hot path, notes' admin tail is CLI-only
+	// (`dex notes`), and session dedup stays internal (not a verb).
 }
 
 // cliToMCPName maps CLI verb names to MCP tool names when they differ.
@@ -31,8 +34,8 @@ var cliToMCPName = map[string]string{}
 //   - a `dex graph <sub>` subcommand (the flat graph/analysis tools, by the
 //     convention established in #480/#490).
 //
-// mcpOnlyTools are deliberately MCP-only and need no CLI path:
-//   - session: an agent-session lifecycle concept with no CLI analogue.
+// mcpOnlyTools (MCP tools with no CLI path) is empty since #195 S4 removed the
+// only members (session/budget) from the MCP surface — kept as the seam.
 func TestMCPToolCLIParity(t *testing.T) {
 	mcpTools := mcpToolSurface
 
@@ -54,12 +57,7 @@ func TestMCPToolCLIParity(t *testing.T) {
 		mcpToCLIName[mcp] = cli
 	}
 
-	mcpOnlyTools := map[string]bool{
-		"session": true,
-		// budget reports per-session counters (slo.Tracker + heatmap) — a CLI
-		// invocation has no agent session and no in-memory counters to report.
-		"budget": true,
-	}
+	mcpOnlyTools := map[string]bool{}
 
 	for _, tool := range mcpTools {
 		if mcpOnlyTools[tool] {

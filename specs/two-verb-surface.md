@@ -357,8 +357,22 @@ slice is a clean break.
       `share_cache` tables, `DEX_AGENT_ID`/`DEX_SWARM_WARMCACHE`/`DEX_AGENT_ROLE`,
       and orphaned `diaries`. Everyday surface is now `query · remember`.
       +124/−5967 across 60 files; all deletions, not refactors. *(shipped, #197)*
-- [ ] **S4 — `remember` → `record`.** Rename; recall stays folded into `query`;
-      drop the `notes`-admin and `session` agent surfaces.
+- [x] **S4 — `remember` → `record`.** Renamed the write verb (types/handler/
+      tool/descriptions/golden); recall stays folded into `query`. Dropped the
+      `notes` MCP tool — its 11-action admin surface is CLI-only (`dex notes`),
+      `record` covers write/recall/supersede. Dropped the `session` + `budget`
+      MCP tools (server_session.go/server_budget.go deleted); session/checkpoint
+      admin isn't an advisory effect, but the seen/delta dedup stays *internal*
+      (sessionAutoFile + working-set recovery hook). The #610 adaptive-compression
+      feedback loop kept its task source: a prose `query` now writes
+      `~/.cache/dex/current_task` (was `session(set_task)`). Default surface =
+      `[query, record]`; expert = 21 tools, none of remember/notes/session/budget.
+      +278/−1506 across 32 files. *(shipped, #198)*
+- [ ] **S5 — Cutover gate.** Reuse #110's router-accuracy harness (labelled
+      input→lane set, threshold) — the *same* gate, now scoring shape→lane.
+      Assert the two-verb system-prompt budget (target: well under the four-verb
+      ~800 tokens) and that **only two tools register** (no old verb reachable).
+      No alias step — the old names were deleted in S2–S4.
 - [ ] **S5 — Cutover gate.** Reuse #110's router-accuracy harness (labelled
       input→lane set, threshold) — the *same* gate, now scoring shape→lane.
       Assert the two-verb system-prompt budget (target: well under the four-verb

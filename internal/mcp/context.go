@@ -232,9 +232,9 @@ type ContextOutput struct {
 	SuggestedReads []SuggestedRead `json:"suggested_reads,omitempty"`
 	NextAction     string          `json:"next_action,omitempty"`
 	Avoid          string          `json:"avoid,omitempty"`
-	// Next is the structured form of the follow-up move, so the four-verb
-	// surface (#110) exposes one `next` key across ask/look/act/remember. It
-	// is derived from evidence ask already produced (the top suggested read),
+	// Next is the structured form of the follow-up move, so the two-verb
+	// surface (#195) exposes one `next` key across query/record. It
+	// is derived from evidence query already produced (the top suggested read),
 	// never re-inferred; NextAction stays as the canonical prose rationale.
 	// Absent when there is no concrete grounded step. ask keeps its richer
 	// trust / next_action — this only aligns the key name.

@@ -119,7 +119,7 @@ func TestKnowledgeAddSkipsReferentNudgeWhenSuperseding(t *testing.T) {
 	if err != nil || first.Status != "ok" {
 		t.Fatalf("first add: status=%q err=%v", first.Status, err)
 	}
-	_, rec, err := rememberVerb(ctx, s, nil, RememberInput{ProjectRoot: root, Query: "retry ceiling", K: 5})
+	_, rec, err := recordVerb(ctx, s, nil, RecordInput{ProjectRoot: root, Query: "retry ceiling", K: 5})
 	if err != nil || len(rec.Result.Facts) == 0 {
 		t.Fatalf("recall first: err=%v facts=%d", err, len(rec.Result.Facts))
 	}

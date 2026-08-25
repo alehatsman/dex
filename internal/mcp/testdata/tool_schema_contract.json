@@ -37,7 +37,7 @@
       }
     },
     {
-      "name": "remember",
+      "name": "record",
       "additionalProperties": false,
       "properties": {
         "archetype": {
@@ -210,75 +210,6 @@
       }
     },
     {
-      "name": "notes",
-      "additionalProperties": false,
-      "required": [
-        "action"
-      ],
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "archetype": {
-          "type": "string"
-        },
-        "body": {
-          "type": "string"
-        },
-        "confidence": {
-          "type": "number"
-        },
-        "diagram": {
-          "type": "boolean"
-        },
-        "evidence": {
-          "type": "boolean"
-        },
-        "gc_decay_per_day": {
-          "type": "number"
-        },
-        "gc_floor": {
-          "type": "number"
-        },
-        "gc_jaccard_merge": {
-          "type": "number"
-        },
-        "gc_max_facts": {
-          "type": "integer"
-        },
-        "id": {
-          "type": "integer"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "relate_from": {
-          "type": "integer"
-        },
-        "relate_kind": {
-          "type": "string"
-        },
-        "relate_to": {
-          "type": "integer"
-        },
-        "scope": {
-          "type": "string"
-        },
-        "supersedes_id": {
-          "type": "integer"
-        },
-        "valid_until": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "plan_rename",
       "additionalProperties": false,
       "required": [
@@ -403,6 +334,36 @@
       }
     },
     {
+      "name": "record",
+      "additionalProperties": false,
+      "properties": {
+        "archetype": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "integer"
+        },
+        "fact": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "supersedes": {
+          "type": "integer"
+        }
+      }
+    },
+    {
       "name": "refs",
       "additionalProperties": false,
       "required": [
@@ -433,36 +394,6 @@
         },
         "project_root": {
           "type": "string"
-        }
-      }
-    },
-    {
-      "name": "remember",
-      "additionalProperties": false,
-      "properties": {
-        "archetype": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "fact": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "scope": {
-          "type": "string"
-        },
-        "supersedes": {
-          "type": "integer"
         }
       }
     },
@@ -562,42 +493,6 @@
         },
         "query": {
           "type": "string"
-        }
-      }
-    },
-    {
-      "name": "session",
-      "additionalProperties": false,
-      "required": [
-        "action"
-      ],
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "bundle": {
-          "type": "string"
-        },
-        "file": {
-          "type": "string"
-        },
-        "note": {
-          "type": "string"
-        },
-        "op": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "task": {
-          "type": "string"
-        },
-        "window_size": {
-          "type": "integer"
         }
       }
     },
@@ -723,7 +618,7 @@
       }
     },
     {
-      "name": "remember",
+      "name": "record",
       "additionalProperties": false,
       "properties": {
         "archetype": {

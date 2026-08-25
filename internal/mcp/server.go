@@ -42,21 +42,20 @@ import (
 func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
-dex is advisory-only — exactly two effects: query (read the intelligence) · remember (write a durable finding). Running commands, editing, and verifying are the harness's job.
+dex is advisory-only — exactly two effects: query (read the intelligence) · record (write a durable finding). Running commands, editing, and verifying are the harness's job.
 1. query(input) — START HERE for any coding task or question. Its input SHAPE picks the lane, and the answer's precision tracks the input's: a file path → its compressed signatures (raw bytes: use native Read), a path:line or range → that slice, a /regex/ → grep, a bare symbol ('NewServer', '(*Server).Run') → JUST its call graph, a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Force the lane with kind=… and the facet with want=… (want=assemble for a task-start working set; kind=review for a working-tree review). The envelope's route echoes the shape detected and the road not taken.
 2. edit / run / verify — your job (native Edit + Bash), not dex's.
 
 Tool mapping (use these instead of native):
 - query(input)    instead of Grep/rg/Read/manual navigation — one read verb: a path → signatures, a /regex/ → grep, a path:line → slice, a symbol → call graph, prose → routed evidence pack (semantic + symbol + graph). Raw file bytes are still the native Read tool's job.
-- remember(fact)  instead of re-deriving facts — write a durable finding, recall with query=…, or correct a stale one with fact + supersedes=<id>
+- record(fact)  instead of re-deriving facts — write a durable finding, recall with query=…, or correct a stale one with fact + supersedes=<id>
 
 Power lanes (gated behind DEX_EXPERT — the two verbs above cover everyday work):
 - grep / read — the raw primitives query wraps; reach here for the primitive directly
-- notes — the full knowledge surface (delete, pin, gc, consolidate, export/import, relate); remember covers everyday write/recall/supersede
 - review_diff — targeted PR/branch/ref review (query kind=review covers the working tree)
-- trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / session / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
+- trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query,mcp__dex__remember" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query,mcp__dex__record" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -532,16 +531,6 @@ func (s *Server) Knowledge(ctx context.Context, in KnowledgeInput) (KnowledgeOut
 	return out, err
 }
 
-func (s *Server) Session(ctx context.Context, in SessionInput) (SessionOutput, error) {
-	_, out, err := s.session(ctx, nil, in)
-	return out, err
-}
-
-func (s *Server) Budget(ctx context.Context, in BudgetInput) (BudgetOutput, error) {
-	_, out, err := s.budget(ctx, nil, in)
-	return out, err
-}
-
 func (s *Server) IndexStatus(ctx context.Context, in IndexStatusInput) (IndexStatusOutput, error) {
 	_, out, err := s.indexStatus(ctx, nil, in)
 	return out, err
@@ -845,12 +834,10 @@ type toolSurface interface {
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
 	searchGrep(context.Context, *sdk.CallToolRequest, SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error)
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
-	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
 	check(context.Context, *sdk.CallToolRequest, CheckInput) (*sdk.CallToolResult, CheckOutput, error)
 	refs(context.Context, *sdk.CallToolRequest, RefsInput) (*sdk.CallToolResult, RefsOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
-	budget(context.Context, *sdk.CallToolRequest, BudgetInput) (*sdk.CallToolResult, BudgetOutput, error)
 	indexStatus(context.Context, *sdk.CallToolRequest, IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error)
 }
 
@@ -893,9 +880,9 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // Named profiles, not a boolean matrix (#110 step 8, spec: tool-surface.md).
 // The deployment shape is one of three profiles — full (embedder+chat),
 // bm25-only (no embedder), lean (weak local model) — but the VERB SET is
-// constant across all three: ask · look · act · remember. A profile changes only
-// ask's internal capability (synthesis → lexical → hits-only, degraded at call
-// time from embed/chat), never which tools an agent sees. remember registers even
+// constant across all three: query · record. A profile changes only query's
+// internal capability (synthesis → lexical → hits-only, degraded at call
+// time from embed/chat), never which tools an agent sees. record registers even
 // for a weak local model: a weaker model forgets more, so durable memory helps it
 // most. DEX_EXPERT is an additive power-lane overlay, orthogonal to the profile —
 // never a different shape of the everyday surface.
@@ -903,10 +890,10 @@ func registerTools(srv *sdk.Server, h toolSurface, embedAvailable bool, descMode
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 
 	// The two-verb surface (#197, epic #195): query (read the intelligence) +
-	// remember (write a durable finding). dex is advisory-only — running commands
+	// record (write a durable finding). dex is advisory-only — running commands
 	// is the harness's job, so act/shell/verify/checkpoint are gone.
 	registerQueryTool(srv, h, td)                     // query — the single read verb (merges ask + look)
-	registerEverydayTools(srv, h, td, embedAvailable) // remember (durable memory)
+	registerEverydayTools(srv, h, td, embedAvailable) // record (durable memory)
 
 	// DEX_EXPERT overlays the granular power lanes additively, in any profile.
 	if expertEnabled() {
@@ -914,19 +901,20 @@ func registerTools(srv *sdk.Server, h toolSurface, embedAvailable bool, descMode
 	}
 }
 
-// registerEverydayTools wires the write verb of the two-verb surface: remember
+// registerEverydayTools wires the write verb of the two-verb surface: record
 // (durable memory). Read moves live in query (path/regex/symbol/prose → the one
-// classifier); remember absorbed notes' everyday moves (#147: write/recall/
-// supersede), leaving notes' admin/relate tail on the expert lane.
+// classifier); record absorbed notes' everyday moves (#147: write/recall/
+// supersede), leaving notes' admin/relate tail on the CLI (`dex notes`).
 func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
 	_ = embedAvailable // no everyday tool is embed-gated after the 5c/5d collapse
 
-	// remember — the durable-memory verb (#110). An envelope facade over the
-	// knowledge engine covering the memory hot path: `fact` writes, `query`
-	// recalls, `supersedes` upserts (#147). Same store and salience as the expert
-	// `notes` tool, which retains the admin/relate tail. No embedder needed.
+	// record — the durable-memory verb (#195, renamed from remember to avoid the
+	// cognition metaphor). An envelope facade over the knowledge engine covering
+	// the memory hot path: `fact` writes, `query` recalls, `supersedes` upserts
+	// (#147). Same store and salience as the CLI `dex notes` admin surface, which
+	// retains the admin/relate tail. No embedder needed.
 	addTool(srv, &sdk.Tool{
-		Name: "remember",
+		Name: "record",
 		Description: td("Durable project memory across session resets, inside the universal envelope " +
 			"{result, trust, next}. Three moves: pass `fact` to persist a durable fact (write — lead a " +
 			"review finding or gotcha with a bracketed [kind]; use `scope` to bind it to a file glob so it " +
@@ -934,8 +922,8 @@ func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) strin
 			"empty query returns top facts by salience), or pass `fact` with `supersedes=<id>` to correct a " +
 			"stale fact in one step (upsert — the id comes from a recall or a near-duplicate warning, #606). " +
 			"The admin/relate lanes (delete, gc, export, import, consolidate, pin, relate, review) live on the " +
-			"expert `notes` tool (DEX_EXPERT)."),
-	}, rememberHandler(h))
+			"CLI (`dex notes`)."),
+	}, recordHandler(h))
 }
 
 // registerExpertTools wires the power lanes behind DEX_EXPERT (#125):
@@ -1070,38 +1058,11 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
 	}, h.review)
 
-	// notes — the full knowledge surface (#147). remember covers the everyday
-	// hot path (write/recall/supersede); notes retains the admin/relate tail
-	// (delete, pin/unpin, gc, consolidate, export/import, relate/relations,
-	// review) that isn't the every-task loop. Needs no embedder or chat model.
-	addTool(srv, &sdk.Tool{
-		Name: "notes",
-		Description: td("Persistent project memory — the full knowledge surface (no embedding required). " +
-			"For the everyday write/recall/supersede loop prefer the `remember` verb; reach for `notes` for the " +
-			"admin/relate actions below. " +
-			"Actions: add (store a fact with an archetype and confidence — the response's " +
-			"`similar` list warns when a near-duplicate note already exists so you can `delete` " +
-			"the superseded one; pass `scope` to bind the fact to a file glob/path/package so `locate` " +
-			"surfaces it proactively when it touches a matching file, #645 — and if you omit `scope` but the " +
-			"note names a real project file/glob, the response's `scope_suggestion` proposes one), " +
-			"list (recall top-k facts ordered by salience), delete (remove a fact by id), " +
-			"review (read-only: suggest near-duplicate merges, overlaps to judge, and stale facts — " +
-			"dex never auto-applies these, you act on them), pin/unpin (mark a fact permanent — exempt " +
-			"from decay, eviction, and staleness proposals, #633), " +
-			"relate (create/reinforce a typed edge between facts via relate_from/relate_to/relate_kind: " +
-			"DependsOn|RelatedTo|Supports|Contradicts|Supersedes, #621), " +
-			"relations (list edges for a fact id, or set diagram=true for a Mermaid graph of all edges), " +
-			"gc (run the lifecycle pass: decay confidence, consolidate near-duplicates, evict past the cap), " +
-			"consolidate (one-shot merge of near-duplicate facts without the rest of gc), " +
-			"export/import (dump/load the full note set as JSON for backup or cross-project transfer). " +
-			"Archetypes: Architecture | Gotcha | Convention | Decision | Observation | Dependency | Pattern | Fact | ReviewFinding. " +
-			"ReviewFinding closes the review→edit loop (#87): after reviewing a file, persist what the next editor " +
-			"most needs (a god-object, a duplication, a layering-violation, an injection-risk — lead the body with a " +
-			"bracketed [kind]) as add(archetype=ReviewFinding, scope=<reviewed file>) so read/locate/review surface it " +
-			"on touch instead of it leaking into chat. " +
-			"High-salience facts (Architecture, Gotcha) are automatically injected into ask responses " +
-			"as knowledge_facts."),
-	}, h.knowledge)
+	// notes' admin/relate surface (delete, pin/unpin, gc, consolidate,
+	// export/import, relate/relations, review) is CLI-only (`dex notes`, #147,
+	// #195 S4): record covers the everyday write/recall/supersede hot path, and
+	// the admin tail isn't an agent-facing effect. The knowledge engine (h.knowledge)
+	// still backs record and the CLI; only the MCP tool is gone.
 
 	// lookup is not a standalone tool — `find` already fuses exact
 	// symbol-name hits via RRF, and `ask` detects identifiers and runs
@@ -1285,19 +1246,12 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"For everyday use, single-project index freshness is embedded in `ask` responses — call this for cross-project health checks or debugging."),
 	}, h.status)
 
-	addTool(srv, &sdk.Tool{
-		Name: "session",
-		Description: td("Manage per-project session memory across tool calls. " +
-			"Actions: set_task (declare what you're working on), add_note (record a finding or decision), " +
-			"add_file (track a file you read/wrote), get (retrieve the current session state), " +
-			"clear (reset the session), snapshot (generate a recovery block after context compaction), " +
-			"budget (estimate context window utilization — returns used_tokens, remaining_tokens, utilization 0–1, and a recommendation: normal/compress/evict/critical), " +
-			"heatmap (show per-file access frequency and compression savings — hot/cold file breakdown, useful for spotting orphaned or rarely-read files), " +
-			"export (serialise task + working-set files (path+etag, no content) + notes into a dex-session-v1 bundle for handoff across a context reset), " +
-			"import (restore that bundle into a fresh session and return a recovery digest, flagging any files changed since export). " +
-			"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
-			"don't lose context across reconnects. No embedding required."),
-	}, h.session)
+	// The session/checkpoint admin surface (set_task/add_note/snapshot/export/
+	// import/budget/heatmap) was removed with the two-verb collapse (#195 S4):
+	// running a working session is the harness's job, not an advisory effect.
+	// The dedup that made it useful stays *internal* — sessionAutoFile tracks
+	// touched files and the seen/delta mechanism suppresses re-sends, and the
+	// current task still surfaces in query responses as session_task.
 }
 
 // registerQueryTool wires the single read verb of the two-verb surface (#196,
