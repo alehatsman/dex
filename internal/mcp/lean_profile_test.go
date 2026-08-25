@@ -13,14 +13,13 @@ import (
 
 // zeroInferenceTools work with no embedder at all (query's router degrades to
 // BM25+symbol lanes; the exact lanes route to grep/signatures over the
-// pre-computed index; act runs shell). They are the default verb surface and
-// must always be advertised, lean or not. After the 5c collapse (#145) the raw
-// grep primitive moved to expert — its lean-mode coverage is now via
-// query("/regex/"). (repo_map is expert-only; exact-symbol lookup has no
-// standalone tool since #685.)
+// pre-computed index). They are the default verb surface and must always be
+// advertised, lean or not. After the 5c collapse (#145) the raw grep primitive
+// moved to expert — its lean-mode coverage is now via query("/regex/").
+// (repo_map is expert-only; exact-symbol lookup has no standalone tool since
+// #685.)
 var zeroInferenceTools = []string{
 	"query",    // the read verb (merges ask+look, #196): symbol→graph, path:line→slice, path→signatures, /re/→grep; degrades to BM25 without an embedder
-	"act",      // run verb (wraps shell); no embedder needed
 	"remember", // memory verb (write/recall/supersede), no embedder needed; notes' admin tail is expert (#147)
 }
 

@@ -341,17 +341,22 @@ no deprecation window** — dex is a single-consumer tool (this harness), so old
 verb names are deleted outright in the same slice that replaces them. Every
 slice is a clean break.
 
-- [ ] **S1 — this spec.** Two verbs, advisory-only principle, the precision
+- [x] **S1 — this spec.** Two verbs, advisory-only principle, the precision
       ladder, per-item provenance, failure taxonomy, removals scoped. Gates the
       rest. *(this document)*
-- [ ] **S2 — `query` = merge `ask` + `look`.** One classifier = `look`'s
+- [x] **S2 — `query` = merge `ask` + `look`.** One classifier = `look`'s
       target-type detector ∪ `ResolveIntent`; narrow-default routing (symbol →
       graph, not fusion); `kind` / `want` overrides; the legible `route`.
       `ask`/`look` collapse into `query`'s internal handlers and their tool
-      registrations are **deleted** — not aliased.
-- [ ] **S3 — Remove what isn't code-intelligence.** (a) drop `act`/shell/verify/
-      checkpoint; (b) remove the swarm surface from the tree (confirm exact
-      extent first). Both are deletions, not refactors.
+      registrations are **deleted** — not aliased. *(shipped, #196)*
+- [x] **S3 — Remove what isn't code-intelligence.** (a) dropped `act`/shell/
+      verify/checkpoint (dex is advisory-only — running commands is the harness's
+      job); (b) removed the swarm surface from the tree — `dex agent` CLI,
+      `peer_claims`/`peer_findings`/`warm_cache`, `store_agent`/`store_claim`/
+      `store_share`, `foldPeerFindings`, the `agents`/`agent_messages`/
+      `share_cache` tables, `DEX_AGENT_ID`/`DEX_SWARM_WARMCACHE`/`DEX_AGENT_ROLE`,
+      and orphaned `diaries`. Everyday surface is now `query · remember`.
+      +124/−5967 across 60 files; all deletions, not refactors. *(shipped, #197)*
 - [ ] **S4 — `remember` → `record`.** Rename; recall stays folded into `query`;
       drop the `notes`-admin and `session` agent surfaces.
 - [ ] **S5 — Cutover gate.** Reuse #110's router-accuracy harness (labelled

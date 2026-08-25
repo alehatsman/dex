@@ -38,12 +38,6 @@ func (n *noopSurface) rehearse(_ context.Context, _ *sdk.CallToolRequest, _ Rehe
 func (n *noopSurface) cohort(_ context.Context, _ *sdk.CallToolRequest, _ CohortInput) (*sdk.CallToolResult, CohortOutput, error) {
 	return nil, CohortOutput{}, n.err()
 }
-func (n *noopSurface) verify(_ context.Context, _ *sdk.CallToolRequest, _ VerifyInput) (*sdk.CallToolResult, VerifyOutput, error) {
-	return nil, VerifyOutput{}, n.err()
-}
-func (n *noopSurface) checkpoint(_ context.Context, _ *sdk.CallToolRequest, _ CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error) {
-	return nil, CheckpointOutput{}, n.err()
-}
 func (n *noopSurface) search(_ context.Context, _ *sdk.CallToolRequest, _ SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	return nil, SearchOutput{}, n.err()
 }
@@ -106,9 +100,6 @@ func (n *noopSurface) knowledge(_ context.Context, _ *sdk.CallToolRequest, _ Kno
 }
 func (n *noopSurface) session(_ context.Context, _ *sdk.CallToolRequest, _ SessionInput) (*sdk.CallToolResult, SessionOutput, error) {
 	return nil, SessionOutput{}, n.err()
-}
-func (n *noopSurface) shellRun(_ context.Context, _ *sdk.CallToolRequest, _ ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
-	return nil, ShellOutput{}, n.err()
 }
 func (n *noopSurface) status(_ context.Context, _ *sdk.CallToolRequest, _ StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
 	return nil, StatusOutput{}, n.err()

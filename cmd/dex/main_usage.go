@@ -34,7 +34,6 @@ SEARCH & UNDERSTAND
   dex grep     [<path>] <pattern>        exact RE2 search (literals, import paths, no-embed fallback)
 
 CHANGE SAFETY
-  dex verify_change [<path>]             run tests implicated by a change
   dex review_diff   [<path>]             per-hunk PR intelligence (--ref|--branch|--pr)
   dex check   [<path>] <ref...>          verify file:line[:symbol] references exist
 
@@ -108,7 +107,6 @@ query — core verbs (CLI names match the MCP tool names):
                                           doc, blame, notes (MCP: locate)
   dex trace  [<path>] <name>            call graph via --dir callers|callees|path|impact
   dex grep   [<path>] <pattern>         exact RE2 regex search (MCP: grep)
-  dex verify_change [<path>]            run tests a change implicates (MCP: verify_change)
   dex review_diff   [<path>]            per-hunk PR intelligence (MCP: review_diff).
                                           Flags: --ref, --branch, --pr
   dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check)
@@ -212,7 +210,7 @@ env:
 exit codes:
   0    success
   1    error — runtime (index not found, embed unreachable) or usage
-       (bad flags, missing arguments); verify_change/check also exit 1 on failure
+       (bad flags, missing arguments); check also exits 1 on failure
   2    unknown command
   130  interrupted (SIGINT / Ctrl-C)
 

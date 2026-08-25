@@ -63,16 +63,6 @@ func (p projectScoped) cohort(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.cohort(ctx, req, in)
 }
 
-func (p projectScoped) verify(ctx context.Context, req *sdk.CallToolRequest, in VerifyInput) (*sdk.CallToolResult, VerifyOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.verify(ctx, req, in)
-}
-
-func (p projectScoped) checkpoint(ctx context.Context, req *sdk.CallToolRequest, in CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.checkpoint(ctx, req, in)
-}
-
 func (p projectScoped) search(ctx context.Context, req *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.search(ctx, req, in)
@@ -177,11 +167,6 @@ func (p projectScoped) searchTree(ctx context.Context, req *sdk.CallToolRequest,
 func (p projectScoped) searchGrep(ctx context.Context, req *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.searchGrep(ctx, req, in)
-}
-
-// shellRun is not project-scoped; the cwd in ShellInput governs the working directory.
-func (p projectScoped) shellRun(ctx context.Context, req *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
-	return p.s.shellRun(ctx, req, in)
 }
 
 // status is daemon-global (not project-scoped), so the bound root is ignored

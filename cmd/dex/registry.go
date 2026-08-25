@@ -90,8 +90,7 @@ func serverReadMode(m string) bool { return serverReadModes[m] }
 // (#521). These tools stay off the `verbs` registry by design — the MCP-only
 // contract is locked by verb_parity_test.go.
 var mcpOnlyToolHints = map[string]string{
-	"session":    "session is available via the MCP tool surface, not the CLI — it recaps an active MCP connection's working set (DEX_EXPERT power lane).",
-	"checkpoint": "checkpoint is available via the MCP tool surface, not the CLI — it keeps a shadow-git history of an agent's work-in-progress (snapshot/log/diff; DEX_EXPERT power lane).",
+	"session": "session is available via the MCP tool surface, not the CLI — it recaps an active MCP connection's working set (DEX_EXPERT power lane).",
 }
 
 // mcpOnlyToolHint returns the MCP-only help message for cmd, if any.
@@ -205,17 +204,6 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "verify_change", group: groupQuery, args: "[<path>]",
-		summary: "run the tests a change implicates (working tree / --ref / --symbol)",
-		flags: []flagSpec{
-			{name: "--ref", desc: "test a git range instead of the working tree", arg: true},
-			{name: "--symbol", desc: "test a symbol's blast-radius instead of a diff", arg: true},
-			{name: "--command", desc: "override test command template ({{packages}})", arg: true},
-			{name: "--timeout", desc: "test-run timeout seconds", arg: true},
-			flagFormat,
-		},
-	},
-	{
 		name: "check", group: groupQuery, args: "[<path>] <ref...>",
 		summary: "verify file:line[:symbol] references against the index",
 		flags: []flagSpec{
@@ -229,15 +217,6 @@ var verbs = []verbSpec{
 			{name: "--ext", desc: "file extension filter (no dot)", arg: true},
 			{name: "--in", desc: "restrict to a subdirectory", arg: true},
 			{name: "--max-results", desc: "maximum matches", arg: true},
-			flagFormat,
-		},
-	},
-	{
-		name: "shell", group: groupHidden, args: "<command...>",
-		summary: "run a command with compressed output",
-		flags: []flagSpec{
-			{name: "--cwd", desc: "working directory", arg: true},
-			{name: "--raw", desc: "skip compression"},
 			flagFormat,
 		},
 	},
@@ -431,7 +410,6 @@ var verbs = []verbSpec{
 	},
 
 	// ---- hidden (dispatched, not advertised) ----
-	{name: "agent", group: groupHidden, args: "announce|post|read|list|claim|release", summary: "multi-agent coordination bus (swarm findings + edit claims)"},
 	{name: "compress-stdin", group: groupHidden, summary: "compress stdin through dex patterns", noFiles: true},
 	{name: "shell-hook", group: groupHidden, summary: "print eval-able shell hook for passive compression", noFiles: true},
 }

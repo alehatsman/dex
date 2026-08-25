@@ -136,7 +136,6 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 	}
 	chatClient, chatConfigured := newChatClientConfigured()
 	expandClient := newExpandClient(chatClient)
-	agentID, agentRole := agentIdentity()
 	srv := &mcp.Server{
 		EmbedClient:    newEmbedClient(""),
 		ChatClient:     chatClient,
@@ -147,8 +146,6 @@ func newServerFromEnv(base string) (*mcp.Server, rerank.HealthChecker) {
 		StoreOpts:      opts,
 		Retrieve:       rerankSvc,
 		AutoWatch:      autoWatchConfigFromEnv(),
-		AgentID:        agentID,
-		AgentRole:      agentRole,
 	}
 	// Only populate the interface field when a client is actually configured.
 	// newExpandClient returns a *chat.Client, so assigning its nil value

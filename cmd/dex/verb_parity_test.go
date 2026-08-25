@@ -7,10 +7,10 @@ import "testing"
 // list so the CLI↔MCP contract is guarded in both directions.
 var mcpToolSurface = []string{
 	"ask", "search", "repo_map", "trace", "locate", "review_diff", "plan_rename", "rehearse_patch", "read",
-	"grep", "shell",
+	"grep",
 	"deps", "clusters",
-	"smells", "clones", "similar", "routes", "cohort", "refs", "verify_change", "check",
-	"status", "notes", "session", "checkpoint",
+	"smells", "clones", "similar", "routes", "cohort", "refs", "check",
+	"status", "notes", "session",
 }
 
 // cliToMCPName maps CLI verb names to MCP tool names when they differ.
@@ -59,9 +59,6 @@ func TestMCPToolCLIParity(t *testing.T) {
 		// budget reports per-session counters (slo.Tracker + heatmap) — a CLI
 		// invocation has no agent session and no in-memory counters to report.
 		"budget": true,
-		// checkpoint manages an agent's shadow-git work history — a session-scoped
-		// concept with no CLI analogue (#608), surfaced via mcpOnlyToolHints.
-		"checkpoint": true,
 	}
 
 	for _, tool := range mcpTools {

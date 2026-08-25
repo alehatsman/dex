@@ -1,36 +1,6 @@
 {
   "default": [
     {
-      "name": "act",
-      "additionalProperties": false,
-      "required": [
-        "command"
-      ],
-      "properties": {
-        "budget": {
-          "type": "integer"
-        },
-        "command": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": "string"
-        },
-        "expect": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "boolean"
-        },
-        "timeout_secs": {
-          "type": "integer"
-        }
-      }
-    },
-    {
       "name": "query",
       "additionalProperties": false,
       "required": [
@@ -99,36 +69,6 @@
   ],
   "expert": [
     {
-      "name": "act",
-      "additionalProperties": false,
-      "required": [
-        "command"
-      ],
-      "properties": {
-        "budget": {
-          "type": "integer"
-        },
-        "command": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": "string"
-        },
-        "expect": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "boolean"
-        },
-        "timeout_secs": {
-          "type": "integer"
-        }
-      }
-    },
-    {
       "name": "check",
       "additionalProperties": false,
       "required": [
@@ -139,33 +79,6 @@
           "type": "array|null"
         },
         "project_root": {
-          "type": "string"
-        }
-      }
-    },
-    {
-      "name": "checkpoint",
-      "additionalProperties": false,
-      "required": [
-        "action"
-      ],
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "from": {
-          "type": "string"
-        },
-        "limit": {
-          "type": "integer"
-        },
-        "message": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "to": {
           "type": "string"
         }
       }
@@ -689,36 +602,6 @@
       }
     },
     {
-      "name": "shell",
-      "additionalProperties": false,
-      "required": [
-        "command"
-      ],
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "expect": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "boolean"
-        },
-        "timeout_secs": {
-          "type": "integer"
-        }
-      }
-    },
-    {
       "name": "similar",
       "additionalProperties": false,
       "required": [
@@ -800,60 +683,9 @@
           "type": "string"
         }
       }
-    },
-    {
-      "name": "verify_change",
-      "additionalProperties": false,
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        },
-        "timeout_secs": {
-          "type": "integer"
-        }
-      }
     }
   ],
   "lean": [
-    {
-      "name": "act",
-      "additionalProperties": false,
-      "required": [
-        "command"
-      ],
-      "properties": {
-        "budget": {
-          "type": "integer"
-        },
-        "command": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": "string"
-        },
-        "expect": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "boolean"
-        },
-        "timeout_secs": {
-          "type": "integer"
-        }
-      }
-    },
     {
       "name": "query",
       "additionalProperties": false,

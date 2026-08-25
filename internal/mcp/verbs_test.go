@@ -13,9 +13,9 @@ var powerTools = []string{
 	"plan_rename", "rehearse_patch", "check",
 	"repo_map",
 	"trace", "locate", // demoted from the everyday surface in #143
-	// the raw primitives the verbs subsume, demoted in the 5c collapse (#145):
-	// act wraps shell; look routes to grep/read; ask(review) covers worktree review.
-	"shell", "grep", "read", "review_diff", "verify_change",
+	// the raw primitives query subsumes, demoted in the 5c collapse (#145):
+	// query routes /regex/→grep and path→read; kind=review covers worktree review.
+	"grep", "read", "review_diff",
 	// notes' admin/relate tail folded into the expert lane in the 5d fold (#147);
 	// remember absorbed the everyday write/recall/supersede moves.
 	"notes",
@@ -24,12 +24,13 @@ var powerTools = []string{
 // defaultVerbs are the zero-inference verbs that headline the default surface;
 // they don't need an embedder or chat model, so a lean stubServer advertises
 // them regardless of DEX_EXPERT. After the 5c collapse (#145, raw primitives →
-// expert), the 5d fold (#147, notes' admin tail → expert), and the #196 two-read-
-// verb merge (ask+look → query), the default surface is query · act · remember.
+// expert), the 5d fold (#147, notes' admin tail → expert), the #196 two-read-verb
+// merge (ask+look → query), and the #197 advisory-only cut (act/shell/verify/
+// checkpoint removed), the default surface is the two verbs query · remember.
 // query is the read verb (symbol→graph, path:line→slice, path→signatures,
 // /regex/→grep, prose→evidence pack; degrades to BM25 when no embedder is wired);
-// act runs (wraps shell); remember absorbs write/recall/supersede.
-var defaultVerbs = []string{"query", "act", "remember"}
+// remember absorbs write/recall/supersede.
+var defaultVerbs = []string{"query", "remember"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

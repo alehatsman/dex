@@ -219,18 +219,6 @@ func (rc *remoteClient) refs(ctx context.Context, _ *sdk.CallToolRequest, in Ref
 	return nil, out, err
 }
 
-func (rc *remoteClient) verify(ctx context.Context, _ *sdk.CallToolRequest, in VerifyInput) (*sdk.CallToolResult, VerifyOutput, error) {
-	var out VerifyOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/verify"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) checkpoint(ctx context.Context, _ *sdk.CallToolRequest, in CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error) {
-	var out CheckpointOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/checkpoint"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	var out SearchOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/find"), in, &out)
@@ -317,11 +305,6 @@ func (rc *remoteClient) searchTree(ctx context.Context, _ *sdk.CallToolRequest, 
 func (rc *remoteClient) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
 	var out SearchGrepOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/grep"), in, &out)
-	return nil, out, err
-}
-func (rc *remoteClient) shellRun(ctx context.Context, _ *sdk.CallToolRequest, in ShellInput) (*sdk.CallToolResult, ShellOutput, error) {
-	var out ShellOutput
-	err := rc.do(ctx, http.MethodPost, rc.base+"/v1/shell", in, &out)
 	return nil, out, err
 }
 func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in SmellsInput) (*sdk.CallToolResult, SmellsOutput, error) {

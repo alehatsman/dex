@@ -97,56 +97,6 @@ func TestHTTPMCPSession(t *testing.T) {
 	}
 }
 
-// TestHTTPMCPShellSchemaAcceptsDescription pins the accept-and-ignore contract
-// for the shell tool's `description` arg (#81). Native Bash/exec tools in most
-// harnesses require a description, so LLMs reflexively attach one to the first
-// shell call; before the field existed, the SDK-generated schema
-// (additionalProperties:false) hard-failed that inert key and cost a wasted
-// round-trip. The advertised InputSchema must now list `description` as a
-// property while keeping additionalProperties:false — so strictness stays
-// targeted rather than disabled wholesale.
-func TestHTTPMCPShellSchemaAcceptsDescription(t *testing.T) {
-	ctx := context.Background()
-	t.Setenv("DEX_EXPERT", "1") // shell demoted to the expert lane in the 5c collapse (#145)
-	srv := stubServer(t)
-	id, _, projects := oneProjectRegistry(t)
-	ts := startTestHTTPServer(t, srv, RunHTTPOptions{Projects: projects})
-	cs := mcpConnect(t, ctx, ts.URL, "/v1/projects/"+id+"/mcp", ts.Client())
-
-	tools, err := cs.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatalf("ListTools: %v", err)
-	}
-	var shell *sdk.Tool
-	for _, tool := range tools.Tools {
-		if tool.Name == "shell" {
-			shell = tool
-			break
-		}
-	}
-	if shell == nil {
-		t.Fatalf("shell tool not advertised; got %d tools", len(tools.Tools))
-	}
-
-	// InputSchema arrives as decoded JSON — round-trip it into a typed view.
-	var schema struct {
-		Properties           map[string]json.RawMessage `json:"properties"`
-		AdditionalProperties *bool                      `json:"additionalProperties"`
-	}
-	raw, _ := json.Marshal(shell.InputSchema)
-	if err := json.Unmarshal(raw, &schema); err != nil {
-		t.Fatalf("decode shell inputSchema: %v (raw=%s)", err, raw)
-	}
-	if _, ok := schema.Properties["description"]; !ok {
-		t.Errorf("shell schema must advertise a `description` property; properties=%s", raw)
-	}
-	// Strictness must remain: additionalProperties stays false so any OTHER
-	// unknown key is still rejected — the fix is a targeted allowance.
-	if schema.AdditionalProperties == nil || *schema.AdditionalProperties {
-		t.Errorf("shell schema additionalProperties must remain false; raw=%s", raw)
-	}
-}
-
 // TestHTTPMCPUnknownProject confirms an unknown {id} is refused (getServer
 // returns nil => 400), so the session fails to establish.
 func TestHTTPMCPUnknownProject(t *testing.T) {

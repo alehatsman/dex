@@ -42,23 +42,21 @@ import (
 func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
-Everyday surface = query (read) · record via remember (write); act runs commands:
+dex is advisory-only — exactly two effects: query (read the intelligence) · remember (write a durable finding). Running commands, editing, and verifying are the harness's job.
 1. query(input) — START HERE for any coding task or question. Its input SHAPE picks the lane, and the answer's precision tracks the input's: a file path → its compressed signatures (raw bytes: use native Read), a path:line or range → that slice, a /regex/ → grep, a bare symbol ('NewServer', '(*Server).Run') → JUST its call graph, a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Force the lane with kind=… and the facet with want=… (want=assemble for a task-start working set; kind=review for a working-tree review). The envelope's route echoes the shape detected and the road not taken.
-2. edit — your job, not dex's.
-3. act(command) — run builds/tests/git; compressed output inside the universal envelope.
+2. edit / run / verify — your job (native Edit + Bash), not dex's.
 
 Tool mapping (use these instead of native):
 - query(input)    instead of Grep/rg/Read/manual navigation — one read verb: a path → signatures, a /regex/ → grep, a path:line → slice, a symbol → call graph, prose → routed evidence pack (semantic + symbol + graph). Raw file bytes are still the native Read tool's job.
-- act(command)    instead of Bash — shell with compressed output in the envelope
 - remember(fact)  instead of re-deriving facts — write a durable finding, recall with query=…, or correct a stale one with fact + supersedes=<id>
 
-Power lanes (gated behind DEX_EXPERT — the verbs above cover everyday work):
-- shell / grep / read — the raw primitives act and query wrap; reach here for the primitive directly
+Power lanes (gated behind DEX_EXPERT — the two verbs above cover everyday work):
+- grep / read — the raw primitives query wraps; reach here for the primitive directly
 - notes — the full knowledge surface (delete, pin, gc, consolidate, export/import, relate); remember covers everyday write/recall/supersede
-- review_diff — targeted PR/branch/ref review (query kind=review covers the working tree); verify_change — find and run the tests a change implicates
+- review_diff — targeted PR/branch/ref review (query kind=review covers the working tree)
 - trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / session / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query,mcp__dex__act,mcp__dex__remember" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query,mcp__dex__remember" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.
@@ -186,8 +184,6 @@ type Server struct {
 	Retrieve       retrieve.Service     // query-time ranking service; holds the cross-encoder + shared rerank cache (#473)
 	AutoWatch      AutoWatchConfig      // lazy per-project watcher; zero value disables
 	CCRDir         string               // optional override for the proxy CCR tee dir; defaults to ~/.cache/dex/proxy/tee (#630)
-	AgentID        string               // this process's identity on the swarm findings bus (#180); minted per-process, overridable via DEX_AGENT_ID. Self-filters own findings out of the recall fold.
-	AgentRole      string               // optional human-legible role for bus provenance (DEX_AGENT_ROLE); empty = none
 
 	watcherState  // project watcher goroutines
 	sessionState  // per-MCP-session tracking (throttle, dedup, body handles)
@@ -829,7 +825,6 @@ type toolSurface interface {
 	refactor(context.Context, *sdk.CallToolRequest, RefactorInput) (*sdk.CallToolResult, RefactorOutput, error)
 	rehearse(context.Context, *sdk.CallToolRequest, RehearseInput) (*sdk.CallToolResult, RehearseOutput, error)
 	cohort(context.Context, *sdk.CallToolRequest, CohortInput) (*sdk.CallToolResult, CohortOutput, error)
-	verify(context.Context, *sdk.CallToolRequest, VerifyInput) (*sdk.CallToolResult, VerifyOutput, error)
 	search(context.Context, *sdk.CallToolRequest, SearchInput) (*sdk.CallToolResult, SearchOutput, error)
 	findSymbol(context.Context, *sdk.CallToolRequest, FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error)
 	related(context.Context, *sdk.CallToolRequest, RelatedInput) (*sdk.CallToolResult, RelatedOutput, error)
@@ -851,10 +846,8 @@ type toolSurface interface {
 	searchGrep(context.Context, *sdk.CallToolRequest, SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error)
 	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	session(context.Context, *sdk.CallToolRequest, SessionInput) (*sdk.CallToolResult, SessionOutput, error)
-	checkpoint(context.Context, *sdk.CallToolRequest, CheckpointInput) (*sdk.CallToolResult, CheckpointOutput, error)
 	check(context.Context, *sdk.CallToolRequest, CheckInput) (*sdk.CallToolResult, CheckOutput, error)
 	refs(context.Context, *sdk.CallToolRequest, RefsInput) (*sdk.CallToolResult, RefsOutput, error)
-	shellRun(context.Context, *sdk.CallToolRequest, ShellInput) (*sdk.CallToolResult, ShellOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)
 	summarize(context.Context, *sdk.CallToolRequest, SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error)
 	budget(context.Context, *sdk.CallToolRequest, BudgetInput) (*sdk.CallToolResult, BudgetOutput, error)
@@ -909,9 +902,9 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 func registerTools(srv *sdk.Server, h toolSurface, embedAvailable bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 
-	// The two-verb read surface (#196, epic #195): query merges ask+look into one
-	// classifier over the same engine. act remains until S3 removes it.
-	registerBaselineTools(srv, h, td)                 // act (run): the index-free floor
+	// The two-verb surface (#197, epic #195): query (read the intelligence) +
+	// remember (write a durable finding). dex is advisory-only — running commands
+	// is the harness's job, so act/shell/verify/checkpoint are gone.
 	registerQueryTool(srv, h, td)                     // query — the single read verb (merges ask + look)
 	registerEverydayTools(srv, h, td, embedAvailable) // remember (durable memory)
 
@@ -921,12 +914,10 @@ func registerTools(srv *sdk.Server, h toolSurface, embedAvailable bool, descMode
 	}
 }
 
-// registerEverydayTools wires the everyday non-baseline verb of the four-verb
-// surface: remember (durable memory). The other everyday primitives all demoted
-// once a verb covered them — act runs (shell), look fetches (read/grep),
-// ask(review) reviews, and remember absorbed notes' everyday moves (#147:
-// write/recall/supersede), leaving notes' admin/relate tail on the expert lane.
-// look/act live in registerBaselineTools as the always-on floor.
+// registerEverydayTools wires the write verb of the two-verb surface: remember
+// (durable memory). Read moves live in query (path/regex/symbol/prose → the one
+// classifier); remember absorbed notes' everyday moves (#147: write/recall/
+// supersede), leaving notes' admin/relate tail on the expert lane.
 func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
 	_ = embedAvailable // no everyday tool is embed-gated after the 5c/5d collapse
 
@@ -1010,26 +1001,10 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"ask remains the primary entry point for open-ended questions."),
 	}, h.locate)
 
-	// The four raw primitives the verbs subsume (#145): shell (act wraps it),
-	// grep + read (look routes /regex/→grep, path→read), and review_diff
-	// (ask("review my changes") covers the everyday worktree case #144 — this is
-	// the targeted ref/branch/pr escape hatch). All index-free, so unconditional.
-	addTool(srv, &sdk.Tool{
-		Name: "shell",
-		Description: td("Execute a shell command and return compressed output. " +
-			"Applies the same compression pipeline as compress_output — collapses build noise, " +
-			"deduplicates log lines, strips ANSI, and summarises go test / git / cargo / npm / docker output — " +
-			"so raw command output never hits your context budget. " +
-			"Use raw:true to skip compression. " +
-			"Runs via bash when available (falls back to POSIX sh), so pipefail and bash-only " +
-			"syntax work; override with DEX_SHELL. " +
-			"File-write redirects (> >>) and tee are blocked by default; use the Write tool instead, " +
-			"or set DEX_SHELL_ALLOW_WRITES=1 to permit them. " +
-			"On a non-zero exit whose output matches a known failure signature, the response carries a " +
-			"low-confidence `gotcha_candidate` — confirm it with `notes` (action=add) to persist the pitfall. " +
-			"Timeout: 60 s."),
-	}, h.shellRun)
-
+	// The raw primitives the verbs subsume (#145): grep + read (look routes
+	// /regex/→grep, path→read), and review_diff (ask("review my changes") covers
+	// the everyday worktree case #144 — this is the targeted ref/branch/pr escape
+	// hatch). All index-free, so unconditional.
 	addTool(srv, &sdk.Tool{
 		Name:        "grep",
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
@@ -1094,22 +1069,6 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"model. Degrades cleanly: callers/risk are empty when the graph isn't indexed (diff + churn " +
 			"still returned); returns 'no-index' / 'no-changes' / 'not-found' otherwise."),
 	}, h.review)
-
-	// verify_change is NOT read-only (it runs the test command), so no ReadOnlyHint.
-	// Demoted to expert (#145) pending #146: today it guesses `go test`; until it
-	// delegates to the detected canonical command it loses to the project task runner.
-	addTool(srv, &sdk.Tool{
-		Name: "verify_change",
-		Description: td("Run the tests a change implicates and return pass/fail in ONE call — closes " +
-			"change → verify → learn. With no args it tests the uncommitted working-tree changes (vs " +
-			"HEAD); `ref` tests a git range (e.g. 'HEAD~3..HEAD'); `symbol` tests a symbol's blast-radius " +
-			"(its own test plus its callers', #654). Resolves changed files → Go packages and runs the " +
-			"project's declared test command (tasks.yml/Makefile/package.json — e.g. `mooncake task test`), " +
-			"re-scoped to those packages for a plain `go test`, routed through the shell pipeline so output " +
-			"is compressed and a failing run stages a `gotcha_candidate` you persist with `notes`. Override " +
-			"via `command` or $DEX_VERIFY_CMD with a '{{packages}}' placeholder. Go-only in v1: returns " +
-			"'no-tests' when no Go package is implicated, 'no-changes' when the diff is empty."),
-	}, h.verify)
 
 	// notes — the full knowledge surface (#147). remember covers the everyday
 	// hot path (write/recall/supersede); notes retains the admin/relate tail
@@ -1339,38 +1298,6 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"Session state (task + notes + files) is surfaced in ask responses as session_task so you " +
 			"don't lose context across reconnects. No embedding required."),
 	}, h.session)
-
-	addTool(srv, &sdk.Tool{
-		Name: "checkpoint",
-		Description: td("Private shadow git history of the working tree — checkpoint and review your " +
-			"own work-in-progress WITHOUT touching the user's .git (a separate repo under dex's cache). " +
-			"Actions: snapshot (commit the current working tree to the shadow; idempotent — no commit when " +
-			"unchanged; returns sha + files_changed), log (list checkpoints, newest first; limit default 20/max 200), " +
-			"diff (unified diff between two checkpoints, default HEAD~1..HEAD; from/to override; byte-capped). " +
-			"Use it to review what you've changed across a session, or to snapshot before a risky refactor. " +
-			"Read-only on the user's tree (dex never writes it, #551): apply any rollback yourself from the diff."),
-	}, h.checkpoint)
-}
-
-// registerBaselineTools wires the always-on floor (#145): the index-free verbs
-// act (run) + look (fetch) stay exposed under every profile, including the
-// weak-model one. shell/grep/read demoted to expert — act wraps shell, look
-// routes /regex/→grep and path→read — so the floor is the verbs, not the raw
-// primitives they subsume.
-func registerBaselineTools(srv *sdk.Server, h toolSurface, td func(string) string) {
-	// act — the "run and verify" verb (#110). A thin envelope facade over shell:
-	// same execution/compression, plus a trust/cost envelope and a routed next
-	// step to `remember` when the command fails with a recognized signature.
-	// Registered in baseline so exec stays available under every profile, exactly
-	// like the shell alias it wraps.
-	addTool(srv, &sdk.Tool{
-		Name: "act",
-		Description: td("Run a shell command and get compressed output back inside the universal " +
-			"envelope {result, trust, cost, next}. act is the run/verify verb: builds, tests, git, " +
-			"formatters — writes and verification, not context-gathering. Same execution, sandboxing, " +
-			"and compression as `shell` (its alias); adds cost.saved_pct and, on a recognized failure " +
-			"signature, a next step to remember the gotcha. Use raw:true to skip compression. Timeout: 60 s."),
-	}, actHandler(h))
 }
 
 // registerQueryTool wires the single read verb of the two-verb surface (#196,

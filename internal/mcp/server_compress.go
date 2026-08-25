@@ -2,10 +2,54 @@ package mcp
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/alehatsman/dex/internal/compress"
 )
+
+// reAnsi matches ANSI CSI/OSC escape sequences. stripANSI drops them before any
+// compression or byte-capping so terminal control codes never inflate output or
+// break the summary pipeline (relocated from the removed shell surface #197).
+var reAnsi = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+
+func stripANSI(s string) string { return reAnsi.ReplaceAllString(s, "") }
+
+// authFlowStrong / authFlowWeak recognise an OAuth device-code prompt in
+// captured output — such text must pass through uncompressed and untruncated so
+// the user can still read the code and URL.
+var authFlowStrong = []string{
+	"devicelogin", "deviceauth", "device_code", "device code",
+	"device-code", "verification_uri", "user_code", "one-time code",
+}
+
+var authFlowWeak = []string{
+	"enter the code", "enter this code", "enter code:", "use the code",
+	"use a web browser to open", "open the page",
+	"authenticate by visiting", "sign in with the code",
+	"sign in using a code", "verification code",
+	"authorize this device", "waiting for authentication",
+	"waiting for login", "open your browser", "open in your browser",
+}
+
+// containsAuthFlow returns true when output looks like an OAuth device-code
+// flow. Output must never be compressed or truncated in this case.
+func containsAuthFlow(output string) bool {
+	lower := strings.ToLower(output)
+	for _, s := range authFlowStrong {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+	for _, s := range authFlowWeak {
+		if strings.Contains(lower, s) {
+			if strings.Contains(lower, "http://") || strings.Contains(lower, "https://") {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // minCompressLines is the minimum number of lines required before any pattern
 // runs — tiny outputs gain nothing and can only be made worse.

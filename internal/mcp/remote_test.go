@@ -299,7 +299,6 @@ func TestRemoteRouteParity(t *testing.T) {
 		{"notes", func() error { _, _, e := rc.knowledge(ctx, nil, KnowledgeInput{}); return e }},
 		{"session", func() error { _, _, e := rc.session(ctx, nil, SessionInput{}); return e }},
 		{"read", func() error { _, _, e := rc.summarize(ctx, nil, SummarizeInput{}); return e }},
-		{"shell", func() error { _, _, e := rc.shellRun(ctx, nil, ShellInput{}); return e }},
 		{"ls", func() error { _, _, e := rc.searchTree(ctx, nil, SearchTreeInput{}); return e }},
 		{"grep", func() error { _, _, e := rc.searchGrep(ctx, nil, SearchGrepInput{}); return e }},
 	}

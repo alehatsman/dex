@@ -12,8 +12,7 @@ import (
 // row table: vectors are keyed on the source rowid and dropped by an AFTER
 // DELETE trigger when the source row goes away. Unlike chunk_vecs there is no
 // insert/update mirroring or quant lane — the owner writes vectors explicitly.
-// Shared by knowledge fact embeddings (fact_vecs) and agent findings-bus
-// embeddings (agent_msg_vecs).
+// Used by knowledge fact embeddings (fact_vecs).
 type sidecarVecSpec struct {
 	vecTable   string // vec0 table name, e.g. "fact_vecs"
 	srcTable   string // row table the delete-cascade trigger fires on

@@ -15,14 +15,13 @@ import (
 // from an envelope or lets an exact verb claim a non-exact provenance, one of
 // these fails before it ships.
 
-// exactVerbOutputs is the set of exact-verb (look/act/remember) envelope types.
+// exactVerbOutputs is the set of exact-verb (look/remember) envelope types.
 // ask is deliberately excluded: it is the one verb allowed to infer, and it
 // carries a richer trust envelope (confidence + semantic/name-based provenance),
 // so it does not share this shape.
 func exactVerbOutputs() map[string]reflect.Type {
 	return map[string]reflect.Type{
 		"look":     reflect.TypeOf(LookOutput{}),
-		"act":      reflect.TypeOf(ActOutput{}),
 		"remember": reflect.TypeOf(RememberOutput{}),
 	}
 }
@@ -66,10 +65,6 @@ func TestOneFuzzyVerbInvariant(t *testing.T) {
 		}
 	}
 
-	// act: empty command → error path.
-	if _, out, _ := actVerb(ctx, h, req, ActInput{}); true {
-		check("act(empty)", out.Trust.Provenance)
-	}
 	// remember: recall against no index.
 	if _, out, _ := rememberVerb(ctx, h, req, RememberInput{Query: "anything"}); true {
 		check("remember(recall)", out.Trust.Provenance)

@@ -234,52 +234,6 @@ func schemaDDL() []string {
 		   created_at INTEGER NOT NULL,
 		   PRIMARY KEY(from_id, to_id, kind)
 		 )`,
-		// agents / agent_messages — multi-agent coordination bus. Agents announce
-		// themselves, post findings, and read peers' messages. category groups
-		// messages by semantic kind (e.g. "finding", "plan", "error"); the FTS5
-		// index gives full-text search over the bus.
-		`CREATE TABLE IF NOT EXISTS agents (
-		   id           TEXT PRIMARY KEY,
-		   role         TEXT NOT NULL DEFAULT '',
-		   announced_at INTEGER NOT NULL,
-		   last_seen_at INTEGER NOT NULL
-		 )`,
-		`CREATE TABLE IF NOT EXISTS agent_messages (
-		   id        INTEGER PRIMARY KEY AUTOINCREMENT,
-		   agent_id  TEXT NOT NULL,
-		   topic     TEXT NOT NULL DEFAULT '',
-		   body      TEXT NOT NULL,
-		   posted_at INTEGER NOT NULL,
-		   category  TEXT NOT NULL DEFAULT ''
-		 )`,
-		`CREATE INDEX IF NOT EXISTS idx_agent_messages_topic ON agent_messages(topic, id)`,
-		`CREATE VIRTUAL TABLE IF NOT EXISTS agent_messages_fts USING fts5(
-		   body, topic, category,
-		   content='agent_messages', content_rowid='id'
-		 )`,
-		`CREATE TRIGGER IF NOT EXISTS agent_messages_ai AFTER INSERT ON agent_messages BEGIN
-		   INSERT INTO agent_messages_fts(rowid, body, topic, category)
-		   VALUES (new.id, new.body, new.topic, new.category); END`,
-		`CREATE TRIGGER IF NOT EXISTS agent_messages_ad AFTER DELETE ON agent_messages BEGIN
-		   INSERT INTO agent_messages_fts(agent_messages_fts, rowid, body, topic, category)
-		   VALUES ('delete', old.id, old.body, old.topic, old.category); END`,
-		`CREATE TRIGGER IF NOT EXISTS agent_messages_au AFTER UPDATE ON agent_messages BEGIN
-		   INSERT INTO agent_messages_fts(agent_messages_fts, rowid, body, topic, category)
-		   VALUES ('delete', old.id, old.body, old.topic, old.category);
-		   INSERT INTO agent_messages_fts(rowid, body, topic, category)
-		   VALUES (new.id, new.body, new.topic, new.category); END`,
-		// share_cache — shared compressed-file-context cache for parallel agents.
-		// Keyed by path (one entry per file). Evicted on hash mismatch (pull).
-		`CREATE TABLE IF NOT EXISTS share_cache (
-		   id           INTEGER PRIMARY KEY AUTOINCREMENT,
-		   path         TEXT NOT NULL,
-		   content_hash TEXT NOT NULL,
-		   content      TEXT NOT NULL,
-		   pushed_by    TEXT NOT NULL DEFAULT '',
-		   pushed_at    INTEGER NOT NULL,
-		   hit_count    INTEGER NOT NULL DEFAULT 0,
-		   UNIQUE(path)
-		 )`,
 		// ctx_packages — registry of installed context packages (.ctxpkg bundles).
 		`CREATE TABLE IF NOT EXISTS ctx_packages (
 		   name       TEXT PRIMARY KEY,

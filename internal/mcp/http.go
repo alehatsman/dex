@@ -255,7 +255,6 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed := http.NewServeMux()
 	authed.HandleFunc("GET /v1/projects", s.handleListProjects(opts.Projects))
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
-	authed.HandleFunc("POST /v1/shell", s.handleShell())
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/map", jsonHandler(opts.Projects, func(in *MapInput, r string) { in.ProjectRoot = r }, s.Map))
 	authed.HandleFunc("POST /v1/projects/{id}/trace", jsonHandler(opts.Projects, func(in *TraceInput, r string) { in.ProjectRoot = r }, s.Trace))
@@ -263,7 +262,6 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/review", jsonHandler(opts.Projects, func(in *ReviewInput, r string) { in.ProjectRoot = r }, s.Review))
 	authed.HandleFunc("POST /v1/projects/{id}/refactor", jsonHandler(opts.Projects, func(in *RefactorInput, r string) { in.ProjectRoot = r }, s.Refactor))
 	authed.HandleFunc("POST /v1/projects/{id}/cohort", jsonHandler(opts.Projects, func(in *CohortInput, r string) { in.ProjectRoot = r }, s.Cohort))
-	authed.HandleFunc("POST /v1/projects/{id}/verify", jsonHandler(opts.Projects, func(in *VerifyInput, r string) { in.ProjectRoot = r }, s.Verify))
 	authed.HandleFunc("POST /v1/projects/{id}/find", jsonHandler(opts.Projects, func(in *SearchInput, r string) { in.ProjectRoot = r }, s.Search))
 	authed.HandleFunc("POST /v1/projects/{id}/lookup", jsonHandler(opts.Projects, func(in *FindSymbolInput, r string) { in.ProjectRoot = r }, s.FindSymbol))
 	authed.HandleFunc("POST /v1/projects/{id}/grep", jsonHandler(opts.Projects, func(in *SearchGrepInput, r string) { in.ProjectRoot = r }, s.SearchGrep))
@@ -283,7 +281,6 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/clusters", jsonHandler(opts.Projects, func(in *CommunitiesInput, r string) { in.ProjectRoot = r }, s.GraphCommunities))
 	authed.HandleFunc("POST /v1/projects/{id}/notes", jsonHandler(opts.Projects, func(in *KnowledgeInput, r string) { in.ProjectRoot = r }, s.Knowledge))
 	authed.HandleFunc("POST /v1/projects/{id}/session", jsonHandler(opts.Projects, func(in *SessionInput, r string) { in.ProjectRoot = r }, s.Session))
-	authed.HandleFunc("POST /v1/projects/{id}/checkpoint", jsonHandler(opts.Projects, func(in *CheckpointInput, r string) { in.ProjectRoot = r }, s.Checkpoint))
 	authed.HandleFunc("POST /v1/projects/{id}/budget", jsonHandler(opts.Projects, func(in *BudgetInput, r string) { in.ProjectRoot = r }, s.Budget))
 	authed.HandleFunc("POST /v1/projects/{id}/index-status", jsonHandler(opts.Projects, func(in *IndexStatusInput, r string) { in.ProjectRoot = r }, s.IndexStatus))
 
@@ -551,22 +548,6 @@ func jsonHandler[In, Out any](
 		}
 		bind(&in, root)
 		out, err := call(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
-}
-
-func (s *Server) handleShell() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var in ShellInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		out, err := s.ShellRun(r.Context(), in)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
