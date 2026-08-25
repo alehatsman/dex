@@ -368,16 +368,18 @@ slice is a clean break.
       `~/.cache/dex/current_task` (was `session(set_task)`). Default surface =
       `[query, record]`; expert = 21 tools, none of remember/notes/session/budget.
       +278/−1506 across 32 files. *(shipped, #198)*
-- [ ] **S5 — Cutover gate.** Reuse #110's router-accuracy harness (labelled
-      input→lane set, threshold) — the *same* gate, now scoring shape→lane.
-      Assert the two-verb system-prompt budget (target: well under the four-verb
-      ~800 tokens) and that **only two tools register** (no old verb reachable).
-      No alias step — the old names were deleted in S2–S4.
-- [ ] **S5 — Cutover gate.** Reuse #110's router-accuracy harness (labelled
-      input→lane set, threshold) — the *same* gate, now scoring shape→lane.
-      Assert the two-verb system-prompt budget (target: well under the four-verb
-      ~800 tokens) and that **only two tools register** (no old verb reachable).
-      No alias step — the old names were deleted in S2–S4.
+- [x] **S5 — Cutover gate.** Reused #110's router-accuracy harness, re-pointed
+      to score shape→lane through query's classifier (`classifyQuery`) — a
+      labelled input→lane corpus spanning every rung of the ladder, exact (the
+      classifier is deterministic, so the bar is 100%, not a fuzzy floor). retrieve's
+      harness still guards the semantic lane's prose→intent sub-routing. Added the
+      registration gate (default surface is EXACTLY `{query, record}`; every verb
+      deleted in S2–S4 is unreachable at both the default and DEX_EXPERT tiers) and
+      the system-prompt budget (`ServerInstructions` ≈ 533 tokens, well under the
+      four-verb ~800). Folded in the exact/symbol dispatch e2e deferred from S2:
+      query's read/slice/locate/grep/symbol lanes driven over a real indexed
+      fixture. No alias step — the old names were deleted in S2–S4.
+      3 new test files, no production change. *(shipped, #199)*
 
 ---
 
