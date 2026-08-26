@@ -180,6 +180,14 @@ type GraphOptions struct {
 	// graph-sweep eval (#470) sets this to measure the lane's marginal NDCG/
 	// Recall delta vs graph-off. Not env-wired; ablation/test use only.
 	GraphLaneDisabled bool
+
+	// GraphSeedTopN gates spreading-activation seeding by primary-hit
+	// confidence (spike #225): when > 0, only the top N primary hits by
+	// score seed BFS, instead of every hit in the fused pool. Zero (default)
+	// is unchanged blanket seeding. Session-recent files and their
+	// co-access neighbors are never gated. Set via DEX_GRAPH_SEED_GATE_TOPN
+	// — spike-only, not in the documented env table until proven.
+	GraphSeedTopN int
 }
 
 // InfraOptions controls storage and learning behaviour.

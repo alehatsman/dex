@@ -435,8 +435,18 @@ func (s *Store) activationSeeds(ctx context.Context, hits []Hit) []SeedFile {
 	}
 
 	// Primary hits seed BFS (structural discovery from what's already relevant).
+	// GraphSeedTopN (spike #225) gates this to the top N by score instead of
+	// every hit in the fused pool — session-recent files and their co-access
+	// neighbors above are never gated, only this blanket-by-default leg.
+	primary := hits
+	if s.opts.GraphSeedTopN > 0 && len(hits) > s.opts.GraphSeedTopN {
+		ranked := make([]Hit, len(hits))
+		copy(ranked, hits)
+		sort.Slice(ranked, func(i, j int) bool { return ranked[i].Score > ranked[j].Score })
+		primary = ranked[:s.opts.GraphSeedTopN]
+	}
 	var maxScore float32
-	for _, h := range hits {
+	for _, h := range primary {
 		if h.Score > maxScore {
 			maxScore = h.Score
 		}
@@ -444,7 +454,7 @@ func (s *Store) activationSeeds(ctx context.Context, hits []Hit) []SeedFile {
 	if maxScore <= 0 {
 		maxScore = 1
 	}
-	for _, h := range hits {
+	for _, h := range primary {
 		if _, dup := seen[h.Path]; !dup {
 			seeds = append(seeds, SeedFile{Path: h.Path, Weight: h.Score / maxScore})
 			seen[h.Path] = struct{}{}

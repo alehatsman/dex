@@ -50,6 +50,7 @@ func storeOpts() store.Options {
 			GraphGamma:      graphGamma(),
 			GraphHopCap:     graphHopCap(),
 			GraphLaneWeight: graphLaneWeight(),
+			GraphSeedTopN:   graphSeedTopN(),
 		},
 		InfraOptions: store.InfraOptions{
 			DisableCoAccess: os.Getenv("DEX_COACCESS") == "0",
@@ -181,6 +182,22 @@ func graphLaneWeight() float32 {
 		return 0
 	}
 	return float32(v)
+}
+
+// graphSeedTopN reads DEX_GRAPH_SEED_GATE_TOPN — spike #225, confidence-gated
+// spreading-activation seeding. Zero (unset/invalid) keeps unchanged blanket
+// seeding (every primary hit seeds BFS).
+func graphSeedTopN() int {
+	raw := os.Getenv("DEX_GRAPH_SEED_GATE_TOPN")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		fmt.Fprintf(os.Stderr, "warning: DEX_GRAPH_SEED_GATE_TOPN=%q is not a positive integer; ignoring\n", raw)
+		return 0
+	}
+	return n
 }
 
 func parseDuration(envVar, raw string, def time.Duration) time.Duration {
