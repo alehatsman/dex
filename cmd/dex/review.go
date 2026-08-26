@@ -129,9 +129,6 @@ func renderReviewText(out mcp.ReviewOutput) {
 				}
 				fmt.Printf("       • %s%s%s\n", sym.Name, exp, callers)
 			}
-			if len(h.Notes) > 0 {
-				fmt.Printf("       notes: %d related\n", len(h.Notes))
-			}
 		}
 	}
 }

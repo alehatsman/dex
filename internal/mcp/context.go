@@ -71,38 +71,13 @@ func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextO
 	return stale, indexing, indexedAt
 }
 
-// loadContextFacts loads the session task and knowledge facts into out.
+// loadContextFacts loads the current session task into out. Knowledge-fact
+// injection was removed with the L3 subsystem (#205): dex is retrieval over the
+// codebase, not agent memory.
 func (s *Server) loadContextFacts(ctx context.Context, st *store.Store, in ContextInput, out *ContextOutput) {
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
 		out.SessionTask = ss.Task
 	}
-	// skipFallback=true routes ask through the 0.5 relevance floor (KnowledgeQueryVec
-	// strict mode) and drops the top-salience fallback: a query injects only facts
-	// that actually match it, not whatever scores highest by archetype weight. This
-	// keeps off-topic, high-salience notes (e.g. bulky VerifiedFact session logs that
-	// cosine ~0.3-0.4) out of every unrelated ask (#785).
-	if facts, err := s.recallFacts(ctx, st, in.Question, 5, true, "", true); err == nil && len(facts) > 0 {
-		for _, f := range facts {
-			out.KnowledgeFacts = append(out.KnowledgeFacts, "["+f.Archetype+"] "+capFactBody(f.Body))
-		}
-	}
-}
-
-// maxInjectedFactBody bounds how much of one fact body ask inlines into
-// knowledge_facts. The relevance floor keeps off-topic facts out, but an
-// on-topic giant (a multi-KB note body) would still blow the response budget,
-// so each injected body is clipped to this many runes (#785).
-const maxInjectedFactBody = 600
-
-// capFactBody clips an over-long fact body for injection, appending a marker so
-// the truncation is visible. Operates on runes to avoid splitting a multibyte
-// character.
-func capFactBody(body string) string {
-	r := []rune(body)
-	if len(r) <= maxInjectedFactBody {
-		return body
-	}
-	return strings.TrimRight(string(r[:maxInjectedFactBody]), " ") + " …(truncated)"
 }
 
 // contextRouterStream is the single chokepoint all ask entry points (MCP tool,

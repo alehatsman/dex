@@ -310,18 +310,6 @@ func TestReviewIntegration(t *testing.T) {
 			}
 		}
 	}
-	// Guard #701: no hunk should list the same note ID twice.
-	for _, h := range f.Hunks {
-		seen := map[int64]int{}
-		for _, n := range h.Notes {
-			seen[n.ID]++
-		}
-		for id, count := range seen {
-			if count > 1 {
-				t.Errorf("hunk @%d has %d duplicate entries for note id=%d (want 1)", h.NewStart, count, id)
-			}
-		}
-	}
 	// #136: caller bodies are hoisted to the top-level map, keyed by symbol.
 	// Its keys must always be a subset of the symbols the emitted hunks touch —
 	// no orphan entries (holds even when the graph lane is empty, as here).
@@ -438,55 +426,6 @@ func TestReviewIsExpertGated(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "1")
 	if !listToolNames(t, stubServer(t))["review_diff"] {
 		t.Error("DEX_EXPERT=1 but review_diff not advertised")
-	}
-}
-
-// TestReviewSurfacesScopedNotes covers #649: a note scoped to a touched file's
-// path appears in that file's ScopedNotes, tagged with the matching scope.
-func TestReviewSurfacesScopedNotes(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	srv := fakeEmbed(t, 16)
-	t.Cleanup(srv.Close)
-	cacheDir := t.TempDir()
-	projDir := t.TempDir()
-
-	gitRun(t, projDir, "init", "-q")
-	writeFile(t, filepath.Join(projDir, "greet.go"),
-		"package main\n\nfunc Greet(name string) string { return \"hi \" + name }\n")
-	gitRun(t, projDir, "add", ".")
-	gitRun(t, projDir, "commit", "-q", "-m", "v1")
-	writeFile(t, filepath.Join(projDir, "greet.go"),
-		"package main\n\nfunc Greet(name string) string { return \"hello \" + name }\n")
-	gitRun(t, projDir, "add", ".")
-	gitRun(t, projDir, "commit", "-q", "-m", "v2")
-
-	root := indexProject(t, projDir, cacheDir, srv.URL)
-	s := newServer(srv.URL, cacheDir)
-	ctx := context.Background()
-
-	// A Gotcha scoped to greet.go.
-	if _, _, err := s.knowledge(ctx, nil, KnowledgeInput{
-		ProjectRoot: root, Action: "add", Archetype: "Gotcha",
-		Body: "greet.go: keep the trailing space in the prefix", Scope: "greet.go",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	_, out, err := s.review(ctx, nil, ReviewInput{Ref: "HEAD~1..HEAD", ProjectRoot: root})
-	if err != nil || out.Status != "ok" {
-		t.Fatalf("review: status=%q hint=%q err=%v", out.Status, out.Hint, err)
-	}
-	if len(out.Files) != 1 {
-		t.Fatalf("files = %d, want 1", len(out.Files))
-	}
-	sn := out.Files[0].ScopedNotes
-	if len(sn) != 1 {
-		t.Fatalf("ScopedNotes = %d, want 1: %+v", len(sn), sn)
-	}
-	if sn[0].Scope != "greet.go" || !strings.Contains(sn[0].Body, "trailing space") {
-		t.Errorf("wrong scoped note: %+v", sn[0])
 	}
 }
 

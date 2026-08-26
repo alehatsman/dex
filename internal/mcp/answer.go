@@ -235,8 +235,8 @@ func buildAnswerEvidence(intent string, out *ContextOutput) string {
 	}
 
 	// Session context appended last: code content forms a stable prefix for
-	// LLM provider KV-cache; dynamic task/facts only invalidate the tail.
-	if !appendSessionContextSection(write, out.SessionTask, out.KnowledgeFacts) {
+	// LLM provider KV-cache; the dynamic task only invalidates the tail.
+	if !appendSessionContextSection(write, out.SessionTask) {
 		return b.String()
 	}
 
@@ -316,26 +316,16 @@ func appendSymbolsSection(write func(string) bool, symbols []SymbolHit) bool {
 	return true
 }
 
-// appendSessionContextSection writes the session task + knowledge facts into
-// the evidence block. Returns false when the byte budget is exhausted.
-func appendSessionContextSection(write func(string) bool, task string, facts []string) bool {
-	if task == "" && len(facts) == 0 {
+// appendSessionContextSection writes the session task into the evidence block.
+// Returns false when the byte budget is exhausted.
+func appendSessionContextSection(write func(string) bool, task string) bool {
+	if task == "" {
 		return true
 	}
 	if !write("\nSESSION CONTEXT:\n") {
 		return false
 	}
-	if task != "" {
-		if !write(fmt.Sprintf("Task: %s\n", task)) {
-			return false
-		}
-	}
-	for _, f := range facts {
-		if !write(fmt.Sprintf("- %s\n", f)) {
-			return false
-		}
-	}
-	return true
+	return write(fmt.Sprintf("Task: %s\n", task))
 }
 
 // maybeAnswerStyle runs the chat synthesis leg when answer_style is "brief".

@@ -39,19 +39,6 @@ type LocateInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
-// LocatedFact is the compact projection of a knowledge fact surfaced next to
-// a located symbol — just enough to judge relevance without the full record.
-type LocatedFact struct {
-	ID        int64   `json:"id"`
-	Archetype string  `json:"archetype"`
-	Body      string  `json:"body"`
-	Salience  float64 `json:"salience"`
-	// Scope is set when this note surfaced because its scope matched the file
-	// being located (proactive gotcha-on-touch, #645), naming the glob/path it's
-	// bound to. Empty for a note recalled by semantic/salience match.
-	Scope string `json:"scope,omitempty"`
-}
-
 // LocateOutput is the orientation bundle. Beyond the resolved target every
 // field is best-effort: an empty list or string means the lane found nothing
 // (or degraded — e.g. callers is empty when the graph isn't indexed), never
@@ -75,7 +62,6 @@ type LocateOutput struct {
 	NearestDoc string        `json:"nearest_doc,omitempty"`
 	LastCommit string        `json:"last_commit,omitempty"`
 	LastAuthor string        `json:"last_author,omitempty"`
-	Notes      []LocatedFact `json:"notes,omitempty"`
 	Issues     []string      `json:"issues,omitempty"`
 
 	// Shared machine-readable contract (#816): confidence in the resolution,
@@ -207,37 +193,6 @@ func (s *Server) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateIn
 	if m := meta[res.Path]; m != nil {
 		out.LastCommit = m.LastCommit
 		out.LastAuthor = m.LastAuthor
-	}
-
-	// Related notes — semantic match on the symbol name when an embedder is
-	// wired, falling back to top-salience facts otherwise (recallFacts handles
-	// the degradation internally).
-	seenNote := map[int64]bool{}
-	// Proactive gotcha-on-touch (#645) FIRST: notes SCOPED to this file's path —
-	// surfaced (and tagged with `scope`) because you touched the file, even if
-	// they wouldn't match the symbol semantically. The "you're editing X, here's
-	// the gotcha about X" signal leads.
-	if scoped, serr := st.KnowledgeByScope(ctx, res.Path, k); serr == nil {
-		for _, f := range scoped {
-			seenNote[f.ID] = true
-			out.Notes = append(out.Notes, LocatedFact{
-				ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience, Scope: f.Scope,
-			})
-		}
-	}
-	// Then semantic recall on the symbol, deduped against the scoped set.
-	// skipFallback=true: locate shows no notes rather than irrelevant top-salience
-	// ones when the symbol doesn't match any note semantically.
-	if facts, ferr := s.recallFacts(ctx, st, res.Symbol, k, false, "", true); ferr == nil {
-		for _, f := range facts {
-			if seenNote[f.ID] {
-				continue
-			}
-			seenNote[f.ID] = true
-			out.Notes = append(out.Notes, LocatedFact{
-				ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience,
-			})
-		}
 	}
 
 	// Optional: related open issues via `gh` — opt-in, best-effort, hermetic-safe.

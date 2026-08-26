@@ -82,11 +82,6 @@ type SummarizeOutput struct {
 	// applied (single-file, fewer than 2 files had import blocks, or dedup
 	// was explicitly disabled).
 	ImportsDedupSavedLines int `json:"imports_dedup_saved_lines,omitempty"`
-	// ScopedNotes are notes BOUND to this file's path via their scope
-	// (gotcha-on-touch, #645/#650) — surfaced because you read the file, each
-	// tagged with the matching glob/path. The proactive "you're about to edit
-	// this, here's the gotcha" signal, on the verb agents touch files with most.
-	ScopedNotes []LocatedFact `json:"scoped_notes,omitempty"`
 	// SeenTurn is set when look's read lane suppressed this range's content
 	// because the same bytes were surfaced on an earlier turn of this session
 	// (#110 step 3): the turn they were first sent. Content is cleared; reuse

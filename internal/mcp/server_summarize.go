@@ -13,29 +13,6 @@ import (
 
 // ─── tool: view_summarize ─────────────────────────────────────────────────
 
-// attachScopedNotes surfaces notes whose scope binds out.Path (gotcha-on-touch,
-// #650). Best-effort and a no-op on error / empty path / error status. Invoked
-// via defer on summarize's named return so it covers every read mode uniformly;
-// the cached store keeps it cheap on the hot read path.
-func (s *Server) attachScopedNotes(ctx context.Context, dbPath string, out *SummarizeOutput) {
-	if out.Path == "" || out.Status == "error" || out.Status == "needs-chat" {
-		return
-	}
-	st, err := s.openStore(dbPath)
-	if err != nil {
-		return
-	}
-	scoped, err := st.KnowledgeByScope(ctx, out.Path, 5)
-	if err != nil {
-		return
-	}
-	for _, f := range scoped {
-		out.ScopedNotes = append(out.ScopedNotes, LocatedFact{
-			ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience, Scope: f.Scope,
-		})
-	}
-}
-
 func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (result *sdk.CallToolResult, out SummarizeOutput, err error) {
 
 	// CCR blob expansion and handle decode (#344, #630): CCR short-circuits to the
@@ -150,11 +127,6 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	cacheDir := p.CacheDir
 	sloTracker := s.sloFor(p.Root)
 	defer s.recordSummarizeMetrics(cacheDir, sloTracker, relTarget, &out)
-	// Proactive gotcha-on-touch (#645/#650): notes scoped to this file's path,
-	// surfaced whenever you read it — the moment right before you edit. Uniform
-	// across every read mode and the cached/unchanged early-outs via the named
-	// return. Cheap (openStore is cached) and best-effort.
-	defer s.attachScopedNotes(ctx, p.DBPath, &out)
 
 	var sessionID string
 	sessionID, earlyOut, done = s.summarizeCheckCached(req, in, relTarget, etag, isLLM, data, out)

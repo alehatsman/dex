@@ -87,7 +87,6 @@ type ReviewHunk struct {
 	NewLines       int            `json:"new_lines"`
 	Heading        string         `json:"heading,omitempty"`
 	SymbolsTouched []ReviewSymbol `json:"symbols_touched,omitempty"`
-	Notes          []LocatedFact  `json:"notes,omitempty"`
 	RiskTier       string         `json:"risk_tier"`             // "low" | "medium" | "high"
 	RiskReason     string         `json:"risk_reason,omitempty"` // dominant signal
 }
@@ -103,11 +102,6 @@ type ReviewFile struct {
 	LastCommit    string   `json:"last_commit,omitempty"`
 	LastAuthor    string   `json:"last_author,omitempty"`
 	AuthorHistory []string `json:"author_history,omitempty"`
-	// ScopedNotes are notes BOUND to this file's path via their scope
-	// (gotcha-on-touch, #645/#649) — surfaced because the PR touches the file,
-	// each tagged with the matching glob/path. Distinct from per-hunk Notes,
-	// which are recalled by the touched symbol.
-	ScopedNotes []LocatedFact `json:"scoped_notes,omitempty"`
 	// GateFindings are machine-readable quality-gate findings (#155) whose path
 	// is this file, read from .gate/findings.jsonl (the goq/findings artifact).
 	// Best-effort: empty when the artifact is absent or the file has none. Lets
@@ -248,10 +242,9 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 		}
 	}
 	e := &retrieve.Enricher{ProjectRoot: p.Root}
-	// Cache caller/risk + notes per symbol — the same function often recurs
-	// across hunks and files, and traceVerb/recallFacts are the costly legs.
+	// Cache caller/risk per symbol — the same function often recurs across hunks
+	// and files, and traceVerb is the costly leg.
 	callerCache := map[string]traceResult{}
-	noteCache := map[string][]LocatedFact{}
 
 	hunkBudget := reviewMaxHunks
 	if len(files) > reviewMaxFiles {
@@ -260,7 +253,7 @@ func (s *Server) review(ctx context.Context, _ *sdk.CallToolRequest, in ReviewIn
 	}
 
 	for _, fd := range files {
-		rf := s.reviewFile(ctx, st, e, p.Root, fd, k, &hunkBudget, callerCache, noteCache, newRef)
+		rf := s.reviewFile(ctx, st, e, p.Root, fd, k, &hunkBudget, callerCache, newRef)
 		if in.Compact {
 			rf.Hunks = dropLowRiskHunks(rf.Hunks)
 			if len(rf.Hunks) == 0 {

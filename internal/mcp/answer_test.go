@@ -220,7 +220,6 @@ func TestBuildAnswerEvidenceCallersLeadWithGraph(t *testing.T) {
 func TestBuildAnswerEvidenceSessionContext(t *testing.T) {
 	out := &ContextOutput{
 		SessionTask:    "refactor the watcher",
-		KnowledgeFacts: []string{"[Architecture] watch.go owns the file watcher", "[Gotcha] debounce is 500ms"},
 		SuggestedReads: []SuggestedRead{{Path: "watch.go", StartLine: 1, EndLine: 3, Content: "func Watch(){}"}},
 	}
 	ev := buildAnswerEvidence(retrieve.IntentBehaviorSearch, out)
@@ -230,9 +229,6 @@ func TestBuildAnswerEvidenceSessionContext(t *testing.T) {
 	}
 	if !strings.Contains(ev, "Task: refactor the watcher") {
 		t.Errorf("evidence missing session task: %q", ev)
-	}
-	if !strings.Contains(ev, "[Architecture] watch.go owns the file watcher") {
-		t.Errorf("evidence missing knowledge fact: %q", ev)
 	}
 	// Session block must appear after code evidence (KV-cache: stable code prefix, dynamic tail).
 	sessionIdx := strings.Index(ev, "SESSION CONTEXT:")

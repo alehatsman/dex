@@ -23,10 +23,6 @@ type ContextPack struct {
 	Annotations    map[string]PathMeta // per-file enrichment keyed by rel path
 	RelatedFiles   []string            // spreading activation (#688), assemble intent only
 
-	// --- Accumulated knowledge ---
-	KnowledgeFacts []string     // top project facts by salience
-	ScopedNotes    []ScopedNote // notes bound to a touched file's path (#645)
-
 	// --- Completeness (#725) ---
 	Concerns Concerns
 
@@ -129,14 +125,4 @@ type PathMeta struct {
 	Tests      []string // sibling test files paired by language convention
 	BuildTags  string   // //go:build constraint + package clause
 	Package    string   // package name (Go)
-}
-
-// ScopedNote is a durable note bound to a file's path via its scope
-// (gotcha-on-touch, #645) — the domain twin of mcp.LocatedFact.
-type ScopedNote struct {
-	ID        int64
-	Archetype string
-	Body      string
-	Salience  float64
-	Scope     string
 }

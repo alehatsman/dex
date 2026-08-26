@@ -116,12 +116,6 @@ func renderLocateText(out mcp.LocateOutput) {
 	if out.LastCommit != "" {
 		fmt.Printf("  last: %s  (%s)\n", out.LastCommit, out.LastAuthor)
 	}
-	if len(out.Notes) > 0 {
-		fmt.Printf("  notes (%d):\n", len(out.Notes))
-		for _, n := range out.Notes {
-			fmt.Printf("    [%s] %s\n", n.Archetype, n.Body)
-		}
-	}
 	if len(out.Issues) > 0 {
 		fmt.Printf("  issues:\n")
 		for _, is := range out.Issues {

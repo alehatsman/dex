@@ -240,9 +240,6 @@ type ContextOutput struct {
 	Annotations map[string]PathMeta `json:"annotations,omitempty"`
 	// SessionTask is the current session's declared task, if any.
 	SessionTask string `json:"session_task,omitempty"`
-	// KnowledgeFacts are the top project facts ordered by salience,
-	// injected from the knowledge base so agents see accumulated context.
-	KnowledgeFacts []string `json:"knowledge_facts,omitempty"`
 	// ContentBytesInlined is the total bytes of file content inlined into
 	// suggested_reads and semantic_hits. Zero when no_inline=true or when
 	// no content was inlined. Use this to gauge context-window cost and

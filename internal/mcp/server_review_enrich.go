@@ -47,7 +47,7 @@ func collectCallersBySymbol(files []ReviewFile, cache map[string]traceResult) ma
 // against the historical file content at that ref instead of the live index.
 func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.Enricher, root string,
 	fd review.FileDiff, k int, hunkBudget *int,
-	callerCache map[string]traceResult, noteCache map[string][]LocatedFact,
+	callerCache map[string]traceResult,
 	newRef string) ReviewFile {
 
 	rf := ReviewFile{Path: fd.Path, OldPath: fd.OldPath, Status: fd.Status}
@@ -63,17 +63,6 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.En
 	}
 	rf.Churn30d = gitChurnCount(ctx, root, fd.Path)
 	rf.AuthorHistory = gitAuthorHistory(ctx, root, fd.Path)
-
-	// Proactive gotcha-on-touch (#645/#649): notes whose scope binds this file's
-	// path — surfaced because the PR touches it, even if no hunk symbol recalls
-	// them. Best-effort.
-	if scoped, err := st.KnowledgeByScope(ctx, fd.Path, k); err == nil {
-		for _, f := range scoped {
-			rf.ScopedNotes = append(rf.ScopedNotes, LocatedFact{
-				ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience, Scope: f.Scope,
-			})
-		}
-	}
 
 	// A deleted file has no current symbols to resolve; emit its hunks with
 	// diff + history only (still useful, per the cold-start contract).
@@ -122,7 +111,6 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.En
 			if len(syms) == 0 {
 				hadGraph = true
 			}
-			seenNote := map[int64]bool{}
 			for i, sym := range syms {
 				if sym.Exported {
 					exported = true
@@ -138,15 +126,6 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.En
 				// keeps only the per-symbol count so a reader sees how hot each
 				// touched symbol is without the join.
 				rh.SymbolsTouched[i].CallerCount = tr.count
-				// Dedup notes by ID across symbols: two symbols in the same hunk
-				// often share the same note (e.g. a gotcha scoped to the file),
-				// which would produce duplicates per hunk with many probes (#701).
-				for _, n := range cachedNotes(ctx, s, st, sym.Name, k, noteCache) {
-					if !seenNote[n.ID] {
-						seenNote[n.ID] = true
-						rh.Notes = append(rh.Notes, n)
-					}
-				}
 			}
 		}
 		rh.RiskTier, rh.RiskReason = hunkRisk(maxCallers, exported, hadGraph)
@@ -223,19 +202,4 @@ func cachedCallers(ctx context.Context, s *Server, root, symbol string, k int, c
 	}
 	cache[symbol] = res
 	return res
-}
-
-// cachedNotes returns related notes for a symbol, memoised across the review.
-func cachedNotes(ctx context.Context, s *Server, st *store.Store, symbol string, k int, cache map[string][]LocatedFact) []LocatedFact {
-	if n, ok := cache[symbol]; ok {
-		return n
-	}
-	var notes []LocatedFact
-	if facts, err := s.recallFacts(ctx, st, symbol, k, false, "", true); err == nil {
-		for _, f := range facts {
-			notes = append(notes, LocatedFact{ID: f.ID, Archetype: f.Archetype, Body: f.Body, Salience: f.Salience})
-		}
-	}
-	cache[symbol] = notes
-	return notes
 }

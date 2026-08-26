@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/alehatsman/dex/internal/retrieve"
@@ -161,34 +160,5 @@ func TestLocateIsExpertGated(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "1")
 	if !listToolNames(t, stubServer(t))["locate"] {
 		t.Error("DEX_EXPERT surface omitted \"locate\"; want it advertised")
-	}
-}
-
-// TestLocateSurfacesScopedNote covers #645: a note scoped to a file path is
-// surfaced (tagged with scope) when locate touches that file.
-func TestLocateSurfacesScopedNote(t *testing.T) {
-	s, root := locateFixture(t)
-	ctx := context.Background()
-	if _, _, err := s.knowledge(ctx, nil, KnowledgeInput{
-		ProjectRoot: root, Action: "add", Archetype: "Gotcha",
-		Body: "greet.go: callers must pre-trim the name", Scope: "greet.go",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	_, out, err := s.locate(ctx, nil, LocateInput{Ref: "greet.go:3", ProjectRoot: root})
-	if err != nil || out.Status != "ok" {
-		t.Fatalf("locate: status=%q hint=%q err=%v", out.Status, out.Hint, err)
-	}
-	var scoped *LocatedFact
-	for i := range out.Notes {
-		if out.Notes[i].Scope != "" {
-			scoped = &out.Notes[i]
-		}
-	}
-	if scoped == nil {
-		t.Fatal("expected a scope-matched note surfaced on touch (#645)")
-	}
-	if scoped.Scope != "greet.go" || !strings.Contains(scoped.Body, "pre-trim") {
-		t.Errorf("wrong scoped note: %+v", scoped)
 	}
 }

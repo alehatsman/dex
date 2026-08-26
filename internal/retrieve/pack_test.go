@@ -21,7 +21,6 @@ func TestContextPackShape(t *testing.T) {
 			want: []string{
 				"Intent", "Question",
 				"Symbols", "SemanticHits", "SuggestedReads", "Graph", "References", "Annotations", "RelatedFiles",
-				"KnowledgeFacts", "ScopedNotes",
 				"Concerns",
 				"NextAction", "Avoid",
 				"Trust",
@@ -63,7 +62,6 @@ func TestContextPackIsWireFree(t *testing.T) {
 		reflect.TypeOf(Concerns{}),
 		reflect.TypeOf(SymbolHit{}),
 		reflect.TypeOf(RefHit{}),
-		reflect.TypeOf(ScopedNote{}),
 	} {
 		for i := 0; i < typ.NumField(); i++ {
 			f := typ.Field(i)
