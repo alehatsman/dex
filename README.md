@@ -45,22 +45,23 @@ dex doctor
 
 ## MCP tools
 
-The agent-facing surface is **two verbs**, constant across every deployment
+The agent-facing surface is **one verb**, constant across every deployment
 profile (full / bm25-only / lean):
 
 | Verb | What it does |
 |---|---|
 | `query` | The one read verb. Input **shape** picks the lane and the answer's precision tracks it: a path → its compressed signatures, a `path:line` or range → that slice, a `/regex/` → grep, a bare symbol (`NewServer`, `(*Server).Run`) → just its call graph, a prose question → a ranked semantic evidence pack with a `next_action`. Force the lane with `kind=…`, the facet with `want=…` (`want=assemble` for a task-start working set, `kind=review` to review the working tree). |
-| `record` | Durable project memory: write a fact, recall by `query=…`, or correct a stale one with `supersedes=<id>`. High-salience facts auto-inject into `query`. |
 
 `query` is advisory intelligence, not a file server — a bare path returns
 compressed signatures; for raw bytes use the native Read tool. Running commands
-(builds / tests / git) is the host agent's job, not dex's.
+(builds / tests / git) is the host agent's job, not dex's. dex is retrieval over
+the codebase, not agent memory: durable findings live in the harness's own
+file-based memory, not in dex (the `record` verb was removed in #205).
 
 Everything else — the raw `search`, `trace`, `locate`, `grep`, `read` primitives
 plus the `deps` / `clusters` / `smells` / `clones` graph lanes — is a power-lane
-overlay behind `DEX_EXPERT=1`. The two verbs cover everyday work; the overlay
-never changes their shape.
+overlay behind `DEX_EXPERT=1`. `query` covers everyday work; the overlay
+never changes its shape.
 
 ## CLI
 
@@ -88,7 +89,6 @@ internally).
 | `dex trace [path] <symbol>` | Callers/callees/impact |
 | `dex review_diff [path]` | Per-hunk change analysis |
 | `dex check [path]` | Structural/quality checks |
-| `dex notes add\|list\|delete\|gc` | Repo-local memory |
 | `dex grep [path] <regex>` | Regex search |
 | `dex mcp` | Serve MCP |
 
@@ -134,7 +134,7 @@ DEX_EMBED_ENGINE=none
 DEX_EXPERT=1
 ```
 
-Overlays the power lanes onto the two verbs: the raw primitives `search`,
+Overlays the power lanes onto `query`: the raw primitives `search`,
 `trace`, `locate`, `grep`, `read` plus the graph/quality lanes `deps`,
 `clusters`, `routes`, `smells`, `clones`, `similar`, `cohort`, `refs`, `status`,
 `repo_map`, `review_diff`, `check`, `plan_rename`, and `rehearse_patch`.

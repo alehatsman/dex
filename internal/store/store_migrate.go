@@ -193,15 +193,13 @@ func schemaDDL() []string {
 		   UNIQUE(session_id, path)
 		 )`,
 		`CREATE INDEX IF NOT EXISTS idx_session_files_session ON session_files(session_id, touched_at)`,
-		// knowledge_facts — agent-accumulated project facts. One row per unique
-		// body (UNIQUE constraint). Salience computed on read; last_retrieved (#225)
-		// tracks last surfacing (distinct from updated_at = last confirmed) to slow
-		// decay on frequently-recalled facts.
-		// active=0 means the fact was superseded and is excluded from all recall
-		// queries. superseded_by points at the fact that replaced it (#606).
-		// valid_until (unix nanos, 0=no expiry) excludes time-bounded facts after
-		// their window closes (#618). evidence=1 marks facts derived from code
-		// inspection and halves their effective decay rate (#618).
+		// knowledge_facts / knowledge_relations — RETIRED (#205). The L3 knowledge
+		// subsystem (the `record` verb + `dex notes`) was removed: dex is retrieval
+		// over the codebase, not agent memory. The DDL is kept, dormant and
+		// unreferenced by any Go code, purely so migrations stay idempotent and an
+		// existing index still opens cleanly (no read, no write, no data migration).
+		// Do not wire new code onto these tables — durable findings are the
+		// harness's file-based memory now.
 		`CREATE TABLE IF NOT EXISTS knowledge_facts (
 		   id             INTEGER PRIMARY KEY AUTOINCREMENT,
 		   archetype      TEXT NOT NULL DEFAULT 'Observation',

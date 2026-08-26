@@ -8,55 +8,6 @@ import (
 	"database/sql"
 )
 
-// sidecarVecSpec describes a simple vec0 sidecar table that mirrors a source
-// row table: vectors are keyed on the source rowid and dropped by an AFTER
-// DELETE trigger when the source row goes away. Unlike chunk_vecs there is no
-// insert/update mirroring or quant lane — the owner writes vectors explicitly.
-// Used by knowledge fact embeddings (fact_vecs).
-type sidecarVecSpec struct {
-	vecTable   string // vec0 table name, e.g. "fact_vecs"
-	srcTable   string // row table the delete-cascade trigger fires on
-	trigger    string // AFTER DELETE trigger name
-	dimMetaKey string // meta key recording the current dim
-}
-
-// ensureSidecarVecTable materializes spec's vec0 virtual table at dim plus its
-// delete-cascade trigger. Idempotent. If the table exists at a different
-// dimension (embed model changed) it is dropped and recreated — vectors
-// re-backfill lazily on the next write. dim<=0 is a no-op.
-func ensureSidecarVecTable(ctx context.Context, db *sql.DB, spec sidecarVecSpec, dim int) error {
-	if dim <= 0 {
-		return nil
-	}
-	var recorded string
-	_ = db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, spec.dimMetaKey).Scan(&recorded)
-	want := fmt.Sprintf("%d", dim)
-	if recorded != "" && recorded != want {
-		if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS `+spec.vecTable); err != nil {
-			return fmt.Errorf("ensure %s: drop on dim change: %w", spec.vecTable, err)
-		}
-	}
-	stmts := []string{
-		fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS %s USING vec0(
-		   embedding FLOAT[%d] distance_metric=cosine
-		 )`, spec.vecTable, dim),
-		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS %s AFTER DELETE ON %s BEGIN
-		   DELETE FROM %s WHERE rowid = old.id;
-		 END`, spec.trigger, spec.srcTable, spec.vecTable),
-	}
-	for _, q := range stmts {
-		if _, err := db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("ensure %s: %w", spec.vecTable, err)
-		}
-	}
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO meta(key, value) VALUES(?, ?)
-		   ON CONFLICT(key) DO UPDATE SET value=excluded.value`, spec.dimMetaKey, want); err != nil {
-		return fmt.Errorf("ensure %s: record dim: %w", spec.vecTable, err)
-	}
-	return nil
-}
-
 func (s *Store) quantMode() string {
 	if strings.EqualFold(strings.TrimSpace(s.opts.VectorQuant), "int8") {
 		return "int8"

@@ -1,13 +1,15 @@
 # Tools
 
-This is the **query/tool contract**. Since the #195 two-verb cutover the agent
+This is the **query/tool contract**. Since the #205 single-verb cutover the agent
 surface (over MCP) and the human surface (on the CLI) **diverge on purpose**:
 
-- **Over MCP** an agent sees **two verbs** — `query` (read) and `record`
-  (write). That set is constant across every deployment profile.
+- **Over MCP** an agent sees **one verb** — `query` (read). That set is constant
+  across every deployment profile. dex is retrieval over the codebase, not agent
+  memory: the `record` write verb and the L3 knowledge subsystem were removed in
+  #205 — durable findings are the harness's file-based memory now.
 - **On the CLI** the granular verbs live on directly (`dex ask` / `search` /
-  `read` / `locate` / `trace` / `review_diff` / `check` / `grep` / `notes`),
-  because a human at a prompt wants to name the lane. CLI form:
+  `read` / `locate` / `trace` / `review_diff` / `check` / `grep`), because a
+  human at a prompt wants to name the lane. CLI form:
   `dex <verb> [path] <args…>` (`path` defaults to cwd).
 
 The two are one engine: the CLI verbs *are* the lanes `query` routes to
@@ -17,12 +19,11 @@ internally. The CLI also carries lifecycle/ops commands with **no MCP form** —
 build, serve, and maintain the index rather than query it; see the README or
 `dex help all`.
 
-## The two MCP verbs
+## The MCP verb
 
 | Verb | Purpose | Backend |
 |----------|---------|---------|
 | `query` | The one read verb. Its input **shape** picks the lane and the answer's precision tracks it: a path → compressed signatures, a `path:line`/range → that slice, a `/regex/` → grep, a bare symbol → just its call graph, a prose question → a fused semantic + symbol + graph evidence pack with a `next_action` (and, with a chat model, a cited answer). `kind=` forces the lane, `want=` the facet: `want=assemble` returns a budget-bounded working set, `kind=review` reviews the working tree. Raw file bytes are the native Read tool's job. | always (semantic lane needs an embedder; degrades to BM25 + symbol + graph) |
-| `record` | Durable project memory: write a fact (optionally `scope`-bound to a glob), recall the most relevant by `query=`, or correct a stale one with `supersedes=<id>`. High-salience facts auto-inject into `query` as `knowledge_facts`. | always |
 
 ## Profiles, not tiers
 
@@ -33,11 +34,11 @@ do internally (synthesis → lexical → hits-only), never which tools an agent 
 - **bm25-only** (`DEX_EMBED_ENGINE=none`): no embedder — `query` falls back to
   BM25 + symbol + graph on its own; the semantic lane is skipped, not a missing
   tool.
-- **lean** (weak local model): same two verbs; `record` matters most here,
-  since a weaker model forgets more.
+- **lean** (weak local model): same single verb; `query` still routes every lane,
+  only its synthesis degrades.
 
 `DEX_EXPERT=1` is an **additive overlay**, orthogonal to the profile. It exposes
-the raw primitives the verbs wrap — `search` (raw ranked hits with the full
+the raw primitives `query` wraps — `search` (raw ranked hits with the full
 scoring breakdown), `trace` (`--dir callers|callees|path|impact`), `locate`,
 `grep`, `read` — plus the graph/quality lanes `deps`, `clusters`, `routes`,
 `smells`, `clones`, `similar`, `cohort`, `refs`, `status`, `repo_map`,
@@ -92,8 +93,9 @@ recover (e.g. run `dex index`, retry with another mode) instead of giving up.
 
 dex is **read-only by design** (#551): every tool is `readOnlyHint: true` and
 there is no edit/write/apply verb. `query` locates and explains; the host agent
-makes the changes with its own editing tools. The only persistence verb,
-`record`, writes dex's knowledge store — never project files.
+makes the changes with its own editing tools. dex never writes project files, and
+since #205 it holds no durable memory of its own either — findings live in the
+harness's file-based memory.
 
 ## Transports
 

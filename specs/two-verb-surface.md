@@ -1,6 +1,7 @@
 ---
 id: two-verb-surface
-status: shipped
+status: superseded
+superseded_by: alehatsman/dex#205
 supersedes: tool-surface
 last_verified: cd55ef3
 owners: [aleh]
@@ -13,6 +14,12 @@ covers:
   - "internal/retrieve/pack.go"
 tracking: alehatsman/dex#195
 ---
+
+> **SUPERSEDED by #205 (2026-08-26).** The `record` verb and the entire L3
+> knowledge subsystem have been removed: dex is deterministic retrieval over the
+> codebase, not agent memory. The surface is now a **single verb, `query`** —
+> durable findings are the harness's file-based memory, not a retrieval tool's.
+> Everything below about `record` is historical. The `query` half stands.
 
 # Two-verb surface — `query` · `record`
 

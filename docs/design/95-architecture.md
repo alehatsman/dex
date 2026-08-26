@@ -2,6 +2,14 @@
 
 Status: **design / architecture — largely LANDED** · Grounds the #95 platform epic against the as-built code.
 
+> **Update (2026-08-26, #205):** the L3 **knowledge** subsystem is GONE — the
+> `record` verb, `dex notes`, `knowledge_facts`/`knowledge_relations` and the
+> `recallFacts` read path were all removed. dex is deterministic retrieval over
+> the codebase, not agent memory; durable findings are the harness's file-based
+> memory. Every reference below to `knowledge`/`notes`/`remember`/`recallFacts`
+> and the "persistent repo memory" / §6.2 "one knowledge store" discussion is
+> **historical** — read it as the as-of-design analysis, not the current shape.
+
 > **Update (2026-08-06):** the §6.1 seam decision shipped. Assembly now lives in L2
 > (`retrieve/assembler.go`, `pack.go`, `inline_assemble.go`); `mcp/context.go` holds only
 > the JSON-tagged projection + transport concerns — exactly the §6.1 target. **6 of 7
@@ -59,7 +67,7 @@ dependencies point downward. The mess is at L4 (`cmd/dex` is a junk drawer) and 
 | **L1 — Substrate** | `store` · `embed rerank chat` (model backends) | Persistence + the three model I/O ports. `store` = SQLite/FTS5/BM25. Single source of truth. |
 | **L1.5 — Ingest** | `source chunk symbols graph index watch graphrefresh gitrecency trigram` | Turn a repo into rows: parse → chunk → symbolize → build graph → embed → persist. Incremental via `watch`/`graphrefresh`. |
 | **L2 — Retrieval** | `retrieve graphquery summarize heatmap cohesion codemap` | Query-time engine: hybrid search, RRF fusion, rerank, **intent routing**, graph walks, spreading activation. |
-| **L3 — Derived knowledge** | `gotcha feedback review knowledge` *(+ store tables: `knowledge_facts`, `knowledge_relations`, `file_summaries`, `agents`, `agent_messages`)* | Facts source alone doesn't state. **Half-built** — tables exist, wiring is thin. |
+| **L3 — Derived knowledge** | `feedback review` *(+ store table `file_summaries`)* | Facts source alone doesn't state. **The `knowledge` subsystem (the `record` verb, `knowledge_facts`/`knowledge_relations` tables, `dex notes`) was REMOVED in #205** — dex is retrieval over the codebase, not agent memory. The DDL survives dormant/unreferenced (idempotent migrations); `feedback` (lane reweighting) and `review` (change-scoped findings) remain. |
 | **L4 — Surface** | `mcp` (verbs) · `ctx` (ledger) · `cmd/dex` · `proxy` | Verb contracts + CLI. Cross-cutting: `eval bench rehearse shadow profiles`. |
 
 ### Dependency-graph health

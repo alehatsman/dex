@@ -34,7 +34,7 @@ type LocateInput struct {
 	Symbol      string `json:"symbol,omitempty" jsonschema:"a symbol name: bare ('Foo'), receiver-qualified ('(*Server).Run'), or package-tail-qualified ('mcp.NewServer')"`
 	Frame       string `json:"frame,omitempty" jsonschema:"a raw stack-trace frame line; the file:line or symbol is parsed out of it"`
 	Issues      bool   `json:"issues,omitempty" jsonschema:"opt-in: also list related open GitHub issues via the 'gh' CLI (best-effort, skipped when gh is absent)"`
-	K           int    `json:"k,omitempty" jsonschema:"max callers and related notes to return (default 8, max 30)"`
+	K           int    `json:"k,omitempty" jsonschema:"max callers to return (default 8, max 30)"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 }
 
@@ -55,13 +55,13 @@ type LocateOutput struct {
 	EndLine   int    `json:"end_line,omitempty"`
 
 	// Composed lanes.
-	Callers    []CallSite    `json:"callers"`
-	Risk       string        `json:"risk,omitempty"`
-	Tests      []string      `json:"tests,omitempty"`
-	NearestDoc string        `json:"nearest_doc,omitempty"`
-	LastCommit string        `json:"last_commit,omitempty"`
-	LastAuthor string        `json:"last_author,omitempty"`
-	Issues     []string      `json:"issues,omitempty"`
+	Callers    []CallSite `json:"callers"`
+	Risk       string     `json:"risk,omitempty"`
+	Tests      []string   `json:"tests,omitempty"`
+	NearestDoc string     `json:"nearest_doc,omitempty"`
+	LastCommit string     `json:"last_commit,omitempty"`
+	LastAuthor string     `json:"last_author,omitempty"`
+	Issues     []string   `json:"issues,omitempty"`
 
 	// Shared machine-readable contract (#816): confidence in the resolution,
 	// the line-level evidence span, index staleness, blast-radius risk flags,
