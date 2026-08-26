@@ -139,7 +139,7 @@ func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, only
 	// named top-level symbols as part of the public API.
 	isGoFile := strings.HasSuffix(relPath, ".go")
 	exported := func(sym store.GraphSymbol) bool {
-		if sym.Kind == "field" || sym.Kind == "import" || sym.Kind == "file" {
+		if isScaffoldKind(sym.Kind) {
 			return false
 		}
 		if !isGoFile {
@@ -174,6 +174,14 @@ func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, only
 	return b.String()
 }
 
+// isScaffoldKind reports whether sym.Kind is a synthetic/structural node —
+// the whole-file scaffold, an import statement, or a struct field — none of
+// which belong in a file's public-API listing. Shared by formatSignatures and
+// formatMap so the excluded-kind set can't drift between the two views.
+func isScaffoldKind(kind string) bool {
+	return kind == "file" || kind == "import" || kind == "field"
+}
+
 // formatMap produces a compact dependency map for a file: its package-level
 // imports and exported declarations, sourced from the index (no LLM, no file
 // read). Unexported symbols are omitted so the output mirrors the public API.
@@ -193,12 +201,12 @@ func formatMap(relPath string, syms []store.GraphSymbol, imports []string, data 
 	var exportedLines strings.Builder
 	count := 0
 	for _, sym := range syms {
-		// The synthetic whole-file scaffold node (kind "file") and import/field
-		// nodes aren't part of a file's public API — skip them like
-		// formatSignatures' exported() does, or a pure re-export barrel (whose
-		// only symbol is that scaffold) reports one bogus "export" instead of
-		// its real content (#232).
-		if sym.Kind == "file" || sym.Kind == "import" || sym.Kind == "field" {
+		// The synthetic whole-file scaffold node and import/field nodes aren't
+		// part of a file's public API — skip them like formatSignatures' own
+		// exported() does, or a pure re-export barrel (whose only symbol is
+		// that scaffold) reports one bogus "export" instead of its real
+		// content (#232).
+		if isScaffoldKind(sym.Kind) {
 			continue
 		}
 		if len(sym.Name) == 0 {

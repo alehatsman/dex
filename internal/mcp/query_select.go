@@ -231,8 +231,15 @@ func (s *Server) selectSymbols(ctx context.Context, projectRoot, cleaned string,
 	// names before parsing — the store only carries the file-derived directory
 	// (packages/bright-api), never the scoped npm name (@bright/api) that
 	// imports/docs actually use, so a bare directory-basename match would
-	// silently miss every scoped workspace package (#232).
-	sel := parseSelector(resolvePkgTokens(cleaned, resolve.Load(p.Root)))
+	// silently miss every scoped workspace package (#232). resolve.Load walks
+	// the whole project tree for package.json/tsconfig.json, so it's only
+	// worth paying for when the selector actually has a pkg: token to resolve
+	// — every func:/type:/file:/kind: selector query skips it entirely.
+	resolved := cleaned
+	if strings.Contains(strings.ToLower(cleaned), "pkg:") {
+		resolved = resolvePkgTokens(cleaned, resolve.Load(p.Root))
+	}
+	sel := parseSelector(resolved)
 	syms, err := st.SelectSymbols(ctx, sel, limit)
 	if err != nil {
 		return nil, err

@@ -1,8 +1,10 @@
 package graph
 
-// TypeScript tree-sitter extractor. Handles .ts and .tsx via the
-// typescript grammar (mirrors internal/chunk/chunk.go's choice).
-// Emits package / file / function / class / method / interface /
+// TypeScript tree-sitter extractor. Handles .ts via the plain TypeScript
+// grammar; .tsx gets its own extractor (newTSXTagsExtractor,
+// sitter_jsts_tags.go) on the JSX-aware TSX grammar — the plain grammar
+// mislexes JSX syntax as type assertions (#232).
+// Emits package / file / function / class / method / interface / type /
 // import nodes and contains / has_method / imports / calls edges
 // with the same shape as the Python extractor — graph_deps and
 // graph_callers see a unified surface across languages.

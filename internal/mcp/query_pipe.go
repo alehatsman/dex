@@ -402,16 +402,22 @@ func runTerminal(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, i
 		budget = pipeDefaultBudget
 	}
 	only := symbolFilterFor(st)
+	// The final envelope's Route carries the full input string and stage list
+	// (runPipe sets Route.Input=orig, Route.Stages=st.stages once this terminal's
+	// own segment is appended) — pass that same shape into renderSignatures so
+	// its overhead reservation matches what stampEnvelopeCost actually measures,
+	// not just this terminal's slice of it.
+	finalStages := append(append([]string(nil), st.stages...), name)
 	switch name {
 	case "signatures":
-		return renderSignatures(ctx, h, req, in, st.refs, budget, only), nil
+		return renderSignatures(ctx, h, req, in, st.refs, budget, only, finalStages), nil
 	case "assemble":
 		if arg != "" {
 			if n, e := strconv.Atoi(arg); e == nil && n > 0 {
 				budget = n
 			}
 		}
-		return renderSignatures(ctx, h, req, in, st.refs, budget, only), nil
+		return renderSignatures(ctx, h, req, in, st.refs, budget, only, finalStages), nil
 	}
 	return QueryOutput{}, fmt.Errorf("unknown terminal %q", name)
 }
@@ -450,18 +456,20 @@ func symbolFilterFor(st *pipeState) map[string][]string {
 // 0 the total output is hard-clamped to it, INCLUDING the first file (a single
 // large file is truncated to fit, not admitted whole) — the #164 clamp
 // discipline applied to a pipe terminal, an honest partial over an overflow.
-func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput, refs []Ref, budget int, only map[string][]string) QueryOutput {
+func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput, refs []Ref, budget int, only map[string][]string, stages []string) QueryOutput {
 	paths := uniquePaths(refs)
 	// cost.tokens_returned is measured over the whole marshaled QueryOutput
 	// (stampEnvelopeCost), not just Content — Status/Route/Trust/Paths add
 	// their own JSON weight. Reserve that overhead up front (worst-case: all
-	// paths present, truncated with the longer caveat) so clamping Content to
+	// paths present, truncated with the longer caveat, PLUS the actual
+	// Route.Input/Stages the final envelope carries — a long pipe string or a
+	// long stage chain has real JSON weight too) so clamping Content to
 	// `budget` doesn't still overshoot the promised total once wrapped (#232,
 	// a recurrence of #218 on a bigger corpus).
 	budgetSet := budget > 0
 	contentBudget := budget
 	if budgetSet {
-		contentBudget = budget - envelopeOverhead(paths)
+		contentBudget = budget - envelopeOverhead(paths, strings.TrimSpace(in.Input), stages)
 		if contentBudget < 0 {
 			contentBudget = 0
 		}
@@ -513,14 +521,18 @@ func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolReque
 	return out
 }
 
-// envelopeOverhead measures the JSON weight of a renderSignatures QueryOutput
+// envelopeOverhead measures the JSON weight of the final wrapped QueryOutput
 // with the given paths but empty Content, using the longest caveat text the
 // terminal can emit — a worst-case estimate so clamping Content still leaves
-// the marshaled total within budget after stampEnvelopeCost wraps it.
-func envelopeOverhead(paths []string) int {
+// the marshaled total within budget after stampEnvelopeCost wraps it. input
+// and stages mirror exactly what runPipe sets on the real envelope's Route
+// (Route.Input=orig, Route.Stages=st.stages+this terminal) — omitting them
+// undercounts a long pipe query string or a long stage chain's own JSON
+// weight, which reintroduces the overflow this reservation exists to prevent.
+func envelopeOverhead(paths []string, input string, stages []string) int {
 	skeleton := QueryOutput{
 		Status: "ok",
-		Route:  QueryRoute{Lane: "read"},
+		Route:  QueryRoute{Input: input, Detected: "pipe", Lane: "read", Stages: stages},
 		Result: QueryResult{Read: &SummarizeOutput{Status: "ok", Paths: paths, Truncated: true}},
 		Trust:  EnvTrust{Provenance: "exact", Caveat: fmt.Sprintf("assemble budget reached — last file truncated, %d further file(s) dropped", len(paths))},
 	}

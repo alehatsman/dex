@@ -212,7 +212,9 @@ func truncateMatchLine(s string) string {
 	if len(s) <= maxMatchLineBytes {
 		return s
 	}
-	return s[:maxMatchLineBytes] + fmt.Sprintf(" … [truncated, %d bytes total]", len(s))
+	// A multi-byte rune can straddle the byte cutpoint; ToValidUTF8 drops the
+	// resulting partial rune instead of shipping invalid UTF-8 downstream.
+	return strings.ToValidUTF8(s[:maxMatchLineBytes], "") + fmt.Sprintf(" … [truncated, %d bytes total]", len(s))
 }
 
 // newGrepMatch builds a match for the line at index i, attaching up to ctxN
