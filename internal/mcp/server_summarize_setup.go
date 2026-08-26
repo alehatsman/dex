@@ -44,7 +44,7 @@ func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string
 	// populated for a "lines:" mode string (summarizeModeLines parses the
 	// range from the mode string itself, not those fields) — so the fallback
 	// silently dumped the WHOLE file instead of the requested slice.
-	if strings.HasPrefix(string(mode), "lines:") {
+	if mode.IsLines() {
 		return mode, isLLM
 	}
 	if mode == ReadModeSignatures || mode == ReadModeSkeleton {

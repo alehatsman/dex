@@ -134,10 +134,15 @@ func gitDiffUnified(ctx context.Context, root, rng string) (string, error) {
 	}
 	// A genuinely bad ref (or non-repo root) exits non-zero with nothing on
 	// stdout — that must not read as "no changes" (#231/#12). Only trust
-	// Wait's error when the read reached natural EOF: a truncated read means
-	// we killed a still-running-but-healthy process ourselves, so Wait's error
-	// there is just "signal: killed", not a command failure.
-	if !truncated && waitErr != nil {
+	// Wait's error when the process wasn't killed by US: a truncated read means
+	// we killed a still-running-but-healthy process at the byte cap, and
+	// cctx.Err() != nil means the context deadline (reviewGitTimeout) or an
+	// upstream cancellation killed it — a large-but-legitimate diff that's
+	// still streaming when the timeout fires must degrade to its partial
+	// output exactly like the old code did, not read as a command failure
+	// (both cases make Wait's error just "signal: killed", never a real exit
+	// code).
+	if !truncated && cctx.Err() == nil && waitErr != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = waitErr.Error()

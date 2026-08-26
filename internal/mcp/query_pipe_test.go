@@ -398,6 +398,25 @@ func TestPipeUnknownOp(t *testing.T) {
 	}
 }
 
+// TestPipeInvalidKindSeedSurfacesOwnDiagnostic locks the #231 review fix: an
+// invalid `kind` on the pipe SEED must return its own diagnostic — Status and
+// Route.Detected must both say the seed failed, not fall through to the
+// empty-refs dead-end path (which used to overwrite Route.Detected with the
+// less informative "pipe").
+func TestPipeInvalidKindSeedSurfacesOwnDiagnostic(t *testing.T) {
+	_, _, _, call := pipeFixture(t)
+	out := call(QueryInput{Input: "pipeLeaf | callers", Kind: "bogus"})
+	if out.Status != "error" {
+		t.Fatalf("status = %q, want error", out.Status)
+	}
+	if out.Route.Detected != "invalid-kind" {
+		t.Errorf("route.detected = %q, want invalid-kind (must not be overwritten to \"pipe\")", out.Route.Detected)
+	}
+	if out.Trust.Caveat == "" || !strings.Contains(out.Trust.Caveat, "bogus") {
+		t.Errorf("caveat should name the bad kind, got %q", out.Trust.Caveat)
+	}
+}
+
 func hasID(xs []string, s string) bool {
 	for _, x := range xs {
 		if x == s {

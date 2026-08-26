@@ -8,6 +8,59 @@ import (
 	"github.com/alehatsman/dex/internal/retrieve"
 )
 
+// TestApplyLoopThrottle_BlockClearsEveryContentField locks the #231 review fix:
+// a blocked call must return a genuinely empty payload. RelatedFiles, Rules,
+// and Concerns are populated earlier in the assemble pipeline (before the
+// throttle check runs) and were missing from the original clear-list, so a
+// "loop-blocked" response could still leak them.
+func TestApplyLoopThrottle_BlockClearsEveryContentField(t *testing.T) {
+	s := &Server{}
+	out := ContextOutput{
+		Answer: "some answer", AnswerModel: "m",
+		SemanticHits:   []SemHit{{}},
+		Symbols:        []SymbolHit{{}},
+		Graph:          &GraphResult{},
+		SuggestedReads: []SuggestedRead{{Path: "a.go", Content: "package a"}},
+		NextAction:     "do X", Avoid: "don't do Y",
+		Next:         []NextStep{{Verb: "query"}},
+		Map:          "some map",
+		References:   []RefHit{{}},
+		Annotations:  map[string]PathMeta{"a.go": {}},
+		RelatedFiles: []string{"a.go", "b.go"},
+		Rules:        []string{"CLAUDE.md"},
+		Concerns:     &AssembleConcerns{},
+	}
+	// Trip the block threshold with repeated identical calls, same pattern as
+	// the other throttle tests (search_throttle_test.go).
+	var blocked bool
+	for i := 0; i < 20; i++ {
+		blocked = s.applyLoopThrottle("same question over and over", &out)
+		if blocked {
+			break
+		}
+	}
+	if !blocked {
+		t.Fatal("expected applyLoopThrottle to block after repeated identical calls")
+	}
+	if out.Status != "loop-blocked" {
+		t.Errorf("status = %q, want loop-blocked", out.Status)
+	}
+	if out.Answer != "" || out.AnswerModel != "" || out.SemanticHits != nil || out.Symbols != nil ||
+		out.Graph != nil || out.SuggestedReads != nil || out.NextAction != "" || out.Avoid != "" ||
+		out.Next != nil || out.Map != "" || out.References != nil || out.Annotations != nil {
+		t.Errorf("a blocked call must clear every content field, got %+v", out)
+	}
+	if out.RelatedFiles != nil {
+		t.Errorf("RelatedFiles must be cleared on block, got %v", out.RelatedFiles)
+	}
+	if out.Rules != nil {
+		t.Errorf("Rules must be cleared on block, got %v", out.Rules)
+	}
+	if out.Concerns != nil {
+		t.Errorf("Concerns must be cleared on block, got %+v", out.Concerns)
+	}
+}
+
 // envelopeCeilingBytes must leave headroom above the inline pool for the lanes
 // that sit outside it (graph, knowledge_facts, answer).
 func TestEnvelopeCeilingExceedsInlinePool(t *testing.T) {

@@ -102,10 +102,24 @@ func parseSelector(s string) store.SymbolSelector {
 			// start of the full repo-relative path and never match a nested
 			// file (#231). A pattern that already names a directory (has "/")
 			// keeps the existing anchored-from-start behavior.
+			//
+			// Only the LEADING boundary is ever added here (never a trailing
+			// "%"): wrapping both ends turns a suffix glob like "*.go" into an
+			// unanchored substring match ("%.go%"), which also matches
+			// ".golangci.yml" or "algorithm.gox" — anything containing ".go"
+			// anywhere, not just paths ending in it (#231 review fix). The
+			// glob's own trailing "*" (if any) already becomes a trailing "%"
+			// via GlobToLike's translation, so no extra wrap is needed there;
+			// omitting one when absent correctly anchors the match to the end
+			// of the path.
 			if strings.Contains(val, "/") {
 				sel.File = store.GlobToLike(val, true)
 			} else {
-				sel.File = "%" + store.GlobToLike(val, false) + "%"
+				like := store.GlobToLike(val, false)
+				if !strings.HasPrefix(val, "*") {
+					like = "%" + like
+				}
+				sel.File = like
 			}
 		case "kind":
 			for _, k := range normalizeKind(val) {
@@ -147,13 +161,9 @@ func dispatchSelector(ctx context.Context, h toolSurface, _ *sdk.CallToolRequest
 	if len(refs) == 0 {
 		status = "not-found"
 		// A dead-end selector is a genuine fallback point (#231, mirroring the
-		// symbol/grep lanes): the pattern may be too narrow, or this shouldn't
-		// have been a selector query at all.
-		next = append(next, NextStep{
-			Verb: "query",
-			Args: map[string]any{"input": cleaned, "kind": "search"},
-			Why:  "no symbol matches this selector — search for the behavior instead",
-		})
+		// symbol/grep/locate lanes): the pattern may be too narrow, or this
+		// shouldn't have been a selector query at all.
+		next = append(next, searchFallbackNext(cleaned, "no symbol matches this selector — search for the behavior instead"))
 	}
 	return nil, QueryOutput{
 		Status: status,

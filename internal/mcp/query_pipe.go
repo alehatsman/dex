@@ -127,6 +127,17 @@ func runPipe(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in Qu
 	if err != nil {
 		return nil, seedOut, err
 	}
+	if seedOut.Status == "error" {
+		// A seed that failed outright (e.g. an invalid `kind` override) must
+		// surface its own diagnostic untouched — falling through to the
+		// empty-refs dead-end path below would overwrite Route.Detected with
+		// the less informative "pipe" and hide which lane actually failed
+		// (#231 review fix). This is distinct from err != nil above: a failed
+		// dispatch can legitimately return a nil Go error alongside a
+		// Status:"error" body (see query_pipe.go's "invalid-kind" case).
+		seedOut.Route.Stages = []string{seedOut.Route.Lane}
+		return nil, seedOut, nil
+	}
 	stages := []string{seedOut.Route.Lane}
 
 	refs := seedOut.Refs

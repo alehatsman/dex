@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,84 @@ func TestParseSelector(t *testing.T) {
 	if got := parseSelector("func:NewServer").Name; got != "NewServer" {
 		t.Errorf("bare func name = %q, want exact NewServer", got)
 	}
+}
+
+// TestParseSelectorFileGlob locks the #231 review fix: a basename glob with a
+// trailing wildcard (e.g. "*.go") must anchor to the end of the path, not
+// degrade to an unanchored substring match. The bug: wrapping GlobToLike's
+// output in "%...%" for every basename pattern turned "*.go" into "%.go%",
+// which matches ANY path containing ".go" anywhere (e.g. ".golangci.yml",
+// "algorithm.gox") — not just paths ending in ".go".
+func TestParseSelectorFileGlob(t *testing.T) {
+	cases := []struct {
+		glob string
+		want string
+	}{
+		{"*.go", "%.go"},                       // trailing-wildcard glob anchors to end of path
+		{"query*.go", "%query%.go"},            // leading % for "anywhere", but still ends in .go
+		{"query.go", "%query.go"},              // exact basename anchors to end too
+		{"query*", "%query%"},                  // trailing * already unanchored, no change needed
+		{"internal/*/x.go", "internal/%/x.go"}, // slash-containing glob keeps the existing anchored-from-start behavior
+	}
+	for _, c := range cases {
+		got := parseSelector("file:" + c.glob).File
+		if got != c.want {
+			t.Errorf("file:%s -> %q, want %q", c.glob, got, c.want)
+		}
+	}
+
+	// The resulting patterns must NOT match a path that merely contains ".go"
+	// as a substring without ending in it.
+	badMatches := []struct {
+		like string
+		path string
+	}{
+		{"%.go", ".golangci.yml"},
+		{"%.go", "internal/algorithm.gox"},
+		{"%query%.go", "internal/algorithm.gox"},
+	}
+	for _, c := range badMatches {
+		if sqlLike(c.path, c.like) {
+			t.Errorf("LIKE %q must not match %q (unanchored substring leak)", c.like, c.path)
+		}
+	}
+	goodMatches := []struct {
+		like string
+		path string
+	}{
+		{"%.go", "internal/mcp/query.go"},
+		{"%query%.go", "internal/mcp/query.go"},
+	}
+	for _, c := range goodMatches {
+		if !sqlLike(c.path, c.like) {
+			t.Errorf("LIKE %q must match %q", c.like, c.path)
+		}
+	}
+}
+
+// sqlLike is a minimal SQL-LIKE-semantics stand-in (% = any run, no escaping
+// needed for these ASCII test fixtures) so TestParseSelectorFileGlob can
+// assert match/no-match without spinning up sqlite.
+func sqlLike(s, pattern string) bool {
+	parts := strings.Split(pattern, "%")
+	i := 0
+	for pi, part := range parts {
+		if part == "" {
+			continue
+		}
+		idx := strings.Index(s[i:], part)
+		if idx < 0 {
+			return false
+		}
+		if pi == 0 && idx != 0 {
+			return false // pattern has no leading % — must match at the start
+		}
+		i += idx + len(part)
+	}
+	if !strings.HasSuffix(pattern, "%") && i != len(s) {
+		return false // pattern has no trailing % — must match to the end
+	}
+	return true
 }
 
 func TestNormalizeKind(t *testing.T) {

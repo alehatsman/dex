@@ -398,21 +398,15 @@ func dispatchExact(ctx context.Context, h toolSurface, req *sdk.CallToolRequest,
 	out.Refs = refsFromExact(out.Result) // uniform Selection currency (#95f)
 	// On an empty exact-lane result the road-not-taken is a genuine fallback:
 	// offer the search lane in next, not just as a passive alt (#231 — this
-	// used to be symbol-only, leaving a grep no-matches dead-ended).
+	// used to be symbol-only, leaving grep/locate no-matches dead-ended).
 	if isEmptyStatus(lo.Status) {
 		switch lr.lane {
 		case "symbol":
-			out.Next = append(out.Next, NextStep{
-				Verb: "query",
-				Args: map[string]any{"input": cleaned, "kind": "search"},
-				Why:  "no symbol by that name — search for the behavior instead",
-			})
+			out.Next = append(out.Next, searchFallbackNext(cleaned, "no symbol by that name — search for the behavior instead"))
 		case "grep":
-			out.Next = append(out.Next, NextStep{
-				Verb: "query",
-				Args: map[string]any{"input": cleaned, "kind": "search"},
-				Why:  "no literal/regex match — search for the behavior instead",
-			})
+			out.Next = append(out.Next, searchFallbackNext(cleaned, "no literal/regex match — search for the behavior instead"))
+		case "locate":
+			out.Next = append(out.Next, searchFallbackNext(cleaned, "no location at that path/line — search for the behavior instead"))
 		}
 	}
 	return nil, out, err
@@ -486,6 +480,17 @@ func redirectToNativeRead(path string, route QueryRoute) (*sdk.CallToolResult, Q
 			{Verb: "query", Args: map[string]any{"input": path, "want": "map"}, Why: "imports + exports only"},
 		},
 	}, nil
+}
+
+// searchFallbackNext builds the "try the search lane instead" NextStep every
+// exact/selector lane offers on a dead end — one shared shape (#231 review
+// fix) instead of three hand-copied literals that could drift out of sync.
+func searchFallbackNext(cleaned, why string) NextStep {
+	return NextStep{
+		Verb: "query",
+		Args: map[string]any{"input": cleaned, "kind": "search"},
+		Why:  why,
+	}
 }
 
 // isEmptyStatus reports whether a lane status means "found nothing" (vs an

@@ -199,6 +199,14 @@ func (s *Server) applyLoopThrottle(question string, out *ContextOutput) bool {
 		out.Map = ""
 		out.References = nil
 		out.Annotations = nil
+		// RelatedFiles/Rules/Concerns are populated earlier in the assemble
+		// pipeline (context_stream.go), before this throttle check runs — left
+		// uncleared they leaked repo file paths and rule/spec paths through a
+		// "loop-blocked" response, directly contradicting the empty-payload
+		// intent above (caught in review of #231).
+		out.RelatedFiles = nil
+		out.Rules = nil
+		out.Concerns = nil
 		return true
 	}
 	if ldLevel == throttle.Reduce {
