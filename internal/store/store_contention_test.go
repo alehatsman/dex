@@ -25,9 +25,20 @@ func TestStoreSingleConnectionPinned(t *testing.T) {
 	}
 }
 
+// chunkCount returns the number of rows in the chunks table — a raw read leg
+// for the contention test that doesn't depend on any higher-level query path.
+func chunkCount(ctx context.Context, t *testing.T, s *Store) int {
+	t.Helper()
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks`).Scan(&n); err != nil {
+		t.Fatalf("count chunks: %v", err)
+	}
+	return n
+}
+
 // TestStoreConcurrentReadWriteContention hammers one *Store with concurrent
-// transactional writes (KnowledgeAdd → BeginTx → addInTx) and reads
-// (KnowledgeCount / KnowledgeQuery). Two things are under test:
+// transactional writes (UpsertMany → BeginTx) and reads (a COUNT over chunks).
+// Two things are under test:
 //
 //   - No SQLITE_BUSY* surfaces — the single connection serializes access so the
 //     snapshot-upgrade race can't happen (#185).
@@ -46,9 +57,10 @@ func TestStoreConcurrentReadWriteContention(t *testing.T) {
 
 	const workers = 16
 	const iters = 40
+	now := time.Now()
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, workers*iters*3)
+	errCh := make(chan error, workers*iters*2)
 	start := make(chan struct{}) // release all goroutines at once to maximize contention
 
 	for w := range workers {
@@ -57,14 +69,20 @@ func TestStoreConcurrentReadWriteContention(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for i := range iters {
-				if _, err := s.KnowledgeAdd(ctx, "note", fmt.Sprintf("fact w%d i%d", w, i), 0.5); err != nil {
-					errCh <- fmt.Errorf("KnowledgeAdd w%d i%d: %w", w, i, err)
+				// BM25-only write (empty Vec) — a distinct chunk per (w,i) so the
+				// final count is deterministic. Goes through UpsertMany's BeginTx.
+				path := fmt.Sprintf("f_w%d_i%d.go", w, i)
+				row := PendingChunk{
+					Path: path, Kind: "func", Name: fmt.Sprintf("Fn%d_%d", w, i),
+					StartLine: 1, EndLine: 2,
+					ContentSHA: path, Content: fmt.Sprintf("chunk w%d i%d", w, i),
 				}
-				if _, err := s.KnowledgeCount(ctx); err != nil {
-					errCh <- fmt.Errorf("KnowledgeCount w%d i%d: %w", w, i, err)
+				if err := s.UpsertMany(ctx, []PendingChunk{row}, now); err != nil {
+					errCh <- fmt.Errorf("UpsertMany w%d i%d: %w", w, i, err)
 				}
-				if _, err := s.KnowledgeQuery(ctx, 5); err != nil {
-					errCh <- fmt.Errorf("KnowledgeQuery w%d i%d: %w", w, i, err)
+				var n int
+				if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks`).Scan(&n); err != nil {
+					errCh <- fmt.Errorf("count w%d i%d: %w", w, i, err)
 				}
 			}
 		}(w)
@@ -94,9 +112,7 @@ func TestStoreConcurrentReadWriteContention(t *testing.T) {
 	}
 
 	// All writes landed — the serialized path lost nothing.
-	if n, err := s.KnowledgeCount(ctx); err != nil {
-		t.Fatalf("final count: %v", err)
-	} else if n != workers*iters {
-		t.Fatalf("final fact count = %d, want %d — writes were dropped under contention", n, workers*iters)
+	if n := chunkCount(ctx, t, s); n != workers*iters {
+		t.Fatalf("final chunk count = %d, want %d — writes were dropped under contention", n, workers*iters)
 	}
 }

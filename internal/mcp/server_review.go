@@ -22,14 +22,14 @@ import (
 // review (#639 / GitHub #65 Tier S2) is per-hunk PR intelligence. Code review is
 // delta-shaped, but every other dex verb is state-shaped — ask/find/trace/read
 // give a current snapshot. To review a diff an agent otherwise stitches together
-// six tools per file: diff, then callers per touched symbol, then sibling tests,
-// then git history, then linked notes. review collapses that into one call.
+// five tools per file: diff, then callers per touched symbol, then sibling tests,
+// then git history. review collapses that into one call.
 //
 // It is pure composition over shipped infrastructure: the review.ParseUnified
 // hunk parser (the only new piece), ChunkAt for hunk→symbol mapping, traceVerb
-// for callers + risk, the Enricher legs for tests / nearest doc / blame, small
-// git helpers for churn + author history, and recallFacts for notes. No new
-// store schema, no new backend, no model call.
+// for callers + risk, the Enricher legs for tests / nearest doc / blame, and small
+// git helpers for churn + author history. No new store schema, no new backend,
+// no model call.
 //
 // Scope (v1): hunk→symbol mapping resolves a changed line to its *enclosing
 // declaration* via ChunkAt (decl byte-spans from #591). It is NOT call-site

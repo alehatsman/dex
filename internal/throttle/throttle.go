@@ -26,12 +26,12 @@ const (
 
 // blockedMsg is returned when a call is blocked.
 const blockedMsg = "loop-blocked: this exact call has been made %d times in the last 5 minutes. " +
-	"Consider: grep for an exact literal, ls to orient, narrowing with path= or kind= " +
-	"parameters, or storing findings with the knowledge tool."
+	"Consider: grep for an exact literal, ls to orient, or narrowing with path= or kind= " +
+	"parameters."
 
 // hintMsg is a softer nudge for moderate repetition.
 const hintMsg = "repeated call (%d times) — if results aren't helping, try grep for " +
-	"exact text, ls for orientation, or knowledge action=add to store findings."
+	"exact text, ls for orientation, or read specific files directly."
 
 // Level describes the detector's recommended response to a call.
 type Level int
@@ -130,8 +130,8 @@ func (d *Detector) Check(tool, args string, isSearch bool) (Level, string) {
 	// Cross-tool search group budget exceeded.
 	if isSearch && searchGroupCount >= searchGroupLimit {
 		return Block, fmt.Sprintf(
-			"search-group-blocked: %d search calls in the last 5 minutes. Store findings with "+
-				"knowledge action=add, use grep for exact literals, or read specific files directly.",
+			"search-group-blocked: %d search calls in the last 5 minutes. "+
+				"Use grep for exact literals, or read specific files directly.",
 			searchGroupCount,
 		)
 	}

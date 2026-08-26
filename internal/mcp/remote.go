@@ -284,12 +284,6 @@ func (rc *remoteClient) summarize(ctx context.Context, _ *sdk.CallToolRequest, i
 	return nil, out, err
 }
 
-func (rc *remoteClient) knowledge(ctx context.Context, _ *sdk.CallToolRequest, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
-	var out KnowledgeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/notes"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
 	var out SearchTreeOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/ls"), in, &out)

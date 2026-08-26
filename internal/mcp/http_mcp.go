@@ -149,11 +149,6 @@ func (p projectScoped) routes(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.routes(ctx, req, in)
 }
 
-func (p projectScoped) knowledge(ctx context.Context, req *sdk.CallToolRequest, in KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.knowledge(ctx, req, in)
-}
-
 func (p projectScoped) searchTree(ctx context.Context, req *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.searchTree(ctx, req, in)

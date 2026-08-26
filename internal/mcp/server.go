@@ -83,10 +83,6 @@ type watcherState struct {
 	// watcherWG lets RunStdio wait for all watcher goroutines to drain
 	// before returning.
 	watcherWG sync.WaitGroup
-	// activityTracker accumulates per-project tool-call weights to surface
-	// a knowledge-nudge hint when the agent has done significant work but
-	// hasn't recorded any findings. Key: project root; value: *activityState.
-	activityTracker sync.Map
 }
 
 // sessionState tracks per-MCP-session bookkeeping.
@@ -274,11 +270,6 @@ func (s *Server) Summarize(ctx context.Context, in SummarizeInput) (SummarizeOut
 
 func (s *Server) Status(ctx context.Context) (StatusOutput, error) {
 	_, out, err := s.status(ctx, nil, StatusInput{})
-	return out, err
-}
-
-func (s *Server) Knowledge(ctx context.Context, in KnowledgeInput) (KnowledgeOutput, error) {
-	_, out, err := s.knowledge(ctx, nil, in)
 	return out, err
 }
 

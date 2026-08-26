@@ -68,7 +68,7 @@ var (
 	// BodyFillCoverage — submodular body-packing that fills the pool with many
 	// symbol bodies — so at capsDense (40 KB) its envelope ceiling lands at
 	// 40+10 = 50 KB, exactly the client tool-result reject point (a real
-	// (*Server).recallFacts assemble hard-errored at 50,328 chars). 28 KB keeps
+	// assemble pack hard-errored at 50,328 chars). 28 KB keeps
 	// the empirically-good working set (~28 KB / 14 bodies) while dropping the
 	// derived ceiling to 38 KB, leaving headroom for the callers/callees graph.
 	capsAssembleDense = InlineCaps{MaxLinesPerRead: 120, MaxBytesPerRead: 8 * 1024, TotalBytesCap: 28 * 1024}

@@ -183,8 +183,6 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		return nil, out, nil
 	}
 
-	s.activityRecord(p.Root, 1)
-
 	// Apply language and path_glob filters post-ranking, then trim to k.
 	exts := langToExtensions(in.Languages)
 	preFilterHits := hits
@@ -201,9 +199,6 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	}
 
 	out.Status = "ok"
-	if out.Hint == "" {
-		out.Hint = s.activityNudge(p.Root, sessionTask)
-	}
 	if ldHint != "" && out.Hint == "" {
 		out.Hint = ldHint
 	}

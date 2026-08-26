@@ -32,7 +32,6 @@ package mcp
 // POST /projects/{id}/path         — body: PathInput
 // POST /projects/{id}/diff         — body: DiffInput
 // POST /projects/{id}/clusters     — body: CommunitiesInput
-// POST /projects/{id}/notes        — body: KnowledgeInput
 // POST /projects/{id}/session      — body: SessionInput
 // *    /projects/{id}/mcp          — native streamable-HTTP MCP
 //                                    transport (http_mcp.go), not REST

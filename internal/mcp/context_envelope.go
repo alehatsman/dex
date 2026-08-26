@@ -27,7 +27,7 @@ import (
 
 // envelopeCeilingBytes is the hard cap on one ask response's serialized size,
 // derived from the intent's inline pool budget plus headroom for the lanes that
-// sit outside the pool (graph, knowledge_facts, annotations, answer). It stays
+// sit outside the pool (graph, annotations, answer). It stays
 // well under the MCP tool-result token ceiling — a ~62 KB bundle has overflowed
 // it in practice (#784).
 func envelopeCeilingBytes(intent string) int {

@@ -95,9 +95,6 @@ func (n *noopSurface) searchTree(_ context.Context, _ *sdk.CallToolRequest, _ Se
 func (n *noopSurface) searchGrep(_ context.Context, _ *sdk.CallToolRequest, _ SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
 	return nil, SearchGrepOutput{}, n.err()
 }
-func (n *noopSurface) knowledge(_ context.Context, _ *sdk.CallToolRequest, _ KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error) {
-	return nil, KnowledgeOutput{}, n.err()
-}
 func (n *noopSurface) status(_ context.Context, _ *sdk.CallToolRequest, _ StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
 	return nil, StatusOutput{}, n.err()
 }

@@ -32,7 +32,6 @@ package mcp
 // POST /projects/{id}/path         — body: PathInput
 // POST /projects/{id}/diff         — body: DiffInput
 // POST /projects/{id}/clusters     — body: CommunitiesInput
-// POST /projects/{id}/notes        — body: KnowledgeInput
 // POST /projects/{id}/session      — body: SessionInput
 // *    /projects/{id}/mcp          — native streamable-HTTP MCP
 //                                    transport (http_mcp.go), not REST
@@ -273,7 +272,6 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed.HandleFunc("POST /v1/projects/{id}/path", jsonHandler(opts.Projects, func(in *PathInput, r string) { in.ProjectRoot = r }, s.GraphPath))
 	authed.HandleFunc("POST /v1/projects/{id}/diff", jsonHandler(opts.Projects, func(in *DiffInput, r string) { in.ProjectRoot = r }, s.GraphDiff))
 	authed.HandleFunc("POST /v1/projects/{id}/clusters", jsonHandler(opts.Projects, func(in *CommunitiesInput, r string) { in.ProjectRoot = r }, s.GraphCommunities))
-	authed.HandleFunc("POST /v1/projects/{id}/notes", jsonHandler(opts.Projects, func(in *KnowledgeInput, r string) { in.ProjectRoot = r }, s.Knowledge))
 	authed.HandleFunc("POST /v1/projects/{id}/index-status", jsonHandler(opts.Projects, func(in *IndexStatusInput, r string) { in.ProjectRoot = r }, s.IndexStatus))
 
 	// Native streamable-HTTP MCP transport — clients attach dex directly over

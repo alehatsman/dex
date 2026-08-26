@@ -228,8 +228,6 @@ type Store struct {
 	embedURL   atomic.Value      // string: transport endpoint last used (advisory, not identity); "" until recorded
 	opts       Options           // immutable after Open
 	gitRecency GitRecencyBonuser // non-nil when a project root is known at open time
-
-	knowledgeStore // knowledge-fact methods, keyed on Store.db
 }
 
 // Open opens or creates the SQLite file at path with default
@@ -267,7 +265,7 @@ func OpenWith(ctx context.Context, path string, opts Options) (*Store, error) {
 	// unchanged — each process owns its own connection and still relies on WAL +
 	// `_busy_timeout`.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, opts: opts, knowledgeStore: knowledgeStore{db: db}}
+	s := &Store{db: db, opts: opts}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, err

@@ -20,11 +20,10 @@ import (
 // locate (#636 / GitHub #65 Tier S1) is one-call orientation around a code
 // location. It collapses the 4–6 call dance every session repeats — resolve
 // the symbol, walk its callers, find sibling tests, find the nearest doc,
-// check recent churn, recall related notes — into a single response. It is
-// pure composition over shipped infrastructure: ChunkAt / FindSymbol for
-// resolution, traceVerb for callers, the Enricher legs for tests / nearest
-// doc / git blame, recallFacts for notes. No new store schema, no new
-// backend, no model call.
+// check recent churn — into a single response. It is pure composition over
+// shipped infrastructure: ChunkAt / FindSymbol for resolution, traceVerb for
+// callers, the Enricher legs for tests / nearest doc / git blame. No new store
+// schema, no new backend, no model call.
 
 // LocateInput selects the target three ways. Exactly one of Ref / Symbol /
 // Frame is expected; when more than one is set the precedence is Ref, then

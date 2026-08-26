@@ -303,7 +303,6 @@ func (s *Server) summarizeModeSummary(w summarizeWork) (*sdk.CallToolResult, Sum
 		out.Model = resp.Model
 	}
 	s.readCacheMark(w.sessionID, w.relTarget, w.etag, w.in.Mode)
-	s.activityRecord(w.p.Root, 1)
 	return nil, out, nil
 }
 

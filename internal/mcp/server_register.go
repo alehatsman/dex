@@ -44,7 +44,6 @@ type toolSurface interface {
 	routes(context.Context, *sdk.CallToolRequest, RoutesInput) (*sdk.CallToolResult, RoutesOutput, error)
 	searchTree(context.Context, *sdk.CallToolRequest, SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error)
 	searchGrep(context.Context, *sdk.CallToolRequest, SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error)
-	knowledge(context.Context, *sdk.CallToolRequest, KnowledgeInput) (*sdk.CallToolResult, KnowledgeOutput, error)
 	check(context.Context, *sdk.CallToolRequest, CheckInput) (*sdk.CallToolResult, CheckOutput, error)
 	refs(context.Context, *sdk.CallToolRequest, RefsInput) (*sdk.CallToolResult, RefsOutput, error)
 	status(context.Context, *sdk.CallToolRequest, StatusInput) (*sdk.CallToolResult, StatusOutput, error)

@@ -42,7 +42,7 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 	if throttleHint, earlyReturn := s.searchThrottleHint(in.Question, p.Root); earlyReturn {
 		return nil, ContextOutput{Status: "ok", Project: p.Root, Hint: throttleHint}, nil
 	} else if throttleHint != "" {
-		// Pre-set hint; activityNudge will be skipped below in favour of this.
+		// Pre-set hint from the repetition guard; applied to out.Hint below.
 		hint = throttleHint
 	}
 
@@ -199,10 +199,6 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 	if embedFailed && out.Hint == "" {
 		out.Hint = "embed offline; results from symbol lane only."
 	}
-	s.activityRecord(p.Root, 1)
-	if out.Hint == "" {
-		out.Hint = s.activityNudge(p.Root, out.SessionTask)
-	}
 	// Task-start packs carry the local rules that govern the working set, so the
 	// agent sees the constraints before editing. Folded in from brief (#141);
 	// assemble is the "starting a task" intent, so only it pays this cost.
@@ -233,9 +229,9 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 	s.applySeenContext(sessionKey(req), &out)
 
 	// Final safety net: keep the whole serialized bundle under a hard ceiling.
-	// The inline byte pool bounds suggested_reads + semantic_hits, but graph and
-	// knowledge_facts are appended outside it, so a dense graph on top of a full
-	// exploration pool could still overflow the MCP tool-result limit (#784).
+	// The inline byte pool bounds suggested_reads + semantic_hits, but the graph
+	// is appended outside it, so a dense graph on top of a full exploration pool
+	// could still overflow the MCP tool-result limit (#784).
 	clampResponseEnvelope(&out, intent)
 	return nil, out, nil
 }
