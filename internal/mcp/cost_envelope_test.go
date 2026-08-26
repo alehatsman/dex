@@ -4,30 +4,34 @@ import "testing"
 
 // The cost envelope is stamped uniformly at the choke point (#110 step 2):
 // tokens_returned on every four-verb success; budget_left only when the input
-// carried a budget, floored at 0.
+// carried a budget, floored at 0. BudgetLeft is a *int (#231) so an exhausted
+// budget (0 left) is distinguishable from no budget having been set at all —
+// both must round-trip through JSON distinctly rather than the field being
+// silently omitted in either case.
 func TestStampEnvelopeCost(t *testing.T) {
-	// tokens_returned is always set; budget_left stays 0 without a budget.
+	// tokens_returned is always set; budget_left stays nil (unset) without a budget.
 	out := LookOutput{Status: "ok", Result: LookResult{Kind: "grep"}}
 	stampEnvelopeCost(&out, LookInput{})
 	if out.Cost == nil || out.Cost.TokensReturned <= 0 {
 		t.Fatalf("tokens_returned not stamped: %+v", out.Cost)
 	}
-	if out.Cost.BudgetLeft != 0 {
-		t.Fatalf("budget_left must be 0 without a budget, got %d", out.Cost.BudgetLeft)
+	if out.Cost.BudgetLeft != nil {
+		t.Fatalf("budget_left must be nil without a budget, got %v", *out.Cost.BudgetLeft)
 	}
 
 	// With a budget, budget_left = budget − tokens_returned.
 	withBudget := LookOutput{Status: "ok"}
 	stampEnvelopeCost(&withBudget, LookInput{Budget: 100000})
-	if withBudget.Cost.BudgetLeft <= 0 || withBudget.Cost.BudgetLeft >= 100000 {
+	if withBudget.Cost.BudgetLeft == nil || *withBudget.Cost.BudgetLeft <= 0 || *withBudget.Cost.BudgetLeft >= 100000 {
 		t.Fatalf("budget_left not computed: %+v", withBudget.Cost)
 	}
 
-	// A budget smaller than the response floors at 0, never negative.
+	// A budget smaller than the response floors at 0 (still set, not omitted —
+	// "budget exhausted" must not look like "no budget was passed").
 	tiny := LookOutput{Status: "ok"}
 	stampEnvelopeCost(&tiny, LookInput{Budget: 1})
-	if tiny.Cost.BudgetLeft != 0 {
-		t.Fatalf("budget_left must floor at 0, got %d", tiny.Cost.BudgetLeft)
+	if tiny.Cost.BudgetLeft == nil || *tiny.Cost.BudgetLeft != 0 {
+		t.Fatalf("budget_left must be present and floor at 0, got %+v", tiny.Cost)
 	}
 
 	// An output that doesn't implement costStamper is a silent no-op.

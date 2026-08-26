@@ -44,7 +44,7 @@ type QueryInput struct {
 	Context int  `json:"context,omitempty" jsonschema:"grep lane only: lines of surrounding context per match (0-10)"`
 	Fixed   bool `json:"fixed,omitempty" jsonschema:"grep lane only: treat the pattern as a literal string, not a regex"`
 	// shared.
-	K           int    `json:"k,omitempty" jsonschema:"max results per lane"`
+	K           int    `json:"k,omitempty" jsonschema:"max results per lane (for the symbol lane's impact facet, this caps results PER GRAPH DEPTH, not the total — see result.trace.elided for what a lower k drops)"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Budget      int    `json:"budget,omitempty" jsonschema:"optional context-token budget; when set, the response reports cost.budget_left = budget − tokens_returned"`
 }
@@ -120,7 +120,7 @@ type QueryOutput struct {
 	Next  []NextStep `json:"next,omitempty"`
 }
 
-func (o *QueryOutput) stampCost(t, left int) { o.Cost = withCost(o.Cost, t, left) }
+func (o *QueryOutput) stampCost(t int, left *int) { o.Cost = withCost(o.Cost, t, left) }
 
 // symbolToken matches a single bare / receiver-qualified / package-qualified
 // identifier — the shape that routes to the graph lane. It deliberately rejects

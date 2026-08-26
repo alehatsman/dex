@@ -58,12 +58,19 @@ type CallSite struct {
 	// invisible. Empty for a direct static caller.
 	Via string `json:"via,omitempty"`
 	// Content is, by default, a small window centred on the call site (#486)
-	// — for a who-calls-X query the call expression is the answer, not the
-	// whole enclosing function. StartLine/EndLine still name the enclosing
-	// symbol for reference. Set Verbose to get the full enclosing body.
+	// — the call expression is the answer, not the whole enclosing function.
+	// IMPORTANT (#231): the window always lives at CallSitePath:CallSiteLine —
+	// on a callers query that's the same file as the peer's own definition
+	// (Path/StartLine/EndLine), but on a CALLEES query the call expression
+	// lives in the QUERIED symbol's body, not the callee's, so Content shows
+	// "how the queried symbol invokes this callee", not the callee's own
+	// source. Path/StartLine/EndLine are always the callee's own definition —
+	// query() that location directly to read the callee's body. Set Verbose
+	// to get the full enclosing body instead of the windowed call site.
 	Content string `json:"content,omitempty"`
 	// ContentStartLine is the first source line of Content (the window's top,
-	// or the enclosing symbol's start line in verbose mode).
+	// or the enclosing symbol's start line in verbose mode) — a position in
+	// CallSitePath, NOT necessarily in Path (see Content's callees note above).
 	ContentStartLine int  `json:"content_start_line,omitempty"`
 	Truncated        bool `json:"truncated,omitempty"`
 }

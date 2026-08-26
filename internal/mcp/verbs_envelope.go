@@ -53,7 +53,11 @@ type EnvTrust struct {
 type EnvCost struct {
 	TokensReturned int `json:"tokens_returned,omitempty"`
 	SavedPct       int `json:"saved_pct,omitempty"`
-	BudgetLeft     int `json:"budget_left,omitempty"`
+	// BudgetLeft is a pointer so an exhausted budget (0 left) is distinguishable
+	// from no budget having been passed at all (#231) — an int with omitempty
+	// would silently drop the field in both cases, making "you blew the whole
+	// budget" look identical to "you never set one".
+	BudgetLeft *int `json:"budget_left,omitempty"`
 }
 
 // NextStep is a suggested follow-up call — the verb to run, the arguments to run
@@ -72,7 +76,7 @@ func exactTrust() EnvTrust { return EnvTrust{Provenance: "exact"} }
 // records cost.tokens_returned (and budget_left when the caller passed a budget)
 // uniformly (#110 step 2), without each handler duplicating the math.
 type costStamper interface {
-	stampCost(tokensReturned, budgetLeft int)
+	stampCost(tokensReturned int, budgetLeft *int)
 }
 
 // budgetCarrier is implemented by the four-verb inputs that accept an optional
@@ -95,32 +99,36 @@ func stampEnvelopeCost(out any, in any) {
 		return
 	}
 	toks := tokens.Count(string(b))
-	left := 0
+	var left *int
 	if bc, ok := in.(budgetCarrier); ok {
 		if budget := bc.budgetTokens(); budget > 0 {
-			if left = budget - toks; left < 0 {
-				left = 0
+			l := budget - toks
+			if l < 0 {
+				l = 0
 			}
+			left = &l
 		}
 	}
 	cs.stampCost(toks, left)
 }
 
 // withCost folds a measured token count (and optional budget_left) into an
-// EnvCost, preserving any saved_pct a verb already recorded.
-func withCost(c *EnvCost, tokensReturned, budgetLeft int) *EnvCost {
+// EnvCost, preserving any saved_pct a verb already recorded. budgetLeft is nil
+// when the caller passed no budget; a non-nil *0 means the budget was fully
+// spent and must still be reported, not omitted (#231).
+func withCost(c *EnvCost, tokensReturned int, budgetLeft *int) *EnvCost {
 	if c == nil {
 		c = &EnvCost{}
 	}
 	c.TokensReturned = tokensReturned
-	if budgetLeft > 0 {
+	if budgetLeft != nil {
 		c.BudgetLeft = budgetLeft
 	}
 	return c
 }
 
-func (o *ContextOutput) stampCost(t, left int) { o.Cost = withCost(o.Cost, t, left) }
-func (o *LookOutput) stampCost(t, left int)    { o.Cost = withCost(o.Cost, t, left) }
+func (o *ContextOutput) stampCost(t int, left *int) { o.Cost = withCost(o.Cost, t, left) }
+func (o *LookOutput) stampCost(t int, left *int)    { o.Cost = withCost(o.Cost, t, left) }
 
 func (in ContextInput) budgetTokens() int { return in.Budget }
 func (in LookInput) budgetTokens() int    { return in.Budget }
