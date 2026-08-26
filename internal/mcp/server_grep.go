@@ -16,12 +16,14 @@ import (
 
 type SearchGrepInput struct {
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
-	Pattern     string `json:"pattern"                jsonschema:"RE2 regex pattern to search for"`
+	Pattern     string `json:"pattern,omitempty"      jsonschema:"RE2 regex pattern to search for — mutually exclusive with query"`
 	Path        string `json:"path,omitempty"         jsonschema:"relative subdirectory to restrict the search (default: project root)"`
 	Ext         string `json:"ext,omitempty"          jsonschema:"file extension filter without leading dot, e.g. go or ts"`
 	MaxResults  int    `json:"max_results,omitempty"  jsonschema:"maximum matches to return (default 50, max 200)"`
 	Context     int    `json:"context,omitempty"      jsonschema:"lines of surrounding context to include before AND after each match (like grep -C), 0-10; default 0"`
 	Fixed       bool   `json:"fixed,omitempty"        jsonschema:"match the pattern as a literal string (like grep -F) instead of a regex — use for code containing metacharacters (foo.bar, arr[i], f(x))"`
+	Query       string `json:"query,omitempty"        jsonschema:"tree-sitter structural query (.scm syntax), e.g. '(call_expression function: (identifier) @fn (#eq? @fn \"foo\"))' — matches by AST shape instead of text; mutually exclusive with pattern, requires lang"`
+	Lang        string `json:"lang,omitempty"         jsonschema:"language for a structural query: python|javascript|typescript|tsx|rust|java"`
 }
 
 type GrepMatch struct {
@@ -54,8 +56,14 @@ func (s *Server) searchGrep(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 	if hint != "" {
 		return nil, SearchGrepOutput{Status: "error", Hint: hint}, nil
 	}
-	if in.Pattern == "" {
-		return nil, SearchGrepOutput{Status: "error", Hint: "pattern is required"}, nil
+	if in.Pattern == "" && in.Query == "" {
+		return nil, SearchGrepOutput{Status: "error", Hint: "pattern or query is required"}, nil
+	}
+	if in.Pattern != "" && in.Query != "" {
+		return nil, SearchGrepOutput{Status: "error", Hint: "pattern and query are mutually exclusive — set one"}, nil
+	}
+	if in.Query != "" {
+		return s.searchGrepStructural(ctx, p, in)
 	}
 	// fixed=true matches the pattern literally (grep -F): code routinely contains
 	// regex metacharacters, and quoting them by hand is error-prone (#663).
@@ -132,7 +140,18 @@ outer:
 	// nothing and an empty loop-blocked payload is indistinguishable from a
 	// genuine no-matches result. Never suppress grep results — at most trim and
 	// surface the loop-detector hint as advisory guidance.
-	ldLevel, ldHint := s.ld().Check("grep", throttle.ArgsKey(in.Pattern), false)
+	out := s.finishGrepOutput(p, matches, truncated, maxResults, throttle.ArgsKey(in.Pattern), false)
+	return nil, out, nil
+}
+
+// finishGrepOutput applies the shared tail shared by every grep facet: the
+// loop-detector check, status derivation, and truncation hint. isSearch
+// threads through to the throttle check — the RE2 facet opts out (see the
+// comment at its call site); the structural facet opts in because parsing
+// every candidate file with a CGO tree-sitter grammar is a materially
+// different cost class than a bytes-level regex scan.
+func (s *Server) finishGrepOutput(p *proj.Project, matches []GrepMatch, truncated bool, maxResults int, argsKey string, isSearch bool) SearchGrepOutput {
+	ldLevel, ldHint := s.ld().Check("grep", argsKey, isSearch)
 
 	status := "ok"
 	if len(matches) == 0 {
@@ -155,7 +174,7 @@ outer:
 	} else if ldHint != "" && out.Hint == "" {
 		out.Hint = ldHint
 	}
-	return nil, out, nil
+	return out
 }
 
 // grepFileList resolves the candidate files for a grep scan. A single-file

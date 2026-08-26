@@ -131,9 +131,6 @@
     {
       "name": "grep",
       "additionalProperties": false,
-      "required": [
-        "pattern"
-      ],
       "properties": {
         "context": {
           "type": "integer"
@@ -143,6 +140,9 @@
         },
         "fixed": {
           "type": "boolean"
+        },
+        "lang": {
+          "type": "string"
         },
         "max_results": {
           "type": "integer"
@@ -154,6 +154,9 @@
           "type": "string"
         },
         "project_root": {
+          "type": "string"
+        },
+        "query": {
           "type": "string"
         }
       }

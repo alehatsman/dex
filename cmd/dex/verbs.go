@@ -184,25 +184,35 @@ func cmdImpact(ctx context.Context, args []string) error {
 func cmdGrep(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("grep", flag.ContinueOnError)
 	setHelp(fs,
-		"Exact RE2 regex search over project files (MCP: grep).",
+		"Exact RE2 regex search over project files, or structural AST match with --query (MCP: grep).",
 		"dex grep [flags] [<path>] <pattern>",
 		"dex grep 'func New'",
-		"dex grep --ext go --in internal/mcp 'AddTool'")
+		"dex grep --ext go --in internal/mcp 'AddTool'",
+		`dex grep --query '(call function: (identifier) @fn (#eq? @fn "foo"))' --lang python`)
 	ext := fs.String("ext", "", "file extension filter without leading dot, e.g. go or ts")
 	in := fs.String("in", "", "restrict to a subdirectory of the project")
 	maxResults := fs.Int("max-results", 0, "maximum matches (default 50, max 200)")
 	contextN := fs.Int("context", 0, "lines of context before/after each match (like grep -C), 0-10")
 	fixed := fs.Bool("fixed", false, "match the pattern literally (like grep -F), not as a regex")
+	query := fs.String("query", "", "tree-sitter structural query (.scm syntax) instead of a regex pattern — requires --lang")
+	lang := fs.String("lang", "", "language for --query: python|javascript|typescript|tsx|rust|java")
 	format := fs.String("format", "text", "output format: text | json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
 	path, rest := splitProjectArg(fs.Args())
-	if len(rest) != 1 {
+	var pattern string
+	if *query != "" {
+		if len(rest) != 0 {
+			return fmt.Errorf("grep --query takes no positional <pattern>; got %d", len(rest))
+		}
+	} else if len(rest) != 1 {
 		if len(rest) == 0 {
-			return fmt.Errorf("grep needs a <pattern> (path defaults to cwd); quote patterns with spaces")
+			return fmt.Errorf("grep needs a <pattern> (path defaults to cwd) or --query; quote patterns with spaces")
 		}
 		return fmt.Errorf("grep takes one <pattern> (got %d); quote patterns with spaces", len(rest))
+	} else {
+		pattern = rest[0]
 	}
 	base, err := indexDir()
 	if err != nil {
@@ -214,12 +224,14 @@ func cmdGrep(ctx context.Context, args []string) error {
 	}
 	s, _ := newServerFromEnv(base)
 	out, err := s.SearchGrep(ctx, mcp.SearchGrepInput{
-		Pattern:     rest[0],
+		Pattern:     pattern,
 		Path:        *in,
 		Ext:         *ext,
 		MaxResults:  *maxResults,
 		Context:     *contextN,
 		Fixed:       *fixed,
+		Query:       *query,
+		Lang:        *lang,
 		ProjectRoot: p.Root,
 	})
 	if err != nil {
