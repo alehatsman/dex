@@ -33,6 +33,12 @@ type projectScoped struct {
 	root string
 }
 
+func (p projectScoped) query(ctx context.Context, req *sdk.CallToolRequest, in QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
+	in.ProjectRoot = p.root
+	// Compose over the scoped surface so every lane call inherits the bound root.
+	return queryVerb(ctx, p, req, in)
+}
+
 func (p projectScoped) contextRouter(ctx context.Context, req *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.contextRouter(ctx, req, in)

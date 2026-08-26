@@ -177,6 +177,16 @@ func remoteHTTPError(method, url string, resp *http.Response) error {
 // SDK marshals the structured result, exactly as it does for the local
 // handlers. The REST routes mirror buildHTTPHandler in http.go.
 
+// query serves the whole read verb in ONE round trip: it POSTs to the server's
+// first-class /query endpoint, which runs the lane composition server-side (#207
+// serve). This replaces composing queryVerb client-side over the per-lane REST
+// primitives, which cost several round trips per query over a container network.
+func (rc *remoteClient) query(ctx context.Context, _ *sdk.CallToolRequest, in QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
+	var out QueryOutput
+	err := rc.do(ctx, http.MethodPost, rc.projectPath("/query"), in, &out)
+	return nil, out, err
+}
+
 func (rc *remoteClient) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
 	var out ContextOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/ask"), in, &out)

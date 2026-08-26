@@ -248,6 +248,11 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	authed := http.NewServeMux()
 	authed.HandleFunc("GET /v1/projects", s.handleListProjects(opts.Projects))
 	authed.HandleFunc("GET /v1/status", s.handleStatus)
+	// The first-class query endpoint (#207 serve): the whole read verb server-side
+	// in one round trip, so a container agent (moongit) reaches it via the remote
+	// shim without composing lane-by-lane over the network. The per-lane routes
+	// below remain for the expert surface and backward compatibility.
+	authed.HandleFunc("POST /v1/projects/{id}/query", jsonHandler(opts.Projects, func(in *QueryInput, r string) { in.ProjectRoot = r }, s.Query))
 	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
 	authed.HandleFunc("POST /v1/projects/{id}/map", jsonHandler(opts.Projects, func(in *MapInput, r string) { in.ProjectRoot = r }, s.Map))
 	authed.HandleFunc("POST /v1/projects/{id}/trace", jsonHandler(opts.Projects, func(in *TraceInput, r string) { in.ProjectRoot = r }, s.Trace))

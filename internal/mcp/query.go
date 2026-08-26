@@ -238,8 +238,29 @@ func classifyQuery(raw, kindOverride string) (lr laneRoute, cleaned, detected st
 
 func queryHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
 	return func(ctx context.Context, req *sdk.CallToolRequest, in QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
-		return queryVerb(ctx, h, req, in)
+		// Dispatch through the surface's query method so query is first-class: the
+		// local Server composes queryVerb over its lanes, while the remote shim
+		// (remoteClient.query) collapses the whole call into one POST /query round
+		// trip instead of composing lane-by-lane over the network (#207 serve).
+		return h.query(ctx, req, in)
 	}
+}
+
+// query is *Server's first-class query handler: it composes queryVerb over the
+// local lanes. It is the surface method queryHandler dispatches to, so the local
+// stdio path is unchanged while the remote shim can override with a single-round
+// -trip implementation.
+func (s *Server) query(ctx context.Context, req *sdk.CallToolRequest, in QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
+	return queryVerb(ctx, s, req, in)
+}
+
+// Query is the exported REST entry point for the `dex serve` /query route — the
+// first-class server-side query endpoint (#207). It runs the full lane
+// composition server-side so a container agent (moongit) reaches a whole query
+// in one round trip rather than several. Mirrors Trace/Locate/Summarize.
+func (s *Server) Query(ctx context.Context, in QueryInput) (QueryOutput, error) {
+	_, out, err := queryVerb(ctx, s, nil, in)
+	return out, err
 }
 
 // queryVerb classifies the input, dispatches to the existing lane handler, and

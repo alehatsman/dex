@@ -101,6 +101,9 @@ func (n *noopSurface) status(_ context.Context, _ *sdk.CallToolRequest, _ Status
 func (n *noopSurface) summarize(_ context.Context, _ *sdk.CallToolRequest, _ SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	return nil, SummarizeOutput{}, n.err()
 }
+func (n *noopSurface) query(_ context.Context, _ *sdk.CallToolRequest, _ QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
+	return nil, QueryOutput{}, n.err()
+}
 func (n *noopSurface) check(_ context.Context, _ *sdk.CallToolRequest, _ CheckInput) (*sdk.CallToolResult, CheckOutput, error) {
 	return nil, CheckOutput{}, n.err()
 }

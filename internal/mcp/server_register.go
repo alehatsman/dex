@@ -19,6 +19,10 @@ import (
 // or descriptions — the schema for each tool is derived by the SDK from the
 // shared Input type, so both backends advertise byte-identical tools.
 type toolSurface interface {
+	// query is the single read verb — first-class on the surface so the remote
+	// shim can serve it in one round trip (remoteClient.query) instead of
+	// composing lane-by-lane over the network (#207). *Server composes queryVerb.
+	query(context.Context, *sdk.CallToolRequest, QueryInput) (*sdk.CallToolResult, QueryOutput, error)
 	contextRouter(context.Context, *sdk.CallToolRequest, ContextInput) (*sdk.CallToolResult, ContextOutput, error)
 	locate(context.Context, *sdk.CallToolRequest, LocateInput) (*sdk.CallToolResult, LocateOutput, error)
 	review(context.Context, *sdk.CallToolRequest, ReviewInput) (*sdk.CallToolResult, ReviewOutput, error)

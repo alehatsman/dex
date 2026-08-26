@@ -77,6 +77,11 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 		wantMethod string
 		wantPath   string
 	}{
+		{"query", func(c context.Context, rc *remoteClient) error {
+			// One round trip: the whole read verb resolves server-side (#207 serve).
+			_, _, err := rc.query(c, nil, QueryInput{Input: "how does indexing work?"})
+			return err
+		}, http.MethodPost, base + "/query"},
 		{"ask", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.contextRouter(c, nil, ContextInput{Question: "q"})
 			return err
@@ -283,6 +288,7 @@ func TestRemoteRouteParity(t *testing.T) {
 		name string
 		fn   func() error
 	}{
+		{"query", func() error { _, _, e := rc.query(ctx, nil, QueryInput{}); return e }},
 		{"ask", func() error { _, _, e := rc.contextRouter(ctx, nil, ContextInput{}); return e }},
 		{"find", func() error { _, _, e := rc.search(ctx, nil, SearchInput{}); return e }},
 		{"lookup", func() error { _, _, e := rc.findSymbol(ctx, nil, FindSymbolInput{}); return e }},
