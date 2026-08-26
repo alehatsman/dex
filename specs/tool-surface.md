@@ -1,6 +1,7 @@
 ---
 id: tool-surface
-status: accepted
+status: superseded
+superseded_by: two-verb-surface
 last_verified: ceb7e33
 owners: [aleh]
 covers:
@@ -15,11 +16,11 @@ tracking: alehatsman/dex#110
 
 # Tool surface — the agent-facing contract
 
-> **Superseded going forward by [`two-verb-surface.md`](two-verb-surface.md)
-> (#195).** This spec documents the **shipped** four-verb surface
-> (`ask · look · act · remember`) and remains the accepted record of what is in
-> the tree today. The forward direction collapses it to two verbs
-> (`query · record`); read the successor for the target design.
+> **Superseded by [`two-verb-surface.md`](two-verb-surface.md) (#195, shipped).**
+> This spec is the historical record of the four-verb surface
+> (`ask · look · act · remember`) that shipped under #110. That surface has since
+> been collapsed to two verbs (`query · record`) and is **no longer in the tree** —
+> read the successor for the current design.
 
 ## Goal
 

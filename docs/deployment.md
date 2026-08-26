@@ -8,8 +8,8 @@ profile that matches your hardware.
 
 | Role | Required? | Env | Used by |
 |------|-----------|-----|---------|
-| Embeddings | for semantic search | `DEX_EMBED_URL` (default `http://localhost:11434`), `DEX_EMBED_MODEL` | indexing, `ask` semantic lane |
-| Chat | optional | `DEX_CHAT_URL`, `DEX_CHAT_MODEL` | `ask` answer synthesis, `read --mode=summary` |
+| Embeddings | for semantic search | `DEX_EMBED_URL` (default `http://localhost:11434`), `DEX_EMBED_MODEL` | indexing, `query` semantic lane |
+| Chat | optional | `DEX_CHAT_URL`, `DEX_CHAT_MODEL` | `query` answer synthesis, `read --mode=summary` |
 | Reranker | optional | `DEX_RERANK_URL`, `DEX_RERANK_MODEL` | reorders the top candidate pool |
 
 Each degrades gracefully when its endpoint is unreachable: no chat → evidence
@@ -24,12 +24,12 @@ cold model, so it's opt-in and slower than the default liveness check.
 
 **Full (GPU).** A running embedder is the only hard requirement. With ollama on
 `localhost:11434`, `dex setup` auto-detects a usable embedding model. Add a chat
-model for `ask` answers and a reranker for best ranking.
+model for `query` answers and a reranker for best ranking.
 
 **Lean (no GPU).** `DEX_EMBED_ENGINE=none` drops embeddings entirely: retrieval
 runs on BM25 + exact symbol + call-graph lanes with **zero inference** — ideal
 for laptops, CI, containers, and air-gapped boxes. The semantic lane is skipped;
-`ask` routes across the remaining lanes on its own. Nothing to pull, nothing to
+`query` routes across the remaining lanes on its own. Nothing to pull, nothing to
 serve.
 
 **In-process embeddings (CPU, no server).** Build with `-tags onnx` and set
@@ -70,7 +70,7 @@ Any OpenAI-compatible model works; these are sane defaults:
 - **Embeddings** — a code-aware embedding model (e.g. `bge`-class, or a
   `qwen3-embedding` variant). The index pins the dimension, so changing models
   means `dex reindex`.
-- **Chat** (`ask` / `read summary`) — a non-thinking instruct/coder model.
+- **Chat** (`query` / `read summary`) — a non-thinking instruct/coder model.
   Thinking models can leave the response body empty; prefer a plain coder model.
 - **Reranker** — a cross-encoder reranker if you have the VRAM; it is pure upside
   on ranking quality and optional.

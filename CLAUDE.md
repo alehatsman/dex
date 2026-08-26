@@ -1,6 +1,6 @@
 # dex
 
-Local semantic-search MCP server for Claude Code (Go). Indexes a repo and serves `ask` / `find` / graph tools over MCP.
+Local semantic-search MCP server for Claude Code (Go). Indexes a repo and serves two verbs — `query` (read) / `record` (write) — plus a `DEX_EXPERT` overlay of raw graph/search lanes over MCP.
 
 ## Workflow — moongit issues (mgit)
 

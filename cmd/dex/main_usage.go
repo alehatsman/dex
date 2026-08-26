@@ -77,12 +77,12 @@ quickstart:
 
   <path> defaults to cwd on every query/graph command.
 
-query — core verbs (CLI names match the MCP tool names):
+query — read verbs (over MCP these fold into query; the granular tools surface under DEX_EXPERT):
   dex repo_map [--cluster <id>] [<path>] repo orientation (MCP: repo_map). No --cluster: the
                                           first-touch bundle (L0 overview + a zoom into
                                           the most-central cluster). --cluster <id>: zoom
                                           a chosen cluster.
-  dex ask    [<path>] <q...>            one-shot router (MCP: ask). Picks intent,
+  dex ask    [<path>] <q...>            one-shot router (MCP: query). Picks intent,
                                           fuses semantic + symbol + graph; returns
                                           suggested_reads and a prose next_action.
                                           --intent assemble returns a task working set:
@@ -110,7 +110,7 @@ query — core verbs (CLI names match the MCP tool names):
   dex review_diff   [<path>]            per-hunk PR intelligence (MCP: review_diff).
                                           Flags: --ref, --branch, --pr
   dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check)
-  dex notes  add|list|delete|review     per-project knowledge store (MCP: notes).
+  dex notes  add|list|delete|review     per-project knowledge store (MCP write via record).
      |pin|unpin|gc|relate|relations       add: --archetype, --confidence, --supersedes,
                                           --valid-until, --evidence; list: --k by salience;
                                           gc: decay+consolidate+evict; relate: typed edges

@@ -1,53 +1,51 @@
 # Tools
 
-This is the **query/tool contract**. Since the #110 cutover the agent surface
-(over MCP) and the human surface (on the CLI) **diverged on purpose**:
+This is the **query/tool contract**. Since the #195 two-verb cutover the agent
+surface (over MCP) and the human surface (on the CLI) **diverge on purpose**:
 
-- **Over MCP** an agent sees **four verbs** — `ask`, `look`, `act`, `remember` —
-  plus `index_status`. That set is constant across every deployment profile.
+- **Over MCP** an agent sees **two verbs** — `query` (read) and `record`
+  (write). That set is constant across every deployment profile.
 - **On the CLI** the granular verbs live on directly (`dex ask` / `search` /
-  `read` / `locate` / `trace` / `review` / `verify` / `grep` / `notes`), because
-  a human at a prompt wants to name the lane. CLI form:
+  `read` / `locate` / `trace` / `review_diff` / `check` / `grep` / `notes`),
+  because a human at a prompt wants to name the lane. CLI form:
   `dex <verb> [path] <args…>` (`path` defaults to cwd).
 
-The two are one engine: the CLI verbs *are* the lanes `ask` and `look` route to
+The two are one engine: the CLI verbs *are* the lanes `query` routes to
 internally. The CLI also carries lifecycle/ops commands with **no MCP form** —
 `index`, `reindex`, `watch`, `serve`, `mcp`, `proxy`, `setup`, `doctor`,
 `config`, `env`, `nuke`, `clone`, `bench`, `compact`, `compress`, `hook`. Those
 build, serve, and maintain the index rather than query it; see the README or
 `dex help all`.
 
-## The four MCP verbs
+## The two MCP verbs
 
 | Verb | Purpose | Backend |
 |----------|---------|---------|
-| `ask` | Front door: routes intent (behavior_search / symbol_lookup / callers / callees / architecture / package_topology / editing_context / assemble / review), fuses the semantic + symbol + graph lanes, returns a ranked evidence pack, a `next_action`, and (with a chat model) a cited answer. `ask("review my changes")` reviews the working tree. | always (semantic lane needs embedder; degrades to BM25 + symbol + graph) |
-| `look` | Exact fetch for a target you can already name — dex classifies it: a path → read, a `/regex/` → grep, a `path:line` → locate, a symbol → its call graph. Every result carries `trust: exact`. | always (call graph needs graph) |
-| `act` | Run a command, get compressed output inside the universal `{result, trust, cost, next}` envelope. Blocks writes (`>`/`>>`/`tee`) unless `DEX_SHELL_ALLOW_WRITES=1`; 60 s timeout; `raw:true` to skip compression. | always |
-| `remember` | Durable project memory: write a fact (optionally `scope`-bound to a glob), recall the most relevant by `query`, or correct a stale one with `supersedes=<id>`. High-salience facts auto-inject into `ask` as `knowledge_facts`. | always |
+| `query` | The one read verb. Its input **shape** picks the lane and the answer's precision tracks it: a path → compressed signatures, a `path:line`/range → that slice, a `/regex/` → grep, a bare symbol → just its call graph, a prose question → a fused semantic + symbol + graph evidence pack with a `next_action` (and, with a chat model, a cited answer). `kind=` forces the lane, `want=` the facet: `want=assemble` returns a budget-bounded working set, `kind=review` reviews the working tree. Raw file bytes are the native Read tool's job. | always (semantic lane needs an embedder; degrades to BM25 + symbol + graph) |
+| `record` | Durable project memory: write a fact (optionally `scope`-bound to a glob), recall the most relevant by `query=`, or correct a stale one with `supersedes=<id>`. High-salience facts auto-inject into `query` as `knowledge_facts`. | always |
 
 ## Profiles, not tiers
 
-The verb set is constant; a deployment **profile** only changes what `ask` can do
-internally (synthesis → lexical → hits-only), never which tools an agent sees:
+The verb set is constant; a deployment **profile** only changes what `query` can
+do internally (synthesis → lexical → hits-only), never which tools an agent sees:
 
-- **full** (embedder + chat): `ask` synthesizes cited answers.
-- **bm25-only** (`DEX_EMBED_ENGINE=none`): no embedder — `ask` falls back to
+- **full** (embedder + chat): `query` synthesizes cited answers.
+- **bm25-only** (`DEX_EMBED_ENGINE=none`): no embedder — `query` falls back to
   BM25 + symbol + graph on its own; the semantic lane is skipped, not a missing
   tool.
-- **lean** (weak local model): same four verbs; `remember` matters most here,
+- **lean** (weak local model): same two verbs; `record` matters most here,
   since a weaker model forgets more.
 
 `DEX_EXPERT=1` is an **additive overlay**, orthogonal to the profile. It exposes
 the raw primitives the verbs wrap — `search` (raw ranked hits with the full
 scoring breakdown), `trace` (`--dir callers|callees|path|impact`), `locate`,
-`grep`, `read`, `shell` — plus the graph/quality lanes `deps`, `diff`,
-`clusters`, `routes`, `smells`, `clones`, `similar`, `cohort`, `status`,
-`session`, `checkpoint`, `refactor`, `rehearse`, `check`, and the full `notes`
-knowledge surface. `clones` finds clusters of semantically near-duplicate code
-blocks and `similar` finds blocks near a given one — semantic work grep can't do;
-both reuse the search vectors, so they need an embedder (#84). The overlay never
-changes the shape of the four everyday verbs.
+`grep`, `read` — plus the graph/quality lanes `deps`, `clusters`, `routes`,
+`smells`, `clones`, `similar`, `cohort`, `refs`, `status`, `repo_map`,
+`review_diff`, `check`, `plan_rename`, and `rehearse_patch`. `clones` finds
+clusters of semantically near-duplicate code blocks and `similar` finds blocks
+near a given one — semantic work grep can't do; both reuse the search vectors, so
+they need an embedder (#84). The overlay never changes the shape of the two
+everyday verbs.
 
 On the CLI every verb, plus the full `dex graph <sub>` set, is always available
 without the flag. Several `dex graph` subcommands are **CLI-only** with no MCP
@@ -90,12 +88,12 @@ Every tool returns a structured `status` (`ok`, `not-found`, `no-graph`,
 `needs-chat`, `error`, …) plus a `hint`. A missing index or an offline backend
 yields an explicit fallback signal, never a hard failure — so an agent can
 recover (e.g. run `dex index`, retry with another mode) instead of giving up.
-`ask` always returns a `next_action` directive telling you what to do next.
+`query` always returns a `next_action` directive telling you what to do next.
 
 dex is **read-only by design** (#551): every tool is `readOnlyHint: true` and
-there is no edit/write/apply verb. `ask` and `look` locate and explain; the host
-agent makes the changes with its own editing tools. The only persistence verb,
-`remember`, writes dex's knowledge store — never project files.
+there is no edit/write/apply verb. `query` locates and explains; the host agent
+makes the changes with its own editing tools. The only persistence verb,
+`record`, writes dex's knowledge store — never project files.
 
 ## Transports
 

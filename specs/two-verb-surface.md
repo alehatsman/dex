@@ -1,8 +1,8 @@
 ---
 id: two-verb-surface
-status: proposed
+status: shipped
 supersedes: tool-surface
-last_verified: 93c2d98
+last_verified: cd55ef3
 owners: [aleh]
 covers:
   - "internal/mcp/server.go"

@@ -1,9 +1,11 @@
 // dex — local semantic-search helper for Claude Code.
 //
-// The query-side verbs share the MCP tool names 1:1 (search, trace, repo_map,
-// read, ask). The build/maintenance commands are CLI-only.
+// The read-side CLI verbs mirror the lanes `query` routes to (search, trace,
+// repo_map, read); over MCP the everyday surface is just `query` + `record`,
+// with the granular tools exposed under DEX_EXPERT. The build/maintenance
+// commands are CLI-only.
 //
-//	ask <path> <q...>             Primary entry point (MCP: ask).
+//	ask <path> <q...>             Primary CLI read verb (MCP: query semantic lane).
 //	search <path> <q...>          Hybrid semantic top-k chunks; fuses exact
 //	                              symbol-name hits via RRF (MCP: search).
 //	trace <path> <sym>            Call-graph callers/callees/path/impact (MCP: trace).
@@ -17,7 +19,6 @@
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
 //	read <file>                   Read a file (MCP: read). Default mode=full is raw (no LLM); mode=summary is an LLM digest.
 //	grep <path> <pattern>         Exact RE2 regex search over project files (MCP: grep).
-//	shell <command...>            Run a command with compressed output (MCP: shell).
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status).
 //	env                           Print effective env-var configuration.
@@ -31,7 +32,7 @@
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	bench locomo <path>           LoCoMo memory-recall benchmark (recall@k / token-F1).
-//	notes add|query|rm|gc         Store/list/delete/gc per-project facts (MCP: notes).
+//	notes add|query|rm|gc         Store/list/delete/gc per-project facts (CLI-only; MCP write via record).
 //	compress <file|->             Compress a file or stdin through the dex engine (no LLM).
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.

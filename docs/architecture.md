@@ -100,12 +100,14 @@ the whole file — the foundation for deterministic typed refactors.
 
 ## The tool layer
 
-`internal/mcp` wraps retrieval as the tool surface. `ask` leads: it routes a
-free-text question across the lanes and, when a chat model is configured,
+`internal/mcp` wraps retrieval as the tool surface. `query` leads: it classifies
+the input's shape into a lane (path → signatures, `/regex/` → grep, symbol → call
+graph, prose → fused semantic pack) and, when a chat model is configured,
 synthesizes a cited (`path:line`) answer from the evidence. The individual lanes
-are also exposed as their own tools. The surface is **capability-derived** — a
-tool appears only when its backend is wired (see [tools.md](tools.md)). `cmd/dex`
-provides the CLI mirrors and the `dex mcp` (stdio) / `dex serve` (HTTP) entrypoints.
+are also exposed as their own tools under `DEX_EXPERT`. The surface is
+**capability-derived** — a tool appears only when its backend is wired (see
+[tools.md](tools.md)). `cmd/dex` provides the CLI mirrors and the `dex mcp`
+(stdio) / `dex serve` (HTTP) entrypoints.
 
 ```
 files ─► walk ─► chunk ─► embed ─► chunks / chunk_vecs / chunks_fts
