@@ -48,7 +48,7 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 		if out.Trust.Provenance != "exact" {
 			t.Fatalf("provenance = %q, want exact", out.Trust.Provenance)
 		}
-		if out.Result.Look == nil || out.Result.Look.Result.Read == nil {
+		if out.Result.Read == nil {
 			t.Fatalf("read lane returned no read result: %+v", out.Result)
 		}
 	})
@@ -58,7 +58,7 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 		if out.Route.Lane != "read" {
 			t.Fatalf("lane = %q, want read (detected=%q)", out.Route.Lane, out.Route.Detected)
 		}
-		if out.Result.Look == nil || out.Result.Look.Result.Read == nil {
+		if out.Result.Read == nil {
 			t.Fatalf("range slice returned no read result: %+v", out.Result)
 		}
 	})
@@ -68,7 +68,7 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 		if out.Route.Lane != "locate" {
 			t.Fatalf("lane = %q, want locate (detected=%q)", out.Route.Lane, out.Route.Detected)
 		}
-		if out.Result.Look == nil || out.Result.Look.Result.Locate == nil {
+		if out.Result.Locate == nil {
 			t.Fatalf("locate lane returned no locate result: %+v", out.Result)
 		}
 	})
@@ -78,19 +78,22 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 		if out.Route.Lane != "grep" {
 			t.Fatalf("lane = %q, want grep (detected=%q)", out.Route.Lane, out.Route.Detected)
 		}
-		g := out.Result.Look
-		if g == nil || g.Result.Grep == nil || len(g.Result.Grep.Matches) == 0 {
+		if out.Result.Grep == nil || len(out.Result.Grep.Matches) == 0 {
 			t.Fatalf("grep lane returned no matches: %+v", out.Result)
 		}
 	})
 
 	t.Run("symbol→graph/trace", func(t *testing.T) {
 		out := call(t, QueryInput{Input: "dispatchLeaf"})
-		if out.Route.Lane != "symbol" {
-			t.Fatalf("lane = %q, want symbol (detected=%q)", out.Route.Lane, out.Route.Detected)
+		// The symbol input shape (detected) routes to the trace lane on the wire
+		// (#95g): route.lane names the populated field (result.trace).
+		if out.Route.Detected != "symbol" {
+			t.Fatalf("detected = %q, want symbol", out.Route.Detected)
 		}
-		lk := out.Result.Look
-		if lk == nil || lk.Result.Kind != "trace" || lk.Result.Trace == nil {
+		if out.Route.Lane != "trace" {
+			t.Fatalf("lane = %q, want trace (detected=%q)", out.Route.Lane, out.Route.Detected)
+		}
+		if out.Result.Trace == nil {
 			t.Fatalf("symbol lane did not dispatch to trace: %+v", out.Result)
 		}
 	})

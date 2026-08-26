@@ -70,13 +70,24 @@ type QueryAlt struct {
 	Why  string `json:"why"`
 }
 
-// QueryResult is the discriminated union of the lane payloads. Exactly one of
-// Look / Ask is populated, named by QueryRoute.Lane so the agent never sniffs.
-// The lane payloads are the SAME shapes the old verbs returned — query wraps,
-// it does not rebuild.
+// QueryResult is the flat, lane-keyed union of the payloads (#207 / #95g).
+// route.lane is the single discriminator; exactly one pointer below is populated,
+// and the envelope (status/trust/cost/next) lives once on QueryOutput — no
+// look/ask wrapper, no re-declared envelope. The exact lanes are the same
+// payloads the exact-fetch handlers return; the semantic god-struct is split
+// per-intent (SemanticResult / OrientResult / ReviewOutput). Projections live in
+// query_result.go.
 type QueryResult struct {
-	Look *LookOutput    `json:"look,omitempty"` // read | grep | locate | symbol (graph)
-	Ask  *ContextOutput `json:"ask,omitempty"`  // semantic / architecture / orient / review
+	// exact lanes (unwrapped from the former LookResult)
+	Read   *SummarizeOutput  `json:"read,omitempty"`
+	Grep   *SearchGrepOutput `json:"grep,omitempty"`
+	Trace  *TraceOutput      `json:"trace,omitempty"`
+	Locate *LocateOutput     `json:"locate,omitempty"`
+
+	// semantic lanes (split from the former ContextOutput god-struct)
+	Semantic *SemanticResult `json:"semantic,omitempty"`
+	Orient   *OrientResult   `json:"orient,omitempty"`
+	Review   *ReviewOutput   `json:"review,omitempty"`
 }
 
 // QueryOutput is the universal envelope for the read verb. Status/Trust/Cost/Next
@@ -298,13 +309,26 @@ func dispatchExact(ctx context.Context, h toolSurface, req *sdk.CallToolRequest,
 	}
 
 	_, lo, err := lookVerb(ctx, h, req, li)
+	// The symbol input shape routes to the trace lane; report route.lane as the
+	// wire lane that names the populated field (result.trace), keeping detected
+	// as the "symbol" input shape (#95g §4 — one operation name on the wire).
+	if lr.lane == "symbol" {
+		route.Lane = "trace"
+	}
+	// Unwrap the LookOutput envelope into the flat lane (#95g): exactly one of
+	// these is populated, matching route.lane. The envelope fields hoist below.
 	out := QueryOutput{
 		Status: lo.Status,
 		Route:  route,
-		Result: QueryResult{Look: &lo},
-		Trust:  lo.Trust,
-		Cost:   lo.Cost,
-		Next:   lo.Next,
+		Result: QueryResult{
+			Read:   lo.Result.Read,
+			Grep:   lo.Result.Grep,
+			Trace:  lo.Result.Trace,
+			Locate: lo.Result.Locate,
+		},
+		Trust: lo.Trust,
+		Cost:  lo.Cost,
+		Next:  lo.Next,
 	}
 	// On an empty symbol result the road-not-taken is a genuine fallback: offer
 	// the search lane in next, not just as a passive alt.
@@ -341,13 +365,18 @@ func dispatchSemantic(ctx context.Context, h toolSurface, req *sdk.CallToolReque
 	}
 
 	_, co, err := h.contextRouter(ctx, req, ci)
+	// Project the router's internal ContextOutput into the flat lane its resolved
+	// intent names (#95g), and refine route.lane from the coarse "semantic" to the
+	// actual sub-lane (orient/review/semantic).
+	qr, lane := semanticLane(&co)
+	route.Lane = lane
 	// contextRouter owns its own trust shape inside ContextOutput; project it into
 	// the envelope's EnvTrust so query's top-level trust is uniform. Semantic
 	// provenance unless the router resolved a deterministic (orient/topology) lane.
 	out := QueryOutput{
 		Status: co.Status,
 		Route:  route,
-		Result: QueryResult{Ask: &co},
+		Result: qr,
 		Trust:  semanticTrustFrom(&co),
 		Next:   co.Next,
 	}

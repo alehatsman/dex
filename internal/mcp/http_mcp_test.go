@@ -87,13 +87,13 @@ func TestHTTPMCPSession(t *testing.T) {
 	if out.Status != "no-index" {
 		t.Errorf("status = %q, want no-index (empty index)", out.Status)
 	}
-	if out.Result.Ask == nil {
-		t.Fatalf("prose input should populate result.ask, got %+v", out.Result)
+	if out.Result.Semantic == nil {
+		t.Fatalf("prose input should populate result.semantic, got %+v", out.Result)
 	}
 	// Scoping proof: the handler stamped the registry root onto the Input, so
 	// the tool resolved the bound project rather than the server default.
-	if out.Result.Ask.Project != root {
-		t.Errorf("project = %q, want bound root %q", out.Result.Ask.Project, root)
+	if out.Result.Semantic.Project != root {
+		t.Errorf("project = %q, want bound root %q", out.Result.Semantic.Project, root)
 	}
 }
 
