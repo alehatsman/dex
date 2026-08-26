@@ -102,6 +102,16 @@ const (
 	// Document → tag direction; the reverse groups every doc carrying a
 	// tag, for tag-based clustering.
 	EdgeTagged EdgeKind = "tagged"
+	// EdgeCoChanges is a non-structural edge mined from git history (#212):
+	// two files that change together across commits above a support/
+	// confidence threshold, independent of any call/import relationship.
+	// Src/dst are always `file` nodes, deduped so SrcID < DstID
+	// lexicographically (the relationship is symmetric — one edge per
+	// pair). Metadata carries {"support": int, "confidence": float64}.
+	// Kept fully separate from EdgeCalls/EdgeImports so structural
+	// consumers (PageRank, Louvain, cochange's baseline reachability
+	// metric) are unaffected by its presence. See mineCoChanges.
+	EdgeCoChanges EdgeKind = "co_changes"
 )
 
 // Node is a structural symbol persisted in graph_nodes.
@@ -397,6 +407,40 @@ func (g *Indexer) Run(ctx context.Context) (*Stats, error) {
 			"nodes", len(result.Nodes),
 			"edges", len(result.Edges),
 			"warnings", len(result.Warnings))
+	}
+
+	// Temporal coupling (#212): mine git history for file pairs that
+	// co-change but aren't call/import connected, and emit them as
+	// co_changes edges — separate from calls/imports so structural
+	// consumers are unaffected. Runs after every extractor has contributed
+	// its file nodes (so cross-language pairs are eligible endpoints), and
+	// only when extraction produced at least one node (gated below by the
+	// same condition as the empty-extraction guard, so a co-change-only
+	// graph is never a supported state). Best-effort in the sense that
+	// mineCoChanges never fails the *run*: on a genuine mining error we
+	// don't just skip and warn, we also re-touch this run's edge set with
+	// whatever co_changes edges were already persisted from a prior
+	// successful mine — GraphUpsertEdges/GraphPruneUnseen below deletes any
+	// edge kind not re-upserted at this run's cutoff, so without this a
+	// transient git failure (lock contention, git briefly missing from
+	// PATH, a context deadline mid-walk) would silently wipe the entire
+	// temporal-coupling graph instead of just leaving it stale.
+	if coChangeEnabled() && len(result.Nodes) > 0 {
+		ccEdges, ccErr := mineCoChanges(ctx, g.project.Root, result.Nodes)
+		if ccErr != nil {
+			warning := fmt.Sprintf("co-change mining failed, keeping prior co_changes edges: %v", ccErr)
+			g.log.Warn(warning)
+			result.Warnings = append(result.Warnings, warning)
+			if prior, err := g.store.GraphAllEdges(ctx); err == nil {
+				for _, e := range prior {
+					if e.Kind == EdgeCoChanges {
+						result.Edges = append(result.Edges, e)
+					}
+				}
+			}
+		} else {
+			result.Edges = append(result.Edges, ccEdges...)
+		}
 	}
 
 	// Empty-extraction guard (#529): when no extractor produced a single node or

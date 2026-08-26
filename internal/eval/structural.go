@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/alehatsman/dex/internal/gitlog"
 )
 
 // structuralMinWords is the minimum word count a cleaned commit subject must
@@ -52,7 +54,7 @@ func GenerateStructural(ctx context.Context, root string, opts GenOpts) (GoldenS
 	if err != nil {
 		return GoldenSet{}, fmt.Errorf("eval: read HEAD: %w", err)
 	}
-	commits, err := collectCommits(ctx, root, opts.MaxCommits)
+	commits, err := gitlog.Collect(ctx, root, opts.MaxCommits)
 	if err != nil {
 		return GoldenSet{}, fmt.Errorf("eval: collect commits: %w", err)
 	}
@@ -60,13 +62,13 @@ func GenerateStructural(ctx context.Context, root string, opts GenOpts) (GoldenS
 	var queries []GoldenQuery
 	seen := make(map[string]bool)
 	for _, c := range commits {
-		q := cleanSubject(c.subject)
+		q := cleanSubject(c.Subject)
 		if len(q) < genMinQueryLen || !isProseSubject(q) || seen[q] {
 			continue
 		}
 
 		var files []string
-		for _, f := range c.files {
+		for _, f := range c.Files {
 			if !codeExts[strings.ToLower(filepath.Ext(f))] {
 				continue
 			}
@@ -94,7 +96,7 @@ func GenerateStructural(ctx context.Context, root string, opts GenOpts) (GoldenS
 		sort.Strings(files)
 		seen[q] = true
 		queries = append(queries, GoldenQuery{
-			ID:            c.shortHash,
+			ID:            c.ShortHash,
 			Query:         q,
 			RelevantFiles: files,
 		})

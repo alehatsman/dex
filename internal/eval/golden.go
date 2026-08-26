@@ -1,7 +1,6 @@
 package eval
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/alehatsman/dex/internal/gitenv"
+	"github.com/alehatsman/dex/internal/gitlog"
 )
 
 // GoldenQuery is one labeled retrieval example: a query and the set of source
@@ -85,7 +85,7 @@ func Generate(ctx context.Context, root string, opts GenOpts) (GoldenSet, error)
 		return GoldenSet{}, fmt.Errorf("eval: read HEAD: %w", err)
 	}
 
-	commits, err := collectCommits(ctx, root, opts.MaxCommits)
+	commits, err := gitlog.Collect(ctx, root, opts.MaxCommits)
 	if err != nil {
 		return GoldenSet{}, fmt.Errorf("eval: collect commits: %w", err)
 	}
@@ -93,12 +93,12 @@ func Generate(ctx context.Context, root string, opts GenOpts) (GoldenSet, error)
 	var queries []GoldenQuery
 	seen := make(map[string]bool) // dedup identical query texts
 	for _, c := range commits {
-		q := cleanSubject(c.subject)
+		q := cleanSubject(c.Subject)
 		if len(q) < genMinQueryLen || seen[q] {
 			continue
 		}
 		var rel []string
-		for _, f := range c.files {
+		for _, f := range c.Files {
 			if !codeExts[strings.ToLower(filepath.Ext(f))] {
 				continue
 			}
@@ -115,7 +115,7 @@ func Generate(ctx context.Context, root string, opts GenOpts) (GoldenSet, error)
 		sort.Strings(rel)
 		seen[q] = true
 		queries = append(queries, GoldenQuery{
-			ID:            c.shortHash,
+			ID:            c.ShortHash,
 			Query:         q,
 			RelevantFiles: rel,
 		})
@@ -133,78 +133,6 @@ func Generate(ctx context.Context, root string, opts GenOpts) (GoldenSet, error)
 // leaving a natural-language intent suitable as a search query.
 func cleanSubject(s string) string {
 	return strings.TrimSpace(convPrefix.ReplaceAllString(strings.TrimSpace(s), ""))
-}
-
-type commitRec struct {
-	shortHash string
-	subject   string
-	files     []string
-}
-
-// collectCommits runs git log and parses subject + changed-file list per
-// non-merge commit. With --name-only the output is a sequence of blocks:
-//
-//	<hash>\x00<subject>      ← metadata line (the only line containing a NUL)
-//	                         ← blank
-//	path/one.go              ← changed files, one per line
-//	path/two.go
-//
-// followed by the next commit's block. We detect metadata lines by the NUL
-// they carry; every non-empty line in between is a changed file of the
-// current commit. This avoids any sentinel-placement fragility.
-func collectCommits(ctx context.Context, root string, max int) ([]commitRec, error) {
-	args := []string{
-		"log",
-		"--no-merges",
-		"--format=%H%x00%s",
-		"--name-only",
-		// --relative makes git both (a) restrict output to files under the cwd
-		// subtree and (b) emit pathnames relative to it. When root is the repo
-		// root this is a no-op (relative to root == repo-root-relative, whole
-		// tree); when root is an index_subdir (e.g. packages/react-dom-bindings)
-		// it filters to that package AND rebases paths to subdir-relative, so the
-		// generated relevant_files match how the index records paths and the
-		// downstream os.Stat(root/f) existence check resolves. Without it, a
-		// subdir root yields repo-root-relative paths that fail that check,
-		// silently dropping every file and producing an empty golden set (#285).
-		"--relative",
-		fmt.Sprintf("--max-count=%d", max),
-	}
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = root
-	cmd.Env = gitenv.Current() // prevent hook-injected GIT_DIR from redirecting to wrong repo (#716)
-	out, err := cmd.Output()
-	if err != nil {
-		if len(out) == 0 {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var recs []commitRec
-	var cur *commitRec
-	for _, raw := range bytes.Split(out, []byte("\n")) {
-		line := bytes.TrimRight(raw, "\r")
-		if i := bytes.IndexByte(line, 0); i >= 0 {
-			// Metadata line: starts a new commit record.
-			hash := strings.TrimSpace(string(line[:i]))
-			subject := strings.TrimSpace(string(line[i+1:]))
-			if len(hash) < 8 || subject == "" {
-				cur = nil
-				continue
-			}
-			recs = append(recs, commitRec{shortHash: hash[:8], subject: subject})
-			cur = &recs[len(recs)-1]
-			continue
-		}
-		if cur == nil {
-			continue
-		}
-		if f := strings.TrimSpace(string(line)); f != "" {
-			cur.files = append(cur.files, f)
-		}
-	}
-	return recs, nil
 }
 
 func gitOutput(ctx context.Context, root string, args ...string) (string, error) {

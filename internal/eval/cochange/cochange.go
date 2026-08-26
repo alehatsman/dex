@@ -74,11 +74,34 @@ func share(n, d int) float64 {
 }
 
 // Compute scores one repo's blast-radius golden set against its loaded graph
-// view. lang drives the test-file heuristic. A nil view (no graph indexed) is
-// treated as an empty graph: every src-only query is unreachable.
+// view, using only the structural (calls/imports) connecting kinds. lang
+// drives the test-file heuristic. A nil view (no graph indexed) is treated as
+// an empty graph: every src-only query is unreachable.
+//
+// This is the committed #555 baseline — its Report shape and connectingKinds
+// input must stay unchanged by #212's co_changes edges (regression safety:
+// the new edge kind is additive, never merged into this number). See
+// ComputeWithCoChange for the second, additive metric.
 func Compute(view *graphquery.View, queries []eval.GoldenQuery, lang string) Report {
+	return compute(view, queries, lang, connectingKinds)
+}
+
+// ComputeWithCoChange scores the same golden set as Compute, but with
+// graph.EdgeCoChanges (#212) added to the connecting kinds — so file pairs
+// only linked by git-history temporal coupling, not calls/imports, count as
+// reachable too. Reported as a SEPARATE Report from Compute's, never merged:
+// it measures how much of the #555 ceiling temporal coupling closes, without
+// touching the structural-only baseline other code depends on.
+func ComputeWithCoChange(view *graphquery.View, queries []eval.GoldenQuery, lang string) Report {
+	kinds := make([]graph.EdgeKind, 0, len(connectingKinds)+1)
+	kinds = append(kinds, connectingKinds...)
+	kinds = append(kinds, graph.EdgeCoChanges)
+	return compute(view, queries, lang, kinds)
+}
+
+func compute(view *graphquery.View, queries []eval.GoldenQuery, lang string, kinds []graph.EdgeKind) Report {
 	rep := Report{Lang: lang}
-	adj := buildFileAdjacency(view)
+	adj := buildFileAdjacency(view, kinds)
 	for _, q := range queries {
 		if q.Anchor == "" { // not a blast-radius query — skip defensively
 			continue
@@ -106,11 +129,11 @@ func Compute(view *graphquery.View, queries []eval.GoldenQuery, lang string) Rep
 	return rep
 }
 
-// buildFileAdjacency collapses the connecting edges to an undirected file→file
+// buildFileAdjacency collapses kinds' edges to an undirected file→file
 // adjacency. Endpoints whose node has no file path (package/import sentinel
 // nodes) and self-edges are dropped, so an entry means "two distinct source
-// files are linked by a call or import".
-func buildFileAdjacency(view *graphquery.View) map[string]map[string]bool {
+// files are linked by one of kinds".
+func buildFileAdjacency(view *graphquery.View, kinds []graph.EdgeKind) map[string]map[string]bool {
 	adj := map[string]map[string]bool{}
 	if view == nil {
 		return adj
@@ -128,7 +151,7 @@ func buildFileAdjacency(view *graphquery.View) map[string]map[string]bool {
 		adj[a][b] = true
 		adj[b][a] = true
 	}
-	for _, kind := range connectingKinds {
+	for _, kind := range kinds {
 		for _, e := range view.EdgesByKind[kind] {
 			link(view.NodesByID[e.SrcID].FilePath, view.NodesByID[e.DstID].FilePath)
 		}

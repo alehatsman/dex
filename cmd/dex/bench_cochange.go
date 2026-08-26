@@ -204,7 +204,12 @@ func cochangeCorpusRepo(ctx context.Context, base, cacheRoot string, spec corpus
 		return cochange.Cell{}, false, fmt.Errorf("mine blast-radius gold: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "dex bench cochange: scoring %s (%d blast-radius queries)\n", spec.Name, len(gs.Queries))
-	return cochange.Cell{Repo: spec.Name, Report: cochange.Compute(view, gs.Queries, primaryLang(spec))}, true, nil
+	lang := primaryLang(spec)
+	return cochange.Cell{
+		Repo:         spec.Name,
+		Report:       cochange.Compute(view, gs.Queries, lang),
+		WithCoChange: cochange.ComputeWithCoChange(view, gs.Queries, lang),
+	}, true, nil
 }
 
 // loadGraphView opens the index and loads its call graph. Unlike openTraceView
@@ -245,7 +250,11 @@ func cochangeProject(ctx context.Context, base, project, lang string) ([]cochang
 		return nil, fmt.Errorf("dex bench cochange: mine blast-radius gold: %w", err)
 	}
 	label := filepath.Base(strings.TrimRight(project, string(os.PathSeparator)))
-	return []cochange.Cell{{Repo: label, Report: cochange.Compute(view, gs.Queries, lang)}}, nil
+	return []cochange.Cell{{
+		Repo:         label,
+		Report:       cochange.Compute(view, gs.Queries, lang),
+		WithCoChange: cochange.ComputeWithCoChange(view, gs.Queries, lang),
+	}}, nil
 }
 
 // primaryLang is the first declared language of a corpus repo, used for the

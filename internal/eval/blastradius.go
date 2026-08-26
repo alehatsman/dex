@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/alehatsman/dex/internal/gitlog"
 )
 
 // blastRadiusAnchorChars caps the query excerpt drawn from an anchor file.
@@ -39,7 +41,7 @@ func GenerateBlastRadius(ctx context.Context, root string, opts GenOpts) (Golden
 	if err != nil {
 		return GoldenSet{}, fmt.Errorf("eval: read HEAD: %w", err)
 	}
-	commits, err := collectCommits(ctx, root, opts.MaxCommits)
+	commits, err := gitlog.Collect(ctx, root, opts.MaxCommits)
 	if err != nil {
 		return GoldenSet{}, fmt.Errorf("eval: collect commits: %w", err)
 	}
@@ -49,7 +51,7 @@ func GenerateBlastRadius(ctx context.Context, root string, opts GenOpts) (Golden
 	for _, c := range commits {
 		// Code files this commit touched that still exist on disk.
 		var files []string
-		for _, f := range c.files {
+		for _, f := range c.Files {
 			if !codeExts[strings.ToLower(filepath.Ext(f))] {
 				continue
 			}
@@ -85,7 +87,7 @@ func GenerateBlastRadius(ctx context.Context, root string, opts GenOpts) (Golden
 			}
 			seenAnchor[key] = true
 			queries = append(queries, GoldenQuery{
-				ID:            c.shortHash + ":" + filepath.Base(anchor),
+				ID:            c.ShortHash + ":" + filepath.Base(anchor),
 				Query:         excerpt,
 				RelevantFiles: relevant,
 				Anchor:        anchor,

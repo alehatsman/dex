@@ -10,9 +10,17 @@ import (
 
 // Cell is one repo's cochange Report under a repo label. A corpus run produces
 // one Cell per blast-radius-enabled repo; --project mode produces a single Cell.
+//
+// WithCoChange (#212) is a SEPARATE, additive measurement — the same golden
+// set scored with graph.EdgeCoChanges added to the connecting kinds. It is
+// never merged into Report: Report stays the committed #555 structural-only
+// baseline so --check drift gating keeps anchoring to it unchanged.
+// WithCoChange is the zero Report when the caller didn't compute it (e.g. a
+// --check baseline saved before #212).
 type Cell struct {
-	Repo   string `json:"repo"`
-	Report Report `json:"report"`
+	Repo         string `json:"repo"`
+	Report       Report `json:"report"`
+	WithCoChange Report `json:"with_co_change,omitzero"`
 }
 
 // Suite is the committed/printed collection of cochange cells, sorted by repo
@@ -39,18 +47,23 @@ func LoadSuite(data []byte) (Suite, error) {
 	return s, nil
 }
 
-// Markdown renders one row per repo: the gold-type split and the structural
-// reachability of the src-only subset. A low two_hop% means the co-change
-// coupling is non-structural — the graph lane cannot re-rank it (#555 ceiling).
+// Markdown renders one row per repo: the gold-type split, the structural
+// reachability of the src-only subset, and — when WithCoChange was computed
+// (#212) — the same reachability with co_changes edges additionally included.
+// A low structural 2-hop% means the co-change coupling is non-structural —
+// the graph lane cannot re-rank it (#555 ceiling); a higher +cc 2-hop% shows
+// how much of that ceiling git-history mining closes.
 func (s Suite) Markdown() string {
 	var b strings.Builder
-	b.WriteString("| repo | lang | queries | test-gold% | src-only | anchor-in-graph% | 1-hop% | 2-hop% |\n")
-	b.WriteString("|------|------|--------:|-----------:|---------:|-----------------:|-------:|-------:|\n")
+	b.WriteString("| repo | lang | queries | test-gold% | src-only | anchor-in-graph% | 1-hop% | 2-hop% | 1-hop%+cc | 2-hop%+cc |\n")
+	b.WriteString("|------|------|--------:|-----------:|---------:|-----------------:|-------:|-------:|----------:|----------:|\n")
 	for _, c := range s.Cells {
 		r := c.Report
-		fmt.Fprintf(&b, "| %s | %s | %d | %.0f%% | %d | %.0f%% | %.0f%% | %.0f%% |\n",
+		cc := c.WithCoChange
+		fmt.Fprintf(&b, "| %s | %s | %d | %.0f%% | %d | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% |\n",
 			c.Repo, r.Lang, r.Queries, r.TestGoldShare()*100, r.SrcOnly,
-			r.AnchorResolveShare()*100, r.OneHopShare()*100, r.TwoHopShare()*100)
+			r.AnchorResolveShare()*100, r.OneHopShare()*100, r.TwoHopShare()*100,
+			cc.OneHopShare()*100, cc.TwoHopShare()*100)
 	}
 	return b.String()
 }
