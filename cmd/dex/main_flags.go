@@ -16,42 +16,6 @@ func splitProjectArg(args []string) (path string, rest []string) {
 	return ".", args
 }
 
-// registerProjectFlag adds the --project flag shared by the `notes` verbs so the
-// project root can be given as `--project <dir>` in addition to the positional
-// `<path>` (#89). dex already uses --project (serve) and --project-root (mcp)
-// elsewhere; honouring it here removes a papercut where `dex notes add --project
-// <dir>` failed with a cryptic "flag provided but not defined". Resolve the
-// effective root with projectFromFlag after Parse.
-func registerProjectFlag(fs *flag.FlagSet) *string {
-	return fs.String("project", "", "project root (default: cwd; also accepted as a positional <path>)")
-}
-
-// projectFromFlag resolves the effective project path for a notes verb: the
-// --project flag wins when set, else the positional <path> parsed from the
-// remaining args. Both paths flow through the same store resolution downstream.
-func projectFromFlag(flagVal string, args []string) (path string, rest []string) {
-	path, rest = splitProjectArg(args)
-	if v := strings.TrimSpace(flagVal); v != "" {
-		path = v
-	}
-	return path, rest
-}
-
-// parseNotesArgs registers the shared --project flag on fs, parses args
-// (reordering flags after positionals), and resolves the effective project path
-// (--project wins over the positional <path>). The notes verbs whose project is
-// the only positional funnel through it so `--project <dir>` works uniformly
-// (#89). Verbs with extra post-parse validation (e.g. add) call
-// registerProjectFlag + projectFromFlag directly instead.
-func parseNotesArgs(fs *flag.FlagSet, args []string) (path string, rest []string, err error) {
-	projectRoot := registerProjectFlag(fs)
-	if err = fs.Parse(reorderFlags(fs, args)); err != nil {
-		return "", nil, err
-	}
-	path, rest = projectFromFlag(*projectRoot, fs.Args())
-	return path, rest, nil
-}
-
 // validIntent reports whether s is one of the strategies the context
 // router accepts. Empty string means "auto" and is allowed.
 func validIntent(s string) bool {
@@ -74,40 +38,6 @@ func validExpandMode(s string) bool {
 		return true
 	}
 	return false
-}
-
-// canonicalArchetype validates a knowledge-fact archetype case-insensitively
-// and returns its canonical capitalisation. The canonical form matters: the
-// store's salience weighting (archetypeWeight) is case-sensitive, so a
-// mis-cased archetype would silently fall back to the default weight (#520).
-func canonicalArchetype(s string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "architecture":
-		return "Architecture", true
-	case "gotcha":
-		return "Gotcha", true
-	case "decision":
-		return "Decision", true
-	case "convention":
-		return "Convention", true
-	case "dependency":
-		return "Dependency", true
-	case "pattern":
-		return "Pattern", true
-	case "fact":
-		return "Fact", true
-	case "reviewfinding", "review-finding", "review_finding":
-		return "ReviewFinding", true
-	case "observation":
-		return "Observation", true
-	case "hypothesis":
-		return "Hypothesis", true
-	case "inference":
-		return "Inference", true
-	case "verifiedfact", "verified-fact", "verified_fact":
-		return "VerifiedFact", true
-	}
-	return "", false
 }
 
 // boolFlag duck-types the stdlib's unexported flag.boolFlag interface so

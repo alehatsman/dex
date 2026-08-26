@@ -29,7 +29,7 @@ SEARCH & UNDERSTAND
   dex repo_map [--cluster <id>] [<path>] repo overview — run first in an unfamiliar repo
   dex search   [<path>] <q...>           hybrid search — raw ranking (ask composes this)
   dex read     <file>                    read a file (--mode signatures|skeleton|summary)
-  dex locate   [<path>] <sym|path:line>  full context for one symbol: callers, tests, doc, blame, notes
+  dex locate   [<path>] <sym|path:line>  full context for one symbol: callers, tests, doc, blame
   dex trace    [<path>] <name>           call graph — --dir callers|callees|path|impact
   dex grep     [<path>] <pattern>        exact RE2 search (literals, import paths, no-embed fallback)
 
@@ -37,8 +37,7 @@ CHANGE SAFETY
   dex review_diff   [<path>]             per-hunk PR intelligence (--ref|--branch|--pr)
   dex check   [<path>] <ref...>          verify file:line[:symbol] references exist
 
-KNOWLEDGE & STATUS
-  dex notes  add|list|review|pin|gc      per-project knowledge store
+STATUS
   dex status [<path>]                    endpoint health + index stats
 
 MAINTENANCE
@@ -104,18 +103,12 @@ query — read verbs (over MCP these fold into query; the granular tools surface
                                           --temperature, --max-tokens, -v,
                                           --format=text|json
   dex locate [<path>] <target>          full context for one symbol: callers, tests,
-                                          doc, blame, notes (MCP: locate)
+                                          doc, blame (MCP: locate)
   dex trace  [<path>] <name>            call graph via --dir callers|callees|path|impact
   dex grep   [<path>] <pattern>         exact RE2 regex search (MCP: grep)
   dex review_diff   [<path>]            per-hunk PR intelligence (MCP: review_diff).
                                           Flags: --ref, --branch, --pr
   dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check)
-  dex notes  add|list|delete|review     per-project knowledge store (MCP write via record).
-     |pin|unpin|gc|relate|relations       add: --archetype, --confidence, --supersedes,
-                                          --valid-until, --evidence; list: --k by salience;
-                                          gc: decay+consolidate+evict; relate: typed edges
-                                          (--from, --to, --kind); relations: --diagram (Mermaid).
-                                          Aliases: query/rm. Flags: --format=text|json
   dex status [<path>]                   endpoint health + project stats
                                           (MCP: status; alias: index status)
   dex index status [<path>]             same as dex status

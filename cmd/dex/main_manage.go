@@ -16,7 +16,6 @@ import (
 	"github.com/alehatsman/dex/internal/index"
 	"github.com/alehatsman/dex/internal/logx"
 	"github.com/alehatsman/dex/internal/proj"
-	"github.com/alehatsman/dex/internal/store"
 )
 
 func cmdNuke(_ context.Context, args []string) error {
@@ -162,28 +161,6 @@ func cmdReindex(ctx context.Context, args []string) error {
 	return reindexOne(ctx, rest[0], base, *verbose, *force, *waitLock, *breakLock)
 }
 
-// restoreNotes re-adds rescued knowledge facts into a freshly-rebuilt store
-// (#647). KnowledgeRestore (not KnowledgeAdd) preserves each fact's scope
-// binding and salience signal (created_at / counters) across the rebuild —
-// otherwise the first reindex silently unscopes every scoped note and resets
-// its ranking (#678). Best-effort and idempotent (dedups by body); a per-fact
-// failure is skipped, never fatal to the reindex. Embeddings backfill lazily on
-// the next semantic recall.
-func restoreNotes(ctx context.Context, st *store.Store, facts []store.KnowledgeBackup) {
-	if len(facts) == 0 {
-		return
-	}
-	restored := 0
-	for _, f := range facts {
-		if err := st.KnowledgeRestore(ctx, f); err == nil {
-			restored++
-		}
-	}
-	if restored > 0 {
-		fmt.Fprintf(os.Stderr, "  notes: preserved %d across reindex\n", restored)
-	}
-}
-
 // reindexOne drops the existing per-project cache dir and re-runs the
 // indexer from scratch. Used by both `reindex <path>` and the loop in
 // `reindex --all`.
@@ -217,12 +194,6 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		priorEmbedModel = prior.EmbedModel()
 		_ = prior.Close()
 	}
-	// Rescue the knowledge store (#647/#648) — the clear below drops the whole DB
-	// and the user's notes live in it. The read is migrate-FREE (raw sqlite), so
-	// notes survive even a reindex triggered by a schema mismatch, when the
-	// migrate-gated open above fails. Best-effort.
-	savedNotes, _ := store.ExportKnowledgeRaw(ctx, p.DBPath)
-
 	// Build into a temp DB adjacent to the real one. On success we clear the
 	// old cache and rename the temp into place atomically. On failure the temp
 	// is removed and the original index.db is left untouched, so a mid-run
@@ -240,9 +211,6 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 			_ = os.Remove(newDBPath)
 		}
 	}()
-	// Restore rescued notes into the fresh store. KnowledgeAdd dedups by body so
-	// this is idempotent; embeddings backfill lazily on the next semantic recall.
-	restoreNotes(ctx, st, savedNotes)
 	ig, err := ignore.New(p.Root)
 	if err != nil {
 		return err
