@@ -74,7 +74,7 @@ func contextRouterCheckStale(ctx context.Context, st *store.Store, out *ContextO
 // loadContextFacts loads the current session task into out. Knowledge-fact
 // injection was removed with the L3 subsystem (#205): dex is retrieval over the
 // codebase, not agent memory.
-func (s *Server) loadContextFacts(ctx context.Context, st *store.Store, in ContextInput, out *ContextOutput) {
+func (s *Server) loadContextFacts(ctx context.Context, st *store.Store, out *ContextOutput) {
 	if ss, ok, err := st.SessionGet(ctx); err == nil && ok && ss.Task != "" {
 		out.SessionTask = ss.Task
 	}

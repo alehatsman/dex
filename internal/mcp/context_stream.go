@@ -95,7 +95,7 @@ func (s *Server) contextRouterStreamImpl(ctx context.Context, req *sdk.CallToolR
 	}
 
 	stale, indexing, indexedAt := contextRouterCheckStale(ctx, st, &out, p.Root)
-	s.loadContextFacts(ctx, st, in, &out)
+	s.loadContextFacts(ctx, st, &out)
 
 	// The assembler sets pack.Graph only when it has something to emit; the
 	// projection below leaves out.Graph absent otherwise. An absent `graph`

@@ -146,12 +146,6 @@ func looksLikePath(t string) bool {
 	return lookPathExts[ext]
 }
 
-func lookHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, LookInput) (*sdk.CallToolResult, LookOutput, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, in LookInput) (*sdk.CallToolResult, LookOutput, error) {
-		return lookVerb(ctx, h, req, in)
-	}
-}
-
 // lookVerb classifies the target, dispatches to the selected exact-fetch handler,
 // and folds its result into the universal envelope. Provenance is "exact" for
 // every lane — look never infers.

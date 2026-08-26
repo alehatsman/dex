@@ -47,7 +47,7 @@ func cmdGraphExport(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	outDir := *output
 	if outDir == "" {
