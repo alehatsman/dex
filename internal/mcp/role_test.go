@@ -36,20 +36,26 @@ func TestFormatRole(t *testing.T) {
 
 func TestGraphAgreement(t *testing.T) {
 	cases := []struct {
-		role string
-		want int
+		name        string
+		inDegree    int
+		crossPkg    int
+		betweenness float64
+		want        int
 	}{
-		{"", 1},
-		{"leaf", 1},
-		{"exported-unused", 1},
-		{"bridge:15%", 2},
-		{"central:12", 3},
-		{"central:5/2pkg", 3},
+		{"unremarkable", 0, 0, 0, 1},
+		{"leaf-shaped (in>0, low everything else)", 2, 0, 0, 1},
+		{"high in_degree → central", 12, 0, 0, 3},
+		{"cross_pkg ≥ 2 → central", 1, 2, 0, 3},
+		{"bridge: high betweenness", 1, 0, 0.15, 2},
+		{"central wins over bridge", 10, 3, 0.2, 3},
 	}
 	for _, tc := range cases {
-		if got := graphAgreement(tc.role); got != tc.want {
-			t.Errorf("graphAgreement(%q) = %d, want %d", tc.role, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := graphAgreement(tc.inDegree, tc.crossPkg, tc.betweenness); got != tc.want {
+				t.Errorf("graphAgreement(in=%d, pkg=%d, bw=%.2f) = %d, want %d",
+					tc.inDegree, tc.crossPkg, tc.betweenness, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -62,8 +68,8 @@ func TestGraphAgreement(t *testing.T) {
 // hits, but for graph nodes via graphAgreement in place of lane count.
 func TestReweightedPageRankPromotesCentralPeerOnMiss(t *testing.T) {
 	const openRate, n = 0.0, 1000 // total miss, high confidence
-	plain := reweightedPageRank(1.00, "", openRate, n)
-	central := reweightedPageRank(0.95, "central:12", openRate, n)
+	plain := reweightedPageRank(1.00, 0, 0, 0, openRate, n)
+	central := reweightedPageRank(0.95, 12, 0, 0, openRate, n)
 	if central <= plain {
 		t.Errorf("central peer (%.4f) should be promoted above plain peer (%.4f) on total miss", central, plain)
 	}
@@ -73,7 +79,7 @@ func TestReweightedPageRankPromotesCentralPeerOnMiss(t *testing.T) {
 // no open-rate signal (n=0 — live reweight off or an intent with no history
 // yet), reweightedPageRank must reduce to the raw PageRank unchanged.
 func TestReweightedPageRankNoSignalIsIdentity(t *testing.T) {
-	got := reweightedPageRank(0.42, "central:12", 0.0, 0)
+	got := reweightedPageRank(0.42, 12, 0, 0, 0.0, 0)
 	if got != 0.42 {
 		t.Errorf("reweightedPageRank with n=0 = %v, want identity 0.42", got)
 	}

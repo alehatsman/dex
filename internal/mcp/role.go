@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"fmt"
-	"strings"
 	"unicode"
 
 	"github.com/alehatsman/dex/internal/feedback"
@@ -73,21 +72,29 @@ func isExported(name string) bool {
 	return false
 }
 
-// graphAgreement maps a formatRole tag to an agreement tier for the live
-// feedback reweight (#220). Semantic hits carry a lane count (how many
-// independent search lanes — vector/bm25/graph — surfaced the same hit) that
-// feeds feedback.ShadowMultiplier; graph-lane hits (callers/callees) have no
-// such per-hit signal, since they're single-sourced from the call graph. A
-// node's centrality tier is the natural analogue: "central" means multiple
-// independent signals (high in-degree, or callers spanning package
-// boundaries) already agree the node matters, the same way multiple lanes
-// agreeing does for a semantic hit. "bridge" is a weaker single-signal case.
-// Anything else gets tier 1 — no boost, matching a single-lane semantic hit.
-func graphAgreement(role string) int {
+// graphAgreement maps a node's raw centrality to an agreement tier for the
+// live feedback reweight (#220), using the SAME thresholds formatRole uses to
+// pick a role tag — kept as separate raw-int logic (not a formatRole-string
+// parse) so a future rewording of the role tag text can't silently desync the
+// tiering from a HasPrefix check elsewhere.
+//
+// This is a proxy, not independent evidence: semantic hits carry a lane count
+// (how many independently-computed search lanes — vector/bm25/graph —
+// surfaced the same hit), which IS independent of any one lane's own score.
+// Graph-lane hits (callers/callees) have no such independent signal — they're
+// single-sourced from the call graph, and centrality is itself PageRank-
+// adjacent. So this reweight doesn't surface overlooked low-rank hits the way
+// the semantic one can; it widens the gap between already-high- and
+// already-low-centrality hits when an intent is under-served. Tier 3
+// ("central": high in-degree, or callers spanning package boundaries) and
+// tier 2 ("bridge": on many shortest call-paths) both mean multiple raw
+// signals already agree the node matters; tier 1 (the rest) gets no boost,
+// matching a single-lane semantic hit.
+func graphAgreement(inDegree, crossPkg int, betweenness float64) int {
 	switch {
-	case strings.HasPrefix(role, "central"):
+	case inDegree >= 5 || crossPkg >= 2:
 		return 3
-	case strings.HasPrefix(role, "bridge"):
+	case betweenness >= 0.1:
 		return 2
 	default:
 		return 1
@@ -96,9 +103,9 @@ func graphAgreement(role string) int {
 
 // reweightedPageRank scales a peer's PageRank by the live feedback multiplier
 // (#220), analogous to shadowReorder's per-hit rescoring for semantic hits.
-// openRate/n ==(0, 0) (live reweight off, or no signal yet for this intent)
+// openRate/n == (0, 0) (live reweight off, or no signal yet for this intent)
 // degrades feedback.ShadowMultiplier to 1.0 — an identity scale, so callers
 // don't need a separate off-path branch.
-func reweightedPageRank(pageRank float64, role string, openRate float64, n int) float64 {
-	return pageRank * feedback.ShadowMultiplier(openRate, n, graphAgreement(role))
+func reweightedPageRank(pageRank float64, inDegree, crossPkg int, betweenness float64, openRate float64, n int) float64 {
+	return pageRank * feedback.ShadowMultiplier(openRate, n, graphAgreement(inDegree, crossPkg, betweenness))
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,9 +34,18 @@ type feedbackState struct {
 // shadowEnabled reports whether shadow-mode A/B logging is on.
 func shadowEnabled() bool { return os.Getenv("DEX_FEEDBACK_SHADOW") == "1" }
 
+// liveOffValues are the DEX_FEEDBACK_LIVE values that opt out of the default-on
+// live reweight (#220). Recognizing the common falsy spellings — not just "0" —
+// avoids silently re-enabling the feature for an operator who reasonably typed
+// "false" or "off" expecting it to stick.
+var liveOffValues = map[string]bool{"0": true, "false": true, "off": true, "no": true}
+
 // liveEnabled reports whether the lane-agreement reweight is served to
-// callers. Default ON (#220) — set DEX_FEEDBACK_LIVE=0 to opt out.
-func liveEnabled() bool { return os.Getenv("DEX_FEEDBACK_LIVE") != "0" }
+// callers. Default ON (#220) — set DEX_FEEDBACK_LIVE to any of liveOffValues
+// to opt out.
+func liveEnabled() bool {
+	return !liveOffValues[strings.ToLower(strings.TrimSpace(os.Getenv("DEX_FEEDBACK_LIVE")))]
+}
 
 // feedbackThrottle lazily builds the live reader (and shadow logger when shadow
 // is on) on first use when either shadow or live mode is active. Returns
@@ -97,24 +107,21 @@ func (s *Server) recordShadow(intent, question string, hits []SemHit) {
 }
 
 // applyLiveReweight returns hits re-scored by the live lane-agreement signal
-// when DEX_FEEDBACK_LIVE=1, and the original slice otherwise. Designed to be
-// called immediately after recordShadow so the shadow log captures the
+// when DEX_FEEDBACK_LIVE is on, and the original slice otherwise. Designed to
+// be called immediately after recordShadow so the shadow log captures the
 // static-vs-reweighted delta even during live serving.
 func (s *Server) applyLiveReweight(intent string, hits []SemHit) []SemHit {
-	if !liveEnabled() {
+	openRate, n := s.graphIntentSignal(intent)
+	if n == 0 {
 		return hits
 	}
-	th, _ := s.feedbackThrottle()
-	if th == nil {
-		return hits
-	}
-	openRate, n := th.IntentSignal(intent)
 	return shadowReorder(hits, openRate, n)
 }
 
-// graphIntentSignal returns the live open-rate signal for a graph-lane intent
-// ("callers" / "callees" / "impact") — the same per-intent signal
-// applyLiveReweight uses for semantic hits, extended to graph lanes (#220).
+// graphIntentSignal returns the live open-rate signal for an intent — the
+// same per-intent signal applyLiveReweight uses for semantic hits, also used
+// by callEdges (graph_callers/graph_callees) to extend the reweight to graph
+// lanes (#220; graphImpact is not yet wired — see server_graph_calls.go).
 // Returns (0, 0) when live reweight is off or the throttle can't be built;
 // feedback.ShadowMultiplier(0, 0, ...) degrades to the identity multiplier
 // (1.0), so callers can invoke this unconditionally without a separate
