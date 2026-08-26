@@ -1,5 +1,8 @@
 # Spec: verify — run the project's canonical test command, not a guessed `go test`
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 Status: proposed
 Issue: #146
 Epic tail: #110 (verify's re-promotion path — a runner the agent can trust earns

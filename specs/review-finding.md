@@ -1,5 +1,8 @@
 # Spec: review-finding scoped notes (close the review→edit loop)
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 Issue: #87 — let a code review emit findings as scoped notes (gotcha-on-touch).
 
 ## Goal

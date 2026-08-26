@@ -11,6 +11,9 @@ tracking: alehatsman/dex#163
 
 # Pack-efficiency bench — prove the context pack is cheaper at held correctness
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 ## Goal
 
 Instrument epic #95's two open acceptance criteria with a deterministic,

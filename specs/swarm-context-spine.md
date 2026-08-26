@@ -27,6 +27,9 @@ tracking: alehatsman/dex#169
 
 # Swarm context spine: make good context compound across parallel agents
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 ## Goal
 
 dex is the only process that sees the whole swarm — every concurrent Claude Code

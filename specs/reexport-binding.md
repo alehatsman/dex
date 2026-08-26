@@ -12,6 +12,9 @@ extends:
 
 # Re-export binding (#127 Phase 2)
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 ## Goal
 
 Bind a cross-package call whose import path lands on a **barrel `index.ts`** that

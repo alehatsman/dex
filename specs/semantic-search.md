@@ -12,6 +12,9 @@ covers:
 ---
 # Semantic Search
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 ## Intent
 
 Semantic search is dex's primary query surface: given a natural-language or

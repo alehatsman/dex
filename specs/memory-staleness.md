@@ -14,6 +14,9 @@ tracking: alehatsman/dex#167
 
 # Memory staleness discipline: decay + liveness-check recalled facts
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 <!--
 STATUS 2026-08-17 — ALL THREE PARTS SHIPPED, #167 closable.
 - Part 2 liveness — shipped dbd0868 (annotateLiveness / referent.go).

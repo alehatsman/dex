@@ -1,5 +1,8 @@
 # Uniform envelope + session spine (#110 steps 2–3)
 
+> **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+
+
 ## Goal
 Finish the two partial steps of epic #110 so every verb response carries the
 same top-level envelope shape and the session spine is consistent:
