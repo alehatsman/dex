@@ -9,7 +9,6 @@ covers:
   - "internal/mcp/answer.go"
   - "internal/mcp/server_graph.go"
   - "internal/compress/noncode_map.go"
-  - "internal/mcp/server_knowledge.go"
   - "internal/mcp/server_session.go"
   - "internal/mcp/server_grep.go"
   - "internal/mcp/server_tree.go"
@@ -20,6 +19,13 @@ covers:
   - "internal/mcp/remote.go"
 ---
 # MCP Server (stdio)
+
+> **Update (#205, 2026-08-26):** the MCP surface is now a **single verb, `query`**.
+> The `record`/`notes` write verb, the whole knowledge subsystem (`knowledge_facts`/
+> `knowledge_relations`, `scoped_notes`, the `knowledge_facts` injection into `ask`),
+> and the `server_knowledge.go` handler were removed — dex is retrieval over the
+> codebase, not agent memory. Sections below that describe `notes`, `scoped_notes`,
+> or `knowledge_facts` are **historical**; the `session_task` path still stands.
 
 ## Intent
 
@@ -110,7 +116,7 @@ re-exposed as REST endpoints for service clients are the http-api spec's.
     always-on lane (`ask`, `grep`, `ls`, `shell`) is exposed.
   This yields a flat, prefix-free surface: the default
   `brief`, `ask`, `search`, `repo_map`, `trace`, `locate`, `review_diff`,
-  `verify_change`, `read`, `grep`, `shell`, `notes`, `index_status` plus the
+  `verify_change`, `read`, `grep`, `shell`, `index_status` plus the
   `DEX_EXPERT` power lane `plan_rename`, `rehearse_patch`, `check`, `deps`,
   `diff`, `clusters`, `routes`, `smells`, `cohort`, `status`, `budget`,
   `session`, `checkpoint`.
