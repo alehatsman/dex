@@ -180,10 +180,25 @@ func symbolNearMiss(ctx context.Context, st store.Searcher, intent string, candi
 func (s *Server) applyLoopThrottle(question string, out *ContextOutput) bool {
 	ldLevel, ldHint := s.ld().Check("ask", throttle.ArgsKey(question), true)
 	if ldLevel == throttle.Block {
+		// A blocked call must return an empty payload (grep_throttle_test.go's
+		// stated intent) — an agent reads "loop-blocked" as "nothing came back",
+		// so every content-bearing field has to actually be empty, not just the
+		// two that happened to be cleared originally (#231): SuggestedReads
+		// especially could still carry full inlined file content.
 		out.Status = "loop-blocked"
 		out.Hint = ldHint
+		out.Answer = ""
+		out.AnswerModel = ""
 		out.SemanticHits = nil
 		out.Symbols = nil
+		out.Graph = nil
+		out.SuggestedReads = nil
+		out.NextAction = ""
+		out.Avoid = ""
+		out.Next = nil
+		out.Map = ""
+		out.References = nil
+		out.Annotations = nil
 		return true
 	}
 	if ldLevel == throttle.Reduce {

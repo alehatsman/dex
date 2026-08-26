@@ -107,7 +107,12 @@ type QueryResult struct {
 // are hoisted from whichever lane ran so an agent reads them the same way for
 // every input shape; Result carries the full lane payload for detail.
 type QueryOutput struct {
-	Status string      `json:"status"`
+	Status string `json:"status"`
+	// Hint carries a lane-level explanation that doesn't fit route/trust — most
+	// notably why a semantic-lane call returned "loop-blocked" (#231): without
+	// this, dispatchSemantic projected ContextOutput's own Hint away entirely,
+	// so an agent saw an empty payload with no explanation of why.
+	Hint   string      `json:"hint,omitempty"`
 	Route  QueryRoute  `json:"route"`
 	Result QueryResult `json:"result"`
 	// Refs is the uniform Selection currency (#207 / #95f): a flat index of the
@@ -446,6 +451,7 @@ func dispatchSemantic(ctx context.Context, h toolSurface, req *sdk.CallToolReque
 	// provenance unless the router resolved a deterministic (orient/topology) lane.
 	out := QueryOutput{
 		Status: co.Status,
+		Hint:   co.Hint,
 		Route:  route,
 		Result: qr,
 		Refs:   refsFromSemantic(&co), // uniform Selection currency (#95f)
