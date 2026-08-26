@@ -256,6 +256,62 @@ func seedSelectGraph(t *testing.T, ctx context.Context, root, cacheDir string) {
 	}
 }
 
+// TestSelectorPkgScopedName covers #232: pkg: only ever matched the
+// file-derived directory (packages/api), never the scoped npm name a
+// workspace package.json actually declares (@acme/api) — the name every
+// import/doc in a real monorepo uses. Both the scoped name and the plain
+// directory must resolve to the same symbols.
+func TestSelectorPkgScopedName(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	t.Cleanup(srv.Close)
+	cacheDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "packages", "api", "package.json"), `{"name":"@acme/api"}`)
+	writeFile(t, filepath.Join(projDir, "packages", "api", "index.ts"), "export function handler() {}\n")
+	root := indexProject(t, projDir, cacheDir, srv.URL)
+	ctx := context.Background()
+
+	p, err := proj.Resolve(root, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(ctx, p.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Now()
+	node := store.GraphNodeRow{
+		ID: "m::packages/api::function::handler", Kind: string(graph.NodeFunction),
+		Name: "handler", QualifiedName: "handler", PackagePath: "packages/api",
+		FilePath: "packages/api/index.ts", StartLine: 1, EndLine: 1,
+		MetadataJSON: []byte("{}"), ContentHash: "n-handler",
+	}
+	if err := st.GraphUpsertNodes(ctx, []store.GraphNodeRow{node}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	h := newServer(srv.URL, cacheDir)
+	call := func(in QueryInput) QueryOutput {
+		in.ProjectRoot = root
+		_, out, err := queryVerb(ctx, h, &sdk.CallToolRequest{}, in)
+		if err != nil {
+			t.Fatalf("queryVerb(%q): %v", in.Input, err)
+		}
+		return out
+	}
+
+	dirOut := call(QueryInput{Input: "pkg:packages/api"})
+	if dirOut.Status != "ok" || dirOut.Result.Select == nil || dirOut.Result.Select.Count != 1 {
+		t.Fatalf("pkg:packages/api = %+v, want 1 match", dirOut.Result.Select)
+	}
+
+	scopedOut := call(QueryInput{Input: "pkg:@acme/api"})
+	if scopedOut.Status != "ok" || scopedOut.Result.Select == nil || scopedOut.Result.Select.Count != 1 {
+		t.Fatalf("pkg:@acme/api = %+v, want 1 match (scoped npm name should resolve to the same package)", scopedOut.Result.Select)
+	}
+}
+
 // TestSelectorLaneStandalone: a `func:*` selector enumerates the fixture funcs,
 // ranked by pagerank, on the select lane.
 func TestSelectorLaneStandalone(t *testing.T) {

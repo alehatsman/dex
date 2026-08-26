@@ -201,10 +201,24 @@ func (s *Server) grepFileList(p *proj.Project, prefix, extFilter string) ([]stri
 	return filtered, nil
 }
 
+// maxMatchLineBytes bounds a single grep match line. The 50-match count cap
+// only guards against many matches — a single line inside a minified bundle
+// or a binary file misread as text can alone run to hundreds of KB, blowing
+// the MCP response past its token ceiling before the count cap ever engages
+// (#232). Truncating per-line keeps that cost bounded regardless of count.
+const maxMatchLineBytes = 2000
+
+func truncateMatchLine(s string) string {
+	if len(s) <= maxMatchLineBytes {
+		return s
+	}
+	return s[:maxMatchLineBytes] + fmt.Sprintf(" … [truncated, %d bytes total]", len(s))
+}
+
 // newGrepMatch builds a match for the line at index i, attaching up to ctxN
 // surrounding lines before and after (#662). lines is the file's split content.
 func newGrepMatch(lines []string, i int, relPath string, ctxN int) GrepMatch {
-	m := GrepMatch{Path: relPath, Line: i + 1, Content: strings.TrimSpace(lines[i])}
+	m := GrepMatch{Path: relPath, Line: i + 1, Content: truncateMatchLine(strings.TrimSpace(lines[i]))}
 	if ctxN > 0 {
 		m.Before = grepContextSlice(lines, i-ctxN, i)
 		m.After = grepContextSlice(lines, i+1, i+1+ctxN)
@@ -232,5 +246,9 @@ func grepContextSlice(lines []string, lo, hi int) []string {
 	if len(seg) == 0 {
 		return nil
 	}
-	return append([]string(nil), seg...)
+	out := make([]string, len(seg))
+	for i, ln := range seg {
+		out[i] = truncateMatchLine(ln)
+	}
+	return out
 }

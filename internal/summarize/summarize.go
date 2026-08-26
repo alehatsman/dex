@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -68,7 +69,17 @@ func ParseLinesRange(s string) (start, end int, ok bool) {
 // and indexed symbols (and a store for the graph/session lookups) and get the
 // composed text back.
 func SignaturesView(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, relPath string) string {
-	content := formatSignatures(data, syms, relPath, nil)
+	return SignaturesViewFiltered(ctx, st, data, syms, relPath, nil)
+}
+
+// SignaturesViewFiltered is SignaturesView narrowed to a specific symbol set —
+// `only`, a set of qualified names. Empty/nil means show every symbol in the
+// file (the plain SignaturesView behavior). Used by the pipe `callees|`/
+// `callers|signatures` terminal, which otherwise dumped every export of a
+// resolved callee's containing file instead of just the resolved symbols
+// (#232).
+func SignaturesViewFiltered(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, relPath string, only []string) string {
+	content := formatSignatures(data, syms, relPath, only)
 	if related := graphRelatedHint(ctx, st, relPath); related != "" {
 		content += related
 	}
@@ -78,7 +89,7 @@ func SignaturesView(ctx context.Context, st *store.Store, data []byte, syms []st
 // MapView builds the mode=map view: imports + exported symbols, followed by a
 // related-files hint and (when symbols exist) any task-relevant symbol body.
 func MapView(ctx context.Context, st *store.Store, data []byte, syms []store.GraphSymbol, imports []string, relPath string) string {
-	content := formatMap(relPath, syms, imports)
+	content := formatMap(relPath, syms, imports, data)
 	if related := graphRelatedHint(ctx, st, relPath); related != "" {
 		content += related
 	}
@@ -91,11 +102,33 @@ func MapView(ctx context.Context, st *store.Store, data []byte, syms []store.Gra
 // formatSignatures produces a compact symbol index for a file.
 // Each exported symbol gets its declaration line; unexported symbols are
 // listed without source. Output is ~10× smaller than mode=full.
-func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []string) string {
+//
+// only, when non-empty, narrows the listing to just those qualified names —
+// used when the caller already resolved a specific symbol set (e.g. a pipe's
+// `callees | signatures` terminal) and wants those, not every export the
+// containing file happens to have (#232).
+func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, only []string) string {
+	if len(only) > 0 {
+		want := make(map[string]bool, len(only))
+		for _, q := range only {
+			want[q] = true
+		}
+		filtered := syms[:0:0]
+		for _, sym := range syms {
+			if want[sym.QualifiedName] {
+				filtered = append(filtered, sym)
+			}
+		}
+		syms = filtered
+	}
 	srcLines := bytes.Split(bytes.TrimRight(src, "\n"), []byte("\n"))
 	totalLines := bytes.Count(src, []byte("\n")) + 1
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %dL (%d symbols)\n\n", relPath, totalLines, len(syms))
+	if len(only) > 0 {
+		fmt.Fprintf(&b, "%s %dL (%d of file's symbols — resolved via callees/callers)\n\n", relPath, totalLines, len(syms))
+	} else {
+		fmt.Fprintf(&b, "%s %dL (%d symbols)\n\n", relPath, totalLines, len(syms))
+	}
 
 	isTypeKind := func(kind string) bool {
 		return kind == "struct" || kind == "interface" || kind == "type"
@@ -144,7 +177,7 @@ func formatSignatures(src []byte, syms []store.GraphSymbol, relPath string, _ []
 // formatMap produces a compact dependency map for a file: its package-level
 // imports and exported declarations, sourced from the index (no LLM, no file
 // read). Unexported symbols are omitted so the output mirrors the public API.
-func formatMap(relPath string, syms []store.GraphSymbol, imports []string) string {
+func formatMap(relPath string, syms []store.GraphSymbol, imports []string, data []byte) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "FILE: %s\n\n", relPath)
 	if len(imports) > 0 {
@@ -160,6 +193,14 @@ func formatMap(relPath string, syms []store.GraphSymbol, imports []string) strin
 	var exportedLines strings.Builder
 	count := 0
 	for _, sym := range syms {
+		// The synthetic whole-file scaffold node (kind "file") and import/field
+		// nodes aren't part of a file's public API — skip them like
+		// formatSignatures' exported() does, or a pure re-export barrel (whose
+		// only symbol is that scaffold) reports one bogus "export" instead of
+		// its real content (#232).
+		if sym.Kind == "file" || sym.Kind == "import" || sym.Kind == "field" {
+			continue
+		}
 		if len(sym.Name) == 0 {
 			continue
 		}
@@ -172,8 +213,38 @@ func formatMap(relPath string, syms []store.GraphSymbol, imports []string) strin
 	if count > 0 {
 		fmt.Fprintf(&b, "EXPORTS (%d):\n", count)
 		b.WriteString(exportedLines.String())
+		return b.String()
+	}
+	// A pure re-export barrel (`export * from './x'`, no local declarations)
+	// has no symbols of its own — list the re-export targets instead of an
+	// empty EXPORTS section, so `map` stays useful for the barrel-heavy
+	// pattern common in JS/TS workspaces (#232).
+	if reexports := reExportLines(data); len(reexports) > 0 {
+		fmt.Fprintf(&b, "RE-EXPORTS (%d):\n", len(reexports))
+		for _, ln := range reexports {
+			fmt.Fprintf(&b, "  %s\n", ln)
+		}
 	}
 	return b.String()
+}
+
+// reExportMatch finds JS/TS barrel re-export statements: `export * from '...'`
+// and `export * as NS from '...'`.
+var reExportMatch = regexp.MustCompile(`export\s*\*\s*(as\s+\w+\s+)?from\s*['"]([^'"]+)['"]`)
+
+// reExportLines scans raw file bytes for barrel re-export statements a graph
+// extractor doesn't persist as queryable symbols (they're resolved in-memory
+// at graph-build time for cross-package call resolution, not stored).
+func reExportLines(data []byte) []string {
+	var out []string
+	for _, m := range reExportMatch.FindAllSubmatch(data, -1) {
+		if len(m[1]) > 0 {
+			out = append(out, fmt.Sprintf("re-export: * %sfrom '%s'", string(m[1]), string(m[2])))
+		} else {
+			out = append(out, fmt.Sprintf("re-export: * from '%s'", string(m[2])))
+		}
+	}
+	return out
 }
 
 // SliceLines returns the byte slice of `data` between lines start and

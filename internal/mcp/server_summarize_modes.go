@@ -56,7 +56,7 @@ func (s *Server) summarizeModeSignatures(w summarizeWork) (*sdk.CallToolResult, 
 		out.Hint = "no indexed symbols for this file — run `dex index` first or use mode=full"
 		return nil, out, nil
 	}
-	content := summarize.SignaturesView(w.ctx, st, w.data, syms, w.relTarget)
+	content := summarize.SignaturesViewFiltered(w.ctx, st, w.data, syms, w.relTarget, w.in.Symbols)
 	out := w.out
 	out.Status = "ok"
 	out.Etag = w.etag

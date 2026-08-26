@@ -28,7 +28,7 @@ func walkProjectFiles(root, searchRel string) ([]string, error) {
 	if searchRel != "" {
 		searchRoot = filepath.Join(root, searchRel)
 	}
-	matcher, _ := ignore.New(root)
+	matcher, _ := ignore.NewForWalk(root)
 	var out []string
 	err := filepath.Walk(searchRoot, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {

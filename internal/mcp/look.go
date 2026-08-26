@@ -177,7 +177,7 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 
 	switch kind {
 	case "read":
-		_, ro, err := h.summarize(ctx, req, SummarizeInput{Path: cleaned, Mode: in.Mode, ProjectRoot: in.ProjectRoot})
+		_, ro, err := h.summarize(ctx, req, SummarizeInput{Path: cleaned, Mode: in.Mode, ProjectRoot: in.ProjectRoot, BudgetTokens: in.Budget})
 		if err != nil {
 			return nil, LookOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 		}

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/graph/resolve"
 	"github.com/alehatsman/dex/internal/store"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -74,6 +75,34 @@ func normalizeKind(val string) []string {
 		return ks
 	}
 	return []string{v}
+}
+
+// resolvePkgTokens rewrites every `pkg:<val>` token whose value exactly
+// matches a workspace package's declared package.json name (e.g. @bright/api)
+// to `pkg:<dir>`, the file-derived directory parseSelector actually knows how
+// to match. ws may be a nil/empty *resolve.Workspace (a repo with no
+// workspace config) — Projects() is nil-safe and returns nothing, so this is
+// then a no-op. Non-pkg tokens and values with no matching project name pass
+// through unchanged.
+func resolvePkgTokens(s string, ws *resolve.Workspace) string {
+	projects := ws.Projects()
+	if len(projects) == 0 {
+		return s
+	}
+	fields := strings.Fields(s)
+	for i, f := range fields {
+		field, val, ok := strings.Cut(f, ":")
+		if !ok || strings.ToLower(field) != "pkg" {
+			continue
+		}
+		for _, p := range projects {
+			if p.Name == val {
+				fields[i] = "pkg:" + p.Dir
+				break
+			}
+		}
+	}
+	return strings.Join(fields, " ")
 }
 
 // parseSelector folds the tokens into a conjunctive store.SymbolSelector. func:
@@ -152,7 +181,7 @@ func dispatchSelector(ctx context.Context, h toolSurface, _ *sdk.CallToolRequest
 	if !ok {
 		return fail("selector lane is unavailable on this surface", nil)
 	}
-	refs, err := src.selectSymbols(ctx, in.ProjectRoot, parseSelector(cleaned), in.K)
+	refs, err := src.selectSymbols(ctx, in.ProjectRoot, cleaned, in.K)
 	if err != nil {
 		return fail(err.Error(), err)
 	}
@@ -180,13 +209,13 @@ func dispatchSelector(ctx context.Context, h toolSurface, _ *sdk.CallToolRequest
 // the store-backed *Server implements it; the remote surface runs the whole
 // query server-side on a *Server via /query, so it never needs its own.
 type symbolSelectorSource interface {
-	selectSymbols(ctx context.Context, projectRoot string, sel store.SymbolSelector, limit int) ([]Ref, error)
+	selectSymbols(ctx context.Context, projectRoot, cleaned string, limit int) ([]Ref, error)
 }
 
 // selectSymbols implements symbolSelectorSource on *Server, mirroring
 // symbolsUnder: resolve the project, open the (cached) store, run the indexed
 // query, and project GraphSymbols into symbol Refs ranked by pagerank.
-func (s *Server) selectSymbols(ctx context.Context, projectRoot string, sel store.SymbolSelector, limit int) ([]Ref, error) {
+func (s *Server) selectSymbols(ctx context.Context, projectRoot, cleaned string, limit int) ([]Ref, error) {
 	p, hint := s.resolveProject(ctx, projectRoot)
 	if hint != "" {
 		return nil, errors.New(hint)
@@ -198,6 +227,12 @@ func (s *Server) selectSymbols(ctx context.Context, projectRoot string, sel stor
 	if err != nil {
 		return nil, fmt.Errorf("open index: %w", err)
 	}
+	// A `pkg:` token is resolved against the workspace's declared package.json
+	// names before parsing — the store only carries the file-derived directory
+	// (packages/bright-api), never the scoped npm name (@bright/api) that
+	// imports/docs actually use, so a bare directory-basename match would
+	// silently miss every scoped workspace package (#232).
+	sel := parseSelector(resolvePkgTokens(cleaned, resolve.Load(p.Root)))
 	syms, err := st.SelectSymbols(ctx, sel, limit)
 	if err != nil {
 		return nil, err

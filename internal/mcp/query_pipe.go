@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -400,18 +401,46 @@ func runTerminal(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, i
 	if budget <= 0 {
 		budget = pipeDefaultBudget
 	}
+	only := symbolFilterFor(st)
 	switch name {
 	case "signatures":
-		return renderSignatures(ctx, h, req, in, st.refs, budget), nil
+		return renderSignatures(ctx, h, req, in, st.refs, budget, only), nil
 	case "assemble":
 		if arg != "" {
 			if n, e := strconv.Atoi(arg); e == nil && n > 0 {
 				budget = n
 			}
 		}
-		return renderSignatures(ctx, h, req, in, st.refs, budget), nil
+		return renderSignatures(ctx, h, req, in, st.refs, budget, only), nil
 	}
 	return QueryOutput{}, fmt.Errorf("unknown terminal %q", name)
+}
+
+// symbolFilterFor returns the per-path qualified-name allow-list a
+// `signatures`/`assemble` terminal should narrow to, or nil for "show every
+// export" (the previous, unfiltered behavior). Only applies right after a
+// callers/callees/impact transform, whose refs are reliably Kind=="symbol"
+// with ID==QualifiedName (query_refs.go) — a `select`/`since`/bare-symbol seed
+// with no transform keeps showing the whole file, since that's what those
+// seeds' own QA passes validated (#232: filtering there risked hiding
+// legitimately-matched symbols behind an ID convention those seeds don't share).
+func symbolFilterFor(st *pipeState) map[string][]string {
+	if len(st.stages) == 0 {
+		return nil
+	}
+	switch st.stages[len(st.stages)-1] {
+	case "callers", "callees", "impact":
+	default:
+		return nil
+	}
+	only := map[string][]string{}
+	for _, r := range st.refs {
+		if r.Kind != "symbol" || r.Path == "" || r.ID == "" {
+			continue
+		}
+		only[r.Path] = append(only[r.Path], r.ID)
+	}
+	return only
 }
 
 // renderSignatures reads each distinct file in the Selection as compressed
@@ -421,14 +450,28 @@ func runTerminal(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, i
 // 0 the total output is hard-clamped to it, INCLUDING the first file (a single
 // large file is truncated to fit, not admitted whole) — the #164 clamp
 // discipline applied to a pipe terminal, an honest partial over an overflow.
-func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput, refs []Ref, budget int) QueryOutput {
+func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput, refs []Ref, budget int, only map[string][]string) QueryOutput {
 	paths := uniquePaths(refs)
+	// cost.tokens_returned is measured over the whole marshaled QueryOutput
+	// (stampEnvelopeCost), not just Content — Status/Route/Trust/Paths add
+	// their own JSON weight. Reserve that overhead up front (worst-case: all
+	// paths present, truncated with the longer caveat) so clamping Content to
+	// `budget` doesn't still overshoot the promised total once wrapped (#232,
+	// a recurrence of #218 on a bigger corpus).
+	budgetSet := budget > 0
+	contentBudget := budget
+	if budgetSet {
+		contentBudget = budget - envelopeOverhead(paths)
+		if contentBudget < 0 {
+			contentBudget = 0
+		}
+	}
 	var b strings.Builder
 	used := make([]string, 0, len(paths))
 	dropped := 0
 	truncated := false
 	for idx, p := range paths {
-		_, ro, err := h.summarize(ctx, req, SummarizeInput{Path: p, Mode: "signatures", ProjectRoot: in.ProjectRoot, NoBounce: true})
+		_, ro, err := h.summarize(ctx, req, SummarizeInput{Path: p, Mode: "signatures", ProjectRoot: in.ProjectRoot, NoBounce: true, Symbols: only[p]})
 		if err != nil || strings.TrimSpace(ro.Content) == "" {
 			continue
 		}
@@ -436,11 +479,11 @@ func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolReque
 		if b.Len() > 0 {
 			sep = "\n\n"
 		}
-		if budget > 0 && tokens.Count(b.String()+sep+ro.Content) > budget {
+		if budgetSet && tokens.Count(b.String()+sep+ro.Content) > contentBudget {
 			// This file overflows the budget. Fit as much of it as the remaining
 			// budget allows (which may be nothing), then stop — the first file is
 			// clamped too, so a single oversized file can never blow the budget.
-			clamped, _ := clampToTokens(ro.Content, budget-tokens.Count(b.String()))
+			clamped, _ := clampToTokens(ro.Content, contentBudget-tokens.Count(b.String()))
 			if strings.TrimSpace(clamped) != "" {
 				b.WriteString(sep)
 				b.WriteString(clamped)
@@ -468,6 +511,24 @@ func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolReque
 		}
 	}
 	return out
+}
+
+// envelopeOverhead measures the JSON weight of a renderSignatures QueryOutput
+// with the given paths but empty Content, using the longest caveat text the
+// terminal can emit — a worst-case estimate so clamping Content still leaves
+// the marshaled total within budget after stampEnvelopeCost wraps it.
+func envelopeOverhead(paths []string) int {
+	skeleton := QueryOutput{
+		Status: "ok",
+		Route:  QueryRoute{Lane: "read"},
+		Result: QueryResult{Read: &SummarizeOutput{Status: "ok", Paths: paths, Truncated: true}},
+		Trust:  EnvTrust{Provenance: "exact", Caveat: fmt.Sprintf("assemble budget reached — last file truncated, %d further file(s) dropped", len(paths))},
+	}
+	b, err := json.Marshal(skeleton)
+	if err != nil {
+		return 0
+	}
+	return tokens.Count(string(b))
 }
 
 // clampToTokens returns the longest whole-line prefix of s whose token count

@@ -158,6 +158,7 @@ func DefaultExtractors() []ExtractorFactory {
 	return []ExtractorFactory{
 		newPythonTagsExtractor,
 		newTSTagsExtractor,
+		newTSXTagsExtractor,
 		newJSTagsExtractor,
 		newRustTagsExtractor,
 		newJavaTagsExtractor,

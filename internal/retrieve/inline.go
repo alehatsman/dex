@@ -24,6 +24,15 @@ const NoiseFloorScore = 0.40
 // chunk happens to share a token.
 const LowConfidenceScore = 0.45
 
+// HighConfidenceScore is the cosine-fused top-score floor for a genuinely
+// strong semantic match. Picked empirically from a live QA session: relevant
+// hits on a large real index clustered ≥0.58, while a score just above
+// LowConfidenceScore (~0.50) on an off-topic question still produced a
+// full "high"-confidence response with no signal it was a weak match (#232).
+// Scores in [LowConfidenceScore, HighConfidenceScore) are "medium" — real
+// enough to surface, not strong enough to present as settled.
+const HighConfidenceScore = 0.58
+
 // ─── inline file contents into suggested_reads ────────────────────────────
 
 // InlineCaps are the per-intent budgets for InlineContent. Exploration

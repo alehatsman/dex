@@ -3,8 +3,9 @@ package retrieve
 import "testing"
 
 func TestConfidenceLevel(t *testing.T) {
-	const strong = LowConfidenceScore + 0.1 // >= threshold
-	const weak = LowConfidenceScore - 0.1   // below threshold
+	const strong = HighConfidenceScore + 0.1 // >= high threshold
+	const mid = LowConfidenceScore + 0.05    // between low and high threshold
+	const weak = LowConfidenceScore - 0.1    // below low threshold
 	cases := []struct {
 		name           string
 		intent         string
@@ -16,6 +17,7 @@ func TestConfidenceLevel(t *testing.T) {
 	}{
 		{"symbols carry it", IntentBehaviorSearch, 3, weak, 0, false, "high"},
 		{"strong semantic", IntentBehaviorSearch, 0, strong, 0, false, "high"},
+		{"mid semantic no symbols", IntentBehaviorSearch, 0, mid, 0, false, "medium"},
 		{"weak semantic no symbols", IntentBehaviorSearch, 0, weak, 0, false, "low"},
 		{"no evidence at all", IntentBehaviorSearch, 0, 0, 0, false, "low"},
 		{"topology payload rescues weak", IntentPackageTopology, 0, weak, 5, false, "high"},
@@ -23,7 +25,8 @@ func TestConfidenceLevel(t *testing.T) {
 		{"architecture payload rescues weak", IntentArchitecture, 0, weak, 2, false, "high"},
 		{"editing blame rescues weak", IntentEditingContext, 0, weak, 0, true, "high"},
 		{"editing no blame", IntentEditingContext, 0, weak, 0, false, "low"},
-		{"threshold is inclusive", IntentBehaviorSearch, 0, LowConfidenceScore, 0, false, "high"},
+		{"low threshold is inclusive", IntentBehaviorSearch, 0, LowConfidenceScore, 0, false, "medium"},
+		{"high threshold is inclusive", IntentBehaviorSearch, 0, HighConfidenceScore, 0, false, "high"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -35,14 +35,20 @@ func intentPayloadStrong(intent string, graphEdgeCount int, hasBlame bool) bool 
 
 // ConfidenceLevel classifies how much to trust the top-ranked evidence, using
 // the same predicate BuildNextAction bakes into its prose (#102). "high" when
-// there are symbol hits, a strong semantic score (>= LowConfidenceScore), or a
-// strong intent payload; "low" otherwise — the caller should verify (e.g. grep)
-// before relying on the ranking. Surfaced as a structured field so agents can
-// gate on it instead of parsing next_action prose.
+// there are symbol hits, a strong semantic score (>= HighConfidenceScore), or
+// a strong intent payload; "medium" when the top score only clears the lower
+// noise floor (>= LowConfidenceScore) with no other signal — real, but not
+// strong enough to present as settled (#232, a score of ~0.50 on a genuinely
+// off-topic query was previously reported "high"); "low" otherwise — the
+// caller should verify (e.g. grep) before relying on the ranking. Surfaced as
+// a structured field so agents can gate on it instead of parsing next_action
+// prose.
 func ConfidenceLevel(intent string, nSymbols int, topSemScore float32, graphEdgeCount int, hasBlame bool) string {
-	strongSemantic := topSemScore >= LowConfidenceScore
-	if nSymbols > 0 || strongSemantic || intentPayloadStrong(intent, graphEdgeCount, hasBlame) {
+	if nSymbols > 0 || topSemScore >= HighConfidenceScore || intentPayloadStrong(intent, graphEdgeCount, hasBlame) {
 		return "high"
+	}
+	if topSemScore >= LowConfidenceScore {
+		return "medium"
 	}
 	return "low"
 }

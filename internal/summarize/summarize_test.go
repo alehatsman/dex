@@ -71,7 +71,7 @@ func TestFormatMap(t *testing.T) {
 		{Name: "Run", QualifiedName: "mcp.Server.Run", Kind: "method", FilePath: "server.go", StartLine: 100, EndLine: 120},
 	}
 	imports := []string{"context", "fmt", "os"}
-	got := formatMap("server.go", syms, imports)
+	got := formatMap("server.go", syms, imports, nil)
 	for _, want := range []string{
 		"FILE: server.go",
 		"IMPORTS:",

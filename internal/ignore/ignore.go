@@ -241,6 +241,20 @@ type Matcher struct {
 // allow-list from `index.include`. When no include is configured the
 // Matcher skips every file (index-nothing-until-opted-in).
 func New(root string) (*Matcher, error) {
+	return newMatcher(root, false)
+}
+
+// NewForWalk is New but always folds in nested per-directory .gitignore
+// files, ignoring the index.respect_nested_gitignore config flag. Grep and
+// file_tree walk the working tree directly rather than the sqlite index, so
+// callers reasonably expect them to honor every .gitignore a package ships
+// (e.g. a build-output out/ dir) — unlike indexing's opt-in nested behavior
+// (#74), which stays conservative for corpus-composition reasons (#232).
+func NewForWalk(root string) (*Matcher, error) {
+	return newMatcher(root, true)
+}
+
+func newMatcher(root string, forceNested bool) (*Matcher, error) {
 	cfg, err := loadIndexConfig(root)
 	if err != nil {
 		return nil, err
@@ -255,10 +269,10 @@ func New(root string) (*Matcher, error) {
 		}
 		lines = append(lines, extra...)
 	}
-	// Nested per-directory .gitignore files (opt-in). Appended after the root
-	// files and before config.ignore, in walk order (shallower first) so a
-	// deeper file's rules win — approximating git's "deeper wins" (#74).
-	if cfg.RespectNestedGitignore {
+	// Nested per-directory .gitignore files. Appended after the root files
+	// and before config.ignore, in walk order (shallower first) so a deeper
+	// file's rules win — approximating git's "deeper wins" (#74).
+	if cfg.RespectNestedGitignore || forceNested {
 		nested, err := collectNestedGitignore(root)
 		if err != nil {
 			return nil, err

@@ -241,3 +241,75 @@ func TestSearchGrepUnindexedRespectsExcludes(t *testing.T) {
 		}
 	}
 }
+
+// TestSearchGrepRespectsNestedGitignore covers #232: a nested package's own
+// .gitignore (e.g. apps/gui/.gitignore excluding its build-output out/ dir)
+// was never honored by grep's disk walk — only the root .gitignore was, and
+// only when index.respect_nested_gitignore was explicitly opted in (#74).
+// grep is disk-authoritative (#132) and has no such opt-in surface, so a
+// package's own gitignored build output leaked into results.
+func TestSearchGrepRespectsNestedGitignore(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	s := newServer(srv.URL, t.TempDir())
+
+	projDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projDir, "keep.go"), []byte("package p\n// NEEDLE in source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appDir := filepath.Join(projDir, "apps", "gui")
+	outDir := filepath.Join(appDir, "out")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, ".gitignore"), []byte("out\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "bundle.js"), []byte("// NEEDLE in build artifact\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, out, err := s.searchGrep(context.Background(), nil, SearchGrepInput{
+		Pattern:     "NEEDLE",
+		ProjectRoot: projDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Total != 1 || out.Matches[0].Path != "keep.go" {
+		t.Fatalf("want exactly one match in keep.go, got %d: %+v", out.Total, out.Matches)
+	}
+}
+
+// TestGrepMatchContentCapped covers #232: a single match line inside a
+// minified/bundled file can run to hundreds of KB, and unlike the 50-match
+// count cap, one such line alone could blow the MCP response past its token
+// ceiling before the count cap ever engaged.
+func TestGrepMatchContentCapped(t *testing.T) {
+	srv := fakeEmbed(t, 16)
+	defer srv.Close()
+	s := newServer(srv.URL, t.TempDir())
+
+	projDir := t.TempDir()
+	huge := "const NEEDLE = '" + strings.Repeat("x", maxMatchLineBytes*2) + "';\n"
+	if err := os.WriteFile(filepath.Join(projDir, "bundle.js"), []byte(huge), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, out, err := s.searchGrep(context.Background(), nil, SearchGrepInput{
+		Pattern:     "NEEDLE",
+		ProjectRoot: projDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Total != 1 {
+		t.Fatalf("want 1 match, got %d", out.Total)
+	}
+	if n := len(out.Matches[0].Content); n > maxMatchLineBytes+100 {
+		t.Errorf("match content = %d bytes, want capped near %d", n, maxMatchLineBytes)
+	}
+	if !strings.Contains(out.Matches[0].Content, "truncated") {
+		t.Errorf("expected a truncation marker in the capped content, got %q", out.Matches[0].Content[:80])
+	}
+}

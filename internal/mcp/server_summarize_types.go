@@ -53,6 +53,11 @@ type SummarizeInput struct {
 	// get exactly that mode deterministically, not an escalation to raw full
 	// source because the file was already read by hand earlier this session.
 	NoBounce bool `json:"-"`
+	// Symbols narrows mode=signatures to just these qualified names, internal
+	// (never in the MCP schema) — set by a pipe `callees|`/`callers|signatures`
+	// terminal so the rendered signatures match the resolved symbol set instead
+	// of every export the containing file happens to have (#232).
+	Symbols []string `json:"-"`
 }
 
 type SummarizeOutput struct {

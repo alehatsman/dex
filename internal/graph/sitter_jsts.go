@@ -449,6 +449,52 @@ func (e *jstsBase) addInterface(
 	})
 }
 
+// addTypeAlias emits a TypeScript `type X = ...` declaration as a NodeType,
+// the same kind Go's own type-alias handling uses (graph.go), so `kind:type`
+// / `type:` selector queries see TS aliases without a separate alias-map
+// entry (#232 — previously these declarations weren't captured at all).
+func (e *jstsBase) addTypeAlias(
+	n *sitter.Node, src []byte,
+	filePath, pkg, fileID string,
+) {
+	nameNode := n.ChildByFieldName("name")
+	if nameNode == nil {
+		return
+	}
+	name := nodeText(nameNode, src)
+	if name == "" {
+		return
+	}
+	id := NodeID("", pkg, NodeType, name)
+	startLine := lineOfPoint(n.StartPoint().Row)
+	endLine := lineOfPoint(n.EndPoint().Row)
+	if e.addNode(Node{
+		ID:            id,
+		Kind:          NodeType,
+		Name:          name,
+		QualifiedName: name,
+		PackagePath:   pkg,
+		FilePath:      filePath,
+		StartLine:     startLine,
+		EndLine:       endLine,
+		StartByte:     int(n.StartByte()),
+		EndByte:       int(n.EndByte()),
+		Metadata:      map[string]any{"language": e.lang},
+	}) {
+		e.symbols[pkg] = ensureMap(e.symbols[pkg])
+		e.symbols[pkg][name] = id
+	}
+	e.edges = append(e.edges, Edge{
+		ID:        EdgeID(fileID, EdgeContains, id, filePath, startLine),
+		Kind:      EdgeContains,
+		SrcID:     fileID,
+		DstID:     id,
+		FilePath:  filePath,
+		StartLine: startLine,
+		EndLine:   endLine,
+	})
+}
+
 // ---- import parsing --------------------------------------------------------
 
 // parseImportStatement handles every import shape that has a `from`:

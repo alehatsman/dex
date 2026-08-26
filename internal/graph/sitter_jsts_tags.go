@@ -6,6 +6,7 @@ import (
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/typescript/tsx"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
@@ -38,12 +39,24 @@ const tsTagsQuery = `
 (function_declaration) @function
 (class_declaration) @class
 (interface_declaration) @interface
+(type_alias_declaration) @typealias
 (method_definition) @method
 (lexical_declaration) @lexdecl
 (import_statement) @import
 (export_statement) @export
 (call_expression) @call
 (new_expression) @call
+`
+
+// tsxTagsQuery is tsTagsQuery plus the JSX capture patterns from jsTagsQuery.
+// The TSX grammar (unlike plain TypeScript) defines jsx_* node types, and a
+// component whose exported const arrow-function body contains JSX mislexes
+// under the plain TypeScript grammar (`<div>` reads as a type assertion),
+// silently dropping the symbol (#232) — TSX files get their own extractor
+// and grammar so JSX bodies parse correctly.
+const tsxTagsQuery = tsTagsQuery + `
+(jsx_self_closing_element) @call
+(jsx_opening_element) @call
 `
 
 // jstsTagsExtractor is the JavaScript / TypeScript graph extractor. It
@@ -80,9 +93,24 @@ func newTSTagsExtractor() Extractor {
 		jstsBase:  newJSTSBase("typescript"),
 		langName:  "typescript",
 		grammar:   typescript.GetLanguage(),
-		exts:      []string{".ts", ".tsx"},
+		exts:      []string{".ts"},
 		pkgPath:   tsPackagePath,
 		queryStr:  tsTagsQuery,
+		declStmts: map[string]bool{"lexical_declaration": true},
+	}
+}
+
+// newTSXTagsExtractor handles .tsx separately from .ts, using the TSX
+// grammar so JSX-bodied exports (the dominant React component shape) parse
+// correctly instead of mislexing under the plain TypeScript grammar (#232).
+func newTSXTagsExtractor() Extractor {
+	return &jstsTagsExtractor{
+		jstsBase:  newJSTSBase("typescript"),
+		langName:  "typescript",
+		grammar:   tsx.GetLanguage(),
+		exts:      []string{".tsx"},
+		pkgPath:   tsPackagePath,
+		queryStr:  tsxTagsQuery,
 		declStmts: map[string]bool{"lexical_declaration": true},
 	}
 }
@@ -109,7 +137,7 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 		e.query = q
 	}
 
-	var funcs, classes, ifaces, methods, lexdecls, imps, exps, calls []*sitter.Node
+	var funcs, classes, ifaces, typealiases, methods, lexdecls, imps, exps, calls []*sitter.Node
 	runTagsQuery(e.query, in.Root, func(capture string, n *sitter.Node) {
 		switch capture {
 		case "function":
@@ -118,6 +146,8 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 			classes = append(classes, n)
 		case "interface":
 			ifaces = append(ifaces, n)
+		case "typealias":
+			typealiases = append(typealiases, n)
 		case "method":
 			methods = append(methods, n)
 		case "lexdecl":
@@ -175,6 +205,13 @@ func (e *jstsTagsExtractor) ProcessFile(_ context.Context, in FileInput) error {
 			continue
 		}
 		e.addInterface(n, in.Source, in.RelPath, pkg, fileID)
+		e.maybeMarkDefaultExport(n, in.Source, pkg)
+	}
+	for _, n := range typealiases {
+		if !jstsDeclTopLevel(n) {
+			continue
+		}
+		e.addTypeAlias(n, in.Source, in.RelPath, pkg, fileID)
 		e.maybeMarkDefaultExport(n, in.Source, pkg)
 	}
 
