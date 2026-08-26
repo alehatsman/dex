@@ -42,7 +42,6 @@ const (
 	reviewMaxHunks       = 200 // cap total hunks emitted; truncate past this
 	reviewMaxHunksNoCode = 3   // per-file cap when the file has no indexed symbols
 	reviewMaxSymHunk     = 6   // cap symbols resolved per hunk
-	reviewMaxProbes      = 32  // cap ChunkAt lookups per hunk (strided over big hunks)
 	reviewCallerMed      = 10  // >= this many callers → at least medium risk
 	reviewCallerHigh     = 30  // >= this many callers → high risk
 	reviewGitTimeout     = 5 * time.Second

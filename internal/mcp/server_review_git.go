@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -36,6 +37,23 @@ func chunkAtLine(chunks []chunk.Chunk, line int) (chunk.Chunk, bool) {
 		}
 	}
 	return best, found
+}
+
+// chunksInRange returns every named chunk whose span overlaps [startLine,
+// endLine], smallest-span first. In-memory counterpart to store.ChunksInRange
+// for the time-travel path (#215), where chunks come from an in-memory parse
+// of historical content rather than the index.
+func chunksInRange(chunks []chunk.Chunk, startLine, endLine int) []chunk.Chunk {
+	var out []chunk.Chunk
+	for _, c := range chunks {
+		if c.Name != "" && c.StartLine <= endLine && c.EndLine >= startLine {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return (out[i].EndLine - out[i].StartLine) < (out[j].EndLine - out[j].StartLine)
+	})
+	return out
 }
 
 // ─── range resolution + git helpers ──────────────────────────────────────

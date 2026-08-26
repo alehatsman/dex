@@ -8,8 +8,53 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alehatsman/dex/internal/chunk"
 	"github.com/alehatsman/dex/internal/retrieve"
+	"github.com/alehatsman/dex/internal/review"
 )
+
+// TestResolveHunkSymbolsExhaustive locks #215: a hunk spanning many short
+// declarations must resolve every one of them (up to reviewMaxSymHunk), not
+// just whichever ones a strided line probe happens to land on. Uses the
+// refChunks (time-travel) path since it needs no store/DB.
+func TestResolveHunkSymbolsExhaustive(t *testing.T) {
+	var chunks []chunk.Chunk
+	// 8 tiny 2-line functions back to back, more than reviewMaxSymHunk (6).
+	for i := 0; i < 8; i++ {
+		start := 1 + i*2
+		chunks = append(chunks, chunk.Chunk{
+			Name: "Fn" + string(rune('A'+i)), Kind: "function_declaration",
+			StartLine: start, EndLine: start + 1,
+		})
+	}
+	h := review.Hunk{NewStart: 1, NewLines: 16}
+	got := resolveHunkSymbols(context.Background(), nil, "f.go", h, chunks)
+	if len(got) != reviewMaxSymHunk {
+		t.Fatalf("got %d symbols, want %d (cap)", len(got), reviewMaxSymHunk)
+	}
+	seen := map[string]bool{}
+	for _, s := range got {
+		if seen[s.Name] {
+			t.Fatalf("duplicate symbol %q in result", s.Name)
+		}
+		seen[s.Name] = true
+	}
+}
+
+// TestResolveHunkSymbolsDropsContainer locks the containment filter: a hunk
+// touching a method nested inside an enclosing type must surface only the
+// innermost declaration, not both.
+func TestResolveHunkSymbolsDropsContainer(t *testing.T) {
+	chunks := []chunk.Chunk{
+		{Name: "Widget", Kind: "type_declaration", StartLine: 1, EndLine: 20},
+		{Name: "(*Widget).Render", Kind: "method_declaration", StartLine: 5, EndLine: 8},
+	}
+	h := review.Hunk{NewStart: 6, NewLines: 1}
+	got := resolveHunkSymbols(context.Background(), nil, "f.go", h, chunks)
+	if len(got) != 1 || got[0].Name != "(*Widget).Render" {
+		t.Fatalf("got %+v, want just the innermost method", got)
+	}
+}
 
 func TestHunkRisk(t *testing.T) {
 	cases := []struct {

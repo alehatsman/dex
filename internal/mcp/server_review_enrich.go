@@ -134,51 +134,66 @@ func (s *Server) reviewFile(ctx context.Context, st *store.Store, e *retrieve.En
 	return rf
 }
 
-// resolveHunkSymbols maps a hunk's new-side line range to the enclosing
-// declarations via ChunkAt, deduped by name+line and capped.
-// refChunks, when non-nil, overrides ChunkAt with an in-memory span lookup
+// resolveHunkSymbols maps a hunk's new-side line range to every enclosing
+// declaration it overlaps, via one range query against the index (#215) —
+// exhaustive rather than sampled, deduped by name and capped.
+// refChunks, when non-nil, overrides the index with an in-memory span lookup
 // over historical file content (time-travel, #644).
 func resolveHunkSymbols(ctx context.Context, st *store.Store, path string, h review.Hunk, refChunks []chunk.Chunk) []ReviewSymbol {
+	lines := h.TouchedLines()
+	if len(lines) == 0 {
+		return nil
+	}
+	startLine, endLine := lines[0], lines[len(lines)-1]
+
+	var candidates []store.Hit
+	if refChunks != nil {
+		for _, c := range chunksInRange(refChunks, startLine, endLine) {
+			candidates = append(candidates, store.Hit{
+				Name: c.Name, Kind: c.Kind, StartLine: c.StartLine, EndLine: c.EndLine,
+			})
+		}
+	} else {
+		hits, err := st.ChunksInRange(ctx, path, startLine, endLine)
+		if err != nil {
+			return nil
+		}
+		candidates = hits
+	}
+
+	// Drop any chunk that strictly contains another candidate (e.g. an outer
+	// class wrapping a touched method) — keep the innermost declaration per
+	// touched span, matching the old per-line ChunkAt behavior.
+	contained := make([]bool, len(candidates))
+	for i, outer := range candidates {
+		for j, inner := range candidates {
+			if i == j || outer.Name == inner.Name {
+				continue
+			}
+			if outer.StartLine <= inner.StartLine && outer.EndLine >= inner.EndLine {
+				contained[i] = true
+				break
+			}
+		}
+	}
+
 	seen := map[string]bool{}
 	var out []ReviewSymbol
-	// Probe at most reviewMaxProbes times, strided evenly across the hunk so a
-	// large added file costs a bounded number of lookups.
-	lines := h.TouchedLines()
-	stride := 1
-	if len(lines) > reviewMaxProbes {
-		stride = (len(lines) + reviewMaxProbes - 1) / reviewMaxProbes
-	}
-	for i := 0; i < len(lines); i += stride {
+	for i, c := range candidates {
+		if contained[i] || seen[c.Name] {
+			continue
+		}
 		if len(out) >= reviewMaxSymHunk {
 			break
-		}
-		line := lines[i]
-		var name, kind string
-		var startLine, endLine int
-		if refChunks != nil {
-			c, ok := chunkAtLine(refChunks, line)
-			if !ok || c.Name == "" {
-				continue
-			}
-			name, kind, startLine, endLine = c.Name, c.Kind, c.StartLine, c.EndLine
-		} else {
-			hit, err := st.ChunkAt(ctx, path, line)
-			if err != nil || hit.Name == "" {
-				continue
-			}
-			name, kind, startLine, endLine = hit.Name, hit.Kind, hit.StartLine, hit.EndLine
 		}
 		// Dedup by name only: a long function spans multiple indexed chunks
 		// with different start_line values, but they're the same symbol.
 		// Method names are qualified ((*Foo).Method), so different-receiver
 		// methods with the same bare name won't collide (#700).
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
+		seen[c.Name] = true
 		out = append(out, ReviewSymbol{
-			Name: name, Kind: kind, Exported: isExportedName(retrieve.BareSymbolName(name)),
-			StartLine: startLine, EndLine: endLine,
+			Name: c.Name, Kind: c.Kind, Exported: isExportedName(retrieve.BareSymbolName(c.Name)),
+			StartLine: c.StartLine, EndLine: c.EndLine,
 		})
 	}
 	return out

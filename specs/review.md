@@ -68,10 +68,11 @@ context lines so hunks stay tight around the actual change.
 
 **Hunk→symbol mapping**:
 
-- Uses `store.ChunkAt(ctx, path, line)` to resolve a new-side line to its
-  enclosing declaration (decl byte-spans from #591).
-- Probes at most `reviewMaxProbes=32` lines per hunk, strided evenly so a large
-  added file costs a bounded number of lookups.
+- Uses `store.ChunksInRange(ctx, path, startLine, endLine)` to resolve every
+  declaration overlapping the hunk's touched-line span in one query (decl
+  byte-spans from #591) — exhaustive, not sampled (#215).
+- Drops any candidate that strictly contains another candidate (e.g. an outer
+  class wrapping a touched method), keeping the innermost declaration.
 - Caps symbols per hunk at `reviewMaxSymHunk=6`.
 - Deduplicates by symbol name: a long function spans multiple indexed chunks with
   different start lines, but they're the same symbol. Method names are
