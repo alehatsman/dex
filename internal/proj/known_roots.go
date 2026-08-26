@@ -45,7 +45,7 @@ func KnownRoots(ctx context.Context, base string, warn func(format string, args 
 			continue
 		}
 		root, err := st.ProjectRoot(ctx)
-		st.Close()
+		_ = st.Close()
 		if err != nil {
 			warn("skipping %s: %v", e.Name(), err)
 			continue

@@ -23,22 +23,6 @@ func gitShowFile(ctx context.Context, root, ref, path string) ([]byte, error) {
 	return cmd.Output()
 }
 
-// chunkAtLine returns the most specific chunk whose span contains line.
-// Mirrors the store.ChunkAt SQL (ORDER BY end_line-start_line ASC LIMIT 1).
-func chunkAtLine(chunks []chunk.Chunk, line int) (chunk.Chunk, bool) {
-	best, found := chunk.Chunk{}, false
-	bestSpan := -1
-	for _, c := range chunks {
-		if c.StartLine <= line && line <= c.EndLine {
-			span := c.EndLine - c.StartLine
-			if !found || span < bestSpan {
-				best, bestSpan, found = c, span, true
-			}
-		}
-	}
-	return best, found
-}
-
 // chunksInRange returns every named chunk whose span overlaps [startLine,
 // endLine], smallest-span first. In-memory counterpart to store.ChunksInRange
 // for the time-travel path (#215), where chunks come from an in-memory parse
