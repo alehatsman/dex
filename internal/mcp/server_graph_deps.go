@@ -223,7 +223,7 @@ func (s *Server) packageGraph(ctx context.Context, _ *sdk.CallToolRequest, in Pa
 		pg = graphquery.BuildPackageGraph(view)
 	}
 	if len(pg.Nodes) == 0 {
-		hint := "no package import graph — the module level covers Go, JS/TS, Python and Rust; a repo in another language returns no-graph. Try level=\"project\" for a JS/TS or Cargo workspace rollup."
+		hint := "no package import graph — the module level covers Go, JS/TS, Python, Rust and Java; a repo in another language returns no-graph. Try level=\"project\" for a JS/TS or Cargo workspace rollup."
 		if in.Level == "project" {
 			hint = "no workspace-project graph — no workspace packages/crates resolved, or no cross-project imports were indexed."
 		}
