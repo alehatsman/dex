@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/proj"
 	"github.com/alehatsman/dex/internal/store"
+	"github.com/alehatsman/dex/internal/tokens"
 )
 
 // TestSplitPipe locks the top-level `|` parser, including the one subtlety: a
@@ -230,6 +232,52 @@ func TestPipeTerminalSignatures(t *testing.T) {
 	last := out.Route.Stages[len(out.Route.Stages)-1]
 	if last != "signatures" {
 		t.Errorf("last stage = %q, want signatures", last)
+	}
+}
+
+// TestClampToTokens locks the #218 budget guarantee: the returned prefix never
+// exceeds the budget, and an over-budget input is flagged truncated.
+func TestClampToTokens(t *testing.T) {
+	// Within budget → unchanged, not truncated.
+	if got, cut := clampToTokens("a\nb\n", 1000); got != "a\nb\n" || cut {
+		t.Errorf("within budget: got %q cut=%v, want unchanged not-cut", got, cut)
+	}
+	// Over budget → bounded and flagged.
+	big := strings.Repeat("xx\n", 100)
+	got, cut := clampToTokens(big, 6)
+	if !cut {
+		t.Errorf("over budget should report truncated")
+	}
+	if n := tokens.Count(got); n > 6 {
+		t.Errorf("clamped output = %d tokens, want <= 6", n)
+	}
+	if got == "" {
+		t.Errorf("clamp should make progress, got empty")
+	}
+	// Zero budget → empty, truncated.
+	if got, cut := clampToTokens("anything", 0); got != "" || !cut {
+		t.Errorf("zero budget: got %q cut=%v, want empty+cut", got, cut)
+	}
+}
+
+// TestPipeTerminalAssembleBudget locks the #218 fix end-to-end: assemble:N caps
+// the terminal output at N tokens (the first file is clamped too) and flags it.
+func TestPipeTerminalAssembleBudget(t *testing.T) {
+	_, _, _, call := pipeFixture(t)
+	full := call(QueryInput{Input: "pipeLeaf | callers | signatures"})
+	if full.Result.Read == nil || full.Result.Read.Content == "" {
+		t.Fatalf("signatures terminal returned no content to bound")
+	}
+	budget := 6
+	out := call(QueryInput{Input: "pipeLeaf | callers | assemble:6"})
+	if out.Status != "ok" || out.Result.Read == nil {
+		t.Fatalf("assemble terminal: status=%q result=%+v", out.Status, out.Result)
+	}
+	if n := tokens.Count(out.Result.Read.Content); n > budget {
+		t.Errorf("assemble:6 returned %d tokens, want <= %d", n, budget)
+	}
+	if !out.Result.Read.Truncated || out.Trust.Caveat == "" {
+		t.Errorf("a budget-clamped assemble should flag Truncated + carry a caveat")
 	}
 }
 

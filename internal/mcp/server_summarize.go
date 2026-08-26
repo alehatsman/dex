@@ -152,10 +152,15 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 		return
 	}
 
-	// Bounce detection (#98): re-escalate on repeated compressed reads.
+	// Bounce detection (#98): re-escalate on repeated compressed reads. Skipped
+	// for a programmatic render (NoBounce, #218) — a pipe terminal that asks for
+	// signatures must get signatures, not an escalation to raw full source just
+	// because the file was already read by hand this session.
 	bt := s.bt()
-	bt.recordRead(sessionID, relTarget)
-	mode, isLLM = s.escalateOnBounce(bt, sessionID, relTarget, mode, isLLM)
+	if !in.NoBounce {
+		bt.recordRead(sessionID, relTarget)
+		mode, isLLM = s.escalateOnBounce(bt, sessionID, relTarget, mode, isLLM)
+	}
 
 	// Budget-aware downgrade (#106): auto-select richest mode within budget.
 	// Skips the LLM summary (its output is already small); raw full is the

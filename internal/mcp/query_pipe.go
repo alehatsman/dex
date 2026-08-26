@@ -303,39 +303,96 @@ func runTerminal(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, i
 }
 
 // renderSignatures reads each distinct file in the Selection as compressed
-// signatures and concatenates them. When budget > 0 it stops once the running
-// token count would exceed it (keeping ref order), recording the drop as a
-// caveat — the #164 clamp discipline applied to a pipe terminal.
+// signatures and concatenates them. NoBounce keeps the render deterministic — a
+// terminal must get the signatures it asked for, never the #98 escalation to raw
+// full source for a file already read by hand this session (#218). When budget >
+// 0 the total output is hard-clamped to it, INCLUDING the first file (a single
+// large file is truncated to fit, not admitted whole) — the #164 clamp
+// discipline applied to a pipe terminal, an honest partial over an overflow.
 func renderSignatures(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput, refs []Ref, budget int) QueryOutput {
 	paths := uniquePaths(refs)
 	var b strings.Builder
 	used := make([]string, 0, len(paths))
 	dropped := 0
+	truncated := false
 	for idx, p := range paths {
-		_, ro, err := h.summarize(ctx, req, SummarizeInput{Path: p, Mode: "signatures", ProjectRoot: in.ProjectRoot})
+		_, ro, err := h.summarize(ctx, req, SummarizeInput{Path: p, Mode: "signatures", ProjectRoot: in.ProjectRoot, NoBounce: true})
 		if err != nil || strings.TrimSpace(ro.Content) == "" {
 			continue
 		}
-		if budget > 0 && b.Len() > 0 && tokens.Count(b.String()+"\n\n"+ro.Content) > budget {
-			dropped = len(paths) - idx
+		sep := ""
+		if b.Len() > 0 {
+			sep = "\n\n"
+		}
+		if budget > 0 && tokens.Count(b.String()+sep+ro.Content) > budget {
+			// This file overflows the budget. Fit as much of it as the remaining
+			// budget allows (which may be nothing), then stop — the first file is
+			// clamped too, so a single oversized file can never blow the budget.
+			clamped, _ := clampToTokens(ro.Content, budget-tokens.Count(b.String()))
+			if strings.TrimSpace(clamped) != "" {
+				b.WriteString(sep)
+				b.WriteString(clamped)
+				used = append(used, p)
+			}
+			truncated = true
+			dropped = len(paths) - idx - 1 // whole files after this one
 			break
 		}
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
-		}
+		b.WriteString(sep)
 		b.WriteString(ro.Content)
 		used = append(used, p)
 	}
 	out := QueryOutput{
 		Status: "ok",
 		Route:  QueryRoute{Lane: "read"},
-		Result: QueryResult{Read: &SummarizeOutput{Status: "ok", Paths: used, Content: b.String(), Truncated: dropped > 0}},
+		Result: QueryResult{Read: &SummarizeOutput{Status: "ok", Paths: used, Content: b.String(), Truncated: truncated}},
 		Trust:  EnvTrust{Provenance: "exact"},
 	}
-	if dropped > 0 {
-		out.Trust.Caveat = fmt.Sprintf("assemble budget reached — %d lower-priority file(s) dropped", dropped)
+	if truncated {
+		if dropped > 0 {
+			out.Trust.Caveat = fmt.Sprintf("assemble budget reached — last file truncated, %d further file(s) dropped", dropped)
+		} else {
+			out.Trust.Caveat = "assemble budget reached — output truncated to fit"
+		}
 	}
 	return out
+}
+
+// clampToTokens returns the longest whole-line prefix of s whose token count
+// stays within budget, plus whether anything was cut. It sums per-line token
+// counts (a safe monotonic guard) instead of re-tokenising the growing buffer.
+// A first line that alone exceeds the budget is byte-clipped (~4 bytes/token) so
+// the clamp always makes progress rather than returning empty on a long line.
+func clampToTokens(s string, budget int) (string, bool) {
+	if budget <= 0 {
+		return "", true
+	}
+	if tokens.Count(s) <= budget {
+		return s, false
+	}
+	var b strings.Builder
+	used := 0
+	for _, ln := range strings.SplitAfter(s, "\n") {
+		t := tokens.Count(ln)
+		if used+t > budget {
+			if b.Len() == 0 {
+				// A first line that alone exceeds the budget: byte-clip it and
+				// shrink until it genuinely fits, so the cap is never overrun.
+				n := budget * 4
+				if n > len(ln) {
+					n = len(ln)
+				}
+				for n > 0 && tokens.Count(ln[:n]) > budget {
+					n = n * 3 / 4
+				}
+				return strings.ToValidUTF8(ln[:n], ""), true
+			}
+			return b.String(), true
+		}
+		b.WriteString(ln)
+		used += t
+	}
+	return b.String(), false
 }
 
 // uniquePaths returns the distinct file paths across a ref set, preserving first

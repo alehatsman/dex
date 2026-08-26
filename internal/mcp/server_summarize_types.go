@@ -47,6 +47,12 @@ type SummarizeInput struct {
 	//   search:PATTERN  RE2 grep ± 3 context lines; groups separated by ---
 	//   json_path:EXPR  dot-path JSON extraction ($.a.b, $.a[0].b)
 	Slice string `json:"slice,omitempty" jsonschema:"surgical extraction: head:N (first N lines), tail:N (last N lines), range:L1-L2 (line slice), search:PATTERN (RE2 grep ±3 context lines), json_path:EXPR (JSON dot-path e.g. $.a.b[0])"`
+	// NoBounce suppresses the #98 repeated-read escalation for this call. It is
+	// internal (never in the MCP schema): a programmatic render — e.g. a pipe
+	// `signatures`/`assemble` terminal (#218) — asks for a specific mode and must
+	// get exactly that mode deterministically, not an escalation to raw full
+	// source because the file was already read by hand earlier this session.
+	NoBounce bool `json:"-"`
 }
 
 type SummarizeOutput struct {
