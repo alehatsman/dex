@@ -46,6 +46,53 @@ func TestParseSelector(t *testing.T) {
 	}
 }
 
+func TestNormalizeKind(t *testing.T) {
+	cases := []struct {
+		val  string
+		want []string
+	}{
+		{"func", []string{"function", "method"}}, // shorthand mirrors the func: field
+		{"fn", []string{"function", "method"}},
+		{"FUNC", []string{"function", "method"}}, // case-insensitive
+		{"meth", []string{"method"}},
+		{"iface", []string{"interface"}},
+		{"function", []string{"function"}}, // exact stored kind passes through
+		{"interface", []string{"interface"}},
+		{"struct", []string{"struct"}},
+	}
+	for _, c := range cases {
+		got := normalizeKind(c.val)
+		if len(got) != len(c.want) {
+			t.Errorf("normalizeKind(%q) = %v, want %v", c.val, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("normalizeKind(%q) = %v, want %v", c.val, got, c.want)
+				break
+			}
+		}
+	}
+}
+
+// TestParseSelectorKindAlias locks the #217 fix: `kind:func` must expand to the
+// stored kinds (function+method), not pass the bare word `func` through — which
+// matched nothing (stored kinds are function/method) and returned a silent empty.
+func TestParseSelectorKindAlias(t *testing.T) {
+	sel := parseSelector("kind:func")
+	if len(sel.Kinds) != 2 || sel.Kinds[0] != "function" || sel.Kinds[1] != "method" {
+		t.Errorf("kind:func -> %v, want [function method]", sel.Kinds)
+	}
+	// An exact stored kind is untouched.
+	if got := parseSelector("kind:interface").Kinds; len(got) != 1 || got[0] != "interface" {
+		t.Errorf("kind:interface -> %v, want [interface]", got)
+	}
+	// kind: unions with a func:/type: field's kinds (deduped, sorted).
+	if got := parseSelector("func:Foo kind:func").Kinds; len(got) != 2 || got[0] != "function" || got[1] != "method" {
+		t.Errorf("func:Foo kind:func -> %v, want [function method]", got)
+	}
+}
+
 func TestGlobToLike(t *testing.T) {
 	cases := []struct {
 		glob      string

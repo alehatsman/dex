@@ -51,6 +51,31 @@ func isSelectorQuery(s string) bool {
 	return true
 }
 
+// kindAliases maps the short/natural kind words an agent is likely to type onto
+// the kinds actually stored in graph_nodes. The `kind:` selector value is passed
+// through this so `kind:func` (mirroring the `func:` field name) doesn't silently
+// miss — the stored kinds are `function`/`method`, not `func`. Only genuine
+// shorthands are listed; an exact stored kind (`function`, `interface`, …) is not
+// a key, so it passes through unchanged and its behavior is untouched (#217).
+var kindAliases = map[string][]string{
+	"func":  {"function", "method"},
+	"fn":    {"function", "method"},
+	"meth":  {"method"},
+	"iface": {"interface"},
+}
+
+// normalizeKind expands a `kind:` value to the stored kinds it should match. A
+// known shorthand expands (func → function+method, mirroring the func: field);
+// any other value returns itself verbatim (exact match on a stored kind), so
+// `kind:function`/`kind:interface`/`kind:struct` keep matching exactly.
+func normalizeKind(val string) []string {
+	v := strings.ToLower(strings.TrimSpace(val))
+	if ks, ok := kindAliases[v]; ok {
+		return ks
+	}
+	return []string{v}
+}
+
 // parseSelector folds the tokens into a conjunctive store.SymbolSelector. func:
 // and type: constrain name + kind; pkg:/file: are substring/glob path filters;
 // kind: adds a bare kind constraint. Distinct fields AND together.
@@ -73,7 +98,9 @@ func parseSelector(s string) store.SymbolSelector {
 		case "file":
 			sel.File = store.GlobToLike(val, true)
 		case "kind":
-			kinds[strings.ToLower(val)] = true
+			for _, k := range normalizeKind(val) {
+				kinds[k] = true
+			}
 		}
 	}
 	if len(kinds) > 0 {
