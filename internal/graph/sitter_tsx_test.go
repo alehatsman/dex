@@ -64,26 +64,31 @@ func TestTSTypeAliasIndexed(t *testing.T) {
 }
 
 // TestHOCComponentEmitted locks #237: a top-level const whose value is a
-// call_expression (styled(...)(...), forwardRef(...), memo(...)) is a common
-// React HOC-wrapped component shape. emitArrowDeclarator only recognized
-// arrow_function/function/function_expression values, so these were silently
-// dropped — no graph node, so JSX call-sites referencing them never resolved
-// an edge. PascalCase naming (the React component convention) gates the
-// call_expression case to avoid mislabeling ordinary factory-call consts.
+// call (or tagged-template call) to a known HOC — styled(...)(...),
+// styled.div`...`, forwardRef(...), memo(...) — is a common React
+// HOC-wrapped component shape. emitArrowDeclarator only recognized
+// arrow_function/function/function_expression values, so these were
+// silently dropped — no graph node, so JSX call-sites referencing them
+// never resolved an edge. Gating on the callee identity (not just a
+// PascalCase name) avoids mislabeling ordinary call-valued consts like
+// `const Config = loadConfig()` as functions.
 func TestHOCComponentEmitted(t *testing.T) {
 	dir := t.TempDir()
 	writeIndexAll(t, dir)
-	src := `import { forwardRef } from 'react';
-import { styled } from '@mui/material';
-
-export const FlexSpacer = styled('span')({ flexGrow: 1 });
-
-export const Widget = forwardRef((props, ref) => {
-  return <div ref={ref} />;
-});
-
-const notAComponent = createThing();
-`
+	src := "import { forwardRef } from 'react';\n" +
+		"import { styled } from '@mui/material';\n" +
+		"\n" +
+		"export const FlexSpacer = styled('span')({ flexGrow: 1 });\n" +
+		"\n" +
+		"export const Bar = styled.div`color: red;`;\n" +
+		"\n" +
+		"export const Widget = forwardRef((props, ref) => {\n" +
+		"  return <div ref={ref} />;\n" +
+		"});\n" +
+		"\n" +
+		"const notAComponent = createThing();\n" +
+		"\n" +
+		"const Config = loadConfig();\n"
 	if err := os.WriteFile(filepath.Join(dir, "Components.tsx"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -96,12 +101,18 @@ const notAComponent = createThing();
 	}
 
 	if findNode(res.Nodes, NodeFunction, "FlexSpacer") == nil {
-		t.Errorf("FlexSpacer (styled HOC) not emitted as a function node; nodes=%v", nodesOfKind(res.Nodes, NodeFunction))
+		t.Errorf("FlexSpacer (styled(...)(...) HOC) not emitted as a function node; nodes=%v", nodesOfKind(res.Nodes, NodeFunction))
+	}
+	if findNode(res.Nodes, NodeFunction, "Bar") == nil {
+		t.Errorf("Bar (styled.div`...` HOC) not emitted as a function node; nodes=%v", nodesOfKind(res.Nodes, NodeFunction))
 	}
 	if findNode(res.Nodes, NodeFunction, "Widget") == nil {
 		t.Errorf("Widget (forwardRef HOC) not emitted as a function node; nodes=%v", nodesOfKind(res.Nodes, NodeFunction))
 	}
 	if findNode(res.Nodes, NodeFunction, "notAComponent") != nil {
-		t.Errorf("notAComponent (non-PascalCase call-valued const) should NOT be emitted as a function node")
+		t.Errorf("notAComponent (non-HOC call-valued const) should NOT be emitted as a function node")
+	}
+	if findNode(res.Nodes, NodeFunction, "Config") != nil {
+		t.Errorf("Config (PascalCase but non-HOC call-valued const) should NOT be emitted as a function node")
 	}
 }

@@ -11,8 +11,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	sitter "github.com/smacker/go-tree-sitter"
 
@@ -566,13 +564,13 @@ func (e *jstsBase) parseImportStatement(
 	})
 }
 
-// emitArrowDeclarator emits an arrow/function-expression const node for a
-// single variable_declarator child of a lexical/variable declaration,
-// WITHOUT collecting calls. n is the declaration statement (used for the
-// node's start line). Returns the node ID and the
-// function body (for the caller to walk), or ("", nil) when the
-// declarator isn't a function-like binding. Shared by addLexicalDecl and
-// the query-driven tags path.
+// emitArrowDeclarator emits an arrow/function-expression (or HOC-wrapped
+// call-expression) const node for a single variable_declarator child of a
+// lexical/variable declaration, WITHOUT collecting calls. n is the
+// declaration statement (used for the node's start line). Returns the node
+// ID and the function body (for the caller to walk; nil for the HOC case,
+// which has no body to walk), or ("", nil) when the declarator isn't a
+// function-like binding. Called from the query-driven tags path.
 func (e *jstsBase) emitArrowDeclarator(
 	n, child *sitter.Node, src []byte,
 	filePath, pkg, fileID string,
@@ -590,17 +588,18 @@ func (e *jstsBase) emitArrowDeclarator(
 		return "", nil
 	}
 	// Function-like values become function nodes directly. A call_expression
-	// value is also accepted when the name is PascalCase (React component
-	// convention) — this is the `styled(...)(...)` / `forwardRef(...)` /
-	// `memo(...)` HOC-wrapped component shape: without this, the const is
-	// silently dropped and JSX call-sites referencing it never resolve an
-	// edge (#237). Ordinary (non-PascalCase) call-valued consts are left
-	// alone to avoid mislabeling factory calls as functions.
+	// or tagged_template_expression value is also accepted when it's a call
+	// to a known HOC — `styled(...)(...)`, `styled.div\`...\``,
+	// `forwardRef(...)`, `memo(...)`, `connect(...)(...)`: without this, the
+	// const is silently dropped and JSX call-sites referencing it never
+	// resolve an edge (#237). Gating on the callee identity (not just a
+	// PascalCase name) avoids mislabeling ordinary call-valued consts like
+	// `const Config = loadConfig()` as functions.
 	form := "arrow"
 	switch valueNode.Type() {
 	case "arrow_function", "function", "function_expression":
-	case "call_expression":
-		if !isPascalCase(name) {
+	case "call_expression", "tagged_template_expression":
+		if !isHOCCall(valueNode, src) {
 			return "", nil
 		}
 		form = "hoc"
@@ -638,13 +637,34 @@ func (e *jstsBase) emitArrowDeclarator(
 	return id, valueNode.ChildByFieldName("body")
 }
 
-// isPascalCase reports whether name starts with an uppercase letter — the
-// React component naming convention, used to distinguish HOC-wrapped
-// components (`const Foo = styled(...)(...)`) from ordinary call-valued
-// consts (`const foo = createThing(...)`).
-func isPascalCase(name string) bool {
-	r, _ := utf8.DecodeRuneInString(name)
-	return r != utf8.RuneError && unicode.IsUpper(r)
+// hocCallees are known JS/TS higher-order component wrappers — a call whose
+// callee chain bottoms out at one of these produces a component, not an
+// arbitrary value, so its result is treated as a function node (#237).
+var hocCallees = map[string]bool{
+	"styled": true, "forwardRef": true, "memo": true, "connect": true,
+}
+
+// isHOCCall reports whether n — a call_expression or
+// tagged_template_expression — is a (possibly curried) call to a known HOC:
+// `forwardRef(...)`, `memo(...)`, `styled(Base)(...)`, `styled.div\`...\“,
+// `connect(...)(Component)`. It walks through chained calls
+// (`styled(Base)(...)`) and member access (`styled.div`) to find the base
+// identifier.
+func isHOCCall(n *sitter.Node, src []byte) bool {
+	fn := n.ChildByFieldName("function")
+	for fn != nil {
+		switch fn.Type() {
+		case "identifier":
+			return hocCallees[nodeText(fn, src)]
+		case "member_expression":
+			fn = fn.ChildByFieldName("object")
+		case "call_expression":
+			fn = fn.ChildByFieldName("function")
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // maybeMarkDefaultExport sets symbols[pkg]["default"] to the node ID
