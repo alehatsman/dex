@@ -206,9 +206,6 @@ func (c *heuristicCounter) Count(s string) int {
 	return int(math.Ceil(est))
 }
 
-// New returns a Counter for the default family.
-func New() Counter { return NewFor(DefaultFamily) }
-
 // NewFor returns a Counter for the given family. It uses a real BPE encoder when
 // the embedded ranks load, and a chars/token heuristic otherwise so counting
 // never hard-fails.

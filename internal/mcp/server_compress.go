@@ -69,26 +69,6 @@ const (
 	aggressiveMinBytes = 4096
 )
 
-// CompressMinimal applies the light Minimal tier (#616): drop only provably-
-// redundant noise (git index-hash plumbing, blank runs, non-signal duplicate
-// lines) while preserving every diff/error/count line. Input is expected to be
-// already ANSI-stripped and secret-masked (the shell path passes `clean`); the
-// result is never longer than the input. Returns the text plus line counts.
-func CompressMinimal(output string) (compressed string, originalLines, outputLines int) {
-	if output == "" {
-		return "", 0, 0
-	}
-	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
-	originalLines = len(lines)
-	out := compress.Minimal(lines)
-	// shorter_only guard: Minimal only ever removes lines, but stay explicit so
-	// the metrics never report an expansion.
-	if len(out) >= originalLines {
-		return strings.Join(lines, "\n"), originalLines, originalLines
-	}
-	return strings.Join(out, "\n"), originalLines, len(out)
-}
-
 // CompressText applies command-specific and generic compression patterns to
 // output text. command is a hint (e.g. "go test", "git diff") that selects
 // the pattern set; an empty or unrecognised command falls back to the generic

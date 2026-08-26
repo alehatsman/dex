@@ -27,18 +27,6 @@ func TestPressure(t *testing.T) {
 	}
 }
 
-func TestRemaining(t *testing.T) {
-	l := Ledger{WindowSize: 100, UsedTokens: 60}
-	if l.Remaining() != 40 {
-		t.Fatalf("got %d, want 40", l.Remaining())
-	}
-	// clamped at zero
-	l.UsedTokens = 200
-	if l.Remaining() != 0 {
-		t.Fatalf("got %d, want 0", l.Remaining())
-	}
-}
-
 func TestUtilization(t *testing.T) {
 	l := Ledger{WindowSize: 100, UsedTokens: 75}
 	if got := l.Utilization(); got != 0.75 {

@@ -32,15 +32,6 @@ func (l Ledger) Utilization() float64 {
 	return u
 }
 
-// Remaining returns estimated tokens still available.
-func (l Ledger) Remaining() int {
-	r := l.WindowSize - l.UsedTokens
-	if r < 0 {
-		return 0
-	}
-	return r
-}
-
 // Pressure returns the recommended action based on current utilization.
 func (l Ledger) Pressure() PressureLevel {
 	u := l.Utilization()

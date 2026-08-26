@@ -6,27 +6,6 @@ import (
 	"testing"
 )
 
-func TestLooksLikeJSON(t *testing.T) {
-	cases := []struct {
-		in   string
-		want bool
-	}{
-		{`{"a":1}`, true},
-		{`  [1,2,3]`, true},
-		{"\n\t {\"a\":1}", true},
-		{`"just a string"`, false},
-		{`42`, false},
-		{`hello`, false},
-		{``, false},
-		{"   ", false},
-	}
-	for _, c := range cases {
-		if got := LooksLikeJSON(c.in); got != c.want {
-			t.Errorf("LooksLikeJSON(%q) = %v, want %v", c.in, got, c.want)
-		}
-	}
-}
-
 func TestCompactJSON(t *testing.T) {
 	cases := []struct {
 		name string
@@ -152,27 +131,6 @@ func TestCompactJSONLScalarSafety(t *testing.T) {
 	}
 }
 
-func TestCompactJSONAuto(t *testing.T) {
-	// Line-delimited objects → JSONL path (newlines kept).
-	jsonl := "{ \"a\": 1 }\n{ \"b\": 2 }"
-	got, ok := CompactJSONAuto(jsonl)
-	if !ok || got != "{\"a\":1}\n{\"b\":2}" {
-		t.Errorf("auto(jsonl) = (%q, %v)", got, ok)
-	}
-
-	// Single pretty document → CompactJSON path (newlines dropped).
-	doc := "{\n  \"a\": 1\n}"
-	got2, ok2 := CompactJSONAuto(doc)
-	if !ok2 || got2 != `{"a":1}` {
-		t.Errorf("auto(doc) = (%q, %v)", got2, ok2)
-	}
-
-	// Non-JSON → no change.
-	if got3, ok3 := CompactJSONAuto("plain text\nlog line"); ok3 || got3 != "plain text\nlog line" {
-		t.Errorf("auto(text) = (%q, %v), want unchanged", got3, ok3)
-	}
-}
-
 // TestCompactJSONLeavesNonJSONUntouched covers #669: output that merely starts
 // with '[' or '{' but isn't valid JSON (log lines, etc.) must pass through
 // untouched — stripping its whitespace as if it were JSON structure corrupts it.
@@ -187,11 +145,6 @@ func TestCompactJSONLeavesNonJSONUntouched(t *testing.T) {
 		if got, ok := CompactJSON(in); ok || got != in {
 			t.Errorf("CompactJSON(%q) = (%q, %v); want it left untouched (input, false)", in, got, ok)
 		}
-	}
-	// Multi-line log where every line starts with '[' would take the JSONL path.
-	log := "[INFO] line one here\n[WARN] line two here\n"
-	if got, ok := CompactJSONAuto(log); ok || got != log {
-		t.Errorf("CompactJSONAuto(multiline log) = (%q, %v); want untouched", got, ok)
 	}
 	// Sanity: genuine JSON still compacts.
 	if got, ok := CompactJSON("{ \"a\": 1 }"); !ok || got != `{"a":1}` {

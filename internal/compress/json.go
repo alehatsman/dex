@@ -13,22 +13,6 @@ import (
 // always semantically identical to the input: pure whitespace removal,
 // deterministic, and cache-safe.
 
-// LooksLikeJSON reports whether s's first non-whitespace byte is '{' or '[',
-// the cheap shape test used to gate compaction on JSON-looking output.
-func LooksLikeJSON(s string) bool {
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case ' ', '\t', '\n', '\r':
-			continue
-		case '{', '[':
-			return true
-		default:
-			return false
-		}
-	}
-	return false
-}
-
 // CompactJSON strips insignificant whitespace (space, tab, CR, LF found
 // outside string literals) from a single JSON document, or from a
 // concatenated stream of JSON objects/arrays (e.g. `go list -json ./...`).
@@ -135,39 +119,4 @@ func CompactJSONL(input string) (string, bool) {
 		return out, true
 	}
 	return input, false
-}
-
-// CompactJSONAuto picks the right compactor for JSON-shaped text. Line-
-// delimited JSON (more than one non-empty line, each itself starting with '{'
-// or '[') is compacted with CompactJSONL so record boundaries survive;
-// everything else — a single pretty document or a concatenated object stream —
-// goes through CompactJSON for full whitespace removal. Non-JSON input returns
-// (input, false).
-func CompactJSONAuto(input string) (string, bool) {
-	if !LooksLikeJSON(input) {
-		return input, false
-	}
-	if isJSONLines(input) {
-		return CompactJSONL(input)
-	}
-	return CompactJSON(input)
-}
-
-// isJSONLines reports whether input looks like line-delimited JSON: more than
-// one non-empty line, with every non-empty line beginning with '{' or '['.
-// Pretty-printed single documents fail this test (their interior lines start
-// with '"' or whitespace), so they fall through to CompactJSON.
-func isJSONLines(input string) bool {
-	nonEmpty := 0
-	for _, ln := range strings.Split(input, "\n") {
-		t := strings.TrimSpace(ln)
-		if t == "" {
-			continue
-		}
-		nonEmpty++
-		if t[0] != '{' && t[0] != '[' {
-			return false
-		}
-	}
-	return nonEmpty > 1
 }

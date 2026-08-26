@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -88,24 +87,6 @@ func (hm *Heatmap) Save(cacheDir string) error {
 	return os.Rename(tmp, filepath.Join(cacheDir, heatmapFile))
 }
 
-// TopFiles returns the N most-accessed files, sorted by access count desc.
-func (hm *Heatmap) TopFiles(n int) []*Entry {
-	entries := make([]*Entry, 0, len(hm.entries))
-	for _, e := range hm.entries {
-		entries = append(entries, e)
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].AccessCount != entries[j].AccessCount {
-			return entries[i].AccessCount > entries[j].AccessCount
-		}
-		return entries[i].Path < entries[j].Path
-	})
-	if n > 0 && len(entries) > n {
-		entries = entries[:n]
-	}
-	return entries
-}
-
 // ColdFiles returns files from allFiles that have never been accessed,
 // up to n results. allFiles should be relative paths (matching Entry.Path).
 func (hm *Heatmap) ColdFiles(allFiles []string, n int) []string {
@@ -119,139 +100,4 @@ func (hm *Heatmap) ColdFiles(allFiles []string, n int) []string {
 		}
 	}
 	return cold
-}
-
-// DirSummary returns an aggregated view grouped by top-level directory.
-// Each entry contains the directory prefix, total accesses, and file count.
-type DirSummary struct {
-	Dir        string
-	Accesses   int
-	Files      int
-	TotalSaved int
-}
-
-// DirectorySummary aggregates access counts by the first two path components.
-func (hm *Heatmap) DirectorySummary() []DirSummary {
-	byDir := make(map[string]*DirSummary)
-	for _, e := range hm.entries {
-		dir := dirOf(e.Path)
-		ds, ok := byDir[dir]
-		if !ok {
-			ds = &DirSummary{Dir: dir}
-			byDir[dir] = ds
-		}
-		ds.Accesses += e.AccessCount
-		ds.TotalSaved += e.TotalSaved
-		ds.Files++
-	}
-	result := make([]DirSummary, 0, len(byDir))
-	for _, ds := range byDir {
-		result = append(result, *ds)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Accesses != result[j].Accesses {
-			return result[i].Accesses > result[j].Accesses
-		}
-		return result[i].Dir < result[j].Dir
-	})
-	return result
-}
-
-// Format renders the heatmap summary as a markdown string suitable for
-// returning in an MCP tool response.
-func (hm *Heatmap) Format(topN int) string {
-	if len(hm.entries) == 0 {
-		return "No files accessed yet."
-	}
-	var sb strings.Builder
-
-	dirs := hm.DirectorySummary()
-	top := hm.TopFiles(topN)
-
-	totalAccesses := 0
-	totalSaved := 0
-	for _, e := range hm.entries {
-		totalAccesses += e.AccessCount
-		totalSaved += e.TotalSaved
-	}
-
-	sb.WriteString("## File Access Heatmap\n\n")
-	if totalSaved > 0 {
-		sb.WriteString("| Metric | Value |\n|---|---|\n")
-		sb.WriteString("| Files tracked | " + itoa(len(hm.entries)) + " |\n")
-		sb.WriteString("| Total accesses | " + itoa(totalAccesses) + " |\n")
-		sb.WriteString("| Total tokens saved | " + itoa(totalSaved) + " |\n\n")
-	} else {
-		sb.WriteString("Files tracked: " + itoa(len(hm.entries)) + "  |  Total accesses: " + itoa(totalAccesses) + "\n\n")
-	}
-
-	if len(dirs) > 0 {
-		sb.WriteString("### Hot Directories\n\n")
-		shown := dirs
-		if len(shown) > 10 {
-			shown = shown[:10]
-		}
-		for _, d := range shown {
-			icon := heatIcon(d.Accesses)
-			sb.WriteString(icon + " `" + d.Dir + "` — " + itoa(d.Accesses) + " accesses, " + itoa(d.Files) + " files\n")
-		}
-		sb.WriteByte('\n')
-	}
-
-	if len(top) > 0 {
-		sb.WriteString("### Top Files\n\n")
-		for _, e := range top {
-			icon := heatIcon(e.AccessCount)
-			line := icon + " `" + e.Path + "` — " + itoa(e.AccessCount) + "x"
-			if e.TotalSaved > 0 {
-				line += ", saved ~" + itoa(e.TotalSaved) + " tokens"
-			}
-			sb.WriteString(line + "\n")
-		}
-	}
-
-	return sb.String()
-}
-
-func heatIcon(accesses int) string {
-	switch {
-	case accesses >= 10:
-		return "🔥"
-	case accesses >= 2:
-		return "◎"
-	default:
-		return "○"
-	}
-}
-
-// dirOf returns the directory portion of a relative path, capped at the
-// first two components (e.g. "internal/mcp/server.go" → "internal/mcp/").
-func dirOf(path string) string {
-	parts := strings.SplitN(path, "/", 3)
-	if len(parts) <= 1 {
-		return "./"
-	}
-	return strings.Join(parts[:len(parts)-1], "/") + "/"
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	pos := len(buf)
-	for n > 0 {
-		pos--
-		buf[pos] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		pos--
-		buf[pos] = '-'
-	}
-	return string(buf[pos:])
 }
