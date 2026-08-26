@@ -34,11 +34,12 @@ func ServerInstructions() string {
 
 dex is advisory-only and retrieval-only — a single read verb, query, over the codebase intelligence. Running commands, editing, and verifying are the harness's job; durable findings are the harness's file-based memory, not dex's.
 1. query(input) — START HERE for any coding task or question. Its input SHAPE picks the lane, and the answer's precision tracks the input's: a file path → its compressed signatures (raw bytes: use native Read), a path:line or range → that slice, a /regex/ → grep, a bare symbol ('NewServer', '(*Server).Run') → JUST its call graph, a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Force the lane with kind=… and the facet with want=… (want=assemble for a task-start working set; kind=review for a working-tree review). The envelope's route echoes the shape detected and the road not taken.
-   PIPES: compose lanes in one call with '|' — query("seed | callers|callees|impact | signatures|assemble:N") runs the stages left-to-right in one round-trip (e.g. "(*Server).Run | callers | impact"). One segment = single-lane behavior; route.stages shows what ran; trust = weakest link across stages.
+   SELECTORS: a 'field:pattern' seed enumerates a symbol set from the index — pkg:/func:/type:/file:/kind: (space-separated = AND, glob */?), e.g. "func:*Handler".
+   PIPES: compose lanes in one call with '|' — query("seed | callers|callees|impact | signatures|assemble:N") runs the stages left-to-right in one round-trip (e.g. "pkg:store | callers | impact"). One segment = single-lane; route.stages shows what ran; trust = weakest link.
 2. edit / run / verify — your job (native Edit + Bash), not dex's.
 
 Tool mapping (use this instead of native):
-- query(input)    instead of Grep/rg/Read/manual navigation — one read verb: a path → signatures, a /regex/ → grep, a path:line → slice, a symbol → call graph, prose → routed evidence pack (semantic + symbol + graph). Compose lanes with '|'. Raw file bytes are still the native Read tool's job.
+- query(input)    instead of Grep/rg/Read/manual navigation — one read verb over all shapes above; selectors + '|' pipes compose lanes in one call. Raw file bytes are still the native Read tool's job.
 
 Power lanes (gated behind DEX_EXPERT — query covers everyday work):
 - grep / read — the raw primitives query wraps; reach here for the primitive directly

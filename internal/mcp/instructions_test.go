@@ -70,9 +70,9 @@ func TestServerInstructionsParamNamesMatchSchema(t *testing.T) {
 // instruction block, or a fresh session never learns to compose lanes.
 func TestServerInstructionsTeachExpectedGrammar(t *testing.T) {
 	instr := ServerInstructions()
-	for _, must := range []string{"PIPES", "| callers", "assemble:N"} {
+	for _, must := range []string{"PIPES", "| callers", "assemble:N", "SELECTORS", "func:"} {
 		if !strings.Contains(instr, must) {
-			t.Errorf("ServerInstructions() no longer teaches the pipe grammar: missing %q", must)
+			t.Errorf("ServerInstructions() no longer teaches the expected grammar: missing %q", must)
 		}
 	}
 }

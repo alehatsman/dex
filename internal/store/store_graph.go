@@ -442,6 +442,81 @@ func (s *Store) TopCentralByDir(ctx context.Context, relDir string, k int, expor
 	return scanSymbols(rows)
 }
 
+// SymbolSelector is a conjunctive filter over graph_nodes for the selector-
+// grammar seeds (#210). Empty fields impose no constraint; set fields AND
+// together. Name/Pkg/File are SQL LIKE patterns (build them with GlobToLike);
+// Kinds restricts to a set of node kinds. See docs/design/95i-selector-grammar.md.
+type SymbolSelector struct {
+	Name  string   // LIKE pattern over name (empty = any)
+	Pkg   string   // LIKE pattern over package_path (empty = any)
+	File  string   // LIKE pattern over file_path (empty = any)
+	Kinds []string // kind IN (…) (empty = any)
+}
+
+// GlobToLike converts a shell-style glob (`*` → any run, `?` → one char) to a
+// SQL LIKE pattern, escaping any literal `%`/`_`/`\` first so an identifier that
+// happens to contain them is matched literally. When the glob has no wildcard,
+// substring=true wraps it in `%…%` (ergonomic for long paths); substring=false
+// leaves it anchored (an exact match for short identifiers).
+func GlobToLike(glob string, substring bool) string {
+	hasWildcard := strings.ContainsAny(glob, "*?")
+	like := escapeLike(glob)
+	like = strings.ReplaceAll(like, "*", "%")
+	like = strings.ReplaceAll(like, "?", "_")
+	if !hasWildcard && substring {
+		return "%" + like + "%"
+	}
+	return like
+}
+
+// SelectSymbols returns the graph nodes matching a conjunctive SymbolSelector,
+// ordered by pagerank (most central first) and capped at limit. One indexed
+// query — the selector-grammar seed's engine (#210). Returns nil (not an error)
+// when nothing matches.
+func (s *Store) SelectSymbols(ctx context.Context, sel SymbolSelector, limit int) ([]GraphSymbol, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var conds []string
+	var args []any
+	if sel.Name != "" {
+		conds = append(conds, `name LIKE ? ESCAPE '\'`)
+		args = append(args, sel.Name)
+	}
+	if sel.Pkg != "" {
+		conds = append(conds, `package_path LIKE ? ESCAPE '\'`)
+		args = append(args, sel.Pkg)
+	}
+	if sel.File != "" {
+		conds = append(conds, `file_path LIKE ? ESCAPE '\'`)
+		args = append(args, sel.File)
+	}
+	if len(sel.Kinds) > 0 {
+		ph := make([]string, len(sel.Kinds))
+		for i, k := range sel.Kinds {
+			ph[i] = "?"
+			args = append(args, k)
+		}
+		conds = append(conds, "kind IN ("+strings.Join(ph, ",")+")")
+	}
+	if len(conds) == 0 {
+		// No constraint at all would dump the whole graph — refuse rather than
+		// silently return everything; the caller must set at least one field.
+		return nil, fmt.Errorf("SelectSymbols: at least one filter (name/pkg/file/kind) is required")
+	}
+	q := `SELECT name, qualified_name, kind, file_path, start_line, end_line, pagerank, in_degree
+		FROM graph_nodes
+		WHERE ` + strings.Join(conds, " AND ") + `
+		ORDER BY pagerank DESC, in_degree DESC, name ASC
+		LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanSymbols(rows)
+}
+
 // SymbolsByFile returns all graph nodes whose file_path exactly matches
 // relPath, ordered by start_line. Returns nil (not an error) when no
 // nodes are indexed for that file.

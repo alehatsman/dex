@@ -34,7 +34,7 @@ import (
 // forces the lane and `want` picks the facet, both otherwise inferred from the
 // shape of `input`.
 type QueryInput struct {
-	Input string `json:"input" jsonschema:"what to read. Its SHAPE picks the lane: a file path ('internal/mcp/server.go') → its compressed signatures (for raw bytes use the native Read tool), a location ('server.go:829') or range ('server.go:120-140') → that slice, a regex ('/func .*Verb/') → grep, a bare symbol ('NewServer', '(*Server).Run', 'mcp.NewServer') → its call graph, and a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Output precision tracks input precision. Compose lanes in one call with '|': '<seed> | callers|callees|impact | signatures|assemble:N' runs the stages left-to-right in one round-trip (e.g. '(*Server).Run | callers | impact')."`
+	Input string `json:"input" jsonschema:"what to read. Its SHAPE picks the lane: a file path ('internal/mcp/server.go') → its compressed signatures (for raw bytes use the native Read tool), a location ('server.go:829') or range ('server.go:120-140') → that slice, a regex ('/func .*Verb/') → grep, a bare symbol ('NewServer', '(*Server).Run', 'mcp.NewServer') → its call graph, and a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Output precision tracks input precision. A 'field:pattern' seed selects a symbol set from the index (pkg:/func:/type:/file:/kind:, space-separated = AND, glob */?; e.g. 'func:*Handler'). Compose lanes in one call with '|': '<seed> | callers|callees|impact | signatures|assemble:N' runs the stages left-to-right in one round-trip (e.g. '(*Server).Run | callers | impact', 'pkg:store | callers')."`
 	// Kind forces the lane, bypassing shape detection.
 	Kind string `json:"kind,omitempty" jsonschema:"force the lane instead of inferring it from input shape: read|grep|locate (exact) · symbol|callers|callees|impact|path (graph) · search|editing|assemble|architecture|packages|orient|review (semantic/intent)"`
 	// Want picks the facet within the chosen lane.
@@ -92,6 +92,10 @@ type QueryResult struct {
 	Semantic *SemanticResult `json:"semantic,omitempty"`
 	Orient   *OrientResult   `json:"orient,omitempty"`
 	Review   *ReviewOutput   `json:"review,omitempty"`
+
+	// selector lane (#210): a symbol set enumerated from the index by a
+	// `field:pattern` seed. Refs carries the same symbols for pipe threading.
+	Select *SelectResult `json:"select,omitempty"`
 }
 
 // QueryOutput is the universal envelope for the read verb. Status/Trust/Cost/Next
@@ -198,6 +202,15 @@ func kindToLane(kind string) (laneRoute, bool) {
 // (for the legible route), and the alternative interpretation not taken.
 func classifyQuery(raw, kindOverride string) (lr laneRoute, cleaned, detected string, alt []QueryAlt) {
 	t := strings.TrimSpace(raw)
+
+	// A selector-grammar seed (#210): every whitespace token is `field:pattern`
+	// with a known field. Checked before the path:line / classifyLookTarget
+	// shapes (which also use ':') so `pkg:store` / `func:*Handler` route to the
+	// selector lane rather than being misread as a location. Only when no kind is
+	// forced — an explicit kind wins below.
+	if strings.TrimSpace(kindOverride) == "" && isSelectorQuery(t) {
+		return laneRoute{lane: "select"}, t, "selector", nil
+	}
 
 	// An explicit kind wins outright — but still strip /regex/ delimiters so the
 	// grep pattern is clean, matching lookVerb's behaviour.

@@ -456,7 +456,10 @@ func registerQueryTool(srv *sdk.Server, h toolSurface, td func(string) string) {
 			"'(*Server).Run', 'mcp.NewServer') → JUST its call graph, and a prose question ('how are edits " +
 			"debounced?') → a ranked semantic evidence pack (semantic_hits + symbols + suggested_reads, contents " +
 			"inlined). A named symbol earns a precise (graph) answer, never a fuzzy one — that is the narrow " +
-			"default. Force the lane with `kind` (read|grep|locate|symbol|callers|callees|impact|path|search|" +
+			"default. SELECTORS: a `field:pattern` seed enumerates a symbol set from the index — " +
+			"`pkg:<glob>` `func:<glob>` `type:<glob>` `file:<glob>` `kind:<k>` (space-separated = AND, glob `*`/`?`), " +
+			"e.g. `func:*Handler`, `pkg:store | callers | impact`. " +
+			"Force the lane with `kind` (read|grep|locate|symbol|callers|callees|impact|path|search|" +
 			"editing|assemble|architecture|packages|orient|review) and the facet with `want`. The envelope's " +
 			"`route` echoes the shape it detected and the alternative it did not take; `trust` carries per-result " +
 			"provenance (exact | semantic | name-based); `next` offers the road not taken. Empty input returns the " +
