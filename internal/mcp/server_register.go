@@ -460,7 +460,12 @@ func registerQueryTool(srv *sdk.Server, h toolSurface, td func(string) string) {
 			"editing|assemble|architecture|packages|orient|review) and the facet with `want`. The envelope's " +
 			"`route` echoes the shape it detected and the alternative it did not take; `trust` carries per-result " +
 			"provenance (exact | semantic | name-based); `next` offers the road not taken. Empty input returns the " +
-			"session-start orientation map."),
+			"session-start orientation map. PIPES: compose lanes in one call with `|` — " +
+			"`<seed> | <transform> | <terminal>` run left-to-right for a whole multi-step walk in one round-trip. " +
+			"Transforms: callers|callees|impact (fan out over the prior set, coercing files/grep-hits to their " +
+			"symbols); terminals: signatures (default) | assemble:N (budget-capped). E.g. `(*Server).Run | callers " +
+			"| impact`, `internal/store | callers`. `route.stages` echoes what ran; `trust` is the weakest link " +
+			"across stages. A single segment is exactly the single-lane behavior — pipes are additive."),
 	}, queryHandler(h))
 }
 

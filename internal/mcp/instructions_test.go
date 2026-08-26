@@ -65,6 +65,18 @@ func TestServerInstructionsParamNamesMatchSchema(t *testing.T) {
 	}
 }
 
+// TestServerInstructionsTeachExpectedGrammar locks the in-band teaching the
+// agent relies on: the pipe grammar (#206) must be discoverable from the
+// instruction block, or a fresh session never learns to compose lanes.
+func TestServerInstructionsTeachExpectedGrammar(t *testing.T) {
+	instr := ServerInstructions()
+	for _, must := range []string{"PIPES", "| callers", "assemble:N"} {
+		if !strings.Contains(instr, must) {
+			t.Errorf("ServerInstructions() no longer teaches the pipe grammar: missing %q", must)
+		}
+	}
+}
+
 // TestServerInstructionsMatchRegistry guards ServerInstructions() against
 // tool-name drift: every name it mentions must be advertised by the server,
 // and no removed name may linger.

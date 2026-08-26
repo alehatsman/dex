@@ -175,7 +175,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 const (
 	rulesMarker    = "# dex — semantic search & context routing"
 	rulesEndMarker = "<!-- /dex -->"
-	rulesVersion   = "<!-- dex-rules-v5 -->"
+	rulesVersion   = "<!-- dex-rules-v6 -->"
 )
 
 // rulesContent is a deliberately thin pointer block. dex injects the full,
@@ -184,15 +184,20 @@ const (
 // here only invites the staleness this block used to carry — keep it minimal
 // and let the MCP instructions be the single source of truth.
 const rulesContent = `# dex — semantic search & context routing
-<!-- dex-rules-v5 -->
+<!-- dex-rules-v6 -->
 
-dex is active as an MCP server, exposing two verbs — ` + "`query`" + ` (read) and
-` + "`record`" + ` (write durable findings). Its tool mapping and workflow are
-injected live as MCP server instructions, generated from the installed binary so
-they never drift — prefer those over any static copy of them. Start each session
-by calling ` + "`query()`" + ` with the task description; its input shape picks the
-lane (path → signatures, /regex/ → grep, path:line → slice, symbol → call graph,
-prose → semantic pack). Persist durable findings with ` + "`record()`" + `.
+dex is active as an MCP server, exposing a single read verb — ` + "`query`" + ` — over
+the codebase intelligence (advisory/retrieval-only; editing and durable findings
+are the harness's job). Its tool mapping and workflow are injected live as
+MCP server instructions, generated from the installed binary so they never
+drift — prefer those over any static copy of them. Start each session by calling
+` + "`query()`" + ` with the task description; its input shape picks the lane (path →
+signatures, /regex/ → grep, path:line → slice, symbol → call graph, prose →
+semantic pack).
+Compose lanes in ONE call with ` + "`|`" + `: ` + "`<seed> | callers|callees|impact | signatures|assemble:N`" + `
+runs the stages left-to-right for a whole multi-step walk in one round-trip
+(e.g. ` + "`query(\"(*Server).Run | callers | impact\")`" + `). A single segment is
+exactly today's single-lane behavior — pipes are additive.
 Working in a git worktree? Pass its absolute path as ` + "`project_root`" + ` to every
 dex call — the server can't see your shell's cwd and otherwise resolves the
 checkout it was started in.

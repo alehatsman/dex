@@ -34,7 +34,7 @@ import (
 // forces the lane and `want` picks the facet, both otherwise inferred from the
 // shape of `input`.
 type QueryInput struct {
-	Input string `json:"input" jsonschema:"what to read. Its SHAPE picks the lane: a file path ('internal/mcp/server.go') → its compressed signatures (for raw bytes use the native Read tool), a location ('server.go:829') or range ('server.go:120-140') → that slice, a regex ('/func .*Verb/') → grep, a bare symbol ('NewServer', '(*Server).Run', 'mcp.NewServer') → its call graph, and a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Output precision tracks input precision."`
+	Input string `json:"input" jsonschema:"what to read. Its SHAPE picks the lane: a file path ('internal/mcp/server.go') → its compressed signatures (for raw bytes use the native Read tool), a location ('server.go:829') or range ('server.go:120-140') → that slice, a regex ('/func .*Verb/') → grep, a bare symbol ('NewServer', '(*Server).Run', 'mcp.NewServer') → its call graph, and a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Output precision tracks input precision. Compose lanes in one call with '|': '<seed> | callers|callees|impact | signatures|assemble:N' runs the stages left-to-right in one round-trip (e.g. '(*Server).Run | callers | impact')."`
 	// Kind forces the lane, bypassing shape detection.
 	Kind string `json:"kind,omitempty" jsonschema:"force the lane instead of inferring it from input shape: read|grep|locate (exact) · symbol|callers|callees|impact|path (graph) · search|editing|assemble|architecture|packages|orient|review (semantic/intent)"`
 	// Want picks the facet within the chosen lane.
