@@ -33,3 +33,48 @@ func TestFormatRole(t *testing.T) {
 		})
 	}
 }
+
+func TestGraphAgreement(t *testing.T) {
+	cases := []struct {
+		role string
+		want int
+	}{
+		{"", 1},
+		{"leaf", 1},
+		{"exported-unused", 1},
+		{"bridge:15%", 2},
+		{"central:12", 3},
+		{"central:5/2pkg", 3},
+	}
+	for _, tc := range cases {
+		if got := graphAgreement(tc.role); got != tc.want {
+			t.Errorf("graphAgreement(%q) = %d, want %d", tc.role, got, tc.want)
+		}
+	}
+}
+
+// TestReweightedPageRankPromotesCentralPeerOnMiss locks #220: extends the
+// #731/#783 live feedback reweight to graph-lane (callers/callees) ordering.
+// A central peer (multiple independent signals already agree it matters)
+// should be promoted above a higher-raw-PageRank but unremarkable peer once
+// the intent's open-rate signal shows a total miss at high confidence — the
+// same shape as TestShadowReorderPrefersCrossLaneAgreementOnMiss for semantic
+// hits, but for graph nodes via graphAgreement in place of lane count.
+func TestReweightedPageRankPromotesCentralPeerOnMiss(t *testing.T) {
+	const openRate, n = 0.0, 1000 // total miss, high confidence
+	plain := reweightedPageRank(1.00, "", openRate, n)
+	central := reweightedPageRank(0.95, "central:12", openRate, n)
+	if central <= plain {
+		t.Errorf("central peer (%.4f) should be promoted above plain peer (%.4f) on total miss", central, plain)
+	}
+}
+
+// TestReweightedPageRankNoSignalIsIdentity locks the off/no-data path: with
+// no open-rate signal (n=0 — live reweight off or an intent with no history
+// yet), reweightedPageRank must reduce to the raw PageRank unchanged.
+func TestReweightedPageRankNoSignalIsIdentity(t *testing.T) {
+	got := reweightedPageRank(0.42, "central:12", 0.0, 0)
+	if got != 0.42 {
+		t.Errorf("reweightedPageRank with n=0 = %v, want identity 0.42", got)
+	}
+}

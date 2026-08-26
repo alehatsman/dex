@@ -225,17 +225,27 @@ func (s *Server) callEdges(ctx context.Context, in CallEdgeInput, callers bool) 
 	// re-resolve per hit. PageRank dominates; in_degree breaks ties
 	// for peers that didn't pick up rank (e.g. callees with no
 	// incoming edges in the indexed slice).
+	//
+	// #220: PageRank is also scaled by the live feedback multiplier before
+	// comparison, extending the semantic-lane reweight (#731/#783) to graph
+	// lanes. Graph hits have no per-hit lane count to feed
+	// feedback.ShadowMultiplier, so a hit's centrality tier (graphAgreement)
+	// stands in — see graphAgreement's doc for the reasoning. openRate/n are
+	// resolved once per call (not per hit) since the intent is fixed for the
+	// whole result set.
+	intent := "callees"
+	if callers {
+		intent = "callers"
+	}
+	openRate, n := s.graphIntentSignal(intent)
 	peerCentrality := func(h CallSite) (float64, int) {
 		// Resolve peer node by qualified name + package — the same key
 		// we used when populating the hit.
-		for _, n := range view.NodesByQualified[h.QualifiedName] {
-			if n.PackagePath == h.Package {
-				return n.PageRank, n.InDegree
-			}
-		}
-		for _, n := range view.NodesByName[h.QualifiedName] {
-			if n.PackagePath == h.Package {
-				return n.PageRank, n.InDegree
+		for _, cands := range [][]graphquery.Node{view.NodesByQualified[h.QualifiedName], view.NodesByName[h.QualifiedName]} {
+			for _, cn := range cands {
+				if cn.PackagePath == h.Package {
+					return reweightedPageRank(cn.PageRank, h.Role, openRate, n), cn.InDegree
+				}
 			}
 		}
 		return 0, 0

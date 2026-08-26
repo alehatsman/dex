@@ -16,12 +16,14 @@ import (
 //
 // Two gates:
 //   - DEX_FEEDBACK_SHADOW=1: log static-vs-reweighted ranking per ask (A/B).
-//   - DEX_FEEDBACK_LIVE=1:   actually serve the reweighted hits (#783, data
-//     gate cleared 2026-06-27: nDCG non-regression confirmed, shadow WIN-CANDIDATE).
+//   - DEX_FEEDBACK_LIVE:     serves the reweighted hits. Default ON (#220 —
+//     the #783 data gate cleared 2026-06-27: nDCG non-regression confirmed,
+//     shadow WIN-CANDIDATE; opt-in via env had left most sessions with zero
+//     benefit from data dex was already collecting). Set to "0" to opt out.
 //
 // Both are zero-cost no-ops when off. Shadow logging continues in live mode so
 // dex feedback --shadow keeps tracking static-vs-reweighted as a regression
-// check after the flip.
+// check.
 type feedbackState struct {
 	fbOnce     sync.Once
 	fbThrottle *feedback.Throttle
@@ -31,8 +33,9 @@ type feedbackState struct {
 // shadowEnabled reports whether shadow-mode A/B logging is on.
 func shadowEnabled() bool { return os.Getenv("DEX_FEEDBACK_SHADOW") == "1" }
 
-// liveEnabled reports whether the lane-agreement reweight is served to callers.
-func liveEnabled() bool { return os.Getenv("DEX_FEEDBACK_LIVE") == "1" }
+// liveEnabled reports whether the lane-agreement reweight is served to
+// callers. Default ON (#220) — set DEX_FEEDBACK_LIVE=0 to opt out.
+func liveEnabled() bool { return os.Getenv("DEX_FEEDBACK_LIVE") != "0" }
 
 // feedbackThrottle lazily builds the live reader (and shadow logger when shadow
 // is on) on first use when either shadow or live mode is active. Returns
@@ -107,6 +110,24 @@ func (s *Server) applyLiveReweight(intent string, hits []SemHit) []SemHit {
 	}
 	openRate, n := th.IntentSignal(intent)
 	return shadowReorder(hits, openRate, n)
+}
+
+// graphIntentSignal returns the live open-rate signal for a graph-lane intent
+// ("callers" / "callees" / "impact") — the same per-intent signal
+// applyLiveReweight uses for semantic hits, extended to graph lanes (#220).
+// Returns (0, 0) when live reweight is off or the throttle can't be built;
+// feedback.ShadowMultiplier(0, 0, ...) degrades to the identity multiplier
+// (1.0), so callers can invoke this unconditionally without a separate
+// liveEnabled() branch.
+func (s *Server) graphIntentSignal(intent string) (openRate float64, n int) {
+	if !liveEnabled() {
+		return 0, 0
+	}
+	th, _ := s.feedbackThrottle()
+	if th == nil {
+		return 0, 0
+	}
+	return th.IntentSignal(intent)
 }
 
 // shadowReorder re-scores each hit by its served score times the bounded

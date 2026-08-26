@@ -38,8 +38,10 @@ func TestShadowReorderNoSignalIsIdentity(t *testing.T) {
 }
 
 func TestRecordShadowOffByDefault(t *testing.T) {
+	// Both gates explicitly off: DEX_FEEDBACK_LIVE=0 opts out of the #220
+	// default-on live reweight; DEX_FEEDBACK_SHADOW unset keeps A/B logging off.
 	t.Setenv("DEX_FEEDBACK_SHADOW", "")
-	t.Setenv("DEX_FEEDBACK_LIVE", "")
+	t.Setenv("DEX_FEEDBACK_LIVE", "0")
 	s := &Server{}
 	// Must not panic, must not write anything — shadow disabled.
 	s.recordShadow("behavior_search", "where is X", []SemHit{
@@ -47,7 +49,25 @@ func TestRecordShadowOffByDefault(t *testing.T) {
 		{Path: "b.go", Score: 0.5, Lanes: []string{"bm25"}},
 	})
 	if th, lg := s.feedbackThrottle(); th != nil || lg != nil {
-		t.Error("feedbackThrottle should be nil when shadow mode is off")
+		t.Error("feedbackThrottle should be nil when both shadow and live are off")
+	}
+}
+
+// TestFeedbackThrottleBuildsByDefault locks #220: DEX_FEEDBACK_LIVE defaults
+// on, so the live reader builds even with shadow logging (and no LIVE env)
+// left unset — only the shadow logger stays nil until DEX_FEEDBACK_SHADOW=1.
+func TestFeedbackThrottleBuildsByDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("DEX_FEEDBACK_SHADOW", "")
+	t.Setenv("DEX_FEEDBACK_LIVE", "")
+	s := &Server{}
+	th, lg := s.feedbackThrottle()
+	if th == nil {
+		t.Error("feedbackThrottle should build the live reader by default (#220)")
+	}
+	if lg != nil {
+		t.Error("shadow logger should stay nil until DEX_FEEDBACK_SHADOW=1")
 	}
 }
 
@@ -103,7 +123,8 @@ func TestRecordShadowWritesWhenEnabled(t *testing.T) {
 }
 
 func TestApplyLiveReweightIsIdentityWhenOff(t *testing.T) {
-	t.Setenv("DEX_FEEDBACK_LIVE", "")
+	// #220: DEX_FEEDBACK_LIVE defaults on, so "off" now means explicit "0".
+	t.Setenv("DEX_FEEDBACK_LIVE", "0")
 	s := &Server{}
 	hits := []SemHit{
 		{Path: "a.go", Score: 1.0, Lanes: []string{"vector", "bm25"}},
@@ -112,6 +133,43 @@ func TestApplyLiveReweightIsIdentityWhenOff(t *testing.T) {
 	got := s.applyLiveReweight("behavior_search", hits)
 	if got[0].Path != "a.go" || got[1].Path != "b.go" {
 		t.Errorf("live-off should preserve order, got %s,%s", got[0].Path, got[1].Path)
+	}
+}
+
+// TestApplyLiveReweightDefaultsOn locks #220: with DEX_FEEDBACK_LIVE unset
+// (not explicitly "0"), the reweight is served — same reorder behavior as
+// TestApplyLiveReweightReordersWithSignal, but without setting the env var.
+func TestApplyLiveReweightDefaultsOn(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("DEX_FEEDBACK_LIVE", "")
+	t.Setenv("DEX_FEEDBACK_SHADOW", "")
+
+	logDir := filepath.Join(dir, "dex")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(filepath.Join(logDir, "hooks.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := []byte(`{"tool_name":"mcp__dex__ask","intent":"behavior_search","paths":["x.go"]}` + "\n")
+	for i := 0; i < 100; i++ {
+		if _, err := f.Write(line); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	s := &Server{}
+	hits := []SemHit{
+		{Path: "single.go", Score: 1.00, Lanes: []string{"vector"}},
+		{Path: "agree.go", Score: 0.95, Lanes: []string{"vector", "bm25"}},
+	}
+	got := s.applyLiveReweight("behavior_search", hits)
+	if got[0].Path != "agree.go" {
+		t.Errorf("default-on live reweight should promote cross-lane hit, got %s first", got[0].Path)
 	}
 }
 

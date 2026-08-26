@@ -2,7 +2,10 @@ package mcp
 
 import (
 	"fmt"
+	"strings"
 	"unicode"
+
+	"github.com/alehatsman/dex/internal/feedback"
 )
 
 // formatRole composes the compact role tag attached to symbol-shaped
@@ -68,4 +71,34 @@ func isExported(name string) bool {
 		return unicode.IsUpper(r)
 	}
 	return false
+}
+
+// graphAgreement maps a formatRole tag to an agreement tier for the live
+// feedback reweight (#220). Semantic hits carry a lane count (how many
+// independent search lanes — vector/bm25/graph — surfaced the same hit) that
+// feeds feedback.ShadowMultiplier; graph-lane hits (callers/callees) have no
+// such per-hit signal, since they're single-sourced from the call graph. A
+// node's centrality tier is the natural analogue: "central" means multiple
+// independent signals (high in-degree, or callers spanning package
+// boundaries) already agree the node matters, the same way multiple lanes
+// agreeing does for a semantic hit. "bridge" is a weaker single-signal case.
+// Anything else gets tier 1 — no boost, matching a single-lane semantic hit.
+func graphAgreement(role string) int {
+	switch {
+	case strings.HasPrefix(role, "central"):
+		return 3
+	case strings.HasPrefix(role, "bridge"):
+		return 2
+	default:
+		return 1
+	}
+}
+
+// reweightedPageRank scales a peer's PageRank by the live feedback multiplier
+// (#220), analogous to shadowReorder's per-hit rescoring for semantic hits.
+// openRate/n ==(0, 0) (live reweight off, or no signal yet for this intent)
+// degrades feedback.ShadowMultiplier to 1.0 — an identity scale, so callers
+// don't need a separate off-path branch.
+func reweightedPageRank(pageRank float64, role string, openRate float64, n int) float64 {
+	return pageRank * feedback.ShadowMultiplier(openRate, n, graphAgreement(role))
 }
