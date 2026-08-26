@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	sitter "github.com/smacker/go-tree-sitter"
 
@@ -587,9 +589,21 @@ func (e *jstsBase) emitArrowDeclarator(
 	if name == "" {
 		return "", nil
 	}
-	// Only function-like values become function nodes.
+	// Function-like values become function nodes directly. A call_expression
+	// value is also accepted when the name is PascalCase (React component
+	// convention) — this is the `styled(...)(...)` / `forwardRef(...)` /
+	// `memo(...)` HOC-wrapped component shape: without this, the const is
+	// silently dropped and JSX call-sites referencing it never resolve an
+	// edge (#237). Ordinary (non-PascalCase) call-valued consts are left
+	// alone to avoid mislabeling factory calls as functions.
+	form := "arrow"
 	switch valueNode.Type() {
 	case "arrow_function", "function", "function_expression":
+	case "call_expression":
+		if !isPascalCase(name) {
+			return "", nil
+		}
+		form = "hoc"
 	default:
 		return "", nil
 	}
@@ -607,7 +621,7 @@ func (e *jstsBase) emitArrowDeclarator(
 		EndLine:       endLine,
 		StartByte:     int(n.StartByte()),
 		EndByte:       int(n.EndByte()),
-		Metadata:      map[string]any{"language": e.lang, "form": "arrow"},
+		Metadata:      map[string]any{"language": e.lang, "form": form},
 	}) {
 		e.symbols[pkg] = ensureMap(e.symbols[pkg])
 		e.symbols[pkg][name] = id
@@ -622,6 +636,15 @@ func (e *jstsBase) emitArrowDeclarator(
 		EndLine:   endLine,
 	})
 	return id, valueNode.ChildByFieldName("body")
+}
+
+// isPascalCase reports whether name starts with an uppercase letter — the
+// React component naming convention, used to distinguish HOC-wrapped
+// components (`const Foo = styled(...)(...)`) from ordinary call-valued
+// consts (`const foo = createThing(...)`).
+func isPascalCase(name string) bool {
+	r, _ := utf8.DecodeRuneInString(name)
+	return r != utf8.RuneError && unicode.IsUpper(r)
 }
 
 // maybeMarkDefaultExport sets symbols[pkg]["default"] to the node ID

@@ -18,6 +18,7 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/scala"
 	"github.com/smacker/go-tree-sitter/swift"
+	"github.com/smacker/go-tree-sitter/typescript/tsx"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
@@ -38,7 +39,10 @@ var languages = map[string]langConfig{
 	".js":  {javascript.GetLanguage(), jsKinds()},
 	".jsx": {javascript.GetLanguage(), jsKinds()},
 	".ts":  {typescript.GetLanguage(), tsKinds()},
-	".tsx": {typescript.GetLanguage(), tsKinds()},
+	// .tsx uses the TSX grammar, not plain TypeScript — the plain grammar
+	// mislexes JSX (`<div>` parses as a type-assertion expression), silently
+	// dropping JSX-bodied chunk roots (#236, adjacent to the graph fix #232).
+	".tsx": {tsx.GetLanguage(), tsKinds()},
 	".rs": {rust.GetLanguage(), set(
 		"function_item", "struct_item", "enum_item", "impl_item",
 		"trait_item", "mod_item",

@@ -52,6 +52,33 @@ var TrailingVar = 42
 	}
 }
 
+// TestTSXChunkCapturesJSXComponent locks #236: .tsx must chunk with the TSX
+// grammar, not plain TypeScript — the plain grammar mislexes `<div>` as a
+// type-assertion expression, turning the arrow function's JSX-bodied value
+// into something the lexical_declaration chunk kind never surfaces as a
+// structural chunk (silently falls back to an orphan window instead).
+func TestTSXChunkCapturesJSXComponent(t *testing.T) {
+	src := []byte(`import { ReactNode } from 'react';
+
+export const Greeting = (props: { name: string }): ReactNode => {
+  return <div className="greeting"><span>{props.name}</span></div>;
+};
+`)
+	chunks, err := Chunks(context.Background(), "Greeting.tsx", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawComponent bool
+	for _, c := range chunks {
+		if c.Kind == "export_statement" && strings.Contains(c.Content, "Greeting") && strings.Contains(c.Content, "<div") {
+			sawComponent = true
+		}
+	}
+	if !sawComponent {
+		t.Errorf("expected a structural chunk containing the JSX-bodied Greeting component with its <div> body intact; chunks=%+v", chunks)
+	}
+}
+
 func TestLongLineFallsBackToByteWindows(t *testing.T) {
 	// A single line longer than MaxBytes. Without byte-window fallback,
 	// halveAndChunk returned nil and the file produced zero chunks.

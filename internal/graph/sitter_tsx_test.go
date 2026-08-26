@@ -62,3 +62,46 @@ func TestTSTypeAliasIndexed(t *testing.T) {
 		t.Errorf("UserID type alias not emitted as a NodeType; type nodes=%v", nodesOfKind(res.Nodes, NodeType))
 	}
 }
+
+// TestHOCComponentEmitted locks #237: a top-level const whose value is a
+// call_expression (styled(...)(...), forwardRef(...), memo(...)) is a common
+// React HOC-wrapped component shape. emitArrowDeclarator only recognized
+// arrow_function/function/function_expression values, so these were silently
+// dropped — no graph node, so JSX call-sites referencing them never resolved
+// an edge. PascalCase naming (the React component convention) gates the
+// call_expression case to avoid mislabeling ordinary factory-call consts.
+func TestHOCComponentEmitted(t *testing.T) {
+	dir := t.TempDir()
+	writeIndexAll(t, dir)
+	src := `import { forwardRef } from 'react';
+import { styled } from '@mui/material';
+
+export const FlexSpacer = styled('span')({ flexGrow: 1 });
+
+export const Widget = forwardRef((props, ref) => {
+  return <div ref={ref} />;
+});
+
+const notAComponent = createThing();
+`
+	if err := os.WriteFile(filepath.Join(dir, "Components.tsx"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := NewRegistry()
+	reg.Register(newTSXTagsExtractor)
+	res, err := ExtractSitterWith(context.Background(), dir, reg)
+	if err != nil {
+		t.Fatalf("ExtractSitterWith: %v", err)
+	}
+
+	if findNode(res.Nodes, NodeFunction, "FlexSpacer") == nil {
+		t.Errorf("FlexSpacer (styled HOC) not emitted as a function node; nodes=%v", nodesOfKind(res.Nodes, NodeFunction))
+	}
+	if findNode(res.Nodes, NodeFunction, "Widget") == nil {
+		t.Errorf("Widget (forwardRef HOC) not emitted as a function node; nodes=%v", nodesOfKind(res.Nodes, NodeFunction))
+	}
+	if findNode(res.Nodes, NodeFunction, "notAComponent") != nil {
+		t.Errorf("notAComponent (non-PascalCase call-valued const) should NOT be emitted as a function node")
+	}
+}
