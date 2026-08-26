@@ -48,7 +48,10 @@ modules:
       # check itself. dex is single-main, so pin deadcode's entry to ./cmd/dex
       # (the shared default ./... would over-report unreachable funcs from
       # unimported internal packages, diverging from our frozen baseline).
-      # Reaches goq/ci + goq/structure-ratchet; every other export ignores it.
+      # As of go-quality@v0.3.3 findings.yml also declares deadcode_pkg, so this
+      # reaches goq/ci + goq/structure-ratchet + goq/findings — the aggregated
+      # .gate/findings.jsonl deadcode pass now matches the gate entry point
+      # instead of scanning ./... (closed #200: was 37 phantom error findings).
       deadcode_pkg: "./cmd/dex"
 
 tasks:
