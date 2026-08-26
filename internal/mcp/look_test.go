@@ -48,6 +48,12 @@ func TestClassifyLookTarget(t *testing.T) {
 
 		// whitespace is trimmed before classification.
 		{"  NewServer  ", "trace", "NewServer"},
+
+		// prose containing a slash must not be misread as a literal path (#229):
+		// a path argument is always a single token, so multi-word input falls
+		// through to trace/prose even when it mentions a slash-separated term.
+		{"how does since:/diff: resolve a ref into changed symbols", "trace", "how does since:/diff: resolve a ref into changed symbols"},
+		{"where do we handle a/b type conflicts", "trace", "where do we handle a/b type conflicts"},
 	}
 	for _, c := range cases {
 		t.Run(c.target, func(t *testing.T) {

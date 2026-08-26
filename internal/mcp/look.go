@@ -128,6 +128,14 @@ func looksLikePath(t string) bool {
 	if t == "" {
 		return false
 	}
+	// A path argument is always a single token. Multi-word input is prose even
+	// when it mentions a slash or a path-like fragment ("how does since:/diff:
+	// resolve a ref") — without this guard the slash short-circuit below
+	// misroutes prose questions to the read lane as a literal, whole-sentence
+	// "file path" (#229).
+	if strings.ContainsAny(t, " \t\n") {
+		return false
+	}
 	if strings.ContainsAny(t, "/\\") {
 		return true
 	}

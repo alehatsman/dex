@@ -30,6 +30,9 @@ func TestClassifyQuery(t *testing.T) {
 		{"where question", "where do we validate the token", "", "semantic", "prose"},
 		{"architecture question", "how does indexing work", "", "semantic", "prose"},
 		{"two words no q", "token validation", "", "semantic", "prose"},
+		// #229: prose mentioning a slash-separated term must still route to
+		// semantic, not be misread as a literal (whole-sentence) file path.
+		{"prose with slash", "how does since:/diff: resolve a ref into changed symbols", "", "semantic", "prose"},
 
 		// kind overrides win outright and are marked forced.
 		{"force search on a symbol-shaped input", "flush", "search", "semantic", "forced"},
