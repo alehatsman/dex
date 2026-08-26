@@ -12,28 +12,29 @@ import (
 // instructionTools are the tool names ServerInstructions() steers agents
 // toward. Each must be a really-registered tool, or the instruction block
 // sends agents chasing names that don't exist (the #325 drift).
-// Everyday tools only — query (read) · record (write) after the #196 two-read-
-// verb fold (ask+look → query) and the #197 advisory-only cut (act/shell/verify/
-// checkpoint removed). Power lanes (notes, grep, read, review_diff, search,
-// trace, locate, smells, …) are mentioned in the instructions but gated behind
-// DEX_EXPERT, so they are not required on the default surface — not listed here.
+// Everyday tools only — query (read), the single-verb surface after the #196
+// two-read-verb fold (ask+look → query), the #197 advisory-only cut (act/shell/
+// verify/checkpoint removed), and the #205 record cut (dex is retrieval, not
+// agent memory). Power lanes (grep, read, review_diff, search, trace, locate,
+// smells, …) are mentioned in the instructions but gated behind DEX_EXPERT, so
+// they are not required on the default surface — not listed here.
 var instructionTools = []string{
-	"query", "record",
+	"query",
 }
 
-// deadToolNames are pre-rename names that must never reappear in the
+// deadToolNames are pre-rename / removed names that must never reappear in the
 // instructions. They were the bug: ServerInstructions advertised them
 // while the registry used the short names above.
 var deadToolNames = []string{
 	"search_semantic", "search_symbol", "ctx_shell", "file_view",
 	"graph_callers", "graph_callees", "graph_deps", "graph_neighbors",
+	"record", // #205: record verb + L3 knowledge subsystem removed
 }
 
 // goodParamSignatures are the tool mnemonics whose param names match the real
 // input schema. Each MUST appear verbatim in ServerInstructions().
 var goodParamSignatures = []string{
 	"query(input)", // QueryInput: input field (merges ask+look, #196)
-	"record(fact)", // RecordInput: fact field
 }
 
 // staleParamSignatures are the pre-#525 param drifts: prose that named params

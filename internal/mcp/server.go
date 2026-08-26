@@ -32,20 +32,19 @@ import (
 func ServerInstructions() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
-dex is advisory-only — exactly two effects: query (read the intelligence) · record (write a durable finding). Running commands, editing, and verifying are the harness's job.
+dex is advisory-only and retrieval-only — a single read verb, query, over the codebase intelligence. Running commands, editing, and verifying are the harness's job; durable findings are the harness's file-based memory, not dex's.
 1. query(input) — START HERE for any coding task or question. Its input SHAPE picks the lane, and the answer's precision tracks the input's: a file path → its compressed signatures (raw bytes: use native Read), a path:line or range → that slice, a /regex/ → grep, a bare symbol ('NewServer', '(*Server).Run') → JUST its call graph, a prose question ('how are edits debounced?') → a ranked semantic evidence pack. Force the lane with kind=… and the facet with want=… (want=assemble for a task-start working set; kind=review for a working-tree review). The envelope's route echoes the shape detected and the road not taken.
 2. edit / run / verify — your job (native Edit + Bash), not dex's.
 
-Tool mapping (use these instead of native):
+Tool mapping (use this instead of native):
 - query(input)    instead of Grep/rg/Read/manual navigation — one read verb: a path → signatures, a /regex/ → grep, a path:line → slice, a symbol → call graph, prose → routed evidence pack (semantic + symbol + graph). Raw file bytes are still the native Read tool's job.
-- record(fact)  instead of re-deriving facts — write a durable finding, recall with query=…, or correct a stale one with fact + supersedes=<id>
 
-Power lanes (gated behind DEX_EXPERT — the two verbs above cover everyday work):
+Power lanes (gated behind DEX_EXPERT — query covers everyday work):
 - grep / read — the raw primitives query wraps; reach here for the primitive directly
 - review_diff — targeted PR/branch/ref review (query kind=review covers the working tree)
 - trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
 
-IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query,mcp__dex__record" before first use.`
+IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query" before first use.`
 }
 
 // AutoWatchConfig configures the MCP server's lazy per-project watcher.

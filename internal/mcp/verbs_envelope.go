@@ -121,8 +121,6 @@ func withCost(c *EnvCost, tokensReturned, budgetLeft int) *EnvCost {
 
 func (o *ContextOutput) stampCost(t, left int) { o.Cost = withCost(o.Cost, t, left) }
 func (o *LookOutput) stampCost(t, left int)    { o.Cost = withCost(o.Cost, t, left) }
-func (o *RecordOutput) stampCost(t, left int)  { o.Cost = withCost(o.Cost, t, left) }
 
 func (in ContextInput) budgetTokens() int { return in.Budget }
 func (in LookInput) budgetTokens() int    { return in.Budget }
-func (in RecordInput) budgetTokens() int  { return in.Budget }

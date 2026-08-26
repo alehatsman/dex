@@ -91,50 +91,24 @@ func addTool[In, Out any](srv *sdk.Server, t *sdk.Tool, h sdk.ToolHandlerFor[In,
 // Named profiles, not a boolean matrix (#110 step 8, spec: tool-surface.md).
 // The deployment shape is one of three profiles — full (embedder+chat),
 // bm25-only (no embedder), lean (weak local model) — but the VERB SET is
-// constant across all three: query · record. A profile changes only query's
-// internal capability (synthesis → lexical → hits-only, degraded at call
-// time from embed/chat), never which tools an agent sees. record registers even
-// for a weak local model: a weaker model forgets more, so durable memory helps it
-// most. DEX_EXPERT is an additive power-lane overlay, orthogonal to the profile —
-// never a different shape of the everyday surface.
+// constant across all three: a single read verb, query. A profile changes only
+// query's internal capability (synthesis → lexical → hits-only, degraded at call
+// time from embed/chat), never which tools an agent sees. DEX_EXPERT is an
+// additive power-lane overlay, orthogonal to the profile — never a different
+// shape of the everyday surface.
 func registerTools(srv *sdk.Server, h toolSurface, embedAvailable bool, descMode DescriptionMode) {
 	td := func(s string) string { return compressToolDesc(s, descMode) }
 
-	// The two-verb surface (#197, epic #195): query (read the intelligence) +
-	// record (write a durable finding). dex is advisory-only — running commands
-	// is the harness's job, so act/shell/verify/checkpoint are gone.
-	registerQueryTool(srv, h, td)                     // query — the single read verb (merges ask + look)
-	registerEverydayTools(srv, h, td, embedAvailable) // record (durable memory)
+	// The single-verb surface (#205, supersedes the two-verb pivot #197): query
+	// (read the codebase intelligence). dex is retrieval, not agent memory —
+	// durable findings are the harness's job (file-based memory), so the `record`
+	// write verb and the whole L3 knowledge subsystem are gone.
+	registerQueryTool(srv, h, td) // query — the single read verb (merges ask + look)
 
 	// DEX_EXPERT overlays the granular power lanes additively, in any profile.
 	if expertEnabled() {
 		registerExpertTools(srv, h, td, embedAvailable)
 	}
-}
-
-// registerEverydayTools wires the write verb of the two-verb surface: record
-// (durable memory). Read moves live in query (path/regex/symbol/prose → the one
-// classifier); record absorbed notes' everyday moves (#147: write/recall/
-// supersede), leaving notes' admin/relate tail on the CLI (`dex notes`).
-func registerEverydayTools(srv *sdk.Server, h toolSurface, td func(string) string, embedAvailable bool) {
-	_ = embedAvailable // no everyday tool is embed-gated after the 5c/5d collapse
-
-	// record — the durable-memory verb (#195, renamed from remember to avoid the
-	// cognition metaphor). An envelope facade over the knowledge engine covering
-	// the memory hot path: `fact` writes, `query` recalls, `supersedes` upserts
-	// (#147). Same store and salience as the CLI `dex notes` admin surface, which
-	// retains the admin/relate tail. No embedder needed.
-	addTool(srv, &sdk.Tool{
-		Name: "record",
-		Description: td("Durable project memory across session resets, inside the universal envelope " +
-			"{result, trust, next}. Three moves: pass `fact` to persist a durable fact (write — lead a " +
-			"review finding or gotcha with a bracketed [kind]; use `scope` to bind it to a file glob so it " +
-			"surfaces on touch, #645), pass `query` to recall the facts most relevant to a task (read — " +
-			"empty query returns top facts by salience), or pass `fact` with `supersedes=<id>` to correct a " +
-			"stale fact in one step (upsert — the id comes from a recall or a near-duplicate warning, #606). " +
-			"The admin/relate lanes (delete, gc, export, import, consolidate, pin, relate, review) live on the " +
-			"CLI (`dex notes`)."),
-	}, recordHandler(h))
 }
 
 // registerExpertTools wires the power lanes behind DEX_EXPERT (#125):

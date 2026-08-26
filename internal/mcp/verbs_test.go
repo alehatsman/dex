@@ -17,8 +17,9 @@ var powerTools = []string{
 	// query routes /regex/→grep and path→read; kind=review covers worktree review.
 	"grep", "read", "review_diff",
 	// notes' admin surface + the session tool were removed from the MCP surface in
-	// #195 S4: record covers the write/recall/supersede hot path, notes' admin tail
-	// is CLI-only (`dex notes`), and session dedup stays internal (not a verb).
+	// #195 S4; the write verb `record` and the whole L3 knowledge subsystem followed
+	// in #205 — dex is retrieval over the codebase, not agent memory (durable
+	// findings are the harness's file-based memory). Session dedup stays internal.
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;
@@ -26,12 +27,11 @@ var powerTools = []string{
 // them regardless of DEX_EXPERT. After the 5c collapse (#145, raw primitives →
 // expert), the 5d fold (#147, notes' admin tail → expert), the #196 two-read-verb
 // merge (ask+look → query), the #197 advisory-only cut (act/shell/verify/
-// checkpoint removed), and the #198 S4 rename (remember → record), the default
-// surface is the two verbs query · record.
+// checkpoint removed), and the #205 record cut (L3 knowledge subsystem removed —
+// dex is retrieval, not agent memory), the default surface is the single verb query.
 // query is the read verb (symbol→graph, path:line→slice, path→signatures,
-// /regex/→grep, prose→evidence pack; degrades to BM25 when no embedder is wired);
-// record absorbs write/recall/supersede.
-var defaultVerbs = []string{"query", "record"}
+// /regex/→grep, prose→evidence pack; degrades to BM25 when no embedder is wired).
+var defaultVerbs = []string{"query"}
 
 func TestExpertGatingHidesPowerToolsByDefault(t *testing.T) {
 	t.Setenv("DEX_EXPERT", "") // explicit: default surface, power tier off

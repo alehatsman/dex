@@ -35,36 +35,6 @@
           "type": "string"
         }
       }
-    },
-    {
-      "name": "record",
-      "additionalProperties": false,
-      "properties": {
-        "archetype": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "fact": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "scope": {
-          "type": "string"
-        },
-        "supersedes": {
-          "type": "integer"
-        }
-      }
     }
   ],
   "expert": [
@@ -334,36 +304,6 @@
       }
     },
     {
-      "name": "record",
-      "additionalProperties": false,
-      "properties": {
-        "archetype": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "fact": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "scope": {
-          "type": "string"
-        },
-        "supersedes": {
-          "type": "integer"
-        }
-      }
-    },
-    {
       "name": "refs",
       "additionalProperties": false,
       "required": [
@@ -614,36 +554,6 @@
         },
         "want": {
           "type": "string"
-        }
-      }
-    },
-    {
-      "name": "record",
-      "additionalProperties": false,
-      "properties": {
-        "archetype": {
-          "type": "string"
-        },
-        "budget": {
-          "type": "integer"
-        },
-        "fact": {
-          "type": "string"
-        },
-        "k": {
-          "type": "integer"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "scope": {
-          "type": "string"
-        },
-        "supersedes": {
-          "type": "integer"
         }
       }
     }

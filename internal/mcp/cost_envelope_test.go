@@ -37,13 +37,13 @@ func TestStampEnvelopeCost(t *testing.T) {
 // All verb outputs implement costStamper and all inputs implement
 // budgetCarrier — the invariant the choke point relies on.
 func TestFourVerbEnvelopeInterfaces(t *testing.T) {
-	var outs = []any{&ContextOutput{}, &LookOutput{}, &RecordOutput{}}
+	var outs = []any{&ContextOutput{}, &LookOutput{}}
 	for _, o := range outs {
 		if _, ok := o.(costStamper); !ok {
 			t.Errorf("%T does not implement costStamper", o)
 		}
 	}
-	var ins = []any{ContextInput{}, LookInput{}, RecordInput{}}
+	var ins = []any{ContextInput{}, LookInput{}}
 	for _, in := range ins {
 		if _, ok := in.(budgetCarrier); !ok {
 			t.Errorf("%T does not implement budgetCarrier", in)
