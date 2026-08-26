@@ -51,6 +51,10 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 		if out.Result.Read == nil {
 			t.Fatalf("read lane returned no read result: %+v", out.Result)
 		}
+		// The uniform Selection currency (#95f) is populated for every lane.
+		if len(out.Refs) == 0 || out.Refs[0].Kind != "file" || out.Refs[0].Prov != "exact" {
+			t.Errorf("read lane should yield an exact file ref, got %+v", out.Refs)
+		}
 	})
 
 	t.Run("range→read slice", func(t *testing.T) {
@@ -81,6 +85,9 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 		if out.Result.Grep == nil || len(out.Result.Grep.Matches) == 0 {
 			t.Fatalf("grep lane returned no matches: %+v", out.Result)
 		}
+		if len(out.Refs) == 0 || out.Refs[0].Kind != "chunk" {
+			t.Errorf("grep lane should yield chunk refs, got %+v", out.Refs)
+		}
 	})
 
 	t.Run("symbol→graph/trace", func(t *testing.T) {
@@ -95,6 +102,12 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 		}
 		if out.Result.Trace == nil {
 			t.Fatalf("symbol lane did not dispatch to trace: %+v", out.Result)
+		}
+		// Trace refs are symbols; provenance is exact or (partial recall) name-based.
+		for _, rf := range out.Refs {
+			if rf.Kind != "symbol" {
+				t.Errorf("trace ref should be a symbol, got %+v", rf)
+			}
 		}
 	})
 }

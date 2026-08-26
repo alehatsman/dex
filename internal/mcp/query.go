@@ -97,9 +97,14 @@ type QueryOutput struct {
 	Status string      `json:"status"`
 	Route  QueryRoute  `json:"route"`
 	Result QueryResult `json:"result"`
-	Trust  EnvTrust    `json:"trust"`
-	Cost   *EnvCost    `json:"cost,omitempty"`
-	Next   []NextStep  `json:"next,omitempty"`
+	// Refs is the uniform Selection currency (#207 / #95f): a flat index of the
+	// located entities the lane surfaced, one shape across every lane, so an agent
+	// (and a pipe stage, #206) threads results without sniffing the typed payload.
+	// The payload in Result stays authoritative for rendering.
+	Refs  []Ref      `json:"refs,omitempty"`
+	Trust EnvTrust   `json:"trust"`
+	Cost  *EnvCost   `json:"cost,omitempty"`
+	Next  []NextStep `json:"next,omitempty"`
 }
 
 func (o *QueryOutput) stampCost(t, left int) { o.Cost = withCost(o.Cost, t, left) }
@@ -330,6 +335,7 @@ func dispatchExact(ctx context.Context, h toolSurface, req *sdk.CallToolRequest,
 		Cost:  lo.Cost,
 		Next:  lo.Next,
 	}
+	out.Refs = refsFromExact(out.Result) // uniform Selection currency (#95f)
 	// On an empty symbol result the road-not-taken is a genuine fallback: offer
 	// the search lane in next, not just as a passive alt.
 	if lr.lane == "symbol" && isEmptyStatus(lo.Status) {
@@ -377,6 +383,7 @@ func dispatchSemantic(ctx context.Context, h toolSurface, req *sdk.CallToolReque
 		Status: co.Status,
 		Route:  route,
 		Result: qr,
+		Refs:   refsFromSemantic(&co), // uniform Selection currency (#95f)
 		Trust:  semanticTrustFrom(&co),
 		Next:   co.Next,
 	}
