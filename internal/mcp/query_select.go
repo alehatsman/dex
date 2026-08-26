@@ -143,8 +143,17 @@ func dispatchSelector(ctx context.Context, h toolSurface, _ *sdk.CallToolRequest
 		return fail(err.Error(), err)
 	}
 	status := "ok"
+	var next []NextStep
 	if len(refs) == 0 {
 		status = "not-found"
+		// A dead-end selector is a genuine fallback point (#231, mirroring the
+		// symbol/grep lanes): the pattern may be too narrow, or this shouldn't
+		// have been a selector query at all.
+		next = append(next, NextStep{
+			Verb: "query",
+			Args: map[string]any{"input": cleaned, "kind": "search"},
+			Why:  "no symbol matches this selector — search for the behavior instead",
+		})
 	}
 	return nil, QueryOutput{
 		Status: status,
@@ -152,6 +161,7 @@ func dispatchSelector(ctx context.Context, h toolSurface, _ *sdk.CallToolRequest
 		Result: QueryResult{Select: &SelectResult{Count: len(refs), Symbols: refs}},
 		Refs:   refs,
 		Trust:  EnvTrust{Provenance: "name-based"},
+		Next:   next,
 	}, nil
 }
 

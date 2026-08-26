@@ -391,14 +391,24 @@ func dispatchExact(ctx context.Context, h toolSurface, req *sdk.CallToolRequest,
 		Next:  lo.Next,
 	}
 	out.Refs = refsFromExact(out.Result) // uniform Selection currency (#95f)
-	// On an empty symbol result the road-not-taken is a genuine fallback: offer
-	// the search lane in next, not just as a passive alt.
-	if lr.lane == "symbol" && isEmptyStatus(lo.Status) {
-		out.Next = append(out.Next, NextStep{
-			Verb: "query",
-			Args: map[string]any{"input": cleaned, "kind": "search"},
-			Why:  "no symbol by that name — search for the behavior instead",
-		})
+	// On an empty exact-lane result the road-not-taken is a genuine fallback:
+	// offer the search lane in next, not just as a passive alt (#231 — this
+	// used to be symbol-only, leaving a grep no-matches dead-ended).
+	if isEmptyStatus(lo.Status) {
+		switch lr.lane {
+		case "symbol":
+			out.Next = append(out.Next, NextStep{
+				Verb: "query",
+				Args: map[string]any{"input": cleaned, "kind": "search"},
+				Why:  "no symbol by that name — search for the behavior instead",
+			})
+		case "grep":
+			out.Next = append(out.Next, NextStep{
+				Verb: "query",
+				Args: map[string]any{"input": cleaned, "kind": "search"},
+				Why:  "no literal/regex match — search for the behavior instead",
+			})
+		}
 	}
 	return nil, out, err
 }
