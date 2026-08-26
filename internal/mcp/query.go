@@ -2,9 +2,12 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
+	"github.com/alehatsman/dex/internal/proj"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -47,6 +50,14 @@ type QueryInput struct {
 	K           int    `json:"k,omitempty" jsonschema:"max results per lane (for the symbol lane's impact facet, this caps results PER GRAPH DEPTH, not the total — see result.trace.elided for what a lower k drops)"`
 	ProjectRoot string `json:"project_root,omitempty" jsonschema:"absolute path to the project or git worktree you are working in. The server cannot see your shell's directory; when working in a worktree different from where the server started, pass that worktree's path"`
 	Budget      int    `json:"budget,omitempty" jsonschema:"optional context-token budget; when set, the response reports cost.budget_left = budget − tokens_returned"`
+	// ProjectRoots fans this same query out across multiple already-indexed
+	// local projects instead of running it against one (#221). When set it
+	// overrides ProjectRoot: the query runs once per root, independently, and
+	// results come back labeled per project in QueryOutput.Fanout — no merge,
+	// no cross-project graph joins. The literal entry "all" expands to every
+	// project this server knows about (same discovery `dex reindex --all`
+	// uses).
+	ProjectRoots []string `json:"project_roots,omitempty" jsonschema:"run this query independently across these already-indexed local project roots and return labeled per-project results in the response's fanout field, instead of a single project_root; pass [\"all\"] to fan out across every project this server already knows about"`
 }
 
 func (in QueryInput) budgetTokens() int { return in.Budget }
@@ -123,6 +134,39 @@ type QueryOutput struct {
 	Trust EnvTrust   `json:"trust"`
 	Cost  *EnvCost   `json:"cost,omitempty"`
 	Next  []NextStep `json:"next,omitempty"`
+	// Fanout carries the per-project results of a project_roots query (#221),
+	// one entry per requested root in request order (not completion order —
+	// deterministic regardless of which project answers first). Set only when
+	// the request had ProjectRoots; Result/Route/Refs stay zero in that case —
+	// Fanout is the whole answer. No merging: each project's own QueryResult
+	// is returned as-is, labeled by root.
+	Fanout []QueryFanout `json:"fanout,omitempty"`
+}
+
+// QueryFanout is one project's outcome from a project_roots query. Status
+// mirrors the top-level envelope's vocabulary ("ok"/"no-index"/"error") so a
+// per-project failure — an unindexed root, a bad path — degrades that one
+// entry instead of failing the whole fan-out.
+type QueryFanout struct {
+	Root   string             `json:"root"`
+	Status string             `json:"status"`
+	Error  string             `json:"error,omitempty"`
+	Result *QueryFanoutResult `json:"result,omitempty"`
+}
+
+// QueryFanoutResult is QueryOutput's payload minus Fanout itself — a
+// per-project query never recurses into another fan-out (dispatchFanout
+// always clears ProjectRoots before rerunning the query per root), so this
+// is a lossless, cycle-free projection of the single-project envelope.
+type QueryFanoutResult struct {
+	Status string      `json:"status"`
+	Hint   string      `json:"hint,omitempty"`
+	Route  QueryRoute  `json:"route"`
+	Result QueryResult `json:"result"`
+	Refs   []Ref       `json:"refs,omitempty"`
+	Trust  EnvTrust    `json:"trust"`
+	Cost   *EnvCost    `json:"cost,omitempty"`
+	Next   []NextStep  `json:"next,omitempty"`
 }
 
 func (o *QueryOutput) stampCost(t int, left *int) { o.Cost = withCost(o.Cost, t, left) }
@@ -289,8 +333,12 @@ func queryHandler(h toolSurface) func(context.Context, *sdk.CallToolRequest, Que
 // query is *Server's first-class query handler: it composes queryVerb over the
 // local lanes. It is the surface method queryHandler dispatches to, so the local
 // stdio path is unchanged while the remote shim can override with a single-round
-// -trip implementation.
+// -trip implementation. A non-empty ProjectRoots (#221) branches to the fan-out
+// path instead — orchestration only, no new lane logic.
 func (s *Server) query(ctx context.Context, req *sdk.CallToolRequest, in QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
+	if len(in.ProjectRoots) > 0 {
+		return dispatchFanout(ctx, s, req, in)
+	}
 	return queryVerb(ctx, s, req, in)
 }
 
@@ -299,8 +347,85 @@ func (s *Server) query(ctx context.Context, req *sdk.CallToolRequest, in QueryIn
 // composition server-side so a container agent (moongit) reaches a whole query
 // in one round trip rather than several. Mirrors Trace/Locate/Summarize.
 func (s *Server) Query(ctx context.Context, in QueryInput) (QueryOutput, error) {
+	if len(in.ProjectRoots) > 0 {
+		_, out, err := dispatchFanout(ctx, s, nil, in)
+		return out, err
+	}
 	_, out, err := queryVerb(ctx, s, nil, in)
 	return out, err
+}
+
+// dispatchFanout runs in independently, once per resolved root, and returns
+// the labeled per-project results as QueryOutput.Fanout (#221). Each root
+// reruns the SAME single-lane or pipe path an equivalent single-project query
+// would (via queryVerb) — no new lane logic, no merging, no cross-project
+// graph joins. A per-project failure (unresolvable root, lane error) becomes
+// that entry's status/error; it does not abort the other projects' queries.
+func dispatchFanout(ctx context.Context, s *Server, req *sdk.CallToolRequest, in QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
+	roots, err := expandProjectRoots(ctx, s, in.ProjectRoots)
+	if err != nil {
+		return nil, QueryOutput{Status: "error", Hint: err.Error()}, nil
+	}
+	fanout := make([]QueryFanout, len(roots))
+	var wg sync.WaitGroup
+	for i, root := range roots {
+		wg.Add(1)
+		go func(i int, root string) {
+			defer wg.Done()
+			sub := in
+			sub.ProjectRoots = nil
+			sub.ProjectRoot = root
+			_, out, qerr := queryVerb(ctx, s, req, sub)
+			result := &QueryFanoutResult{
+				Status: out.Status, Hint: out.Hint, Route: out.Route,
+				Result: out.Result, Refs: out.Refs, Trust: out.Trust,
+				Cost: out.Cost, Next: out.Next,
+			}
+			switch {
+			case qerr != nil:
+				fanout[i] = QueryFanout{Root: root, Status: "error", Error: qerr.Error(), Result: result}
+			case out.Status != "" && out.Status != "ok":
+				fanout[i] = QueryFanout{Root: root, Status: out.Status, Result: result}
+			default:
+				fanout[i] = QueryFanout{Root: root, Status: "ok", Result: result}
+			}
+		}(i, root)
+	}
+	wg.Wait()
+	return nil, QueryOutput{Status: "ok", Fanout: fanout}, nil
+}
+
+// expandProjectRoots resolves the request's project_roots list: the literal
+// entry "all" expands to every project this server's index dir knows about
+// (proj.KnownRoots — the same discovery `dex reindex --all` uses); every
+// other entry passes through unchanged (resolved later, per-root, by the
+// same resolveProject an ordinary single-project query already uses — an
+// unindexed explicit path surfaces as that entry's own no-index status, not
+// a fan-out-wide error). Duplicates (e.g. "all" plus an explicit root also
+// discovered by it) are collapsed so a project isn't queried twice.
+func expandProjectRoots(ctx context.Context, s *Server, roots []string) ([]string, error) {
+	seen := make(map[string]bool, len(roots))
+	var out []string
+	add := func(root string) {
+		if !seen[root] {
+			seen[root] = true
+			out = append(out, root)
+		}
+	}
+	for _, r := range roots {
+		if r != "all" {
+			add(r)
+			continue
+		}
+		known, err := proj.KnownRoots(ctx, s.IndexDir, nil)
+		if err != nil {
+			return nil, fmt.Errorf("discover known projects: %w", err)
+		}
+		for _, k := range known {
+			add(k)
+		}
+	}
+	return out, nil
 }
 
 // queryVerb classifies the input, dispatches to the existing lane handler, and

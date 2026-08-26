@@ -28,6 +28,9 @@
         "project_root": {
           "type": "string"
         },
+        "project_roots": {
+          "type": "array|null"
+        },
         "to": {
           "type": "string"
         },
@@ -231,6 +234,9 @@
         },
         "project_root": {
           "type": "string"
+        },
+        "project_roots": {
+          "type": "array|null"
         },
         "to": {
           "type": "string"
@@ -545,6 +551,9 @@
         },
         "project_root": {
           "type": "string"
+        },
+        "project_roots": {
+          "type": "array|null"
         },
         "to": {
           "type": "string"

@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -133,7 +132,7 @@ func cmdReindex(ctx context.Context, args []string) error {
 		if !*yes {
 			return fmt.Errorf("reindex --all drops every project index and re-embeds from scratch; pass --yes to confirm")
 		}
-		roots, err := knownProjectRoots(ctx, base)
+		roots, err := proj.KnownRoots(ctx, base, proj.WarnStderr)
 		if err != nil {
 			return err
 		}
@@ -276,47 +275,6 @@ func reindexOne(ctx context.Context, root, base string, verbose, force, waitLock
 		_ = reportGraphStats(p.Root, gstats, "text")
 	}
 	return nil
-}
-
-// knownProjectRoots walks the index dir, opening each per-project index
-// and reading the recorded `project_root` meta. Entries written before
-// that meta existed are reported to stderr and skipped — the user can
-// `dex nuke <path>` + `dex index <path>` once to re-record it.
-func knownProjectRoots(ctx context.Context, base string) ([]string, error) {
-	entries, err := os.ReadDir(base)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var roots []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		dbPath := filepath.Join(base, e.Name(), "index.db")
-		if _, err := os.Stat(dbPath); err != nil {
-			continue
-		}
-		st, err := openStore(ctx, dbPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: skipping %s: open: %v\n", e.Name(), err)
-			continue
-		}
-		root, err := st.ProjectRoot(ctx)
-		st.Close()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: skipping %s: %v\n", e.Name(), err)
-			continue
-		}
-		if root == "" {
-			fmt.Fprintf(os.Stderr, "warning: skipping %s: no recorded project_root (pre-migration index)\n", e.Name())
-			continue
-		}
-		roots = append(roots, root)
-	}
-	return roots, nil
 }
 
 // ─── watch ─────────────────────────────────────────────────────────────────
