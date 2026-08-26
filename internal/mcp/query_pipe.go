@@ -190,6 +190,8 @@ func dispatchSingle(ctx context.Context, h toolSurface, req *sdk.CallToolRequest
 		return dispatchExact(ctx, h, req, in, lr, cleaned, route)
 	case "select":
 		return dispatchSelector(ctx, h, req, in, cleaned, route)
+	case "since":
+		return dispatchSince(ctx, h, req, in, cleaned, route)
 	default: // semantic
 		writeCurrentTask(input)
 		return dispatchSemantic(ctx, h, req, in, lr, cleaned, route)
