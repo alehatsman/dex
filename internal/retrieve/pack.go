@@ -8,9 +8,15 @@ import "time"
 // wire type lets the assembly logic live where it belongs and gives the trust
 // envelope a native home next to the facts. See docs/design/95-context-pack.md.
 //
-// This is the target type the #95a seam-move lands on; no caller builds a
-// ContextPack yet (#101 / #95b defines the shape only).
+// The assembler builds one today (assembler.go, since #111) for the
+// semantic/assemble lane. #207/#95f generalizes the seam: ContextPack now embeds
+// Selection — the uniform currency every lane emits — and keeps its rich typed
+// evidence lanes on top. Refs (from the embedded Selection) is a flat index over
+// that evidence; Trust rides the embedded Selection so it is reachable from
+// every lane, not just this one. See docs/design/95f-selection-spine.md.
 type ContextPack struct {
+	Selection // Refs + Trust + Stages + Budget — the uniform lane currency (#95f)
+
 	Intent   string // resolved intent (ResolveIntent)
 	Question string
 
@@ -30,8 +36,8 @@ type ContextPack struct {
 	NextAction string // what to do next given the bundle (#725/#729)
 	Avoid      string // anti-pattern warning for this intent
 
-	// --- Trust envelope (#95c) ---
-	Trust Trust
+	// Trust envelope (#95c) now lives on the embedded Selection above (#95f) —
+	// promoted, so pack.Trust still resolves for every existing caller.
 
 	// --- Cost accounting ---
 	ContentBytesInlined int

@@ -19,13 +19,23 @@ func TestContextPackShape(t *testing.T) {
 			name: "ContextPack",
 			typ:  reflect.TypeOf(ContextPack{}),
 			want: []string{
+				"Selection", // embedded currency (#95f) — carries Refs/Trust/Stages/Budget
 				"Intent", "Question",
 				"Symbols", "SemanticHits", "SuggestedReads", "Graph", "References", "Annotations", "RelatedFiles",
 				"Concerns",
 				"NextAction", "Avoid",
-				"Trust",
 				"ContentBytesInlined", "Expanded",
 			},
+		},
+		{
+			name: "Selection",
+			typ:  reflect.TypeOf(Selection{}),
+			want: []string{"Refs", "Trust", "Stages", "Budget"},
+		},
+		{
+			name: "Ref",
+			typ:  reflect.TypeOf(Ref{}),
+			want: []string{"Kind", "ID", "Path", "Span", "Prov", "Score", "Meta"},
 		},
 		{
 			name: "Trust",
@@ -58,6 +68,8 @@ func TestContextPackShape(t *testing.T) {
 func TestContextPackIsWireFree(t *testing.T) {
 	for _, typ := range []reflect.Type{
 		reflect.TypeOf(ContextPack{}),
+		reflect.TypeOf(Selection{}),
+		reflect.TypeOf(Ref{}),
 		reflect.TypeOf(Trust{}),
 		reflect.TypeOf(Concerns{}),
 		reflect.TypeOf(SymbolHit{}),
