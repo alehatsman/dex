@@ -134,6 +134,7 @@ func lspCorpus(ctx context.Context, base, cacheFlag, manifestPath, reposFlag str
 	if err := m.Validate(); err != nil {
 		return nil, fmt.Errorf("dex bench lsp: invalid manifest: %w", err)
 	}
+	manifestDir := filepath.Dir(absManifest)
 	want := repoFilter(reposFlag)
 
 	var cells []lsprecall.Cell
@@ -144,7 +145,7 @@ func lspCorpus(ctx context.Context, base, cacheFlag, manifestPath, reposFlag str
 		if !spec.LSPRecall {
 			continue
 		}
-		cell, err := lspCorpusRepo(ctx, base, cacheRoot, spec, tsCmd, timeout)
+		cell, err := lspCorpusRepo(ctx, base, cacheRoot, manifestDir, spec, tsCmd, timeout)
 		if err != nil {
 			return nil, fmt.Errorf("dex bench lsp: %s: %w", spec.Name, err)
 		}
@@ -153,7 +154,7 @@ func lspCorpus(ctx context.Context, base, cacheFlag, manifestPath, reposFlag str
 	return cells, nil
 }
 
-func lspCorpusRepo(ctx context.Context, base, cacheRoot string, spec corpus.RepoSpec, tsCmd []string, timeout time.Duration) (lsprecall.Cell, error) {
+func lspCorpusRepo(ctx context.Context, base, cacheRoot, manifestDir string, spec corpus.RepoSpec, tsCmd []string, timeout time.Duration) (lsprecall.Cell, error) {
 	dir, err := corpus.Ensure(ctx, spec, cacheRoot)
 	if err != nil {
 		return lsprecall.Cell{}, err
@@ -182,7 +183,7 @@ func lspCorpusRepo(ctx context.Context, base, cacheRoot string, spec corpus.Repo
 		return lsprecall.Cell{}, err
 	}
 
-	lang, lspCmd, goldPaths, err := lspSpec(spec, tsCmd)
+	lang, lspCmd, goldPaths, err := lspSpec(spec, manifestDir, tsCmd)
 	if err != nil {
 		return lsprecall.Cell{}, err
 	}
@@ -246,7 +247,7 @@ func lspProject(ctx context.Context, base, project, goldFlag string, tsCmd []str
 }
 
 // lspSpec returns the language ID, LSP command, and gold paths for a corpus repo.
-func lspSpec(spec corpus.RepoSpec, tsCmd []string) (lang string, lspCmd []string, goldPaths []string, err error) {
+func lspSpec(spec corpus.RepoSpec, manifestDir string, tsCmd []string) (lang string, lspCmd []string, goldPaths []string, err error) {
 	// Pick the first non-Go language the repo declares — that's what we want LSP for.
 	for _, l := range spec.Languages {
 		switch l {
@@ -264,13 +265,7 @@ func lspSpec(spec corpus.RepoSpec, tsCmd []string) (lang string, lspCmd []string
 	if lang == "" {
 		return "", nil, nil, fmt.Errorf("no supported non-Go language in repo %s (languages: %v)", spec.Name, spec.Languages)
 	}
-	for _, ts := range spec.TraceSets {
-		abs, err := filepath.Abs(ts)
-		if err != nil {
-			return "", nil, nil, fmt.Errorf("resolve trace set %s: %w", ts, err)
-		}
-		goldPaths = append(goldPaths, abs)
-	}
+	goldPaths = resolveTraceSets(spec, manifestDir)
 	if len(goldPaths) == 0 {
 		return "", nil, nil, fmt.Errorf("repo %s has no trace_sets to use as gold", spec.Name)
 	}
