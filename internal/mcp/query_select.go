@@ -96,7 +96,17 @@ func parseSelector(s string) store.SymbolSelector {
 		case "pkg":
 			sel.Pkg = store.GlobToLike(val, true)
 		case "file":
-			sel.File = store.GlobToLike(val, true)
+			// A bare basename glob (no "/") is a match-anywhere-in-the-path
+			// request — GlobToLike's substring wrap only fires when the glob
+			// has no wildcard, so "query*.go" would otherwise anchor to the
+			// start of the full repo-relative path and never match a nested
+			// file (#231). A pattern that already names a directory (has "/")
+			// keeps the existing anchored-from-start behavior.
+			if strings.Contains(val, "/") {
+				sel.File = store.GlobToLike(val, true)
+			} else {
+				sel.File = "%" + store.GlobToLike(val, false) + "%"
+			}
 		case "kind":
 			for _, k := range normalizeKind(val) {
 				kinds[k] = true

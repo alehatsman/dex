@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -113,6 +114,8 @@ func gitDiffUnified(ctx context.Context, root, rng string) (string, error) {
 	cmd := exec.CommandContext(cctx, "git", "-C", root,
 		"diff", "--unified=0", "--no-color", "--end-of-options", rng) // #nosec G204 — rng validated by reValidRef
 	cmd.Env = gitenv.Current()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -121,12 +124,25 @@ func gitDiffUnified(ctx context.Context, root, rng string) (string, error) {
 		return "", err
 	}
 	data, readErr := io.ReadAll(io.LimitReader(pipe, maxDiffBytes))
+	truncated := len(data) >= maxDiffBytes
 	// Kill ensures the process exits promptly if we stopped reading early;
 	// it is a no-op when the process already exited naturally.
 	_ = cmd.Process.Kill()
-	_ = cmd.Wait()
+	waitErr := cmd.Wait()
 	if readErr != nil {
 		return "", readErr
+	}
+	// A genuinely bad ref (or non-repo root) exits non-zero with nothing on
+	// stdout — that must not read as "no changes" (#231/#12). Only trust
+	// Wait's error when the read reached natural EOF: a truncated read means
+	// we killed a still-running-but-healthy process ourselves, so Wait's error
+	// there is just "signal: killed", not a command failure.
+	if !truncated && waitErr != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = waitErr.Error()
+		}
+		return "", fmt.Errorf("git diff %s: %s", rng, msg)
 	}
 	return string(data), nil
 }

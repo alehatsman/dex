@@ -236,6 +236,10 @@ func classifyQuery(raw, kindOverride string) (lr laneRoute, cleaned, detected st
 			}
 			return lr, cleaned, "forced", nil
 		}
+		// An unrecognized kind must fail loudly (#231) — silently falling back to
+		// shape-detection would make a typo'd kind indistinguishable from an
+		// intentional omission.
+		return laneRoute{lane: "invalid-kind"}, t, "invalid-kind", nil
 	}
 
 	// path:N-M range → a precise slice via the read lane's lines mode (locate
