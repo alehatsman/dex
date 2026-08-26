@@ -19,22 +19,25 @@ func TestDeriveAskNextFromTopRead(t *testing.T) {
 		t.Fatalf("want 1 next step, got %d", len(out.Next))
 	}
 	n := out.Next[0]
-	if n.Verb != "look" {
-		t.Errorf("verb = %q, want look", n.Verb)
+	// #207: the emitter now names the live read verb (query/input) directly,
+	// rather than emitting look/target for a later normalizeNext pass to rewrite.
+	if n.Verb != "query" {
+		t.Errorf("verb = %q, want query", n.Verb)
 	}
-	if got := n.Args["target"]; got != "internal/mcp/context.go:42" {
-		t.Errorf("target = %v, want internal/mcp/context.go:42", got)
+	if got := n.Args["input"]; got != "internal/mcp/context.go:42" {
+		t.Errorf("input = %v, want internal/mcp/context.go:42", got)
 	}
 	if n.Why != "router entry point" {
 		t.Errorf("why = %q, want the read's reason", n.Why)
 	}
+	assertLiveNextSteps(t, out.Next)
 }
 
 func TestDeriveAskNextNoLineNumber(t *testing.T) {
 	out := &ContextOutput{SuggestedReads: []SuggestedRead{{Path: "README.md"}}}
 	deriveAskNext(out)
-	if len(out.Next) != 1 || out.Next[0].Args["target"] != "README.md" {
-		t.Fatalf("want bare-path target, got %+v", out.Next)
+	if len(out.Next) != 1 || out.Next[0].Args["input"] != "README.md" {
+		t.Fatalf("want bare-path input, got %+v", out.Next)
 	}
 	if out.Next[0].Why != "open the top suggested read" {
 		t.Errorf("why = %q, want default", out.Next[0].Why)

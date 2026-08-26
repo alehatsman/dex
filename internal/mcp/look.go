@@ -205,8 +205,8 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 		if len(grepOut.Matches) > 0 {
 			m := grepOut.Matches[0]
 			out.Next = append(out.Next, NextStep{
-				Verb: "look",
-				Args: map[string]any{"target": firstMatchRef(m)},
+				Verb: "query",
+				Args: map[string]any{"input": firstMatchRef(m)},
 				Why:  "read the first match in its enclosing context",
 			})
 		}

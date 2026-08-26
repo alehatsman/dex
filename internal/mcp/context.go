@@ -112,8 +112,8 @@ func deriveAskNext(out *ContextOutput) {
 		why = top.Reason
 	}
 	out.Next = []NextStep{{
-		Verb: "look",
-		Args: map[string]any{"target": target},
+		Verb: "query",
+		Args: map[string]any{"input": target},
 		Why:  why,
 	}}
 }

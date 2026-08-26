@@ -298,7 +298,6 @@ func dispatchExact(ctx context.Context, h toolSurface, req *sdk.CallToolRequest,
 	}
 
 	_, lo, err := lookVerb(ctx, h, req, li)
-	normalizeNext(lo.Next) // wrapped handler names the pre-merge verbs; retarget to query
 	out := QueryOutput{
 		Status: lo.Status,
 		Route:  route,
@@ -342,7 +341,6 @@ func dispatchSemantic(ctx context.Context, h toolSurface, req *sdk.CallToolReque
 	}
 
 	_, co, err := h.contextRouter(ctx, req, ci)
-	normalizeNext(co.Next) // wrapped handler names the pre-merge verbs; retarget to query
 	// contextRouter owns its own trust shape inside ContextOutput; project it into
 	// the envelope's EnvTrust so query's top-level trust is uniform. Semantic
 	// provenance unless the router resolved a deterministic (orient/topology) lane.
@@ -381,32 +379,6 @@ func redirectToNativeRead(path string, route QueryRoute) (*sdk.CallToolResult, Q
 			{Verb: "query", Args: map[string]any{"input": path, "want": "map"}, Why: "imports + exports only"},
 		},
 	}, nil
-}
-
-// normalizeNext rewrites the next-step hints the wrapped lane handlers emit so
-// they name the read verb that actually exists. lookVerb/contextRouter still
-// build their Next with the pre-merge verb names ("look"/"ask") and their param
-// keys ("target"/"question"); under the two-verb surface those tools are gone,
-// so a hint pointing at them would send the agent to a dead tool. Map them onto
-// query(input=…) in place, and the pre-rename write verb ("remember") onto
-// record. Other verbs (query, record) pass through.
-func normalizeNext(steps []NextStep) {
-	for i := range steps {
-		switch steps[i].Verb {
-		case "remember":
-			steps[i].Verb = "record"
-		case "look", "ask":
-			steps[i].Verb = "query"
-			if steps[i].Args != nil {
-				for _, oldKey := range []string{"target", "question"} {
-					if v, ok := steps[i].Args[oldKey]; ok {
-						steps[i].Args["input"] = v
-						delete(steps[i].Args, oldKey)
-					}
-				}
-			}
-		}
-	}
 }
 
 // isEmptyStatus reports whether a lane status means "found nothing" (vs an

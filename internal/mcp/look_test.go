@@ -117,7 +117,9 @@ func TestLookVerbGrepRoutesAndChains(t *testing.T) {
 	if out.Result.Grep == nil || len(out.Result.Grep.Matches) == 0 {
 		t.Fatalf("want at least one grep match, got %+v", out.Result.Grep)
 	}
-	if len(out.Next) == 0 || out.Next[0].Verb != "look" {
-		t.Fatalf("want a look next-step after grep, got %+v", out.Next)
+	// #207: the grep follow-up now names the live read verb (query/input)
+	// directly, not the removed look verb that normalizeNext used to rewrite.
+	if len(out.Next) == 0 || out.Next[0].Verb != "query" || out.Next[0].Args["input"] == nil {
+		t.Fatalf("want a query next-step after grep, got %+v", out.Next)
 	}
 }

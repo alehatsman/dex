@@ -77,24 +77,21 @@ func TestForcedKindDirection(t *testing.T) {
 	}
 }
 
-// TestNormalizeNext locks the clean-break invariant: no next-step hint points at
-// a removed verb. The wrapped lane handlers still emit look/ask + target/question;
-// query must retarget them to query(input=…).
-func TestNormalizeNext(t *testing.T) {
-	steps := []NextStep{
-		{Verb: "look", Args: map[string]any{"target": "x.go:12"}, Why: "read match"},
-		{Verb: "ask", Args: map[string]any{"question": "how?"}},
-		{Verb: "act", Args: map[string]any{"command": "go test"}}, // untouched
-	}
-	normalizeNext(steps)
-	if steps[0].Verb != "query" || steps[0].Args["input"] != "x.go:12" || steps[0].Args["target"] != nil {
-		t.Errorf("look/target not retargeted: %+v", steps[0])
-	}
-	if steps[1].Verb != "query" || steps[1].Args["input"] != "how?" || steps[1].Args["question"] != nil {
-		t.Errorf("ask/question not retargeted: %+v", steps[1])
-	}
-	if steps[2].Verb != "act" || steps[2].Args["command"] != "go test" {
-		t.Errorf("act must pass through untouched: %+v", steps[2])
+// assertLiveNextSteps enforces the clean-break invariant now guaranteed at the
+// source rather than by a rewrite pass (#207 deleted normalizeNext): a next-step
+// must name a verb that still exists on the surface and use the merged arg key.
+func assertLiveNextSteps(t *testing.T, steps []NextStep) {
+	t.Helper()
+	deadVerbs := map[string]bool{"look": true, "ask": true, "remember": true}
+	for _, s := range steps {
+		if deadVerbs[s.Verb] {
+			t.Errorf("emitter produced dead verb %q (Args %v) — emit query/record at the source", s.Verb, s.Args)
+		}
+		for _, k := range []string{"target", "question"} {
+			if s.Args != nil && s.Args[k] != nil {
+				t.Errorf("emitter produced pre-merge arg key %q — use input=…: %+v", k, s)
+			}
+		}
 	}
 }
 
