@@ -96,6 +96,30 @@ func TestEscalateOnBounce_MapNeverPromotedToLLM(t *testing.T) {
 	}
 }
 
+func TestEscalateOnBounce_LinesRangeNeverPromotedToLLM(t *testing.T) {
+	// mode=lines:N-M is an explicit, already-precise range request (#231) — it
+	// must never be escalated to summary (LLM) on bounce. summarizeModeLines
+	// parses its range from the mode string itself, not in.StartLine/EndLine,
+	// so an escalation to summary silently lost the requested range and (on a
+	// chat failure) fell back to the WHOLE file instead of the slice asked for.
+	bt := newBounceTracker()
+	bt.recordCompressed("s1", "big.go")
+	bt.recordRead("s1", "big.go") // triggers shouldForceFull
+
+	chatSrv := fakeChat(t, "should not be called")
+	defer chatSrv.Close()
+	srv := newServer("http://127.0.0.1:1", t.TempDir())
+	srv.ChatClient = chat.New(chatSrv.URL, "fake", 30*time.Second)
+
+	mode, isLLM := srv.escalateOnBounce(bt, "s1", "big.go", ReadMode("lines:120-140"), false)
+	if mode != ReadMode("lines:120-140") {
+		t.Errorf("want lines:120-140 preserved, got %s", mode)
+	}
+	if isLLM {
+		t.Error("lines:N-M bounce must not set isLLM=true")
+	}
+}
+
 func TestEscalateOnBounce_SignaturesNeverPromotedToLLM(t *testing.T) {
 	// mode=signatures must never be escalated to summary (LLM) on bounce
 	// (#807, residual of #802). signatures is a deterministic index view

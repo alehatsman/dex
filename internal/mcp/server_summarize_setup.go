@@ -36,6 +36,17 @@ func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string
 	if mode == ReadModeAnalyze || mode == ReadModeMap {
 		return mode, isLLM
 	}
+	// lines:N-M is an explicit, already-precise range request (#231) — like
+	// Analyze/Map it must never be overridden by re-escalation. Without this,
+	// a bounced lines:N-M request fell through to the final ChatClient!=nil
+	// branch below and became mode=summary; on a chat failure
+	// summarizeModeSummary slices by in.StartLine/in.EndLine, which are never
+	// populated for a "lines:" mode string (summarizeModeLines parses the
+	// range from the mode string itself, not those fields) — so the fallback
+	// silently dumped the WHOLE file instead of the requested slice.
+	if strings.HasPrefix(string(mode), "lines:") {
+		return mode, isLLM
+	}
 	if mode == ReadModeSignatures || mode == ReadModeSkeleton {
 		return ReadModeFull, false
 	}
