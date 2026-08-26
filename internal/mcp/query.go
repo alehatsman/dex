@@ -57,10 +57,14 @@ func (in QueryInput) budgetTokens() int { return in.Budget }
 // ambiguous input names the road not taken so the agent can force it via `kind`.
 type QueryRoute struct {
 	Input    string     `json:"input"`
-	Detected string     `json:"detected"` // the input shape: path|location|regex|symbol|prose
+	Detected string     `json:"detected"` // the input shape: path|location|regex|symbol|prose|pipe
 	Lane     string     `json:"lane"`     // the lane chosen: read|grep|locate|symbol|semantic
 	Forced   bool       `json:"forced,omitempty"`
 	Alt      []QueryAlt `json:"alt,omitempty"`
+	// Stages echoes the ordered pipe segments actually executed (#206) — the seed
+	// lane then each transform/terminal op. Empty for a single-lane query; set only
+	// when the input composed lanes with `|`. Teaches the pipe grammar in-band.
+	Stages []string `json:"stages,omitempty"`
 }
 
 // QueryAlt is one interpretation query did not take, offered as a ready-to-force
@@ -275,20 +279,19 @@ func queryVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in 
 		return dispatchSemantic(ctx, h, req, in, laneRoute{lane: "semantic"}, "", QueryRoute{Input: "", Detected: "empty", Lane: "semantic"})
 	}
 
-	lr, cleaned, detected, alt := classifyQuery(input, in.Kind)
-	route := QueryRoute{Input: input, Detected: detected, Lane: lr.lane, Forced: detected == "forced", Alt: alt}
-
-	switch lr.lane {
-	case "read", "grep", "locate", "symbol":
-		return dispatchExact(ctx, h, req, in, lr, cleaned, route)
-	default: // semantic
-		// A prose query is the agent declaring what it is working on — the task
-		// source for the #610 adaptive-compression feedback loop now that
-		// session(set_task) is gone (#195 S4). Exact-lane lookups (path/regex/
-		// symbol) are navigation, not a task, so they don't feed it.
-		writeCurrentTask(input)
-		return dispatchSemantic(ctx, h, req, in, lr, cleaned, route)
+	// A top-level `|` composes lanes into a pipe (#206): seed | transform | … |
+	// terminal, run left-to-right over the uniform Selection currency. A length-1
+	// pipe never reaches here (splitPipe returns one segment → this predicate is
+	// false), so the single-lane path below is byte-for-byte unchanged.
+	if segments := splitPipe(input); len(segments) > 1 {
+		return runPipe(ctx, h, req, in, segments)
 	}
+
+	// Single-lane path (the common case): classify the shape and dispatch. Shared
+	// with the pipe seed via dispatchSingle. A prose query still feeds the #610
+	// adaptive-compression task signal (writeCurrentTask, inside dispatchSingle);
+	// exact-lane lookups are navigation, not a task, so they don't.
+	return dispatchSingle(ctx, h, req, in)
 }
 
 // dispatchExact routes the read/grep/locate/symbol lanes through lookVerb, which
