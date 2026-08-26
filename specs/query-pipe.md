@@ -212,15 +212,24 @@ quarter.
 
 ## Phasing
 
-This spec is **Phase 2** of the roadmap (`specs/roadmap.md`). It is **blocked by
+This spec is **Phase 2** of the roadmap (`specs/roadmap.md`). It was **blocked by
 #207** (the query spine): the `Ref`/`Selection` currency this pipe threads
-between stages is built there, not here. Do not start until #207 lands — on
-today's un-collapsed facades there is no common currency to compose.
+between stages is built there, not here.
 
-- **Prerequisite — #207 (roadmap Phase 1):** collapse `look`/`ask` facades;
-  every lane emits `Selection`. After this the pipe MVP is mechanical.
-- **This spec (roadmap Phase 2):** `|` parsing + fan-out + coercion + terminals
-  over the `Selection` currency #207 provides.
-- **Later (roadmap Phase 3):** selector-grammar seeds (`pkg:` `func:` `calls:`),
-  more transforms/coercions driven by observed errors, then LLM-backed dynamic
-  transforms (pluggable local model, provenance=`model`).
+- **Prerequisite — #207 (roadmap Phase 1): DONE.** Collapsed `look`/`ask`
+  facades; every lane emits the `Selection` currency (`QueryOutput.Refs`).
+- **This spec (roadmap Phase 2): MVP DONE** (`922aa7f`, design note
+  `docs/design/95h-query-pipes.md`). `|` parsing + fan-out + coercion + terminals
+  over the wire-layer `Selection` currency. The pipe threads refs at the **wire
+  layer** (`QueryOutput.Refs`), not `retrieve.Selection` — no wire↔domain
+  conversion between stages; see 95h §"which layer".
+- **Later (roadmap Phase 3) — STATIC FIRST, LLM LAST.** Exhaust every
+  deterministic capability before any model-backed transform is added. Order:
+  1. **Static / graph-index ops (all of these first):** selector-grammar seeds
+     (`pkg:` `func:` `calls:`), more transforms + coercions driven by observed
+     agent errors, the `path` transform in a pipe, wider terminals, branching /
+     fan-in. 100% deterministic.
+  2. **LLM-backed dynamic transforms (dead last):** `explain` / `summarize` /
+     `classify` / `rerank` (pluggable local model, provenance=`model`). Do NOT
+     pull these forward opportunistically — they land only once the static
+     surface is genuinely built out.
