@@ -2,17 +2,21 @@
 
 Local semantic-search MCP server for Claude Code (Go). Indexes a repo and serves two verbs — `query` (read) / `record` (write) — plus a `DEX_EXPERT` overlay of raw graph/search lanes over MCP.
 
-## Workflow — moongit issues (mgit)
+## Workflow — issues (mgit or GitHub)
 
-Export your own `MOONGIT_TOKEN` (`mgt_…`); token name = your identity. No code without an owned issue.
+Issue/PR tracking runs on **one of two backends depending on the environment** — moongit (`mgit`) or GitHub (`gh`). Detect which is live (`mgit issue list` vs `gh issue list`) and use that one consistently for the session. No code without an owned issue.
 
-1. **Survey:** `mgit issue list --state todo,in_progress`
-2. **Plan:** `mgit issue create --title "<t>" --body "<plan>"` (one issue per unit of work)
-3. **Claim:** `mgit issue claim <n> --state in_progress` (never take an already in_progress issue)
-4. **Progress:** `mgit issue comment <n> --body "…"` at real checkpoints
-5. **Close:** `mgit issue set-state <n> done` (or `unclaim` if dropping)
+| Step | mgit | GitHub (`gh`) |
+|------|------|---------------|
+| Survey | `mgit issue list --state todo,in_progress` | `gh issue list --state open` |
+| Plan | `mgit issue create --title "<t>" --body "<plan>"` | `gh issue create --title "<t>" --body "<plan>"` |
+| Claim | `mgit issue claim <n> --state in_progress` | assign yourself / label `in progress` (never take an already-claimed issue) |
+| Progress | `mgit issue comment <n> --body "…"` | `gh issue comment <n> --body "…"` |
+| Close | `mgit issue set-state <n> done` | `gh issue close <n>` |
 
-Worktrees for non-trivial changes (outside repo at `~/worktrees/<repo>/<branch>`); never auto-push; ask before merge; conventional branches/commits. Merge FF-only: `mgit pr merge <n> --ff-only` (bare command defaults to merge commit — always pass `--ff-only`; rebase first if main advanced).
+With mgit, export your own `MOONGIT_TOKEN` (`mgt_…`); token name = your identity. One issue per unit of work.
+
+Worktrees for non-trivial changes (outside repo at `~/worktrees/<repo>/<branch>`); never auto-push; ask before merge; conventional branches/commits. Merge FF-only: with mgit `mgit pr merge <n> --ff-only` (bare command defaults to a merge commit — always pass `--ff-only`); with GitHub, `gh pr merge --ff` is not a valid flag — true FF is `git push origin HEAD:main` after rebasing onto current main.
 
 ## Build / test — always via mooncake task
 
