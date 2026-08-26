@@ -32,10 +32,40 @@ func TestSplitPipe(t *testing.T) {
 		{"/a|b/ | callers", []string{"/a|b/", "callers"}},
 		{"/foo/ | callers | impact", []string{"/foo/", "callers", "impact"}},
 		{"how are edits debounced | callees | assemble:6000", []string{"how are edits debounced", "callees", "assemble:6000"}},
+		// #228: empty segments are preserved (not silently dropped) so the caller
+		// can reject the malformed pipe instead of misreading it as something else.
+		{"pkg:store |", []string{"pkg:store", ""}},
+		{"| callers", []string{"", "callers"}},
+		{"pkg:store || callers", []string{"pkg:store", "", "callers"}},
+		{"/foo/ |", []string{"/foo/", ""}},
 	}
 	for _, c := range cases {
 		if got := splitPipe(c.in); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("splitPipe(%q) = %#v, want %#v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestPipeMalformedSyntax locks #228: a pipe with an empty stage (stray
+// leading/trailing `|` or a doubled `||`) is rejected with a clear error
+// instead of silently falling back to a semantic/prose search or silently
+// collapsing the doubled `|` into a valid-looking pipe.
+func TestPipeMalformedSyntax(t *testing.T) {
+	_, _, _, call := pipeFixture(t)
+	for _, in := range []string{
+		"pipeLeaf |",
+		"| callers",
+		"pipeLeaf || callers",
+	} {
+		out := call(QueryInput{Input: in})
+		if out.Status != "error" {
+			t.Errorf("query(%q).Status = %q, want error", in, out.Status)
+		}
+		if out.Route.Detected != "pipe" {
+			t.Errorf("query(%q).Route.Detected = %q, want pipe", in, out.Route.Detected)
+		}
+		if out.Trust.Caveat == "" {
+			t.Errorf("query(%q) should carry a caveat explaining the malformed pipe", in)
 		}
 	}
 }
@@ -278,6 +308,81 @@ func TestPipeTerminalAssembleBudget(t *testing.T) {
 	}
 	if !out.Result.Read.Truncated || out.Trust.Caveat == "" {
 		t.Errorf("a budget-clamped assemble should flag Truncated + carry a caveat")
+	}
+}
+
+// TestPipeSignaturesTerminalHonorsBudget locks #227: the plain `signatures`
+// terminal (not just an explicit `assemble:N`) now clamps to the caller's
+// `budget` param instead of always rendering unbounded output.
+func TestPipeSignaturesTerminalHonorsBudget(t *testing.T) {
+	_, _, _, call := pipeFixture(t)
+	full := call(QueryInput{Input: "pipeLeaf | callers | signatures"})
+	if full.Result.Read == nil || full.Result.Read.Content == "" {
+		t.Fatalf("signatures terminal returned no content to bound")
+	}
+	budget := 6
+	out := call(QueryInput{Input: "pipeLeaf | callers | signatures", Budget: budget})
+	if out.Status != "ok" || out.Result.Read == nil {
+		t.Fatalf("signatures terminal: status=%q result=%+v", out.Status, out.Result)
+	}
+	if n := tokens.Count(out.Result.Read.Content); n > budget {
+		t.Errorf("budget=6 signatures returned %d tokens, want <= %d", n, budget)
+	}
+	if !out.Result.Read.Truncated || out.Trust.Caveat == "" {
+		t.Errorf("a budget-clamped signatures terminal should flag Truncated + carry a caveat")
+	}
+}
+
+// TestClampTraceToBudget locks #227: a pipe ending on a transform (no
+// terminal) drops trailing hits/nodes to fit a token budget, keeping the
+// highest-priority (earliest) entries and flagging Truncated.
+func TestClampTraceToBudget(t *testing.T) {
+	mkHits := func(n int, contentLen int) []CallSite {
+		hits := make([]CallSite, n)
+		for i := range hits {
+			hits[i] = CallSite{QualifiedName: "sym", Path: "f.go", Content: strings.Repeat("x", contentLen)}
+		}
+		return hits
+	}
+	// Comfortably within budget → untouched.
+	agg := &TraceOutput{Hits: mkHits(2, 4)}
+	if clampTraceToBudget(agg, 1000) {
+		t.Errorf("within-budget trace reported truncated")
+	}
+	if len(agg.Hits) != 2 || agg.Truncated {
+		t.Errorf("within-budget trace was mutated: hits=%d truncated=%v", len(agg.Hits), agg.Truncated)
+	}
+	// Over budget → trailing hits dropped, kept ones are the earliest.
+	agg = &TraceOutput{Hits: mkHits(50, 40)}
+	if !clampTraceToBudget(agg, 100) {
+		t.Errorf("over-budget trace not reported truncated")
+	}
+	if !agg.Truncated {
+		t.Errorf("over-budget trace should set Truncated")
+	}
+	if len(agg.Hits) == 0 || len(agg.Hits) >= 50 {
+		t.Errorf("clamp should keep a strict, non-empty prefix, got %d/50", len(agg.Hits))
+	}
+	// Zero budget is a no-op (caller supplies pipeDefaultBudget when unset).
+	agg = &TraceOutput{Hits: mkHits(3, 4)}
+	if clampTraceToBudget(agg, 0) || len(agg.Hits) != 3 {
+		t.Errorf("zero budget should be a no-op, got hits=%d", len(agg.Hits))
+	}
+}
+
+// TestPipeTransformEndClampsToDefaultBudget locks #227 end-to-end: a pipe
+// ending on a transform with no explicit budget still self-clamps via
+// pipeDefaultBudget rather than returning an unbounded aggregate.
+func TestPipeTransformEndClampsToDefaultBudget(t *testing.T) {
+	_, _, _, call := pipeFixture(t)
+	out := call(QueryInput{Input: "pipeLeaf | callers"})
+	if out.Status != "ok" || out.Result.Trace == nil {
+		t.Fatalf("callers transform: status=%q result=%+v", out.Status, out.Result)
+	}
+	// The fixture's aggregate is tiny, so this just proves the clamp ran without
+	// breaking a normal, comfortably-under-budget result.
+	if out.Result.Trace.Truncated {
+		t.Errorf("small fixture result should not be truncated by the default budget")
 	}
 }
 

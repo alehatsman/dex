@@ -25,6 +25,17 @@ import (
 // truncates honestly rather than running away.
 const pipeMaxRefs = 200
 
+// pipeDefaultBudget bounds a pipe's rendered body when the caller gave no
+// explicit budget. A selector seed can fan a transform out over up to
+// pipeMaxRefs symbols, and each call site carries an inlined source snippet
+// (CallSite.Content) — left unclamped, that aggregate can blow well past a
+// client's max tool-result size even though pipeMaxRefs already bounds the
+// ref *count*. Mirrors the magnitude of capsAssembleDense's TotalBytesCap
+// (internal/retrieve/policy.go) so a bare `seed | callers` self-clamps
+// instead of relying on the caller to know to pass `budget`/`assemble:N`
+// (#227). An explicit `budget` param or `assemble:N` arg still overrides it.
+const pipeDefaultBudget = 6000
+
 // pipeState is the Selection currency at the wire layer: the located refs
 // threaded between stages, the weakest-link provenance seen so far, the ordered
 // stage labels echoed to route.stages, and the remaining token budget.
@@ -40,6 +51,12 @@ type pipeState struct {
 // is delimited by `/`, so the first segment is taken whole up to its closing
 // delimiter before the rest is split. (Only the leading seed may be a regex, so
 // this is the only place `/` needs delimiter treatment.)
+//
+// Empty segments (a stray leading/trailing `|`, or a doubled `||`) are
+// returned as empty strings rather than silently dropped — the caller
+// (queryVerb) rejects a segment list containing one with a clear error instead
+// of letting the malformed input fall through to another lane unexplained,
+// or silently collapsing a doubled `||` into a valid-looking pipe (#228).
 func splitPipe(raw string) []string {
 	t := strings.TrimSpace(raw)
 	if !strings.Contains(t, "|") {
@@ -56,19 +73,27 @@ func splitPipe(raw string) []string {
 			if i := strings.IndexByte(rest, '|'); i >= 0 {
 				rest = rest[i+1:]
 			} else {
-				rest = ""
+				// No further `|` after the regex seed at all — not a pipe, just
+				// an internal alternation inside the regex itself.
+				return segments
 			}
 		}
 	}
 	for _, seg := range strings.Split(rest, "|") {
-		if s := strings.TrimSpace(seg); s != "" {
-			segments = append(segments, s)
-		}
-	}
-	if len(segments) == 0 {
-		return []string{t}
+		segments = append(segments, strings.TrimSpace(seg))
 	}
 	return segments
+}
+
+// hasEmptySegment reports whether any pipe segment is blank — the signature of
+// a stray leading/trailing `|` or a doubled `||` (#228).
+func hasEmptySegment(segments []string) bool {
+	for _, s := range segments {
+		if s == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // indexOfCloser returns the index of the closing `/` of a leading regex (the
@@ -88,6 +113,11 @@ func indexOfCloser(t string) int {
 // and the final Selection in refs so the agent can pipe further.
 func runPipe(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput, segments []string) (*sdk.CallToolResult, QueryOutput, error) {
 	orig := strings.TrimSpace(in.Input)
+
+	if hasEmptySegment(segments) {
+		return pipeError(orig, nil,
+			"empty pipe stage — check for a stray leading/trailing '|' or a doubled '||'")
+	}
 
 	// --- seed (segment 0) ---
 	seedSeg := strings.TrimSpace(segments[0])
@@ -174,8 +204,64 @@ func runPipe(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in Qu
 	if st.prov != "exact" && out.Trust.Caveat == "" {
 		out.Trust.Caveat = "pipe provenance is the weakest link across stages (a coercion or partial-recall walk ran)"
 	}
+	// A pipe ending on a transform (no terminal stage) returns the raw aggregate
+	// trace body, which inlines a source snippet per hit — clamp it the same way
+	// a terminal clamps files, so a bare `seed | callers` over a large seed set
+	// can't blow past the client's max tool-result size (#227).
+	if out.Result.Trace != nil {
+		budget := st.budget
+		if budget <= 0 {
+			budget = pipeDefaultBudget
+		}
+		if clampTraceToBudget(out.Result.Trace, budget) && out.Trust.Caveat == "" {
+			out.Trust.Caveat = "pipe output truncated to fit budget"
+		}
+	}
 	out.Status = "ok"
 	return nil, out, nil
+}
+
+// clampTraceToBudget drops trailing Hits/Nodes from agg until its estimated
+// rendered size fits budget tokens — an honest partial mirroring
+// renderSignatures' file-level clamp. Hits/Nodes are already priority-ordered
+// (earliest-resolved symbols first, per runTransform's fan-out order), so
+// trimming the tail keeps the highest-priority results. Reports whether
+// anything was dropped.
+func clampTraceToBudget(agg *TraceOutput, budget int) bool {
+	if budget <= 0 {
+		return false
+	}
+	const perEntryOverhead = 20 // paths/line numbers/JSON punctuation around each entry
+	used := 0
+	kept := 0
+	for _, hit := range agg.Hits {
+		cost := tokens.Count(hit.Content) + perEntryOverhead
+		if used+cost > budget {
+			break
+		}
+		used += cost
+		kept++
+	}
+	truncated := kept < len(agg.Hits)
+	if truncated {
+		agg.Hits = agg.Hits[:kept]
+	}
+	keptNodes := 0
+	for range agg.Nodes {
+		if used+perEntryOverhead > budget {
+			break
+		}
+		used += perEntryOverhead
+		keptNodes++
+	}
+	if keptNodes < len(agg.Nodes) {
+		agg.Nodes = agg.Nodes[:keptNodes]
+		truncated = true
+	}
+	if truncated {
+		agg.Truncated = true
+	}
+	return truncated
 }
 
 // dispatchSingle is the single-lane path shared by queryVerb and the pipe seed:
@@ -286,14 +372,19 @@ func runTransform(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 }
 
 // runTerminal projects the final Selection into a body. Both terminals render
-// the refs' files as compressed signatures; assemble:N additionally caps the
-// output at N tokens, dropping lowest-priority files (an honest partial).
+// the refs' files as compressed signatures, hard-clamped to a token budget
+// (an explicit `assemble:N` arg, the caller's `budget` param, or
+// pipeDefaultBudget, in that priority order) — dropping lowest-priority files
+// as an honest partial rather than returning an unbounded body (#227).
 func runTerminal(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput, name, arg string, st *pipeState) (QueryOutput, error) {
+	budget := st.budget
+	if budget <= 0 {
+		budget = pipeDefaultBudget
+	}
 	switch name {
 	case "signatures":
-		return renderSignatures(ctx, h, req, in, st.refs, 0), nil
+		return renderSignatures(ctx, h, req, in, st.refs, budget), nil
 	case "assemble":
-		budget := st.budget
 		if arg != "" {
 			if n, e := strconv.Atoi(arg); e == nil && n > 0 {
 				budget = n
