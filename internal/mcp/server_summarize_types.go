@@ -47,10 +47,6 @@ type SummarizeInput struct {
 	//   search:PATTERN  RE2 grep ± 3 context lines; groups separated by ---
 	//   json_path:EXPR  dot-path JSON extraction ($.a.b, $.a[0].b)
 	Slice string `json:"slice,omitempty" jsonschema:"surgical extraction: head:N (first N lines), tail:N (last N lines), range:L1-L2 (line slice), search:PATTERN (RE2 grep ±3 context lines), json_path:EXPR (JSON dot-path e.g. $.a.b[0])"`
-	// CCRHash retrieves a content-addressed blob written by the proxy's CCR tee
-	// store (dex:lc_expand:<hash> recovery markers). When set, path/paths/handle
-	// are ignored; Slice applies to the retrieved blob content (#630).
-	CCRHash string `json:"ccr_hash,omitempty" jsonschema:"content-addressed recovery hash (from a dex:lc_expand:<hash> marker in pruned proxy history); returns the archived tool result, with optional slice applied"`
 }
 
 type SummarizeOutput struct {

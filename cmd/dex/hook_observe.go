@@ -2,11 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/alehatsman/dex/internal/feedback"
@@ -14,10 +11,8 @@ import (
 
 const toolSearch = "ToolSearch"
 
-// hookObserve handles PostToolUse, Stop, and PreCompact. It appends a compact
-// event record to $XDG_DATA_HOME/dex/hooks.jsonl. No stdout output.
-// When the hook event is PreCompact it also signals the proxy to record a
-// budget compact event and advance the session window counter (#60).
+// hookObserve handles PostToolUse and Stop. It appends a compact event record
+// to $XDG_DATA_HOME/dex/hooks.jsonl. No stdout output.
 func hookObserve() error {
 	raw := hookReadStdin()
 	if len(raw) == 0 {
@@ -105,40 +100,7 @@ func hookObserve() error {
 		}
 	}
 
-	// PreCompact: tell the proxy to record a compact event and advance the
-	// window counter. Fails silently — the proxy may not be running.
-	if hookEventName == "PreCompact" {
-		notifyProxyCompact()
-	}
-
 	return nil
-}
-
-// notifyProxyCompact sends POST /compact to the proxy at ANTHROPIC_BASE_URL.
-// Fire-and-forget: silently swallows all errors so the hook never blocks Claude.
-func notifyProxyCompact() {
-	baseURL := strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL"))
-	if baseURL == "" {
-		return
-	}
-	u, err := url.Parse(baseURL)
-	if err != nil || u.Host == "" {
-		return
-	}
-	compactURL := u.Scheme + "://" + u.Host + "/compact"
-	req, err := http.NewRequest(http.MethodPost, compactURL, nil) //nolint:gosec // URL built from operator-controlled env var with hardcoded path
-	if err != nil {
-		return
-	}
-	if tok := strings.TrimSpace(os.Getenv("DEX_PROXY_TOKEN")); tok != "" {
-		req.Header.Set("X-Dex-Proxy-Token", tok)
-	}
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Do(req) //nolint:gosec // same URL, same rationale
-	if err != nil {
-		return
-	}
-	_ = resp.Body.Close()
 }
 
 // hookLogDir resolves the observe-log directory via the shared resolver in

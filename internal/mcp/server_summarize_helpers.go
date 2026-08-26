@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -46,18 +45,6 @@ func applyExpansionHandle(in SummarizeInput) (SummarizeInput, *SummarizeOutput) 
 		in.Mode = fmt.Sprintf("lines:%d-%d", start, end)
 	}
 	return in, nil
-}
-
-// summarizePreFile is the combined pre-file-read gate (#344, #630).
-// It handles CCR blob expansion (ccr_hash present → return immediately) and
-// expansion handle decoding (handle present → rewrite path/range). A non-nil
-// *SummarizeOutput means the caller should return it unchanged.
-func (s *Server) summarizePreFile(in SummarizeInput) (SummarizeInput, *SummarizeOutput) {
-	if strings.TrimSpace(in.CCRHash) != "" {
-		out := s.summarizeCCR(in)
-		return in, &out
-	}
-	return applyExpansionHandle(in)
 }
 
 // summarizeModeSlice applies a Slice spec to file content and signals done=true
@@ -102,57 +89,4 @@ func (s *Server) resolveProjectRoot(ctx context.Context, projectRoot string) (st
 	}
 	warnCwdFallback(wd)
 	return wd, nil
-}
-
-// summarizeCCR retrieves a content-addressed blob from the proxy's CCR tee
-// store (#630). It applies Slice if set and returns the blob as plain content.
-func (s *Server) summarizeCCR(in SummarizeInput) SummarizeOutput {
-	hash := strings.TrimSpace(in.CCRHash)
-	content, ok := s.ccrGet(hash)
-	if !ok {
-		return SummarizeOutput{
-			Status: "not-found",
-			Hint:   fmt.Sprintf("CCR hash %q not found — the blob may have expired (TTL 24h) or the proxy CCR store is not enabled (DEX_PROXY_CCR)", hash),
-		}
-	}
-	if spec := strings.TrimSpace(in.Slice); spec != "" {
-		sliced, hint, err := applySlice([]byte(content), spec)
-		if err != nil {
-			return SummarizeOutput{Status: "error", Hint: fmt.Sprintf("slice: %v", err)}
-		}
-		return SummarizeOutput{
-			Status:  "ok",
-			Content: string(sliced),
-			Bytes:   len(sliced),
-			Hint:    fmt.Sprintf("CCR blob %s: %s", hash, hint),
-		}
-	}
-	return SummarizeOutput{
-		Status:  "ok",
-		Content: content,
-		Bytes:   len(content),
-		Hint:    fmt.Sprintf("CCR blob %s", hash),
-	}
-}
-
-// ccrGet reads a content-addressed blob from the proxy's tee store directory.
-// Returns ("", false) when the hash is absent, expired, or the dir is unreadable.
-// The dir is always ~/.cache/dex/proxy/tee (same path as internal/proxy.TeeStore).
-func (s *Server) ccrGet(hash string) (string, bool) {
-	if hash == "" {
-		return "", false
-	}
-	dir := s.CCRDir
-	if dir == "" {
-		cacheDir, err := os.UserCacheDir()
-		if err != nil {
-			return "", false
-		}
-		dir = filepath.Join(cacheDir, "dex", "proxy", "tee")
-	}
-	b, err := os.ReadFile(filepath.Join(dir, hash+".log"))
-	if err != nil {
-		return "", false
-	}
-	return string(b), true
 }

@@ -359,10 +359,6 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "proxy", group: groupConfig, args: "<path>",
-		summary: "MCP proxy — forward tools to a remote dex server",
-	},
-	{
 		name: "setup", group: groupConfig, summary: "guided first-run wizard", noFiles: true,
 		flags: []flagSpec{{name: "--check", desc: "exit 0 if setup complete, 1 otherwise"}},
 	},

@@ -181,7 +181,6 @@ config / setup:
                                           Flags: --addr=:8080 (default loopback
                                           when no token), --project (repeatable).
                                           DEX_SERVE_TOKEN gates non-loopback.
-  dex proxy <path>                      MCP proxy — forward tools to a remote dex server
   dex hook inject                       Claude Code UserPromptSubmit hook:
                                           inject dex context before each turn.
   dex hook rewrite                      Claude Code PreToolUse(Bash) hook:

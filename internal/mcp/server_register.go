@@ -221,8 +221,6 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"search:PATTERN (RE2 grep with ±3 context lines, groups separated by ---), " +
 			"json_path:EXPR (dot-path JSON extraction, e.g. $.dependencies). " +
 			"Slice composes with handle: the handle resolves to a range first, then slice extracts within it. " +
-			"Pass `ccr_hash` (a hex string from a dex:lc_expand:<hash> recovery marker) to retrieve an archived " +
-			"tool result from the proxy's CCR tee store; `slice` applies to the retrieved blob. " +
 			"On error, returns 'chat-service-unreachable' or 'error'."),
 	}, h.summarize)
 

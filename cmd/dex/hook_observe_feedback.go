@@ -46,7 +46,7 @@ func pathsFromInput(raw json.RawMessage) []string {
 
 var (
 	// path with extension followed by a :start-end line range, as the ask
-	// bundle renders suggested_reads in text ("internal/proxy/prune.go:232-251").
+	// bundle renders suggested_reads in text ("internal/store/store.go:232-251").
 	askPathLineRe = regexp.MustCompile(`([A-Za-z0-9_./\-]+\.[A-Za-z0-9]+):\d+-\d+`)
 	askInlinedRe  = regexp.MustCompile(`content_bytes_inlined["\s:]+(\d+)`)
 	askIntentRe   = regexp.MustCompile(`intent["\s:]+"?([a-z_]+)`)

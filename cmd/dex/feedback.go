@@ -29,9 +29,6 @@ import (
 //     the agent opened afterward — broken down by routed intent;
 //   - inline-reopen rate: of `ask` calls that inlined content, what fraction
 //     were followed by re-opening a recommended file anyway.
-//
-// The pruned-then-re-read (CCR) rate is already measured proxy-side
-// (rereads_after_stub in the proxy request log); see `dex proxy --stats`.
 
 // Type aliases keep the CLI's JSON contract (and #732's --mine-curated) bound
 // to the canonical types in internal/feedback.
@@ -230,7 +227,6 @@ func printFeedbackReport(w io.Writer, r feedbackReport) {
 	if r.SuggestedReads == 0 {
 		fmt.Fprintln(w, "\nno ask suggested_reads captured yet — the enriched observe hook records them going forward.")
 	}
-	fmt.Fprintln(w, "\nCCR pruned-then-re-read rate is measured proxy-side; see `dex proxy --stats`.")
 }
 
 func pct(f float64) string { return fmt.Sprintf("%.0f%%", f*100) }

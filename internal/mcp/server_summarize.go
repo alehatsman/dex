@@ -15,10 +15,9 @@ import (
 
 func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (result *sdk.CallToolResult, out SummarizeOutput, err error) {
 
-	// CCR blob expansion and handle decode (#344, #630): CCR short-circuits to the
-	// content-addressed store; a plain handle decodes to a concrete path+range.
-	// Both return a *SummarizeOutput on early-exit so one nil-check covers both.
-	in, bad := s.summarizePreFile(in)
+	// Handle decode (#344): a plain handle decodes to a concrete path+range,
+	// returning a *SummarizeOutput on early-exit.
+	in, bad := applyExpansionHandle(in)
 	if bad != nil {
 		return nil, *bad, nil
 	}

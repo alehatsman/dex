@@ -250,9 +250,6 @@
         "cache_layout": {
           "type": "string"
         },
-        "ccr_hash": {
-          "type": "string"
-        },
         "dedup": {
           "type": "boolean|null"
         },

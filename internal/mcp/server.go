@@ -167,7 +167,6 @@ type Server struct {
 	StoreOpts      store.Options        // applied to every Store opened by the server
 	Retrieve       retrieve.Service     // query-time ranking service; holds the cross-encoder + shared rerank cache (#473)
 	AutoWatch      AutoWatchConfig      // lazy per-project watcher; zero value disables
-	CCRDir         string               // optional override for the proxy CCR tee dir; defaults to ~/.cache/dex/proxy/tee (#630)
 
 	watcherState  // project watcher goroutines
 	sessionState  // per-MCP-session tracking (throttle, dedup, body handles)

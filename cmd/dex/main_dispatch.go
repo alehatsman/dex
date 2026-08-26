@@ -59,7 +59,6 @@ func dispatchCmd(ctx context.Context, cmd string, args []string) error {
 		"reindex":        cmdReindex,
 		"mcp":            cmdMCP,
 		"serve":          cmdServe,
-		"proxy":          cmdProxy,
 		"watch":          cmdWatch,
 		"clone":          cmdClone,
 		"hook":           cmdHook,
