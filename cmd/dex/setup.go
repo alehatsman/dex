@@ -175,7 +175,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 const (
 	rulesMarker    = "# dex — semantic search & context routing"
 	rulesEndMarker = "<!-- /dex -->"
-	rulesVersion   = "<!-- dex-rules-v4 -->"
+	rulesVersion   = "<!-- dex-rules-v5 -->"
 )
 
 // rulesContent is a deliberately thin pointer block. dex injects the full,
@@ -184,16 +184,19 @@ const (
 // here only invites the staleness this block used to carry — keep it minimal
 // and let the MCP instructions be the single source of truth.
 const rulesContent = `# dex — semantic search & context routing
-<!-- dex-rules-v4 -->
+<!-- dex-rules-v5 -->
 
-dex is active as an MCP server. Its tool mapping and workflow are injected live
-as MCP server instructions, generated from the installed binary so they never
-drift — prefer those over any static copy of them. Start each session by calling
-` + "`ask()`" + ` with the task description; use ` + "`map()`" + ` to orient in an unfamiliar repo.
+dex is active as an MCP server, exposing two verbs — ` + "`query`" + ` (read) and
+` + "`record`" + ` (write durable findings). Its tool mapping and workflow are
+injected live as MCP server instructions, generated from the installed binary so
+they never drift — prefer those over any static copy of them. Start each session
+by calling ` + "`query()`" + ` with the task description; its input shape picks the
+lane (path → signatures, /regex/ → grep, path:line → slice, symbol → call graph,
+prose → semantic pack). Persist durable findings with ` + "`record()`" + `.
 Working in a git worktree? Pass its absolute path as ` + "`project_root`" + ` to every
 dex call — the server can't see your shell's cwd and otherwise resolves the
 checkout it was started in.
-Power lanes (deps, diff, clusters, smells, session, …) are gated behind DEX_EXPERT.
+Power lanes (search, trace, deps, clusters, smells, review_diff, …) are gated behind DEX_EXPERT.
 <!-- /dex -->`
 
 // claudeRulesPath returns $CLAUDE_CONFIG_DIR/rules/dex.md, falling back to
