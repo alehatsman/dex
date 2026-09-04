@@ -23,6 +23,8 @@ func usageQuickstart() {
 // Shown by `dex help` / `dex --help` / `-h`.
 func usageConcise() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
+(MCP agents: 'ask' is 'query', the only tool on by default — every other verb
+below needs DEX_EXPERT=1 to appear over MCP; all of them work from the CLI.)
 
 SEARCH & UNDERSTAND
   dex ask      [<path>] <q...>           START HERE — routed evidence pack (intent=assemble for a task working set)
