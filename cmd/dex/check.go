@@ -13,11 +13,12 @@ import (
 )
 
 // cmdCheck verifies a batch of file:line[:symbol] references against the index
-// (MCP: check). Useful after code changes to confirm cited locations are valid.
+// (MCP: check, DEX_EXPERT). Useful after code changes to confirm cited
+// locations are valid.
 func cmdCheck(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	setHelp(fs,
-		"Verify file:line[:symbol] references against the index (MCP: check).",
+		"Verify file:line[:symbol] references against the index (MCP: check, DEX_EXPERT).",
 		"dex check [flags] [<path>] <ref...>",
 		"dex check internal/mcp/server.go:47:check",
 		"dex check internal/store/store_search.go:1029",

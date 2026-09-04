@@ -12,12 +12,13 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdRefs is the front door for type-precise symbol queries (MCP: refs):
-// references, implementations, supertypes, subtypes — all via go/types, no index.
+// cmdRefs is the front door for type-precise symbol queries (MCP: refs,
+// DEX_EXPERT): references, implementations, supertypes, subtypes — all via
+// go/types, no index.
 func cmdRefs(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("xref", flag.ContinueOnError)
 	setHelp(fs,
-		"Type-precise Go symbol queries via go/types (MCP: refs): references, implementations, supertypes, subtypes.",
+		"Type-precise Go symbol queries via go/types (MCP: refs, DEX_EXPERT): references, implementations, supertypes, subtypes.",
 		"dex xref [flags] [<path>] <action> <symbol>",
 		"dex xref references mcp.NewServer",
 		"dex xref implementations toolSurface",

@@ -20,7 +20,7 @@ import (
 func cmdIndexStatus(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("index status", flag.ContinueOnError)
 	setHelp(fs,
-		"Show endpoint health and project stats (chunks/files/graph). Optional path narrows to one project. (MCP: status)",
+		"Show endpoint health and project stats (chunks/files/graph). Optional path narrows to one project. (MCP: status, DEX_EXPERT)",
 		"dex index status [<path>]")
 	format := fs.String("format", "text", "output format: text|json")
 	jsonFlag := fs.Bool("json", false, "shorthand for --format=json")

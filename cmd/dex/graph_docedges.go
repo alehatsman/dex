@@ -19,17 +19,18 @@ func cmdGraphBacklinks(ctx context.Context, args []string) error {
 	return runGraphDocEdges(ctx, args, true)
 }
 
-// runGraphDocEdges mirrors the MCP graph_links / graph_backlinks tools:
-// markdown doc-graph traversal over `links`/`wikilinks` edges. backlinks
-// walks incoming edges ("what links here"), otherwise outgoing.
+// runGraphDocEdges backs `graph links` / `graph backlinks`: markdown
+// doc-graph traversal over `links`/`wikilinks` edges. backlinks walks
+// incoming edges ("what links here"), otherwise outgoing. CLI-only — never
+// registered as an MCP tool.
 func runGraphDocEdges(ctx context.Context, args []string, backlinks bool) error {
 	name := "graph links"
 	rel := "links"
-	helpOneLiner := "Outgoing doc `links`/`wikilinks` (MCP: graph_links)."
+	helpOneLiner := "Outgoing doc `links`/`wikilinks` (CLI-only)."
 	if backlinks {
 		name = "graph backlinks"
 		rel = "backlinks"
-		helpOneLiner = "Incoming doc `links`/`wikilinks` (MCP: graph_backlinks)."
+		helpOneLiner = "Incoming doc `links`/`wikilinks` (CLI-only)."
 	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	setHelp(fs, helpOneLiner, "dex "+name+" [flags] [<path>] <doc>")
@@ -115,12 +116,12 @@ func runGraphDocEdges(ctx context.Context, args []string, backlinks bool) error 
 	return nil
 }
 
-// cmdGraphTags mirrors the MCP graph_tags tool: --tag=<t> lists the
-// documents carrying a tag (ranked by importance); --doc=<d> lists the
-// tags a document carries.
+// cmdGraphTags: --tag=<t> lists the documents carrying a tag (ranked by
+// importance); --doc=<d> lists the tags a document carries. CLI-only —
+// never registered as an MCP tool.
 func cmdGraphTags(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph tags", flag.ContinueOnError)
-	setHelp(fs, "Query the markdown tag graph (MCP: graph_tags).", "dex graph tags [flags] [<path>]")
+	setHelp(fs, "Query the markdown tag graph (CLI-only).", "dex graph tags [flags] [<path>]")
 	tag := fs.String("tag", "", "a #tag (without #) — list documents carrying it")
 	docFlag := fs.String("doc", "", "a document path — list the tags it carries")
 	k := fs.Int("k", 100, "max items to return (default 100, max 500)")

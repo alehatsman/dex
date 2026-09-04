@@ -14,7 +14,7 @@ import (
 func cmdGraphCommunities(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph clusters", flag.ContinueOnError)
 	setHelp(fs,
-		"List Louvain clusters in the call/import graph (MCP: clusters).",
+		"List Louvain clusters in the call/import graph (MCP: clusters, DEX_EXPERT).",
 		"dex graph clusters [flags] [<path>]")
 	minMembers := fs.Int("min-members", 3, "min community size (default 3)")
 	k := fs.Int("k", 20, "max clusters to return (default 20)")

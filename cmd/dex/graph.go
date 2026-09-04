@@ -57,40 +57,43 @@ func cmdGraph(ctx context.Context, args []string) error {
 		return cmdGraphExport(ctx, rest)
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, `usage:
-  dex graph neighbors   [<path>] <file> <line>  vector neighbours of a chunk (MCP: graph_neighbors)
-  dex graph similar     [<path>] <file> <line>  blocks semantically near a block (MCP: similar)
+  dex graph neighbors   [<path>] <file> <line>  vector neighbours of a chunk (CLI-only)
+  dex graph similar     [<path>] <file> <line>  blocks semantically near a block (MCP: similar, DEX_EXPERT)
                                                     --k=<n>  --threshold=<0..1>
-  dex graph clones      [<path>]                clusters of near-duplicate blocks (MCP: clones)
+  dex graph clones      [<path>]                clusters of near-duplicate blocks (MCP: clones, DEX_EXPERT)
                                                     --path=<prefix>  --threshold=<0..1>
                                                     --min-lines=<n>  --k=<n>  --max-clusters=<n>
-  dex graph deps        [<path>] <file|package>  imports edges (MCP: deps)
+  dex graph deps        [<path>] <file|package>  imports edges (MCP: deps, DEX_EXPERT)
                                                     --file=<rel>  --package=<full>
-  dex graph packages    [<path>]                whole internal package import DAG
-  dex graph links       [<path>] <doc>          docs this doc links to (MCP: graph_links)
+  dex graph packages    [<path>]                whole internal package import DAG (CLI-only)
+  dex graph links       [<path>] <doc>          docs this doc links to (CLI-only)
                                                     --k=<n>
-  dex graph backlinks   [<path>] <doc>          docs that link to this doc (MCP: graph_backlinks)
+  dex graph backlinks   [<path>] <doc>          docs that link to this doc (CLI-only)
                                                     --k=<n>
   dex graph tags        [<path>] [--tag=<t>|--doc=<d>]
-                                                    tag→docs or doc→tags (MCP: graph_tags)
+                                                    tag→docs or doc→tags (CLI-only)
                                                     --k=<n>
-  dex graph cycles      [<path>]                call-graph SCCs ≥ size 2 (MCP: graph_cycles)
+  dex graph cycles      [<path>]                call-graph SCCs ≥ size 2 (CLI-only)
                                                     --min-size=<n>  --k=<n>
-  dex graph diff        [<path>]                blast-radius of current git diff (MCP: diff)
+  dex graph diff        [<path>]                blast-radius of current git diff (CLI-only;
+                                                    MCP covers this via review_diff / trace --dir impact, DEX_EXPERT)
                                                     --ref=<ref>  --depth=<n>
-  dex graph clusters    [<path>]                Louvain call/import-graph clusters (MCP: clusters)
+  dex graph clusters    [<path>]                Louvain call/import-graph clusters (MCP: clusters, DEX_EXPERT)
                                                     --min-members=<n>  --k=<n>  --top-k=<n>
-  dex graph smells      [<path>]                long funcs, dead exports, god files/nodes (MCP: smells)
+  dex graph smells      [<path>]                long funcs, dead exports, god files/nodes (MCP: smells, DEX_EXPERT)
                                                     --min-func-lines=<n>  --min-file-symbols=<n>
                                                     --min-god-node-callers=<n>  --limit=<n>
-  dex graph routes      [<path>]                HTTP/MCP/gRPC handlers + registration sites (MCP: routes)
+  dex graph routes      [<path>]                HTTP/MCP/gRPC handlers + registration sites (MCP: routes, DEX_EXPERT)
   dex graph export      [<path>] [--output=<dir>]
-                                                    dump nodes/edges as JSONL
+                                                    dump nodes/edges as JSONL (CLI-only)
   (path defaults to cwd when omitted)
 
 note:
-  callers/callees/path moved to 'dex trace --dir callers|callees|path'.
+  callers/callees/path fold into 'dex trace --dir callers|callees|path' (MCP: trace, DEX_EXPERT).
   'graph index' is gone — use 'dex index --graph=only <path>'.
-  Plain 'dex index <path>' runs both chunk and graph phases.`)
+  Plain 'dex index <path>' runs both chunk and graph phases.
+  Everyday MCP agents: none of these are on the default surface — 'query' covers
+  this work; the tools named above require DEX_EXPERT=1.`)
 		return nil
 	default:
 		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, similar, clones, deps, packages, links, backlinks, tags, cycles, diff, clusters, smells, routes, export)", sub)

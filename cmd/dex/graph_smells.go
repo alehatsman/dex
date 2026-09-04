@@ -32,7 +32,7 @@ func writeFindingsJSONL(status string, findings []mcp.GateFinding) error {
 func cmdGraphSmells(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph smells", flag.ContinueOnError)
 	setHelp(fs,
-		"Surface code smells: long functions, dead exports, god files, god-nodes (MCP: smells).",
+		"Surface code smells: long functions, dead exports, god files, god-nodes (MCP: smells, DEX_EXPERT).",
 		"dex graph smells [flags] [<path>]")
 	minFuncLines := fs.Int("min-func-lines", 0, "min function body length to flag as long (default 80)")
 	minFileSymbols := fs.Int("min-file-symbols", 0, "min symbols per file to flag as a god file (default 30)")
@@ -138,7 +138,7 @@ func toSmellHitViews(hits []mcp.SmellHit) []SmellHitView {
 func cmdGraphRoutes(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph routes", flag.ContinueOnError)
 	setHelp(fs,
-		"List detected HTTP/MCP/gRPC handlers and registration sites (MCP: routes).",
+		"List detected HTTP/MCP/gRPC handlers and registration sites (MCP: routes, DEX_EXPERT).",
 		"dex graph routes [flags] [<path>]")
 	format := fs.String("format", "text", "output format: text | json")
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {

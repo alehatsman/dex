@@ -16,7 +16,7 @@ import (
 func cmdGraphDeps(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph deps", flag.ContinueOnError)
 	setHelp(fs,
-		"Return `imports` edges for a file or package (MCP: deps).",
+		"Return `imports` edges for a file or package (MCP: deps, DEX_EXPERT).",
 		"dex graph deps [flags] [<project>] <path|package>")
 	file := fs.String("file", "", "relative file path inside the project (resolved to its package)")
 	pkg := fs.String("package", "", "full package path (e.g. 'github.com/foo/bar/internal/baz'); takes precedence over --file")
@@ -155,7 +155,7 @@ func firstGoFile(dir string) string {
 func cmdGraphPackages(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph packages", flag.ContinueOnError)
 	setHelp(fs,
-		"Return the whole internal package import DAG with per-package in/out-degree + PageRank (MCP: graph_packages).",
+		"Return the whole internal package import DAG with per-package in/out-degree + PageRank (CLI-only).",
 		"dex graph packages [flags] [<path>]")
 	format := fs.String("format", "text", "output format: text | json")
 	level := fs.String("level", "module", "aggregation level: module | project (roll JS/TS modules up to workspace packages)")

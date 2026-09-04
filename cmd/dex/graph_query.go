@@ -14,7 +14,7 @@ import (
 func cmdGraphNeighbors(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph neighbors", flag.ContinueOnError)
 	setHelp(fs,
-		"Find chunks semantically related to a given chunk (MCP: graph_neighbors).",
+		"Find chunks semantically related to a given chunk (CLI-only).",
 		"dex graph neighbors [flags] [<path>] <file> <line>")
 	k := fs.Int("k", 8, "number of related chunks to return (max 30)")
 	format := fs.String("format", "text", "output format: text | json")
@@ -62,7 +62,7 @@ func cmdGraphNeighbors(ctx context.Context, args []string) error {
 func cmdGraphSimilar(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph similar", flag.ContinueOnError)
 	setHelp(fs,
-		"Find code blocks semantically near a given block (MCP: similar).",
+		"Find code blocks semantically near a given block (MCP: similar, DEX_EXPERT).",
 		"dex graph similar [flags] [<path>] <file> <line>")
 	k := fs.Int("k", 8, "number of similar blocks to return (max 30)")
 	threshold := fs.Float64("threshold", 0, "drop hits below this cosine similarity (0..1; 0 keeps all)")
@@ -112,7 +112,7 @@ func cmdGraphSimilar(ctx context.Context, args []string) error {
 func cmdGraphClones(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph clones", flag.ContinueOnError)
 	setHelp(fs,
-		"Find clusters of semantically near-duplicate code blocks (MCP: clones).",
+		"Find clusters of semantically near-duplicate code blocks (MCP: clones, DEX_EXPERT).",
 		"dex graph clones [flags] [<path>]")
 	pathPrefix := fs.String("path", "", "restrict the scan to blocks under this relative path prefix")
 	threshold := fs.Float64("threshold", 0, "min cosine similarity for a duplicate edge (default 0.90)")

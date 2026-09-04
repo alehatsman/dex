@@ -11,14 +11,16 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdReview is the front door for per-hunk PR intelligence (MCP: review_diff). It
-// composes the diff with callers, tests, churn, author history, and notes per
-// hunk so a reviewer spends budget on judgment, not context assembly. With no
-// selector it defaults to the last commit (HEAD~1..HEAD).
+// cmdReview is the front door for per-hunk PR intelligence (MCP: review_diff,
+// DEX_EXPERT; query kind=review covers the everyday working-tree case on the
+// default surface). It composes the diff with callers, tests, churn, author
+// history, and notes per hunk so a reviewer spends budget on judgment, not
+// context assembly. With no selector it defaults to the last commit
+// (HEAD~1..HEAD).
 func cmdReview(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("review_diff", flag.ContinueOnError)
 	setHelp(fs,
-		"Per-hunk intelligence for a diff or PR (MCP: review_diff). Composes callers, tests, churn, author history, and notes.",
+		"Per-hunk intelligence for a diff or PR (MCP: review_diff, DEX_EXPERT). Composes callers, tests, churn, author history, and notes.",
 		"dex review_diff [flags] [<path>]",
 		"dex review_diff --ref HEAD~3..HEAD",
 		"dex review_diff --branch feat/foo",

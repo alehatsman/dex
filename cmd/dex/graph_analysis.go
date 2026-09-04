@@ -65,7 +65,7 @@ func cmdGraphExport(ctx context.Context, args []string) error {
 func cmdGraphCycles(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph cycles", flag.ContinueOnError)
 	setHelp(fs,
-		"Find strongly connected components (call cycles / mutual recursion) in the call graph (MCP: graph_cycles).",
+		"Find strongly connected components (call cycles / mutual recursion) in the call graph (CLI-only).",
 		"dex graph cycles [flags] [<path>]")
 	minSize := fs.Int("min-size", 2, "minimum SCC size to include (default 2)")
 	k := fs.Int("k", 20, "max cycles to return (default 20, max 100)")
@@ -128,7 +128,7 @@ func cmdGraphCycles(ctx context.Context, args []string) error {
 func cmdGraphPath(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph path", flag.ContinueOnError)
 	setHelp(fs,
-		"Find the shortest call/import path between two symbols (MCP: path).",
+		"Find the shortest call/import path between two symbols (folds into MCP trace --dir path --to <dst>, DEX_EXPERT).",
 		"dex graph path [flags] [<path>] <src> <dst>")
 	pkg := fs.String("package", "", "package path filter for both src and dst")
 	maxDepth := fs.Int("max-depth", 8, "BFS depth limit (default 8, max 15)")
@@ -190,7 +190,8 @@ func cmdGraphPath(ctx context.Context, args []string) error {
 func cmdGraphDiff(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph diff", flag.ContinueOnError)
 	setHelp(fs,
-		"Blast-radius of the current git diff: changed symbols and their transitive callers (MCP: diff).",
+		"Blast-radius of the current git diff: changed symbols and their transitive callers (CLI-only; "+
+			"MCP covers this via review_diff / trace --dir impact, DEX_EXPERT).",
 		"dex graph diff [flags] [<path>]")
 	ref := fs.String("ref", "HEAD~1", "git ref to diff against (default HEAD~1)")
 	depth := fs.Int("depth", 2, "BFS depth for caller traversal (default 2, max 5)")

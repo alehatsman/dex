@@ -17,13 +17,13 @@ import (
 var reLocateRef = regexp.MustCompile(`:\d+(:\d+)?$`)
 
 // cmdLocate is the front door for one-call orientation around a code location
-// (MCP: locate). It mirrors the MCP tool: give a path:line, a symbol, or a
-// stack frame and it resolves the enclosing symbol plus callers, tests, nearest
-// doc, last commit, and related notes.
+// (MCP: locate, DEX_EXPERT). It mirrors the MCP tool: give a path:line, a
+// symbol, or a stack frame and it resolves the enclosing symbol plus callers,
+// tests, nearest doc, last commit, and related notes.
 func cmdLocate(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("locate", flag.ContinueOnError)
 	setHelp(fs,
-		"One-call orientation around a code location (MCP: locate). Resolves a path:line / symbol / frame to its enclosing symbol + callers, tests, nearest doc, last commit, notes.",
+		"One-call orientation around a code location (MCP: locate, DEX_EXPERT). Resolves a path:line / symbol / frame to its enclosing symbol + callers, tests, nearest doc, last commit, notes.",
 		"dex locate [flags] [<path>] <symbol-or-path:line>",
 		"dex locate '(*Server).RunStdio'",
 		"dex locate internal/mcp/server.go:730",

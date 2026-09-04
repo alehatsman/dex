@@ -12,12 +12,13 @@ import (
 )
 
 // cmdRehearse type-checks a hypothetical edit in-memory and reports new type
-// errors + broken files + tests to run, without writing anything (MCP: rehearse_patch).
+// errors + broken files + tests to run, without writing anything (MCP:
+// rehearse_patch, DEX_EXPERT).
 func cmdRehearse(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("rehearse_patch", flag.ContinueOnError)
 	setHelp(fs,
 		"Type-check a hypothetical edit in-memory and return new type errors, broken files,\n"+
-			"and tests to run — without writing anything (MCP: rehearse_patch). Go-only in v1.",
+			"and tests to run — without writing anything (MCP: rehearse_patch, DEX_EXPERT). Go-only in v1.",
 		"dex rehearse_patch [flags] [<path>] --edits <json> | --file <path> --contents <str>",
 		"dex rehearse_patch --edits '[{\"path\":\"pkg/foo.go\",\"start_byte\":42,\"end_byte\":55,\"replacement\":\"NewName\"}]'",
 		"dex rehearse_patch --file internal/store/store.go --contents \"$(cat /tmp/store_hypo.go)\"")

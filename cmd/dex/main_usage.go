@@ -76,12 +76,16 @@ quickstart:
 
   <path> defaults to cwd on every query/graph command.
 
-query — read verbs (over MCP these fold into query; the granular tools surface under DEX_EXPERT):
-  dex repo_map [--cluster <id>] [<path>] repo orientation (MCP: repo_map). No --cluster: the
+query — read verbs (the everyday MCP agent surface is just 'query', which these
+fold into; every "MCP: X" below is a granular tool that additionally requires
+DEX_EXPERT=1 — it is NOT registered by default):
+  dex repo_map [--cluster <id>] [<path>] repo orientation (MCP: repo_map,
+                                          DEX_EXPERT). No --cluster: the
                                           first-touch bundle (L0 overview + a zoom into
                                           the most-central cluster). --cluster <id>: zoom
                                           a chosen cluster.
-  dex ask    [<path>] <q...>            one-shot router (MCP: query). Picks intent,
+  dex ask    [<path>] <q...>            one-shot router (MCP: query — the only
+                                          tool on the default surface). Picks intent,
                                           fuses semantic + symbol + graph; returns
                                           suggested_reads and a prose next_action.
                                           --intent assemble returns a task working set:
@@ -90,11 +94,11 @@ query — read verbs (over MCP these fold into query; the granular tools surface
                                           Flags: --intent, --k, --format=text|json,
                                           --no-inline, --max-content-bytes, -v
   dex search [<path>] <q...>            hybrid semantic top-k chunks, fuses exact
-                                          symbol-name hits via RRF (MCP: search).
+                                          symbol-name hits via RRF (MCP: search, DEX_EXPERT).
                                           Raw ranking — ask composes this internally.
                                           Flags: --k, --rerank=off, --explain,
                                           --format=text|json, --max-content-bytes, -v
-  dex read   <file>                     read a file (MCP: read). Modes:
+  dex read   <file>                     read a file (MCP: read, DEX_EXPERT). Modes:
                                           full (default; raw, no LLM), signatures,
                                           skeleton, map, aggressive, entropy, auto,
                                           analyze (per-mode token-cost comparison),
@@ -103,32 +107,35 @@ query — read verbs (over MCP these fold into query; the granular tools surface
                                           --temperature, --max-tokens, -v,
                                           --format=text|json
   dex locate [<path>] <target>          full context for one symbol: callers, tests,
-                                          doc, blame (MCP: locate)
+                                          doc, blame (MCP: locate, DEX_EXPERT)
   dex trace  [<path>] <name>            call graph via --dir callers|callees|path|impact
-  dex grep   [<path>] <pattern>         exact RE2 regex search (MCP: grep)
-  dex review_diff   [<path>]            per-hunk PR intelligence (MCP: review_diff).
+                                          (MCP: trace, DEX_EXPERT)
+  dex grep   [<path>] <pattern>         exact RE2 regex search (MCP: grep, DEX_EXPERT)
+  dex review_diff   [<path>]            per-hunk PR intelligence (MCP: review_diff,
+                                          DEX_EXPERT; query kind=review covers the
+                                          everyday working-tree case on the default surface).
                                           Flags: --ref, --branch, --pr
-  dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check)
+  dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check, DEX_EXPERT)
   dex status [<path>]                   endpoint health + project stats
-                                          (MCP: status; alias: index status)
+                                          (MCP: status, DEX_EXPERT; alias: index status)
   dex index status [<path>]             same as dex status
 
-query — power lanes (Go-focused or specialized):
-  dex refs   [<path>] <action> <sym>    type-precise Go symbol queries (MCP: refs).
-                                          Actions: references, implementations,
+query — power lanes (Go-focused or specialized; all DEX_EXPERT-only over MCP):
+  dex refs   [<path>] <action> <sym>    type-precise Go symbol queries (MCP: refs,
+                                          DEX_EXPERT). Actions: references, implementations,
                                           supertypes, subtypes.
   dex plan_rename    [<path>] <sym> <to> plan a type-precise rename — edit triples,
-                                          never writes (MCP: plan_rename)
+                                          never writes (MCP: plan_rename, DEX_EXPERT)
   dex rehearse_patch [<path>]            type-check a hypothetical edit in-memory,
-                                          never writes (MCP: rehearse_patch).
+                                          never writes (MCP: rehearse_patch, DEX_EXPERT).
                                           Flags: --edits, --file
   dex cohort [<path>] <iface>           Go interface lockstep set — types that must
-                                          change together (MCP: cohort)
+                                          change together (MCP: cohort, DEX_EXPERT)
 
-query — graph power lanes:
+query — graph power lanes (CLI-only except deps; deps is DEX_EXPERT-only over MCP):
   dex graph neighbors [<path>] <file> <line>
                                           vector neighbours of a chunk (CLI-only)
-  dex graph deps      [<path>] [flags]  package imports (MCP: deps)
+  dex graph deps      [<path>] [flags]  package imports (MCP: deps, DEX_EXPERT)
                                           Flags: --file=<rel>, --package=<full path>
   dex graph links     [<path>] <doc>    markdown docs this doc links to (CLI-only)
   dex graph backlinks [<path>] <doc>    markdown docs that link to this doc (CLI-only)

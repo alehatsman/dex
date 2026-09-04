@@ -1,26 +1,28 @@
 // dex — local semantic-search helper for Claude Code.
 //
 // The read-side CLI verbs mirror the lanes `query` routes to (search, trace,
-// repo_map, read); over MCP the everyday surface is just `query` + `record`,
-// with the granular tools exposed under DEX_EXPERT. The build/maintenance
-// commands are CLI-only.
+// repo_map, read); over MCP the everyday surface is `query` alone — every
+// name below tagged "MCP: X" is a granular tool exposed only under
+// DEX_EXPERT=1, not part of the default surface. Names tagged "CLI-only"
+// were never registered as MCP tools at all. The build/maintenance commands
+// are CLI-only.
 //
-//	ask <path> <q...>             Primary CLI read verb (MCP: query semantic lane).
+//	ask <path> <q...>             Primary CLI read verb (MCP: query — always on).
 //	search <path> <q...>          Hybrid semantic top-k chunks; fuses exact
-//	                              symbol-name hits via RRF (MCP: search).
-//	trace <path> <sym>            Call-graph callers/callees/path/impact (MCP: trace).
+//	                              symbol-name hits via RRF (MCP: search, DEX_EXPERT).
+//	trace <path> <sym>            Call-graph callers/callees/path/impact (MCP: trace, DEX_EXPERT).
 //	graph neighbors <path> <file> <line>
 //	                              Vector neighbours of a chunk (CLI-only).
 //	graph deps <path> [--file|--package]
-//	                              `imports` edges for a file/package (MCP: deps).
+//	                              `imports` edges for a file/package (MCP: deps, DEX_EXPERT).
 //	graph links <path> <doc>      Docs this markdown doc links to (CLI-only).
 //	graph backlinks <path> <doc>  Docs that link to this markdown doc (CLI-only).
 //	graph tags <path> --tag|--doc Tag→docs or doc→tags (CLI-only).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
-//	read <file>                   Read a file (MCP: read). Default mode=full is raw (no LLM); mode=summary is an LLM digest.
-//	grep <path> <pattern>         Exact RE2 regex search over project files (MCP: grep).
+//	read <file>                   Read a file (MCP: read, DEX_EXPERT). Default mode=full is raw (no LLM); mode=summary is an LLM digest.
+//	grep <path> <pattern>         Exact RE2 regex search over project files (MCP: grep, DEX_EXPERT).
 //	index <path>                  Build or refresh the per-project index.
-//	index status [<path>]         Endpoint health + indexed projects (MCP: status).
+//	index status [<path>]         Endpoint health + indexed projects (MCP: status, DEX_EXPERT).
 //	env                           Print effective env-var configuration.
 //	compact <path>                Concatenate indexable files for LLM prompts (alias: bundle).
 //	nuke <path>                   Delete the on-disk index for a project.
@@ -32,7 +34,6 @@
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	bench locomo <path>           LoCoMo memory-recall benchmark (recall@k / token-F1).
-//	notes add|query|rm|gc         Store/list/delete/gc per-project facts (CLI-only; MCP write via record).
 //	compress <file|->             Compress a file or stdin through the dex engine (no LLM).
 //	compress-stdin                Compress stdin through dex patterns; writes to stdout.
 //	shell-hook                    Print eval-able shell hook for passive output compression.

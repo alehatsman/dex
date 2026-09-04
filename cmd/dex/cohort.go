@@ -11,12 +11,13 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdCohort is the front door for interface cohesion (MCP: cohort): the set of
-// types that must change in lockstep with an interface.
+// cmdCohort is the front door for interface cohesion (MCP: cohort,
+// DEX_EXPERT): the set of types that must change in lockstep with an
+// interface.
 func cmdCohort(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("cohort", flag.ContinueOnError)
 	setHelp(fs,
-		"Find the types that must change together with an interface (MCP: cohort): complete implementors + near-misses missing methods.",
+		"Find the types that must change together with an interface (MCP: cohort, DEX_EXPERT): complete implementors + near-misses missing methods.",
 		"dex cohort [flags] [<path>] <interface>",
 		"dex cohort toolSurface",
 		"dex cohort mcp.toolSurface --format json")

@@ -17,7 +17,7 @@ import (
 // so an agent and a human share one vocabulary across the stdio MCP surface, the
 // REST surface, and the CLI.
 
-// cmdFind is the front door for semantic code search (MCP: search).
+// cmdFind is the front door for semantic code search (MCP: search, DEX_EXPERT).
 func cmdFind(ctx context.Context, args []string) error {
 	return cmdSearchSemantic(ctx, args)
 }
@@ -58,7 +58,7 @@ func splitTraceArgs(args []string) (dir string, fwd []string, help bool, err err
 	return dir, fwd, false, nil
 }
 
-// cmdTrace walks the static call graph from a symbol (MCP: trace). `--direction`
+// cmdTrace walks the static call graph from a symbol (MCP: trace, DEX_EXPERT). `--direction`
 // selects the traversal and dispatches to the (now-internal) graph helpers:
 //
 //	callers (default) -> cmdGraphCallers
@@ -77,7 +77,7 @@ func cmdTrace(ctx context.Context, args []string) error {
   dex trace [<path>] <src> --dir path --to <dst>    shortest call path
   dex trace [<path>] <name> --dir impact            transitive caller blast-radius
 
-mirrors MCP `+"`trace`"+`; covers callers / callees / path / impact in one verb.
+mirrors MCP `+"`trace`"+` (DEX_EXPERT); covers callers / callees / path / impact in one verb.
 flags after the name (-k, --package, --max-depth, --format) pass through.`)
 		return nil
 	}
@@ -97,12 +97,12 @@ flags after the name (-k, --package, --max-depth, --format) pass through.`)
 
 // cmdImpact reports the transitive blast-radius of a symbol — every function
 // reachable by following `calls` edges in the callers direction, tagged with
-// hop depth. Reached via `dex trace --dir impact` (MCP: trace --dir impact);
-// it is no longer a standalone verb (#684).
+// hop depth. Reached via `dex trace --dir impact` (MCP: trace --dir impact,
+// DEX_EXPERT); it is no longer a standalone verb (#684).
 func cmdImpact(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("impact", flag.ContinueOnError)
 	setHelp(fs,
-		"Transitive blast-radius via callers (MCP: trace --dir impact). Go is type-resolved; other langs name-based (tree-sitter, incomplete recall).",
+		"Transitive blast-radius via callers (MCP: trace --dir impact, DEX_EXPERT). Go is type-resolved; other langs name-based (tree-sitter, incomplete recall).",
 		"dex trace [flags] [<path>] <name> --dir impact",
 		"dex trace NewServer --dir impact",
 		"dex trace '(*Server).Run' --dir impact --max-depth 4")
@@ -178,13 +178,14 @@ func cmdImpact(ctx context.Context, args []string) error {
 	return nil
 }
 
-// cmdGrep is the front door for exact RE2 regex search (MCP: grep). It delegates
-// to the same SearchGrep handler the MCP tool uses; the leading [path] is the
-// project root (defaults to cwd) and --in narrows to a subdirectory.
+// cmdGrep is the front door for exact RE2 regex search (MCP: grep,
+// DEX_EXPERT). It delegates to the same SearchGrep handler the MCP tool
+// uses; the leading [path] is the project root (defaults to cwd) and --in
+// narrows to a subdirectory.
 func cmdGrep(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("grep", flag.ContinueOnError)
 	setHelp(fs,
-		"Exact RE2 regex search over project files, or structural AST match with --query (MCP: grep).",
+		"Exact RE2 regex search over project files, or structural AST match with --query (MCP: grep, DEX_EXPERT).",
 		"dex grep [flags] [<path>] <pattern>",
 		"dex grep 'func New'",
 		"dex grep --ext go --in internal/mcp 'AddTool'",

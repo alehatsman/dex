@@ -11,13 +11,13 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdRefactor is the front door for type-precise edit planning (MCP: plan_rename).
-// dex never writes files — it prints the edit triples for the caller to apply.
-// v1 supports op=rename_symbol for Go.
+// cmdRefactor is the front door for type-precise edit planning (MCP:
+// plan_rename, DEX_EXPERT). dex never writes files — it prints the edit
+// triples for the caller to apply. v1 supports op=rename_symbol for Go.
 func cmdRefactor(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("plan_rename", flag.ContinueOnError)
 	setHelp(fs,
-		"Plan a type-precise rename and print byte-exact edit triples (MCP: plan_rename). dex never writes — you apply them.",
+		"Plan a type-precise rename and print byte-exact edit triples (MCP: plan_rename, DEX_EXPERT). dex never writes — you apply them.",
 		"dex plan_rename [flags] [<path>] <symbol> <to>",
 		"dex plan_rename Greet Welcome",
 		"dex plan_rename '(*Server).Run' Start --format json")

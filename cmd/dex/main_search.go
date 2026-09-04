@@ -18,7 +18,7 @@ import (
 func cmdSearchSemantic(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	setHelp(fs,
-		"Hybrid semantic top-k chunks for a query (MCP: search).",
+		"Hybrid semantic top-k chunks for a query (MCP: search, DEX_EXPERT).",
 		"dex search [flags] [<path>] <query...>",
 		`dex search . "retry logic"`,
 		`dex search . --k=16 --explain "rate limiter"`,

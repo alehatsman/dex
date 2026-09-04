@@ -16,8 +16,8 @@ import (
 	"github.com/alehatsman/dex/internal/proj"
 )
 
-// cmdRead is the `dex read <file>` verb (MCP: read). It shares the MCP tool's
-// mode vocabulary so an agent and a human read with one verb:
+// cmdRead is the `dex read <file>` verb (MCP: read, DEX_EXPERT). It shares
+// the MCP tool's mode vocabulary so an agent and a human read with one verb:
 //
 //   - full        — raw content, no LLM (the default; honors --start/--end)
 //   - signatures  — index-backed declaration view (imports + top-level decls,
@@ -45,7 +45,7 @@ import (
 func cmdRead(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("read", flag.ContinueOnError)
 	setHelp(fs,
-		"Read a file (MCP: read). Default mode=full is raw content (no LLM); mode=summary is an LLM digest.",
+		"Read a file (MCP: read, DEX_EXPERT). Default mode=full is raw content (no LLM); mode=summary is an LLM digest.",
 		"dex read [flags] [<path>] <file>",
 		`dex read internal/store/store.go`,
 		`dex read --mode=signatures internal/mcp/server.go`,

@@ -1,8 +1,10 @@
 // Canonical command registry — the single source of truth for the CLI verb
-// surface. Usage text (main_usage.go) and the shell-completion scripts
-// (completion.go) are GENERATED from this table, so adding or renaming a
-// command happens in exactly one place and the three shells can no longer
-// drift out of sync (#469).
+// surface. The shell-completion scripts (completion.go) are GENERATED from
+// this table, so adding or renaming a command keeps the three shells from
+// drifting out of sync (#469). The `dex help` / `dex help all` screens
+// (main_usage.go) are hand-authored prose, NOT generated from this table —
+// keep a new/renamed/re-annotated command's registry entry and its
+// main_usage.go line in sync by hand.
 //
 // The dispatch switch in main.go is kept honest by registry_test.go, which
 // asserts every dispatched command has a registry entry and vice versa.
