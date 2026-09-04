@@ -1,11 +1,1375 @@
 {
   "repo": "dex",
-  "head": "f11abda3db2c1a1315a8fafd7ee3767aefcc1889",
+  "head": "ba8f5542cb64cb67d7279c06064bae91fe0d54fe",
   "gen_opts": {
     "max_commits": 500,
     "max_files": 5
   },
   "queries": [
+    {
+      "id": "ba8f5542",
+      "query": "code-review — honest opt-out semantics, avoid string round-trip, DRY signal lookup",
+      "relevant_files": [
+        "internal/mcp/feedback_shadow.go",
+        "internal/mcp/role.go",
+        "internal/mcp/role_test.go",
+        "internal/mcp/server_graph_calls.go"
+      ]
+    },
+    {
+      "id": "15e33b0a",
+      "query": "#220 extend live feedback reweight to graph lanes; default DEX_FEEDBACK_LIVE on",
+      "relevant_files": [
+        "internal/mcp/feedback_shadow.go",
+        "internal/mcp/feedback_shadow_test.go",
+        "internal/mcp/role.go",
+        "internal/mcp/role_test.go",
+        "internal/mcp/server_graph_calls.go"
+      ]
+    },
+    {
+      "id": "57ba009a",
+      "query": "structural tree-sitter query facet for the grep lane (#238)",
+      "relevant_files": [
+        "cmd/dex/verbs.go",
+        "internal/mcp/server_grep.go",
+        "internal/mcp/server_grep_structural.go",
+        "internal/mcp/server_grep_structural_test.go"
+      ]
+    },
+    {
+      "id": "25e427d7",
+      "query": "dex bench lsp run resolved trace_sets relative to cwd, not manifest dir",
+      "relevant_files": [
+        "cmd/dex/bench_lsp.go"
+      ]
+    },
+    {
+      "id": "9cbe7642",
+      "query": "golangci-lint drift on main (errcheck + unused) (#242)",
+      "relevant_files": [
+        "internal/mcp/server_review_git.go",
+        "internal/proj/known_roots.go"
+      ]
+    },
+    {
+      "id": "52ec7f47",
+      "query": "exhaustive range-query hunk-to-symbol mapping (#215)",
+      "relevant_files": [
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_review_enrich.go",
+        "internal/mcp/server_review_git.go",
+        "internal/mcp/server_review_test.go",
+        "internal/store/store_search.go"
+      ]
+    },
+    {
+      "id": "ac5cfaa0",
+      "query": "cross-project fan-out for query (#221)",
+      "relevant_files": [
+        "cmd/dex/main_manage.go",
+        "internal/mcp/query.go",
+        "internal/mcp/query_fanout_test.go",
+        "internal/proj/known_roots.go"
+      ]
+    },
+    {
+      "id": "b7273203",
+      "query": "code-review — gate HOC-const detection on callee identity, not PascalCase naming",
+      "relevant_files": [
+        "internal/graph/sitter_jsts.go",
+        "internal/graph/sitter_tsx_test.go"
+      ]
+    },
+    {
+      "id": "65a44daa",
+      "query": "#236 .tsx chunking uses JSX-aware grammar; #237 HOC-wrapped consts emitted as graph nodes",
+      "relevant_files": [
+        "internal/chunk/chunk_lang.go",
+        "internal/chunk/chunk_test.go",
+        "internal/graph/sitter_jsts.go",
+        "internal/graph/sitter_tsx_test.go"
+      ]
+    },
+    {
+      "id": "06372294",
+      "query": "confidence-gated spreading-activation seeding (#225)",
+      "relevant_files": [
+        "cmd/dex/main_config.go",
+        "internal/store/store.go",
+        "internal/store/store_graph_fusion.go"
+      ]
+    },
+    {
+      "id": "ca5981aa",
+      "query": "#231 bounce escalation no longer discards an explicit lines:N-M request",
+      "relevant_files": [
+        "internal/mcp/compress_quality_test.go",
+        "internal/mcp/server_summarize_setup.go"
+      ]
+    },
+    {
+      "id": "d1037ed2",
+      "query": "#231 loop-throttle no longer leaks payload, query surfaces its Hint",
+      "relevant_files": [
+        "internal/mcp/context_envelope.go",
+        "internal/mcp/query.go"
+      ]
+    },
+    {
+      "id": "e6137c3d",
+      "query": "#231 query grep/selector dead-ends now offer a next[] fallback",
+      "relevant_files": [
+        "internal/mcp/query.go",
+        "internal/mcp/query_select.go"
+      ]
+    },
+    {
+      "id": "72628acc",
+      "query": "#231 budget_left no longer silently omitted when a budget is exhausted",
+      "relevant_files": [
+        "internal/mcp/cost_envelope_test.go",
+        "internal/mcp/query.go",
+        "internal/mcp/server_graph_calls.go",
+        "internal/mcp/verbs_envelope.go"
+      ]
+    },
+    {
+      "id": "d5b32350",
+      "query": "#231 invalid query kind now errors, file: selector matches nested paths, since: surfaces bad-ref errors",
+      "relevant_files": [
+        "internal/mcp/query.go",
+        "internal/mcp/query_pipe.go",
+        "internal/mcp/query_select.go",
+        "internal/mcp/server_review_git.go"
+      ]
+    },
+    {
+      "id": "95f11d30",
+      "query": "#227/#228 query pipe budget enforcement and malformed-pipe validation",
+      "relevant_files": [
+        "internal/mcp/query_pipe.go",
+        "internal/mcp/query_pipe_test.go"
+      ]
+    },
+    {
+      "id": "87bd2ea2",
+      "query": "#229 prose queries containing '/' no longer misrouted to read lane",
+      "relevant_files": [
+        "internal/mcp/look.go",
+        "internal/mcp/look_test.go",
+        "internal/mcp/query_test.go"
+      ]
+    },
+    {
+      "id": "330c6075",
+      "query": "#219 since:/diff: pipe seed folds review_diff's blast-radius into the pipe grammar",
+      "relevant_files": [
+        "internal/mcp/query.go",
+        "internal/mcp/query_pipe.go",
+        "internal/mcp/query_since.go",
+        "internal/mcp/query_since_test.go"
+      ]
+    },
+    {
+      "id": "0a9edb70",
+      "query": "#218 query pipe assemble:N terminal now honors its token budget",
+      "relevant_files": [
+        "internal/mcp/query_pipe.go",
+        "internal/mcp/query_pipe_test.go",
+        "internal/mcp/server_summarize.go",
+        "internal/mcp/server_summarize_types.go"
+      ]
+    },
+    {
+      "id": "4bfe9893",
+      "query": "#217 alias-normalize selector kind: values (kind:func no longer silently empty)",
+      "relevant_files": [
+        "internal/mcp/query_select.go",
+        "internal/mcp/query_select_test.go"
+      ]
+    },
+    {
+      "id": "93908035",
+      "query": "fix stale no-graph hint omitting Java from module-level languages",
+      "relevant_files": [
+        "internal/mcp/server_graph_deps.go"
+      ]
+    },
+    {
+      "id": "922aa7fa",
+      "query": "#206 teach the pipe grammar on every agent-facing surface",
+      "relevant_files": [
+        "cmd/dex/setup.go",
+        "internal/mcp/instructions_test.go",
+        "internal/mcp/query.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_register.go"
+      ]
+    },
+    {
+      "id": "8469d845",
+      "query": "#206 query pipes MVP — compose lanes in one call",
+      "relevant_files": [
+        "internal/mcp/query.go",
+        "internal/mcp/query_pipe.go",
+        "internal/mcp/query_pipe_coerce.go",
+        "internal/mcp/query_pipe_test.go"
+      ]
+    },
+    {
+      "id": "974948a5",
+      "query": "#207 surface the uniform Selection currency (refs) on every lane",
+      "relevant_files": [
+        "internal/mcp/query.go",
+        "internal/mcp/query_dispatch_e2e_test.go",
+        "internal/mcp/query_refs.go"
+      ]
+    },
+    {
+      "id": "25015994",
+      "query": "#207 collapse query result to a flat, lane-keyed union",
+      "relevant_files": [
+        "internal/mcp/http_mcp_test.go",
+        "internal/mcp/query.go",
+        "internal/mcp/query_dispatch_e2e_test.go",
+        "internal/mcp/query_result.go"
+      ]
+    },
+    {
+      "id": "220ea8f6",
+      "query": "#207 introduce Selection currency, embed into ContextPack",
+      "relevant_files": [
+        "internal/retrieve/pack.go",
+        "internal/retrieve/pack_test.go",
+        "internal/retrieve/selection.go"
+      ]
+    },
+    {
+      "id": "0afd868f",
+      "query": "#205 clear lint surfaced by the knowledge removal",
+      "relevant_files": [
+        "cmd/dex/graph_analysis.go",
+        "internal/mcp/context.go",
+        "internal/mcp/context_stream.go",
+        "internal/mcp/look.go"
+      ]
+    },
+    {
+      "id": "c8e6e0dd",
+      "query": "#205 retire knowledge tables + update docs",
+      "relevant_files": [
+        "cmd/dex/registry.go",
+        "internal/mcp/server_locate.go",
+        "internal/store/store_migrate.go",
+        "internal/store/store_vec.go"
+      ]
+    },
+    {
+      "id": "0aeb9f17",
+      "query": "#205 remove the dex notes CLI",
+      "relevant_files": [
+        "cmd/dex/main_dispatch.go",
+        "cmd/dex/main_flags.go",
+        "cmd/dex/main_manage.go",
+        "cmd/dex/main_usage.go"
+      ]
+    },
+    {
+      "id": "1b3b130c",
+      "query": "#203 split verbs.go by verb into siblings",
+      "relevant_files": [
+        "internal/mcp/verbs.go",
+        "internal/mcp/verbs_trace.go",
+        "internal/mcp/verbs_unresolved_inbound.go"
+      ]
+    },
+    {
+      "id": "371eea6f",
+      "query": "#203 split server_summarize.go into siblings",
+      "relevant_files": [
+        "internal/mcp/server_summarize.go",
+        "internal/mcp/server_summarize_batch.go",
+        "internal/mcp/server_summarize_helpers.go",
+        "internal/mcp/server_summarize_types.go"
+      ]
+    },
+    {
+      "id": "489abde3",
+      "query": "#203 split context.go (ask verb) into siblings",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_envelope.go",
+        "internal/mcp/context_stream.go",
+        "internal/mcp/context_types.go"
+      ]
+    },
+    {
+      "id": "fa3bebd3",
+      "query": "#203 split server_review.go into siblings",
+      "relevant_files": [
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_review_enrich.go",
+        "internal/mcp/server_review_git.go",
+        "internal/mcp/server_review_risk.go"
+      ]
+    },
+    {
+      "id": "123bfc6c",
+      "query": "#203 split http.go middleware + handlers into siblings",
+      "relevant_files": [
+        "internal/mcp/http.go",
+        "internal/mcp/http_handlers.go",
+        "internal/mcp/http_middleware.go"
+      ]
+    },
+    {
+      "id": "abebfaa1",
+      "query": "#203 split server_search.go filter helpers into sibling",
+      "relevant_files": [
+        "internal/mcp/server_search.go",
+        "internal/mcp/server_search_filter.go"
+      ]
+    },
+    {
+      "id": "8ae74690",
+      "query": "#203 split server.go state/activity/watch blocks into siblings",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_activity.go",
+        "internal/mcp/server_readcache.go",
+        "internal/mcp/server_watch.go"
+      ]
+    },
+    {
+      "id": "0f375f4b",
+      "query": "#203 extract tool registration from server.go",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_register.go"
+      ]
+    },
+    {
+      "id": "1cde5450",
+      "query": "#202 split cmd/dex/render.go god-file into per-concern siblings",
+      "relevant_files": [
+        "cmd/dex/render.go",
+        "cmd/dex/render_endpoints.go",
+        "cmd/dex/render_json.go",
+        "cmd/dex/render_projectstats.go"
+      ]
+    },
+    {
+      "id": "9f5469e5",
+      "query": "#202 split remaining graph.go lanes into siblings",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "cmd/dex/graph_calledges.go",
+        "cmd/dex/graph_deps.go",
+        "cmd/dex/graph_docedges.go",
+        "cmd/dex/graph_query.go"
+      ]
+    },
+    {
+      "id": "c34ee463",
+      "query": "#202 split cmd/dex/graph.go god-file into per-lane siblings",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "cmd/dex/graph_analysis.go",
+        "cmd/dex/graph_communities.go",
+        "cmd/dex/graph_smells.go"
+      ]
+    },
+    {
+      "id": "66c342a5",
+      "query": "emit two-verb rules block (query·record), bump to v5",
+      "relevant_files": [
+        "cmd/dex/setup.go"
+      ]
+    },
+    {
+      "id": "c28b2c56",
+      "query": "#195 reconcile docs/specs/CLI-help to the two-verb surface",
+      "relevant_files": [
+        "cmd/dex/main.go",
+        "cmd/dex/main_usage.go"
+      ]
+    },
+    {
+      "id": "cd55ef32",
+      "query": "#199 cutover gate — shape→lane router accuracy, two-tool surface, prompt budget (S5)",
+      "relevant_files": [
+        "internal/mcp/cutover_test.go",
+        "internal/mcp/query_dispatch_e2e_test.go",
+        "internal/mcp/router_accuracy_test.go"
+      ]
+    },
+    {
+      "id": "e6fc5413",
+      "query": "#196 retarget wrapped next-step hints to query",
+      "relevant_files": [
+        "internal/mcp/query.go",
+        "internal/mcp/query_test.go"
+      ]
+    },
+    {
+      "id": "bb4c3fc4",
+      "query": "#185 pin a single connection — close the SQLITE_BUSY_SNAPSHOT gap",
+      "relevant_files": [
+        "internal/store/store.go",
+        "internal/store/store_contention_test.go"
+      ]
+    },
+    {
+      "id": "95fda64c",
+      "query": "#171 swarm warm cache — reuse a peer's compression across agents (S3)",
+      "relevant_files": [
+        "cmd/dex/env.go",
+        "internal/mcp/server_summarize.go"
+      ]
+    },
+    {
+      "id": "5b2746f6",
+      "query": "#170 swarm claim map — surface peer edits as a look caveat (S1)",
+      "relevant_files": [
+        "cmd/dex/registry.go",
+        "internal/mcp/look.go"
+      ]
+    },
+    {
+      "id": "675cee6b",
+      "query": "#183 apply gemini correction on the heuristic fallback",
+      "relevant_files": [
+        "internal/tokens/tokens.go",
+        "internal/tokens/tokens_test.go"
+      ]
+    },
+    {
+      "id": "6310712e",
+      "query": "#181 exclude testdata/vendor from package DAG",
+      "relevant_files": [
+        "internal/graphquery/packages.go",
+        "internal/graphquery/packages_test.go"
+      ]
+    },
+    {
+      "id": "7102a38f",
+      "query": "#164 bound assemble so it can't overflow the client tool-result limit",
+      "relevant_files": [
+        "internal/mcp/context_envelope_test.go",
+        "internal/retrieve/policy.go",
+        "internal/retrieve/policy_test.go"
+      ]
+    },
+    {
+      "id": "831eb7f5",
+      "query": "#163 pack-efficiency lane — prove #95 AC #2/#6",
+      "relevant_files": [
+        "cmd/dex/bench_pack.go",
+        "cmd/dex/locomo.go",
+        "internal/bench/pack/pack.go",
+        "internal/bench/pack/pack_test.go"
+      ]
+    },
+    {
+      "id": "9fa04dcf",
+      "query": "#160 mark configured chat in synthesizeAnswer tests",
+      "relevant_files": [
+        "internal/mcp/answer_cite_test.go",
+        "internal/mcp/answer_test.go"
+      ]
+    },
+    {
+      "id": "723d6ace",
+      "query": "#155 check f.Close() in loadGateFindings (errcheck)",
+      "relevant_files": [
+        "internal/mcp/server_review.go"
+      ]
+    },
+    {
+      "id": "c89853ed",
+      "query": "gate ask brief-synthesis on ChatConfigured (GH #160)",
+      "relevant_files": [
+        "internal/mcp/answer.go",
+        "internal/mcp/server_degrade_chat_test.go"
+      ]
+    },
+    {
+      "id": "0c5523b4",
+      "query": "#155 P3 emit — --format jsonl gate findings",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "internal/mcp/findings_emit_test.go",
+        "internal/mcp/server_clones.go",
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_smells.go"
+      ]
+    },
+    {
+      "id": "fad3fa0a",
+      "query": "#155 P3 ingest — fold gate findings into review",
+      "relevant_files": [
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_review_test.go"
+      ]
+    },
+    {
+      "id": "cb3982e1",
+      "query": "#157 classify JS/TS asset imports as external, not unresolved",
+      "relevant_files": [
+        "internal/graph/sitter_jsts.go",
+        "internal/graph/sitter_jsts_asset_test.go"
+      ]
+    },
+    {
+      "id": "2a013598",
+      "query": "#154 gate packages --level project on IsWorkspaceRoot",
+      "relevant_files": [
+        "internal/mcp/server_graph_deps.go",
+        "internal/mcp/server_graph_project_gate_test.go"
+      ]
+    },
+    {
+      "id": "08002044",
+      "query": "#152 look flags index-backed empties during a destructive reindex",
+      "relevant_files": [
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/look.go",
+        "internal/mcp/look_freshness.go",
+        "internal/mcp/look_freshness_test.go"
+      ]
+    },
+    {
+      "id": "117bb0d5",
+      "query": "#150 fold repo-wide gofmt into ci-fast so drift can't merge past the fast gate",
+      "relevant_files": [
+        "scripts/setup-hooks.sh"
+      ]
+    },
+    {
+      "id": "195e2ea3",
+      "query": "#110 step 3 — automatic session dedup on look's read lane",
+      "relevant_files": [
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/look.go",
+        "internal/mcp/seen.go",
+        "internal/mcp/seen_look_test.go",
+        "internal/mcp/server_summarize.go"
+      ]
+    },
+    {
+      "id": "9ab74b91",
+      "query": "#110 step 2a — unify trust onto one EnvTrust shape across verbs",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_project.go",
+        "internal/mcp/trust_project_test.go",
+        "internal/mcp/verbs_envelope.go"
+      ]
+    },
+    {
+      "id": "553abb24",
+      "query": "clear pre-existing lint debt so full ci gate is green",
+      "relevant_files": [
+        "internal/mcp/look.go",
+        "internal/mcp/remote.go"
+      ]
+    },
+    {
+      "id": "b64d5dd8",
+      "query": "gofmt drift in 4 files (pre-existing, surfaced by full ci)",
+      "relevant_files": [
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/look_test.go",
+        "internal/mcp/server_review_test.go"
+      ]
+    },
+    {
+      "id": "c8cf24ca",
+      "query": "#149 drop vestigial registerTools params (weakModel, chatAvailable)",
+      "relevant_files": [
+        "internal/mcp/http_mcp.go",
+        "internal/mcp/maintenance.go",
+        "internal/mcp/named_profiles_test.go",
+        "internal/mcp/remote.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "c9db83b1",
+      "query": "#148 named profiles — four verbs constant across full/bm25-only/lean",
+      "relevant_files": [
+        "internal/mcp/named_profiles_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "02516183",
+      "query": "#146 run the project's canonical test command, not a guessed go test",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/testscope/testscope.go",
+        "internal/testscope/testscope_test.go"
+      ]
+    },
+    {
+      "id": "c073f4de",
+      "query": "#147 fold notes into remember — pure four-verb everyday surface (ask-merge slice 5d)",
+      "relevant_files": [
+        "internal/mcp/instructions_test.go",
+        "internal/mcp/lean_profile_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/verbs_test.go"
+      ]
+    },
+    {
+      "id": "b96f9d72",
+      "query": "#144 route review intent through ask via a review{} output-union (ask-merge slice 5a)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_review_test.go",
+        "internal/retrieve/intent.go",
+        "internal/retrieve/router_accuracy_test.go"
+      ]
+    },
+    {
+      "id": "babdf767",
+      "query": "#143 demote trace + locate to expert power lanes (ask-merge slice 4)",
+      "relevant_files": [
+        "internal/mcp/instructions_test.go",
+        "internal/mcp/lean_profile_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_locate_test.go",
+        "internal/mcp/verbs_test.go"
+      ]
+    },
+    {
+      "id": "fdca5edd",
+      "query": "#142 demote search to the expert power lane (ask-merge slice 3)",
+      "relevant_files": [
+        "internal/mcp/instructions_test.go",
+        "internal/mcp/lean_profile_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_clones_test.go"
+      ]
+    },
+    {
+      "id": "f38cdc17",
+      "query": "#141 port brief's local_rules into ask(assemble) (slice 2a)",
+      "relevant_files": [
+        "internal/mcp/context.go"
+      ]
+    },
+    {
+      "id": "a945ce87",
+      "query": "#140 make ask the always-on front door (ask-merge slice 1)",
+      "relevant_files": [
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "7fef434d",
+      "query": "#139 anti-accretion lint for tool descriptions",
+      "relevant_files": [
+        "internal/mcp/anti_accretion_test.go"
+      ]
+    },
+    {
+      "id": "542aba38",
+      "query": "#138 fold content fingerprint into dedup key",
+      "relevant_files": [
+        "internal/mcp/seen.go",
+        "internal/mcp/seen_test.go"
+      ]
+    },
+    {
+      "id": "dda751d6",
+      "query": "#137 add worktree mode — review uncommitted changes",
+      "relevant_files": [
+        "cmd/dex/review.go",
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_review_test.go"
+      ]
+    },
+    {
+      "id": "bd9ccab3",
+      "query": "#136 hoist review_diff callers to one map keyed by symbol",
+      "relevant_files": [
+        "cmd/dex/review.go",
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_review_test.go"
+      ]
+    },
+    {
+      "id": "1e3834e0",
+      "query": "#135 ask(\"understand this repo\") routes to orient bundle",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/retrieve/intent.go",
+        "internal/retrieve/intent_test.go",
+        "internal/retrieve/router_accuracy_test.go"
+      ]
+    },
+    {
+      "id": "7355804d",
+      "query": "ask exposes structured next, key-aligned with exact verbs",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_next_test.go"
+      ]
+    },
+    {
+      "id": "1ca78176",
+      "query": "lock four-verb surface invariants",
+      "relevant_files": [
+        "internal/mcp/verbs_surface_test.go"
+      ]
+    },
+    {
+      "id": "494826b9",
+      "query": "look verb — deterministic exact-fetch router",
+      "relevant_files": [
+        "internal/mcp/look.go",
+        "internal/mcp/look_test.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "0308f033",
+      "query": "add act + remember verbs over the universal envelope (additive)",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/verbs_envelope.go",
+        "internal/mcp/verbs_test.go"
+      ]
+    },
+    {
+      "id": "debc72a2",
+      "query": "opt-in nested .gitignore support for monorepos",
+      "relevant_files": [
+        "internal/ignore/config.go",
+        "internal/ignore/ignore.go",
+        "internal/ignore/nested.go",
+        "internal/ignore/nested_test.go"
+      ]
+    },
+    {
+      "id": "8013ee85",
+      "query": "resolve package.json subpath exports maps, incl. barrel artifacts",
+      "relevant_files": [
+        "internal/graph/resolve/resolve.go",
+        "internal/graph/resolve/resolve_test.go"
+      ]
+    },
+    {
+      "id": "76d79be9",
+      "query": "enumerate working tree, not chunk index, for grep \u0026 file_tree",
+      "relevant_files": [
+        "internal/mcp/filewalk.go",
+        "internal/mcp/server_grep.go",
+        "internal/mcp/server_tree.go",
+        "internal/mcp/server_tree_test.go"
+      ]
+    },
+    {
+      "id": "d824de3a",
+      "query": "run unresolved-inbound fold regardless of resolved-hit count",
+      "relevant_files": [
+        "internal/mcp/verbs.go"
+      ]
+    },
+    {
+      "id": "c13cef5c",
+      "query": "explicit unresolved-import status with a reason (Step 1)",
+      "relevant_files": [
+        "internal/graph/resolve/resolve.go",
+        "internal/graph/resolve/resolve_test.go",
+        "internal/graph/sitter_jsts.go",
+        "internal/graph/sitter_ts_workspace_test.go",
+        "internal/graph/testdata/ts_workspace/apps/base-view/src/main.ts"
+      ]
+    },
+    {
+      "id": "df602120",
+      "query": "lint tests too, scope out the idiomatic noise",
+      "relevant_files": [
+        "internal/compress/ib_test.go",
+        "internal/mcp/http_mcp_test.go",
+        "internal/store/store_fts_path_test.go",
+        "internal/store/store_graph_ablation_test.go",
+        "internal/store/store_quant_test.go"
+      ]
+    },
+    {
+      "id": "dc54a470",
+      "query": "genuine defects surfaced during lint audit",
+      "relevant_files": [
+        "internal/codemap/scale_test.go",
+        "internal/mcp/server_routes.go",
+        "internal/retrieve/answer_test.go"
+      ]
+    },
+    {
+      "id": "1188000c",
+      "query": "clear 6 pre-existing golangci-lint issues",
+      "relevant_files": [
+        "internal/graph/sitter_jsts.go",
+        "internal/mcp/roots.go",
+        "internal/store/store_clones.go"
+      ]
+    },
+    {
+      "id": "482d43cb",
+      "query": "package DAG spans Go + JS/TS resolved imports",
+      "relevant_files": [
+        "internal/graphquery/packages.go",
+        "internal/graphquery/packages_test.go",
+        "internal/graphquery/view.go"
+      ]
+    },
+    {
+      "id": "28329a7c",
+      "query": "resolve non-relative JS/TS specifiers to project files",
+      "relevant_files": [
+        "internal/graph/sitter_jsts.go",
+        "internal/graph/sitter_ts_workspace_test.go",
+        "internal/graph/testdata/ts_workspace/apps/base-view/src/main.ts",
+        "internal/graph/testdata/ts_workspace/apps/base-view/src/sibling.ts",
+        "internal/graph/testdata/ts_workspace/apps/base-view/src/util.ts"
+      ]
+    },
+    {
+      "id": "3c32b2af",
+      "query": "add internal/graph/resolve — workspace/tsconfig module resolver",
+      "relevant_files": [
+        "internal/graph/resolve/jsonc.go",
+        "internal/graph/resolve/resolve.go",
+        "internal/graph/resolve/resolve_test.go"
+      ]
+    },
+    {
+      "id": "94cbd5bc",
+      "query": "#128 apply exclude rules in grep's un-indexed walk fallback",
+      "relevant_files": [
+        "internal/mcp/server_grep.go",
+        "internal/mcp/server_grep_test.go"
+      ]
+    },
+    {
+      "id": "e8d7282e",
+      "query": "#126 default-exclude committed test-data \u0026 bundler output",
+      "relevant_files": [
+        "internal/ignore/ignore.go",
+        "internal/ignore/ignore_test.go"
+      ]
+    },
+    {
+      "id": "09f37aeb",
+      "query": "#125 decompose registerTools into capability lanes",
+      "relevant_files": [
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "4b800fb1",
+      "query": "#99 advisory warn when the embed endpoint drifts",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/store/store.go",
+        "internal/store/store_test.go"
+      ]
+    },
+    {
+      "id": "0d34d8b2",
+      "query": "#124 drop reinvented-stdlib helpers (abs/min)",
+      "relevant_files": [
+        "internal/eval/cochange/report.go",
+        "internal/eval/locomo/locomo_test.go",
+        "internal/eval/lsprecall/report.go",
+        "internal/eval/skew/report.go"
+      ]
+    },
+    {
+      "id": "f5b52445",
+      "query": "#123 share the vector cache across a repo's worktrees",
+      "relevant_files": [
+        "cmd/dex/main_veccache.go",
+        "internal/mcp/server.go",
+        "internal/proj/proj.go",
+        "internal/proj/veccache_dir_test.go"
+      ]
+    },
+    {
+      "id": "9b94153e",
+      "query": "#121 periodic prune + env-configurable bound for the long-lived cache",
+      "relevant_files": [
+        "cmd/dex/main_veccache.go",
+        "internal/mcp/server.go",
+        "internal/veccache/veccache.go",
+        "internal/veccache/veccache_test.go"
+      ]
+    },
+    {
+      "id": "56074a3a",
+      "query": "#118 tighten rePackages so a singular \"package\" noun stops shadowing architecture",
+      "relevant_files": [
+        "internal/retrieve/intent.go",
+        "internal/retrieve/router_accuracy_test.go"
+      ]
+    },
+    {
+      "id": "8fa20f66",
+      "query": "#110-9 router-accuracy harness to gate the four-verb cutover",
+      "relevant_files": [
+        "internal/retrieve/router_accuracy_test.go"
+      ]
+    },
+    {
+      "id": "c762bdef",
+      "query": "#114 delete dead ask/context wrappers, port coverage to retrieve",
+      "relevant_files": [
+        "internal/mcp/context_test.go",
+        "internal/retrieve/graph.go",
+        "internal/retrieve/graph_caps_test.go",
+        "internal/retrieve/results_pick_test.go",
+        "internal/retrieve/service_lean_test.go"
+      ]
+    },
+    {
+      "id": "00509db6",
+      "query": "#111 drop the orphaned normalizeRefPath from server_claimref.go",
+      "relevant_files": [
+        "internal/mcp/server_claimref.go"
+      ]
+    },
+    {
+      "id": "cff7f681",
+      "query": "#111 move test-scope helpers to their own internal/testscope",
+      "relevant_files": [
+        "internal/testscope/testscope.go",
+        "internal/testscope/testscope_test.go"
+      ]
+    },
+    {
+      "id": "6088fb8d",
+      "query": "#111 lift resolution + test-scope cores into retrieve",
+      "relevant_files": [
+        "internal/mcp/server_locate.go",
+        "internal/mcp/server_locate_test.go",
+        "internal/retrieve/locate.go",
+        "internal/retrieve/locate_test.go"
+      ]
+    },
+    {
+      "id": "5830fe9e",
+      "query": "#111 lift the search ranking core into retrieve.SearchAssembler",
+      "relevant_files": [
+        "internal/mcp/server_search.go",
+        "internal/retrieve/search.go"
+      ]
+    },
+    {
+      "id": "2dcd5e54",
+      "query": "gofmt three drifted files to green the pre-push gate",
+      "relevant_files": [
+        "cmd/dex/registry.go",
+        "internal/embed/client.go",
+        "internal/mcp/tool_schema_contract_test.go"
+      ]
+    },
+    {
+      "id": "fff106b5",
+      "query": "gofmt struct-literal alignment in the seam files",
+      "relevant_files": [
+        "internal/retrieve/assembler.go",
+        "internal/retrieve/pack.go"
+      ]
+    },
+    {
+      "id": "876c5c65",
+      "query": "#95a drop the now-dead ask prose wrappers",
+      "relevant_files": [
+        "internal/mcp/context_response.go",
+        "internal/mcp/context_test.go",
+        "internal/retrieve/response_assemble_test.go",
+        "internal/retrieve/response_prose_test.go"
+      ]
+    },
+    {
+      "id": "2746531c",
+      "query": "#95a Assemble owns the full ask sequence (tail fold)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_enrich.go",
+        "internal/retrieve/assembler.go",
+        "internal/retrieve/pack.go",
+        "internal/retrieve/pack_test.go"
+      ]
+    },
+    {
+      "id": "0f847c22",
+      "query": "#95a assemble completeness/advice → L2 (stage 2a)",
+      "relevant_files": [
+        "internal/retrieve/response.go",
+        "internal/retrieve/response_assemble_test.go"
+      ]
+    },
+    {
+      "id": "e7d4275b",
+      "query": "#95a assembly evidence core → L2 Assembler (stage 1)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_project.go",
+        "internal/mcp/feedback_bridge.go",
+        "internal/retrieve/assembler.go"
+      ]
+    },
+    {
+      "id": "44b84cba",
+      "query": "#95g push embed backend-defaults heuristic down to internal/embed",
+      "relevant_files": [
+        "cmd/dex/main_clients.go",
+        "internal/embed/vram.go",
+        "internal/embed/vram_test.go"
+      ]
+    },
+    {
+      "id": "5054e7aa",
+      "query": "#102 surface structured confidence on ask responses",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/retrieve/response.go",
+        "internal/retrieve/response_confidence_test.go"
+      ]
+    },
+    {
+      "id": "fc42108e",
+      "query": "#101 ContextPack domain schema + Trust envelope",
+      "relevant_files": [
+        "internal/retrieve/pack.go",
+        "internal/retrieve/pack_test.go"
+      ]
+    },
+    {
+      "id": "9b31a007",
+      "query": "pin the generated tool-schema contract (#93)",
+      "relevant_files": [
+        "internal/mcp/tool_schema_contract_test.go"
+      ]
+    },
+    {
+      "id": "009896de",
+      "query": "add `dex doctor --deep` backend readiness check (#94)",
+      "relevant_files": [
+        "cmd/dex/doctor.go",
+        "cmd/dex/doctor_deep_test.go",
+        "cmd/dex/registry.go",
+        "cmd/dex/render.go"
+      ]
+    },
+    {
+      "id": "0b5c7e1b",
+      "query": "key node re-embed gate on embed text, not content_hash (#91 Tier A)",
+      "relevant_files": [
+        "internal/store/store_graph.go",
+        "internal/store/store_node_embed_gate_test.go"
+      ]
+    },
+    {
+      "id": "087de034",
+      "query": "backend-aware batch/concurrency defaults (#77 §4)",
+      "relevant_files": [
+        "cmd/dex/config_cmd.go",
+        "cmd/dex/env.go",
+        "cmd/dex/main_clients.go",
+        "cmd/dex/main_clients_test.go"
+      ]
+    },
+    {
+      "id": "609cd0dd",
+      "query": "embed-model A/B — bge-large 1.56x faster but retrieval collapses; keep qwen3",
+      "relevant_files": [
+        "benchmark/eval/sweep-embed-model.sh"
+      ]
+    },
+    {
+      "id": "b5875c2e",
+      "query": "rerank health probe uses liveness, not cold inference (#78)",
+      "relevant_files": [
+        "internal/rerank/client.go",
+        "internal/rerank/client_test.go"
+      ]
+    },
+    {
+      "id": "44e9c238",
+      "query": "accept --project \u003cdir\u003e on every notes verb (#89)",
+      "relevant_files": [
+        "cmd/dex/main_flags.go"
+      ]
+    },
+    {
+      "id": "8ef03f95",
+      "query": "ReviewFinding archetype — close the review→edit loop (#87)",
+      "relevant_files": [
+        "cmd/dex/main_flags.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_review.go",
+        "internal/mcp/server_summarize_mode_test.go"
+      ]
+    },
+    {
+      "id": "d770a250",
+      "query": "inline review pack for review/audit intent (#83)",
+      "relevant_files": [
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "e94e4e1a",
+      "query": "add expect output-intent hint so compression preserves terse results (#86)",
+      "relevant_files": [
+        "cmd/dex/verbs.go"
+      ]
+    },
+    {
+      "id": "a73f7a46",
+      "query": "accept-and-ignore a description arg (#81)",
+      "relevant_files": [
+        "internal/mcp/http_mcp_test.go"
+      ]
+    },
+    {
+      "id": "46e4e786",
+      "query": "floor the lossy compression passes to stop silent line loss",
+      "relevant_files": [
+        "internal/mcp/server_compress.go"
+      ]
+    },
+    {
+      "id": "6fcec90b",
+      "query": "add chunk-density guard for machine-emitted files (#76)",
+      "relevant_files": [
+        "cmd/dex/main_index.go",
+        "internal/index/guard.go",
+        "internal/index/guard_test.go",
+        "internal/index/index.go"
+      ]
+    },
+    {
+      "id": "94ee9d05",
+      "query": "notes description now covers all 12 actions",
+      "relevant_files": [
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "32399d11",
+      "query": "drop graph callers/callees/path subs (use trace --dir)",
+      "relevant_files": [
+        "cmd/dex/graph.go",
+        "cmd/dex/main.go",
+        "cmd/dex/main_usage.go",
+        "cmd/dex/registry.go",
+        "cmd/dex/verbs.go"
+      ]
+    },
+    {
+      "id": "428cc88b",
+      "query": "drop standalone index_status tool",
+      "relevant_files": [
+        "cmd/dex/verb_parity_test.go",
+        "internal/mcp/server.go",
+        "internal/mcp/verbs_test.go"
+      ]
+    },
+    {
+      "id": "6bfc2ab8",
+      "query": "skip ci-fast/ci for docs-only commits and pushes",
+      "relevant_files": [
+        "scripts/setup-hooks.sh"
+      ]
+    },
+    {
+      "id": "774f61bc",
+      "query": "rename unused params to _ in brief and indexStatus",
+      "relevant_files": [
+        "internal/mcp/server_index_status.go"
+      ]
+    },
+    {
+      "id": "95931ad4",
+      "query": "gitref, claimref, server session",
+      "relevant_files": [
+        "internal/mcp/server_claimref.go",
+        "internal/source/gitref.go"
+      ]
+    },
+    {
+      "id": "8ac5a84e",
+      "query": "exclude worktrees from gofmt check",
+      "relevant_files": [
+        "scripts/fmt-check.sh"
+      ]
+    },
+    {
+      "id": "345d8e22",
+      "query": "move check/plan_rename/rehearse_patch to DEX_EXPERT power lane",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_refactor_test.go",
+        "internal/mcp/verbs_test.go"
+      ]
+    },
+    {
+      "id": "2a87ec7b",
+      "query": "slim generated routing-rules block to a pointer (v3)",
+      "relevant_files": [
+        "cmd/dex/setup.go",
+        "cmd/dex/setup_test.go"
+      ]
+    },
+    {
+      "id": "9e6363eb",
+      "query": "check/verify json mode must signal failure via exit code",
+      "relevant_files": [
+        "cmd/dex/check.go",
+        "cmd/dex/exit_code_test.go",
+        "cmd/dex/main_usage.go",
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "19a8d384",
+      "query": "signatures mode must not bounce to LLM summary",
+      "relevant_files": [
+        "internal/mcp/compress_quality_test.go",
+        "internal/mcp/server_summarize_setup.go"
+      ]
+    },
+    {
+      "id": "235e0d65",
+      "query": "force full reindex after an interrupted run",
+      "relevant_files": [
+        "internal/index/index.go",
+        "internal/index/interrupted_run_test.go",
+        "internal/store/store.go"
+      ]
+    },
+    {
+      "id": "121e029a",
+      "query": "preserve isolated closing-brace lines in entropy filter",
+      "relevant_files": [
+        "internal/compress/entropy.go",
+        "internal/compress/entropy_test.go"
+      ]
+    },
+    {
+      "id": "8be7f24f",
+      "query": "SQL-level archetype filter in notes list",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/server_locate.go",
+        "internal/mcp/server_review.go"
+      ]
+    },
+    {
+      "id": "e1dd5fcc",
+      "query": "map mode must not bounce to LLM summary",
+      "relevant_files": [
+        "internal/mcp/compress_quality_test.go",
+        "internal/mcp/server_summarize_modes.go",
+        "internal/mcp/server_summarize_setup.go"
+      ]
+    },
+    {
+      "id": "c77eb1f3",
+      "query": "guard vecs[0] in SemanticLane behind the else branch",
+      "relevant_files": [
+        "internal/retrieve/service.go"
+      ]
+    },
+    {
+      "id": "d8010bad",
+      "query": "five QA regression fixes",
+      "relevant_files": [
+        "internal/mcp/server_check.go",
+        "internal/mcp/server_summarize_setup.go",
+        "internal/store/store_graph.go"
+      ]
+    },
+    {
+      "id": "2b322677",
+      "query": "four QA regression fixes",
+      "relevant_files": [
+        "internal/mcp/verbs.go",
+        "internal/mcp/verbs_map_test.go",
+        "internal/rehearse/rehearse.go",
+        "internal/rehearse/rehearse_test.go"
+      ]
+    },
+    {
+      "id": "27790405",
+      "query": "clear DEX_FEEDBACK_LIVE in TestRecordShadowOffByDefault (#795)",
+      "relevant_files": [
+        "internal/mcp/feedback_shadow_test.go"
+      ]
+    },
+    {
+      "id": "01d125ca",
+      "query": "add compile-check to pre-commit gate (#793)",
+      "relevant_files": [
+        "scripts/setup-hooks.sh"
+      ]
+    },
+    {
+      "id": "4d3717a1",
+      "query": "drop locate(claims), keep check as the one batch verifier (#787)",
+      "relevant_files": [
+        "cmd/dex/locate.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_claimref.go",
+        "internal/mcp/server_locate.go"
+      ]
+    },
+    {
+      "id": "9813b258",
+      "query": "end the three-way \"call first\" primacy conflict (#786)",
+      "relevant_files": [
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "584bf548",
+      "query": "hard-cap the response envelope so graph+facts can't overflow (#784)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/context_envelope_test.go"
+      ]
+    },
+    {
+      "id": "00b5188a",
+      "query": "apply 0.5 relevance floor to injected knowledge_facts (#785)",
+      "relevant_files": [
+        "internal/mcp/context.go"
+      ]
+    },
+    {
+      "id": "2564453e",
+      "query": "expose valid_until in recall queries; surface hint on empty communities (#763 #782)",
+      "relevant_files": [
+        "cmd/dex/map.go"
+      ]
+    },
+    {
+      "id": "f7f01e92",
+      "query": "flip shadow lane-reweight to live — DEX_FEEDBACK_LIVE=1 (#783)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/mcp/feedback_shadow.go",
+        "internal/mcp/feedback_shadow_test.go"
+      ]
+    },
     {
       "id": "10208bbd",
       "query": "terse-abbrevs, rehearse-path, map-min-members, entropy-mode #761 #767 #768 #772 #776 #781",
@@ -15,6 +1379,16 @@
         "internal/mcp/server_summarize.go",
         "internal/mcp/server_summarize_mode_test.go",
         "internal/rehearse/rehearse.go"
+      ]
+    },
+    {
+      "id": "d1b1bb84",
+      "query": "batch fixes for #754 #756 #759 #760 #762 #764 #766 #771 #775 #777 #778 #779",
+      "relevant_files": [
+        "cmd/dex/main_flags.go",
+        "cmd/dex/setup.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_summarize.go"
       ]
     },
     {
@@ -32,14 +1406,6 @@
       "relevant_files": [
         "internal/mcp/compress_quality_test.go",
         "internal/mcp/server_summarize_setup.go"
-      ]
-    },
-    {
-      "id": "1ae2daa7",
-      "query": "handle JSON-stringified body in import action via MCP (#748)",
-      "relevant_files": [
-        "internal/mcp/server_knowledge.go",
-        "internal/mcp/server_knowledge_import_test.go"
       ]
     },
     {
@@ -136,10 +1502,13 @@
       ]
     },
     {
-      "id": "f5de30ca",
-      "query": "expand curated golden set to 30 queries with class labels (#735)",
+      "id": "cc80a9e1",
+      "query": "epistemic archetypes, decay, supersession, relation graph (#606 #618 #621)",
       "relevant_files": [
-        "internal/store/store_knowledge_relations.go"
+        "cmd/dex/main_flags.go",
+        "cmd/dex/main_usage.go",
+        "cmd/dex/registry.go",
+        "internal/store/store_migrate.go"
       ]
     },
     {
@@ -171,8 +1540,6 @@
       "id": "6d772b3e",
       "query": "chained next_action directive on partial set (#729)",
       "relevant_files": [
-        "internal/mcp/assemble.go",
-        "internal/mcp/assemble_test.go",
         "internal/mcp/context.go"
       ]
     },
@@ -189,6 +1556,17 @@
       "relevant_files": [
         "internal/mcp/instructions_test.go",
         "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "353c25ca",
+      "query": "agent-driven knowledge review loop (#633)",
+      "relevant_files": [
+        "cmd/dex/main_usage.go",
+        "cmd/dex/registry.go",
+        "internal/mcp/orient.go",
+        "internal/mcp/server.go",
+        "internal/store/store_migrate.go"
       ]
     },
     {
@@ -211,6 +1589,24 @@
       ]
     },
     {
+      "id": "4a92f0cf",
+      "query": "work on prose / multi-concern queries (#723)",
+      "relevant_files": [
+        "internal/mcp/context.go",
+        "internal/retrieve/assemble.go",
+        "internal/retrieve/assemble_test.go",
+        "internal/retrieve/inline.go",
+        "internal/retrieve/submodular_test.go"
+      ]
+    },
+    {
+      "id": "556381ae",
+      "query": "token-ratio feedback signal for adaptive compress policy (#610)",
+      "relevant_files": [
+        "internal/mcp/current_task_test.go"
+      ]
+    },
+    {
       "id": "55c0a437",
       "query": "time-travel symbol resolution for historical diffs (#644)",
       "relevant_files": [
@@ -227,14 +1623,6 @@
       ]
     },
     {
-      "id": "c4b4bdcf",
-      "query": "cachedPrefixLen use contiguous prefix not last-marker scan (#721)",
-      "relevant_files": [
-        "internal/proxy/prune.go",
-        "internal/proxy/prune_test.go"
-      ]
-    },
-    {
       "id": "0ff93e57",
       "query": "use two-value type assertion to satisfy errcheck (check-type-assertions:true)",
       "relevant_files": [
@@ -245,10 +1633,7 @@
       "id": "621894fa",
       "query": "compact dex results in prune zone + doctor stats visibility (#718)",
       "relevant_files": [
-        "cmd/dex/doctor.go",
-        "internal/proxy/prune.go",
-        "internal/proxy/result_compress.go",
-        "internal/proxy/result_compress_test.go"
+        "cmd/dex/doctor.go"
       ]
     },
     {
@@ -275,7 +1660,6 @@
       "relevant_files": [
         "cmd/dex/hook_inject.go",
         "internal/mcp/server_map_task.go",
-        "internal/mcp/server_session.go",
         "internal/mcp/store_cache.go",
         "internal/store/store_session.go"
       ]
@@ -319,9 +1703,16 @@
       "query": "session handoff — export/import session state across resets (#603)",
       "relevant_files": [
         "internal/mcp/server.go",
-        "internal/mcp/server_session.go",
-        "internal/mcp/server_session_handoff_test.go",
         "internal/store/store_session.go"
+      ]
+    },
+    {
+      "id": "79df7d8a",
+      "query": "batch ref-verification of file:line claims (#708)",
+      "relevant_files": [
+        "cmd/dex/locate.go",
+        "internal/mcp/server.go",
+        "internal/mcp/server_locate.go"
       ]
     },
     {
@@ -329,30 +1720,6 @@
       "query": "add check to main_usage.go (TestAdvertisedCommandsAreDocumented)",
       "relevant_files": [
         "cmd/dex/main_usage.go"
-      ]
-    },
-    {
-      "id": "9ff99206",
-      "query": "raise minSimSkip threshold to 0.5 for locate/review note recall (#706)",
-      "relevant_files": [
-        "internal/mcp/server_knowledge.go"
-      ]
-    },
-    {
-      "id": "86f90508",
-      "query": "strict mode in KnowledgeQueryVec suppresses internal salience fallbacks (#706 follow-up)",
-      "relevant_files": [
-        "internal/store/store_knowledge.go",
-        "internal/store/store_knowledge_test.go"
-      ]
-    },
-    {
-      "id": "2f89db83",
-      "query": "add similarity floor to KnowledgeQueryVec for skip-fallback callers (#706)",
-      "relevant_files": [
-        "internal/mcp/server_knowledge.go",
-        "internal/store/store_knowledge.go",
-        "internal/store/store_knowledge_test.go"
       ]
     },
     {
@@ -414,23 +1781,13 @@
       "id": "6106a371",
       "query": "correct stale 'ripgrep-backed' strings missed by #693 (#697)",
       "relevant_files": [
-        "internal/mcp/context_graph.go",
         "internal/retrieve/response.go"
-      ]
-    },
-    {
-      "id": "429110c8",
-      "query": "strip Accept-Encoding so Go transport auto-decompresses SSE",
-      "relevant_files": [
-        "internal/proxy/proxy.go",
-        "internal/proxy/usage_test.go"
       ]
     },
     {
       "id": "70508051",
       "query": "skip salience-fallback in recallFacts (#696)",
       "relevant_files": [
-        "internal/mcp/server_knowledge.go",
         "internal/mcp/server_locate.go",
         "internal/mcp/server_review.go"
       ]
@@ -495,8 +1852,6 @@
       "query": "assemble — Hebbian spreading activation over graph ∪ co-access (#688, epic #683)",
       "relevant_files": [
         "internal/mcp/context.go",
-        "internal/mcp/enrich.go",
-        "internal/mcp/enrich_test.go",
         "internal/store/store_spread.go",
         "internal/store/store_spread_test.go"
       ]
@@ -521,8 +1876,7 @@
       "query": "preserve note scope + salience counters across reindex (#678)",
       "relevant_files": [
         "cmd/dex/main_manage.go",
-        "internal/store/store_external_test.go",
-        "internal/store/store_knowledge.go"
+        "internal/store/store_external_test.go"
       ]
     },
     {
@@ -546,9 +1900,6 @@
       "query": "gofmt 5 files that landed dirty overnight (#675)",
       "relevant_files": [
         "internal/mcp/server_status.go",
-        "internal/proxy/effort.go",
-        "internal/proxy/pricing.go",
-        "internal/proxy/usage.go",
         "internal/store/store.go"
       ]
     },
@@ -577,14 +1928,6 @@
       "query": "split cmdIndexStatus into focused helpers (#671)",
       "relevant_files": [
         "cmd/dex/main_status.go"
-      ]
-    },
-    {
-      "id": "24ef52f4",
-      "query": "strip the full CSI + OSC escape grammar, not just SGR (#670)",
-      "relevant_files": [
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_test.go"
       ]
     },
     {
@@ -685,9 +2028,7 @@
       "id": "51ec7f30",
       "query": "suggest a scope on add when the note names a project file/glob (#658)",
       "relevant_files": [
-        "internal/mcp/server.go",
-        "internal/mcp/server_knowledge.go",
-        "internal/mcp/server_knowledge_scopesuggest_test.go"
+        "internal/mcp/server.go"
       ]
     },
     {
@@ -712,22 +2053,6 @@
         "internal/mcp/server.go",
         "internal/mcp/server_graph_impact.go",
         "internal/mcp/server_graph_impact_test.go"
-      ]
-    },
-    {
-      "id": "628ba0ee",
-      "query": "list --scope \u003cpath\u003e — inspect notes bound to an area (#653)",
-      "relevant_files": [
-        "cmd/dex/knowledge.go",
-        "internal/mcp/server_knowledge.go",
-        "internal/mcp/server_knowledge_scope_test.go"
-      ]
-    },
-    {
-      "id": "f7fd87c5",
-      "query": "lock the tool_use/tool_result pairing invariant of history pruning (#652)",
-      "relevant_files": [
-        "internal/proxy/prune_test.go"
       ]
     },
     {
@@ -757,22 +2082,28 @@
       ]
     },
     {
+      "id": "bb3e01ac",
+      "query": "proactive gotcha-on-touch — scoped notes surface on file touch (#645)",
+      "relevant_files": [
+        "internal/mcp/server.go",
+        "internal/mcp/server_locate.go",
+        "internal/mcp/server_locate_test.go",
+        "internal/store/store_migrate.go"
+      ]
+    },
+    {
       "id": "dae8fcd2",
       "query": "preserve notes across a schema-bump reindex via raw export (#648)",
       "relevant_files": [
         "cmd/dex/main_manage.go",
-        "internal/store/store_external_test.go",
-        "internal/store/store_knowledge.go"
+        "internal/store/store_external_test.go"
       ]
     },
     {
       "id": "5e64952c",
       "query": "preserve the knowledge store across reindex (#647)",
       "relevant_files": [
-        "cmd/dex/main_manage.go",
-        "internal/mcp/server_knowledge.go",
-        "internal/store/store_knowledge.go",
-        "internal/store/store_knowledge_test.go"
+        "cmd/dex/main_manage.go"
       ]
     },
     {
@@ -813,11 +2144,17 @@
       ]
     },
     {
-      "id": "c9218c0d",
-      "query": "content-heuristic tool-kind fallback for foreign MCP tools (#615)",
+      "id": "90d96912",
+      "query": "warn on near-duplicate notes at write time (#606 pt.2)",
       "relevant_files": [
-        "internal/proxy/prune.go",
-        "internal/proxy/prune_test.go"
+        "internal/mcp/server.go"
+      ]
+    },
+    {
+      "id": "58026859",
+      "query": "add Minimal compression tier for structured output (#616)",
+      "relevant_files": [
+        "internal/mcp/server_compress.go"
       ]
     },
     {
@@ -826,27 +2163,24 @@
       "relevant_files": [
         "internal/gotcha/detect.go",
         "internal/gotcha/detect_test.go",
-        "internal/mcp/server.go",
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_test.go"
+        "internal/mcp/server.go"
       ]
     },
     {
       "id": "96049af2",
       "query": "DEX_SHELL_ALLOW_WRITES opt-in for shell redirects (#596)",
       "relevant_files": [
-        "internal/mcp/server.go",
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_test.go"
+        "internal/mcp/server.go"
       ]
     },
     {
-      "id": "8dc3032d",
-      "query": "CCR Option 2 — active over-pruning recovery (#640)",
+      "id": "bc37a71f",
+      "query": "thread stored signature + replace ripgrep with BM25 search",
       "relevant_files": [
-        "internal/proxy/ccr.go",
-        "internal/proxy/ccr_test.go",
-        "internal/proxy/proxy.go"
+        "internal/mcp/context.go",
+        "internal/retrieve/rerank.go",
+        "internal/retrieve/service.go",
+        "internal/store/store_search.go"
       ]
     },
     {
@@ -865,8 +2199,17 @@
       "query": "QA fixes for latest changes",
       "relevant_files": [
         "cmd/dex/main_usage.go",
-        "internal/mcp/server_shell_test.go",
         "internal/proj/proj.go"
+      ]
+    },
+    {
+      "id": "0e5ec52f",
+      "query": "lossless JSON compaction — strip insignificant whitespace (#619)",
+      "relevant_files": [
+        "cmd/dex/compress.go",
+        "cmd/dex/read.go",
+        "internal/compress/json.go",
+        "internal/compress/json_test.go"
       ]
     },
     {
@@ -879,14 +2222,25 @@
       ]
     },
     {
-      "id": "b275b100",
-      "query": "preserve already-compressed tool results in history (#45)",
+      "id": "c17b475b",
+      "query": "session cost tracking and cost-based SLO (#56)",
       "relevant_files": [
-        "internal/proxy/metrics.go",
-        "internal/proxy/proxy.go",
-        "internal/proxy/prune.go",
-        "internal/proxy/result_compress.go",
-        "internal/proxy/result_compress_test.go"
+        "internal/slo/slo.go"
+      ]
+    },
+    {
+      "id": "c6a26b5a",
+      "query": "persistent per-session budget event log (#60)",
+      "relevant_files": [
+        "cmd/dex/hook_observe.go"
+      ]
+    },
+    {
+      "id": "f445cb20",
+      "query": "EditFail signal for adaptive threshold learning (#58)",
+      "relevant_files": [
+        "internal/compress/adaptive.go",
+        "internal/compress/adaptive_test.go"
       ]
     },
     {
@@ -937,25 +2291,6 @@
       ]
     },
     {
-      "id": "522c05b9",
-      "query": "parse real usage token counts from provider SSE streams (#57)",
-      "relevant_files": [
-        "internal/proxy/metrics.go",
-        "internal/proxy/proxy.go",
-        "internal/proxy/usage.go",
-        "internal/proxy/usage_test.go"
-      ]
-    },
-    {
-      "id": "cbed3743",
-      "query": "stride pruning boundary + respect cache_control prefix (#43 #44)",
-      "relevant_files": [
-        "internal/proxy/proxy_test.go",
-        "internal/proxy/prune.go",
-        "internal/proxy/prune_test.go"
-      ]
-    },
-    {
       "id": "f9b924e9",
       "query": "distinguish chat unreachable vs model not found (#36)",
       "relevant_files": [
@@ -975,30 +2310,10 @@
       ]
     },
     {
-      "id": "bf1711e9",
-      "query": "kill the whole descendant process group on timeout",
-      "relevant_files": [
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_pgid_other.go",
-        "internal/mcp/server_shell_pgid_unix.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
       "id": "8d9229a6",
       "query": "configurable per-call timeout (#24)",
       "relevant_files": [
-        "cmd/dex/verbs.go",
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
-      "id": "aa7f4614",
-      "query": "DEX_SHELL_WRAPPED reentry marker (#25)",
-      "relevant_files": [
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_test.go"
+        "cmd/dex/verbs.go"
       ]
     },
     {
@@ -1063,7 +2378,6 @@
       "id": "2fc7e00b",
       "query": "advertise canonical add|list|delete|gc verbs (#576)",
       "relevant_files": [
-        "cmd/dex/knowledge.go",
         "cmd/dex/main_usage.go",
         "cmd/dex/registry.go"
       ]
@@ -1121,17 +2435,6 @@
       "query": "correct --lane bm25 label to match scored pipeline (#558)",
       "relevant_files": [
         "cmd/dex/eval.go"
-      ]
-    },
-    {
-      "id": "a0e07d2e",
-      "query": "add dup-in-window probe to over-pruning instrument",
-      "relevant_files": [
-        "cmd/dex/proxy.go",
-        "internal/proxy/baseline.go",
-        "internal/proxy/metrics.go",
-        "internal/proxy/overprune.go",
-        "internal/proxy/overprune_test.go"
       ]
     },
     {
@@ -1226,1621 +2529,6 @@
         "internal/graph/sitter.go",
         "internal/graph/sitter_java.go",
         "internal/graph/sitter_java_tags.go"
-      ]
-    },
-    {
-      "id": "ee5d39bf",
-      "query": "decline trigram narrowing for alternation patterns (#544)",
-      "relevant_files": [
-        "internal/trigram/trigram.go",
-        "internal/trigram/trigram_test.go"
-      ]
-    },
-    {
-      "id": "bb365a7d",
-      "query": "hint when k is clamped instead of silently overriding",
-      "relevant_files": [
-        "internal/mcp/clamp_searchk_test.go",
-        "internal/mcp/server_search.go"
-      ]
-    },
-    {
-      "id": "30aa3d7e",
-      "query": "run via bash when available, fall back to sh",
-      "relevant_files": [
-        "internal/mcp/server.go",
-        "internal/mcp/server_shell.go",
-        "internal/mcp/shell_interpreter_test.go"
-      ]
-    },
-    {
-      "id": "f072dfd5",
-      "query": "bypass trigram prefilter for case-insensitive patterns",
-      "relevant_files": [
-        "internal/trigram/trigram.go",
-        "internal/trigram/trigram_test.go"
-      ]
-    },
-    {
-      "id": "342cd4da",
-      "query": "protect control-flow lines + correct 'lossless' doc",
-      "relevant_files": [
-        "internal/compress/control_flow_test.go",
-        "internal/compress/thresholds.go"
-      ]
-    },
-    {
-      "id": "e09f55e4",
-      "query": "drop dead body handles for bodyless declarations",
-      "relevant_files": [
-        "internal/compress/skeleton.go",
-        "internal/compress/skeleton_test.go"
-      ]
-    },
-    {
-      "id": "bb2d8957",
-      "query": "isolate redirect target from glued operators",
-      "relevant_files": [
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
-      "id": "9e06f075",
-      "query": "make the architecture graph lane a real structural cross-section",
-      "relevant_files": [
-        "internal/retrieve/graph.go",
-        "internal/retrieve/graph_arch_test.go"
-      ]
-    },
-    {
-      "id": "c8c104d0",
-      "query": "make exclude glob-aware (basename + full path)",
-      "relevant_files": [
-        "internal/mcp/server_search.go",
-        "internal/mcp/server_search_filter_test.go"
-      ]
-    },
-    {
-      "id": "e4f8019e",
-      "query": "lead callers/callees answer evidence with graph edges",
-      "relevant_files": [
-        "internal/mcp/answer.go",
-        "internal/mcp/answer_test.go"
-      ]
-    },
-    {
-      "id": "eca1c466",
-      "query": "accept a file path as the search scope",
-      "relevant_files": [
-        "internal/mcp/server_grep.go",
-        "internal/mcp/server_grep_test.go"
-      ]
-    },
-    {
-      "id": "5f287bee",
-      "query": "gate symbol near-miss hint on an empty symbol lane",
-      "relevant_files": [
-        "internal/mcp/context.go",
-        "internal/mcp/context_nearmiss_test.go"
-      ]
-    },
-    {
-      "id": "518bb471",
-      "query": "reconcile next_action with the synthesized answer's lead",
-      "relevant_files": [
-        "internal/mcp/context.go",
-        "internal/mcp/context_response.go",
-        "internal/mcp/context_response_reconcile_test.go"
-      ]
-    },
-    {
-      "id": "2854595f",
-      "query": "annotate around_diff when changed files yield an empty blast radius",
-      "relevant_files": [
-        "internal/mcp/verbs_map_around.go",
-        "internal/mcp/verbs_map_around_test.go"
-      ]
-    },
-    {
-      "id": "193917d9",
-      "query": "accept top-level -v as a version flag (#505)",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "cmd/dex/registry_test.go"
-      ]
-    },
-    {
-      "id": "f58700e4",
-      "query": "flag when a languages/path_glob filter rejects every hit",
-      "relevant_files": [
-        "internal/mcp/server_search.go",
-        "internal/mcp/server_search_filter_test.go"
-      ]
-    },
-    {
-      "id": "174d90ed",
-      "query": "skip prune when extraction yields 0 nodes+edges (no graph wipe)",
-      "relevant_files": [
-        "internal/graph/graph.go",
-        "internal/graph/graph_test.go"
-      ]
-    },
-    {
-      "id": "bce68df2",
-      "query": "skeleton expand hint names 'read', not nonexistent 'file_view' (#530)",
-      "relevant_files": [
-        "internal/compress/skeleton.go",
-        "internal/compress/skeleton_test.go"
-      ]
-    },
-    {
-      "id": "021809db",
-      "query": "warn when Go files are present but graph extraction is empty",
-      "relevant_files": [
-        "internal/graph/go.go",
-        "internal/graph/go_nomod_test.go"
-      ]
-    },
-    {
-      "id": "c91fa601",
-      "query": "alias 'dex status' -\u003e 'dex index status' (#501)",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "cmd/dex/main_usage.go",
-        "cmd/dex/registry.go",
-        "cmd/dex/verb_parity_test.go"
-      ]
-    },
-    {
-      "id": "ef74de27",
-      "query": "error on unrecognized read mode instead of dumping full file",
-      "relevant_files": [
-        "internal/mcp/server_summarize.go",
-        "internal/mcp/server_summarize_mode_test.go"
-      ]
-    },
-    {
-      "id": "db27e48c",
-      "query": "query-driven Python graph extractor (468b pilot, #497)",
-      "relevant_files": [
-        "internal/graph/sitter.go",
-        "internal/graph/sitter_python.go",
-        "internal/graph/sitter_python_tags.go"
-      ]
-    },
-    {
-      "id": "a86bc7b4",
-      "query": "accept unambiguous project-id prefix in REST/MCP routers",
-      "relevant_files": [
-        "internal/mcp/http.go",
-        "internal/mcp/http_idprefix_test.go",
-        "internal/mcp/http_mcp.go"
-      ]
-    },
-    {
-      "id": "105c08b3",
-      "query": "align tool-instruction param names with the schema (#525)",
-      "relevant_files": [
-        "internal/mcp/instructions_test.go",
-        "internal/mcp/server.go"
-      ]
-    },
-    {
-      "id": "d17cd892",
-      "query": "only block real-file redirects, allow fd-dup and /dev/null",
-      "relevant_files": [
-        "internal/mcp/server_shell.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
-      "id": "4170bbda",
-      "query": "flag synthesized-answer citations absent from the evidence",
-      "relevant_files": [
-        "internal/mcp/answer.go",
-        "internal/mcp/answer_cite_test.go"
-      ]
-    },
-    {
-      "id": "3cc606d7",
-      "query": "expose sort_score as the authoritative rank key in JSON/MCP (#509)",
-      "relevant_files": [
-        "cmd/dex/render.go",
-        "cmd/dex/render_sort_score_test.go",
-        "internal/mcp/server_related.go",
-        "internal/mcp/server_search.go",
-        "internal/mcp/server_symbol.go"
-      ]
-    },
-    {
-      "id": "7abf245a",
-      "query": "accept positional file/package on 'graph deps'",
-      "relevant_files": [
-        "cmd/dex/graph.go",
-        "cmd/dex/graph_deps_test.go"
-      ]
-    },
-    {
-      "id": "040e2724",
-      "query": "concurrency stress test for reindex read-visibility race",
-      "relevant_files": [
-        "internal/index/reindex_race_test.go"
-      ]
-    },
-    {
-      "id": "645df2d4",
-      "query": "reject --k\u003c=0 instead of silently using the default (#523)",
-      "relevant_files": [
-        "cmd/dex/find_k_validation_test.go",
-        "cmd/dex/main_search.go"
-      ]
-    },
-    {
-      "id": "ef7f6c82",
-      "query": "point 'dex session' at the MCP surface instead of unknown-command",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "cmd/dex/registry.go",
-        "cmd/dex/registry_test.go"
-      ]
-    },
-    {
-      "id": "a4086074",
-      "query": "gate http_handler on signature, not just name",
-      "relevant_files": [
-        "internal/mcp/server_routes.go",
-        "internal/mcp/server_routes_test.go"
-      ]
-    },
-    {
-      "id": "57c43c06",
-      "query": "accept optional leading [\u003cpath\u003e] positional",
-      "relevant_files": [
-        "cmd/dex/read.go",
-        "cmd/dex/read_test.go"
-      ]
-    },
-    {
-      "id": "6b4c251a",
-      "query": "rebuild trigram cache when the file set changes",
-      "relevant_files": [
-        "internal/mcp/trigram_cache.go",
-        "internal/mcp/trigram_cache_test.go"
-      ]
-    },
-    {
-      "id": "1d41c76b",
-      "query": "validate --archetype and --confidence on notes add",
-      "relevant_files": [
-        "cmd/dex/knowledge.go",
-        "cmd/dex/knowledge_validation_test.go",
-        "cmd/dex/main_flags.go"
-      ]
-    },
-    {
-      "id": "2c5308d8",
-      "query": "copy index.db instead of hard-linking it",
-      "relevant_files": [
-        "cmd/dex/main_clone.go",
-        "cmd/dex/main_clone_test.go"
-      ]
-    },
-    {
-      "id": "de403cb8",
-      "query": "add --expand flag to CLI dex ask",
-      "relevant_files": [
-        "cmd/dex/ask_expand_test.go",
-        "cmd/dex/main_ask.go",
-        "cmd/dex/main_flags.go"
-      ]
-    },
-    {
-      "id": "e5d5ed00",
-      "query": "decide path containment before existence check",
-      "relevant_files": [
-        "internal/mcp/server_summarize_pathescape_test.go",
-        "internal/mcp/server_summarize_setup.go"
-      ]
-    },
-    {
-      "id": "3b7dc8cd",
-      "query": "honor explicit mode on dependency manifests",
-      "relevant_files": [
-        "internal/mcp/server_summarize.go",
-        "internal/mcp/server_summarize_manifest_test.go"
-      ]
-    },
-    {
-      "id": "b9f031d3",
-      "query": "grep is not search-class and never suppresses results",
-      "relevant_files": [
-        "internal/mcp/grep_throttle_test.go",
-        "internal/mcp/server_grep.go"
-      ]
-    },
-    {
-      "id": "69b25ea6",
-      "query": "index_status must not close the shared cached store",
-      "relevant_files": [
-        "internal/mcp/server_status.go",
-        "internal/mcp/status_store_cache_test.go"
-      ]
-    },
-    {
-      "id": "b2ef1137",
-      "query": "preserve standalone token lines from the entropy filter",
-      "relevant_files": [
-        "internal/compress/entropy.go",
-        "internal/compress/entropy_test.go"
-      ]
-    },
-    {
-      "id": "e592229a",
-      "query": "expand=on|full no longer panics when DEX_EXPAND_MODEL disabled",
-      "relevant_files": [
-        "cmd/dex/expand_nil_test.go",
-        "cmd/dex/main_mcp.go",
-        "internal/mcp/expand_noop_test.go"
-      ]
-    },
-    {
-      "id": "05fddd46",
-      "query": "trace-precision scorer for cross-language graph parity (#496)",
-      "relevant_files": [
-        "internal/eval/trace/trace.go",
-        "internal/eval/trace/trace_test.go"
-      ]
-    },
-    {
-      "id": "1468ae31",
-      "query": "representative corpus + absolute fidelity floor (#492)",
-      "relevant_files": [
-        "cmd/dex/bench_compress.go",
-        "internal/bench/compress/corpus_large.go",
-        "internal/bench/compress/floor_test.go",
-        "internal/bench/compress/report.go",
-        "internal/bench/compress/run.go"
-      ]
-    },
-    {
-      "id": "d2d20332",
-      "query": "document grep/ls/shell in usage text (#500)",
-      "relevant_files": [
-        "cmd/dex/main_usage.go"
-      ]
-    },
-    {
-      "id": "1bbacabd",
-      "query": "replace dispatch switch with a registration table (#475)",
-      "relevant_files": [
-        "internal/compress/dispatch.go",
-        "internal/compress/dispatch_routing_test.go",
-        "internal/mcp/server_compress.go"
-      ]
-    },
-    {
-      "id": "04dfb242",
-      "query": "add grep/ls/shell front doors to match the MCP tools (#494)",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "cmd/dex/registry.go",
-        "cmd/dex/verb_parity_test.go",
-        "cmd/dex/verbs.go"
-      ]
-    },
-    {
-      "id": "453025fa",
-      "query": "unify CLI and MCP read mode vocabularies (#491)",
-      "relevant_files": [
-        "cmd/dex/read.go",
-        "cmd/dex/read_parity_test.go",
-        "cmd/dex/registry.go",
-        "internal/mcp/server_summarize.go"
-      ]
-    },
-    {
-      "id": "b5938dcc",
-      "query": "classify schema-version mismatch distinctly from corrupt (#489)",
-      "relevant_files": [
-        "cmd/dex/main_status.go"
-      ]
-    },
-    {
-      "id": "c0bd49c0",
-      "query": "add graph smells/routes CLI subcommands (#490)",
-      "relevant_files": [
-        "cmd/dex/graph.go",
-        "cmd/dex/registry.go"
-      ]
-    },
-    {
-      "id": "294346ab",
-      "query": "indirect-dispatch hint + windowed caller snippets (#485, #486)",
-      "relevant_files": [
-        "cmd/dex/graph.go",
-        "internal/mcp/server_graph_calls.go"
-      ]
-    },
-    {
-      "id": "5e5cf405",
-      "query": "cap output per depth with +N-more elision (#484)",
-      "relevant_files": [
-        "internal/mcp/server_graph_fix_test.go",
-        "internal/mcp/server_graph_impact.go"
-      ]
-    },
-    {
-      "id": "ada31468",
-      "query": "render handle mode instead of dumping raw file (#487)",
-      "relevant_files": [
-        "internal/mcp/server_summarize.go",
-        "internal/mcp/server_summarize_large_test.go",
-        "internal/mcp/server_summarize_modes.go"
-      ]
-    },
-    {
-      "id": "afdac90d",
-      "query": "keep skeleton deterministic on bounce (#483)",
-      "relevant_files": [
-        "internal/mcp/server_summarize_setup.go"
-      ]
-    },
-    {
-      "id": "acfe4dfb",
-      "query": "register the zsh completer instead of executing it at source time (#488)",
-      "relevant_files": [
-        "cmd/dex/completion.go",
-        "cmd/dex/completion_gen_test.go"
-      ]
-    },
-    {
-      "id": "4cf0092e",
-      "query": "generate per-command completion bodies from the verb registry (#482)",
-      "relevant_files": [
-        "cmd/dex/completion.go",
-        "cmd/dex/completion_gen.go",
-        "cmd/dex/completion_gen_test.go"
-      ]
-    },
-    {
-      "id": "a4d161ca",
-      "query": "single-source CLI verbs from a canonical registry (#469)",
-      "relevant_files": [
-        "cmd/dex/completion.go",
-        "cmd/dex/main_usage.go",
-        "cmd/dex/registry.go",
-        "cmd/dex/registry_test.go",
-        "cmd/dex/usage_test.go"
-      ]
-    },
-    {
-      "id": "69999448",
-      "query": "move semantic-chunk reordering into summarize (#481)",
-      "relevant_files": [
-        "internal/mcp/server_summarize_modes.go",
-        "internal/summarize/semchunks.go",
-        "internal/summarize/semchunks_test.go"
-      ]
-    },
-    {
-      "id": "3a59470a",
-      "query": "move chunk-importance scorer into retrieve (#481)",
-      "relevant_files": [
-        "internal/mcp/server_attention.go",
-        "internal/retrieve/attention.go",
-        "internal/retrieve/attention_test.go"
-      ]
-    },
-    {
-      "id": "eacf4d9e",
-      "query": "move ECS rerank into retrieve (#481)",
-      "relevant_files": [
-        "internal/mcp/server_search.go",
-        "internal/retrieve/ecs.go",
-        "internal/retrieve/ecs_test.go"
-      ]
-    },
-    {
-      "id": "10004e94",
-      "query": "extract symbol-lane RRF fusion into retrieve (#480)",
-      "relevant_files": [
-        "internal/mcp/server_search.go",
-        "internal/retrieve/fuse.go",
-        "internal/retrieve/fuse_test.go"
-      ]
-    },
-    {
-      "id": "fe7ee435",
-      "query": "encapsulate per-view composition (#472 step 5)",
-      "relevant_files": [
-        "internal/mcp/server_summarize_modes.go",
-        "internal/summarize/summarize.go",
-        "internal/summarize/summarize_test.go"
-      ]
-    },
-    {
-      "id": "91f7304c",
-      "query": "move next_action/avoid builders into retrieve (#476e/response)",
-      "relevant_files": [
-        "internal/mcp/context_response.go",
-        "internal/retrieve/response.go"
-      ]
-    },
-    {
-      "id": "9ccbe6bd",
-      "query": "move answer synthesis core into retrieve (#476e/answer)",
-      "relevant_files": [
-        "internal/mcp/answer.go",
-        "internal/mcp/answer_test.go",
-        "internal/mcp/server.go",
-        "internal/retrieve/answer.go",
-        "internal/retrieve/answer_test.go"
-      ]
-    },
-    {
-      "id": "e3ac860e",
-      "query": "move query expansion into retrieve (#476e/expand)",
-      "relevant_files": [
-        "cmd/dex/eval.go",
-        "internal/mcp/context.go",
-        "internal/retrieve/expand.go",
-        "internal/retrieve/expand_test.go"
-      ]
-    },
-    {
-      "id": "d68483fb",
-      "query": "move graph enrichment into retrieve (#476d)",
-      "relevant_files": [
-        "internal/mcp/context_graph.go",
-        "internal/mcp/context_test.go",
-        "internal/retrieve/graph.go"
-      ]
-    },
-    {
-      "id": "684f0ef7",
-      "query": "uniform secret redaction at CompressText chokepoint (#461)",
-      "relevant_files": [
-        "internal/compress/redact.go",
-        "internal/compress/redact_test.go",
-        "internal/ignore/ignore.go",
-        "internal/mcp/server_compress.go",
-        "internal/mcp/server_compress_redact_test.go"
-      ]
-    },
-    {
-      "id": "db0cfbcf",
-      "query": "move search lanes into retrieve.Service (#476)",
-      "relevant_files": [
-        "internal/mcp/context_lanes.go",
-        "internal/retrieve/service.go"
-      ]
-    },
-    {
-      "id": "ce01f343",
-      "query": "dex bench eval --graph-sweep — GraphLaneWeight ablation",
-      "relevant_files": [
-        "cmd/dex/eval.go",
-        "internal/store/store.go",
-        "internal/store/store_graph.go",
-        "internal/store/store_graph_ablation_test.go"
-      ]
-    },
-    {
-      "id": "06f8d67b",
-      "query": "floor declaration signatures in relaxed entropy pass (#456)",
-      "relevant_files": [
-        "internal/compress/thresholds.go",
-        "internal/compress/thresholds_test.go"
-      ]
-    },
-    {
-      "id": "39aff869",
-      "query": "dex eval --alpha-sweep --emit-calibration writes the winner back",
-      "relevant_files": [
-        "cmd/dex/eval.go",
-        "internal/store/calibration.go",
-        "internal/store/calibration_test.go"
-      ]
-    },
-    {
-      "id": "8c2a69b3",
-      "query": "source fusion-lane defaults from embedded calibration artifact",
-      "relevant_files": [
-        "cmd/dex/main_config.go",
-        "internal/store/calibration.go",
-        "internal/store/calibration_test.go",
-        "internal/store/store_graph.go",
-        "internal/store/store_search.go"
-      ]
-    },
-    {
-      "id": "975e3304",
-      "query": "version-gate schema, drop flag-guarded migrate chain",
-      "relevant_files": [
-        "internal/store/store.go",
-        "internal/store/store_fts_path_test.go",
-        "internal/store/store_migrate.go",
-        "internal/store/store_test.go"
-      ]
-    },
-    {
-      "id": "02a9c2df",
-      "query": "rebuild chunks_fts after the context_text trigger swap",
-      "relevant_files": [
-        "internal/store/store_fts_path_test.go",
-        "internal/store/store_migrate.go",
-        "internal/store/store_test.go"
-      ]
-    },
-    {
-      "id": "0dc59c60",
-      "query": "isolate per-batch failures in embed pass-2",
-      "relevant_files": [
-        "internal/index/degradation_test.go",
-        "internal/index/index.go",
-        "internal/index/index_test.go"
-      ]
-    },
-    {
-      "id": "64e91982",
-      "query": "bounded retry with backoff on transient HTTP failures",
-      "relevant_files": [
-        "internal/embed/client.go",
-        "internal/embed/client_test.go"
-      ]
-    },
-    {
-      "id": "a6675a89",
-      "query": "fail loud when model output is shorter than the dim cap",
-      "relevant_files": [
-        "internal/embed/dimcap.go",
-        "internal/embed/dimcap_test.go"
-      ]
-    },
-    {
-      "id": "d56c182b",
-      "query": "key codebook df indent-free to stop doubled indent",
-      "relevant_files": [
-        "internal/compress/codebook.go",
-        "internal/compress/codebook_test.go"
-      ]
-    },
-    {
-      "id": "9d15fe0d",
-      "query": "stop stripping log level in dedup normalization",
-      "relevant_files": [
-        "internal/compress/log_normalize.go",
-        "internal/compress/log_normalize_test.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
-      "id": "32009d29",
-      "query": "anchor CompressPoetry noise patterns, keep failure headers",
-      "relevant_files": [
-        "internal/compress/pkg_managers.go",
-        "internal/compress/pkg_managers_test.go"
-      ]
-    },
-    {
-      "id": "6add67fd",
-      "query": "fall through on unrecognized Playwright/Cypress summary",
-      "relevant_files": [
-        "internal/compress/test_runners.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
-      "id": "047e187e",
-      "query": "keep pytest assertion/traceback detail, not just FAILED count",
-      "relevant_files": [
-        "internal/compress/test_runners.go",
-        "internal/compress/test_runners_test.go"
-      ]
-    },
-    {
-      "id": "db3c4a49",
-      "query": "keep failing-test diagnostics in CompressGoTest",
-      "relevant_files": [
-        "internal/compress/go_tools.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
-      "id": "ed663570",
-      "query": "disambiguate duplicate-content chunks to stop silent loss",
-      "relevant_files": [
-        "internal/index/index.go",
-        "internal/index/index_test.go"
-      ]
-    },
-    {
-      "id": "b2bfac1c",
-      "query": "cap parse file size + bound AST-walk recursion (#443)",
-      "relevant_files": [
-        "internal/graph/sitter.go",
-        "internal/graph/sitter_java.go",
-        "internal/graph/sitter_limits_test.go"
-      ]
-    },
-    {
-      "id": "d7fe1329",
-      "query": "prune to a curated docs/ (architecture, tools, deployment, config) (#465)",
-      "relevant_files": [
-        "cmd/dex/main_clients.go"
-      ]
-    },
-    {
-      "id": "2c932af6",
-      "query": "keep Java method overloads as distinct nodes (#444)",
-      "relevant_files": [
-        "internal/graph/sitter_java.go",
-        "internal/graph/sitter_java_test.go",
-        "internal/graph/testdata/java_simple/com/example/Handler.java"
-      ]
-    },
-    {
-      "id": "aa1f66cf",
-      "query": "copy before append in MySQL/psql table truncation (#459)",
-      "relevant_files": [
-        "internal/compress/db.go",
-        "internal/compress/db_test.go"
-      ]
-    },
-    {
-      "id": "cf2df64f",
-      "query": "redact secret env values, not just by key name (#460)",
-      "relevant_files": [
-        "internal/compress/sys.go",
-        "internal/compress/sys_test.go"
-      ]
-    },
-    {
-      "id": "d786ba75",
-      "query": "CompressBazelQuery must not mutate caller's input (#454)",
-      "relevant_files": [
-        "internal/compress/build_tools.go",
-        "internal/compress/build_tools_test.go"
-      ]
-    },
-    {
-      "id": "b2ae5340",
-      "query": "root-anchor generic build-output default patterns (#457)",
-      "relevant_files": [
-        "internal/ignore/ignore.go",
-        "internal/ignore/ignore_test.go"
-      ]
-    },
-    {
-      "id": "b63b97b3",
-      "query": "keep NgramCodebook.Apply within line boundaries (#449)",
-      "relevant_files": [
-        "internal/compress/ngram_codebook.go",
-        "internal/compress/ngram_codebook_test.go"
-      ]
-    },
-    {
-      "id": "839284ff",
-      "query": "SymbolMap.Apply replaces whole words only (#447)",
-      "relevant_files": [
-        "internal/compress/symmap.go",
-        "internal/compress/symmap_test.go"
-      ]
-    },
-    {
-      "id": "494b736e",
-      "query": "degrade gracefully on 5xx/429 from the reranker (#445)",
-      "relevant_files": [
-        "internal/rerank/client.go",
-        "internal/rerank/client_test.go"
-      ]
-    },
-    {
-      "id": "07d5a710",
-      "query": "validate HTTP embeddings before they reach the index (#435)",
-      "relevant_files": [
-        "internal/embed/client.go",
-        "internal/embed/client_test.go"
-      ]
-    },
-    {
-      "id": "3fffecca",
-      "query": "break Louvain gain ties deterministically (#441)",
-      "relevant_files": [
-        "internal/graph/analysis.go",
-        "internal/graph/analysis_test.go"
-      ]
-    },
-    {
-      "id": "7a7b26fe",
-      "query": "re-index files whose mtime equals last_indexed_at (#439)",
-      "relevant_files": [
-        "internal/index/index.go",
-        "internal/index/index_test.go"
-      ]
-    },
-    {
-      "id": "833e25c9",
-      "query": "extract escalateOnBounce to keep summarize under cyclop cap (#427)",
-      "relevant_files": [
-        "internal/mcp/server_summarize.go",
-        "internal/mcp/server_summarize_setup.go"
-      ]
-    },
-    {
-      "id": "2e0f62cd",
-      "query": "add /map and /trace REST routes for MCP parity (#428)",
-      "relevant_files": [
-        "internal/mcp/http.go",
-        "internal/mcp/http_test.go",
-        "internal/mcp/verbs.go"
-      ]
-    },
-    {
-      "id": "3873c72e",
-      "query": "ask runs BM25 when no embedder is wired",
-      "relevant_files": [
-        "internal/mcp/context_lanes.go",
-        "internal/mcp/lean_ask_test.go"
-      ]
-    },
-    {
-      "id": "d15829b9",
-      "query": "omit symbol map for strict (weak-model) targets",
-      "relevant_files": [
-        "internal/compress/anchors.go",
-        "internal/compress/anchors_test.go",
-        "internal/compress/symmap.go"
-      ]
-    },
-    {
-      "id": "946de31c",
-      "query": "inject build version from git via ldflags",
-      "relevant_files": [
-        "internal/mcp/server.go",
-        "internal/mcp/version.go",
-        "internal/mcp/version_test.go"
-      ]
-    },
-    {
-      "id": "d587c1d3",
-      "query": "ls returns error for file path; find no longer drops all hits",
-      "relevant_files": [
-        "internal/mcp/server_search.go",
-        "internal/mcp/server_test.go",
-        "internal/mcp/server_tree.go"
-      ]
-    },
-    {
-      "id": "21dbb607",
-      "query": "replace CompressIB uniform threshold with AdmTree segment scoring",
-      "relevant_files": [
-        "internal/compress/ib.go",
-        "internal/compress/ib_test.go"
-      ]
-    },
-    {
-      "id": "d6772f8a",
-      "query": "add ref allowlist coverage for graphDiff",
-      "relevant_files": [
-        "internal/mcp/server_graph_diff_test.go"
-      ]
-    },
-    {
-      "id": "d048a398",
-      "query": "simplify ParseSizeField double-scan and clarify EnvFilter idx\u003e0",
-      "relevant_files": [
-        "internal/compress/dispatch.go"
-      ]
-    },
-    {
-      "id": "3af45350",
-      "query": "guard maskList[i][j] against OOB in poolNormalize",
-      "relevant_files": [
-        "internal/embed/onnx_engine.go"
-      ]
-    },
-    {
-      "id": "5f7b90fb",
-      "query": "validate ref against allowlist and add --end-of-options in diff tool",
-      "relevant_files": [
-        "internal/mcp/server_graph_diff.go"
-      ]
-    },
-    {
-      "id": "7d9c3886",
-      "query": "escape LIKE wildcards in dirLikePattern and nestedExclude",
-      "relevant_files": [
-        "internal/store/store_graph.go"
-      ]
-    },
-    {
-      "id": "3e1c4703",
-      "query": "guard bounce escalation against nil ChatClient",
-      "relevant_files": [
-        "internal/mcp/server_summarize.go"
-      ]
-    },
-    {
-      "id": "1cccccb2",
-      "query": "close store in batchStableSet to prevent resource leak",
-      "relevant_files": [
-        "internal/mcp/server_summarize.go"
-      ]
-    },
-    {
-      "id": "23b48f76",
-      "query": "use named returns to preserve defer visibility in summarize",
-      "relevant_files": [
-        "internal/mcp/server_summarize.go"
-      ]
-    },
-    {
-      "id": "8e3a52f7",
-      "query": "decompose summarize and CompressText to remove nolint:cyclop",
-      "relevant_files": [
-        "internal/mcp/server_compress.go",
-        "internal/mcp/server_summarize.go",
-        "internal/mcp/server_summarize_modes.go",
-        "internal/mcp/server_summarize_setup.go"
-      ]
-    },
-    {
-      "id": "208208b8",
-      "query": "define Searcher interface; switch search-lane funcs to it",
-      "relevant_files": [
-        "internal/mcp/context.go",
-        "internal/mcp/context_lanes.go",
-        "internal/store/searcher.go"
-      ]
-    },
-    {
-      "id": "29222fe8",
-      "query": "extract watcherState/sessionState/cacheState/patternState sub-types from Server",
-      "relevant_files": [
-        "internal/mcp/server.go"
-      ]
-    },
-    {
-      "id": "60493b8b",
-      "query": "split 2682-line store.go into migrate, vec, and search files",
-      "relevant_files": [
-        "internal/store/store.go",
-        "internal/store/store_migrate.go",
-        "internal/store/store_search.go"
-      ]
-    },
-    {
-      "id": "7db6770f",
-      "query": "split 1415-line context.go into six focused files",
-      "relevant_files": [
-        "internal/mcp/context.go",
-        "internal/mcp/context_inline.go",
-        "internal/mcp/context_lanes.go",
-        "internal/mcp/context_response.go",
-        "internal/mcp/context_results.go"
-      ]
-    },
-    {
-      "id": "3a06429e",
-      "query": "check f.Close() error in hookObserve (errcheck)",
-      "relevant_files": [
-        "cmd/dex/hook_observe.go"
-      ]
-    },
-    {
-      "id": "7d62362b",
-      "query": "split 660-line hook.go into focused files",
-      "relevant_files": [
-        "cmd/dex/hook.go",
-        "cmd/dex/hook_inject.go",
-        "cmd/dex/hook_observe.go",
-        "cmd/dex/hook_redirect.go",
-        "cmd/dex/hook_rewrite.go"
-      ]
-    },
-    {
-      "id": "3d805051",
-      "query": "remove noopSurface from remoteClient (unused — all 36 methods overridden)",
-      "relevant_files": [
-        "internal/mcp/remote.go"
-      ]
-    },
-    {
-      "id": "ddd2c557",
-      "query": "add noopSurface — eliminate 36-stub boilerplate in maintenanceClient",
-      "relevant_files": [
-        "internal/mcp/maintenance.go",
-        "internal/mcp/maintenance_test.go",
-        "internal/mcp/noop_surface.go",
-        "internal/mcp/remote.go"
-      ]
-    },
-    {
-      "id": "ebe17b55",
-      "query": "introduce Enricher type in enrich.go",
-      "relevant_files": [
-        "internal/mcp/context.go",
-        "internal/mcp/enrich.go",
-        "internal/mcp/enrich_test.go"
-      ]
-    },
-    {
-      "id": "00a8ea3b",
-      "query": "split 1095-line chunk.go into focused files",
-      "relevant_files": [
-        "internal/chunk/chunk.go",
-        "internal/chunk/chunk_embed.go",
-        "internal/chunk/chunk_lang.go",
-        "internal/chunk/chunk_summary.go",
-        "internal/chunk/chunk_window.go"
-      ]
-    },
-    {
-      "id": "5abc42d2",
-      "query": "embed knowledgeStore in Store — separate knowledge concerns",
-      "relevant_files": [
-        "internal/store/store.go",
-        "internal/store/store_knowledge.go"
-      ]
-    },
-    {
-      "id": "0970c6fc",
-      "query": "regression test for compactDiff empty-line panic",
-      "relevant_files": [
-        "internal/compress/dispatch_test.go"
-      ]
-    },
-    {
-      "id": "ded155b4",
-      "query": "remove unused rePytestPassed variable",
-      "relevant_files": [
-        "internal/compress/dispatch.go"
-      ]
-    },
-    {
-      "id": "0eea4a44",
-      "query": "move 85 compress dispatch functions to internal/compress",
-      "relevant_files": [
-        "internal/compress/dispatch.go",
-        "internal/compress/lazyre.go",
-        "internal/mcp/server.go",
-        "internal/mcp/server_compress.go",
-        "internal/mcp/server_shell_test.go"
-      ]
-    },
-    {
-      "id": "9578d206",
-      "query": "add package comment to satisfy revive linter",
-      "relevant_files": [
-        "internal/source/imports.go"
-      ]
-    },
-    {
-      "id": "7d98ad9b",
-      "query": "log stack trace on panic in recoverMiddleware",
-      "relevant_files": [
-        "internal/mcp/http.go"
-      ]
-    },
-    {
-      "id": "d1470689",
-      "query": "extract generateEvalGolden to bring runEval below cyclop threshold",
-      "relevant_files": [
-        "cmd/dex/eval.go"
-      ]
-    },
-    {
-      "id": "45f07b68",
-      "query": "decompose search — extract clampSearchK and applyMultiScaleFilter",
-      "relevant_files": [
-        "internal/mcp/server.go"
-      ]
-    },
-    {
-      "id": "c83d3a78",
-      "query": "decompose contextRouter — extract noLaneHits, symbolNearMiss, applyLoopThrottle",
-      "relevant_files": [
-        "internal/mcp/context.go"
-      ]
-    },
-    {
-      "id": "4c238e26",
-      "query": "cache BuildMultiScale per project; invalidate on last_indexed_at change",
-      "relevant_files": [
-        "internal/mcp/multiscale_cache.go",
-        "internal/mcp/server.go"
-      ]
-    },
-    {
-      "id": "408bd6cb",
-      "query": "two-value type assertion + proper return in cachedLoadGraphView",
-      "relevant_files": [
-        "internal/mcp/context_graph_cache.go"
-      ]
-    },
-    {
-      "id": "c10e795c",
-      "query": "recent tool_result content forwarded verbatim",
-      "relevant_files": [
-        "internal/proxy/proxy_test.go"
-      ]
-    },
-    {
-      "id": "3da0a5e5",
-      "query": "smoke tests for multiscale.go Build/Search",
-      "relevant_files": [
-        "internal/store/multiscale_test.go"
-      ]
-    },
-    {
-      "id": "212ecc43",
-      "query": "cover TarjanSCC, PageRank, and graphrefresh.RunPhase",
-      "relevant_files": [
-        "internal/graph/analysis_test.go",
-        "internal/graphrefresh/graphrefresh_runphase_test.go"
-      ]
-    },
-    {
-      "id": "75d7f954",
-      "query": "inline 17 thin jsonHandler wrappers directly into route table",
-      "relevant_files": [
-        "internal/mcp/http.go"
-      ]
-    },
-    {
-      "id": "5cff9936",
-      "query": "use bytes.NewReader instead of strings.NewReader(string(b)) to avoid copy",
-      "relevant_files": [
-        "internal/proxy/proxy.go"
-      ]
-    },
-    {
-      "id": "20055368",
-      "query": "wire request context into shellRun timeout instead of context.Background",
-      "relevant_files": [
-        "internal/mcp/server_shell.go"
-      ]
-    },
-    {
-      "id": "19237778",
-      "query": "replace hand-rolled constantTimeEqual with crypto/subtle.ConstantTimeCompare",
-      "relevant_files": [
-        "internal/mcp/http.go"
-      ]
-    },
-    {
-      "id": "908f9474",
-      "query": "exclude graph-only hits from cross-encoder rerank (#394)",
-      "relevant_files": [
-        "internal/store/store.go"
-      ]
-    },
-    {
-      "id": "360b7d71",
-      "query": "cover store_graph.go query layer; fix CallerFiles missing columns",
-      "relevant_files": [
-        "internal/store/store_graph.go",
-        "internal/store/store_graph_test.go"
-      ]
-    },
-    {
-      "id": "32cd2c59",
-      "query": "move answerCache state from package globals to Server field",
-      "relevant_files": [
-        "internal/mcp/answer.go",
-        "internal/mcp/answer_test.go",
-        "internal/mcp/server.go",
-        "internal/mcp/server_degrade_chat_test.go"
-      ]
-    },
-    {
-      "id": "feba5522",
-      "query": "gate 64 compress regexps behind sync.Once via lazyRe wrapper",
-      "relevant_files": [
-        "internal/mcp/server_compress.go"
-      ]
-    },
-    {
-      "id": "72a98694",
-      "query": "propagate root-level Walk error in searchGrep; skip inaccessible subdirs",
-      "relevant_files": [
-        "internal/mcp/server_grep.go"
-      ]
-    },
-    {
-      "id": "2b314818",
-      "query": "propagate json.Marshal error in hookRewrite; use _ = for intentional Unmarshal ignore",
-      "relevant_files": [
-        "cmd/dex/hook.go"
-      ]
-    },
-    {
-      "id": "955fe961",
-      "query": "add Chatter interface; use it for Server.ChatClient/ExpandClient",
-      "relevant_files": [
-        "internal/mcp/server_degrade_chat_test.go"
-      ]
-    },
-    {
-      "id": "717e0681",
-      "query": "remove osStat function var — call os.Stat directly",
-      "relevant_files": [
-        "internal/mcp/http.go"
-      ]
-    },
-    {
-      "id": "a9d53c07",
-      "query": "extract jstsBase — deduplicate JS/TS sitter clones",
-      "relevant_files": [
-        "internal/graph/sitter_javascript.go",
-        "internal/graph/sitter_jsts.go",
-        "internal/graph/sitter_ts.go"
-      ]
-    },
-    {
-      "id": "adabe40a",
-      "query": "dedup const/var switch branches in orphan.go",
-      "relevant_files": [
-        "internal/eval/orphan.go"
-      ]
-    },
-    {
-      "id": "13601bea",
-      "query": "remove unreachable keeper/dup swap in knowledgeConsolidateSimilar",
-      "relevant_files": [
-        "internal/store/store_knowledge.go"
-      ]
-    },
-    {
-      "id": "3381479a",
-      "query": "populate content for graph-lane-only hits in HitsForFiles",
-      "relevant_files": [
-        "internal/store/store_graph.go"
-      ]
-    },
-    {
-      "id": "5e91a02a",
-      "query": "always emit hits key — drop omitempty, init to []",
-      "relevant_files": [
-        "internal/mcp/server.go",
-        "internal/mcp/server_graph.go",
-        "internal/mcp/verbs.go"
-      ]
-    },
-    {
-      "id": "142924fb",
-      "query": "#292 gate token-reduction rules on the active tokenizer",
-      "relevant_files": [
-        "cmd/dex/bench_compress.go",
-        "internal/compress/token_reduce.go",
-        "internal/compress/token_reduce_gate_test.go",
-        "internal/compress/token_reduce_test.go",
-        "internal/tokens/tokens.go"
-      ]
-    },
-    {
-      "id": "b8113fe3",
-      "query": "#359 staticcheck cleanup — dead helpers, S1017, ST1013",
-      "relevant_files": [
-        "cmd/dex/main_test.go",
-        "internal/chat/client_test.go",
-        "internal/embed/client_test.go",
-        "internal/graph/sitter_python.go",
-        "internal/graph/sitter_rust.go"
-      ]
-    },
-    {
-      "id": "422d5d43",
-      "query": "#358 gate tokenizer-gated rules on the anchor floor (#291)",
-      "relevant_files": [
-        "internal/compress/token_reduce_anchor_test.go"
-      ]
-    },
-    {
-      "id": "e9b503b6",
-      "query": "#356 #351 phase2 — exact-neighborhood breadth lane",
-      "relevant_files": [
-        "cmd/dex/bench_nav.go"
-      ]
-    },
-    {
-      "id": "8167f845",
-      "query": "#357 retire lossy tool_result compression leg",
-      "relevant_files": [
-        "cmd/dex/proxy.go",
-        "internal/proxy/cache.go",
-        "internal/proxy/proxy.go",
-        "internal/proxy/proxy_test.go"
-      ]
-    },
-    {
-      "id": "927aabfd",
-      "query": "#346 story4 — live recap() re-orientation digest",
-      "relevant_files": [
-        "cmd/dex/bench_nav.go",
-        "internal/mcp/server_session.go",
-        "internal/mcp/server_session_recap_test.go"
-      ]
-    },
-    {
-      "id": "998e7011",
-      "query": "#347 story5 — task-conditioned map (--around query|diff)",
-      "relevant_files": [
-        "cmd/dex/map.go",
-        "internal/codemap/codemap.go",
-        "internal/mcp/verbs.go",
-        "internal/mcp/verbs_map_around.go",
-        "internal/mcp/verbs_map_around_test.go"
-      ]
-    },
-    {
-      "id": "58721597",
-      "query": "#354 mirror the MCP verb facade — add find/trace/impact + grouped help",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "cmd/dex/verbs.go",
-        "cmd/dex/verbs_test.go"
-      ]
-    },
-    {
-      "id": "5c4b982c",
-      "query": "#351 phase 3 — re-orientation lane (gates #346 recap())",
-      "relevant_files": [
-        "cmd/dex/bench_nav.go"
-      ]
-    },
-    {
-      "id": "7d88dfa4",
-      "query": "#316 story3 — verb facade (map/find/trace/impact behind a small default surface)",
-      "relevant_files": [
-        "internal/mcp/instructions_test.go",
-        "internal/mcp/lean_profile_test.go",
-        "internal/mcp/server.go",
-        "internal/mcp/verbs.go",
-        "internal/mcp/verbs_test.go"
-      ]
-    },
-    {
-      "id": "ac42ddcf",
-      "query": "#344 align handle-skip comments with #352 git-chunk removal",
-      "relevant_files": [
-        "internal/mcp/envelope.go",
-        "internal/mcp/server.go"
-      ]
-    },
-    {
-      "id": "5dc8bf86",
-      "query": "#344 (seen: turn N) cross-turn dedup ledger (#316 story 2)",
-      "relevant_files": [
-        "internal/mcp/context.go",
-        "internal/mcp/seen.go",
-        "internal/mcp/seen_test.go",
-        "internal/mcp/server.go"
-      ]
-    },
-    {
-      "id": "e7dc66a3",
-      "query": "#352 drop git_commit chunks from the search index",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "internal/chunk/chunk.go",
-        "internal/eval/runner.go",
-        "internal/eval/runner_test.go",
-        "internal/store/store.go"
-      ]
-    },
-    {
-      "id": "48ca18b7",
-      "query": "#351 phase 2 — neighborhood-breadth lane (the map's regime)",
-      "relevant_files": [
-        "cmd/dex/bench_nav.go"
-      ]
-    },
-    {
-      "id": "2a6ab87c",
-      "query": "#351 nav-bench routing-accuracy@budget — the orientation ruler (#316 story 8)",
-      "relevant_files": [
-        "cmd/dex/bench_nav.go"
-      ]
-    },
-    {
-      "id": "36a0ac5c",
-      "query": "#349 nav-bench Phase B — map-seeded lane + map-vs-no-map delta (#316 story 7)",
-      "relevant_files": [
-        "cmd/dex/bench_nav.go",
-        "internal/codemap/codemap.go",
-        "internal/codemap/codemap_test.go"
-      ]
-    },
-    {
-      "id": "72e74148",
-      "query": "#350 rewrite drifted rules instead of short-circuiting on version marker",
-      "relevant_files": [
-        "cmd/dex/setup.go",
-        "cmd/dex/setup_test.go"
-      ]
-    },
-    {
-      "id": "b099565e",
-      "query": "#343 dex map — deterministic multi-zoom orientation renderer (#316 story 1)",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "cmd/dex/map.go",
-        "internal/codemap/codemap.go",
-        "internal/codemap/codemap_test.go"
-      ]
-    },
-    {
-      "id": "297a7ad4",
-      "query": "#349 nav-bench lane — ruler for the explore epic (#316 story 7)",
-      "relevant_files": [
-        "cmd/dex/bench_nav.go",
-        "cmd/dex/locomo.go"
-      ]
-    },
-    {
-      "id": "1acb68c0",
-      "query": "#252 --expand knob for eval A/B of query expansion",
-      "relevant_files": [
-        "cmd/dex/eval.go",
-        "internal/eval/runner.go"
-      ]
-    },
-    {
-      "id": "6670d89c",
-      "query": "#252 disable reasoning trace on expansion call",
-      "relevant_files": [
-        "internal/chat/client.go"
-      ]
-    },
-    {
-      "id": "00d10d58",
-      "query": "#252 opt-in query-side expansion fused via RRF",
-      "relevant_files": [
-        "cmd/dex/env.go",
-        "cmd/dex/main.go",
-        "internal/mcp/context.go",
-        "internal/mcp/server.go"
-      ]
-    },
-    {
-      "id": "85264ad6",
-      "query": "#340 make TestFailOpenUpstreamDown deterministic",
-      "relevant_files": [
-        "internal/proxy/proxy_test.go"
-      ]
-    },
-    {
-      "id": "72fc1903",
-      "query": "#339 drain sessionAutoFile goroutines before TempDir cleanup",
-      "relevant_files": [
-        "internal/mcp/http.go",
-        "internal/mcp/server.go",
-        "internal/mcp/server_cache_layout_test.go"
-      ]
-    },
-    {
-      "id": "c92bdfb4",
-      "query": "#338 drop unused maxBytes param from printSemanticHits",
-      "relevant_files": [
-        "cmd/dex/render.go"
-      ]
-    },
-    {
-      "id": "b618674d",
-      "query": "#335 drop LLM_GUIDE.md as a tested variable",
-      "relevant_files": [
-        "benchmark/scripts/make-native-fixture.sh",
-        "benchmark/scripts/run.sh"
-      ]
-    },
-    {
-      "id": "a4d67d2d",
-      "query": "show answer in ask text cli resp",
-      "relevant_files": [
-        "cmd/dex/render.go"
-      ]
-    },
-    {
-      "id": "48004ea2",
-      "query": "#334 route runtime store opens through openStore to preserve vec quant",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "cmd/dex/quant_open_test.go"
-      ]
-    },
-    {
-      "id": "0372912c",
-      "query": "#332 skip git lane on existing dense index when embedder is nil",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "internal/store/store.go"
-      ]
-    },
-    {
-      "id": "51585005",
-      "query": "parallelize per-repo scoring in the bench runner",
-      "relevant_files": [
-        "cmd/dex/corpus.go"
-      ]
-    },
-    {
-      "id": "998b5005",
-      "query": "#330 surface scan/iteration errors in graph Smells + HitsForFiles",
-      "relevant_files": [
-        "internal/store/store_graph.go"
-      ]
-    },
-    {
-      "id": "63eb5183",
-      "query": "#329 run migrateChunkContext independently from migrate()",
-      "relevant_files": [
-        "internal/store/store.go",
-        "internal/store/store_test.go"
-      ]
-    },
-    {
-      "id": "b226e851",
-      "query": "default to FusionLinear α=0.7 — calibrated, de-contaminated (#317)",
-      "relevant_files": [
-        "cmd/dex/main.go",
-        "internal/store/store.go"
-      ]
-    },
-    {
-      "id": "fa91b413",
-      "query": "cache git-mined golden sets across runs",
-      "relevant_files": [
-        "cmd/dex/corpus.go"
-      ]
-    },
-    {
-      "id": "ff3b0a98",
-      "query": "parallelize query scoring with bounded errgroup",
-      "relevant_files": [
-        "benchmark/corpus/analyze-sweep.py",
-        "benchmark/corpus/sweep-lane-weights.sh",
-        "internal/eval/runner.go"
-      ]
-    },
-    {
-      "id": "a663c386",
-      "query": "lock graph/symbol lane mode-independence invariant",
-      "relevant_files": [
-        "internal/mcp/server.go",
-        "internal/store/store_graph.go",
-        "internal/store/store_graph_lane_test.go"
-      ]
-    },
-    {
-      "id": "7f69bcc1",
-      "query": "instrument recall@candidateK + per-query-type buckets",
-      "relevant_files": [
-        "internal/eval/report.go",
-        "internal/eval/report_test.go",
-        "internal/eval/runner.go"
-      ]
-    },
-    {
-      "id": "c53cbdce",
-      "query": "#328 remote REST shim route parity + /v1/shell mux mount",
-      "relevant_files": [
-        "internal/mcp/http.go",
-        "internal/mcp/remote.go",
-        "internal/mcp/remote_test.go"
-      ]
-    },
-    {
-      "id": "d4e9a078",
-      "query": "#327 MCP auto-watch now refreshes graph lane",
-      "relevant_files": [
-        "cmd/dex/graph.go",
-        "cmd/dex/main.go",
-        "internal/graphrefresh/graphrefresh.go",
-        "internal/graphrefresh/graphrefresh_test.go",
-        "internal/mcp/server.go"
       ]
     }
   ]
