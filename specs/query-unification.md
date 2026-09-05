@@ -105,8 +105,41 @@ justification in §Classification, not a "well, it's useful" wave.
 | `index`, `watch`, `reindex`, `nuke`, `clone`, `summarize` | **Stay separate.** | Mutating the index, not reading it. Folding a write into `query` is exactly the notes mode-enum anti-pattern `two-verb-surface.md` already rejected for `record`. |
 | `setup`, `doctor`, `env`, `config`, `mcp`, `serve`, `hook`, `completion`, `version` | **Stay separate.** | Process lifecycle / configuration, not retrieval. |
 | `bench *` (8 subcommands), `compact`, `compress` | **Stay separate, out of scope for this spec.** | Development/measurement tooling, not the agent- or human-facing product surface. Revisit under a future "trim the eval/bench footprint" pass (flagged in the parent conversation, not this issue). |
-| `refs`, `plan_rename`, `rehearse_patch`, `cohort` | **Stay separate — different contract, see below.** | |
+| `refs`, `cohort` | **Deleted → `dex query --kind=refs\|cohort`** | Corrected below — these fit the shape better than I first thought. |
+| `plan_rename`, `rehearse_patch` | **Stay separate — different contract, see below.** | |
 | `graph neighbors\|deps\|links\|backlinks\|tags\|export` | **`deps` folds into `kind=deps`; the rest stay CLI-only admin/debug, out of scope.** | `deps` is a plain read keyed by file/package — fits. The others are inspection/debug utilities with no measured usage. |
+
+**Hidden consumer, not just human muscle memory:** `cmd/dex/hook_rewrite.go`
+is a shipped `PreToolUse(Bash)` hook that rewrites `grep`/`rg` shell commands
+to `dex search [PATH] "PATTERN"` **by that literal CLI verb name**. Deleting
+`search` without accounting for this breaks the hook silently for every
+project that has it installed — an internal caller with the same claim on
+correctness as a test, not covered by "no human aliases needed."
+
+Two ways to close this, and **drop is the better one**: transparently
+rewriting the agent's own bash commands is exactly the "magic" the
+project's `explicit>magic` bar argues against — the agent doesn't choose to
+call dex, its command gets silently swapped underneath it. `dex query`'s own
+MCP-primary framing (constitution.md: "MCP is the primary interface... other
+entry points exist to support that use") means the honest fix is to retire
+`hook_rewrite.go` outright as part of this slice, not migrate its rewrite
+target to `dex query --kind=search`. Migrating keeps a magic behavior alive
+through the collapse for no reason the six use cases require; dropping it is
+one more piece of accreted complexity gone, consistent with what this whole
+spec is for. Whichever way it goes, the implementation issue must say so
+explicitly and account for `hook_inject.go` / `setup.go`-generated CLAUDE.md
+snippets referencing the same hook in the same commit — not discovered
+after.
+
+**Standing CI gate that this plan currently fails:** `cmd/dex/verb_parity_test.go`
+(`TestMCPToolCLIParity`, #494) asserts every MCP tool has a reachable
+top-level CLI verb or `dex graph <sub>` subcommand. As written, deleting
+`search`/`trace`/`locate`/`grep`/etc. as CLI verbs while they remain MCP
+tools fails this test outright. The CLI implementation issue must either
+redefine "reachable" to accept `dex query --kind=X` as a valid front door, or
+retire this test in favor of a gate that gates ladder-coverage instead of
+verb-name parity — a decision this spec should make explicit, not leave for
+whoever writes the code to discover via a failing test.
 
 ### REST routes (`internal/mcp/http.go`, 28 today)
 
@@ -114,28 +147,39 @@ Every route whose handler has a CLI/MCP equivalent already covered by a
 `kind=` value collapses into `POST /v1/projects/{id}/query` with that `kind`
 in the body. That's `/ask`, `/find`, `/grep`, `/read`, `/ls`, `/trace`
 (replacing `/callers`, `/callees`, `/impact`, `/path`), `/deps`,
-`/graph/packages`, `/review`, `/diff`. Kept separate: `/healthz`, `/version`,
-`/projects`, `/status`, `/index-status` (not retrieval), and the four
-different-contract tools below (`/refactor`→`plan_rename`, `/cohort`,
-`/refs`, plus `rehearse_patch` needs a route added if REST is meant to carry
-it at all — TBD, see Open questions). `/routes`, `/smells`, `/clones`,
-`/similar`, `/clusters` fold into `query` only if the "graph-wide report"
-question below resolves toward folding; otherwise they're deleted from REST
-the same as the CLI power lanes, on the same never-measured-usage basis.
+`/graph/packages`, `/review`, `/diff`, `/cohort`, `/refs`. Kept separate:
+`/healthz`, `/version`, `/projects`, `/status`, `/index-status` (not
+retrieval), and `/refactor`→`plan_rename` (plus `rehearse_patch` needs a
+route added if REST is meant to carry it at all — TBD, see Open questions).
+`/routes`, `/smells`, `/clones`, `/similar`, `/clusters` fold into `query`
+only if the "graph-wide report" question below resolves toward folding;
+otherwise they're deleted from REST the same as the CLI power lanes, on the
+same never-measured-usage basis.
 
-### MCP expert tools (19 today) and the "different contract" four
+### MCP expert tools (19 today) and the "different contract" two
 
-`plan_rename`, `rehearse_patch`, `refs`, `cohort` do not fit the
-`(input) → precision-tracked read` model even loosely:
+**Correction from first draft:** I originally filed `refs` and `cohort`
+alongside `plan_rename`/`rehearse_patch` as "different contract." On review
+that's wrong — I let "Go-only, niche" substitute for "doesn't fit the
+shape," and those aren't the same test. `refs(symbol, action)` maps directly
+onto `query(input=<symbol>, kind=refs, want=references|implementations|
+supertypes|subtypes)` — `action` is exactly what `want` already means for
+the `callers`/`impact`/`path` facets. `cohort(interface)` is simpler still:
+`query(input=<interface>, kind=cohort)`, no new field. Both fold in.
 
-- `plan_rename` / `rehearse_patch` return **edit plans** (byte-range splices)
-  or **hypothetical type-check results** — not a read of the current state
-  of the code, a computation *about* a proposed change. Different contract,
-  different trust story (`etag`/staleness on a plan, not on a fact).
-- `refs` / `cohort` take a `(symbol, action)` or `(interface)` shape with
-  no free-text `input` — closer to a stored-procedure call than a query.
+Only `plan_rename` and `rehearse_patch` genuinely don't fit
+`(input) → precision-tracked read`:
 
-**Recommendation: these four stay separate tools/verbs/routes, unchanged.**
+- They return **edit plans** (byte-range splices) or **hypothetical
+  type-check results** — not a read of the current state of the code, a
+  computation *about* a proposed change. Different contract, different trust
+  story (`etag`/staleness on a plan, not on a fact).
+- `plan_rename` also needs a destination name (`to`) beyond what any read
+  facet requires, and `rehearse_patch` needs an edit-plan payload
+  (`edits[]`/`files[]`) — genuinely different input shape, not just a
+  different `kind` value.
+
+**Recommendation: these two stay separate tools/verbs/routes, unchanged.**
 Don't force a fourth shape into one interface just to hit "one verb" as a
 slogan — the constitution's own bar is "advisory, read the intelligence",
 not "syntactically identical everywhere." The unification is about deleting
@@ -184,14 +228,36 @@ that's how the last one was added."
 - **Anti-accretion lint stays green** (`specs/anti-accretion-lint.md`) — this
   slice should *lower* the offense ceiling, not raise it, since fewer
   competing tools means less to negotiate between.
+- **Standing re-accretion guard.** `anti-accretion-lint.md` set the precedent
+  of a ratchet test so a fixed sprawl doesn't quietly regrow. This spec
+  should add its own: a test enumerating registered CLI verbs, REST routes,
+  and MCP tools against a named ceiling per transport (today's counts, once
+  this slice lands, become the ceiling). Adding verb #N+1 later means either
+  it's a lifecycle command (fine, ceiling for that category moves) or it's a
+  new `kind=` value (no ceiling change) or someone has to consciously raise
+  the retrieval-surface ceiling in the same PR — mirroring how
+  `antiAccretionCeiling` is a single named constant, not a floor that
+  silently grows. Without this, the CLI/REST collapse this spec earns is
+  just a one-time reset, and the project is back here in a year.
+- **hook_rewrite.go dropped (leaning) and verb_parity_test.go redefined, not
+  orphaned.** The CLI slice's PR must show the hook's removal (or, if the
+  sign-off goes the other way, its migrated rewrite target) and the parity
+  test's new definition of "reachable" in the same diff as the verb
+  deletions — not as a follow-up "oops" fix.
 
 ## Open questions
 
-1. **Do the five whole-repo reports (`routes`/`smells`/`clones`/`similar`/
-   `clusters`) fold into `query` with extra optional params, or stay a
-   separate, deliberately-not-unified "reports" family?** Leaning: keep
-   separate — bespoke params per `kind` value is the same drift risk this
-   spec exists to stop, one layer down.
+1. **Do the whole-repo, zero-subject reports (`routes`/`smells`/`clusters` —
+   no required input, they scan the whole graph) fold into `query` with
+   `input` meaning "path or empty for whole-repo", or stay separate?** And
+   separately: **do the input-anchored pair (`clones`/`similar` — path +
+   threshold) fold in more naturally than the zero-subject three, since they
+   at least have a real `input`?** These may not have the same answer —
+   don't force one verdict across all five just because they were grouped
+   together historically. Leaning on the zero-subject three: keep separate,
+   since `input=""` meaning "the whole repo" is a special case that doesn't
+   exist anywhere else in the ladder. Leaning on the input-anchored two:
+   fold in, same reasoning as `refs`/`cohort` above.
 2. **Does `check`'s `claims` array (non-scalar input) fit `QueryInput.Input`
    (a string) at all, or does it need its own field?** If it needs its own
    field, that's a crack in "one shape" worth resolving explicitly rather
@@ -208,9 +274,21 @@ that's how the last one was added."
 
 ## Rollout (once this spec is signed off)
 
-Each transport becomes its own scoped issue/PR, in this order (lowest risk
-first): REST (fewest real consumers) → CLI (you're the only consumer, but
-highest verb count) → MCP expert-tool re-justification (already closest,
-smallest diff). This spec gates all three; no code moves until the six use
-cases, the classification table, and the four open questions above have
-your sign-off.
+Each transport becomes its own scoped issue/PR. Two orderings are both
+defensible and this spec doesn't pick for you:
+
+- **Risk-first:** REST (fewest real consumers, safest to get wrong) → MCP
+  expert-tool re-justification (already closest, smallest diff) → CLI
+  (highest verb count, and now known to have real blast radius —
+  `hook_rewrite.go`, `verb_parity_test.go`, generated CLAUDE.md snippets from
+  `dex setup`, shell completion scripts).
+- **Value-first:** CLI first, because it's the interface you actually said
+  you wanted collapsed, and delaying it behind two "safer" slices means the
+  felt improvement lands last.
+
+Whichever order, the CLI slice's issue should list the audited hidden
+consumers — `hook_rewrite.go` (drop, per above), the parity test, onboarding
+CLAUDE.md generation, completion scripts — as explicit checklist items up
+front, not discovered mid-implementation. This spec gates all three; no code moves until the six
+use cases, the classification table, and the open questions above have your
+sign-off.
