@@ -58,6 +58,11 @@ type QueryInput struct {
 	// project this server knows about (same discovery `dex reindex --all`
 	// uses).
 	ProjectRoots []string `json:"project_roots,omitempty" jsonschema:"run this query independently across these already-indexed local project roots and return labeled per-project results in the response's fanout field, instead of a single project_root; pass [\"all\"] to fan out across every project this server already knows about"`
+	// Claims is kind=check's batch of file:line[:symbol] refs to verify. The one
+	// deliberate exception to "one string input" (#849 spec, resolved open
+	// question #2): a batch of claims genuinely isn't a single scalar, and
+	// documenting one exception here beats quietly growing a second later.
+	Claims []ClaimRef `json:"claims,omitempty" jsonschema:"only used when kind=check: a batch of file:line or file:line:symbol refs to verify against the index"`
 }
 
 func (in QueryInput) budgetTokens() int { return in.Budget }
@@ -112,6 +117,17 @@ type QueryResult struct {
 	// same range logic review_diff uses. Refs carries the same symbols for pipe
 	// threading.
 	Since *SinceResult `json:"since,omitempty"`
+
+	// forced-kind-only lanes folded in by the CLI collapse (#849): each wraps an
+	// existing single-input server verb verbatim, no new retrieval logic.
+	Check  *CheckOutput     `json:"check,omitempty"`
+	Xref   *RefsOutput      `json:"refs,omitempty"` // Go field named Xref, not Refs, so it can't be confused with QueryOutput's uniform Refs []Ref selection index above.
+	Cohort *CohortOutput    `json:"cohort,omitempty"`
+	Deps   *GraphDepsOutput `json:"deps,omitempty"`
+	// StatusReport, not Status: QueryOutput.Status is the envelope's ok/error
+	// string — a same-named object field one level down would misread as the
+	// envelope status itself.
+	StatusReport *StatusOutput `json:"status_report,omitempty"`
 }
 
 // QueryOutput is the universal envelope for the read verb. Status/Trust/Cost/Next
@@ -241,6 +257,20 @@ func kindToLane(kind string) (laneRoute, bool) {
 		return laneRoute{lane: "semantic", intent: "orient"}, true
 	case "review":
 		return laneRoute{lane: "semantic", intent: "review"}, true
+	// The four kinds below (#849 CLI collapse) have no shape-detected route —
+	// they're forced-kind-only, each a thin dispatch onto an existing, single-
+	// input server verb (check/refs/cohort/deps/status) that already fits
+	// (input, kind) but was never reachable through query.
+	case "check":
+		return laneRoute{lane: "check"}, true
+	case "refs":
+		return laneRoute{lane: "refs"}, true
+	case "cohort":
+		return laneRoute{lane: "cohort"}, true
+	case "deps":
+		return laneRoute{lane: "deps"}, true
+	case "status":
+		return laneRoute{lane: "status"}, true
 	default:
 		return laneRoute{}, false
 	}
@@ -434,9 +464,13 @@ func expandProjectRoots(ctx context.Context, s *Server, roots []string) ([]strin
 // lane goes through contextRouter (which owns ResolveIntent + composition).
 func queryVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in QueryInput) (*sdk.CallToolResult, QueryOutput, error) {
 	input := strings.TrimSpace(in.Input)
-	if input == "" {
-		// An empty input is the session-start orientation signal, exactly as an
-		// empty ask question is (contextRouter → orientResponse).
+	if input == "" && strings.TrimSpace(in.Kind) == "" {
+		// An empty input with NO forced kind is the session-start orientation
+		// signal, exactly as an empty ask question is (contextRouter →
+		// orientResponse). A forced kind always wins outright (#849) — an
+		// empty-input zero-subject kind (status; check, which reads Claims
+		// instead of Input) falls through to the normal classify/dispatch path
+		// below rather than being silently overridden to orient.
 		return dispatchSemantic(ctx, h, req, in, laneRoute{lane: "semantic"}, "", QueryRoute{Input: "", Detected: "empty", Lane: "semantic"})
 	}
 

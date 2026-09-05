@@ -16,8 +16,8 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// hookInject handles UserPromptSubmit. It runs a dex ask query on the prompt
-// and emits {"additionalContext": "..."} so Claude sees relevant file paths
+// hookInject handles UserPromptSubmit. It runs a dex query (prose lane) on
+// the prompt and emits {"additionalContext": "..."} so Claude sees relevant file paths
 // before processing the turn. Also prepends a one-time-per-session nudge when
 // routing rules are stale or drifted, a per-prompt nudge when dex MCP schemas
 // have not yet been loaded via ToolSearch, and an active-session block with

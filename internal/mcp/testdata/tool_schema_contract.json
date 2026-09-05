@@ -10,6 +10,9 @@
         "budget": {
           "type": "integer"
         },
+        "claims": {
+          "type": "array|null"
+        },
         "context": {
           "type": "integer"
         },
@@ -219,6 +222,9 @@
       "properties": {
         "budget": {
           "type": "integer"
+        },
+        "claims": {
+          "type": "array|null"
         },
         "context": {
           "type": "integer"
@@ -536,6 +542,9 @@
       "properties": {
         "budget": {
           "type": "integer"
+        },
+        "claims": {
+          "type": "array|null"
         },
         "context": {
           "type": "integer"

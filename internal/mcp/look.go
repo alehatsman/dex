@@ -20,6 +20,11 @@ import (
 // lane decision is fully testable and never depends on I/O. An explicit `kind`
 // overrides it for the rare ambiguous target.
 
+// locateRefPattern matches a 'path:line' / 'path:line:col' target so the
+// locate lane can tell a location ref from a bare symbol name (mirrors the
+// CLI's former reLocateRef, cmd/dex/locate.go).
+var locateRefPattern = regexp.MustCompile(`:\d+(:\d+)?$`)
+
 // LookInput is the single-target fetch request. Only `target` is required; the
 // rest are lane-specific pass-throughs applied when classification selects that
 // lane.
@@ -240,7 +245,17 @@ func lookVerb(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, in L
 		return nil, out, nil
 
 	case "locate":
-		_, lo, err := h.locate(ctx, req, LocateInput{Ref: cleaned, K: in.K, ProjectRoot: in.ProjectRoot})
+		li := LocateInput{K: in.K, ProjectRoot: in.ProjectRoot}
+		// A path:line-shaped target is a Ref; anything else is a Symbol name
+		// (#849 — the CLI's `locate <symbol>` collapses into this lane and needs
+		// the same bare-symbol shape locateRefPattern's sibling in the CLI used
+		// to detect before routing directly to LocateInput.Symbol).
+		if locateRefPattern.MatchString(cleaned) {
+			li.Ref = cleaned
+		} else {
+			li.Symbol = cleaned
+		}
+		_, lo, err := h.locate(ctx, req, li)
 		if err != nil {
 			return nil, LookOutput{Status: "error", Hint: err.Error(), Trust: exactTrust()}, err
 		}

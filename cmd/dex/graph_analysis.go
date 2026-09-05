@@ -125,67 +125,10 @@ func cmdGraphCycles(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdGraphPath(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("graph path", flag.ContinueOnError)
-	setHelp(fs,
-		"Find the shortest call/import path between two symbols (folds into MCP trace --dir path --to <dst>, DEX_EXPERT).",
-		"dex graph path [flags] [<path>] <src> <dst>")
-	pkg := fs.String("package", "", "package path filter for both src and dst")
-	maxDepth := fs.Int("max-depth", 8, "BFS depth limit (default 8, max 15)")
-	format := fs.String("format", "text", "output format: text | json")
-	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
-		return err
-	}
-	path, rest := splitProjectArg(fs.Args())
-	if len(rest) != 2 {
-		return fmt.Errorf("graph path needs <src> <dst> (got %d positional arg(s))", len(rest))
-	}
-	src, dst := rest[0], rest[1]
-	base, err := indexDir()
-	if err != nil {
-		return err
-	}
-	p, err := proj.Resolve(path, base)
-	if err != nil {
-		return err
-	}
-	s, _ := newServerFromEnv(base)
-	out, err := s.GraphPath(ctx, mcp.PathInput{
-		Src:         src,
-		Dst:         dst,
-		Package:     *pkg,
-		MaxDepth:    *maxDepth,
-		ProjectRoot: p.Root,
-	})
-	if err != nil {
-		return err
-	}
-	if *format == "json" {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(out)
-	}
-	if out.Status != "ok" {
-		fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
-		if out.Hint != "" {
-			fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
-		}
-		return nil
-	}
-	fmt.Printf("path from %q to %q (%d hops):\n\n", out.Src, out.Dst, len(out.Path))
-	for i, hop := range out.Path {
-		loc := hop.Path
-		if hop.StartLine > 0 {
-			loc = fmt.Sprintf("%s:%d", hop.Path, hop.StartLine)
-		}
-		if i == 0 {
-			fmt.Printf("  [src] %s  (%s)  %s\n", hop.QualifiedName, hop.Kind, loc)
-		} else {
-			fmt.Printf("   ─%s─▶ %s  (%s)  %s\n", hop.EdgeKind, hop.QualifiedName, hop.Kind, loc)
-		}
-	}
-	return nil
-}
+// cmdGraphPath was folded into `dex query --kind=path --to <dst>` by #849
+// (CLI collapse) — the shortest call/import path between two symbols is
+// served by internal/mcp's trace lane directly, no CLI-local reimplementation
+// needed anymore.
 
 func cmdGraphDiff(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("graph diff", flag.ContinueOnError)

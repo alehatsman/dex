@@ -15,26 +15,27 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
-// cmdGraph dispatches `dex graph <subcommand>`. callers/callees/path are
-// reached via `dex trace --dir …`, not as graph subs (#728).
+// cmdGraph dispatches `dex graph <subcommand>`. callers/callees/path/deps are
+// reached via `dex query --kind=…` (#728, folded into query by #849), not as
+// graph subs.
 func cmdGraph(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("graph needs a subcommand: neighbors | similar | clones | deps | packages | links | backlinks | tags | cycles | diff | clusters | smells | routes | export")
+		return fmt.Errorf("graph needs a subcommand: neighbors | similar | clones | packages | links | backlinks | tags | cycles | diff | clusters | smells | routes | export")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "index":
 		return fmt.Errorf("`graph index` has been folded into `index` — use `dex index --graph=only <path>` (or just `dex index <path>`, which runs both phases)")
 	case "callers", "callees", "path":
-		return fmt.Errorf("`graph %s` is now `dex trace --dir %s` (#728)", sub, sub)
+		return fmt.Errorf("`graph %s` is now `dex query --kind=%s` (#849)", sub, sub)
+	case "deps":
+		return fmt.Errorf("`graph deps` is now `dex query --kind=deps` (#849)")
 	case "neighbors":
 		return cmdGraphNeighbors(ctx, rest)
 	case "similar":
 		return cmdGraphSimilar(ctx, rest)
 	case "clones":
 		return cmdGraphClones(ctx, rest)
-	case "deps":
-		return cmdGraphDeps(ctx, rest)
 	case "packages":
 		return cmdGraphPackages(ctx, rest)
 	case "links":
@@ -63,8 +64,6 @@ func cmdGraph(ctx context.Context, args []string) error {
   dex graph clones      [<path>]                clusters of near-duplicate blocks (MCP: clones, DEX_EXPERT)
                                                     --path=<prefix>  --threshold=<0..1>
                                                     --min-lines=<n>  --k=<n>  --max-clusters=<n>
-  dex graph deps        [<path>] <file|package>  imports edges (MCP: deps, DEX_EXPERT)
-                                                    --file=<rel>  --package=<full>
   dex graph packages    [<path>]                whole internal package import DAG (CLI-only)
   dex graph links       [<path>] <doc>          docs this doc links to (CLI-only)
                                                     --k=<n>
@@ -89,14 +88,15 @@ func cmdGraph(ctx context.Context, args []string) error {
   (path defaults to cwd when omitted)
 
 note:
-  callers/callees/path fold into 'dex trace --dir callers|callees|path' (MCP: trace, DEX_EXPERT).
+  callers/callees/path fold into 'dex query --kind=callers|callees|path' (MCP: trace, DEX_EXPERT).
+  deps folds into 'dex query --kind=deps <path|package>' (MCP: deps, DEX_EXPERT).
   'graph index' is gone — use 'dex index --graph=only <path>'.
   Plain 'dex index <path>' runs both chunk and graph phases.
   Everyday MCP agents: none of these are on the default surface — 'query' covers
   this work; the tools named above require DEX_EXPERT=1.`)
 		return nil
 	default:
-		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, similar, clones, deps, packages, links, backlinks, tags, cycles, diff, clusters, smells, routes, export)", sub)
+		return fmt.Errorf("unknown graph subcommand: %s (have: neighbors, similar, clones, packages, links, backlinks, tags, cycles, diff, clusters, smells, routes, export)", sub)
 	}
 }
 

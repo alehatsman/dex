@@ -35,7 +35,7 @@ What it does NOT measure:
   - embedding throughput (GPU-bound, variable; report-only, deferred)
   - rerank/chat RTT (network-bound; report-only, deferred)
   - graph expansion latency (no synthetic graph builder yet; deferred)
-  - cold startup latency (requires a full dex binary invocation; use 'time dex ask')
+  - cold startup latency (requires a full dex binary invocation; use 'time dex query')
 `
 
 func runBenchPerf(_ context.Context, args []string) error {

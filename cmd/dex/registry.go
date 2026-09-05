@@ -50,51 +50,40 @@ type verbSpec struct {
 // fmtChoices / fmtFormat reusable flag fragments.
 var (
 	flagFormat = flagSpec{name: "--format", desc: "output format", arg: true, choices: []string{"text", "json"}}
-	flagK      = flagSpec{name: "--k", desc: "max results", arg: true}
+	flagK      = flagSpec{name: "--k", desc: "max results per lane", arg: true}
 	flagV      = flagSpec{name: "-v", desc: "verbose"}
 	flagDeep   = flagSpec{name: "--deep", desc: "send one minimal real request per backend (may load models)"}
-	flagMaxCB  = flagSpec{name: "--max-content-bytes", desc: "truncation limit in bytes (0=no limit)", arg: true}
 
-	intentChoices = []string{
-		"auto", "behavior_search", "symbol_lookup", "callers", "callees",
-		"architecture", "package_topology", "editing_context", "assemble",
+	// queryKindChoices is query's kind= ladder — the single source of truth for
+	// usage text and shell completion (#849).
+	queryKindChoices = []string{
+		"read", "grep", "locate", "symbol", "callers", "callees", "impact", "path",
+		"search", "editing", "assemble", "architecture", "packages", "orient", "review",
+		"check", "refs", "cohort", "deps", "status",
 	}
-	// readModeChoices is the canonical CLI `read --mode` set — the single source
-	// of truth for usage text, shell completion, and `cmdRead` validation.
-	// skeleton/map/summary delegate to Server.Summarize (see serverReadMode);
-	// the rest run locally. Parity with the MCP `read` tool's mode set is locked
-	// by read_parity_test.go.
-	readModeChoices = []string{"full", "signatures", "aggressive", "entropy", "auto", "skeleton", "map", "summary", "analyze"}
-
-	// serverReadModes are the read modes whose logic lives in the index +
-	// Server.Summarize handler; cmdRead delegates these instead of computing a
-	// view locally, so CLI output matches the MCP `read` tool exactly.
-	serverReadModes = map[string]bool{"skeleton": true, "map": true, "summary": true, "analyze": true}
 )
 
-// validReadMode reports whether m is an accepted CLI `read --mode`.
-func validReadMode(m string) bool {
-	for _, c := range readModeChoices {
-		if c == m {
-			return true
-		}
-	}
-	return false
+// mcpOnlyToolHints maps a command name to a help message the dispatcher shows
+// on an unknown command, instead of a bare "unknown command" (#521). Two
+// disjoint reasons a name lands here: an MCP tool that deliberately has NO CLI
+// verb at all (these stay off the `verbs` registry by design — the MCP-only
+// contract is locked by verb_parity_test.go), or a verb the CLI collapse
+// (#849) deleted outright with no alias — same "point at the real door,
+// don't just say unknown" reasoning, redirecting muscle memory to
+// `dex query --kind=…` instead of silently keeping the old name alive.
+var mcpOnlyToolHints = map[string]string{
+	"ask":         "`dex ask` was folded into `dex query` (#849) — try `dex query <input>` (prose routes to the same search+synthesis lanes; --kind=assemble for a task working set)",
+	"search":      "`dex search` was folded into `dex query --kind=search <q>` (#849)",
+	"read":        "`dex read` was folded into `dex query --kind=read <file>` (#849) — default is compressed signatures; --want=full for raw content",
+	"locate":      "`dex locate` was folded into `dex query --kind=locate <symbol-or-path:line>` (#849)",
+	"trace":       "`dex trace` was folded into `dex query --kind=callers|callees|impact|path <name>` (#849)",
+	"grep":        "`dex grep` was folded into `dex query --kind=grep <pattern>` (#849)",
+	"review_diff": "`dex review_diff` was folded into `dex query --kind=review` for the working-tree case (#849); a targeted --ref/--branch/--pr review has no CLI front door anymore (MCP review_diff tool, DEX_EXPERT, still has it)",
+	"repo_map":    "`dex repo_map` was folded into `dex query --kind=orient` (#849) for the default first-touch bundle; --cluster/--around/--around-diff zooms have no CLI front door anymore",
+	"check":       "`dex check` was folded into `dex query --kind=check <ref...>` (#849)",
+	"refs":        "`dex refs` was folded into `dex query --kind=refs --want=<action> <symbol>` (#849)",
+	"cohort":      "`dex cohort` was folded into `dex query --kind=cohort <interface>` (#849)",
 }
-
-// serverReadMode reports whether mode m is handled by delegating to
-// Server.Summarize rather than by a local fast path.
-func serverReadMode(m string) bool { return serverReadModes[m] }
-
-// mcpOnlyToolHints maps MCP tools that deliberately have NO CLI verb to a
-// help message. The dispatcher consults this on an unknown command so
-// `dex <tool>` points at the MCP surface instead of a bare "unknown command"
-// (#521). These tools stay off the `verbs` registry by design — the MCP-only
-// contract is locked by verb_parity_test.go.
-//
-// Empty since #195 S4 removed the only member (session) from the MCP surface;
-// kept as the seam for future MCP-only tools.
-var mcpOnlyToolHints = map[string]string{}
 
 // mcpOnlyToolHint returns the MCP-only help message for cmd, if any.
 func mcpOnlyToolHint(cmd string) (string, bool) {
@@ -105,73 +94,21 @@ func mcpOnlyToolHint(cmd string) (string, bool) {
 // verbs is the canonical registry. Order within a group is the display order
 // in `dex help all`.
 var verbs = []verbSpec{
-	// ---- query verbs (mirror the MCP tool names, #354/#427) ----
+	// ---- query verb (the single read verb, #849 — folds in the former
+	// ask/search/read/repo_map/trace/locate/cohort/refs/check/grep/review_diff/
+	// graph-deps/status verbs; see specs/query-unification.md) ----
 	{
-		name: "ask", group: groupQuery, args: "[<path>] <q...>",
-		summary: "one-shot router (semantic + symbol + graph)",
+		name: "query", group: groupQuery, args: "[<path>] <input...>",
+		summary: "the read verb — one call to read the codebase intelligence",
 		flags: []flagSpec{
-			{name: "--intent", desc: "search strategy", arg: true, choices: intentChoices},
-			flagK, flagFormat,
-			{name: "--no-inline", desc: "skip inlining file contents"},
-			flagMaxCB, flagV,
-		},
-	},
-	{
-		name: "search", group: groupQuery, args: "[<path>] <q...>",
-		summary: "hybrid search — raw ranking (ask composes this)",
-		flags: []flagSpec{
-			flagK, flagFormat,
-			{name: "--rerank", desc: "disable rerank for this query", arg: true, choices: []string{"off"}},
-			{name: "--explain", desc: "show per-chunk score breakdown"},
-			flagMaxCB, flagV,
-		},
-	},
-	{
-		name: "read", group: groupQuery, args: "<file>", fileArgs: true,
-		summary: "read a file (--mode full|signatures|summary…)",
-		flags: []flagSpec{
-			{name: "--mode", desc: "read mode", arg: true, choices: readModeChoices},
-			{name: "--start", desc: "first line", arg: true},
-			{name: "--end", desc: "last line", arg: true},
-			{name: "--focus", desc: "summary steering hint", arg: true},
-			{name: "--temperature", desc: "summary sampling temperature", arg: true},
-			{name: "--max-tokens", desc: "summary max tokens", arg: true},
-			flagFormat, flagV,
-		},
-	},
-	{
-		name: "repo_map", group: groupQuery, args: "[--cluster <id>] [<path>]",
-		summary: "deterministic repo orientation: first-touch bundle, or --cluster to zoom",
-		flags:   []flagSpec{{name: "--cluster", desc: "focus a cluster id", arg: true}, flagFormat, flagV},
-	},
-	{
-		name: "trace", group: groupQuery, args: "[<path>] <name>",
-		summary: "call-graph callers/callees/path/impact",
-		flags: []flagSpec{
-			{name: "--dir", desc: "direction", arg: true, choices: []string{"callers", "callees", "path", "impact"}},
-			{name: "--max-depth", desc: "BFS depth (path/impact)", arg: true},
-			flagK, flagFormat, flagV,
-		},
-	},
-	{
-		name: "locate", group: groupQuery, args: "[<path>] <symbol-or-path:line>",
-		summary: "full context for one symbol: callers, tests, doc, blame, notes",
-		flags: []flagSpec{
-			{name: "--frame", desc: "parse a raw stack-trace frame line", arg: true},
-			{name: "--issues", desc: "also list matching open GitHub issues (gh)"},
-			flagK, flagFormat,
-		},
-	},
-	{
-		name: "cohort", group: groupQuery, args: "[<path>] <interface>",
-		summary: "types that must change in lockstep with an interface",
-		flags:   []flagSpec{flagFormat},
-	},
-	{
-		name: "refs", group: groupQuery, args: "[<path>] <action> <symbol>",
-		summary: "type-precise Go symbol queries — references, implementations, supertypes, subtypes (Go-only)",
-		flags: []flagSpec{
-			{name: "--action", desc: "references | implementations | supertypes | subtypes (also positional arg 1)", arg: true},
+			{name: "--kind", desc: "force the lane", arg: true, choices: queryKindChoices},
+			{name: "--want", desc: "facet within the lane (e.g. signatures|map|skeleton|answer|assemble|callers|callees|impact|path|references|implementations|supertypes|subtypes)", arg: true},
+			{name: "--to", desc: "destination symbol for the graph 'path' facet", arg: true},
+			{name: "--budget", desc: "context-token budget", arg: true},
+			{name: "--project-root", desc: "explicit absolute project/worktree root", arg: true},
+			flagK,
+			{name: "--context", desc: "grep lane: lines of context per match", arg: true},
+			{name: "--fixed", desc: "grep lane: literal match, not regex"},
 			flagFormat,
 		},
 	},
@@ -194,36 +131,6 @@ var verbs = []verbSpec{
 			flagFormat,
 		},
 	},
-	{
-		name: "review_diff", group: groupQuery, args: "[<path>]",
-		summary: "per-hunk PR intelligence",
-		flags: []flagSpec{
-			{name: "--ref", desc: "git range or single ref (default HEAD~1..HEAD)", arg: true},
-			{name: "--branch", desc: "review what a branch adds vs --base", arg: true},
-			{name: "--pr", desc: "GitHub PR number (via gh)", arg: true},
-			{name: "--base", desc: "base branch for --branch/--pr (default main)", arg: true},
-			{name: "--compact", desc: "drop low-risk hunks"},
-			flagK, flagFormat,
-		},
-	},
-	{
-		name: "check", group: groupQuery, args: "[<path>] <ref...>",
-		summary: "verify file:line[:symbol] references against the index",
-		flags: []flagSpec{
-			flagFormat,
-		},
-	},
-	{
-		name: "grep", group: groupQuery, args: "[<path>] <pattern>",
-		summary: "exact RE2 regex search",
-		flags: []flagSpec{
-			{name: "--ext", desc: "file extension filter (no dot)", arg: true},
-			{name: "--in", desc: "restrict to a subdirectory", arg: true},
-			{name: "--max-results", desc: "maximum matches", arg: true},
-			flagFormat,
-		},
-	},
-
 	// ---- graph / notes / power lanes ----
 	{
 		name: "graph", group: groupGraph, args: "<sub> [<path>] …",
@@ -232,7 +139,6 @@ var verbs = []verbSpec{
 			{"neighbors", "vector neighbours of a chunk"},
 			{"similar", "blocks semantically near a given block"},
 			{"clones", "clusters of near-duplicate code blocks"},
-			{"deps", "imports edges for a file or package"},
 			{"packages", "whole internal package import DAG"},
 			{"links", "markdown docs this doc links to"},
 			{"backlinks", "markdown docs that link to this doc"},
@@ -259,11 +165,6 @@ var verbs = []verbSpec{
 			{name: "--force", desc: "bypass guards"},
 			{name: "--wait", desc: "wait for lock"},
 		},
-	},
-	{
-		name: "status", group: groupBuild, args: "[<path>]", fileArgs: true,
-		summary: "endpoint health + project stats (alias: index status)",
-		flags:   []flagSpec{flagFormat, flagV},
 	},
 	{
 		name: "compact", group: groupBuild, args: "<path>",
@@ -338,11 +239,10 @@ var verbs = []verbSpec{
 		},
 	},
 	{
-		name: "hook", group: groupBuild, args: "inject|rewrite|redirect|observe",
+		name: "hook", group: groupBuild, args: "inject|redirect|observe",
 		summary: "Claude Code hook scripts",
 		subs: []subSpec{
 			{"inject", "UserPromptSubmit hook — inject dex context"},
-			{"rewrite", "Bash hook — rewrite rg/grep to dex find"},
 			{"redirect", "Read/Grep hook — compress large files"},
 			{"observe", "PostToolUse/Stop hook — append event log"},
 		},

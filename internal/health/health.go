@@ -135,7 +135,7 @@ func endpointHints(name, url string) []string {
 	case "chat":
 		return []string{
 			"start ollama (auto-detected) or set DEX_CHAT_URL",
-			"chat is required for: dex ask, dex generate, dex read --mode=summary",
+			"chat is required for: dex query's prose lane, and the read tool's summary mode (DEX_EXPERT)",
 		}
 	}
 	return nil

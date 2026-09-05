@@ -2,11 +2,10 @@ package main
 
 import "testing"
 
-// mcpToolSurface is the MCP tool surface, kept in lockstep with registerTools
-// (internal/mcp/server.go) by hand. Both parity tests read from this single
-// list so the CLI↔MCP contract is guarded in both directions.
+// mcpToolSurface is the MCP tool surface, kept in lockstep with
+// registerTools/registerQueryTool (internal/mcp/server_register.go) by hand.
 var mcpToolSurface = []string{
-	"ask", "search", "repo_map", "trace", "locate", "review_diff", "plan_rename", "rehearse_patch", "read",
+	"query", "search", "repo_map", "trace", "locate", "review_diff", "plan_rename", "rehearse_patch", "read",
 	"grep",
 	"deps", "clusters",
 	"smells", "clones", "similar", "routes", "cohort", "refs", "check",
@@ -16,29 +15,55 @@ var mcpToolSurface = []string{
 	// (`dex notes`), and session dedup stays internal (not a verb).
 }
 
-// cliToMCPName maps CLI verb names to MCP tool names when they differ.
-// CLI verbs now share names with the MCP tools, so this map is empty —
-// kept as the seam for future renames.
-var cliToMCPName = map[string]string{}
+// mcpToolQueryKinds maps an MCP tool folded into the CLI's `dex query
+// --kind=X` front door (#849 CLI collapse) to the kind(s) that reach it — any
+// one kind reaching the door is enough to satisfy parity. Tools not listed
+// here are reachable a different way (see cliVerbTools / graphSubTools
+// below), not via query at all.
+var mcpToolQueryKinds = map[string][]string{
+	"search":      {"search"},
+	"read":        {"read"},
+	"grep":        {"grep"},
+	"locate":      {"locate"},
+	"trace":       {"symbol", "callers", "callees", "impact", "path"},
+	"review_diff": {"review"}, // query kind=review covers the everyday working-tree case only
+	"repo_map":    {"orient"}, // bare/default repo_map view only — --cluster/--around have no query facet
+	"check":       {"check"},
+	"refs":        {"refs"},
+	"cohort":      {"cohort"},
+	"deps":        {"deps"},
+	"status":      {"status"},
+}
 
-// TestMCPToolCLIParity locks every MCP `read`/graph/query tool to a reachable
-// CLI path (issue #494). grep/shell regressed silently into MCP-only tools
-// while the README still advertised them as CLI verbs; this test fails if any
-// MCP tool loses its CLI front door again.
-//
-// The MCP tool surface is the contract here (registerTools in
-// internal/mcp/server.go). Each tool is reachable on the CLI in one of two
-// shapes, mirrored by the allow-lists below:
-//
-//   - a top-level verb in the `verbs` registry (the everyday set), or
-//   - a `dex graph <sub>` subcommand (the flat graph/analysis tools, by the
-//     convention established in #480/#490).
-//
-// mcpOnlyTools (MCP tools with no CLI path) is empty since #195 S4 removed the
-// only members (session/budget) from the MCP surface — kept as the seam.
+// cliVerbTools are MCP tools reachable as their own top-level CLI verb rather
+// than a query kind — the two "different contract" tools (#849 spec): they
+// return an edit plan / hypothetical type-check, not a read.
+var cliVerbTools = map[string]bool{
+	"plan_rename":    true,
+	"rehearse_patch": true,
+}
+
+// graphSubTools are MCP tools reachable as a `dex graph <sub>` subcommand —
+// the DEX_EXPERT analysis/report lanes that stayed CLI-graph-shaped rather
+// than folding into query (#849 spec: zero-subject / whole-repo reports).
+var graphSubTools = map[string]bool{
+	"clusters": true,
+	"smells":   true,
+	"clones":   true,
+	"similar":  true,
+	"routes":   true,
+}
+
+// TestMCPToolCLIParity locks every MCP tool to a reachable CLI path (#494,
+// redefined by #849's CLI collapse from top-level-verb-name parity to kind=
+// ladder coverage — the CLI no longer has a same-named verb per MCP tool,
+// `dex query --kind=X` is the front door for most of them). `query` itself is
+// trivially reachable (it's the CLI's own top-level verb).
 func TestMCPToolCLIParity(t *testing.T) {
-	mcpTools := mcpToolSurface
-
+	kindSet := map[string]bool{}
+	for _, k := range queryKindChoices {
+		kindSet[k] = true
+	}
 	topLevel := map[string]bool{}
 	graphSubs := map[string]bool{}
 	for _, v := range verbs {
@@ -50,45 +75,67 @@ func TestMCPToolCLIParity(t *testing.T) {
 		}
 	}
 
-	// mcpToCLIName is the inverse of cliToMCPName: given an MCP tool name,
-	// what is the CLI verb name? Built from cliToMCPName at test time.
-	mcpToCLIName := make(map[string]string, len(cliToMCPName))
-	for cli, mcp := range cliToMCPName {
-		mcpToCLIName[mcp] = cli
+	for _, tool := range mcpToolSurface {
+		switch {
+		case tool == "query":
+			if !topLevel["query"] {
+				t.Errorf("MCP tool %q has no top-level CLI verb", tool)
+			}
+		case cliVerbTools[tool]:
+			if !topLevel[tool] {
+				t.Errorf("MCP tool %q is in cliVerbTools but has no top-level CLI verb — stale allow-list", tool)
+			}
+		case graphSubTools[tool]:
+			if !graphSubs[tool] {
+				t.Errorf("MCP tool %q is in graphSubTools but `dex graph` has no %q subcommand — stale allow-list", tool, tool)
+			}
+		default:
+			kinds, ok := mcpToolQueryKinds[tool]
+			if !ok || len(kinds) == 0 {
+				t.Errorf("MCP tool %q has no CLI front door: not query, not in cliVerbTools/graphSubTools, and no mcpToolQueryKinds entry", tool)
+				continue
+			}
+			reachable := false
+			for _, k := range kinds {
+				if kindSet[k] {
+					reachable = true
+					break
+				}
+			}
+			if !reachable {
+				t.Errorf("MCP tool %q lists query kind(s) %v but none are in query's kind= ladder (queryKindChoices) — stale mapping", tool, kinds)
+			}
+		}
 	}
 
-	mcpOnlyTools := map[string]bool{}
-
-	for _, tool := range mcpTools {
-		if mcpOnlyTools[tool] {
-			continue
-		}
-		// Check direct name match first, then the cliToMCPName mapping (renamed tools).
-		cliName := tool
-		if mapped, ok := mcpToCLIName[tool]; ok {
-			cliName = mapped
-		}
-		if topLevel[cliName] || graphSubs[cliName] || topLevel[tool] || graphSubs[tool] {
-			continue
-		}
-		t.Errorf("MCP tool %q has no CLI verb, graph subcommand, or allow-list entry", tool)
+	// Guard every allow-list against staleness: a tool removed from the MCP
+	// surface, or reclassified, should drop out of these maps in the same
+	// commit — not linger as a dead entry nobody notices.
+	toolSet := map[string]bool{}
+	for _, tool := range mcpToolSurface {
+		toolSet[tool] = true
 	}
-
-	// Guard the allow-list: a stale entry (tool that gained a CLI verb, or was
-	// removed) is drift too.
-	for tool := range mcpOnlyTools {
-		if topLevel[tool] {
-			t.Errorf("mcpOnlyTools lists %q but it is now a top-level CLI verb — stale allow-list", tool)
+	for tool := range mcpToolQueryKinds {
+		if !toolSet[tool] {
+			t.Errorf("mcpToolQueryKinds lists %q but it is not in mcpToolSurface — stale entry", tool)
+		}
+	}
+	for tool := range cliVerbTools {
+		if !toolSet[tool] {
+			t.Errorf("cliVerbTools lists %q but it is not in mcpToolSurface — stale entry", tool)
+		}
+	}
+	for tool := range graphSubTools {
+		if !toolSet[tool] {
+			t.Errorf("graphSubTools lists %q but it is not in mcpToolSurface — stale entry", tool)
 		}
 	}
 }
 
-// TestQueryVerbsHaveMCPTool is the reverse guard of TestMCPToolCLIParity: every
-// groupQuery CLI verb must map to an MCP tool of the same name. This is the
-// check that the `orient` verb (#574) slipped past — it shipped as a query verb
-// with no MCP tool and no docs entry. A query verb that is deliberately
-// CLI-only must be added to cliOnlyQueryVerbs with a reason, so the exception is
-// explicit rather than silent.
+// TestQueryVerbsHaveMCPTool is the reverse guard: every groupQuery CLI verb
+// must map to an MCP tool. Post-#849 there are only three (query,
+// plan_rename, rehearse_patch) — the kind= ladder itself is guarded by
+// TestMCPToolCLIParity above, not by a per-kind CLI verb anymore.
 //
 // Lifecycle/ops verbs (groupBuild/groupConfig) are intentionally CLI-only and
 // out of scope here — they build, serve, and maintain the index rather than
@@ -98,33 +145,12 @@ func TestQueryVerbsHaveMCPTool(t *testing.T) {
 	for _, tool := range mcpToolSurface {
 		mcpSet[tool] = true
 	}
-
-	// cliOnlyQueryVerbs are query verbs that deliberately have no MCP tool.
-	cliOnlyQueryVerbs := map[string]bool{}
-
 	for _, v := range verbs {
 		if v.group != groupQuery {
 			continue
 		}
-		if cliOnlyQueryVerbs[v.name] {
-			continue
-		}
-		// Check both direct name and the renamed MCP equivalent.
-		mcpName := v.name
-		if mapped, ok := cliToMCPName[v.name]; ok {
-			mcpName = mapped
-		}
-		if mcpSet[v.name] || mcpSet[mcpName] {
-			continue
-		}
-		t.Errorf("query verb %q has no MCP tool and is not in cliOnlyQueryVerbs — "+
-			"either add the MCP tool (keep CLI↔MCP parity) or allow-list it with a reason", v.name)
-	}
-
-	// Guard the allow-list against staleness.
-	for verb := range cliOnlyQueryVerbs {
-		if mcpSet[verb] {
-			t.Errorf("cliOnlyQueryVerbs lists %q but it is now an MCP tool — stale allow-list", verb)
+		if !mcpSet[v.name] {
+			t.Errorf("query verb %q has no MCP tool of the same name", v.name)
 		}
 	}
 }

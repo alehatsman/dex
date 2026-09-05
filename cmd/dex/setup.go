@@ -161,7 +161,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 
 	// ── step 5: show a working example ───────────────────────────────────
 	fmt.Println("try it:")
-	fmt.Println(`  dex ask . "where is the main entry point?"`)
+	fmt.Println(`  dex query . "where is the main entry point?"`)
 	fmt.Println()
 
 	// ── step 6: pointer to help ───────────────────────────────────────────

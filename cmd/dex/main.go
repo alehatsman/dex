@@ -1,26 +1,25 @@
 // dex — local semantic-search helper for Claude Code.
 //
-// The read-side CLI verbs mirror the lanes `query` routes to (search, trace,
-// repo_map, read); over MCP the everyday surface is `query` alone — every
-// name below tagged "MCP: X" is a granular tool exposed only under
-// DEX_EXPERT=1, not part of the default surface. Names tagged "CLI-only"
-// were never registered as MCP tools at all. The build/maintenance commands
-// are CLI-only.
+// `query` is the single read verb, on the CLI as everywhere else (#849,
+// specs/query-unification.md): its input SHAPE picks the lane, --kind forces
+// it. Over MCP the everyday surface is `query` alone — every DEX_EXPERT tool
+// it folds in (search/trace/locate/grep/read/review_diff/repo_map/check/refs/
+// cohort/deps/status) is a granular tool exposed only under DEX_EXPERT=1, not
+// part of the default surface, but still reachable from `dex query --kind=X`.
+// Names tagged "CLI-only" were never registered as MCP tools at all. The
+// build/maintenance commands are CLI-only.
 //
-//	ask <path> <q...>             Primary CLI read verb (MCP: query — always on).
-//	search <path> <q...>          Hybrid semantic top-k chunks; fuses exact
-//	                              symbol-name hits via RRF (MCP: search, DEX_EXPERT).
-//	trace <path> <sym>            Call-graph callers/callees/path/impact (MCP: trace, DEX_EXPERT).
+//	query <path> <input...>       The read verb (MCP: query — always on).
+//	                              --kind forces the lane: read|grep|locate|
+//	                              callers|callees|impact|path|search|assemble|
+//	                              architecture|packages|orient|review|check|
+//	                              refs|cohort|deps|status.
 //	graph neighbors <path> <file> <line>
 //	                              Vector neighbours of a chunk (CLI-only).
-//	graph deps <path> [--file|--package]
-//	                              `imports` edges for a file/package (MCP: deps, DEX_EXPERT).
 //	graph links <path> <doc>      Docs this markdown doc links to (CLI-only).
 //	graph backlinks <path> <doc>  Docs that link to this markdown doc (CLI-only).
 //	graph tags <path> --tag|--doc Tag→docs or doc→tags (CLI-only).
 //	graph export <path>           Dump nodes/edges as JSONL (CLI-only).
-//	read <file>                   Read a file (MCP: read, DEX_EXPERT). Default mode=full is raw (no LLM); mode=summary is an LLM digest.
-//	grep <path> <pattern>         Exact RE2 regex search over project files (MCP: grep, DEX_EXPERT).
 //	index <path>                  Build or refresh the per-project index.
 //	index status [<path>]         Endpoint health + indexed projects (MCP: status, DEX_EXPERT).
 //	env                           Print effective env-var configuration.
@@ -30,7 +29,6 @@
 //	watch <path>                  Keep the index fresh as files change.
 //	clone <src> <dst>             Seed dst's index from src's (worktrees).
 //	hook inject                   Claude Code UserPromptSubmit hook — injects dex context.
-//	hook rewrite                  Claude Code PreToolUse(Bash) hook — rewrites rg/grep to dex.
 //	hook redirect                 Claude Code PreToolUse(Read/Grep/…) hook — compresses large files.
 //	hook observe                  Claude Code PostToolUse/Stop hook — appends event log.
 //	bench locomo <path>           LoCoMo memory-recall benchmark (recall@k / token-F1).

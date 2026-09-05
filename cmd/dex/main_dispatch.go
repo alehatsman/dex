@@ -37,22 +37,11 @@ func dispatchCmd(ctx context.Context, cmd string, args []string) error {
 
 	dispatch := map[string]func(context.Context, []string) error{
 		"index":          cmdIndexDispatch,
-		"status":         cmdIndexStatus, // top-level alias for `dex index status` (#501)
-		"ask":            cmdAsk,
+		"query":          cmdQuery, // the single read verb (#849) — folds in the former ask/search/read/repo_map/trace/review_diff/locate/cohort/refs/check/grep/graph-deps/status verbs
 		"summarize":      cmdSummarize,
-		"read":           cmdRead,
 		"graph":          cmdGraph,
-		"repo_map":       cmdMap,
-		"search":         cmdFind,
-		"trace":          cmdTrace,
-		"review_diff":    cmdReview,
-		"locate":         cmdLocate,
 		"plan_rename":    cmdRefactor,
 		"rehearse_patch": cmdRehearse,
-		"cohort":         cmdCohort,
-		"refs":           cmdRefs,
-		"check":          cmdCheck,
-		"grep":           cmdGrep,
 		"env":            cmdEnv,
 		"compact":        cmdCompact,
 		"nuke":           cmdNuke,

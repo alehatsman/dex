@@ -15,15 +15,6 @@
       {
         "hooks": [
           {
-            "command": "dex hook rewrite",
-            "type": "command"
-          }
-        ],
-        "matcher": "Bash|bash"
-      },
-      {
-        "hooks": [
-          {
             "command": "dex hook redirect",
             "type": "command"
           }

@@ -171,7 +171,7 @@ func buildSignaturesView(ctx context.Context, absPath string, lines []string) st
 	}
 
 	fmt.Fprintf(&b, "// dex signatures view — %s (%d lines, %d declarations)\n", relPath, len(lines), rendered)
-	b.WriteString("// Bodies dropped. Read with a narrower line range, or use `dex read --mode=summary`, for full detail.\n\n")
+	b.WriteString("// Bodies dropped. Read with a narrower line range, or `dex query --kind=read --want=full` for the full file.\n\n")
 	b.WriteString(body.String())
 	return b.String()
 }

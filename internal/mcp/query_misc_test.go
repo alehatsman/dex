@@ -1,4 +1,4 @@
-package main
+package mcp
 
 import (
 	"os"
@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// TestInferDepsTarget covers #504: a positional `graph deps` target is mapped
-// to a file Path or a full Package by filesystem inference relative to the
-// project root.
+// TestInferDepsTarget covers #504 (ported from the CLI's former `graph deps`
+// subcommand by #849): a query(kind=deps) input is mapped to a file Path or a
+// full Package by filesystem inference relative to the project root.
 func TestInferDepsTarget(t *testing.T) {
 	root := t.TempDir()
 	// root/pkg/a.go (+ a_test.go), root/pkg/b.go, root/onlytest/x_test.go

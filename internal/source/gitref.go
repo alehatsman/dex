@@ -13,8 +13,9 @@ import (
 // ReadAtRef returns the contents of path as of git ref (#644 time-travel). It
 // locates the file's git repository, makes the path repo-relative, and runs
 // `git show <ref>:<relpath>` so the read works from any subdirectory. The ref
-// must name a revision, not a git option. Backs `dex read --ref` and the MCP
-// read tool's ref parameter.
+// must name a revision, not a git option. Backs the MCP read tool's ref
+// parameter (DEX_EXPERT — dropped from the CLI's `dex query` front door by
+// #849, no query facet for a historical read).
 func ReadAtRef(ctx context.Context, path, ref string) ([]byte, error) {
 	if strings.HasPrefix(ref, "-") {
 		// A ref starting with '-' would be parsed by git as an option, not a

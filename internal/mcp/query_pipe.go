@@ -290,12 +290,14 @@ func dispatchSingle(ctx context.Context, h toolSurface, req *sdk.CallToolRequest
 		return dispatchSelector(ctx, h, req, in, cleaned, route)
 	case "since":
 		return dispatchSince(ctx, h, req, in, cleaned, route)
+	case "check", "refs", "cohort", "deps", "status":
+		return dispatchMisc(ctx, h, req, in, lr, cleaned, route)
 	case "invalid-kind":
 		return nil, QueryOutput{
 			Status: "error",
 			Route:  route,
 			Trust: EnvTrust{Provenance: "exact", Caveat: fmt.Sprintf(
-				"unknown kind %q — valid: read|grep|locate|symbol|callers|callees|impact|path|search|editing|assemble|architecture|packages|orient|review, or omit to auto-classify",
+				"unknown kind %q — valid: read|grep|locate|symbol|callers|callees|impact|path|search|editing|assemble|architecture|packages|orient|review|check|refs|cohort|deps|status, or omit to auto-classify",
 				in.Kind)},
 		}, nil
 	default: // semantic

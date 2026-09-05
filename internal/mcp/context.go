@@ -27,8 +27,9 @@ import (
 
 // ─── tool: ask ────────────────────────────────────────────────────────────
 
-// ContextRouter is the exported entry point used by the CLI
-// (`dex ask`). It delegates to the MCP-registered handler.
+// ContextRouter is the exported entry point used by the CLI's `dex query`
+// prose lane (formerly `dex ask`, folded in by #849). It delegates to the
+// MCP-registered handler.
 func (s *Server) ContextRouter(ctx context.Context, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
 	return s.contextRouterStream(ctx, nil, in, nil)
 }

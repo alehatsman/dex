@@ -13,7 +13,7 @@ func usageQuickstart() {
 		"  dex setup                          guided first-run wizard (check + index + MCP)\n"+
 		"  dex doctor                         verify endpoints, index dir, and MCP wiring\n"+
 		"  dex index .                        build the per-project index (chunks + graph)\n"+
-		`  dex ask "where is the watcher?"    one-shot router — picks intent, fuses search lanes`+"\n"+
+		`  dex query "where is the watcher?"  the read verb — picks the lane, fuses search lanes`+"\n"+
 		"  dex mcp                            run as MCP server (stdio) for Claude Code\n\n"+
 		"  <path> defaults to cwd on every query/graph command.\n\n"+
 		"run `dex help` for common commands · `dex help all` for the full reference")
@@ -23,24 +23,21 @@ func usageQuickstart() {
 // Shown by `dex help` / `dex --help` / `-h`.
 func usageConcise() {
 	fmt.Fprintln(os.Stderr, `dex — local semantic search for Claude Code
-(MCP agents: 'ask' is 'query', the only tool on by default — every other verb
-below needs DEX_EXPERT=1 to appear over MCP; all of them work from the CLI.)
+(MCP agents: 'query' is the only tool on by default — every DEX_EXPERT power
+lane below (search/trace/grep/read/…) is a granular tool 'query' already
+covers; all of them work from the CLI too, under DEX_EXPERT=1.)
 
 SEARCH & UNDERSTAND
-  dex ask      [<path>] <q...>           START HERE — routed evidence pack (intent=assemble for a task working set)
-  dex repo_map [--cluster <id>] [<path>] repo overview — run first in an unfamiliar repo
-  dex search   [<path>] <q...>           hybrid search — raw ranking (ask composes this)
-  dex read     <file>                    read a file (--mode signatures|skeleton|summary)
-  dex locate   [<path>] <sym|path:line>  full context for one symbol: callers, tests, doc, blame
-  dex trace    [<path>] <name>           call graph — --dir callers|callees|path|impact
-  dex grep     [<path>] <pattern>        exact RE2 search (literals, import paths, no-embed fallback)
+  dex query [--kind=K] [--want=W] [<path>] <input...>
+                                          the read verb — START HERE. Input shape picks the
+                                          lane: a path → signatures, path:line → a slice,
+                                          /regex/ → grep, a bare symbol → its call graph,
+                                          prose → a ranked evidence pack. --kind=assemble
+                                          for a task working set, --kind=orient for a repo
+                                          overview, --kind=review for the working-tree diff.
 
 CHANGE SAFETY
-  dex review_diff   [<path>]             per-hunk PR intelligence (--ref|--branch|--pr)
-  dex check   [<path>] <ref...>          verify file:line[:symbol] references exist
-
-STATUS
-  dex status [<path>]                    endpoint health + index stats
+  dex query --kind=check [<path>] <ref...>   verify file:line[:symbol] references exist
 
 MAINTENANCE
   dex index    <path>   build or refresh the index (--dry-run to preview)
@@ -57,8 +54,9 @@ SETUP
   dex hook <action>                  Claude Code hook scripts
   dex completion bash|zsh|fish       tab-completion script
   dex version                        print the build version
+  dex index status [<path>]          endpoint health + index stats
 
-  run 'dex help all' for power lanes (refs, plan_rename, rehearse_patch, cohort, graph),
+  run 'dex help all' for power lanes (--kind=refs|cohort|deps, plan_rename, rehearse_patch, graph),
   build utilities (compact, compress, summarize, clone, bench), and full flag reference`)
 }
 
@@ -71,74 +69,73 @@ quickstart:
   cd ~/code/myproject
   dex setup                          guided first-run wizard (check + index + MCP)
   dex index .                        build the per-project index (chunks + graph)
-  dex ask "where is the watcher?"    one-shot router; emits suggested reads
+  dex query "where is the watcher?"  the read verb; emits suggested reads
   dex mcp                            run as MCP server (stdio) — point your agent at it
   dex env --doc                      see effective config with inline docs
   dex doctor                         check the setup is working end-to-end
 
   <path> defaults to cwd on every query/graph command.
 
-query — read verbs (the everyday MCP agent surface is just 'query', which these
-fold into; every "MCP: X" below is a granular tool that additionally requires
-DEX_EXPERT=1 — it is NOT registered by default):
-  dex repo_map [--cluster <id>] [<path>] repo orientation (MCP: repo_map,
-                                          DEX_EXPERT). No --cluster: the
-                                          first-touch bundle (L0 overview + a zoom into
-                                          the most-central cluster). --cluster <id>: zoom
-                                          a chosen cluster.
-  dex ask    [<path>] <q...>            one-shot router (MCP: query — the only
-                                          tool on the default surface). Picks intent,
-                                          fuses semantic + symbol + graph; returns
-                                          suggested_reads and a prose next_action.
-                                          --intent assemble returns a task working set:
-                                          ranked files, symbols, and the local rules
-                                          (CLAUDE.md / specs) that govern them.
-                                          Flags: --intent, --k, --format=text|json,
-                                          --no-inline, --max-content-bytes, -v
-  dex search [<path>] <q...>            hybrid semantic top-k chunks, fuses exact
-                                          symbol-name hits via RRF (MCP: search, DEX_EXPERT).
-                                          Raw ranking — ask composes this internally.
-                                          Flags: --k, --rerank=off, --explain,
-                                          --format=text|json, --max-content-bytes, -v
-  dex read   <file>                     read a file (MCP: read, DEX_EXPERT). Modes:
-                                          full (default; raw, no LLM), signatures,
-                                          skeleton, map, aggressive, entropy, auto,
-                                          analyze (per-mode token-cost comparison),
-                                          and summary (LLM digest — needs a chat model).
-                                          Flags: --mode, --start, --end, --focus,
-                                          --temperature, --max-tokens, -v,
-                                          --format=text|json
-  dex locate [<path>] <target>          full context for one symbol: callers, tests,
-                                          doc, blame (MCP: locate, DEX_EXPERT)
-  dex trace  [<path>] <name>            call graph via --dir callers|callees|path|impact
-                                          (MCP: trace, DEX_EXPERT)
-  dex grep   [<path>] <pattern>         exact RE2 regex search (MCP: grep, DEX_EXPERT)
-  dex review_diff   [<path>]            per-hunk PR intelligence (MCP: review_diff,
-                                          DEX_EXPERT; query kind=review covers the
-                                          everyday working-tree case on the default surface).
-                                          Flags: --ref, --branch, --pr
-  dex check  [<path>] <ref...>          verify file:line[:symbol] refs (MCP: check, DEX_EXPERT)
-  dex status [<path>]                   endpoint health + project stats
-                                          (MCP: status, DEX_EXPERT; alias: index status)
-  dex index status [<path>]             same as dex status
+query — the single read verb (#849, specs/query-unification.md). Its input
+SHAPE picks the lane; --kind forces it. This is the everyday MCP/REST/CLI
+surface alike — every transport parses its own format in, calls the same
+dispatcher, and formats its own format out:
+  dex query [flags] [<path>] <input...>  read the codebase intelligence.
+                                          A path → compressed signatures, a
+                                          path:line/range → that slice, a
+                                          /regex/ → grep, a bare symbol → its
+                                          call graph, prose → a ranked
+                                          semantic evidence pack.
+                                          Flags: --kind, --want, --to,
+                                          --budget, --project-root, --k,
+                                          --context, --fixed, --format=text|json
+  dex query --kind=search    <q...>      hybrid semantic top-k chunks
+  dex query --kind=assemble  <task...>   budget-bounded task working set:
+                                          ranked files, symbols, governing rules
+  dex query --kind=architecture|packages|orient  repo-orientation packs
+  dex query --kind=review                per-hunk intelligence for the
+                                          working-tree diff (HEAD~1..HEAD) —
+                                          for a targeted PR/branch/ref, use the
+                                          review_diff MCP tool (DEX_EXPERT)
+  dex query --kind=read      <file>      compressed signatures (default) —
+                                          --want=full for raw content,
+                                          --want=map|skeleton|lines:N-M for
+                                          other facets. Raw full/aggressive/
+                                          entropy/auto/summary modes, --ref
+                                          (historical read), and --handle
+                                          (session expansion) are MCP/DEX_EXPERT
+                                          read-tool-only now, no CLI front door.
+  dex query --kind=grep      <pattern>   exact RE2 regex search.
+                                          Flags: --context, --fixed
+  dex query --kind=locate    <sym|path:line>  full context for one symbol:
+                                          callers, tests, doc, blame
+  dex query --kind=callers|callees|impact|path <sym>  call-graph traversal
+                                          (--to sets the path facet's destination)
+  dex query --kind=check     <ref...>    verify file:line[:symbol] refs exist
+  dex query --kind=refs --want=<action> <sym>  type-precise Go symbol queries
+                                          (references|implementations|
+                                          supertypes|subtypes)
+  dex query --kind=cohort    <iface>     Go interface lockstep set — types
+                                          that must change together
+  dex query --kind=deps      <path|pkg>  package import edges. A relative
+                                          package DIRECTORY (not a file) as
+                                          the sole positional is ambiguous
+                                          with the leading <path> project
+                                          arg — pass --project-root, a file
+                                          inside the package, or the full
+                                          import path instead.
+  dex query --kind=status                endpoint health (cross-project; for
+                                          single-project index stats use
+                                          `+"`dex index status`"+`)
 
-query — power lanes (Go-focused or specialized; all DEX_EXPERT-only over MCP):
-  dex refs   [<path>] <action> <sym>    type-precise Go symbol queries (MCP: refs,
-                                          DEX_EXPERT). Actions: references, implementations,
-                                          supertypes, subtypes.
-  dex plan_rename    [<path>] <sym> <to> plan a type-precise rename — edit triples,
-                                          never writes (MCP: plan_rename, DEX_EXPERT)
-  dex rehearse_patch [<path>]            type-check a hypothetical edit in-memory,
-                                          never writes (MCP: rehearse_patch, DEX_EXPERT).
-                                          Flags: --edits, --file
-  dex cohort [<path>] <iface>           Go interface lockstep set — types that must
-                                          change together (MCP: cohort, DEX_EXPERT)
+  Dropped in the collapse (no longer a CLI front door — the underlying
+  MCP tools still carry them under DEX_EXPERT): search's --explain score
+  breakdown; grep's --ext/--in/--max-results/structural --query/--lang;
+  trace's --package/--max-depth; review_diff's --ref/--branch/--pr/--worktree/
+  --compact selectors; repo_map's --cluster/--around/--around-diff zooms.
 
-query — graph power lanes (CLI-only except deps; deps is DEX_EXPERT-only over MCP):
   dex graph neighbors [<path>] <file> <line>
                                           vector neighbours of a chunk (CLI-only)
-  dex graph deps      [<path>] [flags]  package imports (MCP: deps, DEX_EXPERT)
-                                          Flags: --file=<rel>, --package=<full path>
   dex graph links     [<path>] <doc>    markdown docs this doc links to (CLI-only)
   dex graph backlinks [<path>] <doc>    markdown docs that link to this doc (CLI-only)
                                           Flags: --k
@@ -146,6 +143,13 @@ query — graph power lanes (CLI-only except deps; deps is DEX_EXPERT-only over 
                                           tag→docs or doc→tags (CLI-only)
   dex graph export    [<path>]          dump graph_nodes/graph_edges as JSONL
                                           Flags: --output=<dir>
+  dex plan_rename    [<path>] <sym> <to> plan a type-precise rename — edit triples,
+                                          never writes (MCP: plan_rename, DEX_EXPERT;
+                                          different contract from query — returns an
+                                          edit plan, not a read)
+  dex rehearse_patch [<path>]            type-check a hypothetical edit in-memory,
+                                          never writes (MCP: rehearse_patch, DEX_EXPERT).
+                                          Flags: --edits, --file
 
 build / maintenance:
   dex index   <path>                    build or refresh the index. Runs chunk+embed
@@ -192,8 +196,6 @@ config / setup:
                                           DEX_SERVE_TOKEN gates non-loopback.
   dex hook inject                       Claude Code UserPromptSubmit hook:
                                           inject dex context before each turn.
-  dex hook rewrite                      Claude Code PreToolUse(Bash) hook:
-                                          rewrite rg/grep to dex search.
   dex hook redirect                     Claude Code PreToolUse(Read/Grep/…) hook:
                                           compress large files to save tokens.
   dex hook observe                      Claude Code PostToolUse/Stop hook:
@@ -221,10 +223,10 @@ exit codes:
 // splitProjectArg peels an optional <path> off the front of a
 // command's positional args. If args[0] resolves as an existing
 // directory, use it; otherwise default to "." and pass every arg
-// through to the caller. Matches git/rg ergonomics — `dex ask "where
+// through to the caller. Matches git/rg ergonomics — `dex query "where
 // is X"` works from inside a project root without an explicit path.
 //
-// Trade-off: a typo'd path like `dex ask /tpyo "q"` will be treated
-// as part of the question rather than triggering a clean "path does
+// Trade-off: a typo'd path like `dex query /tpyo "q"` will be treated
+// as part of the input rather than triggering a clean "path does
 // not exist" error. The cost of that ambiguity is small compared to
 // requiring a path on every invocation.

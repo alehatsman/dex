@@ -8,22 +8,22 @@ covers:
   - "cmd/dex/hook_inject.go"
   - "cmd/dex/hook_observe.go"
   - "cmd/dex/hook_redirect.go"
-  - "cmd/dex/hook_rewrite.go"
 ---
 # Hook
 
 > **Note (#205, 2026-08-26):** dex's `record`/`notes` write verb and the whole knowledge subsystem (`knowledge_facts`/`knowledge_relations`/`scoped_notes`) were removed — the MCP surface is a single verb, `query`. Any mention of `record`/`notes`/`knowledge`/`remember` below is **historical**.
+>
+> **Note (#849, 2026-09-06):** the fourth subcommand, `dex hook rewrite` (PreToolUse Bash — rewrote `rg`/`grep` shell commands to `dex search`/`dex compress-stdin` by literal name), was dropped outright as part of the CLI collapse (specs/query-unification.md) — not migrated. Silently rewriting the agent's own shell commands is exactly the "magic" the project's explicit>magic bar argues against, and its rewrite target (`dex search`) no longer exists as a named CLI verb anyway. `cmd/dex/hook_rewrite.go` and its `.claude/settings.json` / `dex hook rewrite` wiring are gone; the `### dex hook rewrite` section below is **historical**.
 
 
 ## Intent
 
-`dex hook` is the Claude Code hook integration: four subcommands map onto four
+`dex hook` is the Claude Code hook integration: three subcommands map onto three
 Claude Code hook events and together ensure each turn starts with relevant
-context, search commands are transparently upgraded to semantic equivalents, and
-large file reads are compressed before they consume context. The hooks are
-surfaced as routing rules written by `dex setup`, run as short-lived subprocess
-invocations, and must never block the Claude session — every handler silently
-passes through on any error.
+context and large file reads are compressed before they consume context. The
+hooks are surfaced as routing rules written by `dex setup`, run as short-lived
+subprocess invocations, and must never block the Claude session — every
+handler silently passes through on any error.
 
 ## Behavior
 

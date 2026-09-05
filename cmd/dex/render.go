@@ -89,35 +89,6 @@ func printSearchHitResult(status, hint, project string, hits []mcp.SearchHit, ma
 	}
 }
 
-// printContextText emits a human-readable rendering of a ContextOutput.
-// maxBytes limits content display (0 = no limit). Mirrors the layout
-// cmdQuery uses for hits so the two surfaces feel like the same tool.
-// printContextText renders the bundle. When answerHandled is true the
-// answer was already streamed to stdout by the caller, so the answer
-// block is skipped here to avoid printing it twice.
-func printContextText(out mcp.ContextOutput, maxBytes int, answerHandled bool) {
-	if out.Status != "ok" {
-		printContextError(out)
-		return
-	}
-	printContextHeader(out)
-	if !answerHandled && out.Answer != "" {
-		if out.AnswerModel != "" {
-			fmt.Printf("answer (%s):\n", out.AnswerModel)
-		}
-		fmt.Printf("%s\n\n", out.Answer)
-	}
-	printSuggestedReads(out.SuggestedReads, maxBytes)
-	printSymbols(out.Symbols)
-	printReferences(out.References)
-	printAnnotations(out.Annotations)
-	printSemanticHits(out.SemanticHits)
-	printGraph(out.Graph)
-	printRelatedFiles(out.RelatedFiles)
-	printConcerns(out.Concerns)
-	printNextActionAndAvoid(out)
-}
-
 // printConcerns renders the assemble completeness signal (#725): which query
 // concerns the working set covers vs which the byte budget dropped.
 func printConcerns(c *mcp.AssembleConcerns) {
@@ -127,27 +98,6 @@ func printConcerns(c *mcp.AssembleConcerns) {
 	fmt.Printf("Concerns: covered %d, dropped %d\n", len(c.Covered), len(c.Dropped))
 	if len(c.Dropped) > 0 {
 		fmt.Printf("  ⚠ dropped (no symbol body in the set): %s\n", strings.Join(c.Dropped, ", "))
-	}
-	fmt.Println()
-}
-
-func printContextError(out mcp.ContextOutput) {
-	fmt.Fprintf(os.Stderr, "status: %s\n", out.Status)
-	if out.Hint != "" {
-		fmt.Fprintf(os.Stderr, "hint:   %s\n", out.Hint)
-	}
-	if out.Endpoint != "" {
-		fmt.Fprintf(os.Stderr, "endpoint: %s\n", out.Endpoint)
-	}
-}
-
-func printContextHeader(out mcp.ContextOutput) {
-	fmt.Printf("intent: %s  project: %s\n", out.Intent, out.Project)
-	if out.Trust != nil && out.Trust.Fresh != nil && !*out.Trust.Fresh {
-		fmt.Println("⚠ index is stale — refresh recommended")
-	}
-	if out.Hint != "" {
-		fmt.Printf("hint: %s\n", out.Hint)
 	}
 	fmt.Println()
 }
@@ -278,13 +228,4 @@ func printGraph(gr *mcp.GraphResult) {
 		fmt.Printf("  edge  %-12s  %s → %s\n", e.Kind, e.From, e.To)
 	}
 	fmt.Println()
-}
-
-func printNextActionAndAvoid(out mcp.ContextOutput) {
-	if out.NextAction != "" {
-		fmt.Printf("Next action:\n  %s\n\n", out.NextAction)
-	}
-	if out.Avoid != "" {
-		fmt.Printf("Avoid:\n  %s\n", out.Avoid)
-	}
 }
