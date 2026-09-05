@@ -1,6 +1,6 @@
 ---
 id: query-unification
-status: proposed
+status: accepted
 owners: [aleh]
 covers:
   - "internal/mcp/query.go"
@@ -245,7 +245,18 @@ that's how the last one was added."
   test's new definition of "reachable" in the same diff as the verb
   deletions — not as a follow-up "oops" fix.
 
-## Open questions
+## Open questions — resolved
+
+1. Zero-subject reports (`routes`/`smells`/`clusters`) stay separate;
+   input-anchored (`clones`/`similar`) fold into `query`.
+2. `check`'s `claims` array gets its own field on the request shape — one
+   deliberate, documented exception, not a precedent for more.
+3. `rehearse_patch` stays CLI/MCP-only; no REST route.
+4. Sequencing is **value-first: CLI slice ships before REST and the MCP
+   re-justification** — CLI collapse is the change actually asked for; REST
+   and MCP re-justification follow it, not precede it.
+
+<details><summary>Original open-questions text (for context)</summary>
 
 1. **Do the whole-repo, zero-subject reports (`routes`/`smells`/`clusters` —
    no required input, they scan the whole graph) fold into `query` with
@@ -272,23 +283,25 @@ that's how the last one was added."
    clean breaks, no shim — but flagging because CLI has real interactive
    users (you) where MCP's collapse had one.
 
-## Rollout (once this spec is signed off)
+</details>
 
-Each transport becomes its own scoped issue/PR. Two orderings are both
-defensible and this spec doesn't pick for you:
+## Rollout
 
-- **Risk-first:** REST (fewest real consumers, safest to get wrong) → MCP
-  expert-tool re-justification (already closest, smallest diff) → CLI
-  (highest verb count, and now known to have real blast radius —
-  `hook_rewrite.go`, `verb_parity_test.go`, generated CLAUDE.md snippets from
-  `dex setup`, shell completion scripts).
-- **Value-first:** CLI first, because it's the interface you actually said
-  you wanted collapsed, and delaying it behind two "safer" slices means the
-  felt improvement lands last.
+Each transport becomes its own scoped issue/PR. **Order: CLI → REST → MCP
+expert-tool re-justification** — value-first, not risk-first: CLI collapse is
+the change actually asked for, so it ships before the two safer, lower-felt
+slices rather than after them.
 
-Whichever order, the CLI slice's issue should list the audited hidden
-consumers — `hook_rewrite.go` (drop, per above), the parity test, onboarding
-CLAUDE.md generation, completion scripts — as explicit checklist items up
-front, not discovered mid-implementation. This spec gates all three; no code moves until the six
-use cases, the classification table, and the open questions above have your
-sign-off.
+The CLI issue must list the audited hidden consumers as explicit checklist
+items up front, not discovered mid-implementation:
+
+- [ ] `hook_rewrite.go` dropped (rewrites `grep`/`rg` → `dex search` by
+      literal name; per the decision above, remove rather than migrate)
+- [ ] `verb_parity_test.go` (#494) redefined to gate `kind=` ladder coverage
+      instead of top-level-verb-name parity
+- [ ] `hook_inject.go` and `dex setup`'s generated CLAUDE.md snippets audited
+      for stale verb-name references
+- [ ] shell completion scripts (`completion_gen.go`) regenerated against the
+      new verb set
+
+This spec is `accepted`; the CLI issue can be filed and claimed now.
