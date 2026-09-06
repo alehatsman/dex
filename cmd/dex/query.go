@@ -59,17 +59,11 @@ func cmdQuery(ctx context.Context, args []string) error {
 	if err := fs.Parse(reorderFlags(fs, args)); err != nil {
 		return err
 	}
-	// With an explicit --project-root, don't also peel a leading path
-	// positional off the input: that heuristic exists to *find* the project
-	// root from an unqualified invocation, which --project-root already
-	// settled. Skipping it matters most for --kind=deps, whose target is
-	// often itself a relative package directory (`cmd/dex`) that would
-	// otherwise be silently swallowed as a redundant path positional (#849).
-	rest := fs.Args()
-	root := *projectRoot
-	if root == "" {
-		root, rest = splitProjectArg(rest)
+	if err := explicitKError(fs, *k); err != nil {
+		return err
 	}
+	rest := fs.Args()
+	root, rest := resolveQueryRoot(*kind, *projectRoot, rest)
 
 	base, err := indexDir()
 	if err != nil {
@@ -107,6 +101,49 @@ func cmdQuery(ctx context.Context, args []string) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+// explicitKError rejects an explicitly-passed, non-positive --k. --k is a
+// max-results cap, not a countable quantity with a meaningful zero — the
+// flag's Go zero value already means "unset, use the lane's default"
+// everywhere downstream (every `if k <= 0 { k = default }` site in
+// internal/mcp), and fs.Int can't by itself tell "the user didn't pass --k"
+// from "the user typed --k 0". fs.Visit can: an *explicit* non-positive --k
+// is always a typo, never a request for "no limit" or "the default" — reject
+// it the same way the pre-#849 standalone `search` verb did, instead of
+// silently discarding it (#858).
+func explicitKError(fs *flag.FlagSet, k int) error {
+	explicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "k" {
+			explicit = true
+		}
+	})
+	if explicit && k <= 0 {
+		return fmt.Errorf("invalid --k=%d (want a positive integer >= 1)", k)
+	}
+	return nil
+}
+
+// resolveQueryRoot decides the project root and the remaining positional args
+// from an explicit --project-root flag (if any), the forced --kind, and the
+// raw positionals. It mirrors splitProjectArg's "peel a leading <path>
+// positional" heuristic for every kind except deps: deps' sole positional is
+// itself commonly a relative package directory (`cmd/dex`), which that
+// heuristic misreads as the project-root arg, leaving deps a redundant empty
+// target that fails as "no index for <that subdirectory>" (#858) — a
+// confusing readback of the escape hatches `dex help all` already documents
+// (--project-root, a file inside the package, or the full import path)
+// instead of the ambiguity itself. An explicit --project-root already settles
+// the question for every kind, deps included, so it always wins.
+func resolveQueryRoot(kind, projectRootFlag string, rest []string) (root string, remaining []string) {
+	if projectRootFlag != "" {
+		return projectRootFlag, rest
+	}
+	if strings.EqualFold(strings.TrimSpace(kind), "deps") {
+		return ".", rest
+	}
+	return splitProjectArg(rest)
 }
 
 // buildQueryInput constructs the QueryInput cmdQuery sends to (*Server).Query
