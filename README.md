@@ -59,9 +59,11 @@ the codebase, not agent memory: durable findings live in the harness's own
 file-based memory, not in dex (the `record` verb was removed in #205).
 
 Everything else — the raw `search`, `trace`, `locate`, `grep`, `read` primitives
-plus the `deps` / `clusters` / `smells` / `clones` graph lanes — is a power-lane
+plus the `clusters` / `smells` / `routes` graph-wide reports — is a power-lane
 overlay behind `DEX_EXPERT=1`. `query` covers everyday work; the overlay
-never changes its shape.
+never changes its shape. (`deps`/`cohort`/`refs`/`clones`/`similar`/`check`
+are reachable only via `query(kind=...)` — no standalone tool of their own,
+#852.)
 
 ## CLI
 
@@ -135,9 +137,11 @@ DEX_EXPERT=1
 ```
 
 Overlays the power lanes onto `query`: the raw primitives `search`,
-`trace`, `locate`, `grep`, `read` plus the graph/quality lanes `deps`,
-`clusters`, `routes`, `smells`, `clones`, `similar`, `cohort`, `refs`, `status`,
-`repo_map`, `review_diff`, `check`, `plan_rename`, and `rehearse_patch`.
+`trace`, `locate`, `grep`, `read` plus the graph/quality reports `clusters`,
+`routes`, `smells`, `status`, `repo_map`, `review_diff`, `plan_rename`, and
+`rehearse_patch`. `deps`, `cohort`, `refs`, `clones`, `similar`, and `check`
+are not separate tools — each is a `query(kind=...)` value (#852), covered
+with full fidelity by the everyday surface.
 
 Graph tools are also available from the CLI without the flag:
 

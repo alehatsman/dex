@@ -45,45 +45,6 @@
   ],
   "expert": [
     {
-      "name": "check",
-      "additionalProperties": false,
-      "required": [
-        "claims"
-      ],
-      "properties": {
-        "claims": {
-          "type": "array|null"
-        },
-        "project_root": {
-          "type": "string"
-        }
-      }
-    },
-    {
-      "name": "clones",
-      "additionalProperties": false,
-      "properties": {
-        "k": {
-          "type": "integer"
-        },
-        "max_clusters": {
-          "type": "integer"
-        },
-        "min_lines": {
-          "type": "integer"
-        },
-        "path": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "threshold": {
-          "type": "number"
-        }
-      }
-    },
-    {
       "name": "clusters",
       "additionalProperties": false,
       "properties": {
@@ -98,36 +59,6 @@
         },
         "top_k": {
           "type": "integer"
-        }
-      }
-    },
-    {
-      "name": "cohort",
-      "additionalProperties": false,
-      "required": [
-        "interface"
-      ],
-      "properties": {
-        "interface": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        }
-      }
-    },
-    {
-      "name": "deps",
-      "additionalProperties": false,
-      "properties": {
-        "package": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
         }
       }
     },
@@ -316,25 +247,6 @@
       }
     },
     {
-      "name": "refs",
-      "additionalProperties": false,
-      "required": [
-        "action",
-        "symbol"
-      ],
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string"
-        }
-      }
-    },
-    {
       "name": "rehearse_patch",
       "additionalProperties": false,
       "properties": {
@@ -445,31 +357,6 @@
         },
         "query": {
           "type": "string"
-        }
-      }
-    },
-    {
-      "name": "similar",
-      "additionalProperties": false,
-      "required": [
-        "path",
-        "start_line"
-      ],
-      "properties": {
-        "k": {
-          "type": "integer"
-        },
-        "path": {
-          "type": "string"
-        },
-        "project_root": {
-          "type": "string"
-        },
-        "start_line": {
-          "type": "integer"
-        },
-        "threshold": {
-          "type": "number"
         }
       }
     },

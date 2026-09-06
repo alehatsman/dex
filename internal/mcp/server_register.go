@@ -255,16 +255,12 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 	// the same lookup automatically. The findSymbol handler stays (it
 	// backs find's fusion, locate's resolver, and the REST /lookup
 	// route); only the redundant tool exposure is removed (#685).
-	addTool(srv, &sdk.Tool{
-		Name:        "deps",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Return the `imports` edges for a file or package — the package the file belongs to, " +
-			"and the list of packages it depends on. Sourced from the static graph (no embedding, no chat). " +
-			"Pass `path` (relative file inside the project) OR `package` (full package path). " +
-			"Returns 'no-index' / 'no-graph' / 'not-found' when the project, graph, or symbol is missing."),
-	}, h.graphDeps)
 	// callers/callees are not standalone tools — `trace --dir
 	// callers|callees` is the single call-graph entry point (#575).
+	// deps is not a standalone tool (#852, query-unification MCP
+	// re-justification): `query(kind=deps)` calls h.graphDeps directly
+	// (query_misc.go dispatchMisc) with no lost capability — a plain
+	// path/package-keyed read, no distinguishing params of its own.
 
 	// plan_rename (#638): type-precise rename planner. Go-only, on-demand
 	// (no index). Moved to expert: niche workflow, byte-offset input shape
@@ -301,20 +297,10 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"edits/files are supplied. Loads packages on-demand — slower than the read verbs."),
 	}, h.rehearse)
 
-	// check (#708): batch citation verification. Moved to expert: meta-tool
-	// for QA of prior notes/citations, not primary coding workflow.
-	addTool(srv, &sdk.Tool{
-		Name:        "check",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Verify a batch of file:line[:symbol] references against the current index — " +
-			"use this after making or reviewing changes to confirm that cited locations are still valid. " +
-			"Pass `claims` as an array of {ref, symbol?} objects where `ref` is 'file:line', " +
-			"'file:line:symbol', or 'file:symbol'. Each result has `status`: " +
-			"ok (reference is valid), moved (symbol found at a different line in the same file, " +
-			"with `found_at`), gone (symbol/line no longer indexed), no_file (path has no indexed " +
-			"chunks), or parse_error (malformed ref). `symbol_at` reports what IS indexed at the " +
-			"given line when the expected symbol does not match."),
-	}, h.check)
+	// check is not a standalone tool (#852): `query(kind=check, claims=[...])`
+	// calls h.check directly (dispatchMisc) — QueryInput.Claims (#849) gives
+	// it full fidelity, the one deliberate non-scalar-input exception the
+	// spec calls out, not a capability gap.
 
 	addTool(srv, &sdk.Tool{
 		Name:        "routes",
@@ -338,65 +324,23 @@ func registerExpertTools(srv *sdk.Server, h toolSurface, td func(string) string,
 			"Requires a graph index (`dex index . --graph=only`). Use before a PR or refactor to spot obvious structural issues."),
 	}, h.smells)
 
-	// clones / similar (#84): semantic duplication detection over the
-	// vectors already indexed for search. Vector-backed, so only wired
-	// when an embedder is present.
-	if embedAvailable {
-		addTool(srv, &sdk.Tool{
-			Name:        "clones",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Find clusters of semantically near-duplicate code blocks (duplication hotspots) — " +
-				"the highest-leverage output for review/refactor work, and something grep can't do (it matches " +
-				"literals, not meaning). Scans indexed function/method blocks, KNNs each against the rest, and " +
-				"union-finds the near-duplicate edges into clusters. Returns clusters of `{path, start_line, " +
-				"end_line, kind, name}` with a `similarity` floor and `size`. Args: `path` (restrict to a file/dir " +
-				"prefix), `threshold` (min cosine similarity, default 0.90), `min_lines` (default 6), `k`, " +
-				"`max_clusters`. Reuses search vectors — no embedder round-trip; an index built without embeddings " +
-				"returns none."),
-		}, h.clones)
+	// clones / similar (#84) are not standalone tools (#852): input-anchored
+	// (path, or path+start_line) with a real Input, so per the spec's Open
+	// Question 1 they fold into `query(kind=clones|similar)` — same
+	// h.clones/h.related handlers via dispatchMisc, no lost capability.
+	// Unlike routes/smells/clusters (zero-subject whole-repo reports with no
+	// real Input), these fit the input-keyed shape and don't need a door of
+	// their own.
 
-		addTool(srv, &sdk.Tool{
-			Name:        "similar",
-			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-			Description: td("Return code blocks across the repo semantically near a given block, ranked by " +
-				"similarity. Point it at a block via `path` + `start_line` (the block indexed at that line); set " +
-				"`threshold` (cosine similarity 0..1) to keep only genuine near-duplicates. Use it to answer " +
-				"'where else is this logic implemented?' before editing or de-duplicating. Vector KNN over the " +
-				"search index — no embedder round-trip."),
-		}, h.related)
-	}
+	// cohort is not a standalone tool (#852): `query(input=<interface>,
+	// kind=cohort)` calls h.cohort directly (dispatchMisc) — the spec's own
+	// MCP-tools classification concludes cohort "fold[s] in", it fits
+	// `(input) → precision-tracked read` same as any other kind=.
 
-	// cohort (#643): blast radius of an intent. Given an interface, list
-	// the types you must edit in lockstep when its method set changes —
-	// complete implementors plus near-misses (the backend you forgot).
-	addTool(srv, &sdk.Tool{
-		Name:        "cohort",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Find the types that must change together with an interface. Given an `interface` " +
-			"name (bare 'toolSurface' or pkg-qualified 'mcp.toolSurface'), returns every type that " +
-			"implements it ('complete') plus near-misses that implement most of it but are missing methods " +
-			"('partial' — the backend you forgot to update), each with its declaration file:line and the " +
-			"missing method names. Pure go/types — no index needed; Go-only (returns 'unsupported-language' " +
-			"otherwise). Reach for it before adding/removing an interface method to plan the lockstep edit."),
-	}, h.cohort)
-
-	// refs (#604 Tier 1): type-precise Go symbol queries via go/types.
-	// references — all def+use sites; implementations — concrete types
-	// satisfying an interface; supertypes — embedded interfaces / interfaces
-	// a type satisfies; subtypes — implementing types / embedding structs.
-	addTool(srv, &sdk.Tool{
-		Name:        "refs",
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-		Description: td("Type-precise Go symbol queries via go/types — no index needed; Go-only. " +
-			"Give a `symbol` (bare 'Foo', receiver-qualified '(*Server).Run', or pkg-qualified 'mcp.NewServer') " +
-			"and an `action`: " +
-			"'references' (all def + use sites across the module), " +
-			"'implementations' (concrete types satisfying an interface), " +
-			"'supertypes' (interfaces embedded by an interface, or interfaces a concrete type satisfies within the module), " +
-			"'subtypes' (types implementing an interface, or structs embedding a struct). " +
-			"Returns a list of {path, line, kind} sites. Returns 'unsupported-language' for non-Go. " +
-			"For interface implementors, `cohort` gives richer coverage-gap analysis; refs gives the raw query."),
-	}, h.refs)
+	// refs is not a standalone tool (#852): `query(input=<symbol>, kind=refs,
+	// want=<action>)` calls h.refs directly (dispatchMisc) — `action` is
+	// exactly what `want` already means for the trace facets; the spec's own
+	// classification concludes refs "fold[s] in" alongside cohort.
 
 	// `path` is not a standalone tool — `trace --dir path --to <dst>`
 	// finds the shortest route between two symbols (#575).

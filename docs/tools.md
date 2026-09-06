@@ -40,13 +40,19 @@ do internally (synthesis → lexical → hits-only), never which tools an agent 
 `DEX_EXPERT=1` is an **additive overlay**, orthogonal to the profile. It exposes
 the raw primitives `query` wraps — `search` (raw ranked hits with the full
 scoring breakdown), `trace` (`--dir callers|callees|path|impact`), `locate`,
-`grep`, `read` — plus the graph/quality lanes `deps`, `clusters`, `routes`,
-`smells`, `clones`, `similar`, `cohort`, `refs`, `status`, `repo_map`,
-`review_diff`, `check`, `plan_rename`, and `rehearse_patch`. `clones` finds
+`grep`, `read` — plus the graph/quality reports `clusters`, `routes`,
+`smells`, `status`, `repo_map`, `review_diff`, `plan_rename`, and
+`rehearse_patch`.
+
+`deps`, `cohort`, `refs`, `clones`, `similar`, and `check` are **not** separate
+tools (#852, query-unification MCP re-justification) — each is fully reachable
+as a `query(kind=...)` value with the exact same handler and no lost
+capability, so a standalone door would just be a duplicate. `clones` finds
 clusters of semantically near-duplicate code blocks and `similar` finds blocks
-near a given one — semantic work grep can't do; both reuse the search vectors, so
-they need an embedder (#84). The overlay never changes the shape of the two
-everyday verbs.
+near a given one — semantic work grep can't do; both reuse the search vectors,
+so they need an embedder (#84), same as `kind=clones|similar`.
+
+The overlay never changes the shape of `query`, the one everyday verb.
 
 On the CLI every verb, plus the full `dex graph <sub>` set, is always available
 without the flag. Several `dex graph` subcommands are **CLI-only** with no MCP

@@ -44,7 +44,7 @@ Tool mapping (use this instead of native):
 Power lanes (gated behind DEX_EXPERT — query covers everyday work):
 - grep / read — the raw primitives query wraps; reach here for the primitive directly
 - review_diff — targeted PR/branch/ref review (query kind=review covers the working tree)
-- trace / locate / search / deps / clusters / routes / smells / clones / similar / cohort / refs / status / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact, clones/similar are vector work grep can't do
+- trace / locate / search / clusters / routes / smells / status / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact
 
 IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query" before first use.`
 }

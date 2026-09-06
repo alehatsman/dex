@@ -8,9 +8,8 @@ import (
 // powerTools are the granular lanes gated behind DEX_EXPERT.
 // They must be absent from the default surface and present once expert is on.
 var powerTools = []string{
-	"deps",
 	"clusters", "routes", "smells", "status",
-	"plan_rename", "rehearse_patch", "check",
+	"plan_rename", "rehearse_patch",
 	"repo_map",
 	"trace", "locate", // demoted from the everyday surface in #143
 	// the raw primitives query subsumes, demoted in the 5c collapse (#145):
@@ -20,6 +19,12 @@ var powerTools = []string{
 	// #195 S4; the write verb `record` and the whole L3 knowledge subsystem followed
 	// in #205 — dex is retrieval over the codebase, not agent memory (durable
 	// findings are the harness's file-based memory). Session dedup stays internal.
+	//
+	// check/refs/cohort/deps/clones/similar are NOT here — the #852
+	// query-unification MCP re-justification removed them as standalone
+	// tools entirely (in every mode, not just the default surface): each was
+	// a byte-identical duplicate of `query(kind=X)` calling the same handler
+	// with no distinguishing capability. Reach them only via query now.
 }
 
 // defaultVerbs are the zero-inference verbs that headline the default surface;

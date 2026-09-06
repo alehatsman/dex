@@ -52,15 +52,17 @@ func main() {}
 	}
 }
 
-// TestCohortIsExpertGated guards that cohort sits in the DEX_EXPERT power lane,
-// not the everyday default surface (it's an occasional planning verb).
-func TestCohortIsExpertGated(t *testing.T) {
-	t.Setenv("DEX_EXPERT", "")
-	if listToolNames(t, stubServer(t))["cohort"] {
-		t.Error("cohort should NOT be in the default surface (expected DEX_EXPERT-gated)")
-	}
-	t.Setenv("DEX_EXPERT", "1")
-	if !listToolNames(t, stubServer(t))["cohort"] {
-		t.Error("cohort should be advertised when DEX_EXPERT is set")
+// TestCohortNotStandaloneTool locks the #852 invariant: cohort is not a
+// standalone MCP tool in any mode — folded into query(kind=cohort) by the
+// query-unification MCP re-justification (the spec's own classification
+// concludes cohort "fold[s] in", unlike plan_rename/rehearse_patch's
+// genuinely different edit-plan contract). The underlying h.cohort handler
+// stays (dispatchMisc calls it directly); only the redundant tool door is gone.
+func TestCohortNotStandaloneTool(t *testing.T) {
+	for _, expert := range []string{"", "1"} {
+		t.Setenv("DEX_EXPERT", expert)
+		if listToolNames(t, stubServer(t))["cohort"] {
+			t.Errorf("DEX_EXPERT=%q: cohort advertised as a standalone tool; want it reachable only via query(kind=cohort)", expert)
+		}
 	}
 }
