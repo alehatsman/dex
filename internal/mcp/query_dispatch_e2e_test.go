@@ -110,4 +110,18 @@ func TestQueryDispatchExactSymbolE2E(t *testing.T) {
 			}
 		}
 	})
+
+	// #854: dispatchExact's QueryOutput literal used to drop LookOutput.Hint,
+	// so an exact-lane error (e.g. an unrecognized read --want=) rendered as a
+	// bare "status: error" with no explanation on every transport that goes
+	// through query (CLI, MCP query tool, REST /query).
+	t.Run("read/unrecognized-want surfaces hint at envelope level", func(t *testing.T) {
+		out := call(t, QueryInput{Input: "main.go", Kind: "read", Want: "entropy"})
+		if out.Status != "error" {
+			t.Fatalf("status = %q, want error", out.Status)
+		}
+		if out.Hint == "" {
+			t.Fatalf("QueryOutput.Hint is empty; the exact-lane hint must reach the envelope, not just result.read.hint")
+		}
+	})
 }

@@ -557,7 +557,11 @@ func dispatchExact(ctx context.Context, h toolSurface, req *sdk.CallToolRequest,
 	// these is populated, matching route.lane. The envelope fields hoist below.
 	out := QueryOutput{
 		Status: lo.Status,
-		Route:  route,
+		// lo.Hint carries the exact-lane explanation (e.g. an unrecognized
+		// read mode's guidance) — dropping it here left an exact-lane error
+		// rendering as a bare "status: error" with no reason (#854).
+		Hint:  lo.Hint,
+		Route: route,
 		Result: QueryResult{
 			Read:   lo.Result.Read,
 			Grep:   lo.Result.Grep,

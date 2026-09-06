@@ -78,8 +78,43 @@ func printQueryRead(ro *mcp.SummarizeOutput) {
 		fmt.Print(", truncated")
 	}
 	fmt.Println(")")
+	// A status "ok" hint means a graceful degrade, not a hard error (e.g.
+	// mode=summary falling back to raw content on a chat failure, #854) — it
+	// must still reach the reader, or the degrade looks indistinguishable
+	// from the real thing.
+	if ro.Hint != "" {
+		fmt.Printf("hint:  %s\n", ro.Hint)
+	}
+	// mode=analyze returns a token-cost comparison instead of file content
+	// (#623) — printing the (empty) Content field silently dropped it (#854).
+	if ro.Analysis != nil {
+		printReadAnalysis(ro.Analysis)
+		return
+	}
 	fmt.Println()
 	fmt.Println(ro.Content)
+}
+
+func printReadAnalysis(a *mcp.ReadAnalysis) {
+	fmt.Printf("  %d lines, entropy %.2f bits/char, compressibility: %s\n",
+		a.Lines, a.MeanBitsPerChar, a.Compressibility)
+	if !a.Indexed {
+		fmt.Println("  (unindexed: structural modes unavailable)")
+	}
+	fmt.Println()
+	fmt.Println("  mode         tokens  saved  lossy  note")
+	for _, m := range a.Modes {
+		lossy := ""
+		if m.Lossy {
+			lossy = "yes"
+		}
+		fmt.Printf("  %-12s %6d  %4d%%  %-5s  %s\n", m.Mode, m.Tokens, m.SavedPct, lossy, m.Note)
+	}
+	fmt.Println()
+	fmt.Printf("  recommendation: %s\n", a.Recommendation)
+	if a.Reason != "" {
+		fmt.Printf("  reason: %s\n", a.Reason)
+	}
 }
 
 // ─── grep ───────────────────────────────────────────────────────────────

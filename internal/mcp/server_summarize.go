@@ -31,21 +31,24 @@ func (s *Server) summarize(ctx context.Context, req *sdk.CallToolRequest, in Sum
 	explicitMode := strings.TrimSpace(in.Mode) != ""
 
 	// An explicitly-requested mode the dispatch doesn't recognize must error
-	// loudly: the switch's default arm serves the full raw file, so a typo'd or
-	// CLI-only mode (e.g. "entropy") would silently blow the token budget (#528).
+	// loudly: the switch's default arm serves the full raw file, so a typo'd
+	// mode name (e.g. "entropy") would silently blow the token budget (#528).
 	// Auto-selected modes come from trusted sources and are always valid.
 	if explicitMode && !ValidReadMode(mode) {
-		// Give specific guidance for CLI-only modes (#768/#776).
+		// entropy/auto aren't read modes at all — they name unrelated modes of
+		// the separate `dex compress --mode=` CLI command, and every transport
+		// (CLI query, MCP tool, REST) hits this same dispatch, so there's no
+		// "CLI-only" door for them here to point callers at (#854).
 		if mode == "entropy" {
 			return nil, SummarizeOutput{
 				Status: "error",
-				Hint:   "mode \"entropy\" is CLI-only (drops low-information lines); use aggressive for a similar lossy pass via the MCP tool",
+				Hint:   "mode \"entropy\" is not a read mode; that name belongs to the separate `dex compress --mode=entropy` command. Use aggressive for a similar lossy pass here",
 			}, nil
 		}
 		if mode == "auto" {
 			return nil, SummarizeOutput{
 				Status: "error",
-				Hint:   "mode \"auto\" is CLI-only; omit the mode field to let dex auto-select based on file type and budget",
+				Hint:   "mode \"auto\" is not a read mode; that name belongs to the separate `dex compress --mode=auto` command. Omit mode here to let dex auto-select based on file type and budget",
 			}, nil
 		}
 		modes := ReadModes()

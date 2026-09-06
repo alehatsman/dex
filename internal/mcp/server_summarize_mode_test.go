@@ -20,8 +20,8 @@ func TestValidReadMode(t *testing.T) {
 		}
 	}
 	invalid := []string{
-		"entropy", // CLI-only convenience, not a server mode
-		"auto",    // CLI-only convenience
+		"entropy", // dex compress --mode=entropy's name, not a read mode (#854)
+		"auto",    // dex compress --mode=auto's name, not a read mode (#854)
 		"lines",   // bare stand-in, not dispatchable; needs lines:N-M
 		"",        // empty is only valid as an *implicit* default, not explicit
 		"xyzzy",
@@ -54,9 +54,10 @@ func TestSummarizeRejectsUnknownMode(t *testing.T) {
 	if out.Status != "error" {
 		t.Fatalf("status = %q, want \"error\" for unrecognized mode", out.Status)
 	}
-	// entropy is a CLI-only mode; the hint should explain that, not just say unknown.
-	if !strings.Contains(out.Hint, "CLI-only") && !strings.Contains(out.Hint, "unrecognized") {
-		t.Errorf("hint = %q, want it to flag the mode as CLI-only or unrecognized", out.Hint)
+	// entropy isn't a read mode at all (it names dex compress --mode=entropy,
+	// #854); the hint should say so, not just "unknown".
+	if !strings.Contains(out.Hint, "not a read mode") && !strings.Contains(out.Hint, "unrecognized") {
+		t.Errorf("hint = %q, want it to flag the mode as not-a-read-mode or unrecognized", out.Hint)
 	}
 	// The raw file content must NOT leak through on the error path.
 	if strings.Contains(out.Content, "filler line") {

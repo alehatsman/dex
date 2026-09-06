@@ -98,13 +98,22 @@ dispatcher, and formats its own format out:
                                           for a targeted PR/branch/ref, use the
                                           review_diff MCP tool (DEX_EXPERT)
   dex query --kind=read      <file>      compressed signatures (default) —
-                                          --want=full for raw content,
                                           --want=map|skeleton|lines:N-M for
-                                          other facets. Raw full/aggressive/
-                                          entropy/auto/summary modes, --ref
-                                          (historical read), and --handle
-                                          (session expansion) are MCP/DEX_EXPERT
-                                          read-tool-only now, no CLI front door.
+                                          other structural facets;
+                                          --want=aggressive|summary|analyze
+                                          also work over the CLI (same
+                                          dispatch as the MCP tool).
+                                          --want=full does not return raw
+                                          bytes — it declines with a
+                                          use-native-read hint (#196); use
+                                          the native Read tool instead.
+                                          --want=entropy/auto are not read
+                                          modes at all — those names belong
+                                          to the separate dex compress
+                                          --mode= command. --ref (historical
+                                          read) and --handle (session
+                                          expansion) are MCP/DEX_EXPERT
+                                          read-tool-only, no CLI front door.
   dex query --kind=grep      <pattern>   exact RE2 regex search.
                                           Flags: --context, --fixed
   dex query --kind=locate    <sym|path:line>  full context for one symbol:
