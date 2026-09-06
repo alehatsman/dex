@@ -332,12 +332,6 @@ func (rc *remoteClient) search(ctx context.Context, _ *sdk.CallToolRequest, in S
 	return nil, out, err
 }
 
-func (rc *remoteClient) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, in FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error) {
-	var out FindSymbolOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/lookup"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) related(ctx context.Context, _ *sdk.CallToolRequest, in RelatedInput) (*sdk.CallToolResult, RelatedOutput, error) {
 	qin := QueryInput{Input: fmt.Sprintf("%s:%d", in.Path, in.StartLine), Kind: "similar", K: in.K, ProjectRoot: in.ProjectRoot}
 	out, err := queryFold(ctx, rc, qin,
@@ -376,33 +370,9 @@ func (rc *remoteClient) graphImpact(ctx context.Context, _ *sdk.CallToolRequest,
 	return nil, out, err
 }
 
-func (rc *remoteClient) graphLinks(ctx context.Context, _ *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
-	var out DocLinkOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/links"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) graphBacklinks(ctx context.Context, _ *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
-	var out DocLinkOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/backlinks"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) graphTags(ctx context.Context, _ *sdk.CallToolRequest, in TagInput) (*sdk.CallToolResult, TagOutput, error) {
-	var out TagOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/tags"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) summarize(ctx context.Context, _ *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
 	var out SummarizeOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/read"), in, &out)
-	return nil, out, err
-}
-
-func (rc *remoteClient) searchTree(ctx context.Context, _ *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
-	var out SearchTreeOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/ls"), in, &out)
 	return nil, out, err
 }
 
@@ -442,12 +412,6 @@ func (rc *remoteClient) status(ctx context.Context, _ *sdk.CallToolRequest, _ St
 	return nil, out, err
 }
 
-func (rc *remoteClient) graphCycles(ctx context.Context, _ *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
-	var out CyclesOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/cycles"), in, &out)
-	return nil, out, err
-}
-
 func (rc *remoteClient) graphPath(ctx context.Context, _ *sdk.CallToolRequest, in PathInput) (*sdk.CallToolResult, PathOutput, error) {
 	var out PathOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/path"), in, &out)
@@ -474,11 +438,5 @@ func (rc *remoteClient) check(ctx context.Context, _ *sdk.CallToolRequest, in Ch
 	out, err := queryFold(ctx, rc, qin,
 		func(r QueryResult) *CheckOutput { return r.Check },
 		func(string, string) CheckOutput { return CheckOutput{} }) // no envelope fields on CheckOutput
-	return nil, out, err
-}
-
-func (rc *remoteClient) indexStatus(ctx context.Context, _ *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
-	var out IndexStatusOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/index-status"), in, &out)
 	return nil, out, err
 }

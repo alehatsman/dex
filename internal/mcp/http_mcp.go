@@ -80,11 +80,6 @@ func (p projectScoped) unresolvedInbound(ctx context.Context, _ string, file str
 	return p.s.unresolvedInbound(ctx, p.root, file, limit)
 }
 
-func (p projectScoped) findSymbol(ctx context.Context, req *sdk.CallToolRequest, in FindSymbolInput) (*sdk.CallToolResult, FindSymbolOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.findSymbol(ctx, req, in)
-}
-
 func (p projectScoped) related(ctx context.Context, req *sdk.CallToolRequest, in RelatedInput) (*sdk.CallToolResult, RelatedOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.related(ctx, req, in)
@@ -107,21 +102,6 @@ func (p projectScoped) graphCallees(ctx context.Context, req *sdk.CallToolReques
 func (p projectScoped) graphImpact(ctx context.Context, req *sdk.CallToolRequest, in ImpactInput) (*sdk.CallToolResult, ImpactOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.graphImpact(ctx, req, in)
-}
-
-func (p projectScoped) graphLinks(ctx context.Context, req *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.graphLinks(ctx, req, in)
-}
-
-func (p projectScoped) graphBacklinks(ctx context.Context, req *sdk.CallToolRequest, in DocLinkInput) (*sdk.CallToolResult, DocLinkOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.graphBacklinks(ctx, req, in)
-}
-
-func (p projectScoped) graphTags(ctx context.Context, req *sdk.CallToolRequest, in TagInput) (*sdk.CallToolResult, TagOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.graphTags(ctx, req, in)
 }
 
 func (p projectScoped) summarize(ctx context.Context, req *sdk.CallToolRequest, in SummarizeInput) (*sdk.CallToolResult, SummarizeOutput, error) {
@@ -155,11 +135,6 @@ func (p projectScoped) routes(ctx context.Context, req *sdk.CallToolRequest, in 
 	return p.s.routes(ctx, req, in)
 }
 
-func (p projectScoped) searchTree(ctx context.Context, req *sdk.CallToolRequest, in SearchTreeInput) (*sdk.CallToolResult, SearchTreeOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.searchTree(ctx, req, in)
-}
-
 func (p projectScoped) searchGrep(ctx context.Context, req *sdk.CallToolRequest, in SearchGrepInput) (*sdk.CallToolResult, SearchGrepOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.searchGrep(ctx, req, in)
@@ -169,11 +144,6 @@ func (p projectScoped) searchGrep(ctx context.Context, req *sdk.CallToolRequest,
 // — matching the REST handleStatus and the stdio index_status tool.
 func (p projectScoped) status(ctx context.Context, req *sdk.CallToolRequest, in StatusInput) (*sdk.CallToolResult, StatusOutput, error) {
 	return p.s.status(ctx, req, in)
-}
-
-func (p projectScoped) graphCycles(ctx context.Context, req *sdk.CallToolRequest, in CyclesInput) (*sdk.CallToolResult, CyclesOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.graphCycles(ctx, req, in)
 }
 
 func (p projectScoped) graphPath(ctx context.Context, req *sdk.CallToolRequest, in PathInput) (*sdk.CallToolResult, PathOutput, error) {
@@ -198,11 +168,6 @@ func (p projectScoped) check(ctx context.Context, req *sdk.CallToolRequest, in C
 func (p projectScoped) refs(ctx context.Context, req *sdk.CallToolRequest, in RefsInput) (*sdk.CallToolResult, RefsOutput, error) {
 	in.ProjectRoot = p.root
 	return p.s.refs(ctx, req, in)
-}
-
-func (p projectScoped) indexStatus(ctx context.Context, req *sdk.CallToolRequest, in IndexStatusInput) (*sdk.CallToolResult, IndexStatusOutput, error) {
-	in.ProjectRoot = p.root
-	return p.s.indexStatus(ctx, req, in)
 }
 
 // newMCPHandler builds the streamable-HTTP MCP handler mounted at

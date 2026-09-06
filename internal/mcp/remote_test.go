@@ -113,10 +113,6 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 			_, _, err := rc.search(c, nil, SearchInput{})
 			return err
 		}, http.MethodPost, base + "/find"},
-		{"findSymbol", func(c context.Context, rc *remoteClient) error {
-			_, _, err := rc.findSymbol(c, nil, FindSymbolInput{})
-			return err
-		}, http.MethodPost, base + "/lookup"},
 		{"related", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.related(c, nil, RelatedInput{Path: "a.go", StartLine: 1})
 			return err
@@ -133,18 +129,6 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 			_, _, err := rc.graphCallees(c, nil, CallEdgeInput{})
 			return err
 		}, http.MethodPost, base + "/callees"},
-		{"graphLinks", func(c context.Context, rc *remoteClient) error {
-			_, _, err := rc.graphLinks(c, nil, DocLinkInput{})
-			return err
-		}, http.MethodPost, base + "/graph/links"},
-		{"graphBacklinks", func(c context.Context, rc *remoteClient) error {
-			_, _, err := rc.graphBacklinks(c, nil, DocLinkInput{})
-			return err
-		}, http.MethodPost, base + "/graph/backlinks"},
-		{"graphTags", func(c context.Context, rc *remoteClient) error {
-			_, _, err := rc.graphTags(c, nil, TagInput{})
-			return err
-		}, http.MethodPost, base + "/graph/tags"},
 		{"summarize", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.summarize(c, nil, SummarizeInput{})
 			return err
@@ -320,7 +304,6 @@ func TestRemoteRouteParity(t *testing.T) {
 		{"related", func() error { _, _, e := rc.related(ctx, nil, RelatedInput{Path: "a.go", StartLine: 1}); return e }},
 		{"check", func() error { _, _, e := rc.check(ctx, nil, CheckInput{}); return e }},
 		{"find", func() error { _, _, e := rc.search(ctx, nil, SearchInput{}); return e }},
-		{"lookup", func() error { _, _, e := rc.findSymbol(ctx, nil, FindSymbolInput{}); return e }},
 		{"deps", func() error { _, _, e := rc.graphDeps(ctx, nil, GraphDepsInput{}); return e }},
 		{"callers", func() error { _, _, e := rc.graphCallers(ctx, nil, CallEdgeInput{}); return e }},
 		{"callees", func() error { _, _, e := rc.graphCallees(ctx, nil, CallEdgeInput{}); return e }},
@@ -332,7 +315,6 @@ func TestRemoteRouteParity(t *testing.T) {
 		{"clusters", func() error { _, _, e := rc.graphCommunities(ctx, nil, CommunitiesInput{}); return e }},
 		{"status", func() error { _, _, e := rc.status(ctx, nil, StatusInput{}); return e }},
 		{"read", func() error { _, _, e := rc.summarize(ctx, nil, SummarizeInput{}); return e }},
-		{"ls", func() error { _, _, e := rc.searchTree(ctx, nil, SearchTreeInput{}); return e }},
 		{"grep", func() error { _, _, e := rc.searchGrep(ctx, nil, SearchGrepInput{}); return e }},
 	}
 
