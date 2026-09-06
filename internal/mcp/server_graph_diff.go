@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/alehatsman/dex/internal/gitenv"
 	"github.com/alehatsman/dex/internal/graph"
 	"github.com/alehatsman/dex/internal/graphquery"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -143,6 +144,7 @@ func gitDiffFiles(root, ref string) ([]string, error) {
 	mkCmd := func(args ...string) *exec.Cmd {
 		c := exec.Command("git", args...) // #nosec G204
 		c.Dir = root
+		c.Env = gitenv.Current()
 		return c
 	}
 	out, err := mkCmd("diff", "--name-only", "--end-of-options", ref, "HEAD").Output()
