@@ -43,17 +43,6 @@ func ExtractSafetyLines(lines []string, max int) []string {
 	return out
 }
 
-// CompressRemoveBlankLines removes all blank lines from lines.
-func CompressRemoveBlankLines(lines []string) []string {
-	var out []string
-	for _, l := range lines {
-		if strings.TrimSpace(l) != "" {
-			out = append(out, l)
-		}
-	}
-	return out
-}
-
 // ── generic ──────────────────────────────────────────────────────────────────
 
 var (
@@ -229,21 +218,6 @@ func CompressFind(lines []string) []string {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
-// CompactLinesFiltered returns at most max non-empty lines from the input slice.
-// Both CompactLines and CompactLinesFiltered are in this file.
-func CompactLinesFiltered(lines []string, max int) []string {
-	var nonEmpty []string
-	for _, l := range lines {
-		if strings.TrimSpace(l) != "" {
-			nonEmpty = append(nonEmpty, l)
-		}
-	}
-	if len(nonEmpty) <= max {
-		return nonEmpty
-	}
-	return append(nonEmpty[:max], fmt.Sprintf("... (%d more lines)", len(nonEmpty)-max))
-}
 
 func ParseInt(s string) int {
 	s = strings.TrimSpace(s)

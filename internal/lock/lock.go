@@ -166,9 +166,6 @@ func (l *Lock) Release() error {
 	return err
 }
 
-// Path returns the lock file path. Mainly useful for diagnostics.
-func (l *Lock) Path() string { return l.path }
-
 // writeHolder serializes h into the lock file, truncating any prior
 // content. Called while the flock is held, so the only concurrent
 // reader is ReadHolder; the JSON payload fits comfortably in one

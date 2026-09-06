@@ -132,18 +132,6 @@ func (r *Registry) Register(f ExtractorFactory) {
 	}
 }
 
-// Extensions returns the sorted, deduped list of extensions handled by
-// this registry. Used by the walker to skip files cheaply.
-func (r *Registry) Extensions() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]string, 0, len(r.byExt))
-	for ext := range r.byExt {
-		out = append(out, ext)
-	}
-	return out
-}
-
 // DefaultExtractors returns the canonical set of language extractors.
 // Callers can pass a subset to NewRegistry for hermetic, single-language
 // extraction (useful in tests).

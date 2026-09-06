@@ -156,19 +156,6 @@ func (c *Client) OutgoingCalls(ctx context.Context, item CallHierarchyItem) ([]O
 	return result, nil
 }
 
-// Implementation issues textDocument/implementation at the given position.
-func (c *Client) Implementation(ctx context.Context, uri string, line, char int) ([]Location, error) {
-	params := map[string]any{
-		"textDocument": map[string]any{"uri": uri},
-		"position":     map[string]any{"line": line, "character": char},
-	}
-	var result []Location
-	if err := c.call(ctx, "textDocument/implementation", params, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 // initialize sends the LSP initialize + initialized handshake.
 func (c *Client) initialize(rootURI string) error {
 	params := map[string]any{

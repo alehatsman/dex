@@ -56,7 +56,7 @@ func InlineCapsFor(intent string) InlineCaps {
 	return PolicyFor(intent).InlineCaps
 }
 
-// InlineContent fills the Content/Truncated fields on suggested_reads,
+// InlineContentKeyed fills the Content/Truncated fields on suggested_reads,
 // the Content fields on semantic_hits, and (for symbol_lookup intent)
 // the Body field on symbols — all from a single per-intent byte
 // budget so the caller gets a usable bundle without follow-up Reads.
@@ -72,16 +72,10 @@ func InlineCapsFor(intent string) InlineCaps {
 // /EndLine to fall back on a manual Read.
 //
 // isTest classifies a path as test source — injected by the transport,
-// which owns path classification.
-func InlineContent(projectRoot, intent string, reads []SuggestedRead, syms []SymbolHit, sem []SemHit, isTest func(string) bool) {
-	InlineContentKeyed(projectRoot, intent, reads, syms, sem, nil, isTest, nil)
-}
-
-// InlineContentKeyed is InlineContent with the query keywords the assemble
-// intent (#687) needs for submodular symbol selection. keywords is ignored for
-// every other intent. isNonImpl (also assemble-only) demotes non-implementation
-// symbols within the coverage ordering. InlineContent is the keyword-free shim
-// for callers that don't assemble.
+// which owns path classification. keywords is the query keywords the
+// assemble intent (#687) needs for submodular symbol selection; ignored for
+// every other intent. isNonImpl (also assemble-only) demotes
+// non-implementation symbols within the coverage ordering.
 func InlineContentKeyed(projectRoot, intent string, reads []SuggestedRead, syms []SymbolHit, sem []SemHit, keywords []string, isTest func(string) bool, isNonImpl func(string) bool) {
 	in := &inliner{
 		projectRoot: projectRoot,

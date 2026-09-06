@@ -208,10 +208,6 @@ func CompressPlaywright(cmd string, lines []string) []string {
 	return out
 }
 
-func CompressCypress(lines []string) []string {
-	return CompressPlaywright("cypress", lines)
-}
-
 func extractNumberBefore(s, word string) int {
 	idx := strings.Index(s, word)
 	if idx <= 0 {

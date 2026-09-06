@@ -35,21 +35,6 @@ func NormalizeLineForDedup(s string) string {
 	return s
 }
 
-// IsBoilerplateLine returns true for common log boilerplate that carries no
-// unique information per line.
-func IsBoilerplateLine(s string) bool {
-	t := strings.ToLower(strings.TrimSpace(s))
-	for _, b := range []string{
-		"starting", "started", "stopping", "stopped", "shutting down",
-		"initializing", "initialized", "listening on", "ready",
-	} {
-		if strings.Contains(t, b) {
-			return true
-		}
-	}
-	return false
-}
-
 // VerbatimCompact deduplicates consecutive runs of identical normalized lines,
 // annotating with [Nx] run counts.
 func VerbatimCompact(lines []string) []string {

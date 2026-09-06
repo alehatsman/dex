@@ -6,29 +6,6 @@ import (
 	"testing"
 )
 
-func TestColdFiles(t *testing.T) {
-	hm := &Heatmap{entries: make(map[string]*Entry)}
-	hm.RecordAccess("a.go", 100, 0)
-
-	all := []string{"a.go", "b.go", "c.go"}
-	cold := hm.ColdFiles(all, 0)
-	if len(cold) != 2 {
-		t.Fatalf("expected 2 cold files, got %d", len(cold))
-	}
-	if cold[0] != "b.go" || cold[1] != "c.go" {
-		t.Errorf("unexpected cold files: %v", cold)
-	}
-}
-
-func TestColdFiles_Limit(t *testing.T) {
-	hm := &Heatmap{entries: make(map[string]*Entry)}
-	all := []string{"a.go", "b.go", "c.go"}
-	cold := hm.ColdFiles(all, 1)
-	if len(cold) != 1 {
-		t.Errorf("expected limit=1, got %d", len(cold))
-	}
-}
-
 func TestSaveLoad(t *testing.T) {
 	dir := t.TempDir()
 	hm := &Heatmap{entries: make(map[string]*Entry)}

@@ -143,24 +143,6 @@ func (h Hit) DisplayScore() float32 {
 	}
 }
 
-// FormatHits renders a slice of hits as a fenced CONTEXT block for
-// injection into a chat completion message. Each chunk gets a header
-// with path:line coordinates so the model can cite real locations.
-func FormatHits(hits []Hit) string {
-	var b strings.Builder
-	b.WriteString("CONTEXT — relevant chunks from the project's dex index:\n\n")
-	for i, h := range hits {
-		fmt.Fprintf(&b, "--- chunk %d: %s:%d-%d (%s, score=%.4f) ---\n",
-			i+1, h.Path, h.StartLine, h.EndLine, h.Kind, h.Score)
-		b.WriteString(h.Content)
-		if !strings.HasSuffix(h.Content, "\n") {
-			b.WriteByte('\n')
-		}
-		b.WriteByte('\n')
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
 // scored holds one chunk's score during ranking. Used internally by
 // both the semantic and BM25 legs; the RRF fuser then walks both lists.
 type scored struct {

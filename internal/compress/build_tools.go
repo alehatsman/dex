@@ -161,10 +161,6 @@ func CompressMaven(cmd string, lines []string) []string {
 	return out
 }
 
-func CompressGradle(lines []string) []string {
-	return CompressMaven("gradle", lines)
-}
-
 // ── bazel ─────────────────────────────────────────────────────────────────────
 
 func CompressBazel(cmd string, lines []string) []string {

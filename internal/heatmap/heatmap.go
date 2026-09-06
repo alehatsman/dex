@@ -86,18 +86,3 @@ func (hm *Heatmap) Save(cacheDir string) error {
 	}
 	return os.Rename(tmp, filepath.Join(cacheDir, heatmapFile))
 }
-
-// ColdFiles returns files from allFiles that have never been accessed,
-// up to n results. allFiles should be relative paths (matching Entry.Path).
-func (hm *Heatmap) ColdFiles(allFiles []string, n int) []string {
-	var cold []string
-	for _, f := range allFiles {
-		if _, ok := hm.entries[f]; !ok {
-			cold = append(cold, f)
-			if n > 0 && len(cold) >= n {
-				break
-			}
-		}
-	}
-	return cold
-}

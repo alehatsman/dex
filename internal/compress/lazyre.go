@@ -32,13 +32,3 @@ func (r *lazyRe) FindStringIndex(s string) []int {
 	r.compile()
 	return r.re.FindStringIndex(s)
 }
-
-func (r *lazyRe) FindAllStringSubmatch(s string, n int) [][]string {
-	r.compile()
-	return r.re.FindAllStringSubmatch(s, n)
-}
-
-func (r *lazyRe) ReplaceAllString(src, repl string) string {
-	r.compile()
-	return r.re.ReplaceAllString(src, repl)
-}
