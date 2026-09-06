@@ -4,8 +4,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// testGitEnv strips every GIT_* var from environ — so an inherited GIT_DIR
+// (the dex pre-push hook exports one whose basename ≠ ".git" for a linked
+// worktree) can't redirect this test's git commands at the real repo and
+// flip its core.bare (#850, same class as #681) — and pins identity to
+// fixed, developer-independent values. Mirrors the sibling helpers
+// (internal/source gitref_test.go, internal/mcp gitRun, internal/gitrecency
+// gitEnv); kept local rather than folded into internal/gitenv because it is
+// deliberately stricter (drops ALL GIT_*, not just the repo-discovery set).
+func testGitEnv(environ []string) []string {
+	env := make([]string, 0, len(environ)+6)
+	for _, kv := range environ {
+		if strings.HasPrefix(kv, "GIT_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+	)
+}
 
 // TestMainWorktreeLinked drives a real `git worktree add` and asserts the linked
 // worktree resolves back to the main working tree.
@@ -16,10 +40,13 @@ func TestMainWorktreeLinked(t *testing.T) {
 	main := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		// -c core.hooksPath=/dev/null: belt-and-suspenders against the dex
+		// pre-commit hook firing against this temp repo (#679) even though
+		// testGitEnv already keeps GIT_DIR from redirecting here at all.
+		full := append([]string{"-c", "core.hooksPath=/dev/null"}, args...)
+		cmd := exec.Command("git", full...)
 		cmd.Dir = main
-		// Keep the sub-git hermetic: a linked-worktree parent env would corrupt it.
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		cmd.Env = testGitEnv(os.Environ())
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
