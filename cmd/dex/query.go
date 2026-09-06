@@ -141,9 +141,18 @@ func buildQueryInput(kind, want, to string, budget, k, contextN int, fixed bool,
 	return in, nil
 }
 
-// queryFailed reports whether out represents a verification failure worth a
-// non-zero exit — today only kind=check.
+// queryFailed reports whether out represents a runtime failure worth a
+// non-zero exit, per the documented exit-code contract ("1 — error: runtime
+// ... or usage"; see `dex help all`). Two independent signals: the envelope's
+// own Status=="error" (set by every lane — a bad regex, a path outside the
+// project root, an unknown --kind, ...; #857), and kind=check's per-claim
+// verification failures, which predate and are stricter than the envelope
+// signal (a check with zero failing claims reports Status=="ok" even though
+// it's still the thing scripts gate on).
 func queryFailed(out mcp.QueryOutput) bool {
+	if out.Status == "error" {
+		return true
+	}
 	if out.Result.Check == nil {
 		return false
 	}
