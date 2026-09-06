@@ -1,51 +1,10 @@
 package mcp
 
-// HTTP transport for the same primitives the stdio MCP server
-// exposes — `Server.RunHTTP` mounts a REST surface that lets coding
-// agents and other services hit dex over the network instead of via
-// MCP's JSON-RPC stdio. Same Server struct, same tool handlers, just
-// a different wire protocol.
-//
-// Endpoint layout, all under /v1:
-// GET  /healthz                    — liveness; never authenticated
-// GET  /version                    — build version; never authenticated
-// GET  /projects                   — list registered (id, root, db_path)
-// GET  /status                     — global health + indexed projects
-// POST /shell                      — body: ShellInput
-// POST /projects/{id}/ask          — body: ContextInput
-// POST /projects/{id}/map          — body: MapInput
-// POST /projects/{id}/trace        — body: TraceInput
-// POST /projects/{id}/find         — body: SearchInput
-// POST /projects/{id}/lookup       — body: FindSymbolInput
-// POST /projects/{id}/grep         — body: SearchGrepInput
-// POST /projects/{id}/read         — body: SummarizeInput
-// POST /projects/{id}/ls           — body: SearchTreeInput
-// GET  /projects/{id}/graph/packages — whole pkg import DAG
-// POST /projects/{id}/deps         — body: GraphDepsInput
-// POST /projects/{id}/callers      — body: CallEdgeInput
-// POST /projects/{id}/callees      — body: CallEdgeInput
-// POST /projects/{id}/impact       — body: ImpactInput
-// POST /projects/{id}/routes       — body: RoutesInput
-// POST /projects/{id}/smells       — body: SmellsInput
-// POST /projects/{id}/clones       — body: ClonesInput
-// POST /projects/{id}/refs         — body: RefsInput
-// POST /projects/{id}/path         — body: PathInput
-// POST /projects/{id}/diff         — body: DiffInput
-// POST /projects/{id}/clusters     — body: CommunitiesInput
-// POST /projects/{id}/session      — body: SessionInput
-// *    /projects/{id}/mcp          — native streamable-HTTP MCP
-//                                    transport (http_mcp.go), not REST
-//
-// The URL's {id} resolves to a project root via the operator-provided
-// registry (RunHTTPOptions.Projects). The corresponding Input struct's
-// project field is always overridden with the registry value, so a
-// client can't smuggle a different path via the body.
-//
-// Auth: when RunHTTPOptions.Token is non-empty, every authenticated
-// route requires `Authorization: Bearer <token>`. Mismatched or
-// missing token → 401. When Token is empty, the server refuses to
-// bind anywhere outside loopback (a misconfigured `--addr 0.0.0.0:X`
-// without a token is rejected at startup).
+// Shared handler plumbing for the REST transport mounted by
+// Server.RunHTTP/buildHTTPHandler (http.go) — the endpoint layout, auth
+// model, and project-registry semantics are documented once there; this file
+// holds the two hand-written handlers (list-projects, status) and the
+// jsonHandler[In,Out] generic every other route delegates to.
 
 import (
 	"context"
@@ -161,27 +120,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
-}
-
-func (s *Server) handleAsk(projects map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		root := resolveProjectFromURL(w, r, projects)
-		if root == "" {
-			return
-		}
-		var in ContextInput
-		if err := decodeBody(r, &in); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		in.ProjectRoot = root
-		_, out, err := s.ContextRouter(r.Context(), in)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
 }
 
 // jsonHandler builds the HTTP handler shared by every project-scoped tool:

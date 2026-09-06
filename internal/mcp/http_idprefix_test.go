@@ -69,8 +69,8 @@ func TestHTTPProjectIDPrefixResolves(t *testing.T) {
 	prefix := fullID[:12] // exactly what serve.go prints in the boot banner
 
 	ts := startTestHTTPServer(t, srv, RunHTTPOptions{Projects: registry})
-	resp, err := http.Post(ts.URL+"/v1/projects/"+prefix+"/ask",
-		"application/json", strings.NewReader(`{"question":"where is the watcher?"}`))
+	resp, err := http.Post(ts.URL+"/v1/projects/"+prefix+"/query",
+		"application/json", strings.NewReader(`{"input":"where is the watcher?"}`))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
@@ -83,7 +83,15 @@ func TestHTTPProjectIDPrefixResolves(t *testing.T) {
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		t.Fatalf("unmarshal: %v body=%s", err, respBody)
 	}
-	if proj, _ := out["project"].(string); proj != "" {
+	// Prose routes to the semantic lane (result.semantic.project); the check
+	// stays lenient (as it always has) since a fresh temp dir has no index.
+	var proj string
+	if result, ok := out["result"].(map[string]any); ok {
+		if sem, ok := result["semantic"].(map[string]any); ok {
+			proj, _ = sem["project"].(string)
+		}
+	}
+	if proj != "" {
 		dirReal, _ := filepath.EvalSymlinks(dir)
 		if proj != dirReal && proj != dir {
 			t.Errorf("prefix resolved project=%q, want %q", proj, dirReal)

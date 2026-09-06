@@ -224,8 +224,8 @@ func TestHTTPProjectUnknownReturns404(t *testing.T) {
 	srv := stubServer(t)
 	ts := startTestHTTPServer(t, srv, RunHTTPOptions{})
 
-	resp, err := http.Post(ts.URL+"/v1/projects/deadbeef/ask",
-		"application/json", strings.NewReader(`{"question":"hi"}`))
+	resp, err := http.Post(ts.URL+"/v1/projects/deadbeef/query",
+		"application/json", strings.NewReader(`{"input":"hi"}`))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
@@ -252,12 +252,12 @@ func TestHTTPProjectIDOverridesBody(t *testing.T) {
 	}
 	ts := startTestHTTPServer(t, srv, RunHTTPOptions{Projects: registry})
 
-	// POST /v1/projects/{id}/ask with a malicious project in the body.
+	// POST /v1/projects/{id}/query with a malicious project in the body.
 	body, _ := json.Marshal(map[string]string{
-		"question":     "where is the watcher?",
+		"input":        "where is the watcher?",
 		"project_root": "/etc",
 	})
-	resp, err := http.Post(ts.URL+"/v1/projects/"+id+"/ask",
+	resp, err := http.Post(ts.URL+"/v1/projects/"+id+"/query",
 		"application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -270,14 +270,19 @@ func TestHTTPProjectIDOverridesBody(t *testing.T) {
 		t.Errorf("status=%d, want 200 (handler should reach the registry-overridden project)", resp.StatusCode)
 	}
 	// And the project the handler resolved should be the registered
-	// dir, not /etc. We detect this by inspecting the body: the
-	// status response carries "project" with the resolved root.
+	// dir, not /etc. We detect this by inspecting the body: prose
+	// routes to the semantic lane, which carries "project".
 	var out map[string]any
 	respBody, _ := io.ReadAll(resp.Body)
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		t.Fatalf("unmarshal: %v body=%s", err, respBody)
 	}
-	proj, _ := out["project"].(string)
+	var proj string
+	if result, ok := out["result"].(map[string]any); ok {
+		if sem, ok := result["semantic"].(map[string]any); ok {
+			proj, _ = sem["project"].(string)
+		}
+	}
 	if proj != "" {
 		// The dir we registered has been EvalSymlinks-resolved, same
 		// path the handler will canonicalize to internally. Compare
@@ -290,12 +295,12 @@ func TestHTTPProjectIDOverridesBody(t *testing.T) {
 	}
 }
 
-// TestHTTPMapTraceRoutesRegistered confirms the composed default verbs
-// `map` and `trace` are reachable over REST (parity with the stdio MCP
-// surface), not just the low-level graph lanes. A registered project with
-// no index reaches the handler and returns 200 with a status body — a
-// missing route would 404 instead.
-func TestHTTPMapTraceRoutesRegistered(t *testing.T) {
+// TestHTTPTraceRouteRegistered confirms `trace` (the last richer-than-query
+// DEX_EXPERT graph tool kept as its own REST route, #851) is reachable over
+// REST, not just the low-level graph lanes. A registered project with no
+// index reaches the handler and returns 200 with a status body — a missing
+// route would 404 instead.
+func TestHTTPTraceRouteRegistered(t *testing.T) {
 	srv := stubServer(t)
 	dir := t.TempDir()
 	registry, err := BuildProjectRegistry([]string{dir})
@@ -313,7 +318,6 @@ func TestHTTPMapTraceRoutesRegistered(t *testing.T) {
 		route string
 		body  map[string]any
 	}{
-		{"map", map[string]any{}},
 		{"trace", map[string]any{"symbol": "Foo", "direction": "callers"}},
 	}
 	for _, tc := range cases {
@@ -348,7 +352,7 @@ func TestHTTPBadJSONReturns400(t *testing.T) {
 	}
 	ts := startTestHTTPServer(t, srv, RunHTTPOptions{Projects: registry})
 
-	resp, err := http.Post(ts.URL+"/v1/projects/"+id+"/ask",
+	resp, err := http.Post(ts.URL+"/v1/projects/"+id+"/query",
 		"application/json", strings.NewReader(`{not valid json`))
 	if err != nil {
 		t.Fatalf("POST: %v", err)

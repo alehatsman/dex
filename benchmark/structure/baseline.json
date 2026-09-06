@@ -45,20 +45,20 @@
       "internal/mcp/noop_surface.go:71:23: unreachable func: noopSurface.graphCycles",
       "internal/mcp/noop_surface.go:92:23: unreachable func: noopSurface.searchTree",
       "internal/mcp/readmode.go:84:6: unreachable func: ParseReadMode",
-      "internal/mcp/remote.go:238:25: unreachable func: remoteClient.findSymbol",
-      "internal/mcp/remote.go:273:25: unreachable func: remoteClient.graphLinks",
-      "internal/mcp/remote.go:279:25: unreachable func: remoteClient.graphBacklinks",
-      "internal/mcp/remote.go:285:25: unreachable func: remoteClient.graphTags",
-      "internal/mcp/remote.go:297:25: unreachable func: remoteClient.searchTree",
-      "internal/mcp/remote.go:334:25: unreachable func: remoteClient.graphCycles",
-      "internal/mcp/remote.go:364:25: unreachable func: remoteClient.indexStatus",
+      "internal/mcp/remote.go:335:25: unreachable func: remoteClient.findSymbol",
+      "internal/mcp/remote.go:379:25: unreachable func: remoteClient.graphLinks",
+      "internal/mcp/remote.go:385:25: unreachable func: remoteClient.graphBacklinks",
+      "internal/mcp/remote.go:391:25: unreachable func: remoteClient.graphTags",
+      "internal/mcp/remote.go:403:25: unreachable func: remoteClient.searchTree",
+      "internal/mcp/remote.go:445:25: unreachable func: remoteClient.graphCycles",
+      "internal/mcp/remote.go:480:25: unreachable func: remoteClient.indexStatus",
       "internal/mcp/verbs_envelope.go:134:21: unreachable func: LookInput.budgetTokens",
       "internal/retrieve/inline.go:76:6: unreachable func: InlineContent",
       "internal/store/store_search.go:149:6: unreachable func: FormatHits"
     ]
   },
   "dupl_pairs": {
-    "count": 13,
+    "count": 14,
     "items": [
       "cmd/dex/bench_cochange.go:53-120 <--> cmd/dex/bench_trace.go:50-117",
       "cmd/dex/bench_nav.go:349-367 <--> cmd/dex/bench_pack.go:342-360",
@@ -72,6 +72,7 @@
       "internal/graph/sitter_jsts.go:410-450 <--> internal/graph/sitter_jsts.go:456-496",
       "internal/graph/sitter_python.go:286-327 <--> internal/graph/sitter_rust.go:383-424",
       "internal/graph/sitter_python.go:289-327 <--> internal/graph/sitter_rust.go:386-424",
+      "internal/mcp/remote.go:318-324 <--> internal/mcp/remote.go:423-429",
       "internal/store/store_rollups.go:48-65 <--> internal/store/store_summaries.go:99-116"
     ]
   },

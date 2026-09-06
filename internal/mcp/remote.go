@@ -187,15 +187,105 @@ func (rc *remoteClient) query(ctx context.Context, _ *sdk.CallToolRequest, in Qu
 	return nil, out, err
 }
 
+// intentToKind maps ContextInput.Intent to the query kind that serves it —
+// the same 1:1 coverage kindToLane's semantic branch already proves (#851:
+// this is why /ask folds losslessly into /query). Empty in/out means "let
+// query's own shape detection classify the question", matching intent=auto.
+func intentToKind(intent string) string {
+	switch intent {
+	case "behavior_search":
+		return "search"
+	case "editing_context":
+		return "editing"
+	case "symbol_lookup":
+		return "symbol"
+	case "callers", "callees", "architecture", "assemble", "orient", "review":
+		return intent
+	case "package_topology":
+		return "packages"
+	default:
+		return ""
+	}
+}
+
+// contextOutputFromQuery reconstructs a ContextOutput from a QueryOutput —
+// the inverse of semanticLane/semanticResultFrom (query_result.go). Used only
+// by remoteClient.contextRouter, which #851 confirmed is unreachable through
+// the toolSurface interface today (nothing calls h.contextRouter except
+// dispatchSemantic, which never runs with h=remoteClient — a query call
+// short-circuits entirely to remoteClient.query, one round trip). Kept
+// correct anyway rather than left pointing at the deleted /ask route, in case
+// a future caller reaches it.
+func contextOutputFromQuery(q QueryOutput) ContextOutput {
+	out := ContextOutput{Status: q.Status, Hint: q.Hint, Trust: &q.Trust, Next: q.Next, Cost: q.Cost}
+	switch {
+	case q.Result.Review != nil:
+		out.Review = q.Result.Review
+		out.Intent = "review"
+	case q.Result.Orient != nil:
+		out.Map = q.Result.Orient.Map
+		out.NextAction = q.Result.Orient.NextAction
+		out.Avoid = q.Result.Orient.Avoid
+		out.Intent = "orient"
+	case q.Result.Semantic != nil:
+		sr := q.Result.Semantic
+		out.Answer, out.AnswerModel, out.Endpoint, out.Project, out.Intent = sr.Answer, sr.AnswerModel, sr.Endpoint, sr.Project, sr.Intent
+		out.SemanticHits, out.Symbols, out.Graph, out.SuggestedReads = sr.SemanticHits, sr.Symbols, sr.Graph, sr.SuggestedReads
+		out.References, out.Annotations, out.NextAction, out.Avoid = sr.References, sr.Annotations, sr.NextAction, sr.Avoid
+		out.SessionTask, out.ContentBytesInlined, out.Expanded = sr.SessionTask, sr.ContentBytesInlined, sr.Expanded
+		out.RelatedFiles, out.Rules, out.Concerns = sr.RelatedFiles, sr.Rules, sr.Concerns
+	}
+	return out
+}
+
 func (rc *remoteClient) contextRouter(ctx context.Context, _ *sdk.CallToolRequest, in ContextInput) (*sdk.CallToolResult, ContextOutput, error) {
-	var out ContextOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/ask"), in, &out)
-	return nil, out, err
+	qin := QueryInput{
+		Input: in.Question, Kind: intentToKind(in.Intent),
+		K: in.K, Budget: in.Budget, ProjectRoot: in.ProjectRoot,
+	}
+	if in.AnswerStyle == "brief" {
+		qin.Want = "answer"
+	}
+	var qout QueryOutput
+	if err := rc.do(ctx, http.MethodPost, rc.projectPath("/query"), qin, &qout); err != nil {
+		return nil, ContextOutput{}, err
+	}
+	return nil, contextOutputFromQuery(qout), nil
+}
+
+// queryFold runs qin through the shared /query endpoint and unwraps the typed
+// lane result pick names out of the response, degrading to whatever degrade
+// builds from the envelope's status/hint when that lane didn't populate
+// (no-index, error, an unrecognized kind, …). Shared by every remoteClient
+// method folded into /query (#851) so the adapt-and-unwrap boilerplate lives
+// in one place instead of being copy-pasted per lane.
+func queryFold[Out any](ctx context.Context, rc *remoteClient, qin QueryInput, pick func(QueryResult) *Out, degrade func(status, hint string) Out) (Out, error) {
+	var qout QueryOutput
+	if err := rc.do(ctx, http.MethodPost, rc.projectPath("/query"), qin, &qout); err != nil {
+		var zero Out
+		return zero, err
+	}
+	if p := pick(qout.Result); p != nil {
+		return *p, nil
+	}
+	return degrade(qout.Status, qout.Hint), nil
 }
 
 func (rc *remoteClient) locate(ctx context.Context, _ *sdk.CallToolRequest, in LocateInput) (*sdk.CallToolResult, LocateOutput, error) {
-	var out LocateOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/locate"), in, &out)
+	if in.Frame != "" {
+		// Raw stack-frame parsing has no query shape (#851, matching #849's
+		// same cut on the CLI side) — fail clearly rather than silently
+		// mis-searching the frame text as a symbol name.
+		return nil, LocateOutput{Status: "error", Hint: "locate --frame is not supported over dex mcp --remote; pass ref or symbol instead"}, nil
+	}
+	target := in.Ref
+	if target == "" {
+		target = in.Symbol
+	}
+	qin := QueryInput{Input: target, Kind: "locate", K: in.K, ProjectRoot: in.ProjectRoot}
+	out, err := queryFold(ctx, rc, qin,
+		func(r QueryResult) *LocateOutput { return r.Locate },
+		func(status, hint string) LocateOutput { return LocateOutput{Status: status, Hint: hint} })
 	return nil, out, err
 }
 
@@ -218,17 +308,24 @@ func (rc *remoteClient) rehearse(ctx context.Context, _ *sdk.CallToolRequest, in
 }
 
 func (rc *remoteClient) cohort(ctx context.Context, _ *sdk.CallToolRequest, in CohortInput) (*sdk.CallToolResult, CohortOutput, error) {
-	var out CohortOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/cohort"), in, &out)
+	qin := QueryInput{Input: in.Interface, Kind: "cohort", ProjectRoot: in.ProjectRoot}
+	out, err := queryFold(ctx, rc, qin,
+		func(r QueryResult) *CohortOutput { return r.Cohort },
+		func(status, hint string) CohortOutput { return CohortOutput{Status: status, Hint: hint} })
 	return nil, out, err
 }
 
 func (rc *remoteClient) refs(ctx context.Context, _ *sdk.CallToolRequest, in RefsInput) (*sdk.CallToolResult, RefsOutput, error) {
-	var out RefsOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/refs"), in, &out)
+	qin := QueryInput{Input: in.Symbol, Kind: "refs", Want: in.Action, ProjectRoot: in.ProjectRoot}
+	out, err := queryFold(ctx, rc, qin,
+		func(r QueryResult) *RefsOutput { return r.Xref },
+		func(status, hint string) RefsOutput { return RefsOutput{Status: status, Hint: hint} })
 	return nil, out, err
 }
 
+// search/find and lookup keep their own dedicated routes (#851: SearchOutput
+// carries raw per-lane scores/lanes that query's SemanticResult drops — not a
+// lossless fold, see the issue's classification table).
 func (rc *remoteClient) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
 	var out SearchOutput
 	err := rc.do(ctx, http.MethodPost, rc.projectPath("/find"), in, &out)
@@ -242,13 +339,22 @@ func (rc *remoteClient) findSymbol(ctx context.Context, _ *sdk.CallToolRequest, 
 }
 
 func (rc *remoteClient) related(ctx context.Context, _ *sdk.CallToolRequest, in RelatedInput) (*sdk.CallToolResult, RelatedOutput, error) {
-	var out RelatedOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/graph/neighbors"), in, &out)
+	qin := QueryInput{Input: fmt.Sprintf("%s:%d", in.Path, in.StartLine), Kind: "similar", K: in.K, ProjectRoot: in.ProjectRoot}
+	out, err := queryFold(ctx, rc, qin,
+		func(r QueryResult) *RelatedOutput { return r.Similar },
+		func(status, hint string) RelatedOutput { return RelatedOutput{Status: status, Hint: hint} })
 	return nil, out, err
 }
+
 func (rc *remoteClient) graphDeps(ctx context.Context, _ *sdk.CallToolRequest, in GraphDepsInput) (*sdk.CallToolResult, GraphDepsOutput, error) {
-	var out GraphDepsOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/deps"), in, &out)
+	target := in.Path
+	if target == "" {
+		target = in.Package // resolved server-side by inferDepsTarget either way
+	}
+	qin := QueryInput{Input: target, Kind: "deps", ProjectRoot: in.ProjectRoot}
+	out, err := queryFold(ctx, rc, qin,
+		func(r QueryResult) *GraphDepsOutput { return r.Deps },
+		func(status, hint string) GraphDepsOutput { return GraphDepsOutput{Status: status, Hint: hint} })
 	return nil, out, err
 }
 
@@ -311,9 +417,14 @@ func (rc *remoteClient) smells(ctx context.Context, _ *sdk.CallToolRequest, in S
 	return nil, out, err
 }
 
+// clones drops threshold/min_lines/max_clusters over this path — no query
+// facet carries them (#851, same reduction pattern as the CLI's grep/trace
+// niche knobs); k survives via QueryInput's own shared field.
 func (rc *remoteClient) clones(ctx context.Context, _ *sdk.CallToolRequest, in ClonesInput) (*sdk.CallToolResult, ClonesOutput, error) {
-	var out ClonesOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/clones"), in, &out)
+	qin := QueryInput{Input: in.Path, Kind: "clones", K: in.K, ProjectRoot: in.ProjectRoot}
+	out, err := queryFold(ctx, rc, qin,
+		func(r QueryResult) *ClonesOutput { return r.Clones },
+		func(status, hint string) ClonesOutput { return ClonesOutput{Status: status, Hint: hint} })
 	return nil, out, err
 }
 
@@ -355,9 +466,14 @@ func (rc *remoteClient) graphCommunities(ctx context.Context, _ *sdk.CallToolReq
 	return nil, out, err
 }
 
+// check had no registered REST route before #851 (a pre-existing dex-mcp
+// --remote gap — this call would 404 against a real dex serve); routing
+// through /query fixes that as a side effect, no route ever needed deleting.
 func (rc *remoteClient) check(ctx context.Context, _ *sdk.CallToolRequest, in CheckInput) (*sdk.CallToolResult, CheckOutput, error) {
-	var out CheckOutput
-	err := rc.do(ctx, http.MethodPost, rc.projectPath("/check"), in, &out)
+	qin := QueryInput{Kind: "check", Claims: in.Claims, ProjectRoot: in.ProjectRoot}
+	out, err := queryFold(ctx, rc, qin,
+		func(r QueryResult) *CheckOutput { return r.Check },
+		func(string, string) CheckOutput { return CheckOutput{} }) // no envelope fields on CheckOutput
 	return nil, out, err
 }
 

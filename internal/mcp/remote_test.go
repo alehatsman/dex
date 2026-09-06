@@ -82,10 +82,33 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 			_, _, err := rc.query(c, nil, QueryInput{Input: "how does indexing work?"})
 			return err
 		}, http.MethodPost, base + "/query"},
+		// ask/locate/cohort/refs/deps/clones/similar/check all fold into
+		// /query now (#851) — each carries its kind= in the body, so the
+		// shim's request PATH converges on the same route regardless of tool.
 		{"ask", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.contextRouter(c, nil, ContextInput{Question: "q"})
 			return err
-		}, http.MethodPost, base + "/ask"},
+		}, http.MethodPost, base + "/query"},
+		{"locate", func(c context.Context, rc *remoteClient) error {
+			_, _, err := rc.locate(c, nil, LocateInput{Symbol: "Foo"})
+			return err
+		}, http.MethodPost, base + "/query"},
+		{"cohort", func(c context.Context, rc *remoteClient) error {
+			_, _, err := rc.cohort(c, nil, CohortInput{Interface: "Foo"})
+			return err
+		}, http.MethodPost, base + "/query"},
+		{"refs", func(c context.Context, rc *remoteClient) error {
+			_, _, err := rc.refs(c, nil, RefsInput{Symbol: "Foo"})
+			return err
+		}, http.MethodPost, base + "/query"},
+		{"clones", func(c context.Context, rc *remoteClient) error {
+			_, _, err := rc.clones(c, nil, ClonesInput{})
+			return err
+		}, http.MethodPost, base + "/query"},
+		{"check", func(c context.Context, rc *remoteClient) error {
+			_, _, err := rc.check(c, nil, CheckInput{})
+			return err
+		}, http.MethodPost, base + "/query"},
 		{"search", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.search(c, nil, SearchInput{})
 			return err
@@ -95,13 +118,13 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 			return err
 		}, http.MethodPost, base + "/lookup"},
 		{"related", func(c context.Context, rc *remoteClient) error {
-			_, _, err := rc.related(c, nil, RelatedInput{})
+			_, _, err := rc.related(c, nil, RelatedInput{Path: "a.go", StartLine: 1})
 			return err
-		}, http.MethodPost, base + "/graph/neighbors"},
+		}, http.MethodPost, base + "/query"},
 		{"graphDeps", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.graphDeps(c, nil, GraphDepsInput{})
 			return err
-		}, http.MethodPost, base + "/deps"},
+		}, http.MethodPost, base + "/query"},
 		{"graphCallers", func(c context.Context, rc *remoteClient) error {
 			_, _, err := rc.graphCallers(c, nil, CallEdgeInput{})
 			return err
@@ -162,7 +185,7 @@ func TestRemoteProxyRequestShape(t *testing.T) {
 func TestRemoteProxyDecodesOutput(t *testing.T) {
 	rs := newRecordingServer()
 	defer rs.close()
-	rs.replyBody = `{"status":"ok","answer":"the answer","answer_model":"qwen2.5-coder:14b","intent":"architecture"}`
+	rs.replyBody = `{"status":"ok","result":{"semantic":{"answer":"the answer","answer_model":"qwen2.5-coder:14b","intent":"architecture"}}}`
 	rc := rs.client("tok")
 
 	_, out, err := rc.contextRouter(context.Background(), nil, ContextInput{Question: "how does indexing work?"})
@@ -173,14 +196,14 @@ func TestRemoteProxyDecodesOutput(t *testing.T) {
 		t.Fatalf("decoded output mismatch: %+v", out)
 	}
 
-	// The request body should carry the question (server overrides project, so
-	// we only assert what the client sends).
-	var sent ContextInput
+	// The request body should carry the question as query's `input` (server
+	// overrides project, so we only assert what the client sends).
+	var sent QueryInput
 	if err := json.Unmarshal(rs.gotBody, &sent); err != nil {
 		t.Fatalf("unmarshal sent body: %v", err)
 	}
-	if sent.Question != "how does indexing work?" {
-		t.Errorf("sent question = %q", sent.Question)
+	if sent.Input != "how does indexing work?" {
+		t.Errorf("sent input = %q", sent.Input)
 	}
 }
 
@@ -290,6 +313,12 @@ func TestRemoteRouteParity(t *testing.T) {
 	}{
 		{"query", func() error { _, _, e := rc.query(ctx, nil, QueryInput{}); return e }},
 		{"ask", func() error { _, _, e := rc.contextRouter(ctx, nil, ContextInput{}); return e }},
+		{"locate", func() error { _, _, e := rc.locate(ctx, nil, LocateInput{Symbol: "Foo"}); return e }},
+		{"cohort", func() error { _, _, e := rc.cohort(ctx, nil, CohortInput{Interface: "Foo"}); return e }},
+		{"refs", func() error { _, _, e := rc.refs(ctx, nil, RefsInput{Symbol: "Foo"}); return e }},
+		{"clones", func() error { _, _, e := rc.clones(ctx, nil, ClonesInput{}); return e }},
+		{"related", func() error { _, _, e := rc.related(ctx, nil, RelatedInput{Path: "a.go", StartLine: 1}); return e }},
+		{"check", func() error { _, _, e := rc.check(ctx, nil, CheckInput{}); return e }},
 		{"find", func() error { _, _, e := rc.search(ctx, nil, SearchInput{}); return e }},
 		{"lookup", func() error { _, _, e := rc.findSymbol(ctx, nil, FindSymbolInput{}); return e }},
 		{"deps", func() error { _, _, e := rc.graphDeps(ctx, nil, GraphDepsInput{}); return e }},

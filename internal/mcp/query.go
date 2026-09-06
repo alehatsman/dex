@@ -128,6 +128,11 @@ type QueryResult struct {
 	// string — a same-named object field one level down would misread as the
 	// envelope status itself.
 	StatusReport *StatusOutput `json:"status_report,omitempty"`
+
+	// clones/similar, folded in by the REST collapse (#851) — same pattern as
+	// the #849 lanes above: thin wraps of existing single-input server verbs.
+	Clones  *ClonesOutput  `json:"clones,omitempty"`
+	Similar *RelatedOutput `json:"similar,omitempty"`
 }
 
 // QueryOutput is the universal envelope for the read verb. Status/Trust/Cost/Next
@@ -271,6 +276,15 @@ func kindToLane(kind string) (laneRoute, bool) {
 		return laneRoute{lane: "deps"}, true
 	case "status":
 		return laneRoute{lane: "status"}, true
+	// clones/similar (#851 REST collapse): the input-anchored pair of the
+	// zero-subject/input-anchored split the spec's resolved open question #1
+	// made — routes/smells/clusters (zero-subject, no required input) stay
+	// separate; clones/similar (each keyed by a real input — a path prefix, a
+	// path:line block) fold in.
+	case "clones":
+		return laneRoute{lane: "clones"}, true
+	case "similar":
+		return laneRoute{lane: "similar"}, true
 	default:
 		return laneRoute{}, false
 	}

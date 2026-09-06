@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -41,8 +42,40 @@ func dispatchMisc(ctx context.Context, h toolSurface, req *sdk.CallToolRequest, 
 		_, so, err := h.status(ctx, req, StatusInput{})
 		out := QueryOutput{Status: "ok", Route: route, Result: QueryResult{StatusReport: &so}}
 		return nil, out, err
+
+	case "clones":
+		_, clo, err := h.clones(ctx, req, ClonesInput{Path: cleaned, K: in.K, ProjectRoot: in.ProjectRoot})
+		out := QueryOutput{Status: clo.Status, Hint: clo.Hint, Route: route, Result: QueryResult{Clones: &clo}}
+		return nil, out, err
+
+	case "similar":
+		path, line, ok := parsePathLineTarget(cleaned)
+		if !ok {
+			return nil, QueryOutput{Status: "error", Route: route,
+				Hint: "kind=similar needs a 'path:line' input naming the block to compare against"}, nil
+		}
+		_, rel, err := h.related(ctx, req, RelatedInput{Path: path, StartLine: line, ProjectRoot: in.ProjectRoot})
+		out := QueryOutput{Status: rel.Status, Hint: rel.Hint, Route: route, Result: QueryResult{Similar: &rel}}
+		return nil, out, err
 	}
 	return nil, QueryOutput{Status: "error", Route: route, Hint: "unreachable lane " + lr.lane}, nil
+}
+
+// parsePathLineTarget splits a 'path:line' target (kind=similar's input
+// shape) into path and a 1-based line number. Mirrors locateRefPattern's
+// shape check (look.go) but also extracts the line, since RelatedInput needs
+// it as an int, not a string ref.
+func parsePathLineTarget(s string) (path string, line int, ok bool) {
+	i := strings.LastIndex(s, ":")
+	if i < 0 {
+		return "", 0, false
+	}
+	path = s[:i]
+	n, err := strconv.Atoi(s[i+1:])
+	if err != nil || n <= 0 || path == "" {
+		return "", 0, false
+	}
+	return path, n, true
 }
 
 // checkEnvelopeStatus projects CheckOutput's per-claim results onto the

@@ -6,33 +6,55 @@ package mcp
 // MCP's JSON-RPC stdio. Same Server struct, same tool handlers, just
 // a different wire protocol.
 //
-// Endpoint layout, all under /v1:
+// Endpoint layout, all under /v1 (kept in lockstep with buildHTTPHandler
+// below by restRouteCount_test.go's route-count ratchet, #851):
 // GET  /healthz                    — liveness; never authenticated
 // GET  /version                    — build version; never authenticated
 // GET  /projects                   — list registered (id, root, db_path)
 // GET  /status                     — global health + indexed projects
-// POST /shell                      — body: ShellInput
-// POST /projects/{id}/ask          — body: ContextInput
-// POST /projects/{id}/map          — body: MapInput
+// POST /projects/{id}/query        — the read verb (#207 serve); body:
+//                                    QueryInput — everything a `kind=` value
+//                                    covers (ask/map/locate/cohort/refs/deps/
+//                                    clones/similar/check all fold in here,
+//                                    #851) goes through this one route now
 // POST /projects/{id}/trace        — body: TraceInput
-// POST /projects/{id}/find         — body: SearchInput
+// POST /projects/{id}/review       — body: ReviewInput (targeted PR/branch/
+//                                    ref review — query's kind=review only
+//                                    covers the working-tree default)
+// POST /projects/{id}/refactor     — body: RefactorInput (plan_rename;
+//                                    different contract — an edit plan, not
+//                                    a read)
+// POST /projects/{id}/find         — body: SearchInput (raw per-lane scores;
+//                                    query's kind=search projection drops them)
 // POST /projects/{id}/lookup       — body: FindSymbolInput
-// POST /projects/{id}/grep         — body: SearchGrepInput
-// POST /projects/{id}/read         — body: SummarizeInput
+// POST /projects/{id}/grep         — body: SearchGrepInput (ext/max_results/
+//                                    structural query/lang — beyond query's
+//                                    grep facet)
+// POST /projects/{id}/read         — body: SummarizeInput (aggressive/entropy/
+//                                    summary/analyze modes, ref, handle —
+//                                    beyond query's want=signatures|map|
+//                                    skeleton|lines)
 // POST /projects/{id}/ls           — body: SearchTreeInput
-// GET  /projects/{id}/graph/packages — whole pkg import DAG
-// POST /projects/{id}/deps         — body: GraphDepsInput
-// POST /projects/{id}/callers      — body: CallEdgeInput
-// POST /projects/{id}/callees      — body: CallEdgeInput
-// POST /projects/{id}/impact       — body: ImpactInput
-// POST /projects/{id}/routes       — body: RoutesInput
-// POST /projects/{id}/smells       — body: SmellsInput
-// POST /projects/{id}/clones       — body: ClonesInput
-// POST /projects/{id}/refs         — body: RefsInput
-// POST /projects/{id}/path         — body: PathInput
-// POST /projects/{id}/diff         — body: DiffInput
-// POST /projects/{id}/clusters     — body: CommunitiesInput
-// POST /projects/{id}/session      — body: SessionInput
+// GET  /projects/{id}/graph/packages — whole pkg import DAG (deterministic
+//                                    zero-subject report, not a `kind=`
+//                                    fold — different from kind=packages/
+//                                    package_topology, a keyword-driven
+//                                    semantic composition)
+// POST /projects/{id}/callers      — body: CallEdgeInput (package filter
+//                                    beyond query's callers facet)
+// POST /projects/{id}/callees      — body: CallEdgeInput (ditto)
+// POST /projects/{id}/impact       — body: ImpactInput (package/max_depth
+//                                    beyond query's impact facet)
+// POST /projects/{id}/path         — body: PathInput (package/max_depth
+//                                    beyond query's path facet)
+// POST /projects/{id}/diff         — body: DiffInput (blast-radius of an
+//                                    arbitrary git ref — a different report
+//                                    than kind=review's working-tree default)
+// POST /projects/{id}/routes       — body: RoutesInput (zero-subject report)
+// POST /projects/{id}/smells       — body: SmellsInput (zero-subject report)
+// POST /projects/{id}/clusters     — body: CommunitiesInput (zero-subject
+//                                    report)
+// POST /projects/{id}/index-status — body: IndexStatusInput
 // *    /projects/{id}/mcp          — native streamable-HTTP MCP
 //                                    transport (http_mcp.go), not REST
 //
@@ -253,27 +275,24 @@ func (s *Server) buildHTTPHandler(opts RunHTTPOptions) http.Handler {
 	// shim without composing lane-by-lane over the network. The per-lane routes
 	// below remain for the expert surface and backward compatibility.
 	authed.HandleFunc("POST /v1/projects/{id}/query", jsonHandler(opts.Projects, func(in *QueryInput, r string) { in.ProjectRoot = r }, s.Query))
-	authed.HandleFunc("POST /v1/projects/{id}/ask", s.handleAsk(opts.Projects))
-	authed.HandleFunc("POST /v1/projects/{id}/map", jsonHandler(opts.Projects, func(in *MapInput, r string) { in.ProjectRoot = r }, s.Map))
+	// ask/map/locate/cohort/refs/deps/clones folded into /query by #851 —
+	// each was a lossless duplicate front door onto a kind= value (see
+	// internal/mcp/remote.go's rewritten remoteClient methods for the
+	// per-lane adapter that replaced these routes' typed contract).
 	authed.HandleFunc("POST /v1/projects/{id}/trace", jsonHandler(opts.Projects, func(in *TraceInput, r string) { in.ProjectRoot = r }, s.Trace))
-	authed.HandleFunc("POST /v1/projects/{id}/locate", jsonHandler(opts.Projects, func(in *LocateInput, r string) { in.ProjectRoot = r }, s.Locate))
 	authed.HandleFunc("POST /v1/projects/{id}/review", jsonHandler(opts.Projects, func(in *ReviewInput, r string) { in.ProjectRoot = r }, s.Review))
 	authed.HandleFunc("POST /v1/projects/{id}/refactor", jsonHandler(opts.Projects, func(in *RefactorInput, r string) { in.ProjectRoot = r }, s.Refactor))
-	authed.HandleFunc("POST /v1/projects/{id}/cohort", jsonHandler(opts.Projects, func(in *CohortInput, r string) { in.ProjectRoot = r }, s.Cohort))
 	authed.HandleFunc("POST /v1/projects/{id}/find", jsonHandler(opts.Projects, func(in *SearchInput, r string) { in.ProjectRoot = r }, s.Search))
 	authed.HandleFunc("POST /v1/projects/{id}/lookup", jsonHandler(opts.Projects, func(in *FindSymbolInput, r string) { in.ProjectRoot = r }, s.FindSymbol))
 	authed.HandleFunc("POST /v1/projects/{id}/grep", jsonHandler(opts.Projects, func(in *SearchGrepInput, r string) { in.ProjectRoot = r }, s.SearchGrep))
 	authed.HandleFunc("POST /v1/projects/{id}/read", jsonHandler(opts.Projects, func(in *SummarizeInput, r string) { in.ProjectRoot = r }, s.Summarize))
 	authed.HandleFunc("POST /v1/projects/{id}/ls", jsonHandler(opts.Projects, func(in *SearchTreeInput, r string) { in.ProjectRoot = r }, s.SearchTree))
 	authed.HandleFunc("GET /v1/projects/{id}/graph/packages", jsonHandler(opts.Projects, func(in *PackageGraphInput, r string) { in.ProjectRoot = r }, s.PackageGraph))
-	authed.HandleFunc("POST /v1/projects/{id}/deps", jsonHandler(opts.Projects, func(in *GraphDepsInput, r string) { in.ProjectRoot = r }, s.GraphDeps))
 	authed.HandleFunc("POST /v1/projects/{id}/callers", jsonHandler(opts.Projects, func(in *CallEdgeInput, r string) { in.ProjectRoot = r }, s.GraphCallers))
 	authed.HandleFunc("POST /v1/projects/{id}/callees", jsonHandler(opts.Projects, func(in *CallEdgeInput, r string) { in.ProjectRoot = r }, s.GraphCallees))
 	authed.HandleFunc("POST /v1/projects/{id}/impact", jsonHandler(opts.Projects, func(in *ImpactInput, r string) { in.ProjectRoot = r }, s.GraphImpact))
 	authed.HandleFunc("POST /v1/projects/{id}/routes", jsonHandler(opts.Projects, func(in *RoutesInput, r string) { in.ProjectRoot = r }, s.Routes))
 	authed.HandleFunc("POST /v1/projects/{id}/smells", jsonHandler(opts.Projects, func(in *SmellsInput, r string) { in.ProjectRoot = r }, s.Smells))
-	authed.HandleFunc("POST /v1/projects/{id}/clones", jsonHandler(opts.Projects, func(in *ClonesInput, r string) { in.ProjectRoot = r }, s.Clones))
-	authed.HandleFunc("POST /v1/projects/{id}/refs", jsonHandler(opts.Projects, func(in *RefsInput, r string) { in.ProjectRoot = r }, s.Refs))
 	authed.HandleFunc("POST /v1/projects/{id}/path", jsonHandler(opts.Projects, func(in *PathInput, r string) { in.ProjectRoot = r }, s.GraphPath))
 	authed.HandleFunc("POST /v1/projects/{id}/diff", jsonHandler(opts.Projects, func(in *DiffInput, r string) { in.ProjectRoot = r }, s.GraphDiff))
 	authed.HandleFunc("POST /v1/projects/{id}/clusters", jsonHandler(opts.Projects, func(in *CommunitiesInput, r string) { in.ProjectRoot = r }, s.GraphCommunities))
