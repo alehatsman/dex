@@ -68,12 +68,15 @@ are reachable only via `query(kind=...)` — no standalone tool of their own,
 ## CLI
 
 ```sh
-dex <verb> [path] <args>
+dex query [--kind=K] [--want=W] [path] <input...>
 ```
 
-`path` defaults to `.`. The CLI keeps the granular verbs (they map onto `query`'s
-lanes — `dex ask`/`search`/`read`/`locate`/`trace` are what `query` routes to
-internally).
+`path` defaults to `.`. The CLI collapsed onto `query` too (#849) — there is no
+`dex ask`/`search`/`read`/`locate`/`trace`/`review_diff`/`check`/`grep` verb
+anymore; each is a `--kind=` value on the one read verb, same as MCP's `query`
+tool. `--kind` is optional for the shape-detected lanes (a path, `path:line`,
+`/regex/`, a bare symbol, or prose all route themselves); force it for the
+lanes with no natural shape (`check`, `refs`, `cohort`, `deps`, `status`).
 
 | Command | Purpose |
 |---|---|
@@ -82,25 +85,30 @@ internally).
 | `dex env` | Print effective config |
 | `dex config init` | Create `.dex/config.yml` |
 | `dex index [path]` | Build/update index |
-| `dex status [path]` | Show index freshness |
+| `dex index status [path]` | Show index freshness |
 | `dex watch [path]` | Keep index current |
-| `dex ask [path] <question>` | Task pack / open-ended repo question |
-| `dex search [path] <query>` | Hybrid semantic + BM25 + symbol + graph search |
-| `dex read <file\|symbol>` | Read exact context |
-| `dex locate [path] <ref>` | Orient around one object |
-| `dex trace [path] <symbol>` | Callers/callees/impact |
-| `dex review_diff [path]` | Per-hunk change analysis |
-| `dex check [path]` | Structural/quality checks |
-| `dex grep [path] <regex>` | Regex search |
+| `dex query [path] <question>` | Task pack / open-ended repo question |
+| `dex query --kind=search [path] <query>` | Hybrid semantic + BM25 + symbol + graph search |
+| `dex query <file\|symbol>` | Read exact context |
+| `dex query --kind=locate [path] <ref>` | Orient around one object |
+| `dex query --kind=callers\|callees\|impact\|path [path] <symbol>` | Call-graph traversal |
+| `dex query --kind=review [path]` | Per-hunk change analysis (working tree) |
+| `dex query --kind=check [path] <ref...>` | Verify file:line[:symbol] references |
+| `dex query --kind=grep [path] <regex>` | Regex search |
 | `dex mcp` | Serve MCP |
 
 ```sh
-dex ask . "add OAuth support"
-dex search . "retry logic"
-dex locate . AuthMiddleware
-dex trace . Run --dir callers
-dex review_diff .
+dex query . "add OAuth support"
+dex query --kind=search . "retry logic"
+dex query --kind=locate . AuthMiddleware
+dex query --kind=callers . Run
+dex query --kind=review .
 ```
+
+Run `dex help all` for the full lane reference (`refs`/`cohort`/`deps`,
+`plan_rename`/`rehearse_patch`, `dex graph <sub>`) and the capabilities the
+collapse deliberately dropped from the CLI (still reachable as MCP tools under
+`DEX_EXPERT=1`).
 
 ## Backends
 
@@ -115,7 +123,7 @@ DEX_EMBED_MODEL=...
 
 ### Chat
 
-Optional. Used by `dex ask` and `dex read --mode summary`. Without it those commands are unavailable.
+Optional. Used by `dex query`'s prose lane (synthesized answers) and the MCP `read` tool's `summary` mode. Without it those degrade to lexical/structural results instead of failing.
 
 ```sh
 DEX_CHAT_URL=...
@@ -143,12 +151,15 @@ Overlays the power lanes onto `query`: the raw primitives `search`,
 are not separate tools — each is a `query(kind=...)` value (#852), covered
 with full fidelity by the everyday surface.
 
-Graph tools are also available from the CLI without the flag:
+`dex graph <sub>` subcommands work without the flag on the CLI regardless —
+some (`neighbors`, `packages`, `links`, `backlinks`, `tags`, `cycles`, `diff`,
+`export`) have no MCP tool at all; others (`similar`, `clones`, `routes`,
+`smells`, `clusters`) are the CLI door onto the same-named DEX_EXPERT MCP
+tool. `dex graph deps` is the one that's gone — that's `dex query --kind=deps`
+now (#849).
 
 ```sh
-dex graph deps
 dex graph cycles
-dex graph routes
 dex graph export
 ```
 

@@ -1,23 +1,31 @@
 # Tools
 
-This is the **query/tool contract**. Since the #205 single-verb cutover the agent
-surface (over MCP) and the human surface (on the CLI) **diverge on purpose**:
+This is the **query/tool contract**. Since query-unification (#848: CLI slice
+#849, REST slice #851, MCP slice #852) all three transports converge on the
+**same shape** — they no longer diverge on purpose the way they briefly did:
 
-- **Over MCP** an agent sees **one verb** — `query` (read). That set is constant
-  across every deployment profile. dex is retrieval over the codebase, not agent
-  memory: the `record` write verb and the L3 knowledge subsystem were removed in
-  #205 — durable findings are the harness's file-based memory now.
-- **On the CLI** the granular verbs live on directly (`dex ask` / `search` /
-  `read` / `locate` / `trace` / `review_diff` / `check` / `grep`), because a
-  human at a prompt wants to name the lane. CLI form:
-  `dex <verb> [path] <args…>` (`path` defaults to cwd).
+- **Over MCP** an agent sees **one verb by default** — `query` (read). That
+  set is constant across every deployment profile. dex is retrieval over the
+  codebase, not agent memory: the `record` write verb and the L3 knowledge
+  subsystem were removed in #205 — durable findings are the harness's
+  file-based memory now.
+- **On the CLI** there is no separate `dex ask`/`search`/`read`/`locate`/
+  `trace`/`review_diff`/`check`/`grep` verb either (#849 deleted all of
+  them) — the human surface is `dex query [--kind=K] [--want=W] [path]
+  <input...>`, same lane classifier as MCP's `query` tool. CLI form for the
+  fixed lifecycle commands (`index`, `setup`, …) stays `dex <verb> [path]
+  <args…>` (`path` defaults to cwd).
 
-The two are one engine: the CLI verbs *are* the lanes `query` routes to
-internally. The CLI also carries lifecycle/ops commands with **no MCP form** —
-`index`, `reindex`, `watch`, `serve`, `mcp`, `proxy`, `setup`, `doctor`,
-`config`, `env`, `nuke`, `clone`, `bench`, `compact`, `compress`, `hook`. Those
-build, serve, and maintain the index rather than query it; see the README or
-`dex help all`.
+The two are one engine: `--kind=`/`--want=` on the CLI *are* the lanes MCP's
+`query` tool routes to internally — same dispatcher (`(*Server).Query`), same
+`QueryInput` shape, different parse-in/format-out per transport. The CLI also
+carries lifecycle/ops commands with **no MCP form** — `index`, `reindex`,
+`watch`, `serve`, `mcp`, `proxy`, `setup`, `doctor`, `config`, `env`, `nuke`,
+`clone`, `bench`, `compact`, `compress`, `hook`, `graph <sub>`. Those build,
+serve, and maintain the index (or inspect it directly) rather than query it
+through the six-use-case ladder; see the README or `dex help all` — the
+latter is the live, generated-from-the-binary reference for exact flags and
+is the one to trust over any hand-copied table here.
 
 ## The MCP verb
 
@@ -37,57 +45,52 @@ do internally (synthesis → lexical → hits-only), never which tools an agent 
 - **lean** (weak local model): same single verb; `query` still routes every lane,
   only its synthesis degrades.
 
-`DEX_EXPERT=1` is an **additive overlay**, orthogonal to the profile. It exposes
-the raw primitives `query` wraps — `search` (raw ranked hits with the full
-scoring breakdown), `trace` (`--dir callers|callees|path|impact`), `locate`,
-`grep`, `read` — plus the graph/quality reports `clusters`, `routes`,
-`smells`, `status`, `repo_map`, `review_diff`, `plan_rename`, and
-`rehearse_patch`.
+`DEX_EXPERT=1` is an **additive overlay**, orthogonal to the profile. Over MCP
+it exposes the raw primitives `query` wraps — `search` (raw ranked hits with
+the full scoring breakdown), `trace` (`--dir callers|callees|path|impact`),
+`locate`, `grep`, `read` — plus `review_diff` (ref/branch/pr/worktree
+targeting beyond `kind=review`'s working-tree-only scope), the graph/quality
+reports `clusters`, `routes`, `smells`, `status`, `repo_map`, and the
+different-contract pair `plan_rename`/`rehearse_patch` (edit plans /
+hypothetical type-check, not a read).
 
 `deps`, `cohort`, `refs`, `clones`, `similar`, and `check` are **not** separate
-tools (#852, query-unification MCP re-justification) — each is fully reachable
-as a `query(kind=...)` value with the exact same handler and no lost
-capability, so a standalone door would just be a duplicate. `clones` finds
-clusters of semantically near-duplicate code blocks and `similar` finds blocks
-near a given one — semantic work grep can't do; both reuse the search vectors,
-so they need an embedder (#84), same as `kind=clones|similar`.
+MCP tools (#852) — each is fully reachable as a `query(kind=...)` value with
+the exact same handler and no lost capability, so a standalone door would
+just be a duplicate. `clones` finds clusters of semantically near-duplicate
+code blocks and `similar` finds blocks near a given one — semantic work grep
+can't do; both reuse the search vectors, so they need an embedder (#84), same
+as `kind=clones|similar`.
 
-The overlay never changes the shape of `query`, the one everyday verb.
+The overlay never changes the shape of `query`, the one everyday verb — on
+the CLI, every `kind=` value works regardless of `DEX_EXPERT` (the flag only
+gates the MCP tool surface); `dex graph <sub>` is likewise always available.
+A handful of `dex graph <sub>` names have no MCP tool at all (`neighbors`,
+`packages`, `links`, `backlinks`, `tags`, `cycles`, `diff`, `export`); others
+(`similar`, `clones`, `routes`, `smells`, `clusters`) are the CLI door onto
+the same-named DEX_EXPERT tool. `dex graph deps` is gone — that's `dex query
+--kind=deps` now (#849).
 
-On the CLI every verb, plus the full `dex graph <sub>` set, is always available
-without the flag. Several `dex graph` subcommands are **CLI-only** with no MCP
-tool — `neighbors`, `packages`, `links`, `backlinks`, `tags`, `cycles`,
-`export`.
+## `read`
 
-## `read` modes
+The read facet's mode contract (`ReadMode`, `internal/mcp/readmode.go`):
+`full` (raw bytes, no LLM — the native Read tool's job outside dex), `signatures`
+(indexed symbols + source lines), `skeleton` (exported decls in full + signatures
+with `@B<n>` body handles), `map` (imports + exported symbols), `lines:N-M`
+(raw line slice; also `lines:N`, `lines:N-`, `lines:-M`), `analyze` (token-cost
+comparison across modes + a recommendation, no file content), and `summary`
+(LLM digest — the only mode needing a chat model; without one it degrades
+rather than failing hard).
 
-`read --mode=<m>` (default `full`):
-
-| mode | output | LLM |
-|------|--------|-----|
-| `full` | raw file content (the default) | no |
-| `signatures` | indexed symbols + their source lines | no |
-| `skeleton` | exported decls in full + function signatures with `@B<n>` body handles | no |
-| `map` | imports + exported symbols | no |
-| `aggressive` | maximal lossy compression: strips comments and low-entropy lines (declaration + control-flow lines protected) | no |
-| `lines:N-M` | a raw line slice; also `lines:N` (single line), `lines:N-` (line N → end of file), `lines:-M` (first M lines) | no |
-| `analyze` | token-cost comparison of every mode + a recommended mode + a `handle`; **no file content** — pick the cheapest view first, or analyze many files then expand only the ones you need via `read(handle=…, mode=…)` (#620) | no |
-| `summary` | LLM-generated digest (`--focus` to steer) | **yes** |
-
-`summary` is the only mode that needs a chat model; without one it returns
-`status=needs-chat` and you fall back to a structural mode.
-
-The CLI `read` verb adds two local conveniences with no MCP equivalent —
-`entropy` (entropy-ranked compression) and `auto` (large indexed files →
-`signatures`, else `full`, mirroring the redirect hook). Conversely the MCP
-tool's session-scoped `expand` (`@B<n>` body handles) and internal `handle`
-downgrade have no CLI form: handles live in per-session server memory. CLI↔MCP
-mode parity is locked by `cmd/dex/read_parity_test.go`.
-
-Line ranges differ in spelling between the two: the CLI uses the `--start` /
-`--end` flags (1-based, `0` = open), while the MCP tool uses the `lines:*` mode
-string. So `read --start=10 --end=40` ≡ `mode=lines:10-40`, `--start=10 --end=0`
-≡ `lines:10-`, and `--start=0 --end=20` ≡ `lines:-20`.
+The MCP `read` tool (DEX_EXPERT) carries the full surface above plus
+session-scoped extras with no CLI form: `expand` (`@B<n>` body handle
+expansion), `handle` (budget-downgrade re-expansion, #620), `etag`/re-read
+delta diffing, `ref` (historical read as-of a git revision), and `slice`
+(head/tail/range/search/json_path extraction). The CLI's `dex query
+--kind=read --want=<facet>` reaches a narrower subset of the same modes; run
+`dex help all` for exactly which — that surface has shifted across #849/#528
+and is easiest to get stale by hand-copying here, so it isn't duplicated in
+this doc.
 
 ## Response contract
 
@@ -106,7 +109,17 @@ harness's file-based memory.
 ## Transports
 
 - **stdio** — `dex mcp`, attached via `claude mcp add --scope user dex -- dex mcp`.
-- **HTTP** — `dex serve` exposes the same tools as a versioned `/v1` REST API
-  (bearer auth) plus native MCP-over-HTTP at `/v1/projects/{id}/mcp`. The REST
-  routes share the tool names and are always full (`DEX_EXPERT` only trims the
-  stdio surface). See [specs/http-api.md](../specs/http-api.md).
+- **HTTP** — `dex serve` exposes a versioned `/v1` REST API (bearer auth) plus
+  native MCP-over-HTTP at `/v1/projects/{id}/mcp`. REST went through its own
+  collapse (#851): `POST /v1/projects/{id}/query` is the one first-class,
+  capability-carrying route (folding `ask`/`map`/`locate`/`cohort`/`refs`/
+  `deps`/`clones` — each was a lossless duplicate front door onto a `kind=`
+  value). The rest of the MCP-tool surface keeps its own dedicated route
+  (`/find`, `/grep`, `/read`, `/ls`, `/trace`, `/review`, `/refactor`,
+  `/callers`, `/callees`, `/impact`, `/path`, `/diff`, `/routes`, `/smells`,
+  `/clusters`, `/graph/packages`) — REST was never `DEX_EXPERT`-gated the way
+  stdio is, so these were never a duplicate of `/query` the way the folded
+  ones were. See `internal/mcp/http.go`'s route list (each entry's comment
+  says why it is or isn't folded) and [specs/http-api.md](../specs/http-api.md)
+  for the exact, current set — safer to trust than a hand-copied route list
+  here.
