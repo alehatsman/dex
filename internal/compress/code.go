@@ -26,10 +26,33 @@ func AggressiveCompress(content, ext string) string {
 	compressed = SafeguardRatio(content, compressed)
 	// Symbol map: replace high-ROI identifiers with αN refs when profitable.
 	sm := BuildSymbolMap(compressed)
-	compressed = sm.ApplyWithLegend(compressed)
+	compressed = keepIfCheaper(compressed, sm.ApplyWithLegend(compressed))
 	// N-gram codebook: replace recurring bi/trigrams with ©N refs.
 	ncb := BuildNgramCodebook(compressed)
-	return ncb.ApplyWithLegend(compressed)
+	return keepIfCheaper(compressed, ncb.ApplyWithLegend(compressed))
+}
+
+// keepIfCheaper returns after only when it actually costs fewer tokens than
+// before, and otherwise discards it.
+//
+// The dictionary passes (SymbolMap, NgramCodebook) each prepend a legend and
+// substitute content tokens with refs. Their own ROI gates estimate the trade
+// from occurrence counts, but the estimate can be wrong: measured on real files,
+// the passes ADD tokens to Markdown (+7) and JSON (+11) while removing them from
+// YAML (-102), go.sum (-16) and Go (-15) — and even on Go, symmap alone loses
+// (+8) before the n-gram pass more than recovers it. A pass that grows the
+// output is a pure loss: the reader pays the legibility cost of substituted
+// tokens and a legend, and gets nothing back (#866).
+//
+// This is measured, not predicted, so it needs no per-language tuning and no
+// code/non-code split — an extension gate would have discarded the YAML win.
+// SafeguardRatio above guards the passes before it on bytes; this guards the
+// dictionary passes on tokens, which is the unit their legend cost is paid in.
+func keepIfCheaper(before, after string) string {
+	if countTokens(after) < countTokens(before) {
+		return after
+	}
+	return before
 }
 
 // LightweightCleanup applies conservative cleanup safe for any file content:

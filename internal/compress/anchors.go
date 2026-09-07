@@ -137,7 +137,7 @@ func AggressiveCompressStrict(content, ext string) string {
 	compressed := applyTokenReductionsExcept(strings.Join(lines, "\n"), ext, anchors)
 	compressed = SafeguardRatio(content, compressed)
 	ncb := BuildNgramCodebook(compressed).excludeAnchors(anchors)
-	return ncb.ApplyWithLegend(compressed)
+	return keepIfCheaper(compressed, ncb.ApplyWithLegend(compressed))
 }
 
 // CompressCode runs aggressive code compression. When strict is true (a weak
