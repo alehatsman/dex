@@ -76,6 +76,11 @@ Flags:
   --emit-calibration path  with --alpha-sweep: write the winning config to the
                    named calibration.yml (run from the dex repo, commit the diff)
 
+Reranking is probed before the run: a configured reranker whose endpoint does
+not answer is reported as a WARNING and recorded as rerank_enabled=false, so a
+run that silently degraded to the local rerank can never pass --check against a
+live cross-encoder baseline.
+
 Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
              DEX_FUSION_MODE=linear  select convex-combination score fusion.
              DEX_FUSION_ALPHA=0.5    dense weight for FusionLinear (0 < α ≤ 1).
@@ -187,7 +192,8 @@ func runEval(ctx context.Context, args []string) error {
 	if _, err := os.Stat(p.DBPath); err != nil {
 		return fmt.Errorf("dex bench eval: no index for %s — run `dex index %s` first", p.Root, p.Root)
 	}
-	st, err := store.OpenWith(ctx, p.DBPath, storeOpts())
+	opts := storeOpts()
+	st, err := store.OpenWith(ctx, p.DBPath, opts)
 	if err != nil {
 		return fmt.Errorf("dex bench eval: open store: %w", err)
 	}
@@ -202,6 +208,14 @@ func runEval(ctx context.Context, args []string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "dex bench eval: %d queries, k=%d, index %s\n", len(gs.Queries), *k, p.DBPath)
+
+	// Rerank preflight (#864). A configured-but-down reranker degrades every
+	// query to the local rerank without an error, so measuring on the wired
+	// flag alone labels no-rerank numbers as rerank numbers — and
+	// EvalManifest.Incompatible then calls them comparable to a baseline
+	// measured against a live cross-encoder. Probe once, record what actually
+	// happened, and let the manifest gate reject the mismatch under --check.
+	rerankLive := evalRerankLive(ctx, opts)
 
 	// Resolve the current repo HEAD and flag a stale golden set (generated
 	// against a different HEAD). Warn always; fail under --check unless the
@@ -239,7 +253,7 @@ func runEval(ctx context.Context, args []string) error {
 		return fmt.Errorf("dex bench eval: run: %w", err)
 	}
 	rep := eval.Compute(results, *k)
-	rep.Manifest = buildEvalManifest(*mode, gPath, gs, repoHead, *lane, *k, stats, storeOpts())
+	rep.Manifest = buildEvalManifest(*mode, gPath, gs, repoHead, *lane, *k, stats, opts, rerankLive)
 
 	switch *outputFmt {
 	case "json":
@@ -281,12 +295,38 @@ func checkStaleGolden(ctx context.Context, root string, gs eval.GoldenSet, check
 	return repoHead, nil
 }
 
+// evalRerankLive reports whether this run will actually be reranked. It is
+// false when no reranker is wired (opts.Rerank nil — DEX_RERANK_URL empty or
+// DEX_DISABLE_RERANK=1, as the BM25 bench-gate baseline sets it) and also when
+// one is wired but its endpoint does not answer: in that state every query
+// falls through to the local rerank and the numbers are no-rerank numbers.
+//
+// An unreachable endpoint is a loud WARN rather than a hard error — the run
+// still produces valid, honestly-labelled no-rerank metrics. The failure is
+// raised where it matters: rerank_enabled is a manifest identity field, so
+// --check against a live-reranker baseline fails closed on the mismatch.
+func evalRerankLive(ctx context.Context, opts store.Options) bool {
+	if opts.Rerank == nil {
+		return false
+	}
+	endpoint, err := probeRerank(ctx)
+	if err == nil {
+		return true
+	}
+	fmt.Fprintf(os.Stderr, "dex bench eval: WARNING: reranker %s did not answer (%v) — "+
+		"every query degrades to the local rerank; recording rerank_enabled=false\n", endpoint, err)
+	return false
+}
+
 // buildEvalManifest stamps the experiment identity onto a report: the golden
 // corpus (mode, file hash, query hash, generation HEAD), the repo HEAD at
 // scoring time, and the retrieval configuration (lane, embed model/dim, fusion
 // mode/alpha, graph weight, k). It is what lets --check refuse to compare
 // runs produced under different conditions.
-func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lane string, k int, stats store.Stats, opts store.Options) *eval.EvalManifest {
+//
+// rerankLive is the observed reranker state (see evalRerankLive), not
+// opts.Rerank != nil: the manifest records what happened, not what was wired.
+func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lane string, k int, stats store.Stats, opts store.Options, rerankLive bool) *eval.EvalManifest {
 	var goldenSHA string
 	if data, err := os.ReadFile(goldenPath); err == nil {
 		goldenSHA = eval.SHA256Hex(data)
@@ -305,7 +345,7 @@ func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lan
 		FusionAlpha:    opts.FusionAlpha,
 		GraphWeight:    opts.GraphLaneWeight,
 		K:              k,
-		RerankEnabled:  opts.Rerank != nil,
+		RerankEnabled:  rerankLive,
 	}
 }
 

@@ -70,6 +70,27 @@ func storeOpts() store.Options {
 	return opts
 }
 
+// probeRerank builds the configured reranker and probes its endpoint, so a
+// caller can tell "reranking is wired" apart from "reranking will actually
+// happen". Returns ("", nil) when no reranker is configured at all
+// (DEX_RERANK_URL empty or DEX_DISABLE_RERANK=1) — the same nil storeOpts
+// sees, and the case where a false rerank flag is already correct.
+//
+// Any Health error counts as not-reachable, not just rerank.ErrUnreachable:
+// ChatReranker reports an HTTP 4xx/5xx from /v1/models as a plain error, and
+// that is exactly the outage (#864) this probe exists to catch.
+//
+// Measurement-only. Live agent queries must keep degrading silently to the
+// local rerank (internal/retrieve/rerank.go) — an outage must not fail a
+// search — but a run whose numbers get compared to a baseline has to know.
+func probeRerank(ctx context.Context) (endpoint string, err error) {
+	rc := newRerankClient()
+	if rc == nil {
+		return "", nil
+	}
+	return rc.Endpoint(), rc.Health(ctx)
+}
+
 // newRerankService builds the query-time ranking service from a configured
 // reranker. Each call allocates its own cross-encoder score cache: that is the
 // right lifetime for a one-shot CLI command (the cache lives as long as the
