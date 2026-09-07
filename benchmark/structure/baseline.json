@@ -1,12 +1,10 @@
 {
   "deadcode_symbols": {
-    "count": 6,
+    "count": 4,
     "items": [
       "internal/compress/anchors.go:102:20: unreachable func: AnchorSet.Missing",
       "internal/compress/anchors.go:71:20: unreachable func: AnchorSet.Anchors",
       "internal/compress/dispatch.go:25:6: unreachable func: Register",
-      "internal/eval/bootstrap.go:30:6: unreachable func: DefaultBootstrapParams",
-      "internal/mcp/readmode.go:84:6: unreachable func: ParseReadMode",
       "internal/mcp/verbs_envelope.go:134:21: unreachable func: LookInput.budgetTokens"
     ]
   },

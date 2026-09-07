@@ -66,6 +66,11 @@ Flags:
                    aggregate. Both HEADs and the manifest are recorded in the
                    report so runs are only ever compared like-for-like.
   --tol 0.05            with --check: regression tolerance (default 0.02). Raise to 0.05 for embedding-model variance.
+  --bootstrap      with --check: gate on the paired-bootstrap significance test
+                   (per-query mean delta vs zero, 95% CI) instead of the fixed
+                   --tol cliff. Needs per-query detail in both reports. Its
+                   verdict is printed either way, so you can compare the two
+                   before switching a gate over to it.
   --allow-incompatible  with --check: compare despite an incompatible manifest
   --allow-stale-golden  compare even when the golden HEAD != current repo HEAD
   --alpha-sweep   sweep FusionLinear α from 0.1 to 1.0 in 0.1 steps, printing
@@ -144,6 +149,7 @@ func runEval(ctx context.Context, args []string) error {
 	expand := fs.String("expand", "off", "query-side expansion to A/B (#252): off | on | full. Requires DEX_EXPAND_MODEL.")
 	faithfulness := fs.Bool("faithfulness", false, "answer-faithfulness gate (#550): synthesize an ask answer per query and score how well it is grounded in the retrieved evidence. Requires a chat model (DEX_CHAT_URL/DEX_CHAT_MODEL).")
 	allowStale := fs.Bool("allow-stale-golden", false, "compare even when the golden set's HEAD differs from the current repo HEAD (deliberate historical comparison). Without it, --check fails on a stale golden set.")
+	useBootstrap := fs.Bool("bootstrap", false, "with --check: gate on the paired-bootstrap significance test instead of the fixed --tol cliff. Needs per-query detail in both reports; its verdict is printed either way.")
 	allowIncompat := fs.Bool("allow-incompatible", false, "with --check: compare even when the reference report's experiment manifest (lane/model/mode/k/fusion/query-corpus) is incompatible. Without it, the check fails closed.")
 	checkTol := fs.Float64("tol", 0.02, "with --check: regression tolerance (0–1). Default 0.02 (2%). Raise to 0.05 when the embedding model has inter-run variance.")
 
@@ -282,7 +288,7 @@ func runEval(ctx context.Context, args []string) error {
 	}
 
 	if *checkPath != "" {
-		if err := checkEvalRegression(rep, *checkPath, *allowIncompat, *checkTol); err != nil {
+		if err := checkEvalRegression(rep, *checkPath, *allowIncompat, *checkTol, *useBootstrap); err != nil {
 			return fmt.Errorf("dex bench eval: regression check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "dex bench eval: regression check passed")
@@ -418,7 +424,7 @@ func resolveEvalProject(path string) (*proj.Project, error) {
 // compatibility: an incompatible reference (different lane/model/mode/k/fusion
 // or query corpus) fails closed unless allowIncompat is set, so the metric
 // comparison is only ever run on genuinely comparable numbers.
-func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool, tol float64) error {
+func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool, tol float64, bootstrap bool) error {
 	data, err := os.ReadFile(refPath)
 	if err != nil {
 		return fmt.Errorf("read reference %q: %w", refPath, err)
@@ -456,6 +462,32 @@ func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool
 	}
 
 	const minBucket = 5
+
+	// Two comparators, one verdict. The paired bootstrap asks whether the
+	// per-query mean delta is distinguishable from zero; the fixed tolerance
+	// asks whether it crossed an arbitrary cliff. The bootstrap was written to
+	// replace the cliff (internal/eval/bootstrap.go) but had never been called,
+	// so its verdict was unknown against real baselines (#869). It now always
+	// runs when the reports carry per-query detail, and reports alongside —
+	// gating only under --bootstrap, so promoting it stays an evidence-based
+	// decision instead of a silent change to every committed baseline.
+	bootRegs, diag, bootRan := bootstrapVerdict(current, ref, bootstrap)
+	if bootstrap {
+		if !bootRan {
+			return fmt.Errorf("--bootstrap needs per-query detail in BOTH reports, but only %d queries paired "+
+				"(current-only %d, reference-only %d) — regenerate the baseline with a current dex",
+				diag.Paired, diag.OnlyNow, diag.OnlyRef)
+		}
+		if len(bootRegs) == 0 {
+			return nil
+		}
+		msgs := make([]string, len(bootRegs))
+		for i, r := range bootRegs {
+			msgs[i] = r.String()
+		}
+		return fmt.Errorf("%s (paired bootstrap, n=%d)", strings.Join(msgs, "; "), diag.Paired)
+	}
+
 	regs := current.Regressions(ref, tol)
 	byType, bucketDelta := current.ByTypeRegressions(ref, tol, minBucket)
 	regs = append(regs, byType...)
@@ -470,6 +502,30 @@ func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool
 		msgs[i] = r.String()
 	}
 	return fmt.Errorf("%s (tol %.2f)", strings.Join(msgs, "; "), tol)
+}
+
+// bootstrapVerdict runs the paired-bootstrap comparator and, when it is not the
+// gating comparator, prints its verdict for comparison. ran=false means the
+// reports had no paired per-query detail (an old baseline, or a sub-report),
+// which is the documented fallback case — not a failure.
+func bootstrapVerdict(current, ref eval.Report, gating bool) (regs []eval.Regression, diag eval.BootstrapDiag, ran bool) {
+	regs, diag = current.BootstrapRegressions(ref, eval.DefaultBootstrapParams())
+	if diag.Paired == 0 {
+		return nil, diag, false
+	}
+	if !gating {
+		verdict := "no statistically significant regression"
+		if len(regs) > 0 {
+			msgs := make([]string, len(regs))
+			for i, r := range regs {
+				msgs[i] = r.String()
+			}
+			verdict = strings.Join(msgs, "; ")
+		}
+		fmt.Fprintf(os.Stderr, "dex bench eval: paired bootstrap (n=%d, 95%% CI): %s — informational; pass --bootstrap to gate on it\n",
+			diag.Paired, verdict)
+	}
+	return regs, diag, true
 }
 
 func shortHash(h string) string {

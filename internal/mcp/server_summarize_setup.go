@@ -61,18 +61,21 @@ func (s *Server) escalateOnBounce(bt *bounceTracker, sessionID, relTarget string
 // only LLM path is `summary` (isLLM). The no-chat handling for summary lives
 // in the caller, which degrades it to a `needs-chat` status.
 func (s *Server) summarizeResolveMode(ctx context.Context, in SummarizeInput) (ReadMode, bool) {
-	raw := strings.ToLower(strings.TrimSpace(in.Mode))
-	if raw == "" {
-		if in.ProjectRoot != "" {
-			if prof := profiles.Active(in.ProjectRoot); prof.Read.DefaultMode != "" {
-				raw = prof.Read.DefaultMode
-			}
-		}
-		if raw == "" {
-			raw = string(ReadModeFull)
+	// Every source goes through ParseReadMode, the one place that owns the
+	// trim/lowercase/empty contract for this wire string. The request mode used
+	// to be normalized inline here while the profile default and the task
+	// override were cast raw — so a hand-edited .dex/config.yml declaring
+	// `default_mode: "Signatures"` produced a ReadMode that ValidReadMode then
+	// rejected downstream (#869).
+	mode, ok := ParseReadMode(in.Mode)
+	if !ok && in.ProjectRoot != "" {
+		if prof := profiles.Active(in.ProjectRoot); prof.Read.DefaultMode != "" {
+			mode, ok = ParseReadMode(prof.Read.DefaultMode)
 		}
 	}
-	mode := ReadMode(raw)
+	if !ok {
+		mode = ReadModeFull
+	}
 	isLLM := mode == ReadModeSummary
 	// A task hint compresses the raw default toward a structural mode (e.g. a
 	// Generate task → signatures) to save tokens; it never forces the LLM.
@@ -82,7 +85,9 @@ func (s *Server) summarizeResolveMode(ctx context.Context, in SummarizeInput) (R
 				pt := compress.LoadPolicy(p2.CacheDir)
 				override = pt.ChooseMode(compress.IntentFromTask(in.Task), override)
 			}
-			mode = ReadMode(override)
+			if parsed, pok := ParseReadMode(override); pok {
+				mode = parsed
+			}
 		}
 	}
 	return mode, isLLM
