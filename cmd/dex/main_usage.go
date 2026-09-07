@@ -192,8 +192,9 @@ config / setup:
   dex env                               print effective env-var config with sources
                                           Flags: --all, --doc, -v, --format=text|json
   dex setup                             guided first-run wizard: check endpoints,
-                                          offer to index cwd, write Claude Code
-                                          routing rules. Flags: --check
+                                          offer to index cwd, wire detected agents
+                                          (Claude Code + Codex CLI). Flags: --check,
+                                          --agent=claude|codex|all
   dex doctor                            check the setup: index dir, endpoints, config, MCP wiring
                                           Flags: -v
   dex config init                       scaffold .dex/config.yml with commented defaults

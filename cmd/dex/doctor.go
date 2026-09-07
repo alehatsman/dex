@@ -61,6 +61,9 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	}
 	checks = append(checks, checkProjectConfig())
 	checks = append(checks, checkMCPWiring())
+	if codexInstalled() {
+		checks = append(checks, checkCodexMCPWiring())
+	}
 	checks = append(checks, checkRulesWiring())
 
 	labelW := 0
@@ -356,7 +359,6 @@ func dexMCPConfigured(raw []byte) bool {
 	return strings.Contains(s, `"dex"`) && strings.Contains(s, `"mcp"`)
 }
 
-// dexPluginManifest reports whether raw is a .claude-plugin/manifest.json
 // that wires dex as an MCP server.
 func dexPluginManifest(raw []byte) bool {
 	var manifest struct {

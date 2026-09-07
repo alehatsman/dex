@@ -26,10 +26,12 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// ServerInstructions returns the MCP server instructions block that Claude Code
-// receives at session init. It maps dex tools to their native equivalents so
-// the agent uses them without being explicitly asked.
-func ServerInstructions() string {
+// CoreWorkflow returns the agent-agnostic tool mapping + ask-first workflow.
+// It is the single source of truth shared by every agent surface: ServerInstructions
+// (Claude Code, injected live over MCP) appends a Claude-harness-specific tail,
+// and `dex setup` materializes this same body into Codex's AGENTS.md because Codex
+// does not surface MCP `instructions` to the model (#844).
+func CoreWorkflow() string {
 	return `dex is active — prefer its MCP tools over native equivalents:
 
 dex is advisory-only and retrieval-only — a single read verb, query, over the codebase intelligence. Running commands, editing, and verifying are the harness's job; durable findings are the harness's file-based memory, not dex's.
@@ -44,7 +46,15 @@ Tool mapping (use this instead of native):
 Power lanes (gated behind DEX_EXPERT — query covers everyday work):
 - grep / read — the raw primitives query wraps; reach here for the primitive directly
 - review_diff — targeted PR/branch/ref review (query kind=review covers the working tree)
-- trace / locate / search / clusters / routes / smells / status / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact
+- trace / locate / search / clusters / routes / smells / status / repo_map — call-graph, structural, and vector lanes: search returns raw ranked hits with the full scoring breakdown, trace walks callers/callees/path/impact`
+}
+
+// ServerInstructions returns the MCP server instructions block that Claude Code
+// receives at session init: the shared CoreWorkflow body plus the tail that only
+// applies to the Claude Code harness (deferred tools are loaded via ToolSearch,
+// which Codex has no equivalent of).
+func ServerInstructions() string {
+	return CoreWorkflow() + `
 
 IMPORTANT: dex MCP tools are deferred — call ToolSearch with query="select:mcp__dex__query" before first use.`
 }

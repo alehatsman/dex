@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,18 +26,27 @@ import (
 func cmdSetup(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	setHelp(fs,
-		"Guided first-run wizard: check setup, optionally index the cwd, show MCP wiring.",
-		"dex setup [--check]",
-		"dex setup          # interactive walkthrough",
-		"dex setup --check  # CI: exit 0 if fully set up, 1 otherwise",
+		"Guided first-run wizard: check setup, optionally index the cwd, wire agents.",
+		"dex setup [--check] [--agent=claude|codex|all]",
+		"dex setup                # interactive walkthrough; wires every agent found",
+		"dex setup --agent=codex  # wire Codex only",
+		"dex setup --check        # CI: exit 0 if fully set up, 1 otherwise",
 	)
 	checkOnly := fs.Bool("check", false, "non-interactive: exit 0 if setup is complete, 1 otherwise")
+	agent := fs.String("agent", "all", "which agent(s) to wire: claude|codex|all")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("setup takes no arguments")
 	}
+	switch *agent {
+	case "claude", "codex", "all":
+	default:
+		return fmt.Errorf("invalid --agent %q: want claude, codex, or all", *agent)
+	}
+	wantClaude := *agent == "claude" || *agent == "all"
+	wantCodex := *agent == "codex" || *agent == "all"
 
 	fmt.Printf("dex setup  (%s)\n\n", mcp.Version)
 
@@ -50,6 +60,9 @@ func cmdSetup(ctx context.Context, args []string) error {
 	checks = append(checks, health.CheckEndpoints(epCtx, collectEndpoints())...)
 	checks = append(checks, checkProjectConfig())
 	checks = append(checks, checkMCPWiring())
+	if codexInstalled() {
+		checks = append(checks, checkCodexMCPWiring())
+	}
 
 	labelW := 0
 	for _, c := range checks {
@@ -135,28 +148,16 @@ func cmdSetup(ctx context.Context, args []string) error {
 		}
 	}
 
-	// ── step 3: MCP wiring ────────────────────────────────────────────────
-	if dexMCPLocation() == "" {
-		fmt.Println("MCP is not wired to Claude Code. To register dex:")
-		fmt.Println("  claude mcp add --scope user dex -- dex mcp")
-		fmt.Println()
-	} else {
-		fmt.Printf("✓ MCP configured (%s)\n\n", dexMCPLocation())
+	// ── step 3: agent wiring (MCP + routing rules) ────────────────────────
+	if wantClaude {
+		wireClaude()
 	}
-
-	// ── step 4: write Claude Code routing rules ───────────────────────────
-	if rulesPath, pathErr := claudeRulesPath(); pathErr == nil {
-		action, newContent, buildErr := buildRulesContent(rulesPath)
-		if buildErr == nil && action != "already up to date" {
-			if mkErr := os.MkdirAll(filepath.Dir(rulesPath), 0o755); mkErr == nil {
-				_ = os.WriteFile(rulesPath, []byte(newContent), 0o644)
-			}
-		}
-		if action == "already up to date" {
-			fmt.Printf("✓ Claude Code routing rules up to date (%s)\n\n", rulesPath)
-		} else {
-			fmt.Printf("✓ Claude Code routing rules written (%s)\n\n", rulesPath)
-		}
+	switch {
+	case wantCodex && codexInstalled():
+		wireCodex(ctx)
+	case *agent == "codex" && !codexInstalled():
+		fmt.Println("codex not found on PATH — skipping Codex wiring")
+		fmt.Println()
 	}
 
 	// ── step 5: show a working example ───────────────────────────────────
@@ -260,53 +261,65 @@ func checkRulesStatus() (rulesStatus, string) {
 	return rulesInSync, path
 }
 
-// extractRulesBlock returns the substring from rulesMarker through
-// rulesEndMarker (inclusive). Returns "" when either marker is absent.
+// extractRulesBlock returns the deployed Claude routing block (marker through
+// end marker, inclusive); "" when either marker is absent.
 func extractRulesBlock(s string) string {
-	start := strings.Index(s, rulesMarker)
-	end := strings.Index(s, rulesEndMarker)
+	return extractBlock(s, rulesMarker, rulesEndMarker)
+}
+
+// extractBlock returns the substring from marker through endMarker (inclusive).
+// Returns "" when either marker is absent or out of order. Shared by the Claude
+// rules block and the Codex AGENTS.md block (#844).
+func extractBlock(s, marker, endMarker string) string {
+	start := strings.Index(s, marker)
+	end := strings.Index(s, endMarker)
 	if start == -1 || end == -1 || end < start {
 		return ""
 	}
-	return s[start : end+len(rulesEndMarker)]
+	return s[start : end+len(endMarker)]
 }
 
-// buildRulesContent reads the existing file (if any) and returns:
+// buildRulesContent reads the existing Claude rules file (if any) and returns
+// the action ("created"/"updated"/"already up to date") plus the new content.
+func buildRulesContent(path string) (action, content string, err error) {
+	return buildBlockContent(path, rulesMarker, rulesEndMarker, rulesContent)
+}
+
+// buildBlockContent reads the file at path (if any) and inserts or refreshes a
+// marker-delimited block, preserving any surrounding content. It returns:
 //   - action: "created", "updated", or "already up to date"
 //   - the full new file content
-func buildRulesContent(path string) (action, content string, err error) {
+//
+// Shared by the Claude rules file and Codex's AGENTS.md (#844). The canonical
+// comparison is extractBlock(...) == block (byte-for-byte) so the writer and the
+// drift checker never disagree — keying off a version marker instead would wedge
+// every existing file when the block changes without a version bump.
+func buildBlockContent(path, marker, endMarker, block string) (action, content string, err error) {
 	existing, readErr := os.ReadFile(path)
 	if readErr != nil {
 		if !errors.Is(readErr, os.ErrNotExist) {
 			return "", "", fmt.Errorf("read %s: %w", path, readErr)
 		}
-		return "created", rulesContent + "\n", nil
+		return "created", block + "\n", nil
 	}
 
 	s := string(existing)
 
-	// Already canonical, byte-for-byte? Nothing to do. Compare the same way
-	// checkRulesStatus does (extractRulesBlock == rulesContent) so the writer
-	// and the drift checker never disagree. Keying off rulesVersion presence
-	// here instead would wedge every existing file when rulesContent changes
-	// without a version bump: the checker reports drift, but the writer sees
-	// the marker and refuses to rewrite.
-	if extractRulesBlock(s) == rulesContent {
+	if extractBlock(s, marker, endMarker) == block {
 		return "already up to date", s, nil
 	}
 
-	if strings.Contains(s, rulesMarker) {
-		start := strings.Index(s, rulesMarker)
-		end := strings.Index(s, rulesEndMarker)
-		var before, after string
-		before = s[:start]
+	if strings.Contains(s, marker) {
+		start := strings.Index(s, marker)
+		end := strings.Index(s, endMarker)
+		before := s[:start]
+		var after string
 		if end != -1 {
-			tail := s[end+len(rulesEndMarker):]
-			after = strings.TrimLeft(tail, "\n")
+			after = strings.TrimLeft(s[end+len(endMarker):], "\n")
 		}
 		var b strings.Builder
 		b.WriteString(before)
-		b.WriteString(rulesContent)
+		b.WriteString(block)
 		b.WriteByte('\n')
 		if after != "" {
 			b.WriteByte('\n')
@@ -321,7 +334,146 @@ func buildRulesContent(path string) (action, content string, err error) {
 		b.WriteByte('\n')
 	}
 	b.WriteByte('\n')
-	b.WriteString(rulesContent)
+	b.WriteString(block)
 	b.WriteByte('\n')
 	return "created", b.String(), nil
+}
+
+// wireClaude reports MCP wiring status for Claude Code and writes/refreshes the
+// routing-rules block. MCP registration itself stays manual (the user runs
+// `claude mcp add`); the rules block is idempotent.
+func wireClaude() {
+	if dexMCPLocation() == "" {
+		fmt.Println("MCP is not wired to Claude Code. To register dex:")
+		fmt.Println("  claude mcp add --scope user dex -- dex mcp")
+		fmt.Println()
+	} else {
+		fmt.Printf("✓ MCP configured (%s)\n\n", dexMCPLocation())
+	}
+
+	rulesPath, pathErr := claudeRulesPath()
+	if pathErr != nil {
+		return
+	}
+	action, newContent, buildErr := buildRulesContent(rulesPath)
+	if buildErr == nil && action != "already up to date" {
+		if mkErr := os.MkdirAll(filepath.Dir(rulesPath), 0o755); mkErr == nil {
+			_ = os.WriteFile(rulesPath, []byte(newContent), 0o644)
+		}
+	}
+	if action == "already up to date" {
+		fmt.Printf("✓ Claude Code routing rules up to date (%s)\n\n", rulesPath)
+	} else {
+		fmt.Printf("✓ Claude Code routing rules written (%s)\n\n", rulesPath)
+	}
+}
+
+// ── Codex CLI wiring (#844) ───────────────────────────────────────────────
+
+const (
+	codexRulesMarker    = "# dex — semantic search & context routing"
+	codexRulesEndMarker = "<!-- /dex -->"
+	codexRulesVersion   = "<!-- dex-codex-rules-v1 -->"
+)
+
+// codexCoreVars are the env vars snapshotted into Codex's MCP server config.
+// Codex does not necessarily pass the parent shell env to MCP children, so the
+// effective values are captured at `dex setup` time via `codex mcp add --env`.
+// Only the documented 80%-of-setups core set — see `dex env`.
+var codexCoreVars = []string{
+	"DEX_EMBED_URL",
+	"DEX_EMBED_MODEL",
+	"DEX_INDEX_DIR",
+	"DEX_CHAT_URL",
+	"DEX_CHAT_MODEL",
+}
+
+// codexRulesContent is the routing block materialized into Codex's AGENTS.md.
+// Unlike Claude's thin pointer, this carries the full mapping inline: Codex
+// parses MCP `instructions` but does not surface them to the model (#844), so
+// the AGENTS.md block is the only place the workflow reaches a Codex agent. The
+// body is single-sourced from mcp.CoreWorkflow() so it can never drift from the
+// Claude path; a Codex-specific note covers tool-name prefixing.
+func codexRulesContent() string {
+	return codexRulesMarker + "\n" + codexRulesVersion + "\n\n" +
+		mcp.CoreWorkflow() + "\n\n" +
+		"Note (Codex): dex's tools are exposed over MCP and may appear with a server " +
+		"prefix (e.g. dex__ask) and/or behind tool-search — the verb names above are " +
+		"the same tools. Start every task with ask().\n" +
+		codexRulesEndMarker
+}
+
+// codexInstalled reports whether the `codex` binary is on PATH.
+func codexInstalled() bool {
+	_, err := exec.LookPath("codex")
+	return err == nil
+}
+
+// codexRulesPath returns $CODEX_HOME/AGENTS.md, falling back to ~/.codex/AGENTS.md.
+func codexRulesPath() (string, error) {
+	base := os.Getenv("CODEX_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("home dir: %w", err)
+		}
+		base = filepath.Join(home, ".codex")
+	}
+	return filepath.Join(base, "AGENTS.md"), nil
+}
+
+// codexEnvSnapshot returns "KEY=VALUE" entries for each core var that is set in
+// the current environment (snapshot, not bake-defaults).
+func codexEnvSnapshot() []string {
+	var out []string
+	for _, k := range codexCoreVars {
+		if v, ok := os.LookupEnv(k); ok && v != "" {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
+}
+
+// wireCodex performs the Codex arm of setup: register the MCP server through
+// Codex's own CLI (which owns config.toml — we never write TOML ourselves) and
+// materialize the routing block into AGENTS.md. A failed `codex mcp add` prints
+// the exact command for the user to run by hand and is non-fatal; the AGENTS.md
+// block is still written so the agent at least gets the mapping.
+func wireCodex(ctx context.Context) {
+	// MCP wiring — only if not already registered.
+	if codexMCPLocation() == "" {
+		args := []string{"mcp", "add", "dex"}
+		for _, kv := range codexEnvSnapshot() {
+			args = append(args, "--env", kv)
+		}
+		args = append(args, "--", "dex", "mcp")
+		cmd := exec.CommandContext(ctx, "codex", args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Println("Codex MCP wiring failed — register dex by hand:")
+			fmt.Printf("  codex %s\n", strings.Join(args, " "))
+			if msg := strings.TrimSpace(string(out)); msg != "" {
+				fmt.Printf("  (%s)\n", msg)
+			}
+			fmt.Println()
+		} else {
+			fmt.Printf("✓ Codex MCP configured (%s)\n\n", codexMCPLocation())
+		}
+	} else {
+		fmt.Printf("✓ Codex MCP configured (%s)\n\n", codexMCPLocation())
+	}
+
+	// AGENTS.md routing block.
+	if rulesPath, pathErr := codexRulesPath(); pathErr == nil {
+		action, newContent, buildErr := buildBlockContent(rulesPath, codexRulesMarker, codexRulesEndMarker, codexRulesContent())
+		if buildErr == nil && action != "already up to date" {
+			if mkErr := os.MkdirAll(filepath.Dir(rulesPath), 0o755); mkErr == nil {
+				_ = os.WriteFile(rulesPath, []byte(newContent), 0o644)
+			}
+		}
+		if action == "already up to date" {
+			fmt.Printf("✓ Codex routing rules up to date (%s)\n\n", rulesPath)
+		} else {
+			fmt.Printf("✓ Codex routing rules written (%s)\n\n", rulesPath)
+		}
+	}
 }

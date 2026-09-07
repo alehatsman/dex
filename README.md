@@ -29,17 +29,20 @@ CGO_ENABLED=1 go install -tags sqlite_fts5 ./cmd/dex
 
 ```sh
 cd your-project
-dex setup
+dex setup        # guided: checks backends, indexes the repo, wires the agents it finds
 ```
 
-`dex setup` creates `.dex/config.yml`, indexes the repo, and registers the MCP server with Claude Code.
+`dex setup` creates `.dex/config.yml`, indexes the repo, and registers the MCP server with
+every agent it detects on your PATH (Claude Code and/or OpenAI Codex CLI). Scope it with
+`--agent=claude|codex|all`.
 
 Manual:
 
 ```sh
 dex config init
 dex index .
-claude mcp add --scope user dex -- dex mcp
+claude mcp add --scope user dex -- dex mcp   # Claude Code
+codex mcp add dex -- dex mcp                 # Codex CLI (writes ~/.codex/config.toml)
 dex doctor
 ```
 
