@@ -40,7 +40,31 @@ type EvalManifest struct {
 	FusionAlpha    float32 `json:"fusion_alpha"`            // dense-lane weight in linear mode
 	GraphWeight    float32 `json:"graph_weight"`            // graph-proximity lane multiplier
 	K              int     `json:"k"`                       // retrieval depth
-	RerankEnabled  bool    `json:"rerank_enabled"`          // true when a reranker was wired into storeOpts
+	RerankEnabled  bool    `json:"rerank_enabled"`          // true when the cross-encoder actually served this run
+
+	// RerankObservedRate is the fraction of eligible rerank calls the
+	// cross-encoder actually served (#865). Nil when nothing was eligible —
+	// no reranker wired, or every candidate pool at or below k — which is not
+	// a degradation and must not be reported as a 0.0 rate.
+	//
+	// Deliberately NOT an identity field: a partial outage does not make two
+	// runs describe different experiments, it makes one of them untrustworthy.
+	// That is gated separately (see RerankDegraded), the way a stale golden
+	// set is gated by StaleGolden rather than by Incompatible.
+	RerankObservedRate *float64 `json:"rerank_observed_rate,omitempty"`
+}
+
+// RerankDegraded reports whether this run was configured for reranking but did
+// not get it on every eligible call — a breaker trip, a partial outage, or a
+// reranker answering its health probe while failing real calls. The returned
+// rate is meaningful only when degraded is true.
+//
+// A run that never had an eligible call is NOT degraded: nothing fell through.
+func (m EvalManifest) RerankDegraded() (rate float64, degraded bool) {
+	if m.RerankObservedRate == nil {
+		return 0, false
+	}
+	return *m.RerankObservedRate, *m.RerankObservedRate < 1.0
 }
 
 // Incompatible returns the identity fields that differ between m and ref in a

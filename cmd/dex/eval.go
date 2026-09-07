@@ -76,10 +76,14 @@ Flags:
   --emit-calibration path  with --alpha-sweep: write the winning config to the
                    named calibration.yml (run from the dex repo, commit the diff)
 
-Reranking is probed before the run: a configured reranker whose endpoint does
+Reranking is both probed and observed. A configured reranker whose endpoint does
 not answer is reported as a WARNING and recorded as rerank_enabled=false, so a
 run that silently degraded to the local rerank can never pass --check against a
-live cross-encoder baseline.
+live cross-encoder baseline. Every eligible rerank call is then counted, and the
+served fraction is recorded as rerank_observed_rate — a run the cross-encoder
+served only partly (a breaker trip, a partial outage, a server answering its
+health probe while failing real calls) blends reranked and non-reranked queries,
+so --check refuses it unless you pass --allow-incompatible.
 
 Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
              DEX_FUSION_MODE=linear  select convex-combination score fusion.
@@ -192,7 +196,13 @@ func runEval(ctx context.Context, args []string) error {
 	if _, err := os.Stat(p.DBPath); err != nil {
 		return fmt.Errorf("dex bench eval: no index for %s — run `dex index %s` first", p.Root, p.Root)
 	}
-	opts := storeOpts()
+	// #865: observe what the cross-encoder actually served across the run. The
+	// #864 preflight below catches a reranker that is down before the run
+	// starts; this catches the ones it structurally cannot — a breaker trip
+	// mid-run, a partial outage, or a server answering /health while failing
+	// every real rerank call.
+	rerankStats := &retrieve.RerankStats{}
+	opts := storeOptsWithRerankStats(rerankStats)
 	st, err := store.OpenWith(ctx, p.DBPath, opts)
 	if err != nil {
 		return fmt.Errorf("dex bench eval: open store: %w", err)
@@ -253,7 +263,8 @@ func runEval(ctx context.Context, args []string) error {
 		return fmt.Errorf("dex bench eval: run: %w", err)
 	}
 	rep := eval.Compute(results, *k)
-	rep.Manifest = buildEvalManifest(*mode, gPath, gs, repoHead, *lane, *k, stats, opts, rerankLive)
+	rep.Manifest = buildEvalManifest(*mode, gPath, gs, repoHead, *lane, *k, stats, opts, rerankLive, rerankStats)
+	warnRerankDegraded(rep.Manifest, rerankStats)
 
 	switch *outputFmt {
 	case "json":
@@ -326,12 +337,12 @@ func evalRerankLive(ctx context.Context, opts store.Options) bool {
 //
 // rerankLive is the observed reranker state (see evalRerankLive), not
 // opts.Rerank != nil: the manifest records what happened, not what was wired.
-func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lane string, k int, stats store.Stats, opts store.Options, rerankLive bool) *eval.EvalManifest {
+func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lane string, k int, stats store.Stats, opts store.Options, rerankLive bool, rerankStats *retrieve.RerankStats) *eval.EvalManifest {
 	var goldenSHA string
 	if data, err := os.ReadFile(goldenPath); err == nil {
 		goldenSHA = eval.SHA256Hex(data)
 	}
-	return &eval.EvalManifest{
+	m := &eval.EvalManifest{
 		SchemaVersion:  eval.ManifestSchemaVersion,
 		GoldenMode:     mode,
 		GoldenSHA256:   goldenSHA,
@@ -347,6 +358,33 @@ func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lan
 		K:              k,
 		RerankEnabled:  rerankLive,
 	}
+	// Observation beats the preflight wherever it has something to say: the
+	// probe reports what the endpoint looked like once, before the run; the
+	// counter reports what the run actually got. With no eligible call there is
+	// nothing to observe (no reranker wired, or every pool at or below k), so
+	// the preflight's answer stands and the rate stays absent.
+	if rate, ok := rerankStats.Rate(); ok {
+		m.RerankObservedRate = &rate
+		m.RerankEnabled = rate > 0
+	}
+	return m
+}
+
+// warnRerankDegraded prints a loud warning when the cross-encoder served only
+// part of the run. The metrics are then a blend of reranked and non-reranked
+// queries, comparable to neither baseline; --check refuses them outright.
+func warnRerankDegraded(m *eval.EvalManifest, rerankStats *retrieve.RerankStats) {
+	if m == nil {
+		return
+	}
+	rate, degraded := m.RerankDegraded()
+	if !degraded {
+		return
+	}
+	attempted, served := rerankStats.Snapshot()
+	fmt.Fprintf(os.Stderr, "dex bench eval: WARNING: the cross-encoder served only %d of %d eligible calls (%.1f%%) "+
+		"— these metrics blend reranked and non-reranked queries and are comparable to neither a "+
+		"reranked nor a BM25 baseline\n", served, attempted, rate*100)
 }
 
 // resolveEvalProject resolves the project path to its index identity.
@@ -384,6 +422,18 @@ func checkEvalRegression(current eval.Report, refPath string, allowIncompat bool
 				return fmt.Errorf("incompatible experiment manifest: %s — pass --allow-incompatible to compare anyway", strings.Join(diffs, ", "))
 			}
 			fmt.Fprintf(os.Stderr, "dex bench eval: warning: comparing incompatible runs: %s\n", strings.Join(diffs, ", "))
+		}
+		// A partially-degraded run (#865) is not an identity mismatch — it is
+		// the same experiment, measured badly. Its metrics blend reranked and
+		// non-reranked queries, so they are comparable to no baseline at all.
+		// Gated here rather than in Incompatible, behind the same escape hatch.
+		if rate, degraded := current.Manifest.RerankDegraded(); degraded {
+			if !allowIncompat {
+				return fmt.Errorf("the cross-encoder served only %.1f%% of eligible rerank calls — these metrics "+
+					"blend reranked and non-reranked queries; fix the reranker and re-run, or pass "+
+					"--allow-incompatible to compare anyway", rate*100)
+			}
+			fmt.Fprintf(os.Stderr, "dex bench eval: warning: comparing a partially-degraded run (rerank served %.1f%%)\n", rate*100)
 		}
 	case ref.Manifest == nil:
 		fmt.Fprintln(os.Stderr, "dex bench eval: warning: reference report predates experiment manifests — comparing metrics only; regenerate the baseline to enable the compatibility gate")

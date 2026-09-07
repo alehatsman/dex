@@ -39,6 +39,13 @@ type Service struct {
 	// DefinitionBoost is the symbol-query declaration multiplier passed to the
 	// local quality rerank fallback; 0 = store's built-in default.
 	DefinitionBoost float64
+
+	// RerankStats, when non-nil, records whether each eligible rerank call was
+	// actually served by the cross-encoder or fell through to the local rerank
+	// (#865). Measurement-only: live query paths leave it nil and pay nothing.
+	// Pointer because Service is copied by value and the copies must share one
+	// counter.
+	RerankStats *RerankStats
 }
 
 // SemHit is one semantic-lane result in neutral (transport-free) form —

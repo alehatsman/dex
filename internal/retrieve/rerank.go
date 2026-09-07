@@ -55,6 +55,9 @@ func (svc Service) RerankFused(ctx context.Context, queryText string, hits []sto
 				svc.RerankCache.Put(cacheKey, scores)
 			}
 		}
+		// Record what actually happened before branching: this is the one place
+		// that can tell a cross-encoder ordering from a silent fall-through.
+		svc.RerankStats.Observe(err == nil)
 		switch {
 		case err == nil:
 			ordered := make([]store.Hit, 0, len(scores))

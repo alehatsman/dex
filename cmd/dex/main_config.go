@@ -38,7 +38,14 @@ func indexDir() (string, error) {
 
 // storeOpts reads runtime tweaks from the environment so every code
 // path that opens a Store sees the same configuration.
-func storeOpts() store.Options {
+func storeOpts() store.Options { return storeOptsWithRerankStats(nil) }
+
+// storeOptsWithRerankStats is storeOpts with an observation hook on the
+// cross-encoder. A non-nil stats sink makes the resulting Service record
+// whether each eligible rerank call was served or fell through (#865) — used
+// by `dex bench eval` so a measurement run can report what actually happened.
+// Everything else is identical; storeOpts passes nil.
+func storeOptsWithRerankStats(rerankStats *retrieve.RerankStats) store.Options {
 	opts := store.Options{
 		SearchOptions: store.SearchOptions{
 			DisableBM25:    os.Getenv("DEX_DISABLE_BM25") == "1",
@@ -64,6 +71,7 @@ func storeOpts() store.Options {
 	// compare != nil and dispatch into a nil receiver.
 	if rc := newRerankClient(); rc != nil {
 		svc := newRerankService(rc, opts.DefinitionBoost)
+		svc.RerankStats = rerankStats
 		opts.Rerank = svc.RerankFused
 		opts.MaxCandidatePool = rerankPool()
 	}
