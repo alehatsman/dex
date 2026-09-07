@@ -1,6 +1,11 @@
 package retrieve
 
-import "sync"
+import (
+	"errors"
+	"sync"
+
+	"github.com/alehatsman/dex/internal/rerank"
+)
 
 // RerankStats accumulates what actually happened at the cross-encoder across a
 // run, so a measurement can tell "reranked" apart from "silently not reranked".
@@ -26,31 +31,41 @@ type RerankStats struct {
 	// served counts calls whose ordering came from the cross-encoder,
 	// including cache hits (the cached ordering IS the cross-encoder's).
 	served int
+	// timedOut counts the subset of unserved calls that expired on our own
+	// per-call deadline rather than failing to reach the endpoint (#868).
+	// Reporting these as "unreachable" points the operator at a healthy
+	// service; they mean the deadline is too tight for the offered load.
+	timedOut int
 }
 
-// Observe records one eligible rerank call. served reports whether the
-// cross-encoder's ordering was used, as opposed to falling through to the
-// local rerank. Safe on a nil receiver.
-func (s *RerankStats) Observe(served bool) {
+// Observe records one eligible rerank call by its outcome: nil err means the
+// cross-encoder's ordering was used, anything else means the call fell through
+// to the local rerank. A rerank.ErrTimeout is additionally tallied so the
+// report can separate "our deadline was too tight" from "the endpoint is
+// down". Safe on a nil receiver.
+func (s *RerankStats) Observe(err error) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attempted++
-	if served {
+	switch {
+	case err == nil:
 		s.served++
+	case errors.Is(err, rerank.ErrTimeout):
+		s.timedOut++
 	}
 }
 
-// Snapshot returns the counts so far. Safe on a nil receiver (0, 0).
-func (s *RerankStats) Snapshot() (attempted, served int) {
+// Snapshot returns the counts so far. Safe on a nil receiver.
+func (s *RerankStats) Snapshot() (attempted, served, timedOut int) {
 	if s == nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.attempted, s.served
+	return s.attempted, s.served, s.timedOut
 }
 
 // Rate returns served/attempted and whether any call was eligible. ok=false
@@ -58,7 +73,7 @@ func (s *RerankStats) Snapshot() (attempted, served int) {
 // degradation — no reranker wired, or every pool at or below k — and a caller
 // must not report 0.0 as if it were an outage.
 func (s *RerankStats) Rate() (rate float64, ok bool) {
-	attempted, served := s.Snapshot()
+	attempted, served, _ := s.Snapshot()
 	if attempted == 0 {
 		return 0, false
 	}

@@ -122,7 +122,7 @@ func (c *ChatReranker) Rerank(ctx context.Context, query string, docs []string) 
 		}
 	}
 	if errCount == len(docs) {
-		return nil, fmt.Errorf("%w: %v", ErrUnreachable, firstErr)
+		return nil, fmt.Errorf("%w: %w", ErrUnreachable, firstErr)
 	}
 
 	// Omit failed pairs rather than assigning score=0: a zero score would
@@ -210,7 +210,7 @@ func (c *ChatReranker) scoreOne(ctx context.Context, query, doc string) (float32
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		return 0, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {

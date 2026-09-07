@@ -57,7 +57,7 @@ func (svc Service) RerankFused(ctx context.Context, queryText string, hits []sto
 		}
 		// Record what actually happened before branching: this is the one place
 		// that can tell a cross-encoder ordering from a silent fall-through.
-		svc.RerankStats.Observe(err == nil)
+		svc.RerankStats.Observe(err)
 		switch {
 		case err == nil:
 			ordered := make([]store.Hit, 0, len(scores))
@@ -100,7 +100,9 @@ func (svc Service) rerankDocs(ctx context.Context, queryText string, docs []stri
 	scores, err := svc.Rerank.Rerank(rerankCtx, queryText, docs)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			return nil, fmt.Errorf("%w: rerank timed out after %s", rerank.ErrUnreachable, timeout)
+			// Both sentinels: ErrUnreachable keeps the fallback firing, ErrTimeout
+			// tells the operator this was our deadline, not their outage (#868).
+			return nil, fmt.Errorf("%w: %w after %s", rerank.ErrUnreachable, rerank.ErrTimeout, timeout)
 		}
 		return nil, err
 	}

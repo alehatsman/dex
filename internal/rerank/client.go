@@ -30,6 +30,20 @@ import (
 // see a search failure caused by reranker outages.
 var ErrUnreachable = errors.New("rerank service unreachable")
 
+// ErrTimeout marks the subset of ErrUnreachable caused by the caller's own
+// per-call deadline expiring rather than by the endpoint being unavailable.
+//
+// Both degrade identically at the fallback (internal/retrieve/rerank.go) — a
+// slow reranker and a dead one are equally unusable for that query — so a
+// timeout is wrapped ALONGSIDE ErrUnreachable, never in place of it, and
+// errors.Is(err, ErrUnreachable) stays true.
+//
+// The distinction exists for the operator, not the fallback. Reporting a
+// timeout as "unreachable" sends the reader after a healthy service: it cost a
+// full round of misdiagnosis in #868, where eval's own parallelism pushed calls
+// past the 1500ms deadline against a server answering in 200ms.
+var ErrTimeout = errors.New("rerank call timed out")
+
 type Client struct {
 	BaseURL string
 	Model   string
@@ -112,7 +126,11 @@ func (c *Client) Rerank(ctx context.Context, query string, docs []string) ([]Sco
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		// %w, not %v: the transport error carries the cause — notably
+		// context.DeadlineExceeded when the caller's per-call deadline fires —
+		// and stringifying it here severs the chain, leaving the caller unable
+		// to tell its own timeout from a dead endpoint (#868).
+		return nil, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {

@@ -83,7 +83,11 @@ live cross-encoder baseline. Every eligible rerank call is then counted, and the
 served fraction is recorded as rerank_observed_rate — a run the cross-encoder
 served only partly (a breaker trip, a partial outage, a server answering its
 health probe while failing real calls) blends reranked and non-reranked queries,
-so --check refuses it unless you pass --allow-incompatible.
+so --check refuses it unless you pass --allow-incompatible. The warning says
+whether the calls were lost to a timeout or to an unreachable endpoint — eval
+runs queries in parallel and the deadline is per call, so a healthy but loaded
+reranker can still miss it; DEX_RERANK_CALL_TIMEOUT raises it (default 30s for
+a measurement run, vs 1500ms for an interactive query).
 
 Environment: DEX_EMBED_URL, DEX_EMBED_MODEL, DEX_EMBED_BATCH — same as indexing.
              DEX_FUSION_MODE=linear  select convex-combination score fusion.
@@ -373,6 +377,11 @@ func buildEvalManifest(mode, goldenPath string, gs eval.GoldenSet, repoHead, lan
 // warnRerankDegraded prints a loud warning when the cross-encoder served only
 // part of the run. The metrics are then a blend of reranked and non-reranked
 // queries, comparable to neither baseline; --check refuses them outright.
+//
+// It names WHY the calls were lost, because the two causes point at opposite
+// fixes and look identical at the fallback: a timeout means our own deadline
+// was too tight for the load this run offered (eval runs queries in parallel),
+// while an unreachable endpoint means the service is actually down (#868).
 func warnRerankDegraded(m *eval.EvalManifest, rerankStats *retrieve.RerankStats) {
 	if m == nil {
 		return
@@ -381,10 +390,17 @@ func warnRerankDegraded(m *eval.EvalManifest, rerankStats *retrieve.RerankStats)
 	if !degraded {
 		return
 	}
-	attempted, served := rerankStats.Snapshot()
-	fmt.Fprintf(os.Stderr, "dex bench eval: WARNING: the cross-encoder served only %d of %d eligible calls (%.1f%%) "+
+	attempted, served, timedOut := rerankStats.Snapshot()
+	cause := fmt.Sprintf("%d unreachable", attempted-served-timedOut)
+	hint := "the reranker did not answer — check the endpoint"
+	if timedOut > 0 {
+		cause = fmt.Sprintf("%d timed out, %d unreachable", timedOut, attempted-served-timedOut)
+		hint = "raise DEX_RERANK_CALL_TIMEOUT — eval runs queries in parallel, and the deadline " +
+			"is per call, so a healthy but loaded reranker still misses it"
+	}
+	fmt.Fprintf(os.Stderr, "dex bench eval: WARNING: the cross-encoder served only %d of %d eligible calls (%.1f%%; %s) "+
 		"— these metrics blend reranked and non-reranked queries and are comparable to neither a "+
-		"reranked nor a BM25 baseline\n", served, attempted, rate*100)
+		"reranked nor a BM25 baseline; %s\n", served, attempted, rate*100, cause, hint)
 }
 
 // resolveEvalProject resolves the project path to its index identity.

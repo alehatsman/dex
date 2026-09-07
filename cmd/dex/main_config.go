@@ -18,6 +18,12 @@ import (
 	"github.com/alehatsman/dex/internal/store"
 )
 
+// evalRerankCallTimeout is the per-call rerank deadline for measurement runs.
+// Generous on purpose: eval fans queries out through an errgroup, so a healthy
+// reranker still queues past an interactive budget, and a timed-out call
+// silently becomes a non-reranked data point (#868).
+const evalRerankCallTimeout = 30 * time.Second
+
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -72,6 +78,12 @@ func storeOptsWithRerankStats(rerankStats *retrieve.RerankStats) store.Options {
 	if rc := newRerankClient(); rc != nil {
 		svc := newRerankService(rc, opts.DefinitionBoost)
 		svc.RerankStats = rerankStats
+		if rerankStats != nil {
+			// A measurement run is not an interactive query: it would rather
+			// wait than record a degraded number, and it drives far more
+			// concurrency than the 1500ms interactive budget assumes (#868).
+			svc.RerankTimeout = rerankCallTimeout(evalRerankCallTimeout)
+		}
 		opts.Rerank = svc.RerankFused
 		opts.MaxCandidatePool = rerankPool()
 	}
@@ -109,7 +121,24 @@ func newRerankService(rc rerank.Reranker, defBoost float64) retrieve.Service {
 		Rerank:          rc,
 		RerankCache:     retrieve.NewRerankCache(0),
 		DefinitionBoost: defBoost,
+		RerankTimeout:   rerankCallTimeout(0),
 	}
+}
+
+// rerankCallTimeout resolves the PER-CALL rerank deadline — distinct from
+// DEX_RERANK_TIMEOUT, which is the HTTP client timeout on the whole connection.
+// This is the one that actually binds: it cancels the call from our side
+// (internal/retrieve/rerank.go) and, before #868, could not be configured at
+// all, so a caller offering more concurrency than the interactive budget
+// assumes had no way to stop degrading against itself.
+//
+// def is the caller's default when DEX_RERANK_CALL_TIMEOUT is unset; 0 leaves
+// retrieve's own 1500ms interactive default in place.
+func rerankCallTimeout(def time.Duration) time.Duration {
+	if v := os.Getenv("DEX_RERANK_CALL_TIMEOUT"); v != "" {
+		return parseDuration("DEX_RERANK_CALL_TIMEOUT", v, def)
+	}
+	return def
 }
 
 // vectorQuant reads DEX_VECTOR_QUANT — the chunk_vecs KNN encoding.
