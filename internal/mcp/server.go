@@ -26,6 +26,14 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// PrimaryVerb is the name of dex's single read verb, as the agent must type it.
+// It is referenced by every surface that names the verb outside CoreWorkflow's
+// body — notably the Codex AGENTS.md tail (#867), which is hand-written and so
+// cannot inherit a rename the way the single-sourced body does. Renaming the
+// verb means changing this constant, and TestAgentSurfacesNameOnlyLiveVerbs
+// fails any surface that names a verb dex no longer serves.
+const PrimaryVerb = "query"
+
 // CoreWorkflow returns the agent-agnostic tool mapping + ask-first workflow.
 // It is the single source of truth shared by every agent surface: ServerInstructions
 // (Claude Code, injected live over MCP) appends a Claude-harness-specific tail,

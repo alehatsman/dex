@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -163,5 +164,56 @@ func TestBuildBlockContentCodex(t *testing.T) {
 	}
 	if action2 != "already up to date" {
 		t.Fatalf("second run action = %q, want already up to date", action2)
+	}
+}
+
+// TestAgentSurfacesNameOnlyLiveVerbs (#867) guards the half of the agent-facing
+// text that TestCodexRulesUsesCoreWorkflow structurally cannot: the hand-written
+// tail appended after mcp.CoreWorkflow().
+//
+// The existing guard asserts the block CONTAINS CoreWorkflow() verbatim, which
+// stays true no matter what the tail says. That is how #844 shipped a Codex
+// block whose body correctly described `query` while its tail still told the
+// agent "Start every task with ask()" and named a `dex__ask` tool — ask having
+// been retired by the #849/#851 collapse. Codex does not surface MCP
+// instructions, so that block is the ONLY place the workflow reaches the agent;
+// a dead verb there is a broken first call, not a cosmetic typo.
+//
+// Every verb-shaped mention across both surfaces must name a tool dex actually
+// serves. Renaming the read verb means updating mcp.PrimaryVerb, and this fails
+// until every surface follows.
+func TestAgentSurfacesNameOnlyLiveVerbs(t *testing.T) {
+	live := map[string]bool{}
+	for _, tool := range mcpToolSurface {
+		live[tool] = true
+	}
+	// Named in CoreWorkflow's prose as harness-side or non-dex actions, so they
+	// are not dex tools and must not be checked against the MCP surface.
+	notATool := map[string]bool{
+		"edit": true, "run": true, "verify": true, "instead": true, "e": true,
+	}
+
+	// dex__<verb> (Codex's server-prefixed form) and mcp__dex__<verb> (Claude's).
+	prefixed := regexp.MustCompile(`\bm?c?p?_*dex__([a-z_]+)`)
+	// <verb>(…) — a call the agent is told to make.
+	called := regexp.MustCompile(`\b([a-z][a-z_]{2,})\(`)
+
+	surfaces := map[string]string{
+		"codexRulesContent (AGENTS.md block)": codexRulesContent(),
+		"mcp.ServerInstructions":              mcp.ServerInstructions(),
+	}
+	for name, text := range surfaces {
+		for _, m := range prefixed.FindAllStringSubmatch(text, -1) {
+			if !live[m[1]] {
+				t.Errorf("%s names tool %q (as %q) — not in the MCP surface; the agent would call a tool that does not exist", name, m[1], m[0])
+			}
+		}
+		for _, m := range called.FindAllStringSubmatch(text, -1) {
+			verb := m[1]
+			if notATool[verb] || live[verb] {
+				continue
+			}
+			t.Errorf("%s instructs the agent to call %s() — not in the MCP surface", name, verb)
+		}
 	}
 }

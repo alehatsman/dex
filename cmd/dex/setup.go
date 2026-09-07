@@ -398,8 +398,8 @@ func codexRulesContent() string {
 	return codexRulesMarker + "\n" + codexRulesVersion + "\n\n" +
 		mcp.CoreWorkflow() + "\n\n" +
 		"Note (Codex): dex's tools are exposed over MCP and may appear with a server " +
-		"prefix (e.g. dex__ask) and/or behind tool-search — the verb names above are " +
-		"the same tools. Start every task with ask().\n" +
+		"prefix (e.g. dex__" + mcp.PrimaryVerb + ") and/or behind tool-search — the verb " +
+		"names above are the same tools. Start every task with " + mcp.PrimaryVerb + "().\n" +
 		codexRulesEndMarker
 }
 
